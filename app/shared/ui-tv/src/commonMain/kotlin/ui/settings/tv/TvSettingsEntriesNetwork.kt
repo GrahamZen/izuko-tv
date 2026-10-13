@@ -19,8 +19,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.him188.ani.app.data.models.preference.AnitorrentConfig
-import me.him188.ani.app.data.models.preference.BangumiEndpointMode
-import me.him188.ani.app.data.models.preference.BangumiMirrorHosts
+import me.him188.ani.app.data.models.preference.BangumiRouteKind
 import me.him188.ani.app.data.models.preference.DanmakuCacheStrategy
 import me.him188.ani.app.data.models.preference.EndpointSelection
 import me.him188.ani.app.data.models.preference.EndpointSelectionMode
@@ -44,14 +43,9 @@ import me.him188.ani.app.ui.lang.settings_media_torrent_sharing_settings
 import me.him188.ani.app.ui.lang.settings_media_torrent_speed_format
 import me.him188.ani.app.ui.lang.settings_media_torrent_unlimited
 import me.him188.ani.app.ui.lang.settings_media_torrent_upload_rate_limit
-import me.him188.ani.app.ui.lang.settings_network_bangumi_auto
-import me.him188.ani.app.ui.lang.settings_network_bangumi_auto_description
-import me.him188.ani.app.ui.lang.settings_network_bangumi_builtin_mirrors
 import me.him188.ani.app.ui.lang.settings_network_bangumi_custom
-import me.him188.ani.app.ui.lang.settings_network_bangumi_direct
 import me.him188.ani.app.ui.lang.settings_network_bangumi_endpoint
 import me.him188.ani.app.ui.lang.settings_network_bangumi_endpoint_description
-import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror
 import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror_credentials
 import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror_credentials_off_confirm
 import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror_credentials_off_message
@@ -60,8 +54,12 @@ import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror_credentials_on
 import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror_credentials_risk_confirm
 import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror_credentials_risk_message
 import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror_credentials_risk_title
-import me.him188.ani.app.ui.lang.settings_network_bangumi_mode
 import me.him188.ani.app.ui.lang.settings_network_bangumi_no_login_notice
+import me.him188.ani.app.ui.lang.settings_network_bangumi_route_custom_description
+import me.him188.ani.app.ui.lang.settings_network_bangumi_route_mirrors
+import me.him188.ani.app.ui.lang.settings_network_bangumi_route_mirrors_description
+import me.him188.ani.app.ui.lang.settings_network_bangumi_route_origin
+import me.him188.ani.app.ui.lang.settings_network_bangumi_route_origin_description
 import me.him188.ani.app.ui.lang.settings_network_endpoint_auto
 import me.him188.ani.app.ui.lang.settings_network_endpoint_auto_description
 import me.him188.ani.app.ui.lang.settings_network_endpoint_custom
@@ -137,6 +135,7 @@ import me.him188.ani.datasources.api.topic.FileSize.Companion.Unspecified
 import me.him188.ani.datasources.api.topic.FileSize.Companion.bytes
 import me.him188.ani.datasources.api.topic.FileSize.Companion.megaBytes
 import me.him188.ani.utils.platform.format1f
+import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.getString
 
 /** 网络、BT、存储用到的几份值. */
@@ -147,6 +146,7 @@ internal object TvNetworkSettingKeys {
     val tmdbHosts = TvSettingKey.Live("tmdbHosts") { GlobalKoin.get<TmdbImageEndpoints>().candidates }
     val bangumi = TvSettingKey.Stored("bangumiEndpoint") { it.bangumiEndpointSettings }
     val bangumiMirrors = TvSettingKey.Live("bangumiMirrors") { GlobalKoin.get<BangumiMirrorListRepository>().mirrors }
+
     val bangumiLoggedIn = TvSettingKey.Live("bangumiLoggedIn") { deps -> deps.settings.bangumiLoggedIn }
 
     val proxyTest = TvSettingKey.Live("proxyTest") { deps ->
@@ -268,50 +268,24 @@ internal fun TvSettingsItemsBuilder.networkItems() {
     )
 
     header(Lang.settings_network_bangumi_endpoint)
-    choiceOf(
-        listOf(keys.bangumi, keys.bangumiMirrors, keys.bangumiLoggedIn), Lang.settings_network_bangumi_mode,
-        options = { v ->
-            val settings = v[keys.bangumi]
-            buildList {
-                add(BangumiEndpointMode.DIRECT)
-                add(BangumiEndpointMode.AUTO)
-                add(BangumiEndpointMode.MIRROR)
-                if (settings != null &&
-                    (BangumiMirrorHosts.normalizeMirrorRoot(settings.customBaseUrl) != null || settings.mode == BangumiEndpointMode.CUSTOM)
-                ) {
-                    add(BangumiEndpointMode.CUSTOM)
-                }
-            }
-        },
-        label = {
-            tvText(
-                when (it) {
-                    BangumiEndpointMode.DIRECT -> Lang.settings_network_bangumi_direct
-                    BangumiEndpointMode.AUTO -> Lang.settings_network_bangumi_auto
-                    BangumiEndpointMode.MIRROR -> Lang.settings_network_bangumi_mirror
-                    BangumiEndpointMode.CUSTOM -> Lang.settings_network_bangumi_custom
-                },
-            )
-        },
-        read = { it[keys.bangumi]?.mode },
-        // 登录着改用第三方镜像要先问 (允许账号数据经过镜像 / 退出登录再切 / 不切), 同原来的设置页
-        write = { mode -> listOf(TvSettingsEdit.Run { env -> switchBangumiMode(env, mode) }) },
-        dynamicDescription = { v ->
-            val settings = v[keys.bangumi]
-            val mirrors = v[keys.bangumiMirrors].orEmpty()
-            val parts = buildList {
-                add(tvText(Lang.settings_network_bangumi_endpoint_description))
-                if (settings?.mode == BangumiEndpointMode.AUTO) add(tvText(Lang.settings_network_bangumi_auto_description))
-                if (mirrors.isNotEmpty() && (settings?.mode == BangumiEndpointMode.AUTO || settings?.mode == BangumiEndpointMode.MIRROR)) {
-                    add(tvText(Lang.settings_network_bangumi_builtin_mirrors, mirrors.joinToString("、")))
-                }
-                add(tvText(Lang.tv_settings_bangumi_custom_hint))
-            }
-            parts.reduce { acc, text -> tvText(Lang.tv_settings_paragraphs, acc, text) }
-        },
-        qr = { consoleQr(it, "#settings/network") },
-    )
-    // 只有第三方镜像那两档要问: 自建的是可信的, 登录照样能用
+    // 每条线路一个开关, 按尝试顺序排 (见 BangumiRouteKind)
+    bangumiRouteToggle(Lang.settings_network_bangumi_route_origin, BangumiRouteKind.ORIGIN) {
+        tvText(
+            Lang.tv_settings_paragraphs,
+            tvText(Lang.settings_network_bangumi_endpoint_description),
+            tvText(Lang.settings_network_bangumi_route_origin_description),
+        )
+    }
+    // 自建地址要打字, 在网页控制台里填; 填好了才有这一行
+    bangumiRouteToggle(
+        Lang.settings_network_bangumi_custom, BangumiRouteKind.CUSTOM,
+        visible = { v -> v[keys.bangumi]?.customRoot != null },
+    ) { v -> tvText(Lang.settings_network_bangumi_route_custom_description, v[keys.bangumi]?.customRoot.orEmpty()) }
+    bangumiRouteToggle(Lang.settings_network_bangumi_route_mirrors, BangumiRouteKind.MIRRORS) { v ->
+        val mirrors = tvText(Lang.settings_network_bangumi_route_mirrors_description, v[keys.bangumiMirrors].orEmpty().joinToString("、"))
+        if (v[keys.bangumi]?.customRoot == null) tvText(Lang.tv_settings_paragraphs, mirrors, tvText(Lang.tv_settings_bangumi_custom_hint)) else mirrors
+    }
+    // 只有第三方镜像要问: 别的线路都直达官方或是用户自己的
     toggleOf(
         listOf(keys.bangumi, keys.bangumiLoggedIn), Lang.settings_network_bangumi_mirror_credentials,
         description = { v ->
@@ -320,8 +294,8 @@ internal fun TvSettingsItemsBuilder.networkItems() {
                 else Lang.settings_network_bangumi_no_login_notice,
             )
         },
-        visible = { v -> v[keys.bangumi]?.mode.let { it == BangumiEndpointMode.AUTO || it == BangumiEndpointMode.MIRROR } },
-        // 打开要先了解风险; 关掉时已登录且用着镜像要先提醒后果
+        visible = { v -> v[keys.bangumi]?.isEnabled(BangumiRouteKind.MIRRORS) == true },
+        // 打开要先了解风险; 关掉时已登录且只剩镜像要先提醒后果
         confirm = { v, on ->
             val settings = v[keys.bangumi]
             when {
@@ -348,10 +322,28 @@ internal fun TvSettingsItemsBuilder.networkItems() {
     )
 }
 
-private suspend fun switchBangumiMode(env: TvSettingsEnv, mode: BangumiEndpointMode) {
+/** 一条 Bangumi 线路的开关. 改动经 [switchBangumiRoute]: 登录着改成只剩镜像时先问. */
+private fun TvSettingsItemsBuilder.bangumiRouteToggle(
+    title: StringResource,
+    kind: BangumiRouteKind,
+    visible: (TvSettingsValues) -> Boolean = { true },
+    description: (TvSettingsValues) -> TvText,
+) {
+    val keys = TvNetworkSettingKeys
+    toggleOf(
+        listOf(keys.bangumi, keys.bangumiMirrors, keys.bangumiLoggedIn), title,
+        description = description,
+        visible = visible,
+        qr = { consoleQr(it, "#settings/network") },
+        read = { it[keys.bangumi]?.isEnabled(kind) == true },
+        write = { on -> listOf(TvSettingsEdit.Run { env -> switchBangumiRoute(env, kind, on) }) },
+    )
+}
+
+private suspend fun switchBangumiRoute(env: TvSettingsEnv, kind: BangumiRouteKind, enabled: Boolean) {
     val settings = env.repository.bangumiEndpointSettings
     val current = settings.flow.first()
-    val target = current.copy(mode = mode)
+    val target = current.withRoute(kind, enabled)
     if (BangumiMirrorConsent.check(current, target, env.deps.settings.bangumiLoggedIn.value) == null) {
         settings.update { target }
         return

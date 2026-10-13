@@ -23,19 +23,15 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * 回落判据: **什么样的失败才算"这一家不通"**.
+ * 回落判据: **什么样的失败才算"这条线路不通"**.
  *
  * 分档搞错的代价是不对称的 —— 判松了, 一个能直连的用户会因为一次 401 被推到第三方反代上, 而那条路
- * 按设计不带凭证 (见 [BangumiMirrorFeature] 的说明), 于是他之后的登录与收藏同步一直失败, 并且不知道
+ * 按设计不带凭证 (见 [BangumiRoutingFeature] 的说明), 于是他之后的登录与收藏同步一直失败, 并且不知道
  * 自己在走反代. 2026-09-22 真机上就是这么炸的: 未登录时探索页并发要收藏计数, 5 个 401 连着把会话
  * 推到了镜像上并粘住半小时.
  */
-class BangumiMirrorFallbackTest {
-    private val routing = BangumiRouting(
-        mirrors = listOf("bangumi.pro"),
-        trusted = false,
-        preferDirect = true,
-    )
+class BangumiRoutingFallbackTest {
+    private val routing = BangumiRouting(listOf(BangumiRoute.Origin, BangumiRoute.Mirror("bangumi.pro")))
 
     private class Outcome(val hosts: List<String>, val status: HttpStatusCode)
 
@@ -61,7 +57,7 @@ class BangumiMirrorFallbackTest {
         }
         val client = HttpClient(engine) { expectSuccess = false }
         // 每个用例一个新 handler: 粘性是实例状态
-        BangumiMirrorFeatureHandler(flowOf(routing)).applyToClient(client, true)
+        BangumiRoutingFeatureHandler(flowOf(routing)).applyToClient(client, true)
         var status = HttpStatusCode.OK
         repeat(times) { status = client.get("https://api.bgm.tv/v0/me").status }
         return Outcome(hosts, status)
@@ -133,7 +129,7 @@ class BangumiMirrorFallbackTest {
             }
         }
         val client = HttpClient(engine) { expectSuccess = false }
-        BangumiMirrorFeatureHandler(flowOf(routing), onOriginUnreachable = { onOriginUnreachable() })
+        BangumiRoutingFeatureHandler(flowOf(routing), onOriginUnreachable = { _, _ -> onOriginUnreachable() })
             .applyToClient(client, true)
         var status = HttpStatusCode.OK
         for (i in originUp.indices) {
