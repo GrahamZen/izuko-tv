@@ -26,7 +26,8 @@ import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 
 /**
- * Web 控制台「设置 → 调试」(只在 debug 包里有, 见 [enabled]): 开发时临时要调的东西放这里, 不用去电视设置页一层层找.
+ * Web 控制台「设置 → 调试」(debug 包与带 `-Pani.devConsole=true` 编的 release 包里有, 见 [enabled]): 开发时临时要调的东西放这里,
+ * 不用去电视设置页一层层找.
  * 两种来源, 网页上与通用设置项同一套卡片:
  * - [DevSwitches] 里声明的调试开关 (代码里临时的开关 / 数值, 只在内存里), key 加 `dev.` 前缀;
  * - [RemoteSettingsCatalog.debugItems] 里登记的已有设置项 (存进设置, 写法同正式清单).
@@ -35,8 +36,8 @@ internal object RemoteDebugSettings {
     private val logger = logger<RemoteDebugSettings>()
     private const val SWITCH_PREFIX = "dev."
 
-    /** debug 包才有调试区: release 包的网页没有这一组, 接口也不收. */
-    val enabled: Boolean get() = currentAniBuildConfig.isDebug
+    /** debug 包与性能对比包 ([me.him188.ani.app.platform.AniBuildConfig.devConsole]) 才有调试区: 正式包的网页没有这一组, 接口也不收. */
+    val enabled: Boolean get() = currentAniBuildConfig.isDebug || currentAniBuildConfig.devConsole
 
     /** 给网页的清单: 调试开关在前, 登记的设置项在后. */
     suspend fun describe(repository: SettingsRepository): JsonArray =
