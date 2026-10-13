@@ -414,6 +414,19 @@ data class ThemeSettings(
      * @since 1.0.6
      */
     val tvEpisodeSpecials: TvEpisodeSpecialsPlacement = TvEpisodeSpecialsPlacement.AfterMain,
+    /**
+     * TV: 海报墙 (探索 / 追番 / 搜索 / 新番时间表) 停在一张海报上 3 秒后其余海报压暗、这张再放大一点, 按方向键就撤; 进简介 (hero 态) 时当场压暗,
+     * 一直暗到退出. 默认开; 在设置「主题与色彩」里改.
+     *
+     * @since 1.0.6
+     */
+    val tvPosterIdleDim: Boolean = true,
+    /**
+     * TV: 焦点离开海报时慢慢缩回原大小 (约 0.4 秒, 同 tvOS), 关着时与聚焦放大一样快. 默认开; 在设置「主题与色彩」里改.
+     *
+     * @since 1.0.6
+     */
+    val tvPosterSlowFocusOut: Boolean = true,
     @Suppress("PropertyName") @Transient val _placeholder: Int = 0,
 ) {
     @Transient
