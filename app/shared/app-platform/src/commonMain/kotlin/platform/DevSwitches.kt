@@ -16,7 +16,7 @@ import androidx.compose.runtime.mutableStateOf
  * 网页上改了立即生效, 不用去电视设置页一层层找.
  *
  * 用的地方读 [value]. 它是 Compose 的 State: Composable 里读会跟着重组, 别处读拿到当前值. 值只在内存里, 应用重启回到默认;
- * release 包的网页没有调试区、接口也不收, 读到的永远是默认值. 用完就删; 要长期留的做成正式设置.
+ * 正式包的网页没有调试区、接口也不收, 读到的永远是默认值 (性能对比包用 `-Pani.devConsole=true` 编, 也有调试区). 用完就删; 要长期留的做成正式设置.
  */
 sealed class DevSwitch<T>(
     /** 网页与接口里的名字, [DevSwitches] 里唯一. */
