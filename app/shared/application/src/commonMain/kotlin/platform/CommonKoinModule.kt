@@ -79,11 +79,10 @@ import me.him188.ani.app.data.repository.user.TokenRepository
 import me.him188.ani.app.domain.foundation.AlternativeEndpointsFeature
 import me.him188.ani.app.domain.foundation.AlternativeEndpointsFeatureHandler
 import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
-import me.him188.ani.app.domain.foundation.BangumiMirrorConsent
 import me.him188.ani.app.domain.foundation.BangumiMirrorConsentRequests
-import me.him188.ani.app.domain.foundation.BangumiMirrorFeature
-import me.him188.ani.app.domain.foundation.BangumiMirrorFeatureHandler
 import me.him188.ani.app.domain.foundation.BangumiMirrorListRepository
+import me.him188.ani.app.domain.foundation.BangumiRoutingFeature
+import me.him188.ani.app.domain.foundation.BangumiRoutingFeatureHandler
 import me.him188.ani.app.domain.foundation.ConvertSendCountExceedExceptionFeature
 import me.him188.ani.app.domain.foundation.ConvertSendCountExceedExceptionFeatureHandler
 import me.him188.ani.app.domain.foundation.CookieJarFeatureHandler
@@ -156,6 +155,8 @@ import me.him188.ani.app.domain.session.SessionStateProvider
 import me.him188.ani.app.domain.session.auth.BangumiOAuthClient
 import me.him188.ani.app.domain.session.auth.BangumiOAuthManager
 import me.him188.ani.app.domain.session.auth.BangumiOAuthRelayClient
+import me.him188.ani.app.domain.session.auth.BangumiWebLogin
+import me.him188.ani.app.domain.session.auth.createBangumiWebLoginClient
 import me.him188.ani.app.domain.settings.ProxyProvider
 import me.him188.ani.app.domain.settings.SettingsBasedProxyProvider
 import me.him188.ani.app.domain.torrent.TorrentEngineType
@@ -244,6 +245,16 @@ private fun KoinApplication.otherModules(
             relay = get(),
         )
     }
+    single<BangumiWebLogin> {
+        BangumiWebLogin(
+            newClient = { createBangumiWebLoginClient(get<ProxyProvider>().proxy.first(), getOrNull<BangumiEchTransport>()) },
+            routing = { get<BangumiEndpointProvider>().routing.first() },
+            recover = { route, cause -> route == BangumiRoute.Ech && getOrNull<BangumiEchTransport>()?.recover(cause) == true },
+            tokenName = "${BangumiWebLogin.TOKEN_NAME} · ${getContext().deviceLabel()}",
+            currentToken = { (get<TokenRepository>().session.first() as? AccessTokenSession)?.tokens?.bangumiAccessToken },
+            scope = coroutineScope,
+        )
+    }
     single<SessionStateProvider> {
         get<SessionManager>().stateProvider
     }
@@ -289,11 +300,12 @@ private fun KoinApplication.otherModules(
             settings = settings.flow,
             mirrors = get<BangumiMirrorListRepository>().mirrors,
             scope = coroutineScope,
-            switchToMirror = {
+            onOriginUnreachable = { workingRoute ->
                 val current = settings.flow.first()
                 val loggedIn = get<TokenRepository>().session.first() is AccessTokenSession
-                // 已登录而凭证不经过镜像: 不替用户改, 请界面问他 (见 BangumiMirrorConsent)
-                if (BangumiMirrorConsent.check(current, current.afterOriginUnreachable(), loggedIn) != null) {
+                // 通了的是第三方镜像 (前面能带凭证的线路都没通), 已登录而凭证不经过镜像: 关掉官方后登录与同步就断了,
+                // 不替用户改, 请界面问他 (见 BangumiMirrorConsent)
+                if (workingRoute.thirdParty && loggedIn && !current.allowCredentialsViaMirror) {
                     get<BangumiMirrorConsentRequests>().request()
                 } else {
                     settings.update { afterOriginUnreachable() }
@@ -307,10 +319,10 @@ private fun KoinApplication.otherModules(
             get(), coroutineScope,
             featureHandlers = listOf(
                 UserAgentFeatureHandler,
-                // bangumi 镜像改写 + 原站不通时回落. 必须在这里注册 —— 没注册的特性会被
+                // bangumi 按线路改写 + 前一条不通时回落. 必须在这里注册 —— 没注册的特性会被
                 // DefaultHttpClientProvider.extendWithNotSet 静默丢掉
                 get<BangumiEndpointProvider>().let {
-                    BangumiMirrorFeatureHandler(it.routing, it::reportSettled, it::reportOriginUnreachable)
+                    BangumiRoutingFeatureHandler(it.routing, it::reportSettled, it::reportOriginUnreachable)
                 },
                 // 可换入口的服务 (TMDB 图片…): 请求时换到选定 / 连得上的入口
                 AlternativeEndpointsFeatureHandler(listOf(get<TmdbImageEndpoints>())),
@@ -883,7 +895,7 @@ private fun holdingInstanceMatrixSequence() = sequence {
                 setOf(
                     UserAgentFeature.withValue(userAgent),
                     ServerListFeature.withValue(ServerListFeatureConfig.Default),
-                    BangumiMirrorFeature.withValue(true),
+                    BangumiRoutingFeature.withValue(true),
                     AlternativeEndpointsFeature.withValue(true),
                     ConvertSendCountExceedExceptionFeature.withValue(true),
                 ),
@@ -896,7 +908,7 @@ private fun holdingInstanceMatrixSequence() = sequence {
             setOf(
                 UserAgentFeature.withValue(ScopedHttpClientUserAgent.ANI),
                 ServerListFeature.withValue(ServerListFeatureConfig.Default),
-                BangumiMirrorFeature.withValue(true),
+                BangumiRoutingFeature.withValue(true),
                 AlternativeEndpointsFeature.withValue(true),
                 ConvertSendCountExceedExceptionFeature.withValue(true),
             ),

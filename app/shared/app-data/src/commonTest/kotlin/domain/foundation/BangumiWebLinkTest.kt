@@ -51,7 +51,7 @@ class BangumiWebLinkTest {
     fun `官方连不上时用镜像 — 落到镜像上才换`() = runTest {
         val provider = provider(MutableStateFlow(BangumiEndpointSettings(mode = BangumiEndpointMode.AUTO)))
         assertEquals("https://bgm.tv/subject/1", provider.webLink("https://bgm.tv/subject/1"))
-        provider.reportSettled(provider.currentRouting!!, "bangumi.vip")
+        provider.reportSettled(provider.currentRouting!!, BangumiRoute.Mirror("bangumi.vip"))
         runCurrent()
         assertEquals("https://bangumi.vip/subject/1", provider.webLink("https://bgm.tv/subject/1"))
     }

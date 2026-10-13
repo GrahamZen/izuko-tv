@@ -17,7 +17,9 @@ import io.ktor.client.plugins.HttpTimeoutCapability
 import io.ktor.client.plugins.timeout
 import io.ktor.client.request.get
 import io.ktor.client.request.post
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.headersOf
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
@@ -33,11 +35,11 @@ import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Instant
 
 /**
- * 粘在哪个目标上什么时候作废, 以及数据里存着的镜像地址怎么走.
+ * 粘在哪条线路上什么时候作废, 试线路时的超时, 以及数据里存着的线路地址怎么走.
  */
-class BangumiMirrorRoutingTest {
-    private val auto = BangumiRouting(listOf("bangumi.vip"), trusted = false, preferDirect = true)
-    private val mirror = BangumiRouting(listOf("bangumi.vip"), trusted = false, preferDirect = false)
+class BangumiRoutingStickyTest {
+    private val auto = BangumiRouting(listOf(BangumiRoute.Origin, BangumiRoute.Mirror("bangumi.vip")))
+    private val mirror = BangumiRouting(listOf(BangumiRoute.Mirror("bangumi.vip")))
 
     private var nowMillis = 0L
     private val clock = object : Clock {
@@ -56,7 +58,7 @@ class BangumiMirrorRoutingTest {
             respond("", status ?: throw IOException("blocked"))
         }
         val client = HttpClient(engine) { expectSuccess = false }
-        BangumiMirrorFeatureHandler(routing, clock = clock).applyToClient(client, true)
+        BangumiRoutingFeatureHandler(routing, clock = clock).applyToClient(client, true)
         return client
     }
 
@@ -81,7 +83,7 @@ class BangumiMirrorRoutingTest {
                 socketTimeoutMillis = 30_000
             }
         }
-        BangumiMirrorFeatureHandler(flowOf(routing), clock = clock).applyToClient(client, true)
+        BangumiRoutingFeatureHandler(flowOf(routing), clock = clock).applyToClient(client, true)
         return client
     }
 
@@ -183,7 +185,7 @@ class BangumiMirrorRoutingTest {
     @Test
     fun `只连官方时也换回官方`() = runTest {
         val hosts = mutableListOf<String>()
-        val direct = BangumiRouting.Direct.copy(knownMirrors = listOf("bangumi.vip"))
+        val direct = BangumiRouting.Direct.copy(knownRoutes = listOf(BangumiRoute.Mirror("bangumi.vip")))
         client(flowOf(direct), hosts).get("https://next.bangumi.vip/p1/subjects/1")
         assertEquals(listOf("next.bgm.tv"), hosts)
     }
@@ -208,6 +210,24 @@ class BangumiMirrorRoutingTest {
             provider.canonicalUrl("https://lain.bangumi.vip/pic/cover/l/c4/ca/1.jpg"),
         )
         assertEquals("https://image.tmdb.org/t/p/w500/a.jpg", provider.canonicalUrl("https://image.tmdb.org/t/p/w500/a.jpg"))
+    }
+
+    @Test
+    fun `官方跳转到图床那一跳照样按线路走`() = runTest {
+        // api.bgm.tv/v0/subjects/{id}/image 回 302 到 lain.bgm.tv: 跳转那一跳也要按线路改写, 不然在大陆会被拦
+        val hosts = mutableListOf<String>()
+        val engine = MockEngine { req ->
+            hosts += req.url.host
+            if (req.url.encodedPath.endsWith("/image")) {
+                respond("", HttpStatusCode.Found, headersOf(HttpHeaders.Location, "https://lain.bgm.tv/pic/cover/l/1.jpg"))
+            } else {
+                respond("", HttpStatusCode.OK)
+            }
+        }
+        val client = HttpClient(engine) { expectSuccess = false }
+        BangumiRoutingFeatureHandler(flowOf(mirror), clock = clock).applyToClient(client, true)
+        assertEquals(HttpStatusCode.OK, client.get("https://api.bgm.tv/v0/subjects/1/image").status)
+        assertEquals(listOf("api.bangumi.vip", "lain.bangumi.vip"), hosts)
     }
 
     @Test

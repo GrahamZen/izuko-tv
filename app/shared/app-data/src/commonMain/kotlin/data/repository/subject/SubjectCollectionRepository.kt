@@ -1092,7 +1092,7 @@ private val YEAR_REGEX = Regex("""(?:19|20)\d{2}""")
  * 走 bangumi 自己的重定向端点而不是直接拼图床路径: `lain.bgm.tv` 的路径里带着图片自己的哈希
  * (`/pic/cover/l/b7/58/302286_s3o3E.jpg`), 光有 subjectId 拼不出来; 这个端点 302 过去.
  *
- * 它是 `bgm.tv` 域名, 所以连不上官方时会被镜像改写一并接管 (见 `BangumiMirrorFeature`).
+ * 它是 `bgm.tv` 域名, 所以连不上官方时一样按线路改写 (见 `BangumiRoutingFeature`).
  */
 fun staticSubjectImageLargeUrl(subjectId: Int): String =
     "https://api.bgm.tv/v0/subjects/$subjectId/image?type=large"

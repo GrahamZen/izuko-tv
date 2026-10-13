@@ -23,21 +23,18 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * 回落判据: **什么样的失败才算"这一家不通"**.
+ * 回落判据: **什么样的失败才算"这条线路不通"**.
  *
  * 分档搞错的代价是不对称的 —— 判松了, 一个能直连的用户会因为一次 401 被推到第三方反代上, 而那条路
- * 按设计不带凭证 (见 [BangumiMirrorFeature] 的说明), 于是他之后的登录与收藏同步一直失败, 并且不知道
+ * 按设计不带凭证 (见 [BangumiRoutingFeature] 的说明), 于是他之后的登录与收藏同步一直失败, 并且不知道
  * 自己在走反代. 2026-09-22 真机上就是这么炸的: 未登录时探索页并发要收藏计数, 5 个 401 连着把会话
  * 推到了镜像上并粘住半小时.
  */
-class BangumiMirrorFallbackTest {
-    private val routing = BangumiRouting(
-        mirrors = listOf("bangumi.pro"),
-        trusted = false,
-        preferDirect = true,
-    )
+class BangumiRoutingFallbackTest {
+    private val routing = BangumiRouting(listOf(BangumiRoute.Origin, BangumiRoute.Mirror("bangumi.pro")))
 
-    private class Outcome(val hosts: List<String>, val status: HttpStatusCode)
+    /** @param status 最后一次的响应码; `null` = 那次请求抛了 [IOException] (所有线路都不通) */
+    private class Outcome(val hosts: List<String>, val status: HttpStatusCode?)
 
     /**
      * 往 `api.bgm.tv` 发 [times] 次请求.
@@ -61,7 +58,7 @@ class BangumiMirrorFallbackTest {
         }
         val client = HttpClient(engine) { expectSuccess = false }
         // 每个用例一个新 handler: 粘性是实例状态
-        BangumiMirrorFeatureHandler(flowOf(routing)).applyToClient(client, true)
+        BangumiRoutingFeatureHandler(flowOf(routing)).applyToClient(client, true)
         var status = HttpStatusCode.OK
         repeat(times) { status = client.get("https://api.bgm.tv/v0/me").status }
         return Outcome(hosts, status)
@@ -118,6 +115,7 @@ class BangumiMirrorFallbackTest {
         vararg originUp: Boolean,
         mirrorServesWebPage: (requestIndex: Int) -> Boolean = { true },
         onOriginUnreachable: () -> Unit = {},
+        originStatus: HttpStatusCode = HttpStatusCode.OK,
     ): Outcome {
         val hosts = mutableListOf<String>()
         var index = 0
@@ -125,7 +123,7 @@ class BangumiMirrorFallbackTest {
             hosts += req.url.host
             if (req.url.host.endsWith("bgm.tv")) {
                 if (!originUp[index]) throw IOException("blocked")
-                respond("{}", HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+                respond("{}", originStatus, headersOf(HttpHeaders.ContentType, "application/json"))
             } else if (mirrorServesWebPage(index)) {
                 respond("<!doctype html>", HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "text/html; charset=utf-8"))
             } else {
@@ -133,12 +131,16 @@ class BangumiMirrorFallbackTest {
             }
         }
         val client = HttpClient(engine) { expectSuccess = false }
-        BangumiMirrorFeatureHandler(flowOf(routing), onOriginUnreachable = { onOriginUnreachable() })
+        BangumiRoutingFeatureHandler(flowOf(routing), onOriginUnreachable = { _, _ -> onOriginUnreachable() })
             .applyToClient(client, true)
-        var status = HttpStatusCode.OK
+        var status: HttpStatusCode? = HttpStatusCode.OK
         for (i in originUp.indices) {
             index = i
-            status = client.get("https://api.bgm.tv/v0/me").status
+            status = try {
+                client.get("https://api.bgm.tv/v0/me").status
+            } catch (_: IOException) {
+                null
+            }
         }
         return Outcome(hosts, status)
     }
@@ -150,6 +152,16 @@ class BangumiMirrorFallbackTest {
         // 第二次照样先试原站: 只回网页的镜像没有被粘住
         assertEquals(listOf("api.bgm.tv", "api.bangumi.pro", "api.bgm.tv", "api.bangumi.pro"), outcome.hosts)
         assertEquals(false, reported)
+        // 原站连不上、镜像只回网页: 当成连不上, 网页不交给调用方去解析
+        assertEquals(null, outcome.status)
+    }
+
+    @Test
+    fun `原站 5xx 而镜像回网页 - 交出原站真实的 5xx`() = runTest {
+        // bangumi 自己出错时镜像把 502 包成一张 200 的网页: 上层该看到的是 502 (服务暂不可用), 不是这张网页
+        val outcome = requestWithWebPageMirror(true, originStatus = HttpStatusCode.BadGateway)
+        assertEquals(listOf("api.bgm.tv", "api.bangumi.pro"), outcome.hosts)
+        assertEquals(HttpStatusCode.BadGateway, outcome.status)
     }
 
     @Test
