@@ -41,6 +41,7 @@ import androidx.leanback.widget.BaseGridView
 import androidx.recyclerview.widget.RecyclerView
 import com.github.panpf.sketch.Sketch
 import me.him188.ani.app.ui.foundation.TvNativeImages
+import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
@@ -629,12 +630,57 @@ class TvNativeEpisodeRowView(
     // 落点那张排出来了就给它: 对齐滚动会把它滑进框里 (不要求此刻已经在框里)
     override fun acceptsEntry(view: View): Boolean = true
 
-    /** 停稳时选中的那张没停在停靠线上 (平滑滚动半路被打断) 就挪过去. */
+    /**
+     * 这一轮滚动是手指拖出来的 (进过 SCROLL_STATE_DRAGGING, 只有触摸会进; 电视上恒 false). 拖动与甩出去的途中换成按需挪:
+     * 对齐策略下 leanback 每次排版 (补排卡片、换数据) 都把选中的那张滚回停靠线, 行会整段弹回去. 停稳时换回对齐, 焦点交给离停靠线
+     * 最近的那张 (见 [alignWhenIdle]). 持焦的那张拖出屏也不会被回收 (leanback 只回收它之外的), 途中焦点不丢.
+     */
+    private var draggedByTouch = false
+
+    init {
+        addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
+                if (newState == SCROLL_STATE_DRAGGING && !draggedByTouch) {
+                    draggedByTouch = true
+                    alignToDock(false)
+                }
+            }
+        })
+    }
+
+    @SuppressLint("RestrictedApi")
+    private fun alignToDock(aligned: Boolean) =
+        setFocusScrollStrategy(if (aligned) BaseGridView.FOCUS_SCROLL_ALIGNED else BaseGridView.FOCUS_SCROLL_ITEM)
+
+    /**
+     * 停稳时选中的那张没停在停靠线上 (平滑滚动半路被打断) 就挪过去. 手指拖完停下时改由离停靠线最近的那张接焦点, 对齐滚动把它滑进框里
+     * (= 遥控器左右键走到那张).
+     */
     override fun alignWhenIdle() {
         if (!isAttachedToWindow || scrollState != SCROLL_STATE_IDLE) return
+        if (draggedByTouch) {
+            draggedByTouch = false
+            alignToDock(true)
+            nearestToDock()?.let {
+                if (getChildAdapterPosition(it) != selectedPosition || !it.isFocused) {
+                    it.requestFocus()
+                    return
+                }
+            }
+        }
         val view = findViewHolderForAdapterPosition(selectedPosition)?.itemView ?: return
         val delta = view.left - paddingLeft
         if (delta != 0) scrollBy(delta, 0)
+    }
+
+    private fun nearestToDock(): View? {
+        var nearest: View? = null
+        for (i in 0 until childCount) {
+            val child = getChildAt(i)
+            if (getChildAdapterPosition(child) == RecyclerView.NO_POSITION) continue
+            if (nearest == null || abs(child.left - paddingLeft) < abs(nearest.left - paddingLeft)) nearest = child
+        }
+        return nearest
     }
 
     override fun onRequestFocusInDescendants(direction: Int, previouslyFocusedRect: Rect?): Boolean {

@@ -54,6 +54,7 @@ import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tv.LocalTvNavKeyTracker
 import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallScale
 import me.him188.ani.app.ui.foundation.tv.LocalTvScrollActivity
+import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.TV_FULLSCREEN_BACKDROP_DIM_ALPHA
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_COLUMN_SPACING
 import me.him188.ani.app.ui.foundation.tv.TvBackdropTreatment
@@ -173,6 +174,8 @@ class TvNativeGridPageCallbacks<T : Any>(
     val onScrollingChanged: (Boolean) -> Unit,
     /** 「海报上按确定」选直接播放时按确定做的事 (同播放键); null = 照旧 [onCardClick] (预览页). */
     val onCardPlay: ((index: Int, item: T) -> Unit)? = null,
+    /** 触屏设备上海报墙左右滑 (左滑 +1, 右滑 −1, 见 TvNativeGridPageView.onTouchSwipe); null = 不认 (搜索页只有一份网格). */
+    val onSwipe: ((delta: Int) -> Unit)? = null,
 )
 
 /**
@@ -321,6 +324,7 @@ private fun <T : Any> TvNativeGridPageHostContent(
     // 卡片区在滚动 / 方向键按住: 背景图的剧照升档等它们都停了才去取原图 (见 TvNativeBackdropView.navigating)
     val scrollActivity = LocalTvScrollActivity.current
     val navKeys = LocalTvNavKeyTracker.current
+    val touchInput = LocalTvTouchInputEnabled.current
     val currentCallbacks by rememberUpdatedState(callbacks)
     val currentItemAt by rememberUpdatedState(itemAt)
     val currentItemCount by rememberUpdatedState(itemCount)
@@ -416,6 +420,7 @@ private fun <T : Any> TvNativeGridPageHostContent(
                 }
                 view.onBindCard = { index -> currentOnBind(index) }
                 view.heroEnabled = heroEnabled
+                view.onTouchSwipe = if (touchInput && callbacks.onSwipe != null) { delta -> currentCallbacks.onSwipe?.invoke(delta) } else null
                 view.confirmFocusesWall = !(posterConfirm == TvPosterConfirmAction.Play && callbacks.onCardPlay != null)
                 view.contentScrollLimitPx = topBarScrollAwayPx
                 view.transitions = visualEffects.transitions

@@ -12,7 +12,9 @@ package me.him188.ani.app.ui.foundation.tv.nativeview
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.os.SystemClock
+import android.view.InputDevice
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.widget.Button
 import android.widget.FrameLayout
@@ -264,6 +266,36 @@ class TvNativeEpisodeRowTest {
         host.waitUntil("聚焦后集号让到播放三角后面") {
             (cardAt(1) as TvNativeEpisodeCardView).getChildAt(1).left == style.textSidePx + style.playIconPx + style.textGapPx
         }
+    }
+
+    @Test
+    fun `after a finger swipe the card nearest the anchor takes focus instead of springing back`() {
+        show(20)
+        focus(0)
+        val y = host.onMain {
+            val location = IntArray(2)
+            row.getLocationOnScreen(location)
+            location[1] + row.height / 2f
+        }
+        // 手指从右往左拖一大段 (经窗口的输入派发, 同真触摸)
+        val steps = 12
+        val start = SystemClock.uptimeMillis() - steps * 16L
+        for (i in 0..steps) {
+            val action = when (i) {
+                0 -> MotionEvent.ACTION_DOWN
+                steps -> MotionEvent.ACTION_UP
+                else -> MotionEvent.ACTION_MOVE
+            }
+            val event = MotionEvent.obtain(start, start + i * 16L, action, 1600f - 1200f * i / steps, y, 0)
+            event.source = InputDevice.SOURCE_TOUCHSCREEN
+            host.instrumentation.sendPointerSync(event)
+            event.recycle()
+        }
+        host.waitUntil("滚动停下") { row.scrollState == RecyclerView.SCROLL_STATE_IDLE }
+        host.instrumentation.waitForIdleSync()
+        val (focused, docked) = host.onMain { focusedIndex() to dockedIndex() }
+        assertTrue(focused > 0, "焦点换到停靠线附近的卡, 不是原来的第 0 张 (焦点 $focused, 停靠线上 $docked)")
+        assertEquals(focused, docked, "停在停靠线上的就是持焦那张")
     }
 
     private companion object {

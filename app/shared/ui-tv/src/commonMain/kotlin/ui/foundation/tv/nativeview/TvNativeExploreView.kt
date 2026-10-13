@@ -18,6 +18,7 @@ import android.graphics.Rect
 import android.graphics.drawable.ColorDrawable
 import android.os.SystemClock
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewTreeObserver
 import android.widget.FrameLayout
@@ -216,6 +217,26 @@ class TvNativeExploreView(
             field = value
             if (!value && timeline.active) setHeroActive(false)
         }
+
+    /**
+     * 触屏设备 (平板装了 TV 包) 才为 true, 宿主按 LocalTvTouchInputEnabled 给; 电视上恒 false, 下面三处触摸处理一处都不装.
+     * 列表叠在 hero 之上、按下点在 hero 按钮上时把手势让给按钮 (列表整页大, 不让的话按钮收不到); 按钮按下即聚焦, 第一下点就是点击;
+     * 轮播区左右滑翻轮播 (见 [TvNativeHorizontalSwipe]).
+     */
+    var touchInput: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            primaryButton.focusOnPress = value
+            scheduleButton.focusOnPress = value
+            list.touchPassThrough = if (value) ::heroButtonAt else null
+            carouselSwipe = if (value) {
+                TvNativeHorizontalSwipe(context, this, ::inCarouselSwipeArea) { listener?.onSwitchCarousel(it) }
+            } else {
+                null
+            }
+        }
+    private var carouselSwipe: TvNativeHorizontalSwipe? = null
 
     /**
      * hero 态 (聚焦卡) 在整页底下铺模糊背景 (设置里的「hero 态铺模糊背景」, 同新番时间表): 进 hero 态时整屏背景 ([wallBackdrop]) 随 hero
@@ -467,7 +488,11 @@ class TvNativeExploreView(
         list.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
                 scrollTracker.onStateChanged(this@TvNativeExploreView, newState)
-                if (newState == RecyclerView.SCROLL_STATE_IDLE) finishFarJump()
+                if (newState == RecyclerView.SCROLL_STATE_DRAGGING) touchDragged = true
+                if (newState == RecyclerView.SCROLL_STATE_IDLE) {
+                    finishFarJump()
+                    if (touchDragged) settleAfterTouch()
+                }
             }
 
             override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
@@ -893,6 +918,66 @@ class TvNativeExploreView(
     }
 
     // ------------------------------------------------------------------
+    // 触摸 (只在触屏设备上, 见 touchInput)
+    // ------------------------------------------------------------------
+
+    override fun onInterceptTouchEvent(ev: MotionEvent): Boolean =
+        carouselSwipe?.onIntercept(ev) == true || super.onInterceptTouchEvent(ev)
+
+    @SuppressLint("ClickableViewAccessibility")
+    override fun onTouchEvent(event: MotionEvent): Boolean =
+        carouselSwipe?.onTouch(event) == true || super.onTouchEvent(event)
+
+    /** 屏幕坐标 ([rawX], [rawY]) 落在看得见的 hero 按钮上. */
+    private fun heroButtonAt(rawX: Float, rawY: Float): Boolean {
+        if (!heroBox.buttonsPresent || heroBox.alpha * buttons.alpha < 0.5f) return false
+        return touchHits(primaryButton, rawX, rawY) || touchHits(scheduleButton, rawX, rawY)
+    }
+
+    private fun touchHits(view: View, rawX: Float, rawY: Float): Boolean {
+        if (!view.isShown) return false
+        val location = IntArray(2)
+        view.getLocationOnScreen(location)
+        return rawX >= location[0] && rawX < location[0] + view.width && rawY >= location[1] && rawY < location[1] + view.height
+    }
+
+    /** 这一轮列表滚动是手指拖出来的 (进过 SCROLL_STATE_DRAGGING, 只有触摸会进; 电视上恒 false): 停稳时就近停 (见 [settleAfterTouch]). */
+    private var touchDragged = false
+
+    /**
+     * 手指拖完 (松手或甩完) 停稳: 列表的停位都是「某一行停在中线 (hero 态: hero 线)」或顶上的轮播, 手指拖动停在哪是哪 —— 按松手速度预判照惯性会停在哪
+     * (见 [TvNativeExploreList.fling]), 挑离那里最近的停位: 一行就把焦点交给那一行上次停的那张、列表滚到它的停位 (= 遥控器上下走到那一行);
+     * 卡片墙上离顶更近就回轮播按钮.
+     */
+    private fun settleAfterTouch() {
+        touchDragged = false
+        val goal = list.scrolledPx() + tvNativeFlingDistance(context, list.takeTouchFlingVelocity())
+        val items = list.items
+        val hero = timeline.active
+        var rowKey: String? = null
+        var best = Int.MAX_VALUE
+        items.forEachIndexed { i, item ->
+            if (item !is TvNativeExploreItem.Row) return@forEachIndexed
+            val stop = if (hero) metrics.heroScroll(items, i) else metrics.centeredScroll(items, i)
+            val distance = abs(stop - goal)
+            if (distance < best) {
+                best = distance
+                rowKey = item.key
+            }
+        }
+        val key = rowKey
+        if (key == null || !hero && abs(goal) < best) {
+            focusHeroButton(lastHeroButton)
+            return
+        }
+        if (key == focusedRowKey && cardAreaHasFocus) updateStop(heroToggled = false) else focusCard(key, -1, far = true)
+    }
+
+    /** 轮播区: 正显示轮播 (不是聚焦卡、没滚出屏), 指示圆点那条线以上 (卡片行都在它下面). */
+    private fun inCarouselSwipeArea(x: Float, y: Float): Boolean =
+        !showsCard && !carouselGone && carouselAlpha() >= 0.5f && y < metrics.dotsCenterYPx - carouselShift() + metrics.dotPx
+
+    // ------------------------------------------------------------------
     // 按键
     // ------------------------------------------------------------------
 
@@ -1104,6 +1189,9 @@ class TvNativeExploreView(
             if (isMoreCard(rowKey, index)) return
             listener?.onCardLongPress(rowKey, index, anchor)
         }
+
+        // 卡片墙上点一下 = 聚焦并进 hero 态; hero 态里点另一张只换焦点 (确认就进详情页了), 「更多」卡也只聚焦
+        override fun tapConfirmsWhileFocusing(index: Int): Boolean = heroEnabled && !timeline.active && !isMoreCard(rowKey, index)
     }
 
     private fun isMoreCard(rowKey: String, index: Int): Boolean =
