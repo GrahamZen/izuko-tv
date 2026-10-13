@@ -82,8 +82,19 @@ interface MediaSource {
 播放时 `WebVideoDirectResolver.resolveDirectly` 执行播放段；取不到或要求嗅探时，播放器按 `matchVideo` 用 WebView 打开剧集页。
 GET 请求被站点验证挡住时改由 `WebSessionManager` 加载，与 `SelectorMediaSource` 共用验证码会话。
 
+`fetch` 可以把响应设的 Cookie 存进变量（`cookies`），交给 `mediaHeaders` 让播放器带上：有的站点取视频地址的接口同时发下载视频要的 Cookie，
+不带就 403。剧集分页列出时，`episodes` 的 `nextPage` 依次打开后面的页，合成一份列表。站点只给「全部条目」的列表、没有搜索接口时，
+`jsonSubjects` / `subjects` 的 `filterByKeyword` 按关键词筛（两边去掉空白与标点、繁转简后比较）；列表的每一项本身是数组时，路径用 `[0]`、`[1]` 按下标取。
+
+播放段的 `sniff`（`goal = video`）可以写 `timeoutMillis`：站点要很久才发出视频请求时，这个源的 WebView 嗅探至少等这么久。
+匹配器实现 `WebVideoSniffTimeout` 报出它，安卓的解析器取全局设置与它中较大的（它最多算 30 秒，与设置里能选的最长时长相同）。
+
 `AniBakaRuleImporter` 把 AniBaka 的规则（`anx-rule/2`）转换成规则源：两者都是「当前值 + 变量」的步骤流水线，
 多数步骤一一对应；用到规则源没有的步骤（加解密、站点专用步骤、HLS 清单处理、XPath）的规则不转换并说明原因。
+站点专用步骤里能用通用步骤表达的照样翻译：anime1 的三步翻成「番剧表按关键词筛 → 分类页翻页取文章 → 文章里的 token 换视频地址并带上接口发的 Cookie」。
+`keywordMatch` 对到 `filterByKeyword`。
+嗅探的选项照录进 `sniff`：等待时长生效；页面加载好 / 被挡的标志文字（`readyContains` / `rejectContains`）、加载好后再等多久、
+视频地址要跟随跳转（`resolveMediaRedirects`）目前只记录，不起作用。
 Web 控制台的导入接受 AniBaka 规则 JSON，或规则 / 规则库索引的地址（由电视下载）。
 订阅地址也可以直接填 AniBaka 规则库索引（`AniBakaSubscription`，挂在 `MediaSourceSubscriptionRequesterImpl` 下载之后）：
 每次更新订阅都重新下载并转换，之后与普通订阅一样按名字增删改；有规则文件没下载下来时这次更新算失败、原有的源不动，
