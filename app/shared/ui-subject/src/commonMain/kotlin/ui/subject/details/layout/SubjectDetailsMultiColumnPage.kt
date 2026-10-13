@@ -11,6 +11,7 @@ package me.him188.ani.app.ui.subject.details.layout
 
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.FlingBehavior
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -327,6 +328,8 @@ fun MultiColumnScaffold(
     onClickOpenExternal: () -> Unit = {},
     topBarTitle: String? = null,
     scrollState: ScrollState = rememberScrollState(),
+    /** 整页滚动的惯性; null = 默认. TV 在触屏设备上给吸附到页起点的 (见 ui-tv 的 TvDetailsTouchSnap). */
+    flingBehavior: FlingBehavior? = null,
     /** 滚过页内标题后是否渐显带底色的粘性顶栏. TV 上应关闭 (10-foot UI 无固定标题栏惯例, 且会遮挡 Hero 背景图). */
     stickyTopBarEnabled: Boolean = true,
     /** 覆盖顶栏右侧按钮区; null 时使用默认 (打开外部链接按钮). TV 用它给按钮加暗色底以浮于背景图上. */
@@ -395,7 +398,7 @@ fun MultiColumnScaffold(
             Modifier
                 .fillMaxSize()
                 .padding(scaffoldPadding)
-                .verticalScroll(scrollState),
+                .verticalScroll(scrollState, flingBehavior = flingBehavior),
         ) {
             Row(
                 // 留白放在滚动容器内, 随内容一起滚出
