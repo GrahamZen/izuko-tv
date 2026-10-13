@@ -26,7 +26,7 @@ import me.him188.ani.utils.ktor.ScopedHttpClient
  * 清单本身也要能在大陆下载到, 都下载不到就用内置那份 —— 而**「自建地址」那一档永远不依赖这里的任何东西**,
  * 那是真正的逃生口.
  *
- * client 惰性取的原因见 [RepoHostedList]: [BangumiMirrorFeatureHandler] 的路由来自 [BangumiEndpointProvider],
+ * client 惰性取的原因见 [RepoHostedList]: [BangumiRoutingFeatureHandler] 的路由来自 [BangumiEndpointProvider],
  * 而后者的镜像清单来自这里.
  */
 class BangumiMirrorListRepository(
