@@ -87,7 +87,7 @@ class SeriesGraphTableTest {
     private fun table() = assertNotNull(SeriesGraphTable.parse(tsv().encodeToByteArray()))
 
     @Test
-    fun `查表 - 有这一行给前传续集, 覆盖到却没有给空, 比表新的给 null`() {
+    fun `查表 - 有这一行给前传续集，覆盖到却没有给空，比表新的给 null`() {
         val table = table()
         assertEquals(500000, table.maxId)
         assertEquals("dump-2026-09-22.210341Z.zip", table.dump)
@@ -133,7 +133,7 @@ class SeriesGraphTableTest {
     }
 
     @Test
-    fun `系列索引与 TMDB 根名都在表上走, 不发请求`() = runTest {
+    fun `系列索引与 TMDB 根名都在表上走，不发请求`() = runTest {
         val table = table()
         val service = SubjectSeriesIndexService(noNetwork(), scope = backgroundScope, graph = { table })
         val index = service.getSubjectRelationIndex(302286)
@@ -157,7 +157,7 @@ class SeriesGraphTableTest {
     ).joinToString("\n")
 
     @Test
-    fun `本篇第一集的 sort 与特别篇数 - 空是默认值, 旧表没有这两列时不知道`() {
+    fun `本篇第一集的 sort 与特别篇数 - 空是默认值，旧表没有这两列时不知道`() {
         val node = assertNotNull(assertNotNull(SeriesGraphTable.parse(reZeroTsv().encodeToByteArray())).nodeOf(547888))
         assertEquals(67, node.firstSort)
         assertEquals(0, node.inlineSpecialCount)
@@ -168,7 +168,7 @@ class SeriesGraphTableTest {
     }
 
     @Test
-    fun `拆分季在本地识别, 不发请求`() = runTest {
+    fun `拆分季在本地识别，不发请求`() = runTest {
         val table = assertNotNull(SeriesGraphTable.parse(reZeroTsv().encodeToByteArray()))
         val index = SubjectSeriesIndexService(noNetwork(), scope = backgroundScope, graph = { table }).getSubjectRelationIndex(633836)
         // 当前条目 (第四季后半) 用自己已经取到的分集
@@ -216,7 +216,7 @@ class SeriesGraphTableTest {
 
     /** 真实时间跑: 等首轮下载的那 3 秒超时在虚拟时间里会立刻到点. */
     @Test
-    fun `本地没有表文件 - 下整份, 不带下载元数据里的 ETag`() = runTest {
+    fun `本地没有表文件 - 下整份，不带下载元数据里的 ETag`() = runTest {
         val requests = mutableListOf<HttpRequestData>()
         val client = HttpClient(
             MockEngine { request ->

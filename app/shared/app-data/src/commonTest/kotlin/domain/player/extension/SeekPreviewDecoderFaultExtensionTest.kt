@@ -93,7 +93,7 @@ class SeekPreviewDecoderFaultExtensionTest : AbstractPlayerExtensionTest() {
     }
 
     @Test
-    fun `预览换输出后解码出错, 改成全屏并提示一次`() = runTest {
+    fun `预览换输出后解码出错，改成全屏并提示一次`() = runTest {
         val (testScope, suite, state) = createCase()
         advanceUntilIdle()
         loadSelectedMedia(suite, state)

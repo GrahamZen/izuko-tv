@@ -94,7 +94,7 @@ class SeekPreviewDecoderFaultTest {
     }
 
     @Test
-    fun `认出之后解码器还坏着的那一阵里, 换了源的解码失败和跳转失败也算`() {
+    fun `认出之后解码器还坏着的那一阵里，换了源的解码失败和跳转失败也算`() {
         SeekPreviewDecoderFault.markOutputSwitched()
         assertTrue(SeekPreviewDecoderFault.isFault(decodingFailed()))
         assertTrue(SeekPreviewDecoderFault.recordFault())
@@ -107,7 +107,7 @@ class SeekPreviewDecoderFaultTest {
     }
 
     @Test
-    fun `一轮只从第一次认出时算起, 过了就照常换源`() {
+    fun `一轮只从第一次认出时算起，过了就照常换源`() {
         SeekPreviewDecoderFault.markOutputSwitched()
         assertTrue(SeekPreviewDecoderFault.recordFault())
         time += 30.seconds

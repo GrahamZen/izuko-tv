@@ -29,8 +29,8 @@ import kotlinx.io.readString
 import me.him188.ani.datasources.api.source.DownloadSearchQuery
 import me.him188.ani.datasources.api.topic.TopicCategory
 import me.him188.ani.datasources.dmhy.impl.protocol.Network
+import me.him188.ani.shaded.jsoup.Jsoup
 import me.him188.ani.utils.ktor.asScopedHttpClient
-import org.jsoup.Jsoup
 import kotlin.test.Test
 import kotlin.test.assertEquals
 

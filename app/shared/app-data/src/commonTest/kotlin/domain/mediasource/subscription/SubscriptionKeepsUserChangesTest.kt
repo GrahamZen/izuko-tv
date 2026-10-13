@@ -19,7 +19,6 @@ import me.him188.ani.app.domain.media.fetch.MediaFetcher
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
 import me.him188.ani.app.domain.media.selector.MediaSelectorSourceTiers
 import me.him188.ani.app.domain.mediasource.codec.ExportedMediaSourceData
-import me.him188.ani.app.domain.mediasource.codec.ExportedMediaSourceDataList
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceCodecManager
 import me.him188.ani.app.domain.mediasource.instance.MediaSourceInstance
 import me.him188.ani.app.domain.mediasource.instance.MediaSourceSave
@@ -106,7 +105,7 @@ class SubscriptionKeepsUserChangesTest {
         ),
         mediaSourceManager = manager,
         codecManager = MediaSourceCodecManager(),
-        requester = { SubscriptionUpdateData(ExportedMediaSourceDataList(remote)) },
+        requester = { SubscriptionUpdateData(mediaSources = remote) },
         getCurrentTimeMillis = { now },
         restoreOrder = { restore },
     )
@@ -145,7 +144,7 @@ class SubscriptionKeepsUserChangesTest {
     }
 
     @Test
-    fun `a renamed source keeps its instance, position and enabled state`() = runTest {
+    fun `a renamed source keeps its instance - position and enabled state`() = runTest {
         update()
         val before = saves.map { it.instanceId }
         moveToFront("乙")
