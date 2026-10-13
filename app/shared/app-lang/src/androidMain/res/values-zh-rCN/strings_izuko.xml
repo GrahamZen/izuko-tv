@@ -267,6 +267,8 @@
     <string name="settings_theme_tv_poster_confirm_hero">先看简介</string>
     <string name="settings_theme_tv_poster_confirm_play">直接播放</string>
     <string name="settings_theme_tv_poster_confirm_details">直接进详情页</string>
+    <string name="settings_theme_tv_poster_idle_dim">停手压暗</string>
+    <string name="settings_theme_tv_poster_idle_dim_description">在探索、追番、搜索与新番时间表里停在一张海报上 3 秒后，其余海报变暗、这张再放大一点，按方向键就恢复；打开简介时也一直压暗。</string>
     <string name="settings_theme_tv_episodes">选集</string>
     <string name="settings_theme_tv_episode_specials">特别篇 (电视)</string>
     <string name="settings_theme_tv_episode_specials_description">详情页和播放器选集里 SP、OP、ED 等非正片放在哪。上一集 / 下一集始终只在同类型之间切换</string>
