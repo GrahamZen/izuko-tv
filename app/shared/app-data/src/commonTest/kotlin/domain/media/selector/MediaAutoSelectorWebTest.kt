@@ -622,6 +622,78 @@ class MediaAutoSelectorWebTest {
             assertTrue(job.isCompleted)
         }
 
+    @Test
+    fun `paused remembered source is resumed alone and keeps priority`() = runFetchMediaSelectorTestSuite {
+        initWeb()
+        val (_, session, sources) = configureFetchSession {
+            object {
+                val remembered by web { tier = 2 }
+                val other by web { tier = 0 }
+            }
+        }
+        val rememberedId = sources.remembered.instance.mediaSourceId
+        // 有缓存的上一集一个源都没查 (或开播时都还没查完), 切到这一集
+        session.pauseSearching()
+        val job = launchSelection(session, preferredSourceId = rememberedId)
+        testScope().runCurrent()
+        assertEquals(1, sources.remembered.fetchCount)
+        assertEquals(0, sources.other.fetchCount)
+        // 记住的源慢也不越过它
+        testScope().advanceTimeBy(20.seconds)
+        testScope().runCurrent()
+        assertNull(selector.selected.value)
+        assertEquals(0, sources.other.fetchCount)
+        sources.remembered.complete(media(kind = WEB, subjectName = "Example Series"))
+        testScope().runCurrent()
+        assertEquals(rememberedId, selector.selected.value?.mediaSourceId)
+        assertTrue(job.isCompleted)
+        assertIs<MediaSourceFetchState.Paused>(session.stateOf(sources.other))
+    }
+
+    @Test
+    fun `other paused sources resume after the resumed remembered source has no candidate`() = runFetchMediaSelectorTestSuite {
+        initWeb()
+        val (_, session, sources) = configureFetchSession {
+            object {
+                val remembered by web { tier = 2 }
+                val other by web { tier = 0 }
+            }
+        }
+        val rememberedId = sources.remembered.instance.mediaSourceId
+        session.pauseSearching()
+        val job = launchSelection(session, preferredSourceId = rememberedId)
+        testScope().runCurrent()
+        sources.remembered.complete(emptyList<Media>())
+        testScope().runCurrent()
+        assertEquals(1, sources.remembered.fetchCount)
+        assertEquals(1, sources.other.fetchCount)
+        sources.other.complete(media(kind = WEB, subjectName = "Example Series"))
+        testScope().runCurrent()
+        assertEquals(sources.other.instance.mediaSourceId, selector.selected.value?.mediaSourceId)
+        assertTrue(job.isCompleted)
+    }
+
+    @Test
+    fun `remembered source paused again after resuming is no longer waited for`() = runFetchMediaSelectorTestSuite {
+        initWeb()
+        val (_, session, sources) = configureFetchSession {
+            object {
+                val remembered by web { tier = 2 }
+                val other by web { tier = 0 }
+            }
+        }
+        val rememberedId = sources.remembered.instance.mediaSourceId
+        session.pauseSearching()
+        val job = launchSelection(session, preferredSourceId = rememberedId)
+        testScope().runCurrent()
+        assertEquals(1, sources.remembered.fetchCount)
+        // 放开后又被暂停: 照记住的源给不出资源处理, 全部放开进入截止时间阶段
+        session.pauseSearching()
+        testScope().runCurrent()
+        assertEquals(1, sources.other.fetchCount)
+        job.cancel()
+    }
+
     private fun MediaFetchSession.stateOf(handle: Handle): MediaSourceFetchState =
         mediaSourceResults.single { it.mediaSourceId == handle.instance.mediaSourceId }.state.value
 
