@@ -92,7 +92,7 @@ class TmdbAiringTest {
     }
 
     @Test
-    fun `整季同一天上线 - 已完结 (Haunted Hotel 第二季)`() {
+    fun `整季同一天上线 - 已完结（Haunted Hotel 第二季）`() {
         val dates = Array(8) { "2026-10-09" }
         assertEquals(SubjectAiringKind.COMPLETED, season(*dates).airingKind(today, 0))
         assertEquals(SubjectAiringKind.COMPLETED, season(*dates).airingKind(today, 8))
@@ -112,7 +112,7 @@ class TmdbAiringTest {
     }
 
     @Test
-    fun `条目横跨好几季 - 不按季判断 (海贼王)`() {
+    fun `条目横跨好几季 - 不按季判断（海贼王）`() {
         val dates = weekly(LocalDate(1999, 10, 20), 61).toTypedArray()
         assertNull(season(*dates, next = "2001-01-01").airingKind(today, 1150))
     }
@@ -159,7 +159,7 @@ class TmdbAiringTest {
     }
 
     @Test
-    fun `已能证明开播 - 不再重取 (连载中也不追)`() {
+    fun `已能证明开播 - 不再重取（连载中也不追）`() {
         assertFalse(season("2026-09-26", "2026-10-03", null).copy(fetchedOn = "2026-09-01").needsRefresh(today))
         assertFalse(season("2026-10-10", "2026-10-17").copy(fetchedOn = "2026-09-01").needsRefresh(today))
     }
@@ -249,7 +249,7 @@ class TmdbAiringTest {
     ) = correctAiringByTmdb(airingInfo, progressInfo, airing, today, totalEpisodes, hasEpisodes)
 
     @Test
-    fun `未开播且没录分集 - 状态与集数用 TMDB 的, 按钮改开始观看`() {
+    fun `未开播且没录分集 - 状态与集数用 TMDB 的，按钮改开始观看`() {
         val corrected = correct(bangumiUpcoming, notOnAir, season(*Array(8) { "2026-10-09" }), hasEpisodes = false)
         assertEquals(SubjectAiringKind.COMPLETED, corrected.airingInfo.kind)
         assertEquals(8, corrected.airingInfo.mainEpisodeCount)
@@ -257,7 +257,7 @@ class TmdbAiringTest {
     }
 
     @Test
-    fun `未开播 - 分集都没日期 (丹佛最后的恐龙)`() {
+    fun `未开播 - 分集都没日期（丹佛最后的恐龙）`() {
         val bangumi = bangumiUpcoming.copy(mainEpisodeCount = 52)
         val corrected = correct(bangumi, notOnAir, TmdbAiring(showEnded = true))
         assertEquals(SubjectAiringKind.COMPLETED, corrected.airingInfo.kind)
@@ -266,7 +266,7 @@ class TmdbAiringTest {
     }
 
     @Test
-    fun `没录分集按条目信息估成连载中 - 按 TMDB 改成已完结 (鼠国流浪记)`() {
+    fun `没录分集按条目信息估成连载中 - 按 TMDB 改成已完结（鼠国流浪记）`() {
         val estimated = bangumiUpcoming.copy(kind = SubjectAiringKind.ON_AIR)
         val movie = TmdbAiring(seasonAirDates = listOf("2006-10-22"), movie = true)
         val corrected = correct(estimated, start, movie, hasEpisodes = false)
@@ -284,7 +284,7 @@ class TmdbAiringTest {
     }
 
     @Test
-    fun `没录分集 - 估成已完结的不改回连载中, TMDB 说没开播的不改`() {
+    fun `没录分集 - 估成已完结的不改回连载中，TMDB 说没开播的不改`() {
         val completed = bangumiUpcoming.copy(kind = SubjectAiringKind.COMPLETED, mainEpisodeCount = 3)
         assertSame(completed, correct(completed, start, season("2026-10-02", null, null), hasEpisodes = false).airingInfo)
         val onAir = bangumiUpcoming.copy(kind = SubjectAiringKind.ON_AIR, mainEpisodeCount = 3)
