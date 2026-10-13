@@ -6,8 +6,8 @@
 
 **为 Android TV / Google TV 打造的追番客户端**
 
-| 首次安装 | 下载 / 更新 | 讨论群 | 许可证 | 原项目 |
-|:---:|:---:|:---:|:---:|:---:|
+| 首次安装 | 下载 / 更新 | 许可证 | 原项目 |
+|:---:|:---:|:---:|:---:|
 | [![Installer](https://img.shields.io/badge/Installer-install--izuko.apk-043b69?labelColor=06599d)](https://github.com/GrahamZen/izuko-tv/releases/download/installer/install-izuko.apk) | [![Release](https://img.shields.io/github/v/release/GrahamZen/izuko-tv.svg?maxAge=3600&label=Download&labelColor=06599d&color=043b69&include_prereleases)](https://github.com/GrahamZen/izuko-tv/releases/latest) | [![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE.txt) | [![Based on Animeko](https://img.shields.io/badge/open--ani%2Fanimeko-181717?logo=github&logoColor=white)](https://github.com/open-ani/animeko) |
 
 </div>
