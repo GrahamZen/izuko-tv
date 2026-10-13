@@ -116,6 +116,9 @@ jobs:
           echo "ani.bangumi.oauth.relay.client.id=${{ secrets.BANGUMI_OAUTH_RELAY_CLIENT_ID }}" >> local.properties
           echo "ani.bangumi.oauth.relay.client.secret=${{ secrets.BANGUMI_OAUTH_RELAY_CLIENT_SECRET }}" >> local.properties
           echo "ani.sentry.dsn=${{ secrets.SENTRY_DSN }}" >> local.properties
+          echo "ani.chat.qq.id=${{ secrets.CHAT_QQ_ID }}" >> local.properties
+          echo "ani.chat.qq.link=${{ secrets.CHAT_QQ_LINK }}" >> local.properties
+          echo "ani.chat.telegram.link=${{ secrets.CHAT_TELEGRAM_LINK }}" >> local.properties
           echo "kotlin.native.ignoreDisabledTargets=true" >> local.properties
       - id: 'step-7'
         continue-on-error: true

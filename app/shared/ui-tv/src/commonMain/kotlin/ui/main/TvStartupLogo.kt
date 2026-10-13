@@ -107,13 +107,23 @@ class TvStartupLogoState(private val tracker: StartupProgressTracker, val onboar
 
     private val shownAt = TimeSource.Monotonic.markNow()
 
-    /** 等首屏准备好再撤. */
-    suspend fun dismissWhenFirstScreenReady() {
+    /** 首屏 (探索页的封面) 准备好了才返回. */
+    suspend fun awaitFirstScreenReady() = tracker.awaitFirstScreenReady()
+
+    /**
+     * 等首屏准备好再撤. 撤之前等 [cover] 的结果: 上面盖着一层 (更新后的「本版新功能」页) 就直接撤, 不淡出 (看不见).
+     */
+    suspend fun dismissWhenFirstScreenReady(cover: suspend () -> Boolean = { false }) {
         val start = TimeSource.Monotonic.markNow()
         tracker.awaitFirstScreenReady()
         val (finished, started) = tracker.coverCounts
-        logger.info { "Startup logo dismissed after ${start.elapsedNow().inWholeMilliseconds}ms, covers $finished/$started" }
-        dismiss()
+        val ready = start.elapsedNow().inWholeMilliseconds
+        val covered = cover()
+        logger.info {
+            "Startup logo dismissed after ${start.elapsedNow().inWholeMilliseconds}ms (first screen ${ready}ms), " +
+                    "covers $finished/$started, covered=$covered"
+        }
+        dismiss(fadeOut = !covered)
     }
 
     /**
