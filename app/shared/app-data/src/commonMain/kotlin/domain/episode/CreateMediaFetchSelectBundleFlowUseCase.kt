@@ -29,6 +29,9 @@ import me.him188.ani.app.domain.media.fetch.MediaFetchSessionRefresh
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
 import me.him188.ani.app.domain.media.fetch.create
 import me.him188.ani.app.domain.media.fetch.createFetchFetchSession
+import me.him188.ani.app.domain.media.fetch.withRegionalAliases
+import me.him188.ani.app.domain.media.fetch.withRegionalNames
+import me.him188.ani.app.domain.media.fetch.withRegionalSeriesNames
 import me.him188.ani.app.domain.media.selector.DefaultMediaSelector
 import me.him188.ani.app.domain.media.selector.MediaSelectorContextFlowProducer
 import me.him188.ani.app.domain.player.extension.holdSearchingForFinishedCache
@@ -137,7 +140,7 @@ class CreateMediaFetchSelectBundleFlowUseCaseImpl(
                     bundle.episodeCollectionInfo.episodeInfo,
                     episodes = bundle.subjectCollectionInfo.episodes.map { it.episodeInfo },
                     seriesInfo = bundle.seriesInfo,
-                )
+                ).let { withRegionalNames(it) }
                 // 用户为本条目改过的搜索关键词只在建会话时读一次: 会话内改动走 MediaFetchSession.setFetchRequest,
                 // 不必因此重建整个会话 (选中项与播放都挂在会话上)
                 bundle to (episodePreferencesRepository.searchKeywordsFlow(bundle.subjectId).first()?.applyTo(request) ?: request)
@@ -165,8 +168,8 @@ class CreateMediaFetchSelectBundleFlowUseCaseImpl(
                     mediaSourceManager.allInstances.map { list ->
                         list.map { it.mediaSourceId }
                     },
-                    flowOf(bundle.seriesInfo),
-                    flowOf(bundle.subjectInfo),
+                    flowOf(withRegionalSeriesNames(bundle.seriesInfo, bundle.subjectInfo)),
+                    flowOf(withRegionalAliases(bundle.subjectInfo, bundle.seriesInfo)),
                     fetchSession.latestRequest.map { bundle.episodeInfo.withRequestedNumbers(it) },
                     mediaSourceManager.mediaSourceTiersFlow(), // only access local settings
                     // 缓存没下完时在选源菜单里标成"不可用"而不是藏掉, 见 MediaExclusionReason.CacheNotReady
