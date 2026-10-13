@@ -86,6 +86,17 @@ interface AniBuildConfig {
     val updateRepository: String
         get() = projectRepository
 
+    /**
+     * 交流群: QQ 群号与加群链接 (`ani.chat.qq.id` / `ani.chat.qq.link`)、Telegram 链接 (`ani.chat.telegram.link`).
+     * 只给装了应用的人看, 不写进源码, 构建时从 local.properties 或 CI secret 注入; 没配置时为空串, 界面上不显示 (见 `ChatGroups`).
+     */
+    val chatQqGroupId: String
+        get() = ""
+    val chatQqGroupLink: String
+        get() = ""
+    val chatTelegramLink: String
+        get() = ""
+
     val sentryEnabled: Boolean
         get() = true
     val analyticsEnabled: Boolean
