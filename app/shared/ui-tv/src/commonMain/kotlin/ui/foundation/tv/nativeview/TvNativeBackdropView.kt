@@ -92,7 +92,7 @@ data class TvNativeBackdropTarget(
  * 剧照升档 ([TvNativeBackdropTarget.upgradeUrl]): 主图上屏、停稳且不在导航 ([navigating]) 之后, 在同一格里叠上原图, 解码好后原地淡入
  * (同一构图, 看起来只是变清楚了); 换了目标就不再去取.
  *
- * 底下铺着整屏模糊背景时 (见 [feather], [zoomSource]): 左缘 / 下缘的渐变不盖遮罩色, 把图的边缘擦成透明露出那一层; 放大转场不从本层起.
+ * 底下铺着整屏模糊背景时 (见 [feather], [zoomSource]): 左缘 / 下缘的渐变不盖遮罩色, 把图的边缘擦成透明露出那一层; 不按下即压暗; 放大转场不从本层起.
  */
 @SuppressLint("ViewConstructor")
 class TvNativeBackdropView(
@@ -247,10 +247,12 @@ class TvNativeBackdropView(
     /**
      * 按下即压暗 (调用方在真实目标换了时调, Prime Video 式的即时反馈): 当前图压到 [TV_BACKDROP_PRESS_DIM_ALPHA] ([TV_BACKDROP_PRESS_DIM_IN_MILLIS], 线性),
      * 至少保持 [TV_BACKDROP_PRESS_DIM_HOLD_MILLIS], 再等 [dimming] 变 false (新图已换上) 用 [TV_BACKDROP_PRESS_DIM_OUT_MILLIS] 放开;
-     * 再按就从当前值重新开始. 受 TvPolishFlags.pressDim 控制.
+     * 再按就从当前值重新开始. 受 TvPolishFlags.pressDim 控制. 底下铺着模糊背景时 ([feather]) 不压: 压的只是本层这一块, 在模糊背景上像一块暗斑;
+     * 换卡只走交叉淡入.
      */
     fun triggerPressDim() {
         if (!TvPolishFlags.pressDim) return
+        if (feather) return
         dimJob?.cancel()
         dimJob = scope.launch {
             val start = SystemClock.uptimeMillis()
