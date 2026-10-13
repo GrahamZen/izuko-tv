@@ -86,6 +86,9 @@ sealed interface RuleStep {
      *
      * @property url 地址模板, 可以是相对地址. 为空表示这一段的输入地址 (条目页 / 剧集页).
      * @property contentType 有请求体时的类型: `form` (`application/x-www-form-urlencoded`)、`json`, 或完整的 MIME.
+     * @property cookies 非空时把响应设的 Cookie (`Set-Cookie`) 存进这个变量, 形如 `a=1; b=2`, 可以直接当 `Cookie` 请求头的值,
+     *   例如视频地址要带上取地址时站点发的 Cookie: `{"op": "mediaHeaders", "headers": {"Cookie": "{变量名}"}}`.
+     *   变量里已有的 Cookie 保留, 同名的换成新的.
      */
     @Serializable
     @SerialName("fetch")
@@ -95,6 +98,7 @@ sealed interface RuleStep {
         val headers: Map<String, String> = emptyMap(),
         val body: String = "",
         val contentType: String = "",
+        val cookies: String = "",
     ) : RuleStep
 
     /**
@@ -103,12 +107,26 @@ sealed interface RuleStep {
      * - `goal = html`: 取页面内容, 与 GET 的 [Fetch] 相同 —— 直连被站点的验证 (如 Cloudflare) 挡住时都会改用浏览器加载.
      * - `goal = video`: 用于播放段, 表示交给 WebView 打开剧集页, 按 [RuleConfig.matchVideo] 嗅探视频地址;
      *   执行到它时播放段就此结束, 后面的步骤不再执行.
+     *
+     * @property timeoutMillis `goal = video` 时嗅探至少等多久 (毫秒): 比设置里的全局时长长时用它, 最多算 30 秒; 0 = 照全局设置.
+     *   播放段里有几个嗅探步骤写了时长时取最长的.
+     *
+     * 以下几项从 AniBaka 规则导入时照录, 目前不起作用:
+     * @property readyContains `goal = html` 时页面出现其中任一段文字才算加载好 (内容由脚本渲染的页面)
+     * @property rejectContains 页面出现其中任一段文字就算被站点挡住
+     * @property settleMillis 加载好之后再等多久 (毫秒)
+     * @property resolveMediaRedirects 嗅探到的视频地址会跳转, 要跟到最终地址
      */
     @Serializable
     @SerialName("sniff")
     data class Sniff(
         val goal: String = GOAL_VIDEO,
         val url: String = "",
+        val timeoutMillis: Long = 0,
+        val readyContains: List<String> = emptyList(),
+        val rejectContains: List<String> = emptyList(),
+        val settleMillis: Long = 0,
+        val resolveMediaRedirects: Boolean = false,
     ) : RuleStep {
         companion object {
             const val GOAL_VIDEO = "video"
@@ -243,6 +261,7 @@ sealed interface RuleStep {
      * 每个条目的地址: [link] 选出的元素的 [linkAttr]; 不填 [link] 时取卡片本身 (若是链接) 或卡片里第一个链接.
      * 名字: [name] 选出的元素的 [nameAttr] (为空取文本); 不填 [name] 时依次试链接的 `title`、图片的 `alt`、标题元素的文本、链接的文本.
      * [linkPattern] 非空时只保留地址里含有它的条目. 地址相同的条目只留第一个.
+     * [filterByKeyword] 为 `true` 时只留名字含有搜索关键词的条目 (比较方法同 [JsonSubjects.filterByKeyword]).
      */
     @Serializable
     @SerialName("subjects")
@@ -253,11 +272,16 @@ sealed interface RuleStep {
         val link: String = "",
         val linkAttr: String = "href",
         val linkPattern: String = "",
+        val filterByKeyword: Boolean = false,
     ) : RuleStep
 
     /**
      * 条目列表, 来自 JSON. [listPath] 是列表的路径, 每一项里按 [namePath] 取名字;
      * 地址按 [urlPath] 取, 取不到时用 [urlTemplate] 拼 (模板里可以用 `{id}` 即 [idPath] 取到的值, 以及该项的任意字段).
+     * 每一项本身是数组时 (`[[12, "名字"], ...]`) 用 `[0]`、`[1]` 按下标取.
+     *
+     * [filterByKeyword] 为 `true` 时只留名字含有搜索关键词的条目, 给只提供「全部条目」列表、没有搜索接口的站点用.
+     * 比较前两边都去掉空白与标点、中文数字换成阿拉伯数字、繁体转成简体 (安卓上), 不分大小写.
      */
     @Serializable
     @SerialName("jsonSubjects")
@@ -267,6 +291,7 @@ sealed interface RuleStep {
         val namePath: String = "name",
         val urlPath: String = "",
         val urlTemplate: String = "",
+        val filterByKeyword: Boolean = false,
     ) : RuleStep
 
     /**
@@ -274,6 +299,9 @@ sealed interface RuleStep {
      * 每个容器里用 [items] 选出剧集 (取文本当名字、`href` 当地址).
      * [tabs] 里第一个能选出元素的选择器选出线路名, 与容器按顺序对应; 不填或对不上时线路没有名字.
      * [reverse] 为 `true` 时把每条线路的剧集倒过来 (站点按新到旧排列时).
+     *
+     * 剧集分页列出时, [nextPage] 选出「下一页」链接 (取 `href`), 依次打开后面的页, 各页同一位置的容器并成一条线路
+     * (后面的页里与前面地址重复的剧集不要), 最多共 [maxPages] 页. 某一页打不开就用已经取到的. [reverse] 作用在合并之后.
      */
     @Serializable
     @SerialName("episodes")
@@ -282,6 +310,8 @@ sealed interface RuleStep {
         val tabs: List<String> = emptyList(),
         val items: String = "a",
         val reverse: Boolean = false,
+        val nextPage: String = "",
+        val maxPages: Int = 20,
     ) : RuleStep
 
     /**
