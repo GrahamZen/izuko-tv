@@ -145,7 +145,7 @@ class SubscriptionKeepsUserChangesTest {
     }
 
     @Test
-    fun `a renamed source keeps its instance, position and enabled state`() = runTest {
+    fun `a renamed source keeps its instance - position and enabled state`() = runTest {
         update()
         val before = saves.map { it.instanceId }
         moveToFront("乙")
