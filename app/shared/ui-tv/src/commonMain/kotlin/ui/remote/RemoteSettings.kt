@@ -25,9 +25,9 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import me.him188.ani.app.data.models.danmaku.DanmakuRegexFilter
-import me.him188.ani.app.data.models.preference.BangumiEndpointMode
 import me.him188.ani.app.data.models.preference.BangumiEndpointSettings
 import me.him188.ani.app.data.models.preference.BangumiMirrorHosts
+import me.him188.ani.app.data.models.preference.BangumiRouteKind
 import me.him188.ani.app.data.models.preference.EndpointSelectionMode
 import me.him188.ani.app.data.models.preference.EndpointUrls
 import me.him188.ani.app.data.network.TmdbImageEndpoints
@@ -137,11 +137,11 @@ internal object RemoteSettings {
                 put("hasPassword", !proxy.manualPassword.isNullOrEmpty())
             }
             putJsonObject("bangumi") {
-                put("mode", bangumi.mode.name)
+                putJsonObject("routes") { BangumiRouteKind.entries.forEach { put(it.id, bangumi.isEnabled(it)) } }
                 put("custom", bangumi.customBaseUrl)
                 putJsonArray("mirrors") { mirrors.forEach { add(it) } }
                 put("allowCredentials", bangumi.allowCredentialsViaMirror)
-                // 登录着改用镜像要先问 (见 BangumiMirrorConsent), 网页在保存前判断
+                // 登录着改成只剩镜像要先问 (见 BangumiMirrorConsent), 网页在保存前判断
                 put("loggedIn", loggedIn)
             }
             putJsonObject("tmdbImages") {
@@ -243,43 +243,34 @@ internal object RemoteSettings {
     }
 
     /**
-     * Bangumi 连接方式 (同设置页「Bangumi 连接方式」那一组). 自建地址要能归一成根域名, 认不出来的当场拒绝 ——
-     * 存进去也会被当成没填、退回直连, 那在大陆表现为「设置了但一样连不上」, 用户看不出是自己填错了.
+     * Bangumi 连接方式 (同设置页「Bangumi 连接方式」那一组): `route_<线路>` = 开着的线路 (见 [BangumiRouteKind.id]),
+     * `routes=1` 标明是按线路提交的表单. 开着自建地址时地址要能归一成根域名, 认不出来的当场拒绝 ——
+     * 存进去也会被当成没开, 那在大陆表现为「设置了但一样连不上」, 用户看不出是自己填错了.
      *
      * `cred` = 登录与收藏同步也经过镜像 ([BangumiEndpointSettings.allowCredentialsViaMirror]); 网页上勾选时已经确认过风险.
      */
     private fun saveBangumiEndpoint(request: LanHttpRequest): JsonObject {
         val fields = request.formFields()
-        val mode = BangumiEndpointMode.entries.firstOrNull { it.name == fields["mode"] }
-            ?: return result(false, tr("无效的连接方式"))
+        if (fields["routes"] != "1") return result(false, tr("无效的连接方式"))
+        val enabled = BangumiRouteKind.entries.associateWith { fields["route_${it.id}"] == "1" }
+        if (enabled.values.none { it }) return result(false, tr("至少开一条线路"))
         val custom = fields["custom"].orEmpty().trim()
         val allowCredentials = fields["cred"] == "1"
-        if (mode == BangumiEndpointMode.CUSTOM && BangumiMirrorHosts.normalizeMirrorRoot(custom) == null) {
+        if (enabled.getValue(BangumiRouteKind.CUSTOM) && BangumiMirrorHosts.normalizeMirrorRoot(custom) == null) {
             return result(false, tr("请填根域名，例如 bangumi.example.com"))
         }
         runBlocking {
             settingsRepository.bangumiEndpointSettings.update {
-                copy(
-                    mode = mode,
-                    customBaseUrl = if (mode == BangumiEndpointMode.CUSTOM) custom else customBaseUrl,
-                    allowCredentialsViaMirror = allowCredentials,
-                )
+                enabled.entries.fold(
+                    copy(
+                        customBaseUrl = if (enabled.getValue(BangumiRouteKind.CUSTOM)) custom else customBaseUrl,
+                        allowCredentialsViaMirror = allowCredentials,
+                    ),
+                ) { settings, (kind, on) -> settings.withRoute(kind, on) }
             }
         }
-        logger.info { "Remote control saved Bangumi endpoint: mode=$mode, allowCredentials=$allowCredentials" }
-        return result(
-            true,
-            when (mode) {
-                BangumiEndpointMode.AUTO ->
-                    if (allowCredentials) tr("已改为官方连不上时用镜像，登录与收藏同步也经过镜像")
-                    else tr("已改为官方连不上时用镜像")
-                BangumiEndpointMode.MIRROR ->
-                    if (allowCredentials) tr("已改为用镜像，登录与收藏同步也经过镜像")
-                    else tr("已改为用镜像")
-                BangumiEndpointMode.DIRECT -> tr("已改为只连官方")
-                BangumiEndpointMode.CUSTOM -> tr("已保存，立即生效")
-            },
-        )
+        logger.info { "Remote control saved Bangumi routes: ${enabled.filterValues { it }.keys.map { it.id }}, allowCredentials=$allowCredentials" }
+        return result(true, tr("已保存，立即生效"))
     }
 
     /**
@@ -340,7 +331,7 @@ internal object RemoteSettings {
         val on = request.formFields()["on"] == "1"
         runBlocking { settingsRepository.bangumiEndpointSettings.update { copy(allowCredentialsViaMirror = on) } }
         logger.info { "Remote control set allowCredentialsViaMirror=$on" }
-        return result(true, if (on) tr("已打开：登录与收藏同步也经过镜像") else tr("已关闭：登录与收藏同步只走官方"))
+        return result(true, if (on) tr("已打开：登录与收藏同步也经过镜像") else tr("已关闭：登录与收藏同步不经过镜像"))
     }
 
     /**

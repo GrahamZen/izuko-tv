@@ -400,6 +400,7 @@ class TvSettingsItemsBuilder(private val prefix: String) {
         description: ((TvSettingsValues) -> TvText?)? = null,
         visible: (TvSettingsValues) -> Boolean = { true },
         confirm: ((TvSettingsValues, Boolean) -> TvSettingsConfirm?)? = null,
+        qr: ((TvSettingsValues) -> TvQr?)? = null,
         read: (TvSettingsValues) -> Boolean,
         write: (Boolean) -> List<TvSettingsEdit>,
     ) {
@@ -412,6 +413,7 @@ class TvSettingsItemsBuilder(private val prefix: String) {
             write = write,
             confirm = confirm,
             visible = { values -> keys.all { values.has(it) } && visible(values) },
+            qr = qr,
         )
     }
 

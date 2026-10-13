@@ -39,7 +39,7 @@ sealed interface Reachability {
 /**
  * 连通性检测 (首次启动引导用): **直接**连给定的地址.
  *
- * [client] 不能带会改写地址的特性 ([BangumiMirrorFeature]、[AlternativeEndpointsFeature]): 带着的话地址会被换掉,
+ * [client] 不能带会改写地址的特性 ([BangumiRoutingFeature]、[AlternativeEndpointsFeature]): 带着的话地址会被换掉,
  * 测的就不是它了. 但要走用户的代理 —— 设好代理再测一次, 才看得出代理管不管用.
  *
  * 判据: 拿到 5xx 以下的任何回应都算连得上 (4xx 也是对方在回答); 连接失败、超时、5xx (反代连不上源站时回 502)

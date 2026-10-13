@@ -12,33 +12,39 @@ package me.him188.ani.app.domain.foundation
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import me.him188.ani.app.data.models.preference.BangumiEndpointMode
 import me.him188.ani.app.data.models.preference.BangumiEndpointSettings
+import me.him188.ani.app.data.models.preference.BangumiRouteKind
 import kotlin.concurrent.Volatile
 
 /**
- * 已登录的人改用第三方镜像之前要他点头.
+ * 已登录的人改成「只剩第三方镜像」之前要他点头.
  *
- * 登录后应用发往 Bangumi 的请求 (连浏览条目在内) 都带着令牌; 没打开「登录与收藏同步也经过镜像」时, 带令牌的请求只走官方
- * (见 [BangumiMirrorFeature]). 所以已登录、凭证又不经过镜像时改成「用镜像」, 官方一连不上就什么都用不了 ——
- * 切过去之前让他选: 允许凭证经过镜像 / 退出登录再切 (只用镜像浏览) / 不切.
+ * 登录后应用发往 Bangumi 的请求 (连浏览条目在内) 都带着令牌; 没打开「登录与收藏同步也经过镜像」时, 带令牌的请求不走镜像
+ * (见 [BangumiRoutingFeature]). 所以已登录、凭证又不经过镜像时把能带凭证的线路 (官方、自建) 全关掉,
+ * 就什么都用不了 —— 改之前让他选: 允许凭证经过镜像 / 退出登录再改 (只用镜像浏览) / 不改.
  */
 object BangumiMirrorConsent {
     enum class Question {
-        /** 要改成「用镜像」, 而凭证不经过镜像. */
+        /** 要改成只剩镜像, 而凭证不经过镜像. */
         SwitchToMirror,
 
-        /** 正用着镜像, 要关掉「登录与收藏同步也经过镜像」. */
+        /** 正只用着镜像, 要关掉「登录与收藏同步也经过镜像」. */
         CredentialsOff,
     }
 
     /** 从 [current] 改成 [target] 之前要问哪一句; `null` = 不用问. */
     fun check(current: BangumiEndpointSettings, target: BangumiEndpointSettings, loggedIn: Boolean): Question? = when {
-        !loggedIn || target.mode != BangumiEndpointMode.MIRROR || target.allowCredentialsViaMirror -> null
-        current.mode != BangumiEndpointMode.MIRROR -> Question.SwitchToMirror
+        !loggedIn || target.allowCredentialsViaMirror || !target.onlyThirdPartyRoutes() -> null
+        !current.onlyThirdPartyRoutes() -> Question.SwitchToMirror
         current.allowCredentialsViaMirror -> Question.CredentialsOff
         else -> null
     }
+
+    /** 开着的线路里只剩第三方镜像: 官方、自建 (填得成样子) 都没开. */
+    fun BangumiEndpointSettings.onlyThirdPartyRoutes(): Boolean =
+        isEnabled(BangumiRouteKind.MIRRORS) &&
+                !isEnabled(BangumiRouteKind.ORIGIN) &&
+                !(isEnabled(BangumiRouteKind.CUSTOM) && customRoot != null)
 }
 
 /**
