@@ -547,7 +547,7 @@ private class LibassMediaSourcePipeline(
 
             is SeekableInputMediaData -> {
                 if (data.uri.startsWith("file://")) {
-                    DefaultDataSource.Factory(context)
+                    BufferedReadDataSource.Factory(DefaultDataSource.Factory(context))
                 } else {
                     // ExoPlayerMediampPlayer.openImpl opened the session's SeekableInput before
                     // invoking this interceptor and registered it as a session resource (the

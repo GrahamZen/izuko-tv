@@ -106,6 +106,8 @@
    作为起播位置（一起看时从头），调用 `PlayerSession.loadMedia(...)`。
 9. `PlayerSession.loadMedia(...)` 通过 `MediaResolver.resolve(...)` 解析，打开得到的
    `MediaDataProvider`，然后调用 `player.setMediaData(...)`，播放器直接在起播位置打开。
+   Android 上 `LibassExoPlayerMediampPlayer` 给本机文件（`file://`，本地缓存与本地文件资源）套 `BufferedReadDataSource` 读缓冲：
+   mkv 提取器解析元素头时一次只读一两个字节，`FileDataSource` 每次读都是一次系统调用。
 
 ### 播放拖入的本地文件（桌面端）
 
