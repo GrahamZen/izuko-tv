@@ -125,7 +125,7 @@ class RuleEngineTest {
     }
 
     @Test
-    fun `empty play stage plays the episode url itself, encoded`() = runTest {
+    fun `empty play stage plays the episode url itself - encoded`() = runTest {
         val result = engine(RuleConfig(), FakeSite(emptyMap())).play("https://cdn.example.com/新番/示例 动画/01.mp4")
         assertIs<RulePlayResult.Direct>(result)
         assertEquals(
