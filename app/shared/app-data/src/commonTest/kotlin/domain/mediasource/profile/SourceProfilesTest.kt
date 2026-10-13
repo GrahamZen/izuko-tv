@@ -36,7 +36,7 @@ class SourceProfilesTest {
     }
 
     @Test
-    fun `ads, webview, low resolution and failures each add levels up to T4`() {
+    fun `ads - webview - low resolution and failures each add levels up to T4`() {
         val s = SourceProfiles.summarize(
             listOf(ok(1, 1280, 720, 900, webView = true, ads = 3), fail(2, webView = true), fail(3, webView = true), fail(4)),
         )!!
@@ -64,7 +64,7 @@ class SourceProfilesTest {
     }
 
     @Test
-    fun `searches give median time, failures and a reason when most fail`() {
+    fun `searches give median time - failures and a reason when most fail`() {
         fun search(at: Long, millis: Long, outcome: SearchObservation.Outcome = SearchObservation.Outcome.OK) = SearchObservation(at, millis, outcome)
         val ok = SourceProfiles.summarize(listOf(ok(1, 1920, 1080, 1500)), listOf(search(1, 1000), search(2, 3000), search(3, 2000)))!!
         assertEquals(3, ok.searches)
