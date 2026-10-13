@@ -651,21 +651,18 @@ class SubjectCollectionRepositoryImpl(
             it.collectionType == UnifiedCollectionType.DOING || it.collectionType == UnifiedCollectionType.ON_HOLD
         }
         if (doing.isEmpty()) return
-        for (subject in doing) {
+        val stale = doing.filter { subject ->
             val cached = episodeCollectionDao.filterBySubjectId(subject.subjectId).first()
-            if (cached.isNotEmpty() && cached.all { currentTimeMillis() - it.lastFetched < cacheExpiry.inWholeMilliseconds }) {
-                continue
-            }
-            try {
-                val episodes = episodeService.getEpisodeCollectionEntities(subject.subjectId, lastFetched)
-                episodeCollectionDao.upsert(episodes)
-                logger.info { "bgm-direct: 补在看/搁置条目的分集 subject=${subject.subjectId} -> ${episodes.size}" }
-            } catch (e: Exception) {
-                if (e is kotlin.coroutines.cancellation.CancellationException) throw e
-                // 分集补取失败不该让整页收藏加载失败: 卡片退化成没有进度, 下次刷新再补
-                logger.warn { "Failed to fetch episodes for in-progress subject ${subject.subjectId}: $e" }
-            }
+            cached.isEmpty() || cached.any { currentTimeMillis() - it.lastFetched >= cacheExpiry.inWholeMilliseconds }
         }
+        backfillEpisodesConcurrently(
+            stale.map { it.subjectId },
+            fetch = { episodeService.getEpisodeCollectionEntities(it, lastFetched) },
+            save = { episodeCollectionDao.upsert(it) },
+            onFetched = { subjectId, count -> logger.info { "bgm-direct: 补在看/搁置条目的分集 subject=$subjectId -> $count" } },
+            // 分集补取失败不该让整页收藏加载失败: 卡片退化成没有进度, 下次刷新再补
+            onFailed = { subjectId, e -> logger.warn { "Failed to fetch episodes for in-progress subject $subjectId: $e" } },
+        )
     }
 
     /**
