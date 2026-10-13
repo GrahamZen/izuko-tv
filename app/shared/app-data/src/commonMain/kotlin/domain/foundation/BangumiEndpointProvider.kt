@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import me.him188.ani.app.data.models.preference.BangumiEndpointSettings
@@ -33,6 +34,13 @@ class BangumiEndpointProvider(
     settings: Flow<BangumiEndpointSettings>,
     mirrors: Flow<List<String>>,
     private val scope: CoroutineScope,
+    /** 这个平台能不能加密直连 (见 [BangumiEchTransport]). 不能的话 [BangumiRouteKind.ECH] 开着也不算. */
+    val echAvailable: Boolean = false,
+    /**
+     * 用户设了代理. 这时不走加密直连: 代理按域名转发, 加密直连那种只在本机认得的域名它连不上;
+     * 而且代理本来就连得上官方.
+     */
+    proxyInUse: Flow<Boolean> = flowOf(false),
     /**
      * 确定官方连不上时调用, 参数是通了的那条线路. 由它决定怎么改设置 (关掉「官方直连」, 或先请界面问用户),
      * 见 [reportOriginUnreachable].
@@ -46,8 +54,8 @@ class BangumiEndpointProvider(
      * 设置与清单读出来之前没有值, 请求先等着 (两者都是本地 DataStore, 很快). 拿一个占位的「只连官方」顶上的话,
      * 启动时头几个请求会只打官方、也不回落 —— 关掉了官方的人也一样, 在大陆就是失败.
      */
-    private val routingState: StateFlow<BangumiRouting?> = combine(settings, mirrors) { settings, mirrors ->
-        computeRouting(settings, mirrors)
+    private val routingState: StateFlow<BangumiRouting?> = combine(settings, mirrors, proxyInUse) { settings, mirrors, proxy ->
+        computeRouting(settings, mirrors, echAvailable = echAvailable && !proxy)
     }.distinctUntilChanged()
         .stateIn<BangumiRouting?>(scope, SharingStarted.Eagerly, null)
 
@@ -162,14 +170,15 @@ class BangumiEndpointProvider(
         .stateIn(scope, SharingStarted.Eagerly, false)
 
     companion object {
-        /** 设置 + 镜像清单 → 依次尝试的线路. 一条都没开 (或开着的都用不了) 时只连官方. */
-        fun computeRouting(settings: BangumiEndpointSettings, mirrors: List<String>): BangumiRouting {
+        /** 设置 + 镜像清单 + 平台能力 → 依次尝试的线路. 一条都没开 (或开着的都用不了) 时只连官方. */
+        fun computeRouting(settings: BangumiEndpointSettings, mirrors: List<String>, echAvailable: Boolean): BangumiRouting {
             val custom = settings.customRoot?.let { BangumiRoute.Custom(it) }
             val mirrorRoutes = mirrors.map { BangumiRoute.Mirror(it) }
             val routes = BangumiRouteKind.entries.filter { settings.isEnabled(it) }.flatMap { kind ->
                 when (kind) {
                     BangumiRouteKind.ORIGIN -> listOf(BangumiRoute.Origin)
                     BangumiRouteKind.CUSTOM -> listOfNotNull(custom)
+                    BangumiRouteKind.ECH -> if (echAvailable) listOf(BangumiRoute.Ech) else emptyList()
                     BangumiRouteKind.MIRRORS -> mirrorRoutes
                 }
             }.ifEmpty { listOf(BangumiRoute.Origin) }
@@ -177,7 +186,7 @@ class BangumiEndpointProvider(
                 routes = routes,
                 allowCredentialsViaThirdParty = settings.allowCredentialsViaMirror,
                 // 数据里可能存着用过的任何一条线路的地址, 开没开都要能换回原站 (见 BangumiRouting.knownRoutes)
-                knownRoutes = (mirrorRoutes + listOfNotNull(custom)).distinct(),
+                knownRoutes = (mirrorRoutes + listOfNotNull(custom) + BangumiRoute.Ech).distinct(),
             )
         }
 
@@ -185,7 +194,7 @@ class BangumiEndpointProvider(
          * 浏览器上用哪个站 (`null` = 官方):
          * - 请求正落在浏览器用得了的线路上 (官方 / 自建 / 镜像) 就用它;
          * - 还没落地而官方开着: 官方;
-         * - 落在浏览器用不了的线路上, 或官方关着: 按顺序取后面第一条浏览器用得了的, 都没有就官方.
+         * - 落在浏览器用不了的线路上 (加密直连), 或官方关着: 按顺序取后面第一条浏览器用得了的, 都没有就官方.
          *
          * @param forCredentials 用户要在这个网页上登录: 第三方镜像只在用户允许凭证经过时才算
          */

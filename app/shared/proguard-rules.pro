@@ -80,3 +80,14 @@
 -keepclassmembernames class com.google.thirdparty.** { *; }
 # 所有改了名的类 (Guava 与 R8 合成的类) 放进我们独有的包, 不落在默认包里 (默认包里的短类名同样可能被 ROM 撞上).
 -repackageclasses me.him188.ani.r8
+
+# 加密直连 (ConscryptEchTransport): Conscrypt 按方法名反射找信任管理器上的 getNetworkSecurityPolicy() 决定用不用 ECH,
+# 按签名反射找 checkServerTrusted(链, 认证类型, 主机名) 校验证书. 代码里没有调用方, 不留着会被当成没用删掉 ——
+# 前者没了 ECH 一律不开, 连接退回明文域名而被拦; 后者没了证书校验不按主机名走网络安全配置.
+-keepclassmembers class me.him188.ani.app.domain.foundation.EchRequiredTrustManager {
+    public org.conscrypt.NetworkSecurityPolicy getNetworkSecurityPolicy();
+    public void checkServerTrusted(java.security.cert.X509Certificate[], java.lang.String, java.lang.String);
+}
+# Conscrypt 的原生库按类名与成员名回调 Java
+-keep class org.conscrypt.** { *; }
+-dontwarn org.conscrypt.**

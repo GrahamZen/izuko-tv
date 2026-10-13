@@ -119,7 +119,6 @@ import me.him188.ani.app.ui.lang.oauth_bangumi_stage_exchanging
 import me.him188.ani.app.ui.lang.oauth_bangumi_stage_opening
 import me.him188.ani.app.ui.lang.settings_network_bangumi_auto
 import me.him188.ani.app.ui.lang.settings_network_bangumi_direct
-import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror
 import me.him188.ani.app.ui.lang.settings_network_endpoint_auto
 import me.him188.ani.app.ui.lang.settings_network_tmdb_images_disable
 import me.him188.ani.app.ui.lang.settings_theme_mode_dark
@@ -162,14 +161,17 @@ import me.him188.ani.app.ui.lang.tv_onboarding_login_via_mirror
 import me.him188.ani.app.ui.lang.tv_onboarding_mode_auto_description
 import me.him188.ani.app.ui.lang.tv_onboarding_mode_direct_description
 import me.him188.ani.app.ui.lang.tv_onboarding_mode_mirror_description
+import me.him188.ani.app.ui.lang.tv_onboarding_mode_skip_origin_description
 import me.him188.ani.app.ui.lang.tv_onboarding_network_checking
 import me.him188.ani.app.ui.lang.tv_onboarding_network_choose
 import me.him188.ani.app.ui.lang.tv_onboarding_network_custom_hint
 import me.him188.ani.app.ui.lang.tv_onboarding_network_description
+import me.him188.ani.app.ui.lang.tv_onboarding_network_ech
 import me.him188.ani.app.ui.lang.tv_onboarding_network_mirror
 import me.him188.ani.app.ui.lang.tv_onboarding_network_origin
 import me.him188.ani.app.ui.lang.tv_onboarding_network_reachable
 import me.him188.ani.app.ui.lang.tv_onboarding_network_summary_checking
+import me.him188.ani.app.ui.lang.tv_onboarding_network_summary_ech
 import me.him188.ani.app.ui.lang.tv_onboarding_network_summary_mirror
 import me.him188.ani.app.ui.lang.tv_onboarding_network_summary_none
 import me.him188.ani.app.ui.lang.tv_onboarding_network_summary_origin
@@ -177,6 +179,7 @@ import me.him188.ani.app.ui.lang.tv_onboarding_network_title
 import me.him188.ani.app.ui.lang.tv_onboarding_network_unreachable
 import me.him188.ani.app.ui.lang.tv_onboarding_next
 import me.him188.ani.app.ui.lang.tv_onboarding_phone_title
+import me.him188.ani.app.ui.lang.tv_onboarding_preset_skip_origin
 import me.him188.ani.app.ui.lang.tv_onboarding_proxy
 import me.him188.ani.app.ui.lang.tv_onboarding_proxy_description
 import me.him188.ani.app.ui.lang.tv_onboarding_proxy_on_tv
@@ -627,7 +630,7 @@ private enum class OnboardingFocus : TvFocusKey {
 /** 检测网络那一步的两页, 共用同一次检测 (见 [TvOnboardingViewModel]). */
 private enum class NetworkPage { Bangumi, Images }
 
-/** 第一页: Bangumi 走哪些线路 (官方、镜像). */
+/** 第一页: Bangumi 走哪些线路 (官方、加密直连、镜像). */
 @Composable
 private fun BangumiStep(
     vm: TvOnboardingViewModel,
@@ -644,8 +647,9 @@ private fun BangumiStep(
         focus,
         title = stringResource(Lang.tv_onboarding_network_title),
         description = stringResource(Lang.tv_onboarding_network_description),
-        rows = listOf(
+        rows = listOfNotNull(
             CheckRow(stringResource(Lang.tv_onboarding_network_origin), ORIGIN_DISPLAY_HOST, result.origin),
+            result.ech?.let { CheckRow(stringResource(Lang.tv_onboarding_network_ech), ORIGIN_DISPLAY_HOST, it) },
             CheckRow(stringResource(Lang.tv_onboarding_network_mirror), result.mirror ?: "—", result.mirrorReachability),
         ),
         completed = result.completed,
@@ -655,6 +659,7 @@ private fun BangumiStep(
             stringResource(
                 when {
                     result.origin is Reachability.Reachable -> Lang.tv_onboarding_network_summary_origin
+                    result.ech is Reachability.Reachable -> Lang.tv_onboarding_network_summary_ech
                     result.mirrorReachability is Reachability.Reachable -> Lang.tv_onboarding_network_summary_mirror
                     else -> Lang.tv_onboarding_network_summary_none
                 },
@@ -670,8 +675,10 @@ private fun BangumiStep(
             ) { onChoose(BangumiConnectionPreset.AUTO) },
             CheckOption(
                 OnboardingFocus.SkipOrigin,
-                stringResource(Lang.settings_network_bangumi_mirror),
-                stringResource(Lang.tv_onboarding_mode_mirror_description),
+                stringResource(Lang.tv_onboarding_preset_skip_origin),
+                stringResource(
+                    if (vm.echAvailable) Lang.tv_onboarding_mode_skip_origin_description else Lang.tv_onboarding_mode_mirror_description,
+                ),
             ) { onChoose(BangumiConnectionPreset.SKIP_ORIGIN) },
             CheckOption(
                 OnboardingFocus.Direct,
