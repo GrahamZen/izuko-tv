@@ -919,7 +919,7 @@ fun KoinApplication.startCommonKoinModule(
 
     coroutineScope.launch {
         val peerFilterRepo = koin.get<PeerFilterSubscriptionRepository>()
-        peerFilterRepo.updateOrLoadAll()
+        peerFilterRepo.updateOrLoadAll(reuseRecent = true)
     }
 
     // 作品是不是 NSFW 的登记表 (见 SubjectNsfw): 读回落盘的、从收藏库补齐, 跟上设置

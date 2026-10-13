@@ -47,6 +47,9 @@ import me.him188.ani.utils.logging.error
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 import me.him188.ani.utils.logging.info
+import me.him188.ani.utils.platform.currentTimeMillis
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.milliseconds
 
 class PeerFilterSubscriptionRepository(
     private val dataStore: DataStore<PeerFilterSubscriptionsSaveData>,
@@ -54,6 +57,7 @@ class PeerFilterSubscriptionRepository(
     private val httpClient: ScopedHttpClient,
     /** 放内置规则的 GitHub 仓库, 见 [fetchBuiltinRules]. */
     private val repository: () -> String = { currentAniBuildConfig.projectRepository },
+    private val clock: () -> Long = { currentTimeMillis() },
 ) {
     private val logger = logger<PeerFilterSubscriptionRepository>()
 
@@ -69,8 +73,12 @@ class PeerFilterSubscriptionRepository(
     val presentationFlow get() = dataStore.data.flowOn(Dispatchers.Default).map { it.list }
     val rulesFlow: Flow<List<PeerFilterRule>> get() = loadedSubRules.map { it.values.toList() } // to list 不会消耗太多时间
 
-    suspend fun updateOrLoadAll() {
-        dataStore.data.first().list.forEach { updateOrLoad(it.subscriptionId) }
+    /**
+     * @param reuseRecent `true` 时 [REUSE_WITHIN] 之内从网上拉过的订阅直接用本地存的那份, 不联网 (启动时用; 规则一般几周才改一次).
+     *   设置页手动更新传 `false`, 照常联网.
+     */
+    suspend fun updateOrLoadAll(reuseRecent: Boolean = false) {
+        dataStore.data.first().list.forEach { updateOrLoad(it.subscriptionId, reuseRecent) }
     }
 
     /**
@@ -94,12 +102,13 @@ class PeerFilterSubscriptionRepository(
     /**
      * 从订阅连接更新并应用规则, 如果更新失败了则使用已保存的本地文件.
      */
-    private suspend fun updateOrLoad(subscriptionId: String) {
+    private suspend fun updateOrLoad(subscriptionId: String, reuseRecent: Boolean = false) {
         val sub = dataStore.data.first().list.firstOrNull { it.subscriptionId == subscriptionId }
         if (sub == null) {
             logger.warn { "Peer filter subscription $subscriptionId is not found." }
             return
         }
+        if (reuseRecent && loadRecentlyFetched(sub)) return
 
         try {
             val (respText, rule) = if (sub.subscriptionId == PeerFilterSubscription.BUILTIN_SUBSCRIPTION_ID) {
@@ -111,7 +120,7 @@ class PeerFilterSubscriptionRepository(
             // 解析成功才覆盖本地那份: 拉回来的若是错误页, 写进去就把上一份好的规则顶掉了
             resolveSaveFile(subscriptionId).writeText(respText)
             if (sub.enabled) loadedSubRules.update { put(sub.subscriptionId, rule) }
-            sub.updateSuccessResult(rule)
+            sub.updateSuccessResult(rule, fetchedAtMillis = clock())
 
             logger.info { "Peer filter subscription $subscriptionId is successfully updated and loaded." }
         } catch (cancellation: CancellationException) {
@@ -134,7 +143,7 @@ class PeerFilterSubscriptionRepository(
                 }
 
                 if (sub.enabled) loadedSubRules.update { put(sub.subscriptionId, decoded) }
-                sub.updateSuccessResult(decoded)
+                sub.updateSuccessResult(decoded, fetchedAtMillis = sub.lastLoaded?.fetchedAtMillis ?: 0)
             } catch (ex2: Exception) {
                 savedPath.delete()
 
@@ -167,11 +176,31 @@ class PeerFilterSubscriptionRepository(
         throw lastError ?: IllegalStateException("No source for the built-in peer filter rules")
     }
 
+    /** [REUSE_WITHIN] 之内从网上拉过、本地那份也读得出来: 直接用本地的. 返回是否用上了. */
+    private suspend fun loadRecentlyFetched(sub: PeerFilterSubscription): Boolean {
+        val fetchedAt = sub.lastLoaded?.fetchedAtMillis ?: return false
+        if (fetchedAt <= 0 || clock() - fetchedAt >= REUSE_WITHIN.inWholeMilliseconds) return false
+        val savedPath = resolveSaveFile(sub.subscriptionId)
+        if (!savedPath.exists()) return false
+        val decoded = try {
+            withContext(Dispatchers.IO_) {
+                savedPath.bufferedSource().use { src -> json.decodeFromSource(PeerFilterRule.serializer(), src) }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return false
+        }
+        if (sub.enabled) loadedSubRules.update { put(sub.subscriptionId, decoded) }
+        logger.info { "Peer filter subscription ${sub.subscriptionId} was fetched ${(clock() - fetchedAt).milliseconds} ago, using the local copy." }
+        return true
+    }
+
     private fun resolveSaveFile(subscriptionId: String): SystemPath {
         return ruleSaveDir.resolve("${subscriptionId}.json")
     }
 
-    private suspend fun PeerFilterSubscription.updateSuccessResult(rule: PeerFilterRule) {
+    private suspend fun PeerFilterSubscription.updateSuccessResult(rule: PeerFilterRule, fetchedAtMillis: Long) {
         updateLoadResult(
             subscriptionId,
             PeerFilterSubscription.LastLoaded(
@@ -181,6 +210,7 @@ class PeerFilterSubscriptionRepository(
                     clientRuleCount = rule.blockedClientRegex.size,
                 ),
                 error = null,
+                fetchedAtMillis = fetchedAtMillis,
             ),
         )
     }
@@ -191,6 +221,7 @@ class PeerFilterSubscriptionRepository(
             PeerFilterSubscription.LastLoaded(
                 ruleStat = if (keepLastStat) lastLoaded?.ruleStat else null,
                 error = e.toString(),
+                fetchedAtMillis = lastLoaded?.fetchedAtMillis ?: 0,
             ),
         )
     }
@@ -247,3 +278,6 @@ data class PeerFilterSubscriptionsSaveData(
         )
     }
 }
+
+/** 启动时多久之内从网上拉过的 peer 过滤规则直接用本地那份, 见 [PeerFilterSubscriptionRepository.updateOrLoadAll]. */
+private val REUSE_WITHIN = 24.hours
