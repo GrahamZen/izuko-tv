@@ -630,7 +630,7 @@ class SubjectCollectionRepositoryImpl(
             )
         }
         subjectCollectionDao.upsertSubjectsWithEpisodes(subjects = subjects, episodes = emptyList())
-        fetchEpisodesForInProgressSubjects(subjects, lastFetched)
+        fetchEpisodesForInProgressSubjects(subjects, lastFetched, existing, items.associate { it.id to it.interest?.epStatus })
         return subjects
     }
 
@@ -641,19 +641,33 @@ class SubjectCollectionRepositoryImpl(
      * 只有它们用得上; 看过/想看的卡片在没有分集时会走 [toSubjectCollectionInfo] 里的降级路径 (用条目
      * 自带的总集数与收藏状态), 进过一次详情页之后分集自然就齐了.
      *
-     * 这两类的量级很小 (几部到几十部), 且**已经有新鲜分集的跳过**, 所以稳态下这里基本不发请求.
+     * 已经有新鲜分集的跳过; 过了缓存期但收藏没变、正片也播完了的照用库里的 (见 [inProgressEpisodesUnchanged]),
+     * 所以稳态下这里只取正在播或别处改过的几部.
+     *
+     * @param previous 这次写库之前库里的条目行
+     * @param epStatus 收藏列表里每部的看到第几集
      */
     private suspend fun fetchEpisodesForInProgressSubjects(
         subjects: List<SubjectCollectionEntity>,
         lastFetched: Long,
+        previous: Map<Int, SubjectCollectionEntity>,
+        epStatus: Map<Int, Int?>,
     ) {
         val doing = subjects.filter {
             it.collectionType == UnifiedCollectionType.DOING || it.collectionType == UnifiedCollectionType.ON_HOLD
         }
         if (doing.isEmpty()) return
+        val today = getCurrentDate()
         val stale = doing.filter { subject ->
             val cached = episodeCollectionDao.filterBySubjectId(subject.subjectId).first()
-            cached.isEmpty() || cached.any { currentTimeMillis() - it.lastFetched >= cacheExpiry.inWholeMilliseconds }
+            val now = currentTimeMillis()
+            val expired = cached.isEmpty() || cached.any { now - it.lastFetched >= cacheExpiry.inWholeMilliseconds }
+            expired && !inProgressEpisodesUnchanged(
+                cached, previous[subject.subjectId], subject, epStatus[subject.subjectId], now, today,
+            )
+        }
+        if (doing.size > stale.size) {
+            logger.info { "bgm-direct: 在看/搁置 ${doing.size} 部, 要补分集 ${stale.size} 部 (其余分集还新鲜或收藏没变且已播完)" }
         }
         backfillEpisodesConcurrently(
             stale.map { it.subjectId },
