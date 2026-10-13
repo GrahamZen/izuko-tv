@@ -11,6 +11,7 @@ package me.him188.ani.app.domain.foundation
 
 import me.him188.ani.app.data.models.preference.BangumiEndpointMode
 import me.him188.ani.app.data.models.preference.BangumiEndpointSettings
+import me.him188.ani.app.data.models.preference.BangumiRouteKind
 import me.him188.ani.app.domain.foundation.BangumiMirrorConsent.Question
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -19,7 +20,9 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * 已登录的人改用第三方镜像前要不要问 ([BangumiMirrorConsent]), 以及自动切换时的询问口子 ([BangumiMirrorConsentRequests]).
+ * 已登录的人改成只剩第三方镜像前要不要问 ([BangumiMirrorConsent]), 以及自动切换时的询问口子 ([BangumiMirrorConsentRequests]).
+ *
+ * 用旧版的「连接方式」造设置 (见 [BangumiEndpointSettings.mode]): 「用镜像」= 关掉官方, 只开着镜像.
  */
 class BangumiMirrorConsentTest {
     private fun s(mode: BangumiEndpointMode, cred: Boolean = false) =
@@ -66,6 +69,16 @@ class BangumiMirrorConsentTest {
         val allowed = s(BangumiEndpointMode.AUTO, cred = true)
         assertNull(BangumiMirrorConsent.check(allowed, allowed.afterOriginUnreachable(), loggedIn = true))
         assertNull(BangumiMirrorConsent.check(auto, auto.afterOriginUnreachable(), loggedIn = false))
+    }
+
+    @Test
+    fun `开着填好了的自建地址 — 凭证走自建，不问`() {
+        val auto = s(BangumiEndpointMode.AUTO).copy(customBaseUrl = "my.example")
+        val target = auto.withRoute(BangumiRouteKind.ORIGIN, false).withRoute(BangumiRouteKind.CUSTOM, true)
+        assertNull(BangumiMirrorConsent.check(auto, target, loggedIn = true))
+        // 地址没填好等于没开
+        val broken = target.copy(customBaseUrl = "not a host")
+        assertEquals(Question.SwitchToMirror, BangumiMirrorConsent.check(auto, broken, loggedIn = true))
     }
 
     @Test

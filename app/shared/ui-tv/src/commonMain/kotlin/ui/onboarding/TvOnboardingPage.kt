@@ -85,7 +85,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import me.him188.ani.app.data.models.preference.BangumiEndpointMode
+import me.him188.ani.app.data.models.preference.BangumiConnectionPreset
 import me.him188.ani.app.data.models.preference.DarkMode
 import me.him188.ani.app.data.models.preference.EndpointUrls
 import me.him188.ani.app.data.models.preference.ThemeSettings
@@ -259,17 +259,17 @@ fun TvOnboardingPage(
     var page by rememberSaveable {
         mutableStateOf(if (TvOnboardingLogin.request.value != null) NetworkPage.Images else NetworkPage.Bangumi)
     }
-    // 选 Bangumi 连接方式时判定的「经镜像」(见 TvOnboardingViewModel.chooseMode), 图片那一页选完一起交出去
+    // 选 Bangumi 连接方式时判定的「经镜像」(见 TvOnboardingViewModel.choosePreset), 图片那一页选完一起交出去
     var assumeViaMirror by rememberSaveable { mutableStateOf(TvOnboardingLogin.request.value ?: false) }
-    // 已登录的人选了用镜像, 等他在询问里回答 (见 BangumiMirrorConsent)
-    var askMirror by remember { mutableStateOf<BangumiEndpointMode?>(null) }
-    askMirror?.let { mode ->
+    // 已登录的人选了只剩镜像的组合, 等他在询问里回答 (见 BangumiMirrorConsent)
+    var askMirror by remember { mutableStateOf<BangumiConnectionPreset?>(null) }
+    askMirror?.let { preset ->
         fun choose(allowCredentials: Boolean?, logoutFirst: Boolean) {
             askMirror = null
             choosing = true
             scope.launch {
                 if (logoutFirst) vm.logout()
-                assumeViaMirror = vm.chooseMode(mode, allowCredentials)
+                assumeViaMirror = vm.choosePreset(preset, allowCredentials)
                 page = NetworkPage.Images
                 choosing = false
             }
@@ -324,16 +324,16 @@ fun TvOnboardingPage(
                 NetworkPage.Bangumi -> BangumiStep(
                     vm,
                     focus,
-                    onChoose = { mode ->
+                    onChoose = { preset ->
                         // 存设置要一小会儿, 连按两下别存两次
                         if (!choosing) {
                             choosing = true
                             scope.launch {
-                                // 已登录的人改用镜像: 先问 (见 BangumiMirrorConsent), 答完再存
-                                if (vm.mirrorConsentNeeded(mode)) {
-                                    askMirror = mode
+                                // 已登录的人改成只剩镜像: 先问 (见 BangumiMirrorConsent), 答完再存
+                                if (vm.mirrorConsentNeeded(preset)) {
+                                    askMirror = preset
                                 } else {
-                                    assumeViaMirror = vm.chooseMode(mode)
+                                    assumeViaMirror = vm.choosePreset(preset)
                                     page = NetworkPage.Images
                                 }
                                 choosing = false
@@ -389,7 +389,7 @@ fun TvOnboardingPage(
  * 登录层自己关.
  */
 object TvOnboardingLogin {
-    /** 非 null = 显示登录层; 值是「经镜像」判定 (见 [TvOnboardingViewModel.chooseMode]). */
+    /** 非 null = 显示登录层; 值是「经镜像」判定 (见 [TvOnboardingViewModel.choosePreset]). */
     val request = MutableStateFlow<Boolean?>(null)
 
     /**
@@ -620,26 +620,26 @@ internal fun OnboardingSurface(focus: TvFocusScope, modifier: Modifier, content:
 }
 
 private enum class OnboardingFocus : TvFocusKey {
-    Welcome, Next, Auto, Mirror, Direct, ImagesAuto, ImagesOff, Proxy, Recheck, TvLogin, Skip, Local, Start,
+    Welcome, Next, Auto, SkipOrigin, Direct, ImagesAuto, ImagesOff, Proxy, Recheck, TvLogin, Skip, Local, Start,
     ThemeHero, ThemePlay, ThemeDetails, ThemeDone,
 }
 
 /** 检测网络那一步的两页, 共用同一次检测 (见 [TvOnboardingViewModel]). */
 private enum class NetworkPage { Bangumi, Images }
 
-/** 第一页: Bangumi 走官方还是镜像. */
+/** 第一页: Bangumi 走哪些线路 (官方、镜像). */
 @Composable
 private fun BangumiStep(
     vm: TvOnboardingViewModel,
     focus: TvFocusScope,
-    onChoose: (BangumiEndpointMode) -> Unit,
+    onChoose: (BangumiConnectionPreset) -> Unit,
     onOpenProxy: () -> Unit,
 ) {
     val result by vm.bangumi.result.collectAsStateWithLifecycle()
     val unlocked by vm.bangumi.unlocked.collectAsStateWithLifecycle()
     val deadline by vm.bangumi.deadlineMillis.collectAsStateWithLifecycle()
     val secondsLeft = rememberSecondsLeft(deadline, counting = !result.completed)
-    val recommended = result.recommendedMode
+    val recommended = result.recommended
     CheckStep(
         focus,
         title = stringResource(Lang.tv_onboarding_network_title),
@@ -653,9 +653,9 @@ private fun BangumiStep(
             stringResource(Lang.tv_onboarding_network_summary_checking, secondsLeft)
         } else {
             stringResource(
-                when (recommended) {
-                    BangumiEndpointMode.AUTO -> Lang.tv_onboarding_network_summary_origin
-                    BangumiEndpointMode.MIRROR -> Lang.tv_onboarding_network_summary_mirror
+                when {
+                    result.origin is Reachability.Reachable -> Lang.tv_onboarding_network_summary_origin
+                    result.mirrorReachability is Reachability.Reachable -> Lang.tv_onboarding_network_summary_mirror
                     else -> Lang.tv_onboarding_network_summary_none
                 },
             )
@@ -667,21 +667,21 @@ private fun BangumiStep(
                 OnboardingFocus.Auto,
                 stringResource(Lang.settings_network_bangumi_auto),
                 stringResource(Lang.tv_onboarding_mode_auto_description),
-            ) { onChoose(BangumiEndpointMode.AUTO) },
+            ) { onChoose(BangumiConnectionPreset.AUTO) },
             CheckOption(
-                OnboardingFocus.Mirror,
+                OnboardingFocus.SkipOrigin,
                 stringResource(Lang.settings_network_bangumi_mirror),
                 stringResource(Lang.tv_onboarding_mode_mirror_description),
-            ) { onChoose(BangumiEndpointMode.MIRROR) },
+            ) { onChoose(BangumiConnectionPreset.SKIP_ORIGIN) },
             CheckOption(
                 OnboardingFocus.Direct,
                 stringResource(Lang.settings_network_bangumi_direct),
                 stringResource(Lang.tv_onboarding_mode_direct_description),
-            ) { onChoose(BangumiEndpointMode.DIRECT) },
+            ) { onChoose(BangumiConnectionPreset.DIRECT) },
         ),
         recommended = when (recommended) {
-            BangumiEndpointMode.AUTO -> OnboardingFocus.Auto
-            BangumiEndpointMode.MIRROR -> OnboardingFocus.Mirror
+            BangumiConnectionPreset.AUTO -> OnboardingFocus.Auto
+            BangumiConnectionPreset.SKIP_ORIGIN -> OnboardingFocus.SkipOrigin
             else -> null
         },
         unlocked = unlocked,
