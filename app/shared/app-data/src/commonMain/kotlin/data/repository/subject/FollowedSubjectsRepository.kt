@@ -57,56 +57,60 @@ class FollowedSubjectsRepository(
             }
         }
 
-        // 对于最近看过的一些条目
+        // 对于最近看过的一些条目: 本地库里的先出, 刷新在后台跑. 刷新要拉列表再逐部补分集, 镜像慢时要好几分钟,
+        // 探索页只在有数据时才有「继续观看」这一行, 等刷新完再查库的话冷启动后这一行要那么久才出来.
         return ticker.flatMapLatest {
-            try {
-                // 与下面查本地的 limit 对齐: 这一个批量请求是本栏目唯一的刷新来源, 少拉的那部分条目
-                // (以前靠逐条 subjectCollectionFlow 顺带刷新) 就会一直看不到新播出的剧集 —— 表现为它不会
-                // 被 sorter 的 hasNewEpisodeToPlay 顶到行首、hero 仍写着"已看完". 服务端 limit 无上限
-                // (追番页 pager 的 initialLoadSize 已是 120), 拉满比多发几十个单条请求便宜得多.
-                subjectCollectionRepository.updateRecentlyUpdatedSubjectCollections(
-                    FOLLOWED_SUBJECTS_LIMIT,
-                    UnifiedCollectionType.DOING,
-                ) // refresh
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                val displayE = when (e) {
-                    is RepositoryUnknownException -> e
-                    is RepositoryException -> null
-                    else -> e
-                }
-
-                logger.error(displayE) { """Failed to update recently updated subject collections due to ${e}, ignoring. 这只会导致探索页的继续观看栏目可能显示旧结果. """ }
-            }
-
-            // 先查询完成 (插入数据库) 再返回 flow 去查数据库. 前端会展示 placeholder 所以延迟没问题.
-
-            subjectCollectionRepository.mostRecentlyUpdatedSubjectCollectionsFlow(
-                limit = FOLLOWED_SUBJECTS_LIMIT,
-                types = listOf(
-                    UnifiedCollectionType.DOING,
-                ),
-            ).map { subjectCollectionInfoList ->
-                // 这里不要再 combine 一次设置 flow. 上游那条已经 combine 过同一个 uiSettings flow, 且它后面跟着
-                // distinctUntilChanged —— 改一项与 NSFW 无关的 UI 设置不会往下发. 而这里若自己再订阅一遍,
-                // 任何 UISettings 变更都会让 64 条 FollowedSubjectInfo 全部重建并重新排序, PagingData 换新对象,
-                // 探索页"继续观看"整行 LazyPagingItems 重建一次 snapshot, 而 nsfwMode 其实一个字节都没变.
-                toFollowedSubjectInfos(subjectCollectionInfoList)
-                    .toMutableList()
-                    .apply {
-                        sortWith(sorter)
-                    }
-            }
-                // 内层任意一次失败都不能杀掉整条链: 它上面挂着探索页"继续观看"的 cachedIn 收集协程, 一旦
-                // 协程死掉这一栏就永久停在旧快照 (改收藏、看完新一集都不再反映), 只能重启应用恢复.
-                .retryWithBackoffDelay { e, _ ->
-                    if (e is CancellationException) throw e
-                    logger.error(e) { "Failed to collect followed subjects, retrying. 这只会导致探索页的继续观看栏目短暂显示旧结果." }
-                    true
-                }
+            followedSubjectsFromLocal().whileRefreshingInBackground { refreshFollowedSubjects() }
         }.flowOn(defaultDispatcher)
     }
+
+    private suspend fun refreshFollowedSubjects() {
+        try {
+            // 与下面查本地的 limit 对齐: 这一个批量请求是本栏目唯一的刷新来源, 少拉的那部分条目
+            // (以前靠逐条 subjectCollectionFlow 顺带刷新) 就会一直看不到新播出的剧集 —— 表现为它不会
+            // 被 sorter 的 hasNewEpisodeToPlay 顶到行首、hero 仍写着"已看完". 服务端 limit 无上限
+            // (追番页 pager 的 initialLoadSize 已是 120), 拉满比多发几十个单条请求便宜得多.
+            subjectCollectionRepository.updateRecentlyUpdatedSubjectCollections(
+                FOLLOWED_SUBJECTS_LIMIT,
+                UnifiedCollectionType.DOING,
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            val displayE = when (e) {
+                is RepositoryUnknownException -> e
+                is RepositoryException -> null
+                else -> e
+            }
+
+            logger.error(displayE) { """Failed to update recently updated subject collections due to ${e}, ignoring. 这只会导致探索页的继续观看栏目可能显示旧结果. """ }
+        }
+    }
+
+    private fun followedSubjectsFromLocal(): Flow<List<FollowedSubjectInfo>> =
+        subjectCollectionRepository.mostRecentlyUpdatedSubjectCollectionsFlow(
+            limit = FOLLOWED_SUBJECTS_LIMIT,
+            types = listOf(
+                UnifiedCollectionType.DOING,
+            ),
+        ).map { subjectCollectionInfoList ->
+            // 这里不要再 combine 一次设置 flow. 上游那条已经 combine 过同一个 uiSettings flow, 且它后面跟着
+            // distinctUntilChanged —— 改一项与 NSFW 无关的 UI 设置不会往下发. 而这里若自己再订阅一遍,
+            // 任何 UISettings 变更都会让 64 条 FollowedSubjectInfo 全部重建并重新排序, PagingData 换新对象,
+            // 探索页"继续观看"整行 LazyPagingItems 重建一次 snapshot, 而 nsfwMode 其实一个字节都没变.
+            toFollowedSubjectInfos(subjectCollectionInfoList)
+                .toMutableList()
+                .apply {
+                    sortWith(sorter)
+                }
+        }
+            // 内层任意一次失败都不能杀掉整条链: 它上面挂着探索页"继续观看"的 cachedIn 收集协程, 一旦
+            // 协程死掉这一栏就永久停在旧快照 (改收藏、看完新一集都不再反映), 只能重启应用恢复.
+            .retryWithBackoffDelay { e, _ ->
+                if (e is CancellationException) throw e
+                logger.error(e) { "Failed to collect followed subjects, retrying. 这只会导致探索页的继续观看栏目短暂显示旧结果." }
+                true
+            }
 
     /**
      * [subjectCollectionInfoList] 里已经带着各自的剧集列表 ([SubjectCollectionInfo.episodes]), 直接算即可.
