@@ -130,6 +130,18 @@ class TmdbSubjectMapTest {
         assertNull(assertNotNull(index[140001]).anidbId)
     }
 
+    /** 港台译名列 (anidb 之后); 加这一列以前的表没有它. */
+    @Test
+    fun `解析 - 港台译名`() {
+        val line = "329906\ttv/120089\t/a.jpg\ttv/120089\tauto\t\to=ja\t17049\ttw=SPY×FAMILY 間諜家家酒|hk=SPY×FAMILY 間諜過家家"
+        val entry = assertNotNull(parseTmdbSubjectMapLine(line)).second
+        assertEquals(mapOf("tw" to "SPY×FAMILY 間諜家家酒", "hk" to "SPY×FAMILY 間諜過家家"), entry.regionalNames)
+        assertEquals(17049, entry.anidbId)
+        val twOnly = assertNotNull(parseTmdbSubjectMapLine("400602\ttv/209867\t/a.jpg\ttv/209867\tauto\t\t\t\ttw=葬送的芙莉蓮")).second
+        assertEquals(mapOf("tw" to "葬送的芙莉蓮"), twOnly.regionalNames)
+        assertEquals(emptyMap(), assertNotNull(index[140001]).regionalNames)
+    }
+
     @Test
     fun `解析 - 认不出的行查不到`() {
         for (id in listOf(237, 140001, 516311, 296195, 311)) assertNotNull(index[id], "$id")
