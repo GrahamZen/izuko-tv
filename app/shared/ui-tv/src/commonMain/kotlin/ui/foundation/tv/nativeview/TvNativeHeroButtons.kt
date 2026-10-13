@@ -21,6 +21,7 @@ import android.graphics.drawable.GradientDrawable
 import android.graphics.Rect
 import android.os.Build
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -64,6 +65,12 @@ class TvNativeHeroButton(
 
     var onFocused: (() -> Unit)? = null
 
+    /**
+     * 按下即聚焦 (同 Compose 那边的 tvTouchFocusOnTap): 触摸模式下可聚焦的视图没聚焦时, 第一下点按只拿焦点不点击;
+     * 按下时先聚焦, 抬起就是点击. 只在触屏设备上打开 (见 TvNativeExploreView.touchInput).
+     */
+    var focusOnPress = false
+
     var style: TvNativeHeroButtonStyle = style
         set(value) {
             if (field == value) return
@@ -105,6 +112,12 @@ class TvNativeHeroButton(
         super.onFocusChanged(gainFocus, direction, previouslyFocusedRect)
         applyFocusColors()
         if (gainFocus) onFocused?.invoke()
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (focusOnPress && event.actionMasked == MotionEvent.ACTION_DOWN && !isFocused) requestFocus()
+        return super.onTouchEvent(event)
     }
 
     private fun applyFocusColors() {

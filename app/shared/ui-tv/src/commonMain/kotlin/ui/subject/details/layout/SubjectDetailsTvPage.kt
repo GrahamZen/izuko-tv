@@ -796,6 +796,14 @@ fun SubjectDetailsTvPage(
         TvDetailsPager(scrollState, backdropFadePx, transitions = !videoBackground)
     }
     LaunchedEffect(pager) { pager.run() }
+    // 触屏设备上手指滑动松手吸附到页起点, 停下的那一页照遥控器翻页的口径记进翻页器并送焦 (电视上为 null, 见 TvDetailsTouchSnap)
+    val touchSnap = rememberTvDetailsTouchSnap(
+        scrollState,
+        pages = { pager.touchSnapPages { sectionNav.firstPresentOn(it) != null } },
+        onSettled = { page, scroll ->
+            if (pager.settleAt(page, scroll)) sectionNav.firstPresentOn(page)?.let { sectionNav.send?.invoke(it, false) }
+        },
+    )
 
     // 动作面板「刷新本页」: 无视一小时的缓存新鲜度重取这个条目 (收藏状态/评分/短评/分集).
     // 在 bgm 网页或另一台设备上改完再回到这页时, 本地那份要等过期才对齐 —— 这是唯一的即时出口.
@@ -1257,6 +1265,7 @@ fun SubjectDetailsTvPage(
         showTopBar = false,
         windowInsets,
         scrollState = scrollState,
+        flingBehavior = touchSnap,
         backgroundOverlay = {
             if (videoBackground) {
                 // 视频作背景: 对下层视频画遮罩 (首屏只压底部 + 左缘, 滚动后整屏变暗)
@@ -3270,6 +3279,10 @@ private class TvDetailsSectionNav {
     private fun prevPresent(from: TvDetailsSection): TvDetailsSection? =
         TvDetailsSection.entries.lastOrNull { it.ordinal < from.ordinal && it in present }
 
+    /** 第 [page] 页最上面一个在场的区块; null = 这一页没有 (触屏滑动停到某页时送焦用, 见 TvDetailsTouchSnap). */
+    fun firstPresentOn(page: Int): TvDetailsSection? =
+        TvDetailsSection.entries.firstOrNull { it.page == page && it in present }
+
     /**
      * 第 [stage] 段 (见 [TvDetailsSection.stage]) 有没有要组合的区块: 没有的段放出后不让出. 第 1 段恒有 (选集页, 内嵌变体是介绍页).
      * 读的是最近一次组合登记的存在性, 与段的组合条件同源.
@@ -4321,6 +4334,40 @@ private class TvDetailsPager(
      * 不是页内导航 —— 见 [reveal]: 这一次要丢掉, 否则入场就不停在页起点上了.
      */
     private var entryReveal = false
+
+    /**
+     * 触屏滑动松手时可停的各页 (见 TvDetailsTouchSnap.kt), 按起点升序: [present] 为 false 的页 (区块没了, 起点是旧值) 不算;
+     * 每页能停到的最远滚动量 = 起点 + 本页比视口多出的高度.
+     */
+    fun touchSnapPages(present: (page: Int) -> Boolean): List<TvDetailsSnapPage> {
+        val max = scrollState.maxValue.toFloat()
+        val viewport = scrollState.viewportSize
+        return (0 until TV_DETAILS_PAGE_COUNT).mapNotNull { page ->
+            val start = starts[page].floatValue
+            if (start.isNaN() || !present(page)) return@mapNotNull null
+            val extent = extents[page].floatValue
+            val overflow = if (extent.isNaN()) 0f else (extent - viewport).coerceAtLeast(0f)
+            val clamped = start.coerceIn(0f, max)
+            TvDetailsSnapPage(page, clamped, (start + overflow).coerceIn(clamped, max))
+        }.sortedBy { it.start }
+    }
+
+    /**
+     * 触屏滑动停在了第 [page] 页的 [scroll] 处: 当前页与页内露出照停下的位置记, 于是派生出的滚动量就是此刻的滚动量, 驱动器不再挪.
+     * 返回 true = 换了页 (调用方随后把焦点送进这一页, 焦点进页的 [goTo] 那时已是同一页, 不再改动).
+     */
+    fun settleAt(page: Int, scroll: Int): Boolean {
+        val wasEngaged = engaged
+        engaged = true
+        val changed = page != current
+        if (changed) {
+            current = page
+            entryReveal = true
+        }
+        val start = starts[page].floatValue
+        within = if (start.isNaN()) 0f else (scroll - start).coerceAtLeast(0f)
+        return changed || !wasEngaged
+    }
 
     /** 焦点进入第 [page] 页. */
     fun goTo(page: Int) {
