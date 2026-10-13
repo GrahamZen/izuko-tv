@@ -123,7 +123,7 @@ object TvHomeChannels {
     /**
      * 在 MainActivity 启动后调用, 非 TV 设备直接跳过.
      *
-     * - 热门动画频道: 每进程只写一次 (要发网络请求, 内容一天也变不了几次);
+     * - 热门动画频道: 每进程对一次热门榜, 没变就不动 (内容一天也变不了几次, 见 [updateTrendingChannel]);
      * - 系统"继续观看"行: 只在进程启动时写一次的话, 用户在详情页把番标成"看过"之后, 主屏那一行
      *   还会挂着它直到下次冷启动. 它在应用退到后台时才写 (见 [collectWatchNext]), 所以跟着进程走, 不随 activity 结束:
      *   按返回退出时 activity 先销毁, 进程稍后才转入后台;
@@ -460,56 +460,99 @@ object TvHomeChannels {
 
     /**
      * 自建"热门动画"预览频道: 全量重写 (先删本频道旧节目再插入, 免去 diff).
+     *
+     * 热门列表只有海报和名字, 简介要逐个取条目. 频道里上次写的节目 (TvProvider 存着, 含简介) 就是现成的:
+     * 热门榜没变 (同样的番、同样的顺序、标题与海报) 就整个跳过 —— 简介是空的也不重取: Bangumi 上本来就没写简介的
+     * (刚公布的续作常这样) 取了还是空; 偶尔上次没取到的, 等热门榜变了跟新上榜的一起补. 变了的话已有的番照用存着的简介,
+     * 只给新上榜的 (或简介是空的) 去取.
      */
     private suspend fun updateTrendingChannel(context: Context, koin: Koin) {
-        // NSFW 作品在设置不是「显示」时不放 (主屏打不了码, 见 SubjectNsfw)
+        // NSFW 作品在设置不是「显示」时不放 (主屏打不了码, 见 SubjectNsfw); 没有海报的不放 (卡片会是一块空白)
         val trending = koin.get<TrendsRepository>().getTrendsInfo().subjects
             .filter { SubjectNsfw.modeOf(it.bangumiId) == NsfwMode.DISPLAY }
             .take(TRENDING_LIMIT)
+            .filter { it.imageLarge.isNotBlank() }
         if (trending.isEmpty()) return
-
-        // 热门列表只有海报和名字, 简介逐个从服务器补 (失败留空, 不影响卡片展示)
-        val subjectService = koin.get<SubjectService>()
-        val summaries = coroutineScope {
-            trending.map { subject ->
-                async {
-                    runCatching { subjectService.getSubjectCollection(subject.bangumiId)?.summary }
-                        .getOrNull().orEmpty()
-                }
-            }.map { it.await() }
-        }
 
         val resolver = context.contentResolver
         val channelId = ensureChannel(context, CHANNEL_INTERNAL_ID, CHANNEL_DISPLAY_NAME)
+        val existing = trendingPrograms(context, channelId)
+        val descriptions = existing.associate { it.subjectId to it.description }
+        val wanted = trending.map { TrendingProgram(it.bangumiId, it.nameCn, it.imageLarge, descriptions[it.bangumiId].orEmpty()) }
+        if (wanted.map { it.withoutDescription() } == existing.map { it.withoutDescription() }) {
+            logger.info { "Trending channel unchanged (${wanted.size} programs), skipped" }
+            return
+        }
+
+        // 简介: 频道里有的照用, 没有的从服务器补 (失败留空, 不影响卡片展示, 下次再补)
+        val subjectService = koin.get<SubjectService>()
+        val missing = wanted.filter { it.description.isEmpty() }
+        val fetched = coroutineScope {
+            missing.map { program ->
+                async {
+                    program.subjectId to runCatching { subjectService.getSubjectCollection(program.subjectId)?.summary }
+                        .getOrNull().orEmpty().let(::formatDescription)
+                }
+            }.map { it.await() }
+        }.toMap()
 
         resolver.query(TvContractCompat.PreviewPrograms.CONTENT_URI, null, null, null, null)?.use { cursor ->
             while (cursor.moveToNext()) {
-                val existing = PreviewProgram.fromCursor(cursor)
-                if (existing.channelId == channelId) {
-                    resolver.delete(TvContractCompat.buildPreviewProgramUri(existing.id), null, null)
+                val program = PreviewProgram.fromCursor(cursor)
+                if (program.channelId == channelId) {
+                    resolver.delete(TvContractCompat.buildPreviewProgramUri(program.id), null, null)
                 }
             }
         }
 
         var inserted = 0
-        trending.forEachIndexed { index, subject ->
-            if (subject.imageLarge.isBlank()) return@forEachIndexed
+        wanted.forEachIndexed { index, subject ->
             val program = PreviewProgram.Builder()
                 .setChannelId(channelId)
                 .setType(TvContractCompat.PreviewPrograms.TYPE_TV_SERIES)
-                .setTitle(subject.nameCn)
-                .setDescription(formatDescription(summaries[index]))
-                .setPosterArtUri(Uri.parse(subject.imageLarge))
+                .setTitle(subject.title)
+                .setDescription(fetched[subject.subjectId] ?: subject.description)
+                .setPosterArtUri(Uri.parse(subject.posterUri))
                 .setPosterArtAspectRatio(TvContractCompat.PreviewPrograms.ASPECT_RATIO_2_3)
-                .setIntentUri(subjectDeepLink(subject.bangumiId))
-                .setInternalProviderId(subject.bangumiId.toString())
+                .setIntentUri(subjectDeepLink(subject.subjectId))
+                .setInternalProviderId(subject.subjectId.toString())
                 // launcher 按 weight 降序排, 保持热门榜原始顺序
-                .setWeight(trending.size - index)
+                .setWeight(wanted.size - index)
                 .build()
             resolver.insert(TvContractCompat.PreviewPrograms.CONTENT_URI, program.toContentValues())
             inserted++
         }
-        logger.info { "Trending channel updated: $inserted programs" }
+        logger.info { "Trending channel updated: $inserted programs (fetched ${missing.size} summaries)" }
+    }
+
+    /** "热门动画"频道里的一个节目; [description] 已按 [formatDescription] 截好, 没有为空. */
+    private data class TrendingProgram(
+        val subjectId: Int,
+        val title: String,
+        val posterUri: String,
+        val description: String,
+    ) {
+        /** 比较热门榜有没有变时不看简介, 见 [updateTrendingChannel]. */
+        fun withoutDescription() = copy(description = "")
+    }
+
+    /** 频道里现有的节目, 按 launcher 的顺序 (weight 降序). */
+    private fun trendingPrograms(context: Context, channelId: Long): List<TrendingProgram> {
+        val programs = ArrayList<Pair<Int, TrendingProgram>>()
+        context.contentResolver.query(TvContractCompat.PreviewPrograms.CONTENT_URI, null, null, null, null)?.use { cursor ->
+            while (cursor.moveToNext()) {
+                val program = PreviewProgram.fromCursor(cursor)
+                if (program.channelId != channelId) continue
+                val subjectId = program.internalProviderId?.toIntOrNull() ?: continue
+                programs += program.weight to TrendingProgram(
+                    subjectId,
+                    program.title.orEmpty(),
+                    program.posterArtUri?.toString().orEmpty(),
+                    program.description.orEmpty(),
+                )
+            }
+        }
+        return programs.sortedByDescending { it.first }.map { it.second }
     }
 
     /**
