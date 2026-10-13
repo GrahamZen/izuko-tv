@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.getAndUpdate
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -131,6 +132,8 @@ class RememberPlayProgressExtension(
             // 已经恢复过记忆进度的媒体. 播放器在原位置重新打开同一个 MediaData 时 (Android 上视频输出超时后恢复播放),
             // 保留播放器打开时的位置, 不跳回记忆的进度.
             var resumedMediaData: MediaData? = null
+            // 正在打开的媒体是不是要一打开就播 (打开中那一刻的 playWhenReady). 一打开就报播完时播放器会转成暂停, 退回开头后照这个接着播
+            var openedToPlay = false
 
             /**
              * 恢复历史进度, 至多一次.
@@ -141,27 +144,47 @@ class RememberPlayProgressExtension(
              * 用户回到页面才开播、才 seek、才二次缓冲, "后台就绪"的提示因此必然说谎
              * (2026-08-11 真机确认: 本地文件已就绪 1 分 43 秒, 播放器一直没动, 回页面那一秒才开播).
              * 见 `RetainedPlaybackSessionHolder` 的第 3 条.
+             *
+             * 存下的进度离这个资源的结尾不到 [EpisodeHistory.FINISHED_THRESHOLD_MILLIS] (进度是同一集别的资源存下的, 如完整的正片,
+             * 而这个资源没那么长, 如预告、SP) 时不跳过去 —— 跳过去会立刻播完、自动连播到下一集 —— 从头播.
+             *
+             * @param afterEnded 播放器在恢复之前就报了播完: 只处理从结尾之后打开 (见上) 这一种, 别的情况不在这里恢复
+             * @return 是否把停在结尾的播放器退回了开头
              */
-            suspend fun restoreSavedPositionOnce() {
+            suspend fun restoreSavedPositionOnce(afterEnded: Boolean = false): Boolean {
                 val mediaData = player.mediaData.value
                 if (mediaData != null && mediaData === resumedMediaData) {
                     haveResumedOnce = true
                 }
-                if (haveResumedOnce) return
-                val positionMillis = reloadPositionMillis.getAndUpdate { null }
+                if (haveResumedOnce) return false
+                val reloadPosition = reloadPositionMillis.value
+                val positionMillis = reloadPosition
                     ?: playProgressRepository.getResumePositionMillisByEpisodeId(episodeSession.episodeId)
                 if (positionMillis == null) {
+                    if (afterEnded) return false
                     logger.info { "Did not find saved position" }
                     haveResumedOnce = true
                     resumedMediaData = mediaData
-                    return
+                    return false
                 }
                 logger.info { "Loaded saved position: $positionMillis, waiting for video properties" }
-                player.mediaProperties.first { (it?.durationMillis ?: 0L) > 0L }
-                withContext(Dispatchers.Main + NonCancellable) { // android must call in main thread
+                val durationMillis = player.mediaProperties.mapNotNull { it?.durationMillis }.first { it > 0L }
+                val pastEnd = durationMillis - positionMillis < EpisodeHistory.FINISHED_THRESHOLD_MILLIS
+                if (afterEnded && !pastEnd) return false
+                reloadPositionMillis.compareAndSet(reloadPosition, null)
+                return withContext(Dispatchers.Main + NonCancellable) { // android must call in main thread
                     val currentMillis = player.currentPositionMillis.value
                     val openedAt = openedAtMillis.getAndUpdate { null }
-                    if (openedAt == positionMillis && currentMillis in (positionMillis - START_SLACK_MILLIS)..(positionMillis + RESUMED_TOLERANCE_MILLIS)) {
+                    var rewound = false
+                    if (pastEnd) {
+                        logger.info { "Saved position $positionMillis is past the end of this media ($durationMillis ms), playing from the start" }
+                        // 打开时就带着这个位置: 播放器一打开就停在结尾、报成播完 (并转成暂停). 退回开头, 照打开时的意思接着播
+                        rewound = durationMillis - currentMillis < EpisodeHistory.FINISHED_THRESHOLD_MILLIS
+                        if (rewound) {
+                            player.seekTo(0)
+                            if (afterEnded && openedToPlay) player.resume()
+                        }
+                    } else if (openedAt == positionMillis && currentMillis in (positionMillis - START_SLACK_MILLIS)..(positionMillis + RESUMED_TOLERANCE_MILLIS)) {
                         // 打开时就从这里开始了: 再 seek 一次会把刚缓冲的扔掉重来
                         logger.info { "Opened at saved position $positionMillis (now $currentMillis), not seeking" }
                     } else {
@@ -171,6 +194,7 @@ class RememberPlayProgressExtension(
                     // seek 引起的状态变化会取消本次收集, 标记必须在 NonCancellable 内完成
                     haveResumedOnce = true
                     resumedMediaData = mediaData
+                    rewound
                 }
             }
 
@@ -179,6 +203,7 @@ class RememberPlayProgressExtension(
                     state.mediaStatus == MediaStatus.Opening -> {
                         // 新媒体正在打开, 重置恢复进度标记
                         haveResumedOnce = false
+                        openedToPlay = state.playWhenReady
                     }
 
                     state.isPlaying -> {
@@ -207,6 +232,9 @@ class RememberPlayProgressExtension(
                     }
 
                     state.mediaStatus == MediaStatus.Ended -> { // 播放完成
+                        // 从结尾之后打开的: 一打开就是这个状态, 退回开头 (见 restoreSavedPositionOnce). 这时不存进度:
+                        // 位置还是结尾, 存下就把这一集记成看完了
+                        if (restoreSavedPositionOnce(afterEnded = true)) return@collectLatest
                         mediaLoaded.await() // 播放器开始播放了一次之后再保存状态
                         savePlayProgressOrRemove(episodeSession)
                     }
