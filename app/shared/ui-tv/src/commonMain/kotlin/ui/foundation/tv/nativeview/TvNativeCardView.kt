@@ -35,7 +35,9 @@ import android.text.Spanned
 import android.text.TextUtils
 import android.text.style.LineHeightSpan
 import android.util.FloatProperty
+import android.view.InputDevice
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.Gravity
 import android.view.View
 import android.view.ViewOutlineProvider
@@ -420,6 +422,24 @@ class TvNativeCardView(context: Context, private val style: TvNativeWallStyle) :
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean =
         confirmKey.onKey(this, event, null) || super.onKeyUp(keyCode, event)
+
+    /** 触摸屏上点这张 (还没聚焦) 时同一下也确认, 由适配器按所在页面的状态答 (见 [TvNativeCardListener.tapConfirmsWhileFocusing]). */
+    var tapConfirmsWhileFocusing: (() -> Boolean)? = null
+
+    /**
+     * 触摸屏 (平板装了 TV 包) 上的点按: 触摸模式下可聚焦的视图没聚焦时, 系统的点按只拿焦点不点击 (= 遥控器上移过去). 页面答应
+     * ([tapConfirmsWhileFocusing], 卡片墙上进 hero 态) 时按下先聚焦, 抬起就是点击 = 移过去再按确认, 一下进 hero 态.
+     * 电视上没有触摸事件, 不经过这里.
+     */
+    @SuppressLint("ClickableViewAccessibility")
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_DOWN && event.isFromSource(InputDevice.SOURCE_TOUCHSCREEN) && !isFocused &&
+            tapConfirmsWhileFocusing?.invoke() == true
+        ) {
+            requestFocus()
+        }
+        return super.onTouchEvent(event)
+    }
 
     /** 封面此刻在窗口里的框 (未放大时的位置): 长按菜单锚在这里. */
     fun coverRectInWindow(): Rect {
