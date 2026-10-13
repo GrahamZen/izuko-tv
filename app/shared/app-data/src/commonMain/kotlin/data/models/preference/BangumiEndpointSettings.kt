@@ -38,17 +38,25 @@ data class BangumiEndpointSettings(
      * 登录与收藏同步 (带凭证的请求, 以及登录本身) 也允许经第三方镜像 ([BangumiRouteKind.MIRRORS]).
      *
      * 默认关: 镜像方能看到经过它的一切, 包括登录凭证. 由用户在弹窗里了解风险后自己决定打开;
-     * 界面同时建议优先用代理 (直连官方, 不经过第三方).
+     * 界面同时建议优先用代理或加密直连 (都直达官方, 不经过第三方).
      */
     val allowCredentialsViaMirror: Boolean = false,
     /** 各线路开没开, 键是 [BangumiRouteKind.id]. 没写的线路按 [mode] 推出, 再没有就用 [BangumiRouteKind.enabledByDefault]. */
     val routes: Map<String, Boolean> = emptyMap(),
     @Suppress("PropertyName") @Transient val _placeHolder: Int = 0,
 ) {
-    fun isEnabled(kind: BangumiRouteKind): Boolean = routes[kind.id] ?: when (mode) {
+    fun isEnabled(kind: BangumiRouteKind): Boolean = routes[kind.id] ?: when {
+        // 1.0.6 存下的开关里没有加密直连: 跟着社区镜像 —— 允许回落到第三方的人也该先用不经第三方的加密直连,
+        // 只连官方、只用自建的人不替他加
+        kind == BangumiRouteKind.ECH && routes.isNotEmpty() -> isEnabled(BangumiRouteKind.MIRRORS)
+        else -> isEnabledByMode(kind)
+    }
+
+    private fun isEnabledByMode(kind: BangumiRouteKind): Boolean = when (mode) {
         null, BangumiEndpointMode.AUTO -> kind.enabledByDefault
         BangumiEndpointMode.DIRECT -> kind == BangumiRouteKind.ORIGIN
-        BangumiEndpointMode.MIRROR -> kind == BangumiRouteKind.MIRRORS
+        // 「用镜像」的人大多是官方连不上被自动切过去的: 加密直连排在镜像前面, 带令牌的请求从此直达官方
+        BangumiEndpointMode.MIRROR -> kind == BangumiRouteKind.ECH || kind == BangumiRouteKind.MIRRORS
         BangumiEndpointMode.CUSTOM -> kind == BangumiRouteKind.CUSTOM
     }
 
@@ -89,9 +97,15 @@ enum class BangumiRouteKind(
 
     /**
      * 用户自己搭的反代 ([BangumiEndpointSettings.customBaseUrl]). 视为可信, **允许带 token**, 也代理得了主站 (换 token 与续期).
-     * 用户自己的优先: 排在社区镜像前面.
+     * 用户自己的优先: 排在加密直连前面 —— 加密直连可能被一条规则封掉, 自建的不会跟着倒.
      */
     CUSTOM("custom", false),
+
+    /**
+     * 加密直连: 用 ECH 把要连的域名藏在加密的握手里, 直达官方 (经 Cloudflare, 与直连同一条路).
+     * 不经第三方, 凭证照常带. 只有支持的平台有 (见 `BangumiEchTransport`).
+     */
+    ECH("ech", true),
 
     /**
      * 社区镜像清单 (见 `BangumiMirrorListRepository`). 第三方能看到经过它的一切, 带凭证的请求默认不发过去
@@ -105,10 +119,10 @@ enum class BangumiRouteKind(
  * 自建地址不动: 那是用户自己填的.
  */
 enum class BangumiConnectionPreset {
-    /** 官方优先, 连不上自动换镜像 (确定连不上后关掉官方). */
+    /** 官方优先, 连不上自动换加密直连或镜像 (确定连不上后关掉官方). */
     AUTO,
 
-    /** 不连官方 (测出来连不上): 只用镜像. */
+    /** 不连官方 (测出来连不上): 加密直连与镜像. */
     SKIP_ORIGIN,
 
     /** 只连官方. */
@@ -117,13 +131,16 @@ enum class BangumiConnectionPreset {
 
     fun applyTo(settings: BangumiEndpointSettings): BangumiEndpointSettings = when (this) {
         AUTO -> settings.withRoute(BangumiRouteKind.ORIGIN, true)
+            .withRoute(BangumiRouteKind.ECH, true)
             .withRoute(BangumiRouteKind.MIRRORS, true)
 
         SKIP_ORIGIN -> settings.withRoute(BangumiRouteKind.ORIGIN, false)
+            .withRoute(BangumiRouteKind.ECH, true)
             .withRoute(BangumiRouteKind.MIRRORS, true)
 
         DIRECT -> settings.withRoute(BangumiRouteKind.ORIGIN, true)
             .withRoute(BangumiRouteKind.CUSTOM, false)
+            .withRoute(BangumiRouteKind.ECH, false)
             .withRoute(BangumiRouteKind.MIRRORS, false)
     }
 }

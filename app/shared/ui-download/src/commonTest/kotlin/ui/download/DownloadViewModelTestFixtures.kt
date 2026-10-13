@@ -301,6 +301,7 @@ internal class FakeSettingsRepository : SettingsRepository {
     override val proxySettings: Settings<ProxySettings> get() = error("Not used")
     override val bangumiEndpointSettings: Settings<BangumiEndpointSettings> get() = error("Not used")
     override val bangumiMirrorCache: Settings<RepoHostedListCache> get() = error("Not used")
+    override val bangumiEchAddressCache: Settings<RepoHostedListCache> get() = error("Not used")
     override val mediaCacheSettings: Settings<MediaCacheSettings> get() = error("Not used")
     override val danmakuSettings: Settings<DanmakuSettings> get() = error("Not used")
     override val uiSettings: Settings<UISettings> get() = error("Not used")
