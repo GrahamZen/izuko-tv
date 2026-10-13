@@ -110,6 +110,7 @@ kotlin {
         implementation(libs.androidx.browser)
         implementation(libs.androidx.webkit)
         implementation(libs.onnxruntime.android)
+        implementation(libs.conscrypt.android) // 加密直连 (ConscryptEchTransport)
         api(libs.datastore) // PlatformDataStoreManagerAndroid (data/persistent, 自 :app:shared 搬迁)
         api(libs.datastore.preferences)
         api(libs.androidx.lifecycle.runtime.ktx)

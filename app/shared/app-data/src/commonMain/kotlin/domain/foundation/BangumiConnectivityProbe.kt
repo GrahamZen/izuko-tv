@@ -20,12 +20,14 @@ import me.him188.ani.app.data.models.preference.BangumiMirrorHosts
 import me.him188.ani.utils.ktor.ScopedHttpClient
 
 /**
- * 「这台设备连不连得上 Bangumi」的一次检测 (首次启动引导用): 官方与镜像清单里的每个镜像**直接**各连一次, 并行.
- * 怎么连、怎么判见 [ReachabilityProbe]; [client] 同样不能带 [BangumiRoutingFeature].
+ * 「这台设备连不连得上 Bangumi」的一次检测 (首次启动引导用): 官方、加密直连、镜像清单里的每个镜像**直接**各连一次, 并行.
+ * 怎么连、怎么判见 [ReachabilityProbe]; [client] 同样不能带 [BangumiRoutingFeature], 要测加密直连就得带 [BangumiEchFeature].
  */
 class BangumiConnectivityProbe(
     client: () -> ScopedHttpClient,
     private val mirrors: Flow<List<String>>,
+    /** 这台设备能不能加密直连 (见 [BangumiEndpointProvider.echAvailable]); 不能就不测这一路. */
+    private val echAvailable: Boolean = false,
     /** 每一路的封顶; 官方与各镜像并行测, 一轮最多也就这么久. */
     val timeoutMillis: Long = 8_000L,
 ) {
@@ -33,16 +35,20 @@ class BangumiConnectivityProbe(
 
     data class Result(
         val origin: Reachability = Reachability.Checking,
+        /** 加密直连; `null` = 这台设备用不了, 不测. */
+        val ech: Reachability? = null,
         /** 展示用的镜像: 连得上的第一个, 都连不上时是清单第一个; 清单为空时为 `null`. */
         val mirror: String? = null,
         val mirrorReachability: Reachability = Reachability.Checking,
     ) {
         val completed: Boolean
-            get() = origin != Reachability.Checking && mirrorReachability != Reachability.Checking
+            get() = origin != Reachability.Checking && ech != Reachability.Checking &&
+                    mirrorReachability != Reachability.Checking
 
         /** 至少有一路连得上: 本机是联网的. */
         val online: Boolean
-            get() = origin is Reachability.Reachable || mirrorReachability is Reachability.Reachable
+            get() = origin is Reachability.Reachable || ech is Reachability.Reachable ||
+                    mirrorReachability is Reachability.Reachable
 
         /** 建议的组合; 还没测完, 或都连不上 (多半是本机没网) 时为 `null`. */
         val recommended: BangumiConnectionPreset?
@@ -53,16 +59,17 @@ class BangumiConnectivityProbe(
                 else -> null
             }
 
-        /** 照建议 (或用户选的 [preset]) 设好之后, 请求会落在第三方镜像上: 官方测出来连不上 (还在测的不算), 只有镜像通. */
+        /** 照建议 (或用户选的 [preset]) 设好之后, 请求会落在第三方镜像上: 官方与加密直连都测出来连不上 (还在测的不算), 只有镜像通. */
         fun landsOnMirror(preset: BangumiConnectionPreset): Boolean =
             preset != BangumiConnectionPreset.DIRECT && origin == Reachability.Unreachable &&
-                    mirrorReachability is Reachability.Reachable
+                    (ech == null || ech == Reachability.Unreachable) && mirrorReachability is Reachability.Reachable
     }
 
     /** 测一轮: 先发一次「检测中」, 之后每出一个结论发一次; 最后一次的 [Result.completed] 为 true. */
     fun run(): Flow<Result> = channelFlow {
         val mirrorList = mirrors.first()
         var result = Result(
+            ech = if (echAvailable) Reachability.Checking else null,
             mirror = mirrorList.firstOrNull(),
             mirrorReachability = if (mirrorList.isEmpty()) Reachability.Unreachable else Reachability.Checking,
         )
@@ -75,6 +82,11 @@ class BangumiConnectivityProbe(
         launch {
             val origin = probe.probe("https://$ORIGIN_PROBE_HOST$PROBE_PATH")
             update { it.copy(origin = origin) }
+        }
+        if (echAvailable) launch {
+            val host = checkNotNull(BangumiRoute.Ech.hostFor(ORIGIN_PROBE_HOST))
+            val ech = probe.probe("https://$host$PROBE_PATH")
+            update { it.copy(ech = ech) }
         }
         if (mirrorList.isNotEmpty()) launch {
             val targets = mirrorList.mapNotNull { mirror ->

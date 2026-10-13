@@ -34,7 +34,7 @@ import kotlin.test.assertNull
 /**
  * 带凭证的请求什么时候可以经过镜像: 默认不走第三方线路; 用户在弹窗里确认风险、打开
  * [BangumiEndpointSettings.allowCredentialsViaMirror] 后, 与匿名请求一样在原站不通时回落到镜像.
- * 换 token 与续期例外: 只发给代理得了 bgm.tv 主站的线路 (官方、自建), 第三方镜像一律不给.
+ * 换 token 与续期例外: 只发给代理得了 bgm.tv 主站的线路 (官方、自建、加密直连), 第三方镜像一律不给.
  */
 class BangumiRoutingCredentialsTest {
     private class Sent(val host: String, val authorized: Boolean)
@@ -109,6 +109,33 @@ class BangumiRoutingCredentialsTest {
         val status = client.submitForm("https://bgm.tv/oauth/access_token", parameters { append("code", "c") }).status
         assertEquals(HttpStatusCode.OK, status)
         assertEquals(listOf("my.example"), sent.map { it.host })
+    }
+
+    @Test
+    fun `加密直连 - 带 token 的请求与换 token 都走它，token 跟着过去`() = runTest {
+        val sent = mutableListOf<Sent>()
+        val routing = BangumiRouting(listOf(BangumiRoute.Origin, BangumiRoute.Ech, BangumiRoute.Mirror("bangumi.pro")))
+        val client = blockedOriginClient(routing, sent)
+        val status = client.get("https://api.bgm.tv/v0/me") { header(HttpHeaders.Authorization, "Bearer t") }.status
+        assertEquals(HttpStatusCode.OK, status)
+        assertEquals(listOf("api.bgm.tv", "api.bgm-tv.ech.invalid"), sent.map { it.host })
+        assertEquals(true, sent.last().authorized)
+
+        sent.clear()
+        client.submitForm("https://bgm.tv/oauth/access_token", parameters { append("grant_type", "refresh_token") })
+        assertEquals(listOf("bgm-tv.ech.invalid"), sent.map { it.host })
+    }
+
+    @Test
+    fun `只剩镜像与加密直连 - 换 token 跳过镜像走加密直连`() = runTest {
+        val sent = mutableListOf<Sent>()
+        val routing = BangumiRouting(
+            listOf(BangumiRoute.Mirror("bangumi.pro"), BangumiRoute.Ech),
+            allowCredentialsViaThirdParty = true,
+        )
+        val client = blockedOriginClient(routing, sent)
+        client.submitForm("https://bgm.tv/oauth/access_token", parameters { append("code", "c") })
+        assertEquals(listOf("bgm-tv.ech.invalid"), sent.map { it.host })
     }
 
     @Test
