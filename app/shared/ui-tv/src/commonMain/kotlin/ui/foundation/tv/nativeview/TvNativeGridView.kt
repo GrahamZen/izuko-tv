@@ -15,6 +15,7 @@ import android.content.Context
 import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.View
+import androidx.core.view.ViewCompat
 import androidx.leanback.widget.BaseGridView
 import androidx.leanback.widget.VerticalGridView
 import androidx.recyclerview.widget.RecyclerView
@@ -205,7 +206,14 @@ class TvNativeGridView(
             }
 
             override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
-                if (newState == RecyclerView.SCROLL_STATE_IDLE) finishFarJump()
+                if (newState == RecyclerView.SCROLL_STATE_DRAGGING && !draggedByTouch) {
+                    draggedByTouch = true
+                    setFocusScrollStrategy(BaseGridView.FOCUS_SCROLL_ITEM)
+                }
+                if (newState == RecyclerView.SCROLL_STATE_IDLE) {
+                    if (draggedByTouch) settleAfterTouch()
+                    finishFarJump()
+                }
             }
         })
         addOnLayoutCompletedListener {
@@ -238,6 +246,67 @@ class TvNativeGridView(
         } else {
             itemAlignmentOffset = style.cardBlockHeightPx / 2
             windowAlignmentOffset = m.topBleedPx + viewportPx / 2
+        }
+    }
+
+    /**
+     * 手指拖动只滚竖向. 多列的 VerticalGridView 横向也能滚 (leanback 的 canScrollHorizontally 在列数大于 1 时为 true), 手指一横拖
+     * 整块网格就滑出画面, 没有什么会把它拉回来. 触摸拖动的横向量在这里全部吃掉, 甩出去的横向速度清零; 方向键的滚动不经过这两处.
+     */
+    override fun dispatchNestedPreScroll(dx: Int, dy: Int, consumed: IntArray?, offsetInWindow: IntArray?, type: Int): Boolean {
+        val handled = super.dispatchNestedPreScroll(dx, dy, consumed, offsetInWindow, type)
+        if (type != ViewCompat.TYPE_TOUCH || dx == 0 || consumed == null) return handled
+        consumed[0] = dx
+        return true
+    }
+
+    /**
+     * 手指甩出去时不照惯性滚 (停在哪是哪, 常停在两行之间): 记下速度、当场停住, 停稳时按它预判的落点挑最近的一行滚过去 (见 [settleAfterTouch]).
+     * 只在手指拖过时这样; 其余 (点按带出的小速度) 照旧, 横向速度一律清零.
+     */
+    override fun fling(velocityX: Int, velocityY: Int): Boolean {
+        if (draggedByTouch) {
+            touchFlingVelocity = velocityY
+            return false
+        }
+        return super.fling(0, velocityY)
+    }
+
+    /**
+     * 这一轮滚动是手指拖出来的 (进过 SCROLL_STATE_DRAGGING, 只有触摸会进; 电视上恒 false). 拖动途中换成按需挪: 对齐策略下 leanback
+     * 每次排版 (翻到底下时分页的新数据插进来就是一次) 都把聚焦那张滚回停位, 手指翻下去的网格会跳回原处. 停稳时换回对齐, 就近停到一行
+     * (见 [settleAfterTouch]).
+     */
+    private var draggedByTouch = false
+
+    /** 手指松手时的竖向速度 (见 [fling]), 停稳时用一次. */
+    private var touchFlingVelocity = 0
+
+    /**
+     * 手指拖完 (松手或甩完) 停稳: 按松手速度预判照惯性会停在哪, 挑离那里最近的一行, 焦点挪到那一行原来那一列 (那一行短了就落末张), 网格滚到
+     * 它的停位 (= 遥控器上下走到那一行). 目标没排出来 (甩得远) 时按远跳滚过去再落焦.
+     */
+    private fun settleAfterTouch() {
+        draggedByTouch = false
+        setFocusScrollStrategy(BaseGridView.FOCUS_SCROLL_ALIGNED)
+        val travel = tvNativeFlingDistance(context, touchFlingVelocity)
+        touchFlingVelocity = 0
+        val cols = metrics.columns.coerceAtLeast(1)
+        val count = cards.itemCount
+        if (count == 0) return
+        val first = (0 until childCount).map { getChildAt(it) }
+            .filter { getChildAdapterPosition(it) >= 0 }
+            .minByOrNull { getChildAdapterPosition(it) } ?: return
+        // 第 r 行此刻的顶 = 第一张排出来的卡的顶 + 行距 × 行差; 滚过 travel 之后对准停位线的那一行
+        val firstRow = getChildAdapterPosition(first) / cols
+        val row = (firstRow + (windowAlignmentOffset - itemAlignmentOffset + travel - first.top).toFloat() / pitchPx)
+            .roundToInt().coerceIn(0, rowCount() - 1)
+        val focused = focusedChild?.let { getChildAdapterPosition(it) }?.takeIf { it >= 0 } ?: selectedPosition.coerceAtLeast(0)
+        val target = (row * cols + focused % cols).coerceAtMost(count - 1)
+        when {
+            target == focused && hasFocus() -> scrollToStopOf(target)?.let { if (it != 0) smoothScrollBy(0, it) }
+            findViewHolderForAdapterPosition(target) != null -> focusItem(target)
+            else -> farJumpTo(target)
         }
     }
 

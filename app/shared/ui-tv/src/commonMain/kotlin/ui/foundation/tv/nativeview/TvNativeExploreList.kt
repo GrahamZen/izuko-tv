@@ -13,6 +13,7 @@ import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Rect
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import androidx.compose.runtime.Immutable
@@ -160,6 +161,34 @@ class TvNativeExploreList(
 
     /** 行绑定 / 滚动 / 布局后调, 页面据此重算各项的淡化 (hero 态越线淡没). */
     var onItemsMoved: (() -> Unit)? = null
+
+    /**
+     * 按下点 (屏幕坐标) 落在这里返回 true 时整个手势不归列表, 交给叠在下面的视图 (列表整页大、叠在 hero 按钮之上).
+     * 只在触屏设备上给 (见 TvNativeExploreView.touchInput), 电视上为 null.
+     */
+    var touchPassThrough: ((rawX: Float, rawY: Float) -> Boolean)? = null
+
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        if (ev.actionMasked == MotionEvent.ACTION_DOWN && touchPassThrough?.invoke(ev.rawX, ev.rawY) == true) return false
+        return super.dispatchTouchEvent(ev)
+    }
+
+    /** 手指拖完松手时的竖向速度 (见 [fling]); 页面停稳就近停时取走 ([takeTouchFlingVelocity]). */
+    private var touchFlingVelocity = 0
+
+    /**
+     * 手指拖完甩出去 (只有触摸会进 SCROLL_STATE_DRAGGING) 不照惯性滚 —— 停在哪是哪, 常停在两行之间: 记下速度、当场停住, 由页面按它预判的
+     * 落点就近停到一行 (见 TvNativeExploreView.settleAfterTouch).
+     */
+    override fun fling(velocityX: Int, velocityY: Int): Boolean {
+        if (scrollState == SCROLL_STATE_DRAGGING) {
+            touchFlingVelocity = velocityY
+            return false
+        }
+        return super.fling(velocityX, velocityY)
+    }
+
+    fun takeTouchFlingVelocity(): Int = touchFlingVelocity.also { touchFlingVelocity = 0 }
 
     /**
      * 远跳途中压住所有卡的聚焦效果. 屏上的行当场改; 回收缓存 / 回收池里的行 (远跳一路滚出去的那些) 重新上屏或重绑时照此补上 ——
