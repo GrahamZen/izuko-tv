@@ -30,6 +30,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import me.him188.ani.app.ui.foundation.AniImageLoadSuccess
 import com.kmpalette.palette.graphics.Palette
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import me.him188.ani.app.data.models.subject.SubjectInfo
 import me.him188.ani.app.data.models.subject.Tag
@@ -139,6 +140,8 @@ import me.him188.ani.app.ui.remote.RegisterTvRemoteBackgroundPlayer
 import me.him188.ani.app.ui.remote.TrackTvRemoteForeground
 import me.him188.ani.app.ui.remote.TvRemoteControl
 import me.him188.ani.app.ui.remote.TvRemoteControlDialogHost
+import me.him188.ani.app.ui.whatsnew.TvWhatsNew
+import me.him188.ani.app.ui.whatsnew.TvWhatsNewHost
 import me.him188.ani.app.ui.remote.TvRemoteLoginCard
 import me.him188.ani.app.ui.exploration.schedule.grid.TvScheduleGridPage
 import org.jetbrains.compose.resources.stringResource
@@ -446,6 +449,8 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         TvUserProfilePickerHost(aniNavigator)
         // 「Web 控制台」二维码弹窗: 侧边栏 (主页 / 搜索页 / 详情页) 与头像菜单都只调 TvRemoteControl.showDialog
         TvRemoteControlDialogHost()
+        // 更新后第一次打开时的「本版新功能」页 / 发版后补的通知 (见 TvWhatsNew)
+        TvWhatsNewHost()
         // 官方连不上、要自动改用镜像而用户登录着: 先问他 (见 BangumiMirrorConsent)
         TvMirrorConsentHost()
         // 本地用户改成 Bangumi 用户后登录了: 问留下的本地收藏合并到账号还是删掉 (只在首页上弹, 见 TvPendingCollectionsHost)
@@ -454,13 +459,20 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         })
         // 「标记看过后删除缓存」删了缓存时弹提示 (标记可能在任何一页或 Web 控制台发生)
         TvMarkedDoneCacheDeletionToasts()
+        // 更新后第一次打开的「本版新功能」页能不能盖上: 在首页, 而且这次不是新用户先登录 (留到下次). 见 TvWhatsNew
+        val whatsNewAllowed = {
+            !newUserLoginPending && runCatching { aniNavigator.backStack.lastOrNull() }.getOrNull() is NavRoutes.Main
+        }
         // 打开应用时弹一次二维码 (设置-界面 / 弹窗里都能关), 见 TvRemoteControl.showDialogOnLaunch.
         // 等地址期间可能已经不在首页了 (休眠后进程重建会恢复到离开时那个页), 那就不弹;
         // 这次启动走了引导页也不弹 —— 引导的登录那一步刚给过同一个码; 先选人或新用户先登录时同理;
         // 应用为换人 / 改成本地用户自己重启进来的也不弹 —— 那不是用户打开应用
         LaunchedEffect(Unit) {
+            TvWhatsNew.prepare(appContext, onboardingPending)
             // 启动页盖着的时候先不弹, 等它撤了再说
             if (startupLogo != null) snapshotFlow { startupLogo.visible }.first { !it }
+            // 「本版新功能」页盖了就不再弹二维码 (冷启动进首页时启动页撤之前已经决定过, 这里拿同一个结果; 先选人的这时才决定)
+            if (TvWhatsNew.showOnLaunch(appContext, whatsNewAllowed)) return@LaunchedEffect
             TvRemoteControl.showDialogOnLaunch {
                 !onboardingPending && !pickerOnLaunch && !newUserLoginPending && !profileRestart &&
                         runCatching { aniNavigator.backStack.lastOrNull() }.getOrNull() is NavRoutes.Main
@@ -494,9 +506,10 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         Box(
             Modifier
                 // 首次启动引导的后两步盖在主页上 (独立窗口): 那个窗口刚出现的零点几秒还没接管按键, 这时按的键会落到
-                // 下面的主页 (返回键弹出退出确认 / 确认键点开条目). 引导层与选人页显示期间主页一个键都不处理; 启动页盖着时同理
+                // 下面的主页 (返回键弹出退出确认 / 确认键点开条目). 引导层、选人页与「本版新功能」页显示期间主页一个键都不处理; 启动页盖着时同理
                 .onPreviewKeyEvent {
-                    TvOnboardingLogin.request.value != null || TvUserProfilePicker.visible.value || startupLogo?.visible == true
+                    TvOnboardingLogin.request.value != null || TvUserProfilePicker.visible.value || startupLogo?.visible == true ||
+                            TvWhatsNew.launchContent.value != null
                 }
                 .tvKeyLongPressInterceptor(backLongPress)
                 .tvKeyLongPressInterceptor(playLongPress)
@@ -520,7 +533,13 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
                     // 进程重建恢复到播放器、详情页这些页时没有首屏封面可等, 栈一就位就撤
                     when (aniNavigator.awaitBackStack().lastOrNull()) {
                         // 打开应用先选人时由选人页那边撤 (见上面 pickerOnLaunch 那段)
-                        is NavRoutes.Main -> if (!pickerOnLaunch) startupLogo.dismissWhenFirstScreenReady()
+                        is NavRoutes.Main -> if (!pickerOnLaunch) {
+                            // 「本版新功能」页说明一到就盖上, 首屏在它背后接着加载; 启动页等首屏好了、也等这个决定, 主页不露出来
+                            val whatsNew = async {
+                                TvWhatsNew.showOnLaunch(appContext, whatsNewAllowed, startupLogo::awaitFirstScreenReady)
+                            }
+                            startupLogo.dismissWhenFirstScreenReady(cover = { whatsNew.await() })
+                        }
                         is NavRoutes.TvOnboarding -> startupLogo.handOffToWelcome()
                         else -> startupLogo.dismiss()
                     }
