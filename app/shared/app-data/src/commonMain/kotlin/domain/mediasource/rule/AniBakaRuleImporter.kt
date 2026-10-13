@@ -18,6 +18,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.longOrNull
 import me.him188.ani.datasources.api.source.MediaSourceTier
 import me.him188.ani.utils.ktor.UrlHelpers
 import kotlin.coroutines.cancellation.CancellationException
@@ -26,7 +27,8 @@ import kotlin.coroutines.cancellation.CancellationException
  * 把 AniBaka 的规则 (`anx-rule/2`) 转换成规则源.
  *
  * AniBaka 规则的三段也是步骤列表, 「当前值」与变量的模型和规则源相同, 大部分步骤一一对应. 少数步骤 (加解密、站点专用的、
- * 处理 HLS 清单的) 没有对应, 用到它们的规则整条不转, 并说明原因. 只影响请求的细节选项 (嗅探的等待时间等) 直接忽略.
+ * 处理 HLS 清单的) 没有对应, 用到它们的规则整条不转, 并说明原因. 嗅探的选项 (等待时长、页面加载好的标志等) 照录进 [RuleStep.Sniff].
+ * 站点专用步骤里能用通用步骤表达的 (anime1 的三步) 翻译过来, 见 [Context.anime1Search].
  *
  * 请求头里的 `User-Agent` 不转: 规则源的请求与 WebView 共用一套按站点对齐的身份, 自己指定 UA 会让过站点验证得到的 Cookie 失效.
  */
@@ -168,7 +170,8 @@ object AniBakaRuleImporter {
         val name = rule.string("name") ?: rule.string("id") ?: "AniBaka"
         // 有的规则把三段与请求头包在 pipeline 里
         val body = (rule["pipeline"] as? JsonObject) ?: rule
-        val context = Context()
+        // anime1 的三步互相引用 (搜索段拼条目地址要用详情段的地址模板, 播放段取 token 要用详情段的选择器), 先找出详情段那一步
+        val context = Context(anime1Detail = topLevelStep(body["detail"], "anime1Detail"))
         val headers = (body["headers"] as? JsonObject ?: rule["headers"] as? JsonObject)
             .orEmpty().mapNotNull { (key, value) ->
                 val text = (value as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
@@ -190,13 +193,23 @@ object AniBakaRuleImporter {
                     search = search,
                     detail = detail,
                     play = play,
+                    matchEpisodeSortFromName = context.matchEpisodeSortFromName ?: RuleConfig().matchEpisodeSortFromName,
                 ),
             ),
         )
     }
 
-    private class Context {
+    private fun topLevelStep(stage: JsonElement?, op: String): JsonObject? =
+        (stage as? JsonArray).orEmpty().filterIsInstance<JsonObject>().firstOrNull { it.string("op") == op }
+
+    private class Context(
+        /** 详情段的 `anime1Detail` 步骤 (没有为 `null`). */
+        val anime1Detail: JsonObject? = null,
+    ) {
         val reasons = mutableListOf<String>()
+
+        /** 翻译出来的步骤要求的集号正则 (见 [RuleConfig.matchEpisodeSortFromName]); `null` 用默认的. */
+        var matchEpisodeSortFromName: String? = null
 
         fun unsupported(reason: String): List<RuleStep> {
             reasons += reason
@@ -230,16 +243,26 @@ object AniBakaRuleImporter {
 
                 // follow 打开当前值这个地址 (一段开头时就是这一段的输入地址)
                 "follow" -> listOf(RuleStep.Fetch(url = "{${RuleEngine.VAR_VALUE}}", headers = requestHeaders(obj["headers"])))
-                "sniff" -> when (obj.string("goal")) {
-                    "html" -> listOf(RuleStep.Sniff(goal = RuleStep.Sniff.GOAL_HTML, url = template(obj.string("url").orEmpty())))
-                    "video", null -> listOf(RuleStep.Sniff(goal = RuleStep.Sniff.GOAL_VIDEO))
-                    else -> unsupported("sniff 的 goal ${obj.string("goal")}")
+                "sniff" -> {
+                    val sniff = RuleStep.Sniff(
+                        timeoutMillis = obj.long("timeoutMs") ?: 0,
+                        readyContains = stringList(obj["readyContains"]),
+                        rejectContains = stringList(obj["rejectContains"]),
+                        settleMillis = obj.long("settleMs") ?: 0,
+                        resolveMediaRedirects = obj.boolean("resolveMediaRedirects") == true,
+                    )
+                    when (obj.string("goal")) {
+                        "html" -> listOf(sniff.copy(goal = RuleStep.Sniff.GOAL_HTML, url = template(obj.string("url").orEmpty())))
+                        "video", null -> listOf(sniff.copy(goal = RuleStep.Sniff.GOAL_VIDEO))
+                        else -> unsupported("sniff 的 goal ${obj.string("goal")}")
+                    }
                 }
 
                 "searchList" -> listOf(
                     RuleStep.Subjects(
                         list = stringList(obj["selectors"]).ifEmpty { return unsupported("searchList 没有 selectors") },
                         linkPattern = obj.string("detailPattern").orEmpty(),
+                        filterByKeyword = obj.boolean("keywordMatch") == true,
                     ),
                 )
 
@@ -330,8 +353,13 @@ object AniBakaRuleImporter {
                         nameKey = obj.string("nameKey") ?: "name",
                         urlKey = obj.string("urlKey"),
                         urlTemplate = obj.string("detailUrlTemplate"),
-                    ) ?: return unsupported("jsonSeries 没有 urlKey 或 detailUrlTemplate"),
+                    )?.copy(filterByKeyword = obj.boolean("keywordMatch") == true)
+                        ?: return unsupported("jsonSeries 没有 urlKey 或 detailUrlTemplate"),
                 )
+
+                "anime1Search" -> anime1Search(obj)
+                "anime1Detail" -> anime1Detail(obj)
+                "anime1Play" -> anime1Play(obj)
 
                 "jsonEpisodes" -> {
                     val urlTemplate = obj.string("detailUrlTemplate") ?: obj.string("episodeIdTemplate")
@@ -359,6 +387,76 @@ object AniBakaRuleImporter {
                 "videoUrl" -> listOf(RuleStep.VideoUrl)
                 else -> unsupported("不支持的步骤 $op")
             }
+        }
+
+        /**
+         * anime1 的搜索: 下载全部番剧的 JSON 表 (每一项是数组, 按 `idIndex` / `nameIndex` 取分类 id 与名字), 按关键词筛出条目.
+         * 条目地址用详情段 `anime1Detail` 的地址模板拼 (`{seriesId}` 是分类 id). 分类 id 为 0 的行是指向别站的外链, 去掉.
+         */
+        fun anime1Search(obj: JsonObject): List<RuleStep> {
+            val detailUrl = anime1Detail?.string("url") ?: return unsupported("anime1Search 没有配套的 anime1Detail")
+            val idIndex = obj.string("idIndex")?.toIntOrNull() ?: 0
+            val nameIndex = obj.string("nameIndex")?.toIntOrNull() ?: 1
+            return listOfNotNull(
+                RuleStep.Fetch(url = template(obj.string("url") ?: return unsupported("anime1Search 没有 url"))),
+                RuleStep.Replace(pattern = ANIME1_ZERO_ID_ROWS, regex = true).takeIf { idIndex == 0 },
+                RuleStep.JsonSubjects(
+                    idPath = "[$idIndex]",
+                    namePath = "[$nameIndex]",
+                    urlTemplate = VARIABLE.replace(detailUrl) { match ->
+                        val name = if (match.groupValues[1] == "seriesId") "id" else match.groupValues[1]
+                        if (match.groupValues[2] == "raw") "{$name}" else "{$name:url}"
+                    },
+                    filterByKeyword = true,
+                ),
+            )
+        }
+
+        /**
+         * anime1 的详情: 分类页 (条目地址) 每页列出若干集, 新的在前, `nextSelector` 翻到更早的页.
+         * AniBaka 在分类页上直接取每集视频的 token, 按顺序命名「第 N 集」; 这里改取每集文章页的链接 (含 token 的文章的标题),
+         * 名字用文章标题 (「葬送的芙莉蓮 第二季 [38]」, 集号按方括号里的取): 站点缺集时按顺序编号会错位,
+         * token 带签发时间, 搜索缓存里存着的旧 token 可能已经失效, 播放时再从文章页取.
+         */
+        fun anime1Detail(obj: JsonObject): List<RuleStep> {
+            val item = obj.string("itemSelector") ?: return unsupported("anime1Detail 没有 itemSelector")
+            matchEpisodeSortFromName = ANIME1_EPISODE_SORT
+            return listOf(
+                RuleStep.Fetch(),
+                RuleStep.Episodes(
+                    lists = listOf("main", "body"),
+                    items = "article:has($item) .entry-title a",
+                    reverse = obj.boolean("reverse") == true,
+                    nextPage = obj.string("nextSelector").orEmpty(),
+                    maxPages = obj.string("maxPages")?.toIntOrNull() ?: 20,
+                ),
+            )
+        }
+
+        /**
+         * anime1 的播放: 从文章页取 token (详情段的 `itemSelector` / `tokenAttribute`), 原样作为表单字段 `tokenField` 提交给取地址的接口,
+         * 按 `sourcePath` 取视频地址. 接口同时发下载视频要的 Cookie, 交给播放器.
+         */
+        fun anime1Play(obj: JsonObject): List<RuleStep> {
+            val detail = anime1Detail ?: return unsupported("anime1Play 没有配套的 anime1Detail")
+            val item = detail.string("itemSelector") ?: return unsupported("anime1Detail 没有 itemSelector")
+            val tokenAttribute = detail.string("tokenAttribute") ?: return unsupported("anime1Detail 没有 tokenAttribute")
+            val field = obj.string("tokenField") ?: "d"
+            return listOf(
+                RuleStep.Fetch(),
+                RuleStep.Select(css = item, attr = tokenAttribute),
+                RuleStep.Fetch(
+                    url = template(obj.string("url") ?: return unsupported("anime1Play 没有 url")),
+                    method = obj.string("method") ?: "POST",
+                    headers = requestHeaders(obj["headers"]),
+                    // token 本身已是 URL 编码过的文本, 原样提交
+                    body = "${field.encodeURLParameter()}={${RuleEngine.VAR_VALUE}}",
+                    contentType = obj.string("contentType") ?: "form",
+                    cookies = ANIME1_COOKIES,
+                ),
+                RuleStep.Json(path = obj.string("sourcePath") ?: return unsupported("anime1Play 没有 sourcePath")),
+                RuleStep.MediaHeaders(headers = requestHeaders(obj["mediaHeaders"]) + ("Cookie" to "{$ANIME1_COOKIES}")),
+            )
         }
 
         private fun jsonSubjects(
@@ -438,6 +536,8 @@ object AniBakaRuleImporter {
 
     private fun JsonObject.boolean(key: String): Boolean? = (this[key] as? JsonPrimitive)?.booleanOrNull
 
+    private fun JsonObject.long(key: String): Long? = (this[key] as? JsonPrimitive)?.longOrNull
+
     private fun stringList(element: JsonElement?): List<String> = when (element) {
         is JsonArray -> element.mapNotNull { (it as? JsonPrimitive)?.contentOrNull?.takeIf(String::isNotBlank) }
         is JsonPrimitive -> listOfNotNull(element.contentOrNull?.takeIf(String::isNotBlank))
@@ -454,7 +554,7 @@ object AniBakaRuleImporter {
     )
 
     /**
-     * 每种步骤认得的选项. 列在这里但规则源用不上的选项 (嗅探的等待时间、搜索结果的关键词过滤等) 转换时忽略;
+     * 每种步骤认得的选项. 列在这里但规则源用不上的选项 (嗅探时是否跟进嵌入的播放器、搜索结果的关键词过滤等) 转换时忽略;
      * 没列的选项意味着规则源做不到, 用到它的规则不转.
      */
     private val KNOWN_KEYS: Map<String, Set<String>> = mapOf(
@@ -482,5 +582,23 @@ object AniBakaRuleImporter {
         "jsonEpisodes" to setOf("episodesPath", "idKey", "nameKey", "episodeNameKey", "detailUrlTemplate", "episodeIdTemplate", "sourceName"),
         "setMediaHeaders" to setOf("headers", "remove"),
         "videoUrl" to emptySet(),
+        "anime1Search" to setOf("url", "idIndex", "nameIndex", "caseSensitive"),
+        "anime1Detail" to setOf(
+            "url", "itemSelector", "tokenAttribute", "nextSelector", "maxPages", "reverse", "sourceName", "episodeNameTemplate",
+        ),
+        "anime1Play" to setOf(
+            "url", "method", "contentType", "tokenField", "sourcePath", "mediaBaseUrl", "cookieNames", "cookiePrefixes", "headers",
+            "mediaHeaders", "validateWithCookies",
+        ),
     )
+
+    /** anime1 番剧表里分类 id 为 0 的行 (连同一个逗号; 第一行带后面的逗号, 其余带前面的). */
+    private const val ANIME1_ZERO_ID_ROWS =
+        """\[0,(?:"(?:[^"\\]|\\.)*"|[^\[\]"])*\],|,\[0,(?:"(?:[^"\\]|\\.)*"|[^\[\]"])*\]"""
+
+    /** anime1 文章标题「名字 [38]」里的集号. */
+    private const val ANIME1_EPISODE_SORT = """\[(?<ep>[^\[\]]+)\]\s*$"""
+
+    /** anime1 取地址的接口发的 Cookie 存在这个变量里. */
+    private const val ANIME1_COOKIES = "anime1Cookies"
 }

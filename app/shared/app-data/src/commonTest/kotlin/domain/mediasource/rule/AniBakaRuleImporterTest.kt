@@ -105,7 +105,8 @@ class AniBakaRuleImporterTest {
                 RuleStep.First(
                     listOf(
                         listOf(RuleStep.MacCmsPlayer()),
-                        listOf(RuleStep.Sniff(goal = RuleStep.Sniff.GOAL_VIDEO)),
+                        // 嗅探的等待时长照录
+                        listOf(RuleStep.Sniff(goal = RuleStep.Sniff.GOAL_VIDEO, timeoutMillis = 45_000)),
                     ),
                 ),
                 // AniBaka 的 replace 默认按字面匹配
@@ -115,6 +116,44 @@ class AniBakaRuleImporterTest {
             ),
             config.play,
         )
+        // 分支里的嗅探时长也算, 代替全局设置
+        assertEquals(45_000L, videoSniffTimeoutMillis(config.play))
+    }
+
+    @Test
+    fun `sniff options are recorded`() {
+        val converted = AniBakaRuleImporter.convert(
+            rule(
+                """
+                {"format": "anx-rule/2", "name": "示例站", "baseUrl": "https://www.example.com",
+                 "search": [{"op": "sniff", "goal": "html", "url": "/s?wd={keyword}",
+                             "readyContains": ["video-img-box"], "rejectContains": ["安全验证"], "timeoutMs": 30000, "settleMs": 2000},
+                            {"op": "searchList", "selectors": [".card"]}],
+                 "play": [{"op": "sniff", "goal": "video", "resolveMediaRedirects": true, "timeoutMs": 60000, "settleMs": 1000}]}
+                """.trimIndent(),
+            ),
+        )
+        assertIs<AniBakaRuleImporter.Converted.Ok>(converted)
+        val config = converted.arguments.rule
+        assertEquals(
+            RuleStep.Sniff(
+                goal = RuleStep.Sniff.GOAL_HTML,
+                url = "/s?wd={keyword}",
+                timeoutMillis = 30_000,
+                readyContains = listOf("video-img-box"),
+                rejectContains = listOf("安全验证"),
+                settleMillis = 2_000,
+            ),
+            config.search[0],
+        )
+        assertEquals(
+            RuleStep.Sniff(goal = RuleStep.Sniff.GOAL_VIDEO, timeoutMillis = 60_000, settleMillis = 1_000, resolveMediaRedirects = true),
+            config.play.single(),
+        )
+        // 只有播放段嗅探视频的时长算数; 没写时长照全局设置
+        assertEquals(60_000L, videoSniffTimeoutMillis(config.play))
+        assertNull(videoSniffTimeoutMillis(config.search))
+        assertNull(videoSniffTimeoutMillis(listOf(RuleStep.Sniff())))
     }
 
     @Test
@@ -249,6 +288,90 @@ class AniBakaRuleImporterTest {
             ),
             converted.arguments.rule.play[1],
         )
+    }
+
+    @Test
+    fun `keywordMatch keeps only subjects named with the keyword`() {
+        val converted = AniBakaRuleImporter.convert(
+            rule(
+                """
+                {"format": "anx-rule/2", "name": "示例站", "baseUrl": "https://www.example.com",
+                 "search": [{"op": "first", "branches": [
+                   [{"op": "fetch", "url": "/api?q={keyword}"},
+                    {"op": "jsonSeries", "listPath": "data", "nameKey": "title", "detailUrlTemplate": "/anime/{id}", "keywordMatch": true}],
+                   [{"op": "fetch", "url": "/s?wd={keyword}"}, {"op": "searchList", "selectors": [".item"], "keywordMatch": true}]
+                 ]}]}
+                """.trimIndent(),
+            ),
+        )
+        assertIs<AniBakaRuleImporter.Converted.Ok>(converted)
+        val branches = assertIs<RuleStep.First>(converted.arguments.rule.search.single()).branches
+        assertTrue(assertIs<RuleStep.JsonSubjects>(branches[0][1]).filterByKeyword)
+        assertTrue(assertIs<RuleStep.Subjects>(branches[1][1]).filterByKeyword)
+    }
+
+    /** 仿 AniBaka anime1 规则结构的虚构站点: 全部番剧的 JSON 表 + 分页的分类页 + 用文章里的 token 换视频地址. */
+    private val anime1Like = """
+        {"format": "anx-rule/2", "name": "示例 anime1", "baseUrl": "https://anime.example.com",
+         "headers": {"User-Agent": "Mozilla/5.0", "Referer": "https://anime.example.com/"},
+         "search": [{"op": "anime1Search", "url": "https://anime.example.com/animelist.json", "idIndex": 0, "nameIndex": 1, "caseSensitive": true}],
+         "detail": [{"op": "anime1Detail", "url": "https://anime.example.com/?cat={seriesId:raw}", "itemSelector": "video[data-apireq]",
+                     "tokenAttribute": "data-apireq", "nextSelector": ".nav-previous a", "maxPages": 32, "reverse": true,
+                     "sourceName": "示例", "episodeNameTemplate": "第{index}集"}],
+         "play": [{"op": "anime1Play", "url": "https://v.anime.example.com/api", "method": "POST", "contentType": "form", "tokenField": "d",
+                   "sourcePath": "s[0].src", "mediaBaseUrl": "https://v.anime.example.com/", "cookieNames": ["e", "p", "h"],
+                   "cookiePrefixes": ["_ga"], "headers": {"Origin": "https://anime.example.com"},
+                   "mediaHeaders": {"User-Agent": "Mozilla/5.0", "Referer": "https://anime.example.com/"}, "validateWithCookies": true}]}
+    """.trimIndent()
+
+    @Test
+    fun `anime1 steps are translated into generic steps`() = runTest {
+        val converted = AniBakaRuleImporter.convert(rule(anime1Like))
+        assertIs<AniBakaRuleImporter.Converted.Ok>(converted)
+        val config = converted.arguments.rule
+
+        fun video(token: String) = """<video data-apireq="$token"></video>"""
+        fun article(id: Int, title: String, token: String) =
+            """<article><h2 class="entry-title"><a href="https://anime.example.com/$id" rel="bookmark">$title</a></h2>${video(token)}</article>"""
+
+        val pages = mapOf(
+            // 分类 id 为 0 的是外链, 不算
+            "https://anime.example.com/animelist.json" to
+                    """[[0,"<a href=\"https://other.example.com/?cat=1\">葬送的芙莉蓮外傳</a>","1-2","2026","春",""],""" +
+                    """[1833,"葬送的芙莉蓮 第二季","29-30","2026","冬",""],[1307,"葬送的芙莉蓮","1-28","2023","秋",""],[5,"其他","1","2020","春",""]]""",
+            "https://anime.example.com/?cat=1833" to
+                    """<main>${article(30, "葬送的芙莉蓮 第二季 [30]", "%7B%22e%22%3A%2230%22%7D")}</main>""" +
+                    """<div class="nav-previous"><a href="https://anime.example.com/cat/1833/page/2">上一頁</a></div>""",
+            "https://anime.example.com/cat/1833/page/2" to
+                    """<main>${article(29, "葬送的芙莉蓮 第二季 [29]", "%7B%22e%22%3A%2229%22%7D")}</main>""",
+            "https://anime.example.com/29" to "<main>${article(29, "葬送的芙莉蓮 第二季 [29]", "%7B%22e%22%3A%2229%22%7D")}</main>",
+            "https://v.anime.example.com/api" to """{"s":[{"src":"//cdn.anime.example.com/1833/29.mp4","type":"video/mp4"}]}""",
+        )
+        val requests = mutableListOf<RuleHttpRequest>()
+        val http = RuleHttp { request ->
+            requests += request
+            val page = pages[request.url] ?: return@RuleHttp RuleHttpResponse(request.url, 404, "")
+            val cookies = if (request.url == "https://v.anime.example.com/api") listOf("e=1", "p=2", "h=3") else emptyList()
+            RuleHttpResponse(request.url, 200, page, cookies)
+        }
+        val engine = RuleEngine(config, http)
+
+        val subjects = engine.search("葬送的芙莉蓮")
+        assertEquals(listOf("葬送的芙莉蓮 第二季", "葬送的芙莉蓮"), subjects.map { it.name })
+        assertEquals("https://anime.example.com/?cat=1833", subjects.first().url)
+
+        // 翻页合并, 从旧到新
+        val episodes = engine.detail(subjects.first().url).single().episodes
+        assertEquals(listOf("葬送的芙莉蓮 第二季 [29]", "葬送的芙莉蓮 第二季 [30]"), episodes.map { it.name })
+        assertEquals("""\[(?<ep>[^\[\]]+)\]\s*$""", config.matchEpisodeSortFromName)
+
+        val play = engine.play(episodes.first().url)
+        assertIs<RulePlayResult.Direct>(play)
+        assertEquals("https://cdn.anime.example.com/1833/29.mp4", play.url)
+        assertEquals("e=1; p=2; h=3", play.headers["Cookie"])
+        assertEquals("https://anime.example.com/", play.headers["Referer"])
+        // token 原样提交
+        assertEquals("d=%7B%22e%22%3A%2229%22%7D", requests.last { it.method == "POST" }.body)
     }
 
     @Test
