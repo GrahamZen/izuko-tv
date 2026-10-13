@@ -773,6 +773,16 @@ private fun TvCollectionPageContent(
                         }
                     }
                 },
+                // 触屏左右滑换标签: 落点同行缘按左右 (新标签同一行的行缘), 只是两头不往外走 (第一个标签往右滑不进侧边栏)
+                onSwipe = { delta ->
+                    val tvIndex = tabOrder.indexOf(COLLECTION_TABS_SORTED[state.selectedTypeIndex])
+                    val target = tvIndex + delta
+                    if (tvIndex >= 0 && target in tabOrder.indices) {
+                        val row = if (gridRegionFocused && lastFocusedCard >= 0) lastFocusedCard / wallLayout.columns else 0
+                        gridFocus.focusRowEdge(row, direction = delta)
+                        tabs.select(tabOrder[target], fromRail = false)
+                    }
+                },
                 onGridFocusChanged = { has ->
                     gridHasFocus = has
                     if (!has) gridRegionFocused = false

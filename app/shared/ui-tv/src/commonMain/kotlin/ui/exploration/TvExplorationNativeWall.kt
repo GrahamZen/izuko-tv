@@ -66,6 +66,7 @@ import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tv.LocalTvNavKeyTracker
 import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallScale
 import me.him188.ani.app.ui.foundation.tv.LocalTvScrollActivity
+import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.TV_FULLSCREEN_BACKDROP_DIM_ALPHA
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_HERO_SPLIT_BAND
 import me.him188.ani.app.ui.foundation.tv.TvHeroMediaPipelineState
@@ -348,6 +349,7 @@ internal fun TvExplorationNativeWall(
     // 卡片区在滚动 / 方向键按住: 背景图的剧照升档等它们都停了才去取原图 (见 TvNativeBackdropView.navigating)
     val scrollActivity = LocalTvScrollActivity.current
     val navKeys = LocalTvNavKeyTracker.current
+    val touchInput = LocalTvTouchInputEnabled.current
     val dotColor = MaterialTheme.colorScheme.onSurface.toArgb()
     val playIcon = rememberTvNativeIcon(Icons.Rounded.PlayArrow, 18.dp)
     val scheduleIcon = rememberTvNativeIcon(Icons.Rounded.CalendarMonth, 18.dp)
@@ -407,6 +409,7 @@ internal fun TvExplorationNativeWall(
                 view.fadeColor = fadeColor.toArgb()
                 view.treatmentFor = { mode -> tvPageBackdropTreatment(mode, topScrim = false, fadeColor = fadeColor, geometry = geometry) }
                 view.heroEnabled = heroEnabled
+                view.touchInput = touchInput
                 view.heroBlur = heroBlur
                 view.wallColor = wallColor.toArgb()
                 view.wallBackdrop?.let { wb ->
