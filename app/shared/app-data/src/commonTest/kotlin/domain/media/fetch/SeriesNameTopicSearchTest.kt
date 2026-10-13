@@ -163,6 +163,15 @@ class SeriesNameTopicSearchTest {
     }
 
     @Test
+    fun `regional names at the end of fallback keywords are not taken as the series name`() = runTest {
+        // 回退关键词末尾的港台译名 (TMDB) 不是 Bangumi 名字的一部分: BT 资源不核对名字, 不拿它去搜
+        val source = FakeTopicSource(mapOf("藥師少女的獨語" to listOf(topic("[字幕组] 藥師少女的獨語 [49]", "49"))))
+        val request = thirdSeason.copy(subjectNames = listOf("药屋少女的呢喃 续篇"), fallbackSearchKeywords = listOf("藥師少女的獨語"))
+        assertEquals(emptyList(), source.titles(request))
+        assertEquals(listOf("药屋少女的呢喃 续篇"), source.searched)
+    }
+
+    @Test
     fun `sources that do not search titles by keyword are untouched`() = runTest {
         val requests = mutableListOf<MediaFetchRequest>()
         val source = TestHttpMediaSource(fetch = { requests += it; emptySizedSource() })
