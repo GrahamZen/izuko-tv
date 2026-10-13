@@ -40,7 +40,7 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
 
 /**
- * 把发往 bangumi 的请求按 [BangumiRouting] 依次发到各条线路上 (官方、自建、镜像…), 前一条不通用下一条.
+ * 把发往 bangumi 的请求按 [BangumiRouting] 依次发到各条线路上 (官方、自建、加密直连、镜像…), 前一条不通用下一条.
  *
  * **为什么做在 HttpClient 这一层, 而不是改各处的 base URL**: 除了 `BangumiApiProvider` 那两个常量,
  * 还有一堆各自写死地址的地方 (`BangumiSummaryService`、`BangumiScheduleSource`、OAuth 的 token 端点、
@@ -71,6 +71,11 @@ class BangumiRoutingFeatureHandler(
      * 见 `BangumiEndpointProvider.reportOriginUnreachable`.
      */
     private val onOriginUnreachable: (routing: BangumiRouting, workingRoute: BangumiRoute) -> Unit = { _, _ -> },
+    /**
+     * 某条线路连接失败时有没有补救办法 (加密直连的配置过期了就换新的). 返回 `true` = 补救了, 同一条线路再试一次.
+     * 每个请求最多补救一次.
+     */
+    private val recover: suspend (route: BangumiRoute, cause: Throwable) -> Boolean = { _, _ -> false },
     private val clock: Clock = Clock.System,
 ) : ScopedHttpClientFeatureHandler<Boolean>(BangumiRoutingFeature) {
     private val logger = logger<BangumiRoutingFeatureHandler>()
@@ -157,6 +162,7 @@ class BangumiRoutingFeatureHandler(
         var lastCall: HttpClientCall? = null
         var answeredWithWebPage = false
         var originConnectFailed = false
+        var recovered = false
         var i = 0
         while (i < candidates.size) {
             val route = candidates[(startIndex + i) % candidates.size]
@@ -166,9 +172,11 @@ class BangumiRoutingFeatureHandler(
                 logger.info { "Bangumi: retrying $originalHost on ${route.label}" }
             }
             // 还不知道这条线路通不通 (没粘在它上面), 后面又还有线路可退时才缩: 最后一站缩了只会让本来能等到的回应超时.
-            // 写请求不缩: 超时之后会换线路重发, 发出去了却没等到回应的写入会被写两遍
+            // 写请求不缩: 超时之后会换线路重发, 发出去了却没等到回应的写入会被写两遍.
+            // 带凭证的也不缩: 通不通交给匿名的读请求 (图片、条目) 去试; 登录后的请求 (收藏、进度) 回得慢不等于连不上,
+            // 缩了会把慢一点的官方当成不通, 把能直连的人切走
             if (route.probeWithShortTimeouts && route != current?.route && request.method == HttpMethod.Get &&
-                i < candidates.size - 1
+                !carriesCredentials(request) && i < candidates.size - 1
             ) {
                 request.timeout {
                     requestTimeoutMillis = originalTimeouts?.request
@@ -198,6 +206,11 @@ class BangumiRoutingFeatureHandler(
                 continue
             } catch (e: IOException) {
                 if (route == BangumiRoute.Origin) originConnectFailed = true
+                if (!recovered && recover(route, e)) {
+                    recovered = true
+                    logger.info { "Bangumi: ${route.label} recovered from ${e::class.simpleName}, retrying it" }
+                    continue
+                }
                 i++
                 continue
             }

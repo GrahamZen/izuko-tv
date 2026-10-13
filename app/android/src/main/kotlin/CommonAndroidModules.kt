@@ -17,6 +17,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.runBlocking
 import me.him188.ani.app.data.models.preference.VideoScaffoldConfig
 import me.him188.ani.app.data.repository.user.SettingsRepository
+import me.him188.ani.app.domain.foundation.BangumiEchTransport
+import me.him188.ani.app.domain.foundation.ConscryptEchTransport
 import me.him188.ani.app.domain.media.fetch.toHeader
 import me.him188.ani.app.domain.media.hls.HlsPlaybackPreparer
 import me.him188.ani.app.domain.media.hls.PlatformHlsPlaybackPreparer
@@ -46,6 +48,7 @@ fun getCommonAndroidModules(coroutineScope: CoroutineScope) = module {
         AndroidPermissionManager()
     }
     single<HlsPlaybackPreparer> { PlatformHlsPlaybackPreparer(get()) }
+    single<BangumiEchTransport> { ConscryptEchTransport(get(), lazy { get() }) } // bangumi 加密直连
 
     single<MediampPlayerFactory<*>> {
         val videoScaffoldConfig = get<SettingsRepository>().videoScaffoldConfig

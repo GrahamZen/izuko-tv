@@ -33,7 +33,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * 首次启动引导的网络检测: 官方、镜像各自直接连一次, 按结果给建议的组合.
+ * 首次启动引导的网络检测: 官方、加密直连、镜像各自直接连一次, 按结果给建议的组合.
  */
 class BangumiConnectivityProbeTest {
     /**
@@ -51,6 +51,7 @@ class BangumiConnectivityProbeTest {
         mirrors: List<String> = listOf("bangumi.vip"),
         hosts: MutableList<String> = mutableListOf(),
         timeoutMillis: Long = 8_000,
+        echAvailable: Boolean = false,
         status: suspend (host: String) -> HttpStatusCode?,
     ): BangumiConnectivityProbe {
         val engine = MockEngine { req ->
@@ -62,7 +63,7 @@ class BangumiConnectivityProbeTest {
             install(HttpTimeout)
             expectSuccess = true
         }
-        return BangumiConnectivityProbe({ client.asScopedHttpClient() }, flowOf(mirrors), timeoutMillis)
+        return BangumiConnectivityProbe({ client.asScopedHttpClient() }, flowOf(mirrors), echAvailable, timeoutMillis)
     }
 
     @Test
@@ -149,20 +150,48 @@ class BangumiConnectivityProbeTest {
     }
 
     @Test
+    fun `设备用不了加密直连 — 不测这一路`() = realTimeTest {
+        val hosts = mutableListOf<String>()
+        val result = probe(hosts = hosts) { HttpStatusCode.OK }.run().last()
+
+        assertNull(result.ech)
+        assertTrue(hosts.none { it.endsWith(BangumiRoute.Ech.HOST_ROOT) })
+    }
+
+    @Test
+    fun `官方连不上、加密直连通 — 建议不连官方，请求不会落到镜像上`() = realTimeTest {
+        val hosts = mutableListOf<String>()
+        val result = probe(hosts = hosts, echAvailable = true) { host ->
+            if (host == "api.bgm.tv") null else HttpStatusCode.OK
+        }.run().last()
+
+        assertIs<Reachability.Reachable>(result.ech)
+        assertEquals(BangumiConnectionPreset.SKIP_ORIGIN, result.recommended)
+        assertFalse(result.landsOnMirror(BangumiConnectionPreset.SKIP_ORIGIN))
+        // 加密直连那一路打的是本机才认得的域名, 由引擎按 ECH 连
+        assertTrue("api.${BangumiRoute.Ech.HOST_ROOT}" in hosts)
+    }
+
+    @Test
     fun `只有镜像通 — 请求会落到镜像上`() = realTimeTest {
-        val result = probe { host ->
+        val result = probe(echAvailable = true) { host ->
             if (host == "api.bangumi.vip") HttpStatusCode.OK else null
         }.run().last()
 
+        assertEquals(Reachability.Unreachable, result.ech)
         assertEquals(BangumiConnectionPreset.SKIP_ORIGIN, result.recommended)
         assertTrue(result.landsOnMirror(BangumiConnectionPreset.SKIP_ORIGIN))
         assertFalse(result.landsOnMirror(BangumiConnectionPreset.DIRECT))
     }
 
     @Test
-    fun `官方还在测时不算会落到镜像上`() {
-        val result = BangumiConnectivityProbe.Result(origin = Reachability.Checking, mirror = "bangumi.vip", mirrorReachability = Reachability.Reachable(100))
-        assertFalse(result.landsOnMirror(BangumiConnectionPreset.AUTO))
+    fun `官方或加密直连还在测时不算会落到镜像上`() {
+        val mirrorUp = BangumiConnectivityProbe.Result(mirror = "bangumi.vip", mirrorReachability = Reachability.Reachable(100))
+        assertFalse(mirrorUp.copy(origin = Reachability.Checking).landsOnMirror(BangumiConnectionPreset.AUTO))
+        assertFalse(
+            mirrorUp.copy(origin = Reachability.Unreachable, ech = Reachability.Checking).landsOnMirror(BangumiConnectionPreset.AUTO),
+        )
+        assertTrue(mirrorUp.copy(origin = Reachability.Unreachable).landsOnMirror(BangumiConnectionPreset.AUTO))
     }
 
     @Test

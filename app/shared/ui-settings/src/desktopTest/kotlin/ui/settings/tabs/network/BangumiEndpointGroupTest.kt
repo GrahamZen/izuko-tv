@@ -36,6 +36,7 @@ class BangumiEndpointGroupTest {
     private fun AniComposeUiTest.showGroup(
         initial: BangumiEndpointSettings,
         loggedIn: Boolean = false,
+        echAvailable: Boolean = false,
     ): () -> BangumiEndpointSettings {
         val value = mutableStateOf(initial)
         setContent {
@@ -46,7 +47,7 @@ class BangumiEndpointGroupTest {
                     val state = remember {
                         SettingsState(value, onUpdate = { value.value = it }, placeholder = initial.copy(), scope)
                     }
-                    BangumiEndpointGroup(state, mirrors = listOf("bangumi.vip"), loggedIn = loggedIn)
+                    BangumiEndpointGroup(state, mirrors = listOf("bangumi.vip"), loggedIn = loggedIn, echAvailable = echAvailable)
                 }
             }
         }
@@ -115,6 +116,23 @@ class BangumiEndpointGroupTest {
         onNodeWithTag(BangumiEndpointGroupTestTags.SWITCH_ALLOW).performClick()
         waitUntil { !settings().isEnabled(BangumiRouteKind.ORIGIN) }
         assertTrue(settings().allowCredentialsViaMirror)
+    }
+
+    @Test
+    fun `登录着关掉官方但能加密直连 — 凭证走加密直连，不问`() = runAniComposeUiTest {
+        val settings = showGroup(BangumiEndpointSettings(), loggedIn = true, echAvailable = true)
+
+        onNodeWithTag(BangumiEndpointGroupTestTags.route(BangumiRouteKind.ORIGIN)).performClick()
+        waitUntil { !settings().isEnabled(BangumiRouteKind.ORIGIN) }
+        onNodeWithTag(BangumiEndpointGroupTestTags.SWITCH_ALLOW).assertDoesNotExist()
+        assertFalse(settings().allowCredentialsViaMirror)
+    }
+
+    @Test
+    fun `设备用不了加密直连时不列这一行`() = runAniComposeUiTest {
+        showGroup(BangumiEndpointSettings())
+        onNodeWithTag(BangumiEndpointGroupTestTags.route(BangumiRouteKind.ECH)).assertDoesNotExist()
+        onNodeWithTag(BangumiEndpointGroupTestTags.route(BangumiRouteKind.ORIGIN)).assertExists()
     }
 
     @Test

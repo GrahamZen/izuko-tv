@@ -38,6 +38,7 @@ import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.data.repository.user.TokenRepository
 import me.him188.ani.app.data.repository.user.UserRepository
 import me.him188.ani.app.domain.foundation.BangumiConnectivityProbe
+import me.him188.ani.app.domain.foundation.BangumiEchFeature
 import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
 import me.him188.ani.app.domain.foundation.BangumiMirrorConsent
 import me.him188.ani.app.domain.foundation.BangumiMirrorConsent.onlyThirdPartyRoutes
@@ -64,6 +65,7 @@ import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 import me.him188.ani.utils.platform.currentTimeMillis
 import org.koin.core.component.KoinComponent
+import org.koin.core.component.get
 import org.koin.core.component.inject
 
 /**
@@ -78,15 +80,20 @@ class TvOnboardingViewModel : AbstractViewModel(), KoinComponent {
     private val mirrorListRepository: BangumiMirrorListRepository by inject()
     private val tmdbImageEndpoints: TmdbImageEndpoints by inject()
 
+    /** 这台设备能不能加密直连: 不能就不测、不列这一路. */
+    val echAvailable: Boolean = get<BangumiEndpointProvider>().echAvailable
+
     /**
-     * 检测用的客户端**不带任何地址改写** (只给 UA): 带着的话测镜像会被换回原站, 测图片入口会被换成选定的那个.
+     * 检测用的客户端**不带任何地址改写** (只给 UA, 以及能连加密直连的域名): 带着的话测镜像会被换回原站, 测图片入口会被换成选定的那个.
      * 代理照常生效 —— 每次借用都取当前的代理设置, 所以同一个实例在用户改了代理之后也会用上新代理.
      */
-    private val probeClient = httpClientProvider.get(setOf(UserAgentFeature.withValue(ScopedHttpClientUserAgent.ANI)))
-    private val bangumiProbe = BangumiConnectivityProbe({ probeClient }, mirrorListRepository.mirrors)
+    private val probeClient = httpClientProvider.get(
+        setOf(UserAgentFeature.withValue(ScopedHttpClientUserAgent.ANI), BangumiEchFeature.withValue(true)),
+    )
+    private val bangumiProbe = BangumiConnectivityProbe({ probeClient }, mirrorListRepository.mirrors, echAvailable)
     private val reachabilityProbe = ReachabilityProbe({ probeClient })
 
-    /** Bangumi 那一页: 官方与镜像. */
+    /** Bangumi 那一页: 官方、加密直连与镜像. */
     val bangumi = OnboardingCheck(
         backgroundScope, BangumiConnectivityProbe.Result(), { it.completed }, bangumiProbe::run, rememberedBangumi,
         maxDurationMillis = bangumiProbe.timeoutMillis,
@@ -130,14 +137,14 @@ class TvOnboardingViewModel : AbstractViewModel(), KoinComponent {
     suspend fun mirrorConsentNeeded(preset: BangumiConnectionPreset): Boolean {
         val current = settingsRepository.bangumiEndpointSettings.flow.first()
         val loggedIn = tokenRepository.session.first() is AccessTokenSession
-        return BangumiMirrorConsent.check(current, preset.applyTo(current), loggedIn) != null
+        return BangumiMirrorConsent.check(current, preset.applyTo(current), loggedIn, echAvailable) != null
     }
 
     /** 「退出登录并改用镜像」里的退出登录. */
     suspend fun logout() = userRepository.clearSelfInfo()
 
     /**
-     * 存下选的组合, 返回登录那一步要不要按「经镜像」处理: 开着的线路只剩镜像, 或刚才测出来官方连不上、
+     * 存下选的组合, 返回登录那一步要不要按「经镜像」处理: 开着的线路只剩镜像, 或刚才测出来官方与加密直连都连不上、
      * 只有镜像通 —— 后者还没有请求落到镜像上, 但授权登录注定失败.
      * 存完才返回: 调用方接着就换页, 之后的请求要按新设置走.
      *
@@ -148,7 +155,7 @@ class TvOnboardingViewModel : AbstractViewModel(), KoinComponent {
             preset.applyTo(this).copy(allowCredentialsViaMirror = allowCredentialsViaMirror ?: this.allowCredentialsViaMirror)
         }
         val saved = settingsRepository.bangumiEndpointSettings.flow.first()
-        return saved.onlyThirdPartyRoutes() || bangumi.result.value.landsOnMirror(preset)
+        return saved.onlyThirdPartyRoutes(echAvailable) || bangumi.result.value.landsOnMirror(preset)
     }
 
     /**

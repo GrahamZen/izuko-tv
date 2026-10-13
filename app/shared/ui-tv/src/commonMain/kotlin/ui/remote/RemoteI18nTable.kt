@@ -935,6 +935,8 @@ private fun part6() = listOf(
     RemoteText("官方直连", "Official site", "官方直連", "官方直連"),
     RemoteText("确定连不上时会自动关掉，之后不再先试它；网络好了可以再打开。", "Turned off automatically once it proves unreachable, so later requests skip it. Turn it back on when your network allows.", "確定連不上時會自動關掉，之後不再先試它；網絡好了可以再打開。", "確定連不上時會自動關閉，之後不再先試它；網路好了可以再開啟。"),
     RemoteText("我自己的镜像", "My own mirror", "我自己的鏡像", "我自己的鏡像"),
+    RemoteText("加密直连", "Encrypted direct", "加密直連", "加密直連"),
+    RemoteText("连的仍是 Bangumi 官方，只是把要连的网址藏进加密的握手里，绕开按网址的拦截；登录与收藏同步照常走它。设了代理时不用它。", "Still the official Bangumi site, but which site you connect to is hidden in an encrypted handshake, getting past address-based blocking. Sign-in and collection sync work as usual. Not used while a proxy is set.", "連的仍是 Bangumi 官方，只是把要連的網址藏進加密的握手裏，繞開按網址的攔截；登錄與收藏同步照常走它。設了代理時不用它。", "連的仍是 Bangumi 官方，只是把要連的網址藏進加密的握手裡，繞開按網址的攔截；登入與收藏同步照常走它。設了代理時不用它。"),
     RemoteText("社区镜像", "Community mirrors", "社群鏡像", "社群鏡像"),
     RemoteText("至少开一条线路", "Turn on at least one route", "至少開一條線路", "至少開啟一條線路"),
     RemoteText("自带镜像：{0}（清单每天自动更新，按顺序尝试），不用填地址。", "Built-in mirrors: {0} (the list updates daily and is tried in order). No address needed.", "內建鏡像：{0}（清單每天自動更新，按順序嘗試），不用填地址。", "內建鏡像：{0}（清單每天自動更新，依序嘗試），不用填網址。"),

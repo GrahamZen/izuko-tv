@@ -66,6 +66,8 @@ import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror_switch_message
 import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror_switch_title
 import me.him188.ani.app.ui.lang.settings_network_bangumi_no_login_notice
 import me.him188.ani.app.ui.lang.settings_network_bangumi_route_custom_description
+import me.him188.ani.app.ui.lang.settings_network_bangumi_route_ech
+import me.him188.ani.app.ui.lang.settings_network_bangumi_route_ech_description
 import me.him188.ani.app.ui.lang.settings_network_bangumi_route_mirrors
 import me.him188.ani.app.ui.lang.settings_network_bangumi_route_mirrors_description
 import me.him188.ani.app.ui.lang.settings_network_bangumi_route_origin
@@ -79,10 +81,10 @@ import me.him188.ani.app.ui.settings.framework.components.TextItem
 import org.jetbrains.compose.resources.stringResource
 
 /**
- * bangumi 经哪些线路连: 官方、自建、社区镜像各一个开关, 按这个顺序尝试 (见 [BangumiRouteKind]).
+ * bangumi 经哪些线路连: 官方、自建、加密直连、社区镜像各一个开关, 按这个顺序尝试 (见 [BangumiRouteKind]).
  *
  * 2026-05 起 bangumi 在中国大陆被整族阻断 (`api.bgm.tv` / `next.bgm.tv` 一起), 直连在那边不可用.
- * 推荐的是代理 (直连官方, 不经过第三方); 社区的反代镜像能救浏览, 但**第三方反代能看到经过它的一切**,
+ * 推荐的是代理 (直连官方, 不经过第三方); 加密直连同样直达官方; 社区的反代镜像能救浏览, 但**第三方反代能看到经过它的一切**,
  * 所以登录与收藏同步默认不走它, 用户在弹窗里了解风险后可以自己打开 —— 界面上必须把这些说清楚,
  * 别让用户对着登录失败猜.
  *
@@ -96,6 +98,8 @@ internal fun SettingsScope.BangumiEndpointGroup(
     mirrors: List<String>,
     /** 是否登录着 Bangumi (有令牌, 不管现在连不连得上). */
     loggedIn: Boolean = false,
+    /** 这台设备能不能加密直连 (见 `BangumiEndpointProvider.echAvailable`); 不能就不列这条线路. */
+    echAvailable: Boolean = false,
     /** 「退出登录并改用镜像」里的退出登录; 退完才切. */
     onLogout: suspend () -> Unit = {},
 ) {
@@ -106,7 +110,7 @@ internal fun SettingsScope.BangumiEndpointGroup(
     var askCredentialsOff by remember { mutableStateOf(false) }
     fun setRoute(kind: BangumiRouteKind, enabled: Boolean) {
         val target = settings.withRoute(kind, enabled)
-        if (BangumiMirrorConsent.check(settings, target, loggedIn) != null) askSwitch = target else state.update(target)
+        if (BangumiMirrorConsent.check(settings, target, loggedIn, echAvailable) != null) askSwitch = target else state.update(target)
     }
     Group(
         title = { Text(stringResource(Lang.settings_network_bangumi_endpoint)) },
@@ -157,6 +161,17 @@ internal fun SettingsScope.BangumiEndpointGroup(
             )
         }
 
+        if (echAvailable) {
+            SwitchItem(
+                checked = settings.isEnabled(BangumiRouteKind.ECH),
+                onCheckedChange = { setRoute(BangumiRouteKind.ECH, it) },
+            modifier = Modifier.testTag(BangumiEndpointGroupTestTags.route(BangumiRouteKind.ECH)),
+                title = { Text(stringResource(Lang.settings_network_bangumi_route_ech)) },
+                description = { Text(stringResource(Lang.settings_network_bangumi_route_ech_description)) },
+                enabled = !state.isLoading,
+            )
+        }
+
         SwitchItem(
             checked = settings.isEnabled(BangumiRouteKind.MIRRORS),
             onCheckedChange = { setRoute(BangumiRouteKind.MIRRORS, it) },
@@ -175,7 +190,7 @@ internal fun SettingsScope.BangumiEndpointGroup(
                     val target = settings.copy(allowCredentialsViaMirror = on)
                     when {
                         on -> confirming = true
-                        BangumiMirrorConsent.check(settings, target, loggedIn) != null -> askCredentialsOff = true
+                        BangumiMirrorConsent.check(settings, target, loggedIn, echAvailable) != null -> askCredentialsOff = true
                         else -> state.update(target)
                     }
                 },

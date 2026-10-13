@@ -414,6 +414,7 @@ fun SettingsScreen(
                                     vm.bangumiEndpointSettings,
                                     bangumiMirrors,
                                     loggedIn = bangumiLoggedIn,
+                                    echAvailable = vm.bangumiEchAvailable,
                                     onLogout = vm::logoutBangumi,
                                 )
                             }

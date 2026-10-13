@@ -35,7 +35,7 @@ sealed class BangumiRoute {
     /** 代理得了 bgm.tv 主站: 换 token 与续期都在主站的 `/oauth/` 上, 只发给这样的线路. */
     abstract val servesMainSite: Boolean
 
-    /** 浏览器能打开这条线路 (网页链接、授权页). 要靠本机特殊连接的线路 (浏览器解析不了它的域名) 不能. */
+    /** 浏览器能打开这条线路 (网页链接、授权页). 浏览器做不了加密直连. */
     abstract val browsable: Boolean
 
     /** 浏览器上用的网页根域名; `null` = 官方. */
@@ -85,6 +85,27 @@ sealed class BangumiRoute {
         override val webRoot get() = root
         override fun hostFor(originHost: String) = BangumiMirrorHosts.mirrorHostOf(originHost, root)
         override fun originHostOf(host: String) = BangumiMirrorHosts.originHostOf(host, root)
+    }
+
+    /**
+     * 加密直连: 连官方, 但要连的域名藏在 ECH 加密的握手里. 请求改写到只在本机认得的域名 ([HOST_ROOT] 之下),
+     * 引擎见到这些域名就按 ECH 连 (见 [BangumiEchTransport]); 浏览器做不了这件事.
+     */
+    data object Ech : BangumiRoute() {
+        /**
+         * 本机才认得的域名根: `api.bgm.tv` → `api.bgm-tv.ech.invalid`. `.invalid` 保证解析不出来 ——
+         * 哪个客户端漏装了加密直连, 请求只会失败, 不会以明文发到别处.
+         */
+        const val HOST_ROOT = "bgm-tv.ech.invalid"
+
+        override val kind get() = BangumiRouteKind.ECH
+        override val label get() = "ech"
+        override val thirdParty get() = false
+        override val servesMainSite get() = true
+        override val browsable get() = false
+        override val probeWithShortTimeouts get() = true
+        override fun hostFor(originHost: String) = BangumiMirrorHosts.mirrorHostOf(originHost, HOST_ROOT)
+        override fun originHostOf(host: String) = BangumiMirrorHosts.originHostOf(host, HOST_ROOT)
     }
 
     /**

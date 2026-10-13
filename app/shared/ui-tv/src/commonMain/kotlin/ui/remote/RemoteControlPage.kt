@@ -5994,7 +5994,7 @@ private val SETTINGS_SCRIPT = """
     }).catch(function () { i.disabled = false; i.checked = !i.checked; fail(); });
   });
   var MODES = [['DISABLED', T('不使用')], ['SYSTEM', T('跟随系统')], ['CUSTOM', T('自定义')]];
-  // Bangumi 连接方式 (同设置页那一组): 官方、我自己的镜像、社区镜像各一个勾, 按这个顺序尝试.
+  // Bangumi 连接方式 (同设置页那一组): 官方、我自己的镜像、加密直连、社区镜像各一个勾, 按这个顺序尝试.
   // 推荐的是上面的代理 (直连官方). 社区镜像是第三方反代, 默认不带登录, 勾「登录与收藏同步也经过镜像」要先确认风险;
   // 自建地址会带登录, 所以只提示填自己的服务器, 不推荐第三方
   function bgmCredHint(on) {
@@ -6002,13 +6002,13 @@ private val SETTINGS_SCRIPT = """
       : T('镜像不带登录：登录与收藏同步不经过镜像，第三方看不到你的账号。');
   }
   // 开着的线路里只剩社区镜像 (同 BangumiMirrorConsent.onlyThirdPartyRoutes): 登录着又不让凭证经过镜像时, 什么都用不了
-  function bgmOnlyMirror(r, custom) {
-    return !!r.mirrors && !r.origin && !(r.custom && custom);
+  function bgmOnlyMirror(r, custom, ech) {
+    return !!r.mirrors && !r.origin && !(r.custom && custom) && !(r.ech && ech);
   }
   // 上次读到的 Bangumi 连接方式 (含电视是否登录着), 保存前判断要不要先问
   var bgmSaved = null;
   function renderBangumi(b) {
-    b = b || { routes: { origin: true, mirrors: true }, custom: '', mirrors: [], allowCredentials: false };
+    b = b || { routes: { origin: true, ech: true, mirrors: true }, echAvailable: false, custom: '', mirrors: [], allowCredentials: false };
     bgmSaved = b;
     var r = b.routes || {};
     var mirrors = (b.mirrors || []).map(esc).join(T('、'));
@@ -6025,6 +6025,9 @@ private val SETTINGS_SCRIPT = """
         esc(b.custom) + '" placeholder="bangumi.example.com"><em>' +
         T('填你自己搭的反代的根域名，它要把 Bangumi 的各个子域（api、next、lain 等）原样转发。登录会经过它，所以只填自己的服务器。') +
         '</em></label></div>') +
+      // 这台电视用不了加密直连时不列, 但原样带上它的开关, 别让保存把它关掉
+      (b.echAvailable ? route('ech', T('加密直连'), T('连的仍是 Bangumi 官方，只是把要连的网址藏进加密的握手里，绕开按网址的拦截；登录与收藏同步照常走它。设了代理时不用它。'))
+        : (r.ech ? '<input type="hidden" name="route_ech" value="1">' : '')) +
       route('mirrors', T('社区镜像'), mirrors ? T('自带镜像：{0}（清单每天自动更新，按顺序尝试），不用填地址。', mirrors) : '',
         '<div class="bgm-auto"' + (r.mirrors ? '' : ' hidden') + '>' +
         '<label class="toggle"><input type="checkbox" name="cred" value="1"' + (b.allowCredentials ? ' checked' : '') + '>' +
@@ -6048,16 +6051,17 @@ private val SETTINGS_SCRIPT = """
     var f = e.target, el = f.elements, cred = !!(el.cred && el.cred.checked);
     function on(id) {
       var i = el['route_' + id];
-      return !!(i && i.checked);
+      return !!(i && (i.type === 'hidden' || i.checked));
     }
-    var target = { origin: on('origin'), custom: on('custom'), mirrors: on('mirrors') };
-    if (!target.origin && !target.custom && !target.mirrors) { toast(T('至少开一条线路')); return; }
+    var target = { origin: on('origin'), custom: on('custom'), ech: on('ech'), mirrors: on('mirrors') };
+    if (!target.origin && !target.custom && !target.ech && !target.mirrors) { toast(T('至少开一条线路')); return; }
     function save() {
       post('api/settings/bangumi', new FormData(f)).then(function (r) { toast(r.message); if (r.ok) load(); }).catch(fail);
     }
     // 电视登录着 (同设置页, 见 BangumiMirrorConsent): 改成只剩镜像而凭证不经过镜像先问; 只剩镜像时关掉凭证先提醒
-    if (bgmSaved && bgmSaved.loggedIn && !cred && bgmOnlyMirror(target, (el.custom.value || '').trim())) {
-      if (!bgmOnlyMirror(bgmSaved.routes || {}, bgmSaved.custom)) { bgmAsk(f, save); return; }
+    var ech = !!(bgmSaved && bgmSaved.echAvailable);
+    if (bgmSaved && bgmSaved.loggedIn && !cred && bgmOnlyMirror(target, (el.custom.value || '').trim(), ech)) {
+      if (!bgmOnlyMirror(bgmSaved.routes || {}, bgmSaved.custom, ech)) { bgmAsk(f, save); return; }
       if (bgmSaved.allowCredentials &&
           !confirm(T('现在只剩镜像可用。关闭后，登录后的请求（收藏、进度，以及登录后浏览条目）不经过镜像，都会失败。'))) return;
     }

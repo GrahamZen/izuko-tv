@@ -47,17 +47,22 @@ class BangumiRoutingAutoSwitchTest {
     private val backup = BangumiRoute.Mirror("backup.example")
     private val autoRouting = BangumiRouting(listOf(BangumiRoute.Origin, vip))
 
-    /** 默认的组合 (官方、镜像开着) 关掉官方 = 只剩镜像. */
-    private val mirrorOnly = BangumiEndpointSettings().withRoute(BangumiRouteKind.ORIGIN, false)
+    /** 默认的组合 (官方、加密直连、镜像都开着) 关掉官方. */
+    private val originOff = BangumiEndpointSettings().withRoute(BangumiRouteKind.ORIGIN, false)
+
+    /** 只剩镜像. */
+    private val mirrorOnly = originOff.withRoute(BangumiRouteKind.ECH, false)
 
     /**
      * @param origin 官方的响应; `null` = 连不上
+     * @param ech 加密直连的响应; `null` = 连不上
      * @param mirror 镜像的响应; `null` = 连不上
      */
     private fun client(
         routing: Flow<BangumiRouting>,
         hosts: MutableList<String>,
         origin: HttpStatusCode?,
+        ech: HttpStatusCode? = HttpStatusCode.OK,
         mirror: HttpStatusCode? = HttpStatusCode.OK,
         onOriginUnreachable: (BangumiRouting, BangumiRoute) -> Unit,
     ): HttpClient {
@@ -65,6 +70,7 @@ class BangumiRoutingAutoSwitchTest {
             hosts += req.url.host
             val status = when {
                 req.url.host.endsWith("bgm.tv") -> origin
+                req.url.host.endsWith(BangumiRoute.Ech.HOST_ROOT) -> ech
                 else -> mirror
             } ?: throw IOException("blocked")
             respond("", status)
@@ -143,22 +149,90 @@ class BangumiRoutingAutoSwitchTest {
         assertEquals(0, reported)
     }
 
+    @Test
+    fun `加密直连排在镜像前面 — 官方连不上时先换它，回报的是它`() = runTest {
+        val hosts = mutableListOf<String>()
+        val reported = mutableListOf<BangumiRoute>()
+        val routing = BangumiRouting(listOf(BangumiRoute.Origin, BangumiRoute.Ech, vip))
+        val client = client(flowOf(routing), hosts, origin = null) { _, route -> reported += route }
+
+        client.get("https://api.bgm.tv/v0/subjects/1")
+        client.get("https://next.bgm.tv/p1/subjects/2")
+
+        assertEquals(listOf("api.bgm.tv", "api.bgm-tv.ech.invalid", "next.bgm-tv.ech.invalid"), hosts)
+        assertEquals(listOf<BangumiRoute>(BangumiRoute.Ech), reported)
+    }
+
+    @Test
+    fun `加密直连也连不上 — 落到镜像上，回报的是镜像`() = runTest {
+        val hosts = mutableListOf<String>()
+        val reported = mutableListOf<BangumiRoute>()
+        val routing = BangumiRouting(listOf(BangumiRoute.Origin, BangumiRoute.Ech, vip))
+        val client = client(flowOf(routing), hosts, origin = null, ech = null) { _, route -> reported += route }
+
+        client.get("https://api.bgm.tv/v0/subjects/1")
+
+        assertEquals(listOf("api.bgm.tv", "api.bgm-tv.ech.invalid", "api.bangumi.vip"), hosts)
+        assertEquals(listOf<BangumiRoute>(vip), reported)
+    }
+
+    @Test
+    fun `加密直连连不上时补救一次 — 换了配置就再试它，没换就去下一条`() = runTest {
+        for (fixed in listOf(true, false)) {
+            val hosts = mutableListOf<String>()
+            var echAttempts = 0
+            val engine = MockEngine { req ->
+                hosts += req.url.host
+                if (req.url.host.endsWith(BangumiRoute.Ech.HOST_ROOT) && echAttempts++ == 0) throw IOException("ech rejected")
+                respond("", HttpStatusCode.OK)
+            }
+            val client = HttpClient(engine) { expectSuccess = false }
+            val recovered = mutableListOf<BangumiRoute>()
+            BangumiRoutingFeatureHandler(
+                flowOf(BangumiRouting(listOf(BangumiRoute.Ech, vip))),
+                recover = { route, _ -> recovered += route; fixed },
+            ).applyToClient(client, true)
+
+            client.get("https://api.bgm.tv/v0/subjects/1")
+            client.get("https://api.bgm.tv/v0/subjects/2")
+
+            assertEquals(listOf<BangumiRoute>(BangumiRoute.Ech), recovered)
+            if (fixed) {
+                assertEquals(List(3) { "api.bgm-tv.ech.invalid" }, hosts)
+            } else {
+                assertEquals(listOf("api.bgm-tv.ech.invalid", "api.bangumi.vip", "api.bangumi.vip"), hosts)
+            }
+        }
+    }
+
     private fun TestScope.provider(
         settings: Flow<BangumiEndpointSettings>,
+        echAvailable: Boolean = false,
+        proxyInUse: Flow<Boolean> = flowOf(false),
         onOriginUnreachable: suspend (BangumiRoute) -> Unit = {},
     ): BangumiEndpointProvider = BangumiEndpointProvider(
         settings = settings,
         mirrors = flowOf(listOf("bangumi.vip", "backup.example")),
         scope = backgroundScope,
+        echAvailable = echAvailable,
+        proxyInUse = proxyInUse,
         onOriginUnreachable = onOriginUnreachable,
     ).also { runCurrent() }
 
     @Test
-    fun `线路按固定顺序排`() = runTest {
+    fun `线路按固定顺序排，平台用不了或开着代理时没有加密直连`() = runTest {
         val custom = BangumiEndpointSettings(customBaseUrl = "https://my.example/").withRoute(BangumiRouteKind.CUSTOM, true)
         assertEquals(
+            listOf(BangumiRoute.Origin, BangumiRoute.Custom("my.example"), BangumiRoute.Ech, vip, backup),
+            provider(flowOf(custom), echAvailable = true).routing.first().routes,
+        )
+        assertEquals(
             listOf(BangumiRoute.Origin, BangumiRoute.Custom("my.example"), vip, backup),
-            provider(flowOf(custom)).routing.first().routes,
+            provider(flowOf(custom), echAvailable = false).routing.first().routes,
+        )
+        assertEquals(
+            listOf(BangumiRoute.Origin, BangumiRoute.Custom("my.example"), vip, backup),
+            provider(flowOf(custom), echAvailable = true, proxyInUse = flowOf(true)).routing.first().routes,
         )
     }
 
@@ -197,6 +271,20 @@ class BangumiRoutingAutoSwitchTest {
     }
 
     @Test
+    fun `落在加密直连上 — 浏览器做不了加密直连，授权页在用户允许时用镜像`() = runTest {
+        val provider = provider(flowOf(originOff.copy(allowCredentialsViaMirror = true)), echAvailable = true)
+        provider.reportSettled(provider.currentRouting!!, BangumiRoute.Ech)
+        runCurrent()
+        assertEquals("bangumi.vip", provider.trustedMirrorRoot.value)
+        assertFalse(provider.viaThirdPartyMirror.value)
+
+        val denied = provider(flowOf(originOff), echAvailable = true)
+        denied.reportSettled(denied.currentRouting!!, BangumiRoute.Ech)
+        runCurrent()
+        assertNull(denied.trustedMirrorRoot.value)
+    }
+
+    @Test
     fun `经镜像 — 只剩镜像时一直算，开着官方时只在落到镜像上时算`() = runTest {
         val mirror = provider(flowOf(mirrorOnly))
         assertTrue(mirror.viaThirdPartyMirror.value)
@@ -209,6 +297,16 @@ class BangumiRoutingAutoSwitchTest {
         auto.reportSettled(auto.currentRouting!!, BangumiRoute.Origin)
         runCurrent()
         assertFalse(auto.viaThirdPartyMirror.value)
+    }
+
+    @Test
+    fun `经镜像 — 关着官方而加密直连排在镜像前面，不算`() = runTest {
+        val provider = provider(flowOf(originOff), echAvailable = true)
+        assertFalse(provider.viaThirdPartyMirror.value)
+        // 加密直连连不上, 落到了镜像上
+        provider.reportSettled(provider.currentRouting!!, vip)
+        runCurrent()
+        assertTrue(provider.viaThirdPartyMirror.value)
     }
 
     @Test
@@ -285,7 +383,9 @@ class BangumiRoutingAutoSwitchTest {
 
     @Test
     fun `只开着官方 — 不会被关掉`() = runTest {
-        val direct = BangumiEndpointSettings().withRoute(BangumiRouteKind.MIRRORS, false)
+        val direct = BangumiEndpointSettings()
+            .withRoute(BangumiRouteKind.ECH, false)
+            .withRoute(BangumiRouteKind.MIRRORS, false)
         val settings = MutableStateFlow(direct)
         val provider = provider(settings) { settings.update { it.afterOriginUnreachable() } }
         provider.reportOriginUnreachable(provider.currentRouting!!, vip)
