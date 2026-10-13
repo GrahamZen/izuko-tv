@@ -566,6 +566,7 @@ class TvNativeGridPageView(
      * 到了照常落地.
      */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        TvNativeFocusCues.onKey(this, event)
         val code = event.keyCode
         val direction = code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN ||
             code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT
@@ -583,6 +584,7 @@ class TvNativeGridPageView(
         super.onAttachedToWindow()
         viewTreeObserver.addOnGlobalFocusChangeListener(focusWatcher)
         viewTreeObserver.addOnGlobalLayoutListener(layoutWatcher)
+        TvNativeFocusCues.attachPage(this)
     }
 
     private fun setGridFocus(has: Boolean) {
@@ -604,6 +606,7 @@ class TvNativeGridPageView(
     fun setHeroActive(active: Boolean, animated: Boolean = true) {
         if (timeline.active == active || active && !heroEnabled) return
         timeline.setActive(active, animated)
+        TvNativeFocusCues.setSpotlight(this, active, animated)
         current?.setHeroActive(active, animated = animated && animatedScroll)
         listener?.onHeroActiveChanged(active)
         // 退出途中又进来 (内容还在屏上): 退出时内容定格没跟着导航换 (见 applySource), 这里对上此刻的
@@ -833,6 +836,7 @@ class TvNativeGridPageView(
     override fun onDetachedFromWindow() {
         viewTreeObserver.removeOnGlobalFocusChangeListener(focusWatcher)
         viewTreeObserver.removeOnGlobalLayoutListener(layoutWatcher)
+        TvNativeFocusCues.detachPage(this)
         super.onDetachedFromWindow()
         scrollTracker.stop()
         wallFocus.detach()

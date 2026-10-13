@@ -267,6 +267,10 @@
     <string name="settings_theme_tv_poster_confirm_hero">Show the overview first</string>
     <string name="settings_theme_tv_poster_confirm_play">Play right away</string>
     <string name="settings_theme_tv_poster_confirm_details">Open the details page</string>
+    <string name="settings_theme_tv_poster_idle_dim">Dim other posters when idle</string>
+    <string name="settings_theme_tv_poster_idle_dim_description">On Explore, Collection, Search and the airing schedule, after you rest on a poster for 3 seconds the other posters dim and this one grows a little; any arrow key brings them back. They also stay dimmed while the overview is open.</string>
+    <string name="settings_theme_tv_poster_slow_focus_out">Ease posters back slowly</string>
+    <string name="settings_theme_tv_poster_slow_focus_out_description">When focus leaves a poster, it shrinks back over about 0.4 seconds, like tvOS. When off, it shrinks as fast as it grows.</string>
     <string name="settings_theme_tv_episodes">Episodes</string>
     <string name="settings_theme_tv_episode_specials">Specials (TV)</string>
     <string name="settings_theme_tv_episode_specials_description">Where SP, OP, ED and other non-main episodes go in the episode list on the details page and in the player. Previous / next episode always stays within the same type</string>
