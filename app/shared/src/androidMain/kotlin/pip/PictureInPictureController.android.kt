@@ -109,7 +109,7 @@ internal class AndroidPictureInPictureController(
     private val playActionLabel: String,
     private val pauseActionLabel: String,
 ) : PictureInPictureController {
-    override val isSupported: Boolean get() = activity != null
+    override val isSupported: Boolean = activity.supportsPictureInPicture()
 
     private val _isInPictureInPicture =
         MutableStateFlow(activity?.isInPictureInPictureMode == true)
@@ -189,11 +189,11 @@ internal class AndroidPictureInPictureController(
     }
 
     override fun enterPictureInPicture() {
-        val activity = activity ?: return
+        val activity = activity?.takeIf { isSupported } ?: return
         if (activity.isDestroyed || activity.isFinishing) return
         if (_isInPictureInPicture.value) return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            activity.enterPictureInPictureMode(buildParams())
+            runPictureInPictureCall("enter") { activity.enterPictureInPictureMode(buildParams()) }
         }
     }
 
@@ -205,7 +205,7 @@ internal class AndroidPictureInPictureController(
     }
 
     private fun refreshParams() {
-        val activity = activity ?: return
+        val activity = activity?.takeIf { isSupported } ?: return
         if (activity.isDestroyed || activity.isFinishing) return
         // 宿主未实现 PictureInPictureHost 时 (无模式变化回调), 在这里同步一次小窗状态
         _isInPictureInPicture.value = activity.isInPictureInPictureMode
@@ -217,7 +217,7 @@ internal class AndroidPictureInPictureController(
         )
         if (signature == appliedSignature) return
         appliedSignature = signature
-        activity.setPictureInPictureParams(params)
+        runPictureInPictureCall("set params") { activity.setPictureInPictureParams(params) }
     }
 
     private fun buildParams(): PictureInPictureParams {
