@@ -184,7 +184,7 @@ class CloudDriveAddedShareService internal constructor(
     fun mediaOf(inspection: DriveShareInspection, fid: String, mediaSourceId: String, request: MediaFetchRequest): Media? {
         val entry = inspection.entries[fid] ?: return null
         val share = FoundShare(inspection.link.shareId, inspection.link.passcode, inspection.title)
-        val subjectName = request.subjectNames.firstOrNull { it.isNotBlank() } ?: request.subjectNameCN
+        val subjectName = CloudDriveMediaSource.subjectNameOf(request)
         return DriveShareMatch(share, entry.file, entry.folders, request.episodeSort)
             .toShareMedia(drive.placeholders, mediaSourceId, CloudDriveAddedShareMediaSource.DISPLAY_NAME, subjectName)
     }
@@ -399,7 +399,7 @@ class CloudDriveAddedShareMediaSource(
 
     override suspend fun fetch(query: MediaFetchRequest): SizedSource<MediaMatch> {
         val service = registry.awaitAddedShareService(driveId) ?: return SinglePagePagedSource { emptyList<MediaMatch>().asFlow() }
-        val subjectName = query.subjectNames.firstOrNull { it.isNotBlank() } ?: query.subjectNameCN
+        val subjectName = CloudDriveMediaSource.subjectNameOf(query)
         // 分享是用户亲手加给这个条目的
         val medias = service.matches(query, mediaSourceId)
             .map { MediaMatch(it.toShareMedia(service.drive.placeholders, mediaSourceId, DISPLAY_NAME, subjectName), MatchKind.EXACT) }
