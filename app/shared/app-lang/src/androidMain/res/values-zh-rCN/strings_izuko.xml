@@ -680,6 +680,7 @@
     <string name="player_frame_preview_not_downloaded">这里还没下载</string>
     <string name="player_frame_preview_stay_to_load">停一下就加载</string>
     <string name="player_seek_preview_switched_to_full_screen">这台设备用小画面预览时解码出错，拖动预览已改为显示在全屏上，可在设置里改回</string>
+    <string name="player_seek_preview_crashed_switched_to_full_screen">上次用小画面预览时闪退了，拖动预览已改为显示在全屏上，可在设置里改回</string>
     <string name="settings_log_share_failed">分享日志文件失败，当前设备可能不支持分享，可改用复制日志内容</string>
     <string name="settings_log_export_file">导出当日日志文件</string>
     <string name="settings_log_export_succeed">日志已导出到 %1$s</string>

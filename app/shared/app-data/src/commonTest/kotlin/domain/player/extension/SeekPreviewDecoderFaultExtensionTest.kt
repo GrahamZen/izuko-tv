@@ -14,7 +14,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -36,10 +35,11 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 /**
  * 拖动预览换输出弄坏了解码器之后: 拖动预览改成画在全屏上、提示一次; 同一轮里接着出的解码错误不重复改、不重复提示;
- * 不是这种错 (没换过输出、或网络错误) 不动设置.
+ * 不是这种错 (没换过输出、或网络错误) 不动设置. 上一次运行在小画面预览时闪退的, 打开播放页就改.
  */
 class SeekPreviewDecoderFaultExtensionTest : AbstractPlayerExtensionTest() {
     private var alreadyFullScreen = false
@@ -95,8 +95,6 @@ class SeekPreviewDecoderFaultExtensionTest : AbstractPlayerExtensionTest() {
     @Test
     fun `预览换输出后解码出错，改成全屏并提示一次`() = runTest {
         val (testScope, suite, state) = createCase()
-        val notices = mutableListOf<Unit>()
-        testScope.launch { SeekPreviewDecoderFault.switchedToFullScreen.collect { notices += it } }
         advanceUntilIdle()
         loadSelectedMedia(suite, state)
 
@@ -104,24 +102,41 @@ class SeekPreviewDecoderFaultExtensionTest : AbstractPlayerExtensionTest() {
         suite.player.injectError(decodingFailed())
         advanceUntilIdle()
         assertEquals(1, switchCalls)
-        assertEquals(1, notices.size)
+        assertEquals(SeekPreviewDecoderFault.Reason.DECODER_ERROR, SeekPreviewDecoderFault.notice.value)
+        SeekPreviewDecoderFault.consumeNotice() // 页面提示过了
 
         // 同一轮里重载后又坏了: 不再改设置, 也不再提示
         loadSelectedMedia(suite, state)
         suite.player.injectError(decodingFailed())
         advanceUntilIdle()
         assertEquals(1, switchCalls)
-        assertEquals(1, notices.size)
+        assertNull(SeekPreviewDecoderFault.notice.value)
 
         testScope.cancel()
+    }
+
+    @Test
+    fun `上次在小画面预览时闪退，打开播放页就改成全屏并提示`() = runTest {
+        SeekPreviewDecoderFault.recordCrashInPreviousRun()
+        val (testScope, _, _) = createCase()
+        advanceUntilIdle()
+        assertEquals(1, switchCalls)
+        assertEquals(SeekPreviewDecoderFault.Reason.CRASHED, SeekPreviewDecoderFault.notice.value)
+        testScope.cancel()
+
+        // 只处理一次: 再打开播放页不再改
+        SeekPreviewDecoderFault.consumeNotice()
+        val (secondScope, _, _) = createCase()
+        advanceUntilIdle()
+        assertEquals(1, switchCalls)
+        assertNull(SeekPreviewDecoderFault.notice.value)
+        secondScope.cancel()
     }
 
     @Test
     fun `原来就是全屏时不提示`() = runTest {
         alreadyFullScreen = true
         val (testScope, suite, state) = createCase()
-        val notices = mutableListOf<Unit>()
-        testScope.launch { SeekPreviewDecoderFault.switchedToFullScreen.collect { notices += it } }
         advanceUntilIdle()
         loadSelectedMedia(suite, state)
 
@@ -129,7 +144,7 @@ class SeekPreviewDecoderFaultExtensionTest : AbstractPlayerExtensionTest() {
         suite.player.injectError(decodingFailed())
         advanceUntilIdle()
         assertEquals(1, switchCalls)
-        assertEquals(0, notices.size)
+        assertNull(SeekPreviewDecoderFault.notice.value)
 
         testScope.cancel()
     }
