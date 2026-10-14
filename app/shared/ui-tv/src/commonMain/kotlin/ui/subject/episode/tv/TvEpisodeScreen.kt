@@ -1243,14 +1243,26 @@ fun TvEpisodeScreenContent(
                         }
 
                     // 拖拽预览中: 确认 = 跳到圆点并继续播放 (控制层留着, 见 exitScrub)
-                    Key.DirectionCenter, Key.Enter, Key.NumPadEnter ->
-                        if (overlay.focusRegion == TvPlayerFocusRegion.PROGRESS) {
+                    Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> when {
+                        overlay.focusRegion == TvPlayerFocusRegion.PROGRESS -> {
                             if (progressSliderState.isPreviewing) exitScrub(commit = true)
                             else vm.player.togglePlayWhenReady()
                             true
-                        } else {
-                            false
                         }
+
+                        // 控制层刚开、焦点还没落到哪一行 (纯视频态按确定暂停后紧接着又按一下): 放出去的话 Compose 把没人消费的
+                        // 确定键当成「进入子项」, 从根节点进到最左上那颗胶囊 (默认相关推荐, 一聚焦就浮出面板). 按焦点正要去的
+                        // 地方算: 去进度条就同进度条上的确定, 去别处就吞掉. 焦点由下面的补发送到位 (这一下按键取消了在途送焦)
+                        overlay.focusRegion == TvPlayerFocusRegion.NONE || focus.isFocused(TvPlayerFocusTarget.ROOT) -> {
+                            if (overlay.pendingFocus.first == TvPlayerFocusTarget.PROGRESS) {
+                                if (progressSliderState.isPreviewing) exitScrub(commit = true)
+                                else vm.player.togglePlayWhenReady()
+                            }
+                            true
+                        }
+
+                        else -> false
+                    }
 
                     Key.MediaPlayPause, Key.MediaPlay, Key.MediaPause -> {
                         // 播放键在拖拽预览中与确认键同义 (遥控器上播放/暂停通常是同一个物理键;
