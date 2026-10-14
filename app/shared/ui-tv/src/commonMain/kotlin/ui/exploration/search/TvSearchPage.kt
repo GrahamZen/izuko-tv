@@ -2045,7 +2045,8 @@ private fun TvSearchActiveFiltersRow(
     val listState = rememberLazyListState()
     val focus = rememberTvFocusScope()
     var focusedChip by remember { mutableIntStateOf(-1) }
-    // 移除一项后原聚焦胶囊销毁, 焦点悬空: 记住移除位置, 重组后聚焦相邻项; 删光交回上方标题
+    // 移除一项后原聚焦胶囊销毁, 焦点悬空: 记住移除位置, 重组后聚焦相邻项. 删最后一项时整行随即离开组合 (见调用处),
+    // 等不到重组, 在点击当场把焦点交回上方标题 —— 焦点一悬空, 全局兜底会把它送回网格里上次停的卡片
     var refocusAfterRemove by remember { mutableIntStateOf(-1) }
     LaunchedEffect(listState) {
         snapshotFlow { focusedChip }.collect { chip ->
@@ -2054,11 +2055,6 @@ private fun TvSearchActiveFiltersRow(
     }
     LaunchedEffect(filters.size) {
         if (refocusAfterRemove < 0) return@LaunchedEffect
-        if (filters.isEmpty()) {
-            refocusAfterRemove = -1
-            onEmptied()
-            return@LaunchedEffect
-        }
         focus.request(SearchActiveFilterFocus(minOf(refocusAfterRemove, filters.lastIndex)))
         refocusAfterRemove = -1
     }
@@ -2102,7 +2098,7 @@ private fun TvSearchActiveFiltersRow(
                 TvSearchActiveFilterChip(
                     label = label,
                     onClick = {
-                        refocusAfterRemove = index
+                        if (filters.size == 1) onEmptied() else refocusAfterRemove = index
                         onRemove(removedQuery)
                     },
                     onFocused = { focusedChip = index },
