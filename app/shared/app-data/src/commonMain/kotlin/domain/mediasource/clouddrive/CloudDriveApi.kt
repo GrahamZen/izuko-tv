@@ -49,6 +49,8 @@ import kotlin.uuid.Uuid
  * 带登录态的请求带同一个 Cookie 请求头 (由 [CloudDriveCookieStore] 提供), 响应里服务端改写的登录 Cookie
  * ([DriveHttpConfig.rotatingCookies]) 交还给 [CloudDriveCookieStore.onServerCookies] —— 有的网盘每次请求都会轮换, 不回写的话登录很快失效.
  *
+ * WebDAV 服务器 ([CloudDriveProtocol.isWebDav]) 不走请求模板: 列目录由 [WebDavClient] 发 `PROPFIND`, 直链就是文件的地址 (见 [WebDav]).
+ *
  * 地址带 `{host}` 的请求在 [DriveHttpConfig.hosts] 之间轮换: 同一个网盘的几个等价域名常解析到不同的边缘节点, 个别节点会连不上
  * (TCP 或 TLS 握手超时) 而其他域名正常, 所以连接层失败时换下一个重试, 并记住最后能用的那个. 不带 `{host}` 的请求连接失败时重试一次.
  *
@@ -61,6 +63,8 @@ internal class CloudDriveApi(
 ) {
     @Volatile
     private var preferredHostIndex = 0
+
+    private val webDav = WebDavClient(client, protocol) { cookies.credentials() }
 
     // region 账号
 
@@ -88,6 +92,7 @@ internal class CloudDriveApi(
 
     /** 列出文件夹的直接子项的一页. */
     suspend fun listFolder(folderId: String, page: Int = 1): DriveFileList {
+        if (protocol().isWebDav) return webDav.list(folderId).let { DriveFileList(it, it.size) }
         val op = protocol().api.listFolder ?: throw CloudDriveUnsupportedException("listFolder")
         return listPage("listFolder", op, mapOf("folderId" to folderId.json, "page" to page.json))
     }
@@ -104,6 +109,7 @@ internal class CloudDriveApi(
     suspend fun downloads(fileIds: List<String>): List<DriveDownload> {
         if (fileIds.isEmpty()) return emptyList()
         val p = protocol()
+        if (p.isWebDav) return fileIds.map { DriveDownload(it, WebDav.nameOf(it), WebDav.parentIdOf(it), WebDav.urlOf(p, it)) }
         val op = p.api.download ?: throw CloudDriveUnsupportedException("download")
         val root = send("download", op.request, mapOf("fileIds" to fileIds.json, "fileId" to fileIds.first().json))
         return root.selectByPath(op.items).mapNotNull { item ->
@@ -411,6 +417,9 @@ internal class CloudDriveApi(
             "mp4", "mkv", "avi", "mov", "flv", "webm", "ts", "m2ts", "mts", "rmvb", "rm", "wmv", "m4v", "3gp", "mpg", "mpeg", "vob",
         )
 
+        /** 文件名的扩展名是视频. */
+        internal fun isVideoFileName(name: String): Boolean = name.substringAfterLast('.', "").lowercase() in VIDEO_EXTENSIONS
+
         /**
          * 网盘专用的 HttpClient.
          *
@@ -449,7 +458,7 @@ internal class CloudDriveApi(
             val isVideo = !dir && if (fields.category.isNotBlank()) {
                 value(fields.category) in fields.videoCategories
             } else {
-                name.substringAfterLast('.', "").lowercase() in VIDEO_EXTENSIONS
+                isVideoFileName(name)
             }
             return DriveFile(
                 fid = fid,
@@ -509,7 +518,7 @@ internal class DriveTemplate(private val values: Map<String, JsonElement>) {
 }
 
 /**
- * 网盘登录 Cookie 的读写.
+ * 网盘登录态的读写: Cookie, 或账号密码 (WebDAV).
  */
 internal interface CloudDriveCookieStore {
     /** 当前的整段 Cookie 请求头, 没登录时为空. */
@@ -517,6 +526,9 @@ internal interface CloudDriveCookieStore {
 
     /** 服务端在响应里改写了这些 Cookie (name 到 value). */
     suspend fun onServerCookies(cookies: Map<String, String>)
+
+    /** 账号密码登录的账号密码; 没有时为 null. */
+    suspend fun credentials(): DriveCredentials? = null
 }
 
 /**

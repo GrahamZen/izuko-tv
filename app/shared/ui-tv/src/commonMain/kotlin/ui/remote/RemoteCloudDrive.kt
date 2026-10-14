@@ -36,6 +36,8 @@ import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveProtocol
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveQrLoginState
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveRegistry
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveService
+import me.him188.ani.app.domain.mediasource.clouddrive.WebDav
+import me.him188.ani.app.domain.mediasource.clouddrive.WebDavSources
 import me.him188.ani.app.domain.mediasource.clouddrive.ensureCloudDriveMediaSourceEnabled
 import me.him188.ani.app.domain.mediasource.instance.MediaSourceInstance
 import me.him188.ani.app.ui.foundation.lan.LanHttpRequest
@@ -57,6 +59,9 @@ import kotlin.time.Duration.Companion.seconds
  * 网盘来自订阅或导入的「网盘」数据源 (见 [CloudDriveRegistry]), 卡片上的名字、扫码用的 App、手机唤起链接、Cookie 说明都取自它的协议.
  * 扫码登录在电视这边跑 ([CloudDriveService.qrLogin]), 每个网盘各有一份状态; 网页轮询 `api/drives` 拿当前状态与二维码:
  * 手机上可以按协议给的唤起链接跳到网盘 App 里确认, 也可以用另一台设备扫 `api/drive/qr.svg?drive=<id>`.
+ *
+ * WebDAV 服务器 (NAS) 是用户在这里自己加的网盘 ([WebDavSources]): 卡片上是账号密码登录、媒体文件夹 (浏览服务器的文件夹选)、改名字与地址、删除;
+ * 最后一张卡片是添加新服务器的表单.
  *
  * 也给另外两处 (播放器页的「添加网盘分享」「从网盘挑」) 提供已配置的网盘.
  */
@@ -84,6 +89,7 @@ internal object RemoteCloudDrive {
     /** 卡片上的操作 (都带表单字段 `drive`). */
     private val DRIVE_ACTIONS = setOf(
         "api/drive/qr/start", "api/drive/qr/cancel", "api/drive/cookie", "api/drive/logout", "api/drive/transcode", "api/drive/enable",
+        "api/drive/password", "api/drive/folders", "api/drive/library", "api/drive/webdav/edit", "api/drive/remove",
     )
 
     /** 处理 `api/drives` 与 `api/drive/` 下的请求; 路径或方法不认识返回 null. */
@@ -96,6 +102,7 @@ internal object RemoteCloudDrive {
                 request.path == "api/drives" && get -> status()
                 !post -> null
                 request.path == "api/drive/check" -> check(request.field("drive"))
+                request.path == "api/drive/webdav/add" -> addWebDav(request)
                 request.path in DRIVE_ACTIONS -> {
                     val service = driveOf(request.field("drive"))
                         ?: return@runCatching status(tr("没有这个网盘，请刷新"), ok = false)
@@ -105,6 +112,11 @@ internal object RemoteCloudDrive {
                         "api/drive/cookie" -> loginWithCookie(service, request.field("cookie"))
                         "api/drive/logout" -> logout(service)
                         "api/drive/transcode" -> setTranscode(service, request.field("on") == "1")
+                        "api/drive/password" -> loginWithPassword(service, request.field("username"), request.field("password"))
+                        "api/drive/folders" -> folders(service, request.field("fid"))
+                        "api/drive/library" -> library(service, request.field("action"), request.field("fid"), request.field("depth"))
+                        "api/drive/webdav/edit" -> editWebDav(service, request.field("name"), request.field("url"))
+                        "api/drive/remove" -> removeWebDav(service)
                         else -> enable(service)
                     }
                 }
@@ -153,7 +165,7 @@ internal object RemoteCloudDrive {
             put("id", service.driveId)
             put("name", protocol.displayName(lang))
             put("shares", protocol.supportsShares)
-            put("pick", protocol.supportsSearch || protocol.api.listFolder != null)
+            put("pick", protocol.supportsSearch || protocol.supportsListing)
         }
     }
 
@@ -225,6 +237,19 @@ internal object RemoteCloudDrive {
             }
         }
         put("cookieHint", protocol.login.cookieHint)
+        put("type", protocol.type)
+        put("supportsPassword", protocol.supportsPasswordLogin)
+        put("username", account.username)
+        if (protocol.isWebDav) {
+            put("server", WebDav.serverUrl(protocol)?.toString().orEmpty())
+            put("depth", protocol.library.depth)
+            putJsonArray("library") {
+                for (fid in protocol.library.folders) addJsonObject {
+                    put("id", fid)
+                    put("path", WebDav.displayPath(protocol, fid))
+                }
+            }
+        }
         if (qr != null) putJsonObject("qr") {
             when (qr) {
                 CloudDriveQrLoginState.Loading -> put("state", "loading")
@@ -302,6 +327,130 @@ internal object RemoteCloudDrive {
         expired.remove(service.driveId)
         return status(tr("已登录{0}", nameOf(service)))
     }
+
+    private fun loginWithPassword(service: CloudDriveService, username: String, password: String): JsonObject {
+        if (username.isBlank()) return status(tr("先填用户名"), ok = false)
+        runBlocking { service.loginWithPassword(username, password) }
+        expired.remove(service.driveId)
+        return status(tr("已登录{0}", nameOf(service)))
+    }
+
+    // region WebDAV 服务器
+
+    /**
+     * 加一台 WebDAV 服务器: 新建它的数据源, 用填的账号密码列一次根目录核对; 连不上或账号密码不对时不留下数据源, 把原因报给网页.
+     */
+    private fun addWebDav(request: LanHttpRequest): JsonObject {
+        val url = request.field("url").trim()
+        val username = request.field("username").trim()
+        if (url.isEmpty()) return status(tr("先填 WebDAV 地址"), ok = false)
+        if (username.isEmpty()) return status(tr("先填用户名"), ok = false)
+        val protocol = try {
+            WebDavSources.newProtocol(request.field("name").trim().ifEmpty { tr("NAS") }, url)
+        } catch (_: IllegalArgumentException) {
+            return status(tr("地址要以 http:// 或 https:// 开头"), ok = false)
+        }
+        runBlocking {
+            WebDavSources.add(manager, protocol)
+            try {
+                registry.serviceFor(protocol).loginWithPassword(username, request.field("password"))
+            } catch (e: Throwable) {
+                WebDavSources.remove(manager, protocol.id)
+                throw e
+            }
+        }
+        awaitDrives { drives -> drives.any { it.driveId == protocol.id } }
+        logger.info { "Added WebDAV drive ${protocol.id} from the web console" }
+        return status(tr("已添加{0}", protocol.name))
+    }
+
+    /** 浏览 WebDAV 服务器的文件夹 (选媒体文件夹用); [fid] 为空时是服务器的根. */
+    private fun folders(service: CloudDriveService, fid: String): JsonObject {
+        val protocol = service.protocol
+        if (!protocol.isWebDav) return result(false, tr("这个网盘不能选媒体文件夹"))
+        val id = fid.ifEmpty { service.rootFolderId }
+        val children = runBlocking { service.listForPicking(id) }.filter { it.dir }.sortedBy { it.fileName.lowercase() }
+        return buildJsonObject {
+            put("ok", true)
+            put("id", id)
+            put("path", WebDav.displayPath(protocol, id))
+            put("parent", if (id == service.rootFolderId) "" else WebDav.parentIdOf(id))
+            put("chosen", id in protocol.library.folders)
+            putJsonArray("folders") {
+                for (folder in children) addJsonObject {
+                    put("id", folder.fid)
+                    put("name", folder.fileName)
+                }
+            }
+        }
+    }
+
+    /** 媒体文件夹: [action] 是 add / remove (文件夹 [fid]) 或 depth (往下找几层). */
+    private fun library(service: CloudDriveService, action: String, fid: String, depth: String): JsonObject {
+        if (!service.protocol.isWebDav) return status(tr("这个网盘不能选媒体文件夹"), ok = false)
+        val expected = updateWebDav(service) { protocol ->
+            val library = protocol.library
+            protocol.copy(
+                library = when (action) {
+                    "add" -> library.copy(folders = (library.folders + fid).filter { it.isNotEmpty() }.distinct())
+                    "remove" -> library.copy(folders = library.folders - fid)
+                    "depth" -> library.copy(depth = depth.toIntOrNull()?.coerceIn(1, 3) ?: library.depth)
+                    else -> library
+                },
+            )
+        } ?: return status(tr("没有找到「{0}」的数据源", nameOf(service)), ok = false)
+        awaitDrives { drives -> drives.any { it.driveId == service.driveId && it.protocol == expected } }
+        return status(
+            when (action) {
+                "add" -> tr("已加为媒体文件夹")
+                "remove" -> tr("已移出媒体文件夹")
+                else -> ""
+            },
+        )
+    }
+
+    /** 改 WebDAV 服务器的名字与地址, 改完向服务器核对一次登录. */
+    private fun editWebDav(service: CloudDriveService, name: String, url: String): JsonObject {
+        if (!service.protocol.isWebDav) return status(tr("订阅来的网盘不能在这里修改"), ok = false)
+        val expected = try {
+            updateWebDav(service) { protocol ->
+                val renamed = protocol.copy(name = name.trim().ifEmpty { protocol.name })
+                if (url.isBlank()) renamed else WebDavSources.withServer(renamed, url)
+            }
+        } catch (_: IllegalArgumentException) {
+            return status(tr("地址要以 http:// 或 https:// 开头"), ok = false)
+        } ?: return status(tr("没有找到「{0}」的数据源", nameOf(service)), ok = false)
+        awaitDrives { drives -> drives.any { it.driveId == service.driveId && it.protocol == expected } }
+        runBlocking { checkOne(service) }
+        return status(tr("已保存"))
+    }
+
+    /** 删掉用户自己加的 WebDAV 服务器 (连同账号密码); 订阅来的网盘会随订阅更新回来, 不在这里删. */
+    private fun removeWebDav(service: CloudDriveService): JsonObject {
+        if (!service.protocol.isWebDav) return status(tr("订阅来的网盘不能在这里删除"), ok = false)
+        val name = nameOf(service)
+        runBlocking {
+            service.logout()
+            WebDavSources.remove(manager, service.driveId)
+        }
+        expired.remove(service.driveId)
+        awaitDrives { drives -> drives.none { it.driveId == service.driveId } }
+        return status(tr("已删除{0}", name))
+    }
+
+    /** 改 [service] 的协议并返回改后的协议; 没有它的数据源时为 null. */
+    private fun updateWebDav(service: CloudDriveService, transform: (CloudDriveProtocol) -> CloudDriveProtocol): CloudDriveProtocol? {
+        var updated: CloudDriveProtocol? = null
+        val found = runBlocking { WebDavSources.update(manager, service.driveId) { transform(it).also { new -> updated = new } } }
+        return if (found) updated else null
+    }
+
+    /** 改完数据源后等网盘列表跟上 (最多 [LOAD_TIMEOUT]), 回给网页的状态才是新的. */
+    private fun awaitDrives(predicate: (List<CloudDriveService>) -> Boolean) {
+        runBlocking { withTimeoutOrNull(LOAD_TIMEOUT) { registry.drives.first { it != null && predicate(it) } } }
+    }
+
+    // endregion
 
     private fun logout(service: CloudDriveService): JsonObject {
         qrLogins.remove(service.driveId)?.job?.cancel()

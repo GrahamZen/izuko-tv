@@ -791,6 +791,9 @@
     <string name="tv_settings_drive_logout_hint">按确定退出这个账号。登录在手机上的 Web 控制台里（扫码或填 Cookie）。</string>
     <string name="tv_settings_drive_login_hint">用手机上的网盘 App 扫右边的码登录。也可以在 Web 控制台里填 Cookie。</string>
     <string name="tv_settings_drive_logout_confirm">退出%1$s的账号「%2$s」？之后要在手机上重新登录。</string>
+    <string name="tv_settings_drive_webdav_add">添加 WebDAV（NAS）</string>
+    <string name="tv_settings_drive_webdav_add_description">把局域网里的 NAS（或任何 WebDAV 服务）当数据源：在 NAS 的系统设置里打开 WebDAV，再扫右边的码，在 Web 控制台里填地址和账号密码。播放的是原文件。</string>
+    <string name="tv_settings_drive_webdav_login_hint">扫右边的码，在 Web 控制台里填账号密码。</string>
     <string name="tv_settings_proxy_mode">代理方式</string>
     <string name="tv_settings_proxy_mode_description">代理地址、用户名和密码要打字：扫右边的码，在 Web 控制台的「设置 → 网络」里填，填过之后这里才有「自定义」。</string>
     <string name="tv_settings_proxy_custom_address">自定义代理：%1$s</string>
