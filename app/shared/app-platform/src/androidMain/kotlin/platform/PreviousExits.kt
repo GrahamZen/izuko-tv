@@ -43,10 +43,10 @@ object PreviousExits {
         reason == ApplicationExitInfo.REASON_LOW_MEMORY ||
             (reason == ApplicationExitInfo.REASON_SIGNALED && status == SIGNAL_KILL)
 
-    /** 把最近几条退出记录写进日志; 只在主进程启动时调一次. */
+    /** 把最近几条退出记录写进日志, 上次原生崩溃的现场在后台补写 ([NativeCrashTrace]); 只在主进程启动时调一次. */
     fun log(context: Context) {
-        if (Build.VERSION.SDK_INT < 30) return
-        runCatching { log30(context) }
+        if (Build.VERSION.SDK_INT >= 30) runCatching { log30(context) }
+        NativeCrashTrace.logInBackground(context)
     }
 
     private fun reasonName(reason: Int): String = when (reason) {
