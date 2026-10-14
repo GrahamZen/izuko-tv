@@ -23,6 +23,8 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <!-- Web 控制台「退出 Ani 后保留」(网页设置里的开关, 默认关) 的常驻前台服务, 见 RemoteKeepAliveService -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- 播放中卡住缓冲时日志里记 Wi-Fi 信号与协商速率 (普通权限, 安装时自动授予), 见 RebufferDiagnostics -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
 
     <!-- 不声明为必需: 同一个包也允许装在带触摸屏的设备上 -->
     <uses-feature
