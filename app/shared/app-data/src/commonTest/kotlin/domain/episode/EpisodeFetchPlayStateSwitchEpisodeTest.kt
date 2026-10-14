@@ -28,6 +28,7 @@ import me.him188.ani.app.data.repository.player.EpisodePlayHistoryRepositoryImpl
 import me.him188.ani.app.domain.media.TestMediaList
 import me.him188.ani.app.domain.media.resolver.MediaResolver
 import me.him188.ani.app.domain.media.resolver.TestUniversalMediaResolver
+import me.him188.ani.app.domain.player.VideoLoadingState
 import me.him188.ani.app.domain.player.extension.AbstractPlayerExtensionTest
 import me.him188.ani.app.domain.player.extension.EpisodePlayerExtensionFactory
 import me.him188.ani.app.domain.player.extension.RememberPlayProgressExtension
@@ -38,6 +39,7 @@ import me.him188.ani.utils.coroutines.childScope
 import kotlin.time.Duration
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 
 /**
  * 测试多个扩展之间的在 [EpisodeFetchSelectPlayState.switchEpisode] 的兼容性.
@@ -159,6 +161,30 @@ class EpisodeFetchPlayStateSwitchEpisodeTest : AbstractPlayerExtensionTest() {
 
             // should load the saved progress for new episode
             assertEquals(5000, suite.player.currentPositionMillis.value)
+        } finally {
+            testScope.cancel()
+        }
+    }
+
+    @Test
+    fun `switching to an episode without media resets the loading state`() = runTest {
+        val (testScope, suite, state) =
+            createCase()
+        try {
+            val ms1 = suite.mediaSelectorTestBuilder.delayedMediaSource("1")
+            val myMedia = TestMediaList[0]
+            ms1.complete(listOf(myMedia))
+            suite.setMediaDuration(100_000)
+            state.mediaSelectorFlow.filterNotNull().first().select(myMedia)
+            advanceUntilIdle()
+            assertIs<VideoLoadingState.Succeed>(state.playerSession.videoLoadingState.value)
+
+            // 下一集一个资源都没选中: 加载状态要回到初始, 播放画面才会显示查找进度或「没找到」, 不能停在上一集的「已装好」
+            state.switchEpisode(newEpisodeId)
+            advanceUntilIdle()
+            assertEquals(newEpisodeId, state.getCurrentEpisodeId())
+            assertEquals(VideoLoadingState.Initial, state.playerSession.videoLoadingState.value)
+            assertEquals(null, state.playerSession.loadedMedia.value)
         } finally {
             testScope.cancel()
         }
