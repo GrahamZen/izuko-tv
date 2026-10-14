@@ -244,6 +244,7 @@ class SeekPreview internal constructor(
         frameOnSurface = false
         setOutputSurface(surface)
         SeekPreviewDecoderFault.markOutputSwitched()
+        SeekPreviewCrashMarker.onPreviewFrame()
         if (surface == null) return
         val target = pendingMillis ?: targetMillis.takeIf { hasSeeked } ?: return
         pendingMillis = null
@@ -377,6 +378,7 @@ class SeekPreview internal constructor(
         if (onFullScreen) return
         restoreOutput()
         SeekPreviewDecoderFault.markOutputSwitched()
+        SeekPreviewCrashMarker.onFullScreen()
     }
 
     private fun releaseFrame() {

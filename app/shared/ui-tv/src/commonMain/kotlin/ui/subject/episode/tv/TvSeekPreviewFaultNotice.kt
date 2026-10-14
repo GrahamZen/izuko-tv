@@ -11,21 +11,32 @@ package me.him188.ani.app.ui.subject.episode.tv
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.flow.filterNotNull
 import me.him188.ani.app.domain.player.SeekPreviewDecoderFault
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.lang.Lang
+import me.him188.ani.app.ui.lang.player_seek_preview_crashed_switched_to_full_screen
 import me.him188.ani.app.ui.lang.player_seek_preview_switched_to_full_screen
 import org.jetbrains.compose.resources.stringResource
 
 /**
- * 拖动预览换输出弄坏了这台设备的解码器、自动改成画在全屏上时 (见 [SeekPreviewDecoderFault]) 弹一次气泡,
+ * 拖动预览换输出弄坏了这台设备的解码器 (或上次在小画面预览时闪退)、自动改成画在全屏上时 (见 [SeekPreviewDecoderFault]) 弹一次气泡,
  * 说明预览为什么变了样、去哪儿改回来. 不画任何东西.
  */
 @Composable
 internal fun TvSeekPreviewFaultNotice() {
     val toaster = LocalToaster.current
-    val text = stringResource(Lang.player_seek_preview_switched_to_full_screen)
-    LaunchedEffect(toaster, text) {
-        SeekPreviewDecoderFault.switchedToFullScreen.collect { toaster.toast(text) }
+    val decoderErrorText = stringResource(Lang.player_seek_preview_switched_to_full_screen)
+    val crashedText = stringResource(Lang.player_seek_preview_crashed_switched_to_full_screen)
+    LaunchedEffect(toaster, decoderErrorText, crashedText) {
+        SeekPreviewDecoderFault.notice.filterNotNull().collect { reason ->
+            toaster.toast(
+                when (reason) {
+                    SeekPreviewDecoderFault.Reason.DECODER_ERROR -> decoderErrorText
+                    SeekPreviewDecoderFault.Reason.CRASHED -> crashedText
+                },
+            )
+            SeekPreviewDecoderFault.consumeNotice()
+        }
     }
 }

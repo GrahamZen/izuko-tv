@@ -678,6 +678,7 @@
     <string name="player_frame_preview_not_downloaded">Not downloaded yet</string>
     <string name="player_frame_preview_stay_to_load">Stay here to load</string>
     <string name="player_seek_preview_switched_to_full_screen">Decoding failed on this device while previewing in the window, so seek previews now show full screen. You can change this in Settings</string>
+    <string name="player_seek_preview_crashed_switched_to_full_screen">Crashed last time while previewing in the window, so seek previews now show full screen. Change in Settings</string>
     <string name="settings_log_share_failed">Failed to share the log file. This device may not support sharing; try copying the log content instead</string>
     <string name="settings_log_export_file">Export today\'s log file</string>
     <string name="settings_log_export_succeed">Log exported to %1$s</string>
