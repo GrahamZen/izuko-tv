@@ -26,7 +26,8 @@ import kotlin.time.Duration.Companion.seconds
 
 /**
  * 认出拖动预览换输出弄坏了解码器 (见 [SeekPreviewDecoderFault]) 时, 把拖动预览改成直接画在全屏上 ([switchToFullScreen], 不再换输出),
- * 改了就让页面提示一次 ([SeekPreviewDecoderFault.switchedToFullScreen]). 不受「播放失败时自动换源」开关管: 这是这台设备的毛病, 不是换不换源的事.
+ * 改了就让页面提示一次 ([SeekPreviewDecoderFault.notice]). 不受「播放失败时自动换源」开关管: 这是这台设备的毛病, 不是换不换源的事.
+ * 上一次运行在小画面预览时原生崩溃的 ([SeekPreviewDecoderFault.recordCrashInPreviousRun]) 在打开播放页时同样改.
  *
  * 原地重载由 [SwitchMediaOnPlayerErrorExtension] 做 (见 [reloadAfterSeekPreviewDecoderFault]), 那边同时不拉黑、不换源.
  *
@@ -38,6 +39,11 @@ class SeekPreviewDecoderFaultExtension(
 ) : PlayerExtension("SeekPreviewDecoderFault") {
     override fun onStart(episodeSession: EpisodeSession, backgroundTaskScope: ExtensionBackgroundTaskScope) {
         backgroundTaskScope.launch("SeekPreviewDecoderFault") {
+            if (SeekPreviewDecoderFault.consumeCrashInPreviousRun()) {
+                val switched = switchToFullScreen()
+                logger.info { "The previous run crashed during a windowed seek preview, seek preview on full screen: switched=$switched" }
+                if (switched) SeekPreviewDecoderFault.notifySwitchedToFullScreen(SeekPreviewDecoderFault.Reason.CRASHED)
+            }
             // 与换源那边看同样的两处: 打开时的失败在加载状态里, 播起来之后的在播放器状态里
             combine(context.videoLoadingStateFlow, context.player.state) { loading, state ->
                 (loading as? VideoLoadingState.UnknownError)?.cause ?: (state.mediaStatus as? MediaStatus.Error)?.error
@@ -48,7 +54,7 @@ class SeekPreviewDecoderFaultExtension(
                     if (!SeekPreviewDecoderFault.recordFault()) return@collect // 这一轮已经处理过
                     val switched = switchToFullScreen()
                     logger.info { "Decoder failed after the seek preview moved the video output (${error.message}), seek preview on full screen: switched=$switched" }
-                    if (switched) SeekPreviewDecoderFault.notifySwitchedToFullScreen()
+                    if (switched) SeekPreviewDecoderFault.notifySwitchedToFullScreen(SeekPreviewDecoderFault.Reason.DECODER_ERROR)
                 }
         }
     }
