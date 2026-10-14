@@ -161,7 +161,9 @@ class LibassExoPlayerMediampPlayer private constructor(
                 builder.setLoadControl(pipeline.loadControl)
             },
         ),
-    )
+    ) {
+        exoPlayer.addAnalyticsListener(RebufferDiagnostics(context.applicationContext, backgroundScope))
+    }
 
     internal val assHandler: AssHandler get() = pipeline.assHandler
 

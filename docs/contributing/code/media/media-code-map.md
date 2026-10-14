@@ -97,6 +97,9 @@
    `MediaDataProvider`，然后调用 `player.setMediaData(...)`。
    Android 上 `LibassExoPlayerMediampPlayer` 给本机文件（`file://`，本地缓存与本地文件资源）套 `BufferedReadDataSource` 读缓冲：
    mkv 提取器解析元素头时一次只读一两个字节，`FileDataSource` 每次读都是一次系统调用。
+   播放中卡住缓冲时 `RebufferDiagnostics`（挂在播放器上的 `AnalyticsListener`）往日志写两行 `[Rebuffer]`：卡住那一刻的缓冲余量、
+   最近 30 秒实收与最慢请求、片源码率、网络（Wi-Fi 信号与协商速率），恢复时卡了多久、期间整机与本 app 各收了多少；
+   开播、拖动、换媒体后的第一次缓冲不算。平时只在内存里记取数据记录，查系统信息与写日志都在后台线程。
 9. 播放器时钟开始走时，`PauseMediaFetchWhilePlayingExtension` 暂停仍在查询的数据源
    （`MediaFetchSession.pauseSearching` / `MediaSourceFetchResult.pause`，状态 `MediaSourceFetchState.Paused`），
    `ObserveWebMediaSourcePreferenceExtension` 把正在播的 Web 源记为本条目的记忆源。
