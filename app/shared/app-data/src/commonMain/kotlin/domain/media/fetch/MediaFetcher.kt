@@ -155,6 +155,7 @@ fun MediaFetchRequest.Companion.create(
             seriesInfo?.seriesSubjectNamesWithoutSelf.orEmpty(),
         ),
         seasonEpisodeCount = seriesInfo?.splitSeason.seasonEpisodeCount(),
+        catalogSubjectName = subject.nameCnOrName,
     )
 }
 

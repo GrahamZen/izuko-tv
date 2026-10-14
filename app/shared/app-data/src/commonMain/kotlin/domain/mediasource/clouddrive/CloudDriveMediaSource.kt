@@ -109,7 +109,7 @@ class CloudDriveMediaSource(
     override suspend fun fetch(query: MediaFetchRequest): SizedSource<MediaMatch> {
         // 订阅下发后每个用户都有这个源, 没登录的不算失败
         if (!service.account.first().isLoggedIn) return SinglePagePagedSource { emptyList<MediaMatch>().asFlow() }
-        val subjectName = query.subjectNames.firstOrNull { it.isNotBlank() } ?: query.subjectNameCN
+        val subjectName = subjectNameOf(query)
         val subjectId = query.subjectId.toIntOrNull()
         val picked = pickedMatches(query)
         val remembered = subjectId?.let { service.matchRememberedFolder(query, it) }.orEmpty()
@@ -217,6 +217,15 @@ class CloudDriveMediaSource(
                 iconUrl = arguments.iconUrl.ifBlank { protocol.iconUrl }.ifBlank { null },
             )
         }
+
+        /**
+         * 网盘资源 (自己网盘与分享) 标成的条目名: 条目服务上的名字 ([MediaFetchRequest.catalogSubjectName]), 未知时才用搜索名.
+         * 文件已经按条目对上了, 而选择器判「条目名不匹配」只认条目服务的名字, 标成用户改过的搜索名会被误排除.
+         */
+        fun subjectNameOf(request: MediaFetchRequest): String? =
+            request.catalogSubjectName?.takeIf { it.isNotBlank() }
+                ?: request.subjectNames.firstOrNull { it.isNotBlank() }
+                ?: request.subjectNameCN
 
         /**
          * 网盘里的视频 [file] 做成自己网盘数据源的资源 (当作第 [episode] 集). 资源 id 只看文件, 所以同一个文件不论怎么对上的都是同一条.
