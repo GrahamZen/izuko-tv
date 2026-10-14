@@ -100,6 +100,9 @@ import me.him188.ani.app.ui.lang.tv_settings_drive_qr_confirmed
 import me.him188.ani.app.ui.lang.tv_settings_drive_qr_expired
 import me.him188.ani.app.ui.lang.tv_settings_drive_qr_failed
 import me.him188.ani.app.ui.lang.tv_settings_drive_qr_success
+import me.him188.ani.app.ui.lang.tv_settings_drive_webdav_add
+import me.him188.ani.app.ui.lang.tv_settings_drive_webdav_add_description
+import me.him188.ani.app.ui.lang.tv_settings_drive_webdav_login_hint
 import me.him188.ani.app.ui.lang.tv_settings_drives
 import me.him188.ani.app.ui.lang.tv_settings_list_join
 import me.him188.ani.app.ui.lang.tv_settings_on_phone
@@ -267,22 +270,44 @@ internal fun TvSettingsItemsBuilder.mediaSourceItems() {
         },
     ) { sub -> listOf(TvSettingsEdit.Run { env -> env.deps.settings.mediaSourceSubscriptionGroupState.delete(sub) }) }
 
-    // 网盘: 没登录的那一行, 焦点停上去就要一张登录二维码画在说明栏 (手机上的网盘 App 扫), 离开就作废; 过期了按确定换一张
+    // 网盘: 没登录的那一行, 焦点停上去就要一张登录二维码画在说明栏 (手机上的网盘 App 扫), 离开就作废; 过期了按确定换一张.
+    // WebDAV 服务器 (NAS) 要填地址与账号密码: 添加与没登录时的二维码都打开手机控制台的数据源页
     header(Lang.tv_settings_drives)
+    action(
+        Lang.tv_settings_drive_webdav_add, Lang.tv_settings_drive_webdav_add_description,
+        value = { tvText(Lang.tv_settings_on_phone) },
+        qr = { consoleQr(it, "#sources") },
+    ) { emptyList() }
     entries(
         listOf(keys.drives, keys.driveQr),
         entries = { it[keys.drives].orEmpty() },
         key = { it.service.driveId },
         title = { tvText(it.service.protocol.displayName(Locale.getDefault().toLanguageTag())) },
         value = { _, drive ->
-            if (drive.account.isLoggedIn) tvText(drive.account.nickname.ifBlank { "✓" }) else tvText(Lang.tv_settings_drive_not_logged_in)
+            if (drive.account.isLoggedIn) {
+                tvText(drive.account.nickname.ifBlank { drive.account.username.ifBlank { "✓" } })
+            } else {
+                tvText(Lang.tv_settings_drive_not_logged_in)
+            }
         },
         description = { _, drive ->
-            tvText(if (drive.account.isLoggedIn) Lang.tv_settings_drive_logout_hint else Lang.tv_settings_drive_login_hint)
+            tvText(
+                when {
+                    drive.account.isLoggedIn -> Lang.tv_settings_drive_logout_hint
+                    drive.service.protocol.supportsPasswordLogin -> Lang.tv_settings_drive_webdav_login_hint
+                    else -> Lang.tv_settings_drive_login_hint
+                },
+            )
         },
-        qr = { v, drive -> if (drive.account.isLoggedIn) null else driveLoginQr(drive, v[keys.driveQr]?.get(drive.service.driveId)) },
+        qr = { v, drive ->
+            when {
+                drive.account.isLoggedIn -> null
+                drive.service.protocol.supportsPasswordLogin -> consoleQr(v, "#sources")
+                else -> driveLoginQr(drive, v[keys.driveQr]?.get(drive.service.driveId))
+            }
+        },
         whileFocused = { drive ->
-            if (drive.account.isLoggedIn) null else { env -> runDriveQrLogin(env, drive.service) }
+            if (drive.account.isLoggedIn || drive.service.protocol.supportsPasswordLogin) null else { env -> runDriveQrLogin(env, drive.service) }
         },
         confirm = { drive ->
             if (!drive.account.isLoggedIn) {
@@ -301,10 +326,10 @@ internal fun TvSettingsItemsBuilder.mediaSourceItems() {
             }
         },
     ) { drive ->
-        if (drive.account.isLoggedIn) {
-            listOf(TvSettingsEdit.Run { drive.service.logout() })
-        } else {
-            listOf(TvSettingsEdit.Run { env -> env.restartFocusTask() })
+        when {
+            drive.account.isLoggedIn -> listOf(TvSettingsEdit.Run { drive.service.logout() })
+            drive.service.protocol.supportsPasswordLogin -> emptyList()
+            else -> listOf(TvSettingsEdit.Run { env -> env.restartFocusTask() })
         }
     }
 }
