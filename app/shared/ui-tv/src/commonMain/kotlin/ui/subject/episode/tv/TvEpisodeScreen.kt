@@ -1729,12 +1729,18 @@ fun TvEpisodeScreenContent(
 
                 // 控制层 (L1 + 浮出面板 L2).
                 //
-                // 提示按钮在场时本层也留着: 它是胶囊行的一员, 位置由那一行的布局直接给出 (不是浮在
-                // 屏幕上按实测坐标跟随 —— 那样在图标行收起的逐帧动画里总慢一拍). 控制层自己的显隐
-                // 照旧, 只是"收起"变成本层内部把除按钮之外的一切淡到透明 (chromeVisible), 布局仍在,
-                // 于是屏幕上只剩那颗按钮, 且纹丝不动
+                // 第一次唤出之后就一直留在组合里: "收起"是本层内部把一切淡到透明 (chromeVisible), 淡完进入休眠
+                // (按钮不可聚焦、视觉状态复位, 见 TvPlayerControlsOverlay). 每次暂停、拖进度条都要唤出它,
+                // 从头组合整层在慢电视上要一两百毫秒.
+                // 提示按钮也靠这一点: 它是胶囊行的一员, 位置由那一行的布局直接给出 (不是浮在屏幕上按实测坐标跟随 ——
+                // 那样在图标行收起的逐帧动画里总慢一拍), 控制层收起时屏幕上只剩那颗按钮, 且纹丝不动
+                val controlsRetained = remember { mutableStateOf(false) }
+                LaunchedEffect(overlay) {
+                    snapshotFlow { overlay.layer }.first { it == TvPlayerLayer.CONTROLS }
+                    controlsRetained.value = true
+                }
                 AniAnimatedVisibility(
-                    visible = overlay.layer == TvPlayerLayer.CONTROLS || skipTipVisible,
+                    visible = overlay.layer == TvPlayerLayer.CONTROLS || skipTipVisible || controlsRetained.value,
                     modifier = Modifier.matchParentSize(),
                 ) {
                     TvPlayerControlsOverlay(
