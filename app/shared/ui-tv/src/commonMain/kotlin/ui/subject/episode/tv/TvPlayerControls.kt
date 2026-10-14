@@ -180,13 +180,11 @@ import me.him188.ani.app.videoplayer.ui.PlaybackSpeedControllerState
 import me.him188.ani.app.videoplayer.ui.VideoAspectRatioControllerState
 import me.him188.ani.app.videoplayer.ui.VideoSideSheetsController
 import me.him188.ani.app.videoplayer.ui.progress.MediaProgressFramePreviewState
-import me.him188.ani.app.videoplayer.ui.progress.MediaProgressSlider
 import me.him188.ani.app.videoplayer.ui.progress.MediaProgressSliderDefaults
 import me.him188.ani.app.videoplayer.ui.progress.PlayerControllerDefaults
 import me.him188.ani.app.videoplayer.ui.progress.PlayerControllerDefaults.SpeedSwitcher
 import me.him188.ani.app.videoplayer.ui.progress.PlayerControllerDefaults.VideoAspectRatioSelector
 import me.him188.ani.app.videoplayer.ui.progress.PlayerProgressSliderState
-import me.him188.ani.app.videoplayer.ui.progress.ProgressSliderPreviewStyle
 import me.him188.ani.app.videoplayer.ui.progress.SubtitleSwitcher
 import me.him188.ani.app.videoplayer.ui.top.SystemTime
 import org.jetbrains.compose.resources.stringResource
@@ -1160,9 +1158,7 @@ internal val TV_ICON_SIZE_VISUAL_COMPENSATED = 18.dp
  * 进度条行: 左当前时间 + 中间进度条 + 右总时长; 整行是一个焦点节点 (左右键由根路由处理),
  * 示焦即进度圆点本身 —— 未聚焦时圆点隐藏, 聚焦时出现 (无光环, 不给整行加底色).
  *
- * 拖拽预览态 (根路由的 scrubStep) 下圆点脱离播放位置, 上方浮出缩略图 + 目标时间:
- * 那个浮窗是 [MediaProgressSlider] 里 `showPreviewTimeTextOnThumb` 那条分支画的,
- * 它锚在圆点上, 本来就是给"程序驱动的 detached slider"准备的, TV 这边只要把开关打开.
+ * 拖拽预览态 (根路由的 scrubStep) 下圆点脱离播放位置, 上方浮出预览画面 + 目标时间 (见 [TvProgressTrack]).
  */
 @Composable
 private fun TvPlayerProgressRow(
@@ -1230,31 +1226,20 @@ private fun TvPlayerProgressRow(
                 .padding(horizontal = 12.dp)
                 .then(if (touchGeometry != null) Modifier.onPlaced { touchGeometry.track = it } else Modifier),
         ) {
-            // 不可见时不订阅: 缓存进度在下载期间刷得很勤, 而 by 解构是在本行的组合里读
-            val cacheProgressInfo = if (live) {
-                vm.cacheProgressInfoFlow.collectAsStateWithLifecycle(null)
-            } else {
-                null
-            }
-            MediaProgressSlider(
-                progressSliderState,
-                // 收 lambda: 读记在 slider 自己身上, 缓存进度每刷一次不带走整行
-                { cacheProgressInfo?.value },
+            // 只是显示; 快进退走遥控器左右键 (根路由), 触屏拖动由行上的 tvProgressTouchSeek 接
+            TvProgressTrack(
+                state = progressSliderState,
+                // 不可见时不订阅: 缓存进度在下载期间刷得很勤
+                cacheProgress = vm.cacheProgressInfoFlow.takeIf { live },
                 colors = MediaProgressSliderDefaults.colors(
                     trackProgressColor = Color.White,
-                    // 圆点即示焦: 未聚焦隐藏, 聚焦出现. 触屏设备上常显 —— 那是"这里能拖"的提示
-                    thumbColor = if (focused || touchInput) Color.White else Color.Transparent,
+                    thumbColor = Color.White,
                     trackBackgroundColor = Color.White.copy(alpha = 0.3f),
                 ),
-                // 展示用; 快进退走遥控器左右键 (根路由). 触屏拖动由行上的 tvProgressTouchSeek 接,
-                // 不启用滑块自己的拖动 (理由见那里)
-                enabled = false,
-                // 拖拽预览态时在圆点上方浮出"缩略图 + 目标时间"
-                showPreviewTimeTextOnThumb = true,
+                // 圆点即示焦: 未聚焦隐藏, 聚焦出现. 触屏设备上常显 —— 那是"这里能拖"的提示
+                thumbVisible = focused || touchInput,
+                live = live,
                 framePreview = framePreview,
-                // 只显示画面, 时间叠在画面底部居中 (Prime 风格): 卡片样式那一圈底色 + 帧下方
-                // 另占一行的文字, 在电视上比画面本身还显眼
-                previewStyle = ProgressSliderPreviewStyle.FrameOnly,
             )
         }
         TvPlayerTimeText(live) { progressSliderState.totalDurationMillis }
@@ -1894,9 +1879,8 @@ private class TvProgressTrackGeometry {
 /**
  * 触屏拖动进度条: 按下即进拖拽预览 (圆点跳到手指处, 上方浮出缩略图), 拖动跟手, 抬起落地; 点一下 = 跳到那里.
  *
- * 为什么不直接把 [MediaProgressSlider] 设成 enabled: Material3 Slider 启用后自带一个 focusable, 会在
- * "整行是一个焦点节点"的进度条行里再嵌一个焦点节点 —— 平板配遥控器时就是"可聚焦容器套可聚焦子节点"
- * 那个坑, 而且它还会接管方向键. 这里只接指针, 焦点结构与遥控器路由一个字不动.
+ * 进度条本体 ([TvProgressTrackView]) 不接焦点也不接触摸: 整行是一个焦点节点, 方向键归根路由; 这里只接指针,
+ * 不在行里再嵌一个焦点节点 (平板配遥控器时就是"可聚焦容器套可聚焦子节点"那个坑).
  *
  * 语义与遥控器的拖拽预览同一个态 ([PlayerProgressSliderState.previewPositionRatio]): 期间暂不暂停看同一个设置
  * ([pause] 由调用方按设置决定是否真的暂停, 见 TvScrubPlayback), 落地后恢复**按下之前**的播放状态 —— 不像遥控器
