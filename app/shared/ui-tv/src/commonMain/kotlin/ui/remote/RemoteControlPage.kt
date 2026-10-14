@@ -683,6 +683,17 @@ button { font: inherit; border: 0; cursor: pointer; }
 .cd-qr img { width: 200px; height: 200px; border-radius: 12px; }
 #src-drives a.primary { text-decoration: none; text-align: center; }
 #src-drives textarea { width: 100%; font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+/* WebDAV 卡片: 媒体文件夹一行一个 (路径 + 移除), 浏览服务器文件夹的面板 */
+.cd-lib { margin-top: 14px; }
+.cd-lib-h { font-size: 13px; color: var(--sub); }
+.cd-lib-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 6px; padding: 8px 12px; border-radius: 10px; background: var(--soft); font-size: 14px; word-break: break-all; }
+.cd-lib-row button { flex: none; height: 32px; padding: 0 12px; font-size: 13px; }
+.cd-browse { margin-top: 10px; padding: 10px; border: 1px solid var(--line2); border-radius: 12px; }
+.cd-path { font-size: 13px; color: var(--sub); word-break: break-all; margin-bottom: 8px; }
+.cd-folders { display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow-y: auto; }
+.cd-folder { text-align: left; padding: 10px 12px; border-radius: 10px; background: var(--soft); color: var(--fg); font-size: 14px; word-break: break-all; }
+.cd-edit { margin-top: 14px; }
+.cd-edit > summary { cursor: pointer; font-size: 14px; color: var(--sub); }
 .log-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 4px; }
 .log-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border-radius: 12px; background: var(--soft); text-decoration: none; }
 .log-name { min-width: 0; font-size: 15px; font-weight: 600; color: var(--p); word-break: break-all; }
@@ -5657,15 +5668,84 @@ private val CLOUD_DRIVE_SCRIPT = """
       return r;
     }).catch(fail);
   }
+  // 正在浏览的 WebDAV 文件夹 (按网盘): 服务端 api/drive/folders 的回复. 卡片重画后照它把面板画回去
+  var browsing = {};
+  function disabledNotice(d) {
+    return '<div class="now-status attention"><b>' + T('「{0}」数据源已停用', esc(d.sourceName)) + '</b><span>' + T('启用后播放时才会在网盘里找') + '</span></div>' +
+      '<div class="row"><button type="button" class="primary" data-cd="enable">' + T('启用') + '</button></div>';
+  }
+  // WebDAV 服务器 (NAS): 账号密码登录、媒体文件夹、改名字与地址、删除
+  function webdavCard(d) {
+    var name = esc(d.name), id = esc(d.id);
+    var h = '<div class="card set-card" data-drive="' + id + '" data-name="' + name + '"><div class="set-title">' +
+      window.srcIcon(d.sourceId, d.name) + name + '<small>' + esc(d.server) + '</small></div>';
+    if (!d.enabled) h += disabledNotice(d);
+    var ok = d.loggedIn && !d.expired;
+    if (ok) h += '<div class="now-status ready"><b>' + T('已连接') + '</b><span>' + esc(d.username) + '</span></div>';
+    else if (d.expired) h += '<div class="now-status error"><b>' + T('连不上服务器或账号密码不对') + '</b><span>' + T('确认服务器开着、地址与账号密码没变') + '</span></div>';
+    if (!ok) {
+      h += '<form class="cd-pass" data-drive="' + id + '">' +
+        '<label class="f"><span>' + T('用户名') + '</span><input type="text" name="username" autocomplete="off" spellcheck="false" value="' + esc(d.username) + '"></label>' +
+        '<label class="f"><span>' + T('密码') + '</span><input type="password" name="password" autocomplete="new-password"></label>' +
+        '<div class="row"><button type="submit" class="primary">' + T('登录') + '</button></div></form>';
+    }
+    h += '<div class="cd-lib"><div class="cd-lib-h">' + T('媒体文件夹') + '</div>' +
+      (d.library.length ? d.library.map(function (f) {
+        return '<div class="cd-lib-row"><span>' + esc(f.path) + '</span><button type="button" class="ghost" data-cd="lib-remove" data-fid="' + esc(f.id) + '">' + T('移除') + '</button></div>';
+      }).join('') : '<p class="hint">' + T('还没有选：播放时在整个服务器里按番名找。选上放动画的文件夹，找得更快也更准。') + '</p>') +
+      '<label class="f"><span>' + T('往下找几层') + '</span><select data-cd="depth">' + [1, 2, 3].map(function (n) {
+        return '<option value="' + n + '"' + (d.depth === n ? ' selected' : '') + '>' + n + '</option>';
+      }).join('') + '</select><em>' + T('1 层：媒体文件夹 / 番名；2 层：媒体文件夹 / 季度 / 番名') + '</em></label>' +
+      (ok ? '<div class="row"><button type="button" class="ghost" data-cd="browse">' + T('选择文件夹') + '</button></div>' : '') +
+      '<div class="cd-browse" data-drive="' + id + '" hidden></div></div>';
+    h += '<details class="cd-edit" data-drive="' + id + '"><summary>' + T('修改名字与地址') + '</summary><form class="cd-webdav-edit" data-drive="' + id + '">' +
+      '<label class="f"><span>' + T('名字') + '</span><input type="text" name="name" autocomplete="off" value="' + name + '"></label>' +
+      '<label class="f"><span>' + T('WebDAV 地址') + '</span><input type="text" name="url" inputmode="url" autocomplete="off" spellcheck="false" value="' + esc(d.server) + '"></label>' +
+      '<div class="row"><button type="submit" class="ghost">' + T('保存') + '</button></div></form></details>';
+    h += '<div class="row">' + (d.loggedIn ? '<button type="button" class="ghost" data-cd="logout">' + T('退出登录') + '</button>' : '') +
+      '<button type="button" class="ghost" data-cd="remove">' + T('删除这台服务器') + '</button></div>';
+    return h + '</div>';
+  }
+  function addCard() {
+    return '<form class="card set-card cd-webdav-add"><div class="set-title">' + T('添加 WebDAV（NAS）') + '<small>' + T('局域网里的 NAS，或者任何 WebDAV 服务') + '</small></div>' +
+      '<p class="hint">' + T('在 NAS 的系统设置里打开 WebDAV 服务，把地址填在这里。添加后，播放时会在服务器上按番名找视频，直接播放原文件。') + '</p>' +
+      '<label class="f"><span>' + T('名字') + '</span><input type="text" name="name" autocomplete="off" placeholder="' + T('例如：家里的 NAS') + '"></label>' +
+      '<label class="f"><span>' + T('WebDAV 地址') + '</span><input type="text" name="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="http://192.168.1.10:5005/"></label>' +
+      '<label class="f"><span>' + T('用户名') + '</span><input type="text" name="username" autocomplete="off" spellcheck="false"></label>' +
+      '<label class="f"><span>' + T('密码') + '</span><input type="password" name="password" autocomplete="new-password"></label>' +
+      '<div class="row"><button type="submit" class="primary">' + T('添加') + '</button></div></form>';
+  }
+  // 浏览服务器文件夹的面板: 当前路径、上一级、子文件夹 (点进去), 把当前文件夹加为媒体文件夹
+  function renderBrowse(drive) {
+    var panel = box.querySelector('.cd-browse[data-drive="' + CSS.escape(drive) + '"]');
+    var b = browsing[drive];
+    if (!panel) return;
+    if (!b) { panel.hidden = true; panel.innerHTML = ''; return; }
+    panel.hidden = false;
+    panel.innerHTML = '<div class="cd-path">' + esc(b.path) + '</div><div class="cd-folders">' +
+      (b.parent ? '<button type="button" class="cd-folder" data-cd="open" data-fid="' + esc(b.parent) + '">' + T('上一级') + '</button>' : '') +
+      b.folders.map(function (f) {
+        return '<button type="button" class="cd-folder" data-cd="open" data-fid="' + esc(f.id) + '">' + esc(f.name) + '</button>';
+      }).join('') +
+      (b.folders.length ? '' : '<p class="hint">' + T('这里没有子文件夹') + '</p>') + '</div>' +
+      '<div class="row">' + (b.chosen ? '<button type="button" class="primary" disabled>' + T('已是媒体文件夹') + '</button>'
+        : '<button type="button" class="primary" data-cd="lib-add" data-fid="' + esc(b.id) + '">' + T('加为媒体文件夹') + '</button>') +
+      '<button type="button" class="ghost" data-cd="browse-close">' + T('收起') + '</button></div>';
+  }
+  function openFolder(drive, fid) {
+    post('api/drive/folders', { drive: drive, fid: fid }).then(function (r) {
+      if (!r.ok) { toast(r.message); return; }
+      browsing[drive] = r;
+      renderBrowse(drive);
+    }).catch(fail);
+  }
   function card(d) {
+    if (d.type === 'webdav') return webdavCard(d);
     var q = d.qr || null, name = esc(d.name), id = esc(d.id), source = esc(d.sourceName);
     var app = d.appName ? esc(d.appName) : T('{0} App', name);
     var h = '<div class="card set-card" data-drive="' + id + '" data-name="' + name + '"><div class="set-title">' +
       window.srcIcon(d.sourceId, d.name) + name + '<small>' + T('在你自己的{0}里找番', name) + '</small></div>';
-    if (!d.enabled) {
-      h += '<div class="now-status attention"><b>' + T('「{0}」数据源已停用', source) + '</b><span>' + T('启用后播放时才会在网盘里找') + '</span></div>' +
-        '<div class="row"><button type="button" class="primary" data-cd="enable">' + T('启用') + '</button></div>';
-    }
+    if (!d.enabled) h += disabledNotice(d);
     if (d.loggedIn) {
       var who = [d.nickname, d.tier].filter(Boolean).join(' · ');
       h += d.expired
@@ -5713,24 +5793,32 @@ private val CLOUD_DRIVE_SCRIPT = """
   }
   function render(d) {
     if (!d || d.drives === undefined) return;
-    var h = d.drives.length ? d.drives.map(card).join('')
-      : '<div class="card set-card"><div class="set-title">' + T('网盘') + '</div><p class="hint">' +
-        T('网盘的接入方式来自订阅或导入的数据源。加上带网盘的数据源后，在这里登录。') + '</p></div>';
+    var h = (d.drives.some(function (x) { return x.type !== 'webdav'; }) ? '' : '<div class="card set-card"><div class="set-title">' + T('网盘') + '</div><p class="hint">' +
+        T('网盘的接入方式来自订阅或导入的数据源。加上带网盘的数据源后，在这里登录。') + '</p></div>') +
+      d.drives.map(card).join('') + addCard();
     if (h !== last) {
-      // 重画保住正在填的 Cookie 与焦点 (按网盘对回去)
-      var typed = {}, focused = null;
-      [].forEach.call(box.querySelectorAll('.cd-cookie'), function (f) {
-        var ta = f.elements.cookie, id = f.getAttribute('data-drive');
-        typed[id] = ta.value;
-        if (document.activeElement === ta) focused = id;
+      // 重画保住正在填的输入框、展开的「修改」与焦点 (按表单与网盘对回去)
+      var typed = {}, focused = null, opened = {};
+      function keyOf(el) {
+        var f = el.closest('form');
+        return f ? f.className + '|' + (f.getAttribute('data-drive') || '') + '|' + el.name : '';
+      }
+      [].forEach.call(box.querySelectorAll('form input, form textarea'), function (el) {
+        var k = keyOf(el);
+        if (!k) return;
+        typed[k] = el.value;
+        if (document.activeElement === el) focused = k;
       });
+      [].forEach.call(box.querySelectorAll('details.cd-edit[open]'), function (el) { opened[el.getAttribute('data-drive')] = true; });
       box.innerHTML = h;
       last = h;
-      [].forEach.call(box.querySelectorAll('.cd-cookie'), function (f) {
-        var ta = f.elements.cookie, id = f.getAttribute('data-drive');
-        if (typed[id]) ta.value = typed[id];
-        if (focused === id) ta.focus();
+      [].forEach.call(box.querySelectorAll('form input, form textarea'), function (el) {
+        var k = keyOf(el);
+        if (k && typed[k] !== undefined && typed[k] !== el.defaultValue) el.value = typed[k];
+        if (k && focused === k) el.focus();
       });
+      [].forEach.call(box.querySelectorAll('details.cd-edit'), function (el) { if (opened[el.getAttribute('data-drive')]) el.open = true; });
+      Object.keys(browsing).forEach(renderBrowse);
     }
     clearTimeout(timer);
     polling = d.drives.some(function (x) {
@@ -5763,15 +5851,57 @@ private val CLOUD_DRIVE_SCRIPT = """
     else if (a === 'logout') {
       var c = b.closest('.card');
       if (confirm(T('退出{0}登录？', c ? c.getAttribute('data-name') : ''))) act('api/drive/logout', { drive: drive });
+    } else if (a === 'browse' || a === 'open') openFolder(drive, b.getAttribute('data-fid') || '');
+    else if (a === 'browse-close') { delete browsing[drive]; renderBrowse(drive); }
+    else if (a === 'lib-add') act('api/drive/library', { drive: drive, action: 'add', fid: b.getAttribute('data-fid') }).then(function (r) {
+      if (r && r.ok) { delete browsing[drive]; renderBrowse(drive); }
+    });
+    else if (a === 'lib-remove') act('api/drive/library', { drive: drive, action: 'remove', fid: b.getAttribute('data-fid') });
+    else if (a === 'remove') {
+      var server = b.closest('.card');
+      if (confirm(T('删除{0}？账号密码与选的媒体文件夹一起删掉，服务器上的文件不受影响。', server ? server.getAttribute('data-name') : ''))) {
+        delete browsing[drive];
+        act('api/drive/remove', { drive: drive }, true);
+      }
     }
   });
   box.addEventListener('change', function (e) {
     if (e.target.getAttribute('data-cd') === 'transcode') {
       act('api/drive/transcode', { drive: driveOf(e.target), on: e.target.checked ? '1' : '0' });
+    } else if (e.target.getAttribute('data-cd') === 'depth') {
+      act('api/drive/library', { drive: driveOf(e.target), action: 'depth', depth: e.target.value });
     }
   });
   box.addEventListener('submit', function (e) {
     var form = e.target;
+    if (form.classList.contains('cd-pass')) {
+      e.preventDefault();
+      if (!form.elements.username.value.trim()) { toast(T('先填用户名')); return; }
+      act('api/drive/password', { drive: form.getAttribute('data-drive'), username: form.elements.username.value.trim(), password: form.elements.password.value }).then(function (r) {
+        if (r && r.ok) form.elements.password.value = '';
+      });
+      return;
+    }
+    if (form.classList.contains('cd-webdav-add')) {
+      e.preventDefault();
+      var v = { name: form.elements.name.value.trim(), url: form.elements.url.value.trim(), username: form.elements.username.value.trim(), password: form.elements.password.value };
+      if (!v.url) { toast(T('先填 WebDAV 地址')); return; }
+      if (!v.username) { toast(T('先填用户名')); return; }
+      var btn = form.querySelector('button[type=submit]');
+      btn.disabled = true;
+      act('api/drive/webdav/add', v, true).then(function (r) {
+        btn.disabled = false;
+        // 成功时卡片已经重画过 (填的值被保住了), 清空的是新画出来的表单
+        var added = box.querySelector('.cd-webdav-add');
+        if (r && r.ok && added) added.reset();
+      });
+      return;
+    }
+    if (form.classList.contains('cd-webdav-edit')) {
+      e.preventDefault();
+      act('api/drive/webdav/edit', { drive: form.getAttribute('data-drive'), name: form.elements.name.value.trim(), url: form.elements.url.value.trim() }, true);
+      return;
+    }
     if (!form.classList.contains('cd-cookie')) return;
     e.preventDefault();
     var cookie = form.elements.cookie.value.trim();
