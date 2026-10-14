@@ -691,6 +691,7 @@ private fun Item.subjectNameFor(query: MediaFetchRequest): String? {
                 .any { it.equals(seasonName, ignoreCase = true) }
         }
     return matchingSeasonName
+        ?: query.catalogSubjectName?.takeIf(String::isNotBlank)
         ?: query.subjectNames.firstOrNull()?.takeIf(String::isNotBlank)
         ?: query.subjectNameCN?.takeIf(String::isNotBlank)
         ?: SeriesName?.takeIf(String::isNotBlank)
