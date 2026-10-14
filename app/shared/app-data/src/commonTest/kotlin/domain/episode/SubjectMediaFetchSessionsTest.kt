@@ -24,6 +24,7 @@ import me.him188.ani.app.domain.media.fetch.CompletedConditions
 import me.him188.ani.app.domain.media.fetch.MediaFetchSession
 import me.him188.ani.app.domain.media.fetch.MediaSourceFetchResult
 import me.him188.ani.app.domain.media.fetch.MediaSourceFetchState
+import me.him188.ani.app.domain.mediasource.clouddrive.DriveVideoInfoRefresh
 import me.him188.ani.app.domain.mediasource.web.SelectorMediaSource
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.Media
@@ -135,6 +136,22 @@ class SubjectMediaFetchSessionsTest {
         assertEquals(listOf(0, 0, 0, 0), listOf(failed, abandoned, working, succeed).map { it.restarts })
         sessions.get(request(2))
         assertEquals(listOf(1, 1, 0, 0), listOf(failed, abandoned, working, succeed).map { it.restarts })
+        sessions.close()
+    }
+
+    @Test
+    fun `reusing restarts drive sources that read new video info`() = runTest {
+        val drive = FakeSource("webdav-test-drive", MediaSourceFetchState.Succeed(0))
+        val other = FakeSource("other", MediaSourceFetchState.Succeed(0))
+        val sessions = SubjectMediaFetchSessions(backgroundScope) { FakeSession(it, listOf(drive, other)) }
+
+        sessions.get(request(1))
+        DriveVideoInfoRefresh.markStale("webdav-test-drive")
+        sessions.get(request(2))
+        assertEquals(listOf(1, 0), listOf(drive, other).map { it.restarts })
+        // 重查过了, 再切集不再重查
+        sessions.get(request(1))
+        assertEquals(listOf(1, 0), listOf(drive, other).map { it.restarts })
         sessions.close()
     }
 

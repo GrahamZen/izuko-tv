@@ -33,6 +33,8 @@ import kotlin.math.roundToInt
  *
  * - mp4: 取开头 64KB, `Content-Range` 给出文件总大小, moov 给出时长、宽高与编码; moov 在文件尾时按 mdat 末尾再取一次.
  *   码率是精确的平均值.
+ * - mkv / webm: 取开头 64KB, Segment 的 Info 给出时长、Tracks 给出视频轨的宽高与编码; 它们不在开头这段时 (前面有大的附件等)
+ *   按 SeekHead 记的位置再取. 码率同 mp4.
  * - HLS 主列表: 读最高一档的 `BANDWIDTH` / `RESOLUTION` / `CODECS`, 缺什么再进那一档的媒体列表补.
  * - HLS 媒体列表: 带 `EXT-X-BYTERANGE` 的直接按长度算; 否则均匀抽 [SAMPLED_SEGMENTS] 个分片各取 1 字节,
  *   由 `Content-Range` 得分片大小. 分片之间码率起伏很大, 估出来只够分档.
@@ -42,7 +44,7 @@ import kotlin.math.roundToInt
  */
 object MediaStreamProbe {
     data class Result(
-        /** `mp4` 或 `hls`. */
+        /** `mp4`、`mkv` 或 `hls`. */
         val container: String,
         val width: Int? = null,
         val height: Int? = null,
@@ -57,6 +59,7 @@ object MediaStreamProbe {
     private const val SEGMENT_HEAD_BYTES = 32 * 1024
     private const val MAX_PLAYLIST_BYTES = 2 * 1024 * 1024
     private const val MAX_MOOV_BYTES = 8 * 1024 * 1024
+    private const val MAX_MKV_ELEMENT_BYTES = 1024 * 1024
     private const val SAMPLED_SEGMENTS = 8
 
     suspend fun probe(client: HttpClient, url: String, headers: Map<String, String> = emptyMap()): Result? {
@@ -68,6 +71,7 @@ object MediaStreamProbe {
             }
 
             Mp4.looksLikeMp4(head.bytes) -> probeMp4(client, url, headers, head)
+            Mkv.looksLikeMkv(head.bytes) -> probeMkv(client, url, headers, head)
             else -> null
         }
     }
@@ -101,6 +105,40 @@ object MediaStreamProbe {
             width = info?.width,
             height = info?.height,
             codec = info?.codec,
+            kbps = if (total != null && duration != null && duration > 0) (total * 8 / duration / 1000).roundToInt() else null,
+            durationSeconds = duration?.roundToInt(),
+        )
+    }
+
+    // endregion
+
+    // region mkv
+
+    private suspend fun probeMkv(client: HttpClient, url: String, headers: Map<String, String>, head: Fetched): Result? {
+        val parsed = Mkv.parseHead(head.bytes) ?: return null
+
+        /** SeekHead 记着 [id] 的位置时, 取那个元素 (整个), 返回字节与元素. */
+        suspend fun fetchElement(id: Long): Pair<ByteArray, Mkv.Element>? {
+            val offset = parsed.seeks[id]?.let { parsed.segmentStart + it } ?: return null
+            val first = client.fetch(url, headers, offset until offset + HEAD_BYTES, HEAD_BYTES) ?: return null
+            val element = Mkv.elementAt(first.bytes, 0)?.takeIf { it.id == id } ?: return null
+            val length = element.dataStart + (element.size ?: return null)
+            val bytes = when {
+                length <= first.bytes.size -> first.bytes
+                length <= MAX_MKV_ELEMENT_BYTES -> client.fetch(url, headers, offset until offset + length, length.toInt())?.bytes ?: return null
+                else -> return null
+            }
+            return bytes to element
+        }
+
+        val video = parsed.video ?: fetchElement(Mkv.TRACKS)?.let { (bytes, element) -> Mkv.parseTracks(bytes, element.dataStart, element.endIn(bytes)) }
+        val duration = parsed.durationSeconds ?: fetchElement(Mkv.INFO)?.let { (bytes, element) -> Mkv.parseInfo(bytes, element.dataStart, element.endIn(bytes)) }
+        val total = head.totalLength
+        return Result(
+            container = "mkv",
+            width = video?.width,
+            height = video?.height,
+            codec = video?.codec,
             kbps = if (total != null && duration != null && duration > 0) (total * 8 / duration / 1000).roundToInt() else null,
             durationSeconds = duration?.roundToInt(),
         )
@@ -401,6 +439,190 @@ internal object Mp4 {
         ((b[at].toLong() and 0xFF) shl 24) or ((b[at + 1].toLong() and 0xFF) shl 16) or ((b[at + 2].toLong() and 0xFF) shl 8) or (b[at + 3].toLong() and 0xFF)
 
     fun u64(b: ByteArray, at: Int): Long = (u32(b, at) shl 32) or u32(b, at + 4)
+}
+
+/** Matroska (mkv / webm) 的 EBML 元素. */
+internal object Mkv {
+    const val EBML = 0x1A45DFA3L
+    const val SEGMENT = 0x18538067L
+    const val SEEK_HEAD = 0x114D9B74L
+    const val SEEK = 0x4DBBL
+    const val SEEK_ID = 0x53ABL
+    const val SEEK_POSITION = 0x53ACL
+    const val INFO = 0x1549A966L
+    const val TIMESTAMP_SCALE = 0x2AD7B1L
+    const val DURATION = 0x4489L
+    const val TRACKS = 0x1654AE6BL
+    const val TRACK_ENTRY = 0xAEL
+    const val TRACK_TYPE = 0x83L
+    const val CODEC_ID = 0x86L
+    const val VIDEO = 0xE0L
+    const val PIXEL_WIDTH = 0xB0L
+    const val PIXEL_HEIGHT = 0xBAL
+    const val CLUSTER = 0x1F43B675L
+
+    private const val TRACK_TYPE_VIDEO = 1L
+    private const val DEFAULT_TIMESTAMP_SCALE = 1_000_000L
+
+    /** 内容从 [dataStart] 起, 长 [size] 字节; 长度未知 (边写边录的写法) 时 [size] 为 null. */
+    class Element(val id: Long, val dataStart: Int, val size: Long?) {
+        /** 内容在 [b] 里的结尾 (长度未知或超出 [b] 时截到 [b] 末尾). */
+        fun endIn(b: ByteArray): Int = size?.let { minOf(dataStart + it, b.size.toLong()).toInt() } ?: b.size
+    }
+
+    class Video(val width: Int?, val height: Int?, val codec: String?)
+
+    /**
+     * 开头这段里读到的: Segment 内容的起点 (SeekHead 的位置都相对它), 时长, 视频轨, SeekHead 记的各元素位置.
+     */
+    class Head(val segmentStart: Long, val durationSeconds: Double?, val video: Video?, val seeks: Map<Long, Long>)
+
+    fun looksLikeMkv(b: ByteArray): Boolean = elementAt(b, 0)?.id == EBML
+
+    fun elementAt(b: ByteArray, at: Int): Element? {
+        if (at >= b.size) return null
+        val idLength = vintLength(b[at].toInt() and 0xFF).takeIf { it <= 4 && at + it <= b.size } ?: return null
+        val id = uint(b, at, at + idLength)
+        val sizeAt = at + idLength
+        if (sizeAt >= b.size) return null
+        val first = b[sizeAt].toInt() and 0xFF
+        val sizeLength = vintLength(first).takeIf { it <= 8 && sizeAt + it <= b.size } ?: return null
+        var size = (first and (0xFF shr sizeLength)).toLong()
+        var allOnes = size == (0xFF shr sizeLength).toLong()
+        for (i in 1 until sizeLength) {
+            val v = b[sizeAt + i].toInt() and 0xFF
+            allOnes = allOnes && v == 0xFF
+            size = (size shl 8) or v.toLong()
+        }
+        return Element(id, sizeAt + sizeLength, if (allOnes) null else size)
+    }
+
+    /** 读开头这段: EBML 头之后的 Segment 里, 遇到 Cluster (正片数据) 或没读全的元素为止. 不是 mkv 时为 null. */
+    fun parseHead(b: ByteArray): Head? {
+        val ebml = elementAt(b, 0)?.takeIf { it.id == EBML } ?: return null
+        val segmentAt = ebml.dataStart + (ebml.size ?: return null)
+        if (segmentAt >= b.size) return null
+        val segment = elementAt(b, segmentAt.toInt())?.takeIf { it.id == SEGMENT } ?: return null
+        var duration: Double? = null
+        var video: Video? = null
+        val seeks = HashMap<Long, Long>()
+        var at = segment.dataStart
+        while (true) {
+            val element = elementAt(b, at) ?: break
+            if (element.id == CLUSTER) break
+            val end = element.dataStart + (element.size ?: break)
+            if (end > b.size) break
+            when (element.id) {
+                SEEK_HEAD -> seeks += parseSeekHead(b, element.dataStart, end.toInt())
+                INFO -> duration = parseInfo(b, element.dataStart, end.toInt())
+                TRACKS -> video = parseTracks(b, element.dataStart, end.toInt())
+            }
+            at = end.toInt()
+        }
+        return Head(segment.dataStart.toLong(), duration, video, seeks)
+    }
+
+    /** 元素 id → 相对 Segment 内容起点的位置. */
+    private fun parseSeekHead(b: ByteArray, start: Int, end: Int): Map<Long, Long> {
+        val seeks = HashMap<Long, Long>()
+        children(b, start, end) { seek, s, e ->
+            if (seek.id != SEEK) return@children
+            var id: Long? = null
+            var position: Long? = null
+            children(b, s, e) { child, cs, ce ->
+                when (child.id) {
+                    SEEK_ID -> id = uint(b, cs, ce)
+                    SEEK_POSITION -> position = uint(b, cs, ce)
+                }
+            }
+            val seekId = id
+            val seekPosition = position
+            if (seekId != null && seekPosition != null) seeks[seekId] = seekPosition
+        }
+        return seeks
+    }
+
+    /** Info 里的时长 (秒); 没写时长时为 null. */
+    fun parseInfo(b: ByteArray, start: Int, end: Int): Double? {
+        var scale = DEFAULT_TIMESTAMP_SCALE
+        var duration: Double? = null
+        children(b, start, end) { child, s, e ->
+            when (child.id) {
+                TIMESTAMP_SCALE -> scale = uint(b, s, e)
+                DURATION -> duration = float(b, s, e)
+            }
+        }
+        return duration?.let { it * scale / 1_000_000_000 }?.takeIf { it > 0 }
+    }
+
+    /** Tracks 里第一条视频轨. */
+    fun parseTracks(b: ByteArray, start: Int, end: Int): Video? {
+        var video: Video? = null
+        children(b, start, end) { entry, s, e ->
+            if (entry.id != TRACK_ENTRY || video != null) return@children
+            var type: Long? = null
+            var codec: String? = null
+            var width: Int? = null
+            var height: Int? = null
+            children(b, s, e) { child, cs, ce ->
+                when (child.id) {
+                    TRACK_TYPE -> type = uint(b, cs, ce)
+                    CODEC_ID -> codec = codecOf(b.decodeToString(cs, ce).trimEnd('\u0000'))
+                    VIDEO -> children(b, cs, ce) { v, vs, ve ->
+                        when (v.id) {
+                            PIXEL_WIDTH -> width = uint(b, vs, ve).toInt()
+                            PIXEL_HEIGHT -> height = uint(b, vs, ve).toInt()
+                        }
+                    }
+                }
+            }
+            if (type == TRACK_TYPE_VIDEO) video = Video(width, height, codec)
+        }
+        return video
+    }
+
+    private fun codecOf(codecId: String): String? = when {
+        codecId.startsWith("V_MPEG4/ISO/AVC") -> "H.264"
+        codecId.startsWith("V_MPEGH/ISO/HEVC") -> "HEVC"
+        codecId.startsWith("V_AV1") -> "AV1"
+        codecId.startsWith("V_VP9") -> "VP9"
+        else -> null
+    }
+
+    private inline fun children(b: ByteArray, start: Int, end: Int, block: (Element, Int, Int) -> Unit) {
+        var at = start
+        val limit = minOf(end, b.size)
+        while (at < limit) {
+            val element = elementAt(b, at) ?: return
+            val childEnd = element.size?.let { minOf(element.dataStart + it, limit.toLong()).toInt() } ?: limit
+            block(element, element.dataStart, childEnd)
+            if (element.size == null) return
+            at = childEnd
+        }
+    }
+
+    /** 首字节前导 0 的个数 + 1, 即变长整数的字节数 (首字节为 0 时返回 9, 当作无效). */
+    private fun vintLength(first: Int): Int {
+        var length = 1
+        var mask = 0x80
+        while (length <= 8 && first and mask == 0) {
+            mask = mask shr 1
+            length++
+        }
+        return length
+    }
+
+    private fun uint(b: ByteArray, start: Int, end: Int): Long {
+        var v = 0L
+        for (i in start until minOf(end, b.size, start + 8)) v = (v shl 8) or (b[i].toLong() and 0xFF)
+        return v
+    }
+
+    private fun float(b: ByteArray, start: Int, end: Int): Double? = when (end - start) {
+        4 -> Float.fromBits(uint(b, start, end).toInt()).toDouble()
+        8 -> Double.fromBits(uint(b, start, end))
+        else -> null
+    }
 }
 
 /** 从 TS 里视频的 SPS 解出宽高与编码 (H.264 / HEVC). */

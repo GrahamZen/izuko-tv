@@ -13,6 +13,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.Serializable
+import me.him188.ani.app.domain.episode.servesWholeSubject
 import me.him188.ani.app.domain.media.fetch.SelfLimitedMediaSource
 import me.him188.ani.app.domain.mediasource.codec.DefaultMediaSourceCodec
 import me.him188.ani.app.domain.mediasource.codec.DontForgetToRegisterCodec
@@ -133,8 +134,13 @@ class CloudDriveMediaSource(
         }
         if (subjectId != null) service.noteMatches(subjectId, remembered + auto)
         val seen = HashSet<String>()
-        val medias = picked.filter { seen.add(it.file.fid) }.map { MediaMatch(it.toMedia(subjectName), MatchKind.EXACT) } +
-                (remembered + auto).filter { seen.add(it.file.fid) }.map { MediaMatch(it.toMedia(subjectName), MatchKind.FUZZY) }
+        val exact = picked.filter { seen.add(it.file.fid) }
+        val fuzzy = (remembered + auto).filter { seen.add(it.file.fid) }
+        // WebDAV 列目录不给画面高度与时长, 读文件头补上: 等这一集的; 条目级会话 (见 servesWholeSubject) 切集不再查, 其余各集在后台读
+        val (current, others) = (exact + fuzzy).partition { it.episode == query.episodeSort || it.episode == query.episodeEp }
+        val probed = service.videoInfoOf(current.map { it.file }, others.takeIf { query.servesWholeSubject }.orEmpty().map { it.file })
+        val medias = exact.map { MediaMatch(it.toMedia(subjectName, probed), MatchKind.EXACT) } +
+                fuzzy.map { MediaMatch(it.toMedia(subjectName, probed), MatchKind.FUZZY) }
         return SinglePagePagedSource { medias.asFlow() }
     }
 
@@ -150,8 +156,9 @@ class CloudDriveMediaSource(
         return files + picks.folders.flatMap { service.matchPickedFolder(query, it) }
     }
 
-    private fun DriveSubjectMatcher.MatchedFile.toMedia(subjectName: String?): Media =
-        mediaFor(service, file, episode, subjectName, folders)
+    /** @param probed 读文件头补上了画面高度与时长的文件 (文件 id → 文件) */
+    private fun DriveSubjectMatcher.MatchedFile.toMedia(subjectName: String?, probed: Map<String, DriveFile>): Media =
+        mediaFor(service, probed[file.fid] ?: file, episode, subjectName, folders)
 
     class Factory(
         private val registry: CloudDriveRegistry,

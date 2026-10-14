@@ -22,10 +22,15 @@ import kotlinx.serialization.json.JsonObject
  * 模板变量写成 `{name}`. 各操作可用的变量见 [DriveApiConfig]; 所有请求都能用 `{host}` (见 [DriveHttpConfig.hosts])
  * 与 `{requestId}` (每次一个随机 UUID).
  *
+ * [type] 是 [WebDav.TYPE] 时是一台 WebDAV 服务器 (NAS 等): 不写请求模板, 引擎按 WebDAV 协议访问 [DriveHttpConfig.hosts] 的第一个地址
+ * (见 [WebDav]), 用账号密码登录.
+ *
  * @property id 稳定标识, 只用小写字母、数字与 `-`. 账号、记下的文件夹、添加的分享、资源都按它归属, 改了就是另一个网盘.
  * 自己网盘那个数据源的 id 是 `<id>-drive`.
  * @property name 显示名, 如设置里的分组标题、数据源名
  * @property names 其它语言的显示名 (语言标记 → 名字, 如 `en`、`zh-TW`), 没有对应语言时用 [name]
+ * @property type 接入方式: 空表示按 [api] 的请求模板访问网盘的接口; [WebDav.TYPE] 表示 WebDAV 服务器
+ * @property library 媒体文件夹: 网盘没有按名搜索时在这些文件夹的索引里找番 (见 [DriveLibraryConfig])
  */
 @Serializable
 data class CloudDriveProtocol(
@@ -49,6 +54,8 @@ data class CloudDriveProtocol(
      */
     val tiers: List<DriveTier> = emptyList(),
     val legacy: DriveLegacyData? = null,
+    val type: String = "",
+    val library: DriveLibraryConfig = DriveLibraryConfig(),
 ) {
     /** 按界面语言 [languageTag] (如 `zh-CN`、`en`) 取显示名. */
     fun displayName(languageTag: String): String = localized(names, languageTag) ?: name
@@ -59,8 +66,25 @@ data class CloudDriveProtocol(
         return tiers.firstOrNull { runCatching { Regex(it.match).containsMatchIn(tier) }.getOrDefault(false) }
     }
 
-    val supportsSearch: Boolean get() = api.search != null
+    val isWebDav: Boolean get() = type == WebDav.TYPE
+
+    /** 能列目录 (控制台「从网盘挑」、媒体文件夹的索引都靠它). */
+    val supportsListing: Boolean get() = isWebDav || api.listFolder != null
+
+    /**
+     * 按名找番靠媒体文件夹的索引 (见 [DriveLibraryIndex]): 没有服务端搜索, 又能列目录. WebDAV 没指定媒体文件夹时索引整个服务器;
+     * 走接口的网盘要指定了媒体文件夹才用.
+     */
+    val searchesLibrary: Boolean get() = api.search == null && (isWebDav || (api.listFolder != null && library.folders.isNotEmpty()))
+
+    val supportsSearch: Boolean get() = api.search != null || searchesLibrary
     val supportsTranscoded: Boolean get() = api.transcoded != null
+
+    /** 账号密码登录 (WebDAV); 否则是扫码或填 Cookie. */
+    val supportsPasswordLogin: Boolean get() = isWebDav
+
+    /** 网盘根目录的文件夹 id: WebDAV 是服务器地址的路径, 其余是 [rootFolderId]. */
+    val rootId: String get() = if (isWebDav) WebDav.rootIdOf(this) else rootFolderId
     val supportsShares: Boolean get() = api.shareToken != null && api.listShare != null && share.linkPattern.isNotBlank()
     val supportsSaving: Boolean get() = api.saveFromShare != null && api.task != null && api.createFolder != null
 
@@ -391,6 +415,21 @@ data class DriveShareConfig(
 data class DriveLinkTemplates(
     val file: String = "",
     val folder: String = "",
+)
+
+/**
+ * 媒体文件夹: 网盘没有按名搜索时 (见 [CloudDriveProtocol.searchesLibrary]) 把这些文件夹往下列 [depth] 层建索引, 在索引里按名字找番,
+ * 找到的文件夹照常往下展开、认季认集 (见 [DriveLibraryIndex]).
+ *
+ * @property folders 文件夹 id; 空表示网盘的根 (只有 WebDAV 这样用)
+ * @property depth 往下列几层: 1 层装得下「媒体文件夹/番名」, 2 层装得下「媒体文件夹/年份或季度/番名」
+ * @property refreshMinutes 索引用多久就重建 (新放进去的番最多晚这么久才找得到)
+ */
+@Serializable
+data class DriveLibraryConfig(
+    val folders: List<String> = emptyList(),
+    val depth: Int = 2,
+    val refreshMinutes: Int = 30,
 )
 
 /**
