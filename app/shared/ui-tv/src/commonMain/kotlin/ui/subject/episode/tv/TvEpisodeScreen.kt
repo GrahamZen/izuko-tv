@@ -282,26 +282,6 @@ fun TvEpisodeScreenContent(
     // Web 控制台的「截图」读这个播放器的画面与字幕 (见 TvPlayerScreenshot)
     RegisterTvPlayerScreenshot(vm.player)
 
-    // 暂停那一刻截一张画面留给动作面板的"正在播放"卡 (见 TvRetainedFrameStore).
-    // 挂在**暂停**上而不是"离开页面"上: 退出播放页必然伴随一次自动暂停 (保留会话的宿主按的),
-    // 那时组合还在、Surface 还活着; 而组合销毁之后就再也取不到画面了.
-    // 手动暂停也顺带更新一张 —— 语义同样是"停在哪儿".
-    //
-    // **必须直接收这条 StateFlow, 不能套 snapshotFlow**: `StateFlow.value` 不是快照状态,
-    // snapshotFlow 里读它不会登记任何依赖 —— 首次发射之后就再也不会重跑, 于是这条永远等不到
-    // 暂停 (2026-08-16 第一版就是这么写的, 表现为退出后缩略图始终是 TMDB 图).
-    LaunchedEffect(vm) {
-        vm.player.state
-            .map { it.playWhenReady }
-            .distinctUntilChanged()
-            .collect { playWhenReady ->
-                if (!playWhenReady) {
-                    val episodeId = vm.pageState.value?.episodePresentation?.episodeId ?: return@collect
-                    TvRetainedFrameStore.capture(vm.player, vm.episodeDetailsState.subjectId, episodeId)
-                }
-            }
-    }
-
     // 预载条目详情 (TMDB 剧照/时长/简介, 详情层内容, 角色/制作人员): 详情层与选集条的增量信息共用同一 loader
     // (有"已加载"守卫, 不会重复请求). 分集列表本身不等它, 见 EpisodeViewModel.episodeListUiStateFlow.
     // 条目 id 必须用 vm.subjectId, 原因见 ensureTvSubjectDetails
