@@ -36,6 +36,7 @@ data class CloudDriveAccounts(
  *
  * [cookie] 是登录后的整段 Cookie 请求头, 由扫码登录或手填写入, 接口响应里轮换的登录 Cookie 也回写到这里.
  * 与 [PikPakConfig] 的密码一样经 [ObscuredStringSerializer] 混淆后落盘, 只防随手查看, 不是加密.
+ * 用账号密码登录的 (WebDAV 服务器) 不用 Cookie, 存 [username] 与 [password] (同样混淆), 请求时带 Basic 认证头.
  *
  * [nickname] 与 [tier] 是登录时与每次校验账号时顺手记下的展示信息, 不参与鉴权.
  */
@@ -43,6 +44,9 @@ data class CloudDriveAccounts(
 data class CloudDriveAccount(
     @Serializable(with = ObscuredStringSerializer::class)
     val cookie: String = "",
+    val username: String = "",
+    @Serializable(with = ObscuredStringSerializer::class)
+    val password: String = "",
     val nickname: String = "",
     /** 账号档位 (如会员类型), 由协议的 `tier` 操作给出. */
     @SerialName("memberType")
@@ -72,13 +76,18 @@ data class CloudDriveAccount(
      * 有要的那一集就不再去站点搜索、也不再打开别的分享. 按记下的先后保留最近的若干个.
      */
     val rememberedShares: Map<String, DriveRememberedShare> = emptyMap(),
+    /**
+     * 列目录不给视频信息的网盘 (WebDAV) 读文件头得到的画面高度与时长 (文件 id 的散列 → 信息, 见 `DriveVideoInfoProbe.keyOf`).
+     * 按记下的先后保留最近的若干个.
+     */
+    val videoInfo: Map<String, DriveVideoInfo> = emptyMap(),
 ) {
-    val isLoggedIn: Boolean get() = cookie.isNotBlank()
+    val isLoggedIn: Boolean get() = cookie.isNotBlank() || username.isNotBlank()
 
     override fun toString(): String {
-        return "CloudDriveAccount(cookie.hash=${if (cookie.isNotEmpty()) cookie.hashCode() else ""}, " +
+        return "CloudDriveAccount(cookie.hash=${if (cookie.isNotEmpty()) cookie.hashCode() else ""}, username=$username, " +
                 "nickname=$nickname, tier=$tier, playbackMode=$playbackMode, shareSaveFolderId=$shareSaveFolderId, " +
-                "subjectPicks=${subjectPicks.size}, pickedSubtitles=${pickedSubtitles.size}, rememberedFolders=${rememberedFolders.size}, rememberedShares=${rememberedShares.size})"
+                "subjectPicks=${subjectPicks.size}, pickedSubtitles=${pickedSubtitles.size}, rememberedFolders=${rememberedFolders.size}, rememberedShares=${rememberedShares.size}, videoInfo=${videoInfo.size})"
     }
 
     companion object {
@@ -110,6 +119,16 @@ data class DrivePickedFolder(val fid: String, val name: String)
  */
 @Serializable
 data class DriveRememberedFolder(val fid: String, val path: List<String>)
+
+/**
+ * 读视频文件头得到的信息, 见 [CloudDriveAccount.videoInfo].
+ *
+ * @property size 读的时候文件的大小; 文件换了 (大小变了) 就重读
+ * @property height 按 16:9 折算的画面高度 (宽银幕的片子按宽度折算, 3840×1608 记作 2160), 读不出为 0
+ * @property durationSeconds 时长, 读不出为 0
+ */
+@Serializable
+data class DriveVideoInfo(val size: Long, val height: Int = 0, val durationSeconds: Int = 0)
 
 /**
  * 「分享搜索」自动记下的分享文件夹, 见 [CloudDriveAccount.rememberedShares].

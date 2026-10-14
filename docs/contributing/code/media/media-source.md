@@ -50,6 +50,15 @@ interface MediaSource {
 协议的文件字段写了视频时长（`DriveFileFields.duration`）时，生成资源时把平均码率（文件大小 ÷ 时长）按资源 id 记进
 `DriveVideoBitrates`，选源面板与 Web 控制台的候选列表在大小后面显示；`Media` 本身没有码率字段，所以另记一份，只在内存里。
 
+协议的 `type` 是 `webdav` 时是一台 WebDAV 服务器（NAS 等，见 `WebDav`）：不写请求模板，`WebDavClient` 用 `PROPFIND` 列目录，
+直链就是文件在服务器上的地址；账号密码登录（存在账号的 `username` / `password`），列目录、播放、取字幕都带 Basic 认证头。
+这类网盘由用户在 Web 控制台添加（`WebDavSources`，默认层级 T0），协议里只有名字、地址与媒体文件夹，账号密码不随数据源导出。
+没有服务端搜索时（WebDAV，或指定了媒体文件夹的接口网盘，见 `searchesLibrary`），`cloud-drive` 在媒体文件夹的索引
+（`DriveLibraryIndex`：往下列 `library.depth` 层，用 `refreshMinutes` 后后台重建）里按名字找番，之后与搜索结果一样往下展开、认季认集。
+WebDAV 列目录不给画面高度与时长：`cloud-drive` 给出候选前读候选视频的文件头（`DriveVideoInfoProbe`，mkv / mp4，经 `MediaStreamProbe`）
+补上，才标得对分辨率、显示得出码率；结果按文件记在账号里只读一次。只等当前这一集的（最多 1 秒），其余各集在后台读；
+条目级查询切集不再查，后来才读到的由 `DriveVideoInfoRefresh` 记下，切集复用查询时让这个源重查一次。
+
 分享搜索用去掉季号与副标题的主标题搜站点，整个系列的分享都会搜出来，每次只打开前 `maxShares` 个。
 打开前按站点剧名写的季排先后（同一档保持站点的顺序）：写了本季的在前，没写季的居中，只写了别的季的最后。
 只排序不去掉，因为写着「第二季」的分享里常连第一季一起放。
