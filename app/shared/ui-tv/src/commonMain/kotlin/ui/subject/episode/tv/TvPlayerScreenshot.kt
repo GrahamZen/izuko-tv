@@ -55,7 +55,8 @@ internal object TvPlayerScreenshots {
     /**
      * 截此刻屏幕上的一帧. 播放页不在, 或画面不在屏幕上 (电视休眠、切到了别的应用) 时为 null.
      *
-     * 只读屏幕上已有的东西 (视频 Surface 上解好的那一帧、字幕视图、弹幕层此刻的内容), 不另起解码器 —— 理由同 [captureTvPlayerFrame].
+     * 只读屏幕上已有的东西 (视频 Surface 上解好的那一帧、字幕视图、弹幕层此刻的内容), 不另起解码器: 后台会话正握着硬解实例,
+     * 第二路解码器在只有一路硬解的盒子上会把它挤掉 (issue #10).
      */
     suspend fun capture(): TvPlayerShot? = withContext(Dispatchers.Main.immediate) {
         val player = player ?: return@withContext null
