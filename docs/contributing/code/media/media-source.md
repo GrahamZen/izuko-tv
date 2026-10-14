@@ -48,6 +48,8 @@ interface MediaSource {
 - `cloud-drive-share-search`：从固定的分享合集（按文件夹名对番名）或站点的搜索接口里找别人的分享，播放时转存到自己的网盘。
 
 资源的 `download` 是占位地址（模板也在协议里），播放时由 `CloudDriveMediaResolver` 认出属于哪个网盘再取直链。
+资源的条目名取 `MediaFetchRequest.catalogSubjectName`（条目服务上的名字，用户改搜索名时不变，见 `CloudDriveMediaSource.subjectNameOf`）：
+文件已经按条目对上了，而选择器判条目名不匹配只认条目服务的名字。
 协议的文件字段写了视频时长（`DriveFileFields.duration`）时，生成资源时把平均码率（文件大小 ÷ 时长）按资源 id 记进
 `DriveVideoBitrates`，选源面板与 Web 控制台的候选列表在大小后面显示；`Media` 本身没有码率字段，所以另记一份，只在内存里。
 

@@ -463,6 +463,45 @@ class CloudDriveServiceTest {
     }
 
     @Test
+    fun `media keeps the catalog subject name when the search names are edited`() = runTest {
+        val (service, _) = service { request ->
+            when (request.url.encodedPath) {
+                "/api/files/search" -> reply(
+                    if (request.url.parameters["q"] == "Smoking Behind the Supermarket with You") {
+                        listJson(dir("d1", "Smoking.Behind.the.Supermarket.With.You.S01", parent = TestDrive.ROOT))
+                    } else {
+                        listJson()
+                    },
+                )
+
+                "/api/files/list" -> reply(
+                    listJson(
+                        DriveFile(
+                            "f3",
+                            fileName = "Smoking.Behind.the.Supermarket.With.You.S01E03.mp4",
+                            parentFid = "d1",
+                            isVideo = true,
+                        ),
+                    ),
+                )
+
+                else -> error("unexpected ${request.url}")
+            }
+        }
+        val request = MediaFetchRequest(
+            subjectId = "571784",
+            episodeId = "1",
+            subjectNameCN = "超市后门吸烟",
+            subjectNames = listOf("超市后门吸烟", "Smoking Behind the Supermarket with You"),
+            episodeSort = EpisodeSort(3),
+            episodeName = "",
+            catalogSubjectName = "在超市后门吸烟的二人",
+        )
+        val media = CloudDriveMediaSource(service, CloudDriveArguments(protocol = protocol)).fetch(request).results.toList().single().media
+        assertEquals("在超市后门吸烟的二人", media.properties.subjectName)
+    }
+
+    @Test
     fun `media source gives nothing when not logged in`() = runTest {
         var sent = 0
         val (service, _) = service(CloudDriveAccount.Default) {
