@@ -261,6 +261,15 @@ class PlayerSession(
         closeHlsPlaybackProxySession()
     }
 
+    /**
+     * 换集时停下上一集: [stopPlayback] 之外把加载状态放回 [VideoLoadingState.Initial]. 不放回的话上一集的「已装好」或「加载失败」
+     * 一直留着, 下一集要是一个资源都没选中 (都没找到、等着手动选), 播放画面既不提示正在查找也不提示没找到, 只剩空白.
+     */
+    suspend fun stopForNextEpisode() {
+        stopPlayback()
+        _videoLoadingStateFlow.value = VideoLoadingState.Initial
+    }
+
     fun close() {
         closeHlsPlaybackProxySession()
         player.close()
