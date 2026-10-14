@@ -9,10 +9,10 @@
 
 package me.him188.ani.app.domain.player
 
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.getAndUpdate
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeMark
 import kotlin.time.TimeSource
@@ -26,6 +26,9 @@ import kotlin.time.TimeSource
  * 这里记下换输出的时刻 ([markOutputSwitched]), 据此认出这种错 ([isFault]): 换过输出之后 [SWITCH_WINDOW] 内的解码错误,
  * 以及认出一次之后 [FAULT_WINDOW] 内的解码错误 (解码器还坏着). 认出之后由 `SeekPreviewDecoderFaultExtension` 原地重载,
  * 并把拖动预览改成直接画在全屏上 (不再换输出, 见 [me.him188.ani.app.data.models.preference.SeekPreviewDisplay]).
+ *
+ * 有的设备不报错, 而是换到小画面一两秒后整个进程原生崩溃 (SIGABRT, 厂商解码或显卡驱动在本进程里 abort), 这里什么也收不到.
+ * 那种由安卓端在下次启动时认出 (video-player 的 `SeekPreviewCrashMarker`), 记到 [recordCrashInPreviousRun], 打开播放页时同样改成全屏.
  */
 object SeekPreviewDecoderFault {
     /** 换输出之后这么久之内的解码错误, 算作换输出弄坏的. */
@@ -38,10 +41,23 @@ object SeekPreviewDecoderFault {
     private val lastSwitch = MutableStateFlow<TimeMark?>(null)
     private val faultStarted = MutableStateFlow<TimeMark?>(null)
 
-    private val _switchedToFullScreen = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    private val crashedInPreviousRun = MutableStateFlow(false)
+    private val _notice = MutableStateFlow<Reason?>(null)
 
-    /** 认出这种错之后拖动预览自动改成画在全屏上了: 页面据此提示一次. */
-    val switchedToFullScreen: SharedFlow<Unit> = _switchedToFullScreen.asSharedFlow()
+    /** 拖动预览为什么自动改成了画在全屏上. */
+    enum class Reason {
+        /** 换输出之后解码出错 ([isFault]) */
+        DECODER_ERROR,
+
+        /** 上一次运行在小画面预览时原生崩溃 ([recordCrashInPreviousRun]) */
+        CRASHED,
+    }
+
+    /**
+     * 拖动预览自动改成画在全屏上了、还没提示的原因: 页面提示一次后 [consumeNotice].
+     * 上次闪退的那种在打开播放页时就改了, 那时提示的界面可能还没出来, 所以留着等它来取.
+     */
+    val notice: StateFlow<Reason?> = _notice.asStateFlow()
 
     /** 拖动预览刚换过主播放器的视频输出 (换到小画面上、换回全屏、或小画面没了). */
     fun markOutputSwitched() {
@@ -65,13 +81,28 @@ object SeekPreviewDecoderFault {
         return true
     }
 
-    internal fun notifySwitchedToFullScreen() {
-        _switchedToFullScreen.tryEmit(Unit)
+    internal fun notifySwitchedToFullScreen(reason: Reason) {
+        _notice.value = reason
     }
+
+    /** 页面已经提示过 [notice]. */
+    fun consumeNotice() {
+        _notice.value = null
+    }
+
+    /** 上一次运行在小画面预览时原生崩溃了 (安卓端启动时认出). 打开播放页时由 `SeekPreviewDecoderFaultExtension` 处理, 见 [consumeCrashInPreviousRun]. */
+    fun recordCrashInPreviousRun() {
+        crashedInPreviousRun.value = true
+    }
+
+    /** 取走 [recordCrashInPreviousRun] 记下的那次: 只处理一次. */
+    internal fun consumeCrashInPreviousRun(): Boolean = crashedInPreviousRun.getAndUpdate { false }
 
     internal fun reset() {
         lastSwitch.value = null
         faultStarted.value = null
+        crashedInPreviousRun.value = false
+        _notice.value = null
     }
 
     private fun TimeMark?.isWithin(millis: Long): Boolean = this != null && elapsedNow().inWholeMilliseconds <= millis
