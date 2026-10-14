@@ -195,9 +195,9 @@ class TvPlayerOverlayState(
     var showPlayerStats: Boolean by mutableStateOf(false)
 
     /**
-     * 控制层版式的读取代数: 控制层每次出现只读一次版式 (见 TvPlayerControlsOverlay), 这个数一变就重读.
-     * 只在「自定义播放器按钮」窗口关掉、版式改过的时候推一次 ([reloadChromeLayout]). 开窗口前控制层已经收起, 多半早退出了组合,
-     * 唤出时本来就重读; 要靠它的是托着 OP/ED 提示按钮留在场上的那一层 —— 那时它是透明的, 没有持焦的按钮会随重排消失.
+     * 控制层版式的读取代数: 控制层只在这个数变的时候读一次版式 (见 TvPlayerControlsOverlay), 在场期间版式定死.
+     * 两处会推: 控制层收起、淡完之后 ([onControlsHidden], 那时没有持焦的按钮会随重排消失, 设置里改的版式下次唤出就生效);
+     * 「自定义播放器按钮」窗口关掉、版式改过时 ([reloadChromeLayout], 开窗口前控制层已经收起).
      */
     var chromeLayoutGeneration: Int by mutableIntStateOf(0)
         private set
@@ -528,6 +528,19 @@ class TvPlayerOverlayState(
         upNextCountdown = false
         markInteraction()
         requestFocus(TvPlayerFocusTarget.BOTTOM_ROW)
+    }
+
+    /**
+     * 控制层收起、淡到全透明之后调 (见 TvPlayerControlsOverlay 的休眠): 控制层不拆掉, 留在组合里等下次唤出,
+     * 上次留下的视觉状态 (浮出的面板、展开的选集条、倒计时态) 在这时复位 —— 谁也看不见, 复位带出的动画也就看不见;
+     * 版式顺带跟上设置 (见 [chromeLayoutGeneration]).
+     */
+    fun onControlsHidden() {
+        episodeStripExpanded = false
+        upNextCountdown = false
+        activePanel = null
+        focusRegion = TvPlayerFocusRegion.NONE
+        chromeLayoutGeneration++
     }
 
     /** 隐藏一切组件回纯视频态, 焦点收回根节点. 视觉状态不复位 (见 [showControls]). */

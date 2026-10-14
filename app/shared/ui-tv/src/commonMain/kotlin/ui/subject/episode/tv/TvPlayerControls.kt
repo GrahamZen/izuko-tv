@@ -79,6 +79,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -333,6 +334,15 @@ internal fun TvPlayerControlsOverlay(
         compositingStrategy = CompositingStrategy.ModulateAlpha
     }
     val chromeLayered = chromeGate.graphicsLayer { alpha = chromeAlpha.value }
+    // **休眠**: 收起之后淡到全透明. 本层收起时不退出组合 (见 TvEpisodeScreen), 留在场上等下次唤出 —— 每次暂停、拖进度条都要唤出它,
+    // 从头组合整层在慢电视上要一两百毫秒. 休眠时按钮不可聚焦 (纯视频态的方向键归根路由, 别让空间搜索或焦点兜底落到看不见的按钮上),
+    // 上次留下的视觉状态在这时复位 (见下面那个 effect 与 TvPlayerOverlayState.onControlsHidden).
+    // 淡出途中不算: 那时焦点可能还在按钮上, 持焦的节点当场变成不可聚焦会把整棵树的焦点清掉
+    val faded by remember { derivedStateOf { chromeAlpha.value == 0f } }
+    val dormant = !chromeVisible && faded
+    // 读在焦点属性的 lambda 里: 翻转时只更新焦点属性, 不重组各行
+    val dormantState = rememberUpdatedState(dormant)
+    val trailingVisibleState = rememberUpdatedState(trailingVisible)
     Box(modifier) {
         // 选集条展开态不整屏压暗: 内容全部贴底, 上下两条渐变 scrim 已足够托住可读性,
         // 画面中部保持通透
@@ -401,17 +411,16 @@ internal fun TvPlayerControlsOverlay(
         // 停靠留边由轮播内部 contentPadding 提供).
         // 焦点在胶囊行/浮出面板时只露到进度条为止 (Prime 行为): 进度条以下的
         // 图标行暂隐, 焦点回到进度条/图标行再出现.
-        // **本次控制层出现期间版式定死** —— 无 key 的 remember, 只在本层重新组合时取一次.
+        // **本次控制层出现期间版式定死** —— 只在 chromeLayoutGeneration 变时重读.
         //
         // 配置是 Compose State (`produceState`), 不这么攥着的话, 用户在别处换一套版式会让正在场上的
         // 这一层当场重排, 而**焦点脚下的那个节点可能就此消失** (被新版式藏掉、或换到了另一行):
         // Compose 在节点移除时清掉焦点且不交还祖先 = 控制层还在但方向键全失效; 顺带 focusRegion
         // 停在旧值 (它只在获焦时上报), 自动隐藏看门狗与 hideBelowProgress 都读它, 后患不止一处.
         //
-        // 收起时本层整个退出组合 (外层 AniAnimatedVisibility), 所以下次唤出来就是新版式 —— 换版式
-        // 永远发生在"屏幕上没有可聚焦按钮"的那一段, 代价只是控制层开着时换的那一次要等它收一下.
-        // 播放中改版式的那个入口 (按钮上长按 → 「自定义播放器按钮」窗口) 也守这道闸: 开窗口前先收起控制层, 关掉后再唤出.
-        // 收起时本层若为托着 OP/ED 提示按钮留在场上 (透明, 没有持焦的按钮), 推一下 chromeLayoutGeneration 让它重读
+        // 收起淡完后 (休眠) 推一次代数, 所以下次唤出来就是新版式 —— 换版式永远发生在"屏幕上没有可聚焦按钮"的那一段,
+        // 代价只是控制层开着时换的那一次要等它收一下. 播放中改版式的那个入口 (按钮上长按 → 「自定义播放器按钮」窗口)
+        // 也守这道闸: 开窗口前先收起控制层, 关掉后再唤出 (那时也推一次)
         val chromeLayout = remember(overlay.chromeLayoutGeneration) { vm.videoScaffoldConfig.tvPlayerChrome.active }
         // 两行此刻各自摆着什么 (版式 + 运行时筛选). 要在行组合之前知道:
         // 进度条上/下键的落点、以及"整行空了就别摆出来"都依赖它
@@ -427,7 +436,9 @@ internal fun TvPlayerControlsOverlay(
                     TvPlayerChromeItem.PILL_COMMENTS -> { _: TvPlayerChromeItem -> commentSortMenu.value = true }
                     else -> onEditChromeItem
                 }
-                Modifier.tvPlayerChromeItem(item, playerFocus, onLongPress) { !overlay.danmakuInputExpanded }
+                Modifier
+                    .focusProperties { canFocus = !dormantState.value }
+                    .tvPlayerChromeItem(item, playerFocus, onLongPress) { !overlay.danmakuInputExpanded }
             }
         }
         // derivedStateOf: focusRegion 每次方向键都在变, 直接读会让整个覆盖层
@@ -449,7 +460,8 @@ internal fun TvPlayerControlsOverlay(
         // 最后一项: 用户可以把图标行整行藏掉 (只剩分组竖线也算空) —— 那时这一行连同它的
         // 间距都不该占位, 进度条的下键也没有落点可指
         val bottomRowHasFocusable = bottomRowItems.any { !it.isSeparator }
-        val showBelowProgress = !hideBelowProgress && chromeVisible && bottomRowHasFocusable
+        // 收起后没有提示按钮要托时图标行也留着 (透明、不可聚焦): 下次唤出不用重新组合这一行
+        val showBelowProgress = !hideBelowProgress && (chromeVisible || !trailingVisible) && bottomRowHasFocusable
         // 上报给根路由: 整行被藏光时"再按下键 = 选集条"的起跳点要让给进度条 (见 bottomRowPresent).
         // 报的是版式判据而不是 showBelowProgress —— 后者含临时淡出, 那不算不在场
         SideEffect { overlay.bottomRowPresent = bottomRowHasFocusable }
@@ -483,6 +495,16 @@ internal fun TvPlayerControlsOverlay(
         // 人物预览是从那个弹窗点开的 (弹窗先关、预览再开), 关掉之后焦点要还给**胶囊**而不是面板条目.
         // 从面板条目点开的那条路不置这个标志, 仍旧还回条目
         var peoplePreviewFrom by remember { mutableStateOf<TvPlayerPanel?>(null) }
+        // 进入休眠: 复位视觉状态, 关掉跟着本层的菜单与弹窗. 纯视频态下再把焦点收回根节点一次 (收起时 hideAll 已经要过,
+        // 这里是兜底: 万一焦点还在某颗按钮上, 它刚变成不可聚焦, 焦点被清掉了). 托着提示按钮时不要: 焦点归那颗按钮
+        LaunchedEffect(dormant) {
+            if (!dormant) return@LaunchedEffect
+            if (overlay.layer == TvPlayerLayer.HIDDEN && !trailingVisibleState.value) overlay.requestRootFocus()
+            overlay.onControlsHidden()
+            commentSortMenu.value = false
+            peopleViewAll = null
+            peoplePreviewFrom = null
+        }
         // 进度条按下键的显式落点: 图标行最左按钮 (全宽进度条交给空间搜索会落到中间按钮)
         val bottomRowFirstFocus = remember { FocusRequester() }
         // 发弹幕弹出 IME 时**只抬这一列, 遮罩与画面都不动**:
@@ -617,6 +639,7 @@ internal fun TvPlayerControlsOverlay(
                     // 摘掉的话那颗提示按钮会当场往下掉一截 (下面的图标行同理)
                     TvPlayerProgressRow(
                         live = chromeVisible,
+                        focusable = { !dormantState.value },
                         vm = vm,
                         progressSliderState = progressSliderState,
                         framePreview = framePreview,
@@ -1147,6 +1170,8 @@ private fun TvPlayerProgressRow(
      * 期间每次位置刷新都会重组一遍整行 —— 而一个像素都看不见.
      */
     live: Boolean,
+    /** 此刻能不能聚焦: 控制层休眠 (收起淡完、仍留在组合里) 时不能. 读在焦点属性里, 翻转不重组本行. */
+    focusable: () -> Boolean,
     modifier: Modifier = Modifier,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -1172,6 +1197,7 @@ private fun TvPlayerProgressRow(
         modifier
             .fillMaxWidth()
             .focusProperties {
+                canFocus = focusable()
                 if (downFocus != null) down = downFocus
                 if (upFocus != null) up = upFocus
             }
