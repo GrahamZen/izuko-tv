@@ -789,6 +789,9 @@
     <string name="tv_settings_drive_logout_hint">Press OK to sign out of this account. Sign in from the Web Console on your phone (QR code or cookie).</string>
     <string name="tv_settings_drive_login_hint">Scan the code on the right with the drive’s app on your phone to sign in. You can also paste a cookie in the Web Console.</string>
     <string name="tv_settings_drive_logout_confirm">Sign out of the %1$s account “%2$s”? You will need to sign in again from your phone.</string>
+    <string name="tv_settings_drive_webdav_add">Add WebDAV (NAS)</string>
+    <string name="tv_settings_drive_webdav_add_description">Use a NAS on your network, or any WebDAV service, as a source: turn on WebDAV in the NAS settings, then scan the code on the right and enter its address, username and password in the Web Console. Videos play from the original files.</string>
+    <string name="tv_settings_drive_webdav_login_hint">Scan the code on the right and enter the username and password in the Web Console.</string>
     <string name="tv_settings_proxy_mode">Proxy</string>
     <string name="tv_settings_proxy_mode_description">The proxy address, username and password need typing: scan the code on the right and enter them in the Web Console (Settings → Network). “Custom” appears here once an address is set.</string>
     <string name="tv_settings_proxy_custom_address">Custom proxy: %1$s</string>

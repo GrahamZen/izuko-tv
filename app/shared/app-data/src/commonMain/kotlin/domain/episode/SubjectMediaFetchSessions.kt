@@ -18,6 +18,7 @@ import kotlinx.coroutines.sync.withLock
 import me.him188.ani.app.domain.media.fetch.MediaFetchSession
 import me.him188.ani.app.domain.media.fetch.MediaSourceFetchState
 import me.him188.ani.app.domain.media.fetch.isFailedOrAbandoned
+import me.him188.ani.app.domain.mediasource.clouddrive.restartSourcesWithNewVideoInfo
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 
 /**
@@ -49,6 +50,7 @@ class SubjectMediaFetchSessions(
         current?.let { (currentRequest, session) ->
             if (currentGeneration == generation && currentRequest.isSameSubjectQuery(request) && currentRequest.servesEpisodeOf(request)) {
                 retryFailedSources(session)
+                session.restartSourcesWithNewVideoInfo()
                 return@withLock session
             }
         }
