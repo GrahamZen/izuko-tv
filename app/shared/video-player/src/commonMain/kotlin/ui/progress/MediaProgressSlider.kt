@@ -767,7 +767,7 @@ fun MediaProgressSlider(
 }
 
 @Composable
-private fun ProgressSliderPreviewContent(
+internal fun ProgressSliderPreviewContent(
     framePreview: MediaProgressFramePreviewState?,
     text: String,
     previewTimeTextColor: Color,
@@ -789,11 +789,11 @@ private fun ProgressSliderPreviewContent(
 
 /** [ProgressSliderPreviewStyle.FrameOnly] 下浮窗容器不要底色 (画面自己就是底). */
 @Composable
-private fun popupBackgroundColor(frameOnly: Boolean, colors: MediaProgressSliderColors): Color =
+internal fun popupBackgroundColor(frameOnly: Boolean, colors: MediaProgressSliderColors): Color =
     if (frameOnly) Color.Transparent else colors.previewTimeBackgroundColor
 
 /** [ProgressSliderPreviewStyle.FrameOnly] 下浮窗容器不留内边距 (那一圈就是"黑边"的主要来源). */
-private fun popupContentPadding(frameOnly: Boolean): PaddingValues =
+internal fun popupContentPadding(frameOnly: Boolean): PaddingValues =
     if (frameOnly) PaddingValues(0.dp) else PaddingValues(horizontal = 16.dp, vertical = 12.dp)
 
 /**
