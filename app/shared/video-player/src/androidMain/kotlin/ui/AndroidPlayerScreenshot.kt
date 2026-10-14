@@ -35,7 +35,8 @@ import kotlin.math.roundToInt
  * 截图 (手机控制台的「截图」) 用的两层: 视频画面 ([captureAndroidVideoFrame]) 与字幕 ([captureAndroidSubtitles]).
  *
  * 视频画面在 SurfaceView 的独立显示层上, 常规的 View / Compose 截图取不到, 只能 [PixelCopy] 从 Surface 读回 —— 读的是已经解好、
- * 正在屏幕上的那一帧, 不另起解码器 (见 ui-tv 的 `captureTvPlayerFrame`). 字幕有两路: SRT 这类画在播放器视图里的 [SubtitleView]
+ * 正在屏幕上的那一帧, 不另起解码器 (第二路会和播放器抢硬解实例). 读回在应用的渲染线程上做, 4K 10bit 的帧在慢电视上要大半秒,
+ * 这段时间界面不刷新, 所以只在用户要截图时调. 字幕有两路: SRT 这类画在播放器视图里的 [SubtitleView]
  * (普通 View, 软件画布能画), ASS 画在叠在它里面的 [LiftableAssSubtitleView] (TextureView, 只能 `getBitmap` 读回; 选中 ASS 轨时才有, 见 [AssSubtitleLayer]).
  */
 class AndroidPlayerFrame(
