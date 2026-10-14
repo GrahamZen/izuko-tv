@@ -517,6 +517,7 @@
     <string name="player_frame_preview_not_downloaded">這裡還沒下載</string>
     <string name="player_frame_preview_stay_to_load">停一下就載入</string>
     <string name="player_seek_preview_switched_to_full_screen">這台裝置用小畫面預覽時解碼出錯，拖動預覽已改為顯示在全螢幕上，可在設定裡改回</string>
+    <string name="player_seek_preview_crashed_switched_to_full_screen">上次用小畫面預覽時閃退了，拖動預覽已改為顯示在全螢幕上，可在設定裡改回</string>
     <string name="settings_log_share_failed">分享日誌檔案失敗，目前裝置可能不支援分享，可改用複製日誌內容</string>
     <string name="settings_log_export_file">匯出當日日誌檔案</string>
     <string name="settings_log_export_succeed">日誌已匯出到 %1$s</string>
