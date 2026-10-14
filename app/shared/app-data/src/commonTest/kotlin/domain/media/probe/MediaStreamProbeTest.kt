@@ -66,6 +66,21 @@ class MediaStreamProbeTest {
     }
 
     @Test
+    fun `mkv from ffmpeg`() = runTest {
+        // 文件只有开头到第一个 Cluster 是真的, 后面补 0 到原来的大小 (10322 字节, 2 秒)
+        val file = Base64.decode(FFMPEG_MKV_HEAD).copyOf(10322)
+        val result = MediaStreamProbe.probe(serve(mapOf("https://v.example.com/a.mkv" to file)), "https://v.example.com/a.mkv")
+        assertEquals(MediaStreamProbe.Result("mkv", 640, 272, "HEVC", kbps = 41, durationSeconds = 2), result)
+    }
+
+    @Test
+    fun `mkv with info and tracks behind large attachments`() = runTest {
+        val file = MkvSamples.video(3840, 1608, durationSeconds = 1440, padding = 100_000)
+        val result = MediaStreamProbe.probe(serve(mapOf("https://v.example.com/b.mkv" to file)), "https://v.example.com/b.mkv")
+        assertEquals(MediaStreamProbe.Result("mkv", 3840, 1608, "HEVC", kbps = 1, durationSeconds = 1440), result)
+    }
+
+    @Test
     fun `hls media playlist samples segment sizes and reads sps`() = runTest {
         val segment = Base64.decode(TS_WITH_PNG)
         val playlist = buildString {
@@ -133,6 +148,43 @@ class MediaStreamProbeTest {
     )
 
     private companion object {
+        /** `ffmpeg -f lavfi -i testsrc=size=640x272:rate=2:duration=2 -c:v libx265 a.mkv` 的开头, 到第一个 Cluster 的头为止. */
+        const val FFMPEG_MKV_HEAD =
+            "GkXfo6NChoEBQveBAULygQRC84EIQoKIbWF0cm9za2FCh4EEQoWBAhhTgGcBAAAAAAAoHhFNm3TAv4RMybAlTbuLU6uEFUmpZlOsgaFNu4tTq4QWVK5rU6yB" +
+            "7027jFOrhBJUw2dTrIILBE27jFOrhBxTu2tTrIIoAuwBAAAAAAAAUwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFUmpZsm/hEGncMcq17GDD0JATYCMTGF2ZjYyLjMuMTAwV0GMTGF2ZjYyLjMuMTAwc6SQdvNw1MbL" +
+            "lerg/2dwfAZDn0SJiECfQAAAAAAAFlSua0oPv4T916/trgEAAAAAAAoA14EBc8WIhC/hk1Ekfc6cgQAitZyDdW5kiIEAhpBWX01QRUdIL0lTTy9IRVZDg4EB" +
+            "I+ODhB3NZQDglrCCAoC6ggEQmoECVbCIVbGBAFW5gQJV7oEA7AEAAAAAAAACAABjokmdAQQIAAAAnggAAAAAP/AA/P/4+AAADwQgAAEAF0ABDAH//wQIAAAD" +
+            "AJ4IAAADAAA/lZQJIQABAC1CAQEECAAAAwCeCAAAAwAAP5AAoEAiLLKypSYXgLcCAgAEAAADAAQAAAMACCAiAAEACEQBwHMYMBiQJwABCSZOAQX/////////" +
+            "//8hLKLeCbUXR9u7VaT+f8L8TngyNjUgKGJ1aWxkIDIxNSkgLSA0LjErMjExLTllNTUxYTk5NDpbV2luZG93c11bR0NDIDE1LjIuMF1bNjQgYml0XSA4Yml0" +
+            "KzEwYml0KzEyYml0IC0gSC4yNjUvSEVWQyBjb2RlYyAtIENvcHlyaWdodCAyMDEzLTIwMTggKGMpIE11bHRpY29yZXdhcmUsIEluYyAtIGh0dHA6Ly94MjY1" +
+            "Lm9yZyAtIG9wdGlvbnM6IGNwdWlkPTExMTEwMzkgZnJhbWUtdGhyZWFkcz00IG51bWEtcG9vbHM9MjQgd3BwIG5vLXBtb2RlIG5vLXBtZSBuby1wc25yIG5v" +
+            "LXNzaW0gbG9nLWxldmVsPS0xIGJpdGRlcHRoPTggaW5wdXQtY3NwPTMgZnBzPTIvMSBpbnB1dC1yZXM9NjQweDI3MiBpbnRlcmxhY2U9MCB0b3RhbC1mcmFt" +
+            "ZXM9MCBsZXZlbC1pZGM9MCBoaWdoLXRpZXI9MSB1aGQtYmQ9MCByZWY9MSBuby1hbGxvdy1ub24tY29uZm9ybWFuY2Ugbm8tcmVwZWF0LWhlYWRlcnMgYW5u" +
+            "ZXhiIG5vLWF1ZCBuby1lb2Igbm8tZW9zIG5vLWhyZCBpbmZvIGhhc2g9MCB0ZW1wb3JhbC1sYXllcnM9MCBvcGVuLWdvcCBtaW4ta2V5aW50PTIga2V5aW50" +
+            "PTI1MCBnb3AtbG9va2FoZWFkPTAgYmZyYW1lcz0zIGItYWRhcHQ9MCBiLXB5cmFtaWQgYmZyYW1lLWJpYXM9MCByYy1sb29rYWhlYWQ9NSBsb29rYWhlYWQt" +
+            "c2xpY2VzPTAgc2NlbmVjdXQ9MCBuby1oaXN0LXNjZW5lY3V0IHJhZGw9MCBuby1zcGxpY2Ugbm8taW50cmEtcmVmcmVzaCBjdHU9MzIgbWluLWN1LXNpemU9" +
+            "MTYgbm8tcmVjdCBuby1hbXAgbWF4LXR1LXNpemU9MzIgdHUtaW50ZXItZGVwdGg9MSB0dS1pbnRyYS1kZXB0aD0xIGxpbWl0LXR1PTAgcmRvcS1sZXZlbD0w" +
+            "IGR5bmFtaWMtcmQ9MC4wMCBuby1zc2ltLXJkIG5vLXNpZ25oaWRlIG5vLXRza2lwIG5yLWludHJhPTAgbnItaW50ZXI9MCBuby1jb25zdHJhaW5lZC1pbnRy" +
+            "YSBzdHJvbmctaW50cmEtc21vb3RoaW5nIG1heC1tZXJnZT0yIGxpbWl0LXJlZnM9MCBuby1saW1pdC1tb2RlcyBtZT0wIHN1Ym1lPTAgbWVyYW5nZT01NyB0" +
+            "ZW1wb3JhbC1tdnAgbm8tZnJhbWUtZHVwIG5vLWhtZSBuby13ZWlnaHRwIG5vLXdlaWdodGIgbm8tYW5hbHl6ZS1zcmMtcGljcyBkZWJsb2NrPTA6MCBuby1z" +
+            "YW8gbm8tc2FvLW5vbi1kZWJsb2NrIHJkPTIgc2VsZWN0aXZlLXNhbz0wIGVhcmx5LXNraXAgcnNraXAgZmFzdC1pbnRyYSBuby10c2tpcC1mYXN0IG5vLWN1" +
+            "LWxvc3NsZXNzIG5vLWItaW50cmEgbm8tc3BsaXRyZC1za2lwIHJkcGVuYWx0eT0wIHBzeS1yZD0yLjAwIHBzeS1yZG9xPTAuMDAgbm8tcmQtcmVmaW5lIG5v" +
+            "LWxvc3NsZXNzIGNicXBvZmZzPTYgY3JxcG9mZnM9NiByYz1jcmYgY3JmPTQwLjAgcWNvbXA9MC42MCBxcHN0ZXA9NCBzdGF0cy13cml0ZT0wIHN0YXRzLXJl" +
+            "YWQ9MCBpcHJhdGlvPTEuNDAgcGJyYXRpbz0xLjMwIGFxLW1vZGU9MSBhcS1zdHJlbmd0aD0wLjAwIGN1dHJlZSB6b25lLWNvdW50PTAgbm8tc3RyaWN0LWNi" +
+            "ciBxZy1zaXplPTMyIG5vLXJjLWdyYWluIHFwbWF4PTY5IHFwbWluPTAgbm8tY29uc3QtdmJ2IHNhcj0xIG92ZXJzY2FuPTAgdmlkZW9mb3JtYXQ9NSByYW5n" +
+            "ZT0xIGNvbG9ycHJpbT0yIHRyYW5zZmVyPTIgY29sb3JtYXRyaXg9MCBjaHJvbWFsb2M9MCBkaXNwbGF5LXdpbmRvdz0wIGNsbD0wLDAgbWluLWx1bWE9MCBt" +
+            "YXgtbHVtYT0yNTUgbG9nMi1tYXgtcG9jLWxzYj04IHZ1aS10aW1pbmctaW5mbyB2dWktaHJkLWluZm8gc2xpY2VzPTEgbm8tb3B0LXFwLXBwcyBuby1vcHQt" +
+            "cmVmLWxpc3QtbGVuZ3RoLXBwcyBuby1tdWx0aS1wYXNzLW9wdC1ycHMgc2NlbmVjdXQtYmlhcz0wLjA1IG5vLW9wdC1jdS1kZWx0YS1xcCBuby1hcS1tb3Rp" +
+            "b24gbm8taGRyMTAgbm8taGRyMTAtb3B0IG5vLWRoZHIxMC1vcHQgbm8taWRyLXJlY292ZXJ5LXNlaSBhbmFseXNpcy1yZXVzZS1sZXZlbD0wIGFuYWx5c2lz" +
+            "LXNhdmUtcmV1c2UtbGV2ZWw9MCBhbmFseXNpcy1sb2FkLXJldXNlLWxldmVsPTAgc2NhbGUtZmFjdG9yPTAgcmVmaW5lLWludHJhPTAgcmVmaW5lLWludGVy" +
+            "PTAgcmVmaW5lLW12PTEgcmVmaW5lLWN0dS1kaXN0b3J0aW9uPTAgbm8tbGltaXQtc2FvIGN0dS1pbmZvPTAgbm8tbG93cGFzcy1kY3QgcmVmaW5lLWFuYWx5" +
+            "c2lzLXR5cGU9MCBjb3B5LXBpYz0xIG1heC1hdXNpemUtZmFjdG9yPTEuMCBuby1keW5hbWljLXJlZmluZSBuby1zaW5nbGUtc2VpIG5vLWhldmMtYXEgbm8t" +
+            "c3Z0IG5vLWZpZWxkIHFwLWFkYXB0YXRpb24tcmFuZ2U9MS4wMCBzY2VuZWN1dC1hd2FyZS1xcD0wY29uZm9ybWFuY2Utd2luZG93LW9mZnNldHMgcmlnaHQ9" +
+            "MCBib3R0b209MCBkZWNvZGVyLW1heC1yYXRlPTAgbm8tdmJ2LWxpdmUtbXVsdGktcGFzcyBuby1tY3N0ZiBuby1zYnJjIG5vLWZyYW1lLXJjgBJUw2dAgr+E" +
+            "Ij1NxHNzn2PAgGfImUWjh0VOQ09ERVJEh4xMYXZmNjIuMy4xMDBzc9djwItjxYiEL+GTUSR9zmfIokWjh0VOQ09ERVJEh5VMYXZjNjIuMTEuMTAwIGxpYngy" +
+            "NjVnyKFFo4hEVVJBVElPTkSHkzAwOjAwOjAyLjAwMDAwMDAwMAAfQ7Z1XHC/hCftRN0="
+
         const val TS_WITH_PNG =
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAAAElFTkSuQmCCR0AREABC8CUAAcEAAP8B/wAB/IAUSBIBBkZGbXBlZwlTZXJ2aWNlMDF3fEPK" +
             "////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////" +
