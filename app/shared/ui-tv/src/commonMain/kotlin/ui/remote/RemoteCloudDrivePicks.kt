@@ -185,7 +185,7 @@ internal object RemoteCloudDrivePicks {
         val request = handle.page?.fetchRequest ?: return result(false, tr("数据源还在加载，请稍后再试"))
         val item = synchronized(seen) { seen[seenKey(drive, fid)] }?.takeIf { it.file.isVideo }
             ?: return result(false, tr("找不到这个文件，请重新搜索"))
-        val subjectName = request.subjectNames.firstOrNull { it.isNotBlank() } ?: request.subjectNameCN
+        val subjectName = CloudDriveMediaSource.subjectNameOf(request)
         val media = CloudDriveMediaSource.mediaFor(drive, item.file, request.episodeSort, subjectName, listOfNotNull(item.folderName))
         if (handle.candidate(media.mediaId)?.isEpisode(request.episodeSort) == true) {
             handle.select(media.mediaId)?.let { return result(false, it) }
@@ -222,7 +222,7 @@ internal object RemoteCloudDrivePicks {
                         refreshSource(drive, handle),
             )
         val refreshed = refreshSource(drive, handle)
-        val subjectName = request.subjectNames.firstOrNull { it.isNotBlank() } ?: request.subjectNameCN
+        val subjectName = CloudDriveMediaSource.subjectNameOf(request)
         val media = CloudDriveMediaSource.mediaFor(drive, current.first, request.episodeSort, subjectName, current.second)
         if (awaitCandidate(handle, media.mediaId, request.episodeSort)) {
             handle.select(media.mediaId)?.let { return result(false, it) }

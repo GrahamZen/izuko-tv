@@ -24,6 +24,7 @@ class SubjectSearchKeywordsTest {
         episodeSort = EpisodeSort(49),
         episodeName = "恶魔与阴谋",
         episodeEp = EpisodeSort(1),
+        catalogSubjectName = "关于我转生变成史莱姆这档事 第三季",
     )
 
     @Test
@@ -37,6 +38,8 @@ class SubjectSearchKeywordsTest {
         assertEquals(request.episodeName, applied.episodeName)
         assertEquals(request.subjectId, applied.subjectId)
         assertEquals(request.episodeId, applied.episodeId)
+        // 网盘等数据源拿它标资源的条目名, 改搜索名不能动它
+        assertEquals(request.catalogSubjectName, applied.catalogSubjectName)
     }
 
     @Test

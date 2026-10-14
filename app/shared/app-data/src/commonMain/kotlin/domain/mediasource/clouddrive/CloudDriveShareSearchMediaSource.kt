@@ -503,7 +503,7 @@ class CloudDriveShareSearchMediaSource(
         }
         // 订阅下发后每个用户都有这个源; 没登录网盘就播不了 (要转存), 不给结果也不算失败
         if (!drive.account.first().isLoggedIn) return SinglePagePagedSource { emptyList<MediaMatch>().asFlow() }
-        val subjectName = query.subjectNames.firstOrNull { it.isNotBlank() } ?: query.subjectNameCN
+        val subjectName = CloudDriveMediaSource.subjectNameOf(query)
         val subjectId = query.subjectId.toIntOrNull()
         val remembered = subjectId?.let { rememberedMatches(drive, engine, query, it) }.orEmpty()
         val searched = if (remembered.any { it.isEpisodeOf(query) }) {
