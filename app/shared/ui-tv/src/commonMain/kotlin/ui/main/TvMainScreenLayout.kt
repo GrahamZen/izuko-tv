@@ -26,7 +26,6 @@ import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusGroup
@@ -165,7 +164,6 @@ import me.him188.ani.app.ui.lang.watch_together_title
 import me.him188.ani.app.ui.subject.episode.PlaybackSessionStatusSeverity
 import me.him188.ani.app.ui.subject.episode.PlaybackSessionStatusText
 import me.him188.ani.app.ui.subject.episode.playbackSessionStatusText
-import me.him188.ani.app.ui.subject.episode.tv.TvRetainedFrameStore
 import me.him188.ani.app.ui.user.SelfInfoUiState
 import me.him188.ani.app.ui.remote.TvRemoteControl
 import me.him188.ani.app.ui.remote.TvRemoteQrCard
@@ -1325,15 +1323,18 @@ private fun TvNowPlayingPlaceholderCard(
 }
 
 /**
- * 卡片左边那块 16:9, 按可得性逐级回退 —— 三档都是 16:9, 所以版式不会因为回退而跳动:
+ * 卡片左边那块 16:9, 按可得性逐级回退 —— 两档都是 16:9, 所以版式不会因为回退而跳动:
  *
- * 1. **最后停在的那一帧** ([TvRetainedFrameStore]): 永远是当前这一集, 而且是"我刚才看的画面缩到
- *    了这里"的空间连续性. 帧在**暂停那一刻**由播放页截好存着, 不是这里现取 —— 现取要另起一路
- *    解码器, 后台会话正握着硬解实例, 那是 issue #10 的引信.
- * 2. **TMDB 单集图**: 那一集自己的剧照.
- * 3. **整部 backdrop**: 进程内热表同步可读, 且它是进详情页的门控条件, 几乎必然有.
+ * 1. **TMDB 单集图**: 那一集自己的剧照.
+ * 2. **整部 backdrop**: 进程内热表同步可读, 且它是进详情页的门控条件, 几乎必然有.
  *
- * 兜底的**主题色渐变 + 大号半透明集号不是第四档, 而是一直铺在最底下**的底色, 上面三档谁到位谁盖
+ * **不用播放时停下的那一帧**: 视频由硬解直接送显示层, 应用手里没有现成的 RGB 画面. 在播放页里截
+ * (PixelCopy) 要在应用的渲染线程上把硬解出的 YUV 帧转色、缩小、读回, Android 13 及以前这段时间界面
+ * 一帧都画不出来 —— 4K 10bit 片源在慢电视上一次 0.6~0.8 秒, 暂停后控制层跟着迟出来; 离开播放页之后
+ * 画面已经没了, 再取只能另起一路解码器 (后台会话正握着硬解实例, 那是 issue #10 的引信) 或改道主播放器
+ * 的输出 (拖动预览切小画面那条路, 部分盒子上会解码出错).
+ *
+ * 兜底的**主题色渐变 + 大号半透明集号不是第三档, 而是一直铺在最底下**的底色, 上面两档谁到位谁盖
  * 上去. 这样"URL 还没解析出来""图正在下载""图下载失败"三种情况自动都是渐变, 一个状态判断都不用
  * 写 —— [AsyncImage] 在这里没有 placeholder 也没有 error painter, 加载中和失败都是**什么都不画**,
  * 底下没东西垫着就是一块空白 (慢网上肉眼可见地空好几秒). 也**不出占位图**: 一张灰底破图片图标会
@@ -1344,12 +1345,9 @@ private fun TvNowPlayingPlaceholderCard(
 @Composable
 private fun TvNowPlayingThumbnail(subjectId: Int, episodeId: Int, episodeSort: String) {
     val tmdb = remember { GlobalKoin.get<TmdbImageService>() }
-    // 第一档 (最后停在的那一帧) 只有"正在播放"态才可能命中: 「接下来播放」那一集根本还没播过,
-    // 帧表里自然没有它, 于是自动落到剧照/backdrop, 不必在这里分叉
-    val frame = TvRetainedFrameStore.frameFor(subjectId, episodeId)
     val stillUrl = rememberTvPlayingEpisodeStill(subjectId, episodeId)
     val imageUrl = stillUrl ?: tmdb.peekBackdropUrl(subjectId)
-    // NSFW 作品打码 (自己的播放记录不藏, 见 NsfwPolicy.ownedCoverDownsample): 停下的那一帧没法降采样, 打码时改用剧照 / 背景图的小图
+    // NSFW 作品打码 (自己的播放记录不藏, 见 NsfwPolicy.ownedCoverDownsample): 剧照 / 背景图取小图
     val obscure = rememberNsfwPolicy().obscuresOwned(subjectId)
     val shape = RoundedCornerShape(6.dp)
     Box(
@@ -1374,14 +1372,7 @@ private fun TvNowPlayingThumbnail(subjectId: Int, episodeId: Int, episodeSort: S
                 style = MaterialTheme.typography.headlineMedium,
             )
         }
-        if (frame != null && !obscure) {
-            Image(
-                frame,
-                contentDescription = null,
-                Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
-            )
-        } else if (imageUrl != null) {
+        if (imageUrl != null) {
             AsyncImage(
                 imageUrl,
                 contentDescription = null,
