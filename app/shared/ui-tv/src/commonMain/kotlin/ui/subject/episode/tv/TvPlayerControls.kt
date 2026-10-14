@@ -36,6 +36,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.size
@@ -127,6 +132,7 @@ import me.him188.ani.app.ui.foundation.focus.restoreFocusAfter
 import me.him188.ani.app.ui.foundation.focus.TvFocusKey
 import me.him188.ani.app.ui.foundation.focus.TvFocusScope
 import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
+import me.him188.ani.app.ui.foundation.focus.tvSwallowKeysWhenLeaving
 import me.him188.ani.app.ui.foundation.tvLongPressKeyOverClick
 import me.him188.ani.app.ui.foundation.icons.AniIcons
 import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
@@ -499,7 +505,25 @@ internal fun TvPlayerControlsOverlay(
                 visible = !overlay.episodeStripExpanded || (!chromeVisible && trailingVisible),
                 modifier = Modifier.align(Alignment.BottomStart),
             ) {
-                Column(Modifier.padding(horizontal = TV_PLAYER_HORIZONTAL_PAD)) {
+                Column(
+                    Modifier
+                        .padding(horizontal = TV_PLAYER_HORIZONTAL_PAD)
+                        // 选集条展开、进了详情层时这一列在淡出, 焦点却可能还停在图标行的按钮上 (送往选集条的焦点要过几帧才到,
+                        // 选集条为空直接进详情层那一路不往这里送): 连按「下、确定」的确定会点到看不见的按钮. 这时吞掉按键 (返回放行);
+                        // 选集条那一路再送一次焦点 —— 这一下按键取消了在途的送焦 (见 tvFocusNavSignal)
+                        .onPreviewKeyEvent {
+                            if (it.type == KeyEventType.KeyDown && it.key != Key.Back && it.key != Key.Escape &&
+                                overlay.layer == TvPlayerLayer.CONTROLS && overlay.episodeStripExpanded
+                            ) {
+                                overlay.expandEpisodeStrip()
+                            }
+                            false
+                        }
+                        .tvSwallowKeysWhenLeaving {
+                            overlay.layer == TvPlayerLayer.DETAILS ||
+                                    (overlay.layer == TvPlayerLayer.CONTROLS && overlay.episodeStripExpanded)
+                        },
+                ) {
                     // L2 浮出面板 (聚焦胶囊按钮时出现, 条目吸底, 从下往上导航).
                     // PeoplePreviewHost: 角色/制作人员面板点击卡片弹居中人物预览
                     // (与详情页同一弹窗), 开着期间抑制控制层自动隐藏
