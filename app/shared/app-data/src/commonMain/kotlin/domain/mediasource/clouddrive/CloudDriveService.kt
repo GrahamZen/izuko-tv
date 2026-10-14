@@ -10,6 +10,7 @@
 package me.him188.ani.app.domain.mediasource.clouddrive
 
 import io.ktor.client.HttpClient
+import io.ktor.http.HttpHeaders
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -31,6 +32,7 @@ import me.him188.ani.app.data.models.preference.DriveRememberedFolder
 import me.him188.ani.app.data.models.preference.DriveRememberedShare
 import me.him188.ani.app.data.models.preference.DriveSubjectPicks
 import me.him188.ani.app.data.repository.user.Settings
+import me.him188.ani.app.domain.media.probe.MediaStreamProbe
 import me.him188.ani.app.platform.PlaybackRequestHints
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.Media
@@ -50,6 +52,7 @@ import kotlin.time.TimeSource
  * 一个网盘的账号与文件访问. 这个网盘的三种数据源、播放解析与设置页共用一个实例 (见 [CloudDriveRegistry]).
  *
  * 登录态就是账号的 Cookie ([CloudDriveAccount.cookie]); 接口响应里轮换的 Cookie 在这里合并后写回.
+ * WebDAV 服务器 ([CloudDriveProtocol.isWebDav]) 用账号密码 ([CloudDriveAccount.username] / [CloudDriveAccount.password]).
  *
  * @param protocol 创建时的协议; 订阅更新后由 [updateProtocol] 换掉, [driveId] 不变
  */
@@ -78,6 +81,8 @@ class CloudDriveService internal constructor(
     fun updateProtocol(protocol: CloudDriveProtocol) {
         require(protocol.id == driveId) { "Cloud drive id changed from $driveId to ${protocol.id}" }
         if (protocol == this.protocol) return
+        // 换了服务器地址: 索引里的文件是旧服务器的 (媒体文件夹与层数改了索引自己会重建)
+        if (protocol.http.hosts != this.protocol.http.hosts) library.invalidate()
         this.protocol = protocol
         placeholders = DrivePlaceholders(protocol)
         shareLinks = DriveShareLinks(protocol)
@@ -110,16 +115,30 @@ class CloudDriveService internal constructor(
         override suspend fun onServerCookies(cookies: Map<String, String>) {
             updateAccount { it.copy(cookie = mergeCookies(it.cookie, cookies)) }
         }
+
+        override suspend fun credentials(): DriveCredentials? =
+            currentAccount().takeIf { it.username.isNotBlank() }?.let { DriveCredentials(it.username, it.password) }
     }
 
     internal val api = CloudDriveApi(httpClient, { this.protocol }, cookieStore)
 
+    /**
+     * 没有服务端搜索时按名找番用的媒体文件夹索引 (见 [CloudDriveProtocol.searchesLibrary]).
+     * 初始化里的 lambda 与匿名对象要写 `this@CloudDriveService.protocol`: 光写 `protocol` 拿到的是构造参数, 订阅更新后不变.
+     */
+    private val library = DriveLibraryIndex(
+        listFolder = { listAll(it) },
+        roots = { this.protocol.library.folders.ifEmpty { listOf(rootFolderId) } },
+        config = { this.protocol.library },
+    )
+
     internal val browser = object : DriveBrowser {
         /**
          * 只取第一页, 文件夹在前 (排序由协议的请求参数决定): 一部番常整个放在一个文件夹里, 而名字相同的单个文件 (各季、字幕、.nfo)
-         * 能把第一页占满, 文件在前的话那个文件夹会被挤到后面几页.
+         * 能把第一页占满, 文件在前的话那个文件夹会被挤到后面几页. 没有服务端搜索时在媒体文件夹的索引里找.
          */
         override suspend fun search(keyword: String): List<DriveFile> {
+            if (this@CloudDriveService.protocol.searchesLibrary) return library.search(keyword)
             val files = api.search(keyword).files
             // 转存来的文件归「分享搜索」数据源, 不在这里重复出现
             val saveFolder = currentAccount().shareSaveFolderId.ifEmpty { return files }
@@ -190,7 +209,7 @@ class CloudDriveService internal constructor(
         return listAll(folderId)
     }
 
-    val rootFolderId: String get() = protocol.rootFolderId
+    val rootFolderId: String get() = protocol.rootId
 
     /** 指定的文件夹 (往下几层) 里对上 [request] 这个条目的剧集, 规则同自己网盘的数据源读指定的文件夹. */
     internal suspend fun matchPickedFolder(request: MediaFetchRequest, folder: DrivePickedFolder): List<DriveSubjectMatcher.MatchedFile> =
@@ -320,6 +339,34 @@ class CloudDriveService internal constructor(
 
     // endregion
 
+    // region 列目录不给视频信息的网盘 (WebDAV) 读文件头补上 (见 DriveVideoInfoProbe)
+
+    private val videoInfoProbe = DriveVideoInfoProbe(
+        stored = { currentAccount().videoInfo },
+        save = { key, info ->
+            updateAccount { current ->
+                current.copy(
+                    videoInfo = (current.videoInfo - key + (key to info)).entries
+                        .toList().takeLast(MAX_VIDEO_INFO).associate { it.key to it.value },
+                )
+            }
+        },
+        probe = { file -> MediaStreamProbe.probe(httpClient, WebDav.urlOf(this.protocol, file.fid), playbackHeaders(currentAccount())) },
+        onLateInfo = { DriveVideoInfoRefresh.markStale(this.protocol.driveMediaSourceId) },
+    )
+
+    /**
+     * WebDAV 上 [current] (当前这一集的) 与 [others] (其余各集的) 视频里读得出画面高度与时长的那些 (文件 id → 补上这两项的文件);
+     * 其他网盘列目录就给了, 为空. 当前这一集没读过的要读文件头, 最多等 [DriveVideoInfoProbe.WAIT]; 其余的在后台读.
+     */
+    internal suspend fun videoInfoOf(current: List<DriveFile>, others: List<DriveFile>): Map<String, DriveFile> {
+        if (!protocol.isWebDav) return emptyMap()
+        DriveVideoInfoRefresh.clear(protocol.driveMediaSourceId)
+        return videoInfoProbe.fill(current, others)
+    }
+
+    // endregion
+
     // region 手动挂上的字幕 (Web 控制台「从网盘挑」里点字幕文件)
 
     /**
@@ -396,9 +443,9 @@ class CloudDriveService internal constructor(
     }
 
     internal val shareBrowser = object : DriveShareBrowser {
-        override val rootFolderId: String get() = protocol.share.rootFolderId
+        override val rootFolderId: String get() = this@CloudDriveService.protocol.share.rootFolderId
 
-        override val needsFileToken: Boolean get() = protocol.file.shareToken.isNotBlank()
+        override val needsFileToken: Boolean get() = this@CloudDriveService.protocol.file.shareToken.isNotBlank()
 
         override suspend fun open(shareId: String, passcode: String): String = shareToken(shareId, passcode).title
 
@@ -759,6 +806,24 @@ class CloudDriveService internal constructor(
         return currentAccount()
     }
 
+    /**
+     * 用账号密码登录 (WebDAV): 先列一次根目录核对, 通过才保存. 登录后重建媒体文件夹的索引 (之前可能是用别的账号列的).
+     */
+    suspend fun loginWithPassword(username: String, password: String): CloudDriveAccount {
+        require(protocol.supportsPasswordLogin) { "这个网盘不支持账号密码登录" }
+        require(username.isNotBlank()) { "先填用户名" }
+        val previous = currentAccount()
+        accountLock.withLock {
+            setAccount(CloudDriveAccount(username = username.trim(), password = password, playbackMode = previous.playbackMode))
+        }
+        return try {
+            refreshAccount().also { library.invalidate() }
+        } catch (e: Throwable) {
+            accountLock.withLock { setAccount(previous) }
+            throw e
+        }
+    }
+
     /** [cookie] 是不是登录后的 Cookie: 带着协议要求的全部名字 ([DriveLoginConfig.requiredCookies]). */
     private fun missingCookies(cookie: String): List<String> {
         val names = cookie.split(';').map { it.substringBefore('=').trim() }.toSet()
@@ -786,6 +851,7 @@ class CloudDriveService internal constructor(
         accountLock.withLock {
             setAccount(CloudDriveAccount(playbackMode = currentAccount().playbackMode))
         }
+        library.invalidate()
     }
 
     suspend fun setPlaybackMode(mode: CloudDrivePlaybackMode) {
@@ -899,7 +965,7 @@ class CloudDriveService internal constructor(
         }
         val download = if (transcoded == null) api.download(fileId) else null
         val url = transcoded ?: download!!.url
-        val headers = playbackHeaders(currentAccount().cookie)
+        val headers = playbackHeaders(currentAccount())
         val subtitles = subtitlesOf(fileId, download, subtitleLookup, subtitleKey)
         // 原文件直链每个连接常有速度上限, 一个连接跟不上码率时让播放器 (与缓存下载) 并发分块取, 路数按账号档位 (见 parallelConnectionsFor);
         // 转码流本来就是一段段小分片, 不用. 档位每次都记: 设置里的值只在变了时才进日志, 用户发来的日志里要看得出是哪种账号
@@ -926,12 +992,16 @@ class CloudDriveService internal constructor(
     internal fun parallelConnectionsFor(tier: String): Int =
         protocol.tierOf(tier)?.parallelConnections ?: protocol.playback.parallelConnections
 
-    /** 播放器请求直链、转码地址与外挂字幕时要带的请求头 (见 [DrivePlaybackConfig.headers]). */
-    fun playbackHeaders(cookie: String): Map<String, String> {
+    /**
+     * 播放器请求直链、转码地址与外挂字幕时要带的请求头 (见 [DrivePlaybackConfig.headers]); 账号密码登录的 (WebDAV) 加上 Basic 认证头.
+     */
+    fun playbackHeaders(account: CloudDriveAccount): Map<String, String> {
         val template = DriveTemplate(
-            mapOf("cookie" to JsonPrimitive(cookie), "userAgent" to JsonPrimitive(protocol.http.userAgent)),
+            mapOf("cookie" to JsonPrimitive(account.cookie), "userAgent" to JsonPrimitive(protocol.http.userAgent)),
         )
-        return protocol.playback.headers.mapValues { template.text(it.value) }.filterValues { it.isNotBlank() }
+        val headers = protocol.playback.headers.mapValues { template.text(it.value) }.filterValues { it.isNotBlank() }
+        if (account.username.isBlank()) return headers
+        return headers + (HttpHeaders.Authorization to WebDav.basicAuthorization(account.username, account.password))
     }
 
     /** 播放时到哪里找外挂字幕. */
@@ -1024,6 +1094,9 @@ class CloudDriveService internal constructor(
 
         /** 「分享搜索」最多记多少个 (数据源, 条目) 的分享文件夹. */
         private const val MAX_REMEMBERED_SHARES = 300
+
+        /** 最多记多少个文件读文件头得到的视频信息. */
+        private const val MAX_VIDEO_INFO = 500
 
         /** 内存里最多记多少个最近搜到的文件. */
         private const val MAX_RECENT_MATCHES = 2000
