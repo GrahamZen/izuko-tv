@@ -29,7 +29,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * 加密直连的配置 ([BangumiEchConfig]) 与地址清单 ([BangumiEchAddressList]).
+ * 加密直连的配置 ([BangumiEchConfig]) 与两份清单 ([BangumiEchAddressList]、[BangumiEchDohList]).
  */
 @OptIn(ExperimentalEncodingApi::class)
 class BangumiEchConfigTest {
@@ -66,6 +66,7 @@ class BangumiEchConfigTest {
         requested: MutableList<String> = mutableListOf(),
         now: () -> Long = { 0L },
         scope: CoroutineScope,
+        endpoints: () -> List<String> = { listOf("https://dns.alidns.com/resolve", "https://dns.google/resolve") },
     ): BangumiEchConfig {
         val engine = MockEngine { req ->
             requested += req.url.host
@@ -76,7 +77,7 @@ class BangumiEchConfigTest {
         return BangumiEchConfig(
             { client },
             scope,
-            dohEndpoints = listOf("https://dns.alidns.com/resolve", "https://dns.google/resolve"),
+            dohEndpoints = endpoints,
             now = now,
         )
     }
@@ -126,6 +127,33 @@ class BangumiEchConfigTest {
         val before = config.current
         assertFalse(config.refresh())
         assertContentEquals(before, config.current)
+    }
+
+    @Test
+    fun `DoH 清单每次拉时现取 — 清单换了马上用新的`() = realTimeTest {
+        var now = 0L
+        var endpoints = listOf("https://dns.alidns.com/resolve")
+        val requested = mutableListOf<String>()
+        val config = config(
+            mapOf("doh.360.cn" to googleAnswer), requested, now = { now }, scope = this, endpoints = { endpoints },
+        )
+
+        assertFalse(config.refresh())
+        endpoints = listOf("https://doh.360.cn/resolve")
+        now = 61_000
+        assertTrue(config.refresh())
+        assertEquals(listOf("dns.alidns.com", "doh.360.cn"), requested)
+    }
+
+    @Test
+    fun `DoH 清单只认 https 地址`() {
+        val ali = "https://dns.alidns.com/resolve?name=crypto.cloudflare.com&type=65"
+        assertEquals(ali, BangumiEchDohList.normalizeEndpoint(" $ali "))
+        assertNull(BangumiEchDohList.normalizeEndpoint("http://dns.alidns.com/resolve"))
+        assertNull(BangumiEchDohList.normalizeEndpoint("dns.alidns.com/resolve"))
+        assertNull(BangumiEchDohList.normalizeEndpoint("https://"))
+        assertNull(BangumiEchDohList.normalizeEndpoint(""))
+        assertTrue(BangumiEchDohList.BUNDLED.all { BangumiEchDohList.normalizeEndpoint(it) == it })
     }
 
     @Test
