@@ -121,9 +121,22 @@ class SeekPreview internal constructor(
     @Volatile
     private var lastFramePositionUs = C.TIME_UNSET
 
-    private val frameMetadataListener = VideoFrameMetadataListener { presentationTimeUs, _, _, _ ->
+    /** 最近画出的那一帧交给输出面时带的时间戳 (纳秒, 播放线程上写), 见 [shownFrameTimestampNs]. */
+    @Volatile
+    private var lastFrameReleaseTimeNs = Long.MIN_VALUE
+
+    private val frameMetadataListener = VideoFrameMetadataListener { presentationTimeUs, releaseTimeNs, _, _ ->
         lastFramePositionUs = presentationTimeUs
+        lastFrameReleaseTimeNs = releaseTimeNs
     }
+
+    private val _shownFrameTimestampNs = MutableStateFlow(Long.MIN_VALUE)
+
+    /**
+     * 小画面上认作当前这一跳的那一帧交给输出面时带的时间戳 (纳秒; 还没有时为 [Long.MIN_VALUE]). 输出面收到的帧带着同一个时间戳
+     * (`SurfaceTexture.getTimestamp`): 小画面要再转一手才画出来时 (见 `SeekPreviewRelayFrame`), 据此判断这一帧画到了没有.
+     */
+    val shownFrameTimestampNs: StateFlow<Long> = _shownFrameTimestampNs.asStateFlow()
 
     private val onBlocked: () -> Unit = { handler.post(::onNetworkBlocked) }
     private val downloadTarget = Runnable { if (status == SeekPreviewStatus.NotDownloaded) startDownload() }
@@ -143,6 +156,7 @@ class SeekPreview internal constructor(
                 return
             }
             logger.info { "Seek preview at $targetMillis ms: frame shown after ${millisSince(seekStartedAt)}ms" }
+            _shownFrameTimestampNs.value = lastFrameReleaseTimeNs
             showFrame()
             seekPending()
         }
