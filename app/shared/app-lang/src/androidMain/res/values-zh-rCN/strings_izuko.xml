@@ -62,7 +62,7 @@
     <string name="settings_player_disk_cache">边下边播</string>
     <string name="settings_player_disk_cache_description">在线播放时把下载过的部分存在本机：往回拖、重看直接读本机，拖动预览时下载过的位置马上出画面（没下载的位置停一下就去下）。关闭时拖动预览每个位置都要先下载。最多占剩余空间的四分之一，满了先删最久没看的</string>
     <string name="settings_player_audio_passthrough">音频直通</string>
-    <string name="settings_player_audio_passthrough_description">把杜比、DTS 这类音轨原样交给功放或回音壁解码，保留多声道和全景声。「自动」：立体声音轨一律在这里解码（直通它们没有好处）；多声道音轨在用电视自带喇叭时也在这里解码，因为有些电视直通后没有声音，其余情况直通。</string>
+    <string name="settings_player_audio_passthrough_description">把杜比、DTS 这类音轨原样交给功放或回音壁解码，保留多声道和全景声。「自动」：立体声音轨一律在这里解码（直通它们没有好处）；多声道音轨只在声音经 HDMI、ARC 或光纤送到外接设备时直通，用电视自带喇叭或蓝牙时在这里解码，因为有些电视直通后没有声音。</string>
     <string name="settings_player_audio_passthrough_auto">自动</string>
     <string name="settings_player_audio_passthrough_always">总是直通</string>
     <string name="settings_player_audio_passthrough_off">关闭</string>
