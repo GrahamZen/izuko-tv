@@ -161,6 +161,8 @@ import me.him188.ani.app.domain.session.SessionStateProvider
 import me.him188.ani.app.domain.session.auth.BangumiOAuthClient
 import me.him188.ani.app.domain.session.auth.BangumiOAuthManager
 import me.him188.ani.app.domain.session.auth.BangumiOAuthRelayClient
+import me.him188.ani.app.domain.session.auth.BangumiWebLogin
+import me.him188.ani.app.domain.session.auth.createBangumiWebLoginClient
 import me.him188.ani.app.domain.settings.ProxyProvider
 import me.him188.ani.app.domain.settings.SettingsBasedProxyProvider
 import me.him188.ani.app.domain.torrent.TorrentEngineType
@@ -247,6 +249,16 @@ private fun KoinApplication.otherModules(
             // 多人共用时内置浏览器里可能还登着上一个人的 bgm 账号
             clearWebLoginBeforeInAppBrowser = { UserProfiles.registry.state.value.profiles.size > 1 },
             relay = get(),
+        )
+    }
+    single<BangumiWebLogin> {
+        BangumiWebLogin(
+            newClient = { createBangumiWebLoginClient(get<ProxyProvider>().proxy.first(), getOrNull<BangumiEchTransport>()) },
+            routing = { get<BangumiEndpointProvider>().routing.first() },
+            recover = { route, cause -> route == BangumiRoute.Ech && getOrNull<BangumiEchTransport>()?.recover(cause) == true },
+            tokenName = "${BangumiWebLogin.TOKEN_NAME} · ${getContext().deviceLabel()}",
+            currentToken = { (get<TokenRepository>().session.first() as? AccessTokenSession)?.tokens?.bangumiAccessToken },
+            scope = coroutineScope,
         )
     }
     single<SessionStateProvider> {

@@ -393,7 +393,7 @@
     <string name="tv_onboarding_login_description">登录是可选的：不登录也能正常找番、看番、缓存。登录后，收藏、看过的进度、评分和评论会同步到你的 Bangumi 账号，以后也可以随时在设置里登录。</string>
     <string name="tv_onboarding_login_on_tv">在电视上登录</string>
     <string name="tv_onboarding_login_on_tv_hint">会打开 Bangumi 的登录页，用遥控器输入账号和密码。</string>
-    <string name="tv_onboarding_login_phone_hint">也可以用手机扫右边的二维码，在 Web 控制台「设置 → 账号」里登录，手机上打字更方便。</string>
+    <string name="tv_onboarding_login_password_hint">用手机扫右边的二维码打开 Web 控制台，在「设置 → 账号」里点「输入账号密码登录」，填好后电视替你登录；手机打不开 Bangumi 也没关系。</string>
     <string name="tv_onboarding_login_qr_title">用手机登录</string>
     <string name="tv_onboarding_login_qr_hint">也可以用手机扫右边的码，在打开的 Bangumi 页面上登录并授权，电视会自动登录。手机要和电视连同一个 Wi-Fi。</string>
     <string name="tv_onboarding_login_qr_retry">上次没有登录成功，已经换了新码，再扫一次</string>
@@ -496,6 +496,7 @@
     <string name="settings_network_endpoint_custom_url_invalid">认不出这个地址：请填 https://域名（可以带路径），或含 {path} 的模板</string>
     <string name="settings_network_proxy_service_tmdb_image">背景图 CDN</string>
     <string name="oauth_bangumi_via_mirror">现在经镜像连接 Bangumi，授权登录走不通。请用手机扫右边的二维码打开「Web 控制台」，在「设置 → 账号」里点「用个人令牌登录」，按弹出的步骤做：先打开「登录与收藏同步也经过镜像」，再到 Bangumi 官网生成令牌粘进来。</string>
+    <string name="oauth_bangumi_via_ech">现在经加密直连连接 Bangumi，手机多半打不开授权页。请用手机扫右边的二维码打开「Web 控制台」，在「设置 → 账号」里点「输入账号密码登录」，填好 Bangumi 账号密码，电视替你登录。</string>
     <string name="oauth_bangumi_authorize_external_browser">用系统浏览器登录</string>
     <string name="oauth_bangumi_stage_opening">正在打开登录页…</string>
     <string name="oauth_bangumi_stage_authorizing">等待在登录页上授权…</string>
