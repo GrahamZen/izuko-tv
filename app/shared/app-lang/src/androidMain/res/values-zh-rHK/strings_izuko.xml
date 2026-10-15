@@ -236,7 +236,7 @@
     <string name="tv_onboarding_login_description">登入是可選的：不登入也能正常找番、看番、緩存。登入後，收藏、看過的進度、評分和評論會同步到你的 Bangumi 帳號，以後也可以隨時在設定裡登入。</string>
     <string name="tv_onboarding_login_on_tv">在電視上登錄</string>
     <string name="tv_onboarding_login_on_tv_hint">會打開 Bangumi 的登錄頁，用遙控器輸入帳號和密碼。</string>
-    <string name="tv_onboarding_login_phone_hint">也可以用手機掃右邊的二維碼，在 Web 控制台「設置 → 帳號」裡登錄，手機上打字更方便。</string>
+    <string name="tv_onboarding_login_password_hint">用手機掃右邊的二維碼打開 Web 控制台，在「設置 → 帳號」裡點「輸入帳號密碼登錄」，填好後電視替你登錄；手機打不開 Bangumi 也沒關係。</string>
     <string name="tv_onboarding_login_qr_title">用手機登錄</string>
     <string name="tv_onboarding_login_qr_hint">也可以用手機掃右邊的碼，在打開的 Bangumi 頁面上登入並授權，電視會自動登入。手機要和電視連同一個 Wi-Fi。</string>
     <string name="tv_onboarding_login_qr_retry">上次沒有登錄成功，已經換了新碼，再掃一次</string>
@@ -338,6 +338,7 @@
     <string name="settings_network_endpoint_custom_url_description">與原站內容相同的位址，例如 %1$s，圖片路徑會接在後面；要把路徑放進參數的代理，寫成含 {path} 的模板，例如 %2$s</string>
     <string name="settings_network_endpoint_custom_url_invalid">認不出這個位址：請填 https://網域（可以帶路徑），或含 {path} 的模板</string>
     <string name="oauth_bangumi_via_mirror">現在經鏡像連接 Bangumi，授權登錄走不通。請用手機掃右邊的二維碼打開「Web 控制台」，在「設置 → 帳號」裡點「用個人令牌登錄」，按彈出的步驟做：先打開「登錄與收藏同步也經過鏡像」，再到 Bangumi 官網生成令牌貼進來。</string>
+    <string name="oauth_bangumi_via_ech">現在經加密直連連接 Bangumi，手機多半打不開授權頁。請用手機掃右邊的二維碼打開「Web 控制台」，在「設置 → 帳號」裡點「輸入帳號密碼登錄」，填好 Bangumi 帳號密碼，電視替你登錄。</string>
     <string name="oauth_bangumi_authorize_external_browser">用系統瀏覽器登入</string>
     <string name="oauth_bangumi_stage_opening">正在打開登錄頁…</string>
     <string name="oauth_bangumi_stage_authorizing">等待在登錄頁上授權…</string>

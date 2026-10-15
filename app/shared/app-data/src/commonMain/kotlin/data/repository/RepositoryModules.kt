@@ -59,6 +59,7 @@ import me.him188.ani.app.domain.foundation.ScopedHttpClientUserAgent
 import me.him188.ani.app.domain.foundation.get
 import me.him188.ani.app.domain.profile.UserProfile
 import me.him188.ani.app.domain.profile.UserProfiles
+import me.him188.ani.app.domain.session.auth.BangumiWebLogin
 import me.him188.ani.app.platform.Context
 import me.him188.ani.app.platform.files
 import me.him188.ani.utils.io.resolve
@@ -83,6 +84,7 @@ fun KoinApplication.repositoryModules(
             get<BangumiApiProvider>().miscApi,
             get(),
             get(),
+            beforeLogout = { get<BangumiWebLogin>().revokeOnLogout() },
         )
     }
 

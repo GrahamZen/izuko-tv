@@ -30,6 +30,7 @@ import me.him188.ani.app.data.models.user.calculateDisplay
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.data.repository.user.UserRepository
 import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
+import me.him188.ani.app.domain.foundation.BangumiLoginPath
 import me.him188.ani.app.domain.foundation.LoadError
 import me.him188.ani.app.domain.profile.UserProfiles
 import me.him188.ani.app.domain.session.InvalidSessionReason
@@ -60,15 +61,16 @@ import kotlin.time.Duration.Companion.seconds
  * 手机自己的那个端口, 电视永远收不到 code. 走 Ani 服务器的那版能让手机直接登录, 靠的正是服务器接回调再中转,
  * 直连之后没有这个中转站.
  *
- * 所以这里给三条路:
- * - **手机授权** (默认): 把授权链接交给手机打开. 这个构建带了中转应用的凭据、手机又是经内网 IPv4 连的控制台时, 用中转应用
- *   ([BangumiOAuthRelay]): 授权完 Worker 把手机跳回电视的 [relayReturn], 什么都不用粘. 否则用主应用, 授权完那一跳必然失败,
- *   但地址栏里带着 code —— 整个地址粘回来 (`api/account/login/callback`), 电视拿它换 token ([BangumiOAuthManager.submitCallbackUrl]).
- *   中转那条跳不回来 (手机连不上电视) 时停住的地址也能这样粘回来.
+ * 所以这里给几条路, 网页上按 [BangumiEndpointProvider.loginPath] 只露出当前走得通的那条:
+ * - **手机授权** (直连时的默认): 这个构建带了中转应用的凭据、手机又是经内网 IPv4 连的控制台时 (`phoneRelay`), 把中转应用
+ *   ([BangumiOAuthRelay]) 的授权链接交给手机打开, 授权完 Worker 把手机跳回电视的 [relayReturn]. 跳不回来时网页上换成账号密码那条.
+ *   授权完停住的那个地址整个粘回来 (`api/account/login/callback`) 也能换 token ([BangumiOAuthManager.submitCallbackUrl]),
+ *   网页上不给入口, 留作手动兜底.
  * - **电视授权** (`where=tv`): 让电视弹出授权页 (挂在应用根部的 `BangumiOAuthDialogHost`, 电视在哪一页都能弹),
  *   用遥控器完成. 电视上打字麻烦, 所以不是默认.
- * - **个人令牌** (`api/account/token`): 在网页上生成令牌粘过来, 不经过授权页与换 token.
- *   中国大陆经镜像只能走这条, 见 [BangumiOAuthManager.loginWithPersonalToken].
+ * - **个人令牌** (`api/account/token`): 经镜像时唯一的一条. 在 Bangumi 官网生成令牌粘过来, 见 [BangumiOAuthManager.loginWithPersonalToken].
+ * - **账号密码** (`api/account/weblogin/`): 经加密直连时唯一的一条, 直连而手机授权跳不回来时也用它. 手机上填账号密码,
+ *   电视替用户登录网页并生成个人令牌, 见 [RemoteWebLogin].
  *
  * 同一时间只等一次: 再点一次 = 放弃上一次、重新开始. 等 [LOGIN_TIMEOUT] 还没结果就放弃.
  */
@@ -112,7 +114,7 @@ internal object RemoteAccount {
         val post = request.method == "POST"
         return runCatching {
             when {
-                request.path == "api/account" && get -> state()
+                request.path == "api/account" && get -> state(request)
                 !post -> null
                 // 本地档不能登录 (收藏只在本地库, 登录了也不会同步), 网页上本来就不给入口
                 UserProfiles.current.isLocal -> result(false, tr("本地用户不能登录 Bangumi。想同步到 Bangumi，请在「用户」里新建一个登录 Bangumi 的用户"))
@@ -120,6 +122,7 @@ internal object RemoteAccount {
                 request.path == "api/account/login/callback" -> submitCallback(request)
                 request.path == "api/account/login/cancel" -> cancelLogin()
                 request.path == "api/account/token" -> tokenLogin(request)
+                request.path.startsWith("api/account/weblogin/") -> RemoteWebLogin.handle(request)
                 request.path == "api/account/logout" -> logout()
                 else -> null
             }
@@ -129,7 +132,8 @@ internal object RemoteAccount {
         }
     }
 
-    private fun state(): JsonObject = runBlocking {
+    /** 查询参数 `host` 是手机打开控制台用的地址 (`location.host`), 据此判断手机授权完能不能跳回来. */
+    private fun state(request: LanHttpRequest): JsonObject = runBlocking {
         // 本地档: 没有账号, 网页上只说明一句 (见 ACCOUNT_SCRIPT)
         if (UserProfiles.current.isLocal) {
             return@runBlocking buildJsonObject {
@@ -172,6 +176,9 @@ internal object RemoteAccount {
             putJsonArray("tokenPages") { add(BangumiOAuthConstants.PERSONAL_TOKEN_PAGE) }
             // 带了中转应用的凭据: 手机授权完会自动跳回来, 网页上的说明按这个换
             put("relay", oauthManager.relaySupported)
+            // 手机授权完能跳回电视 (见 BangumiOAuthRelay): 不能时网页上给账号密码那条
+            put("phoneRelay", oauthManager.relaySupported && phoneHost(request)?.let { BangumiOAuthRelay.isPrivateLanHost(it) } == true)
+            RemoteWebLogin.putState(this)
             putJsonObject("login") {
                 when (current) {
                     Login.Idle -> put("state", "idle")
@@ -205,14 +212,20 @@ internal object RemoteAccount {
         if (endpoints.viaThirdPartyMirror.value) {
             return result(false, tr("现在经镜像连接 Bangumi，授权登录走不通。请在「设置 → 账号」里用个人令牌登录"))
         }
+        if (endpoints.loginPath.value == BangumiLoginPath.TV_WEB_LOGIN) {
+            return result(false, tr("现在经加密直连连接 Bangumi，手机打不开授权页。请在「设置 → 账号」里输入账号密码登录"))
+        }
         val manager = oauthManager
         val fields = request.formFields()
         val onTv = fields["where"] == "tv"
         if (onTv && !manager.inAppBrowserSupported) {
             return result(false, tr("这台电视打不开授权页，改用手机授权"))
         }
-        // 手机经内网 IPv4 连着控制台: 授权完 Worker 能把它跳回来 (公网地址、域名不跳, 见 BangumiOAuthRelay)
+        // 手机经内网 IPv4 连着控制台: 授权完 Worker 能把它跳回来 (公网地址、域名不跳, 见 BangumiOAuthRelay); 跳不回来的走账号密码
         val lanHost = fields["host"]?.takeIf { BangumiOAuthRelay.isPrivateLanHost(it) }
+        if (!onTv && (lanHost == null || !manager.relaySupported)) {
+            return result(false, tr("这里用不了手机扫码授权，请在「设置 → 账号」里输入账号密码登录"))
+        }
         var url: String? = null
         var relay = false
         var configured = true
@@ -224,7 +237,7 @@ internal object RemoteAccount {
             if (onTv) {
                 manager.startInAppBrowser()
             } else {
-                url = lanHost?.let { manager.startRelay(it) }?.also { relay = true } ?: manager.startExternalBrowser()
+                url = lanHost?.let { manager.startRelay(it) }?.also { relay = true }
                 configured = url != null
             }
             if (configured) {
@@ -407,7 +420,7 @@ h1{font-size:24px;margin:0 0 12px}p{margin:8px 0;opacity:.85}a{font-weight:600}<
         withTimeoutOrNull(STATE_TIMEOUT) { settingsRepository.bangumiEndpointSettings.flow.first() }
             ?.allowCredentialsViaMirror == true
 
-    private fun cancelLogin(): JsonObject {
+    fun cancelLogin(): JsonObject {
         synchronized(lock) {
             job?.cancel()
             job = null
@@ -442,7 +455,7 @@ h1{font-size:24px;margin:0 0 12px}p{margin:8px 0;opacity:.85}a{font-weight:600}<
             ?: errorText(state.error)
     }
 
-    private fun errorText(error: LoadError): String = when (error) {
+    fun errorText(error: LoadError): String = when (error) {
         LoadError.NetworkError -> tr("网络错误，电视连不上 Bangumi")
         LoadError.ServiceUnavailable -> tr("Bangumi 暂时不可用，稍后再试")
         LoadError.RateLimited -> tr("操作太频繁，稍后再试")
@@ -452,6 +465,10 @@ h1{font-size:24px;margin:0 0 12px}p{margin:8px 0;opacity:.85}a{font-weight:600}<
         is LoadError.RequestError -> error.localized
         is LoadError.UnknownError -> tr("未知错误") + (error.throwable?.message?.let { "：$it" } ?: "")
     }
+
+    private fun phoneHost(request: LanHttpRequest): String? =
+        request.query.split('&').firstOrNull { it.substringBefore('=') == "host" }
+            ?.let { runCatching { URLDecoder.decode(it.substringAfter('=', ""), "UTF-8") }.getOrNull() }
 
     private fun result(ok: Boolean, message: String): JsonObject = buildJsonObject {
         put("ok", ok)
