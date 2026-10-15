@@ -78,6 +78,7 @@ import me.him188.ani.app.data.repository.user.UserRepository
 import me.him188.ani.app.domain.foundation.AlternativeEndpointsFeature
 import me.him188.ani.app.domain.foundation.AlternativeEndpointsFeatureHandler
 import me.him188.ani.app.domain.foundation.BangumiEchAddressList
+import me.him188.ani.app.domain.foundation.BangumiEchDohList
 import me.him188.ani.app.domain.foundation.BangumiEchConfig
 import me.him188.ani.app.domain.foundation.BangumiEchFeature
 import me.him188.ani.app.domain.foundation.BangumiEchFeatureHandler
@@ -301,7 +302,13 @@ private fun KoinApplication.otherModules(
     }
     single<BangumiMirrorConsentRequests> { BangumiMirrorConsentRequests() }
     // 加密直连的配置与地址; 连接层 BangumiEchTransport 由支持的平台的模块提供 (安卓: ConscryptEchTransport)
-    single<BangumiEchConfig> { BangumiEchConfig({ get<HttpClientProvider>().get() }, coroutineScope) }
+    single<BangumiEchConfig> {
+        // DoH 清单在第一次拉配置时才建 (建时就去仓库拉): 用不到加密直连的人不为它多发请求
+        BangumiEchConfig({ get<HttpClientProvider>().get() }, coroutineScope, dohEndpoints = { get<BangumiEchDohList>().endpoints.value })
+    }
+    single<BangumiEchDohList> {
+        BangumiEchDohList(get<SettingsRepository>().bangumiEchDohCache, { get<HttpClientProvider>().get() }, coroutineScope)
+    }
     single<BangumiEchAddressList> {
         BangumiEchAddressList(get<SettingsRepository>().bangumiEchAddressCache, { get<HttpClientProvider>().get() }, coroutineScope)
     }

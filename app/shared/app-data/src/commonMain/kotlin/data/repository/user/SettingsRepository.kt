@@ -97,6 +97,9 @@ interface SettingsRepository {
 
     /** 加密直连地址清单的本地缓存, 见 `BangumiEchAddressList`. */
     val bangumiEchAddressCache: Settings<RepoHostedListCache>
+
+    /** 拉加密直连配置用的 DoH 清单的本地缓存, 见 `BangumiEchDohList`. */
+    val bangumiEchDohCache: Settings<RepoHostedListCache>
     val mediaCacheSettings: Settings<MediaCacheSettings>
     val danmakuSettings: Settings<DanmakuSettings>
     val uiSettings: Settings<UISettings>
@@ -277,6 +280,11 @@ class PreferencesRepositoryImpl(
     )
     override val bangumiEchAddressCache: Settings<RepoHostedListCache> = SerializablePreference(
         "bangumiEchAddressCache",
+        RepoHostedListCache.serializer(),
+        default = { RepoHostedListCache.Default },
+    )
+    override val bangumiEchDohCache: Settings<RepoHostedListCache> = SerializablePreference(
+        "bangumiEchDohCache",
         RepoHostedListCache.serializer(),
         default = { RepoHostedListCache.Default },
     )

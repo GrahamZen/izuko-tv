@@ -85,14 +85,17 @@ class BangumiEchFeatureHandler(
  * ECH 配置 (`ECHConfigList`): 握手时用它加密内层. Cloudflare 所有站共用一份, 取自 `crypto.cloudflare.com` 的
  * DNS HTTPS 记录 —— bangumi 自己的记录里没有发布 (Cloudflare 照样接受, 2026-10-13 实测).
  *
- * 包里带一份; 第一次用到时在后台经 DoH 拉一次新的, 之后握手被拒时再拉. DoH 先问阿里 (大陆连得上), 再问 Cloudflare 与 Google.
+ * 包里带一份; 第一次用到时在后台经 DoH 拉一次新的, 之后握手被拒时再拉. 问哪些 DoH 见 [BangumiEchDohList].
+ *
+ * 配置本身不放进仓库清单: Cloudflare 隔几个小时就轮换, 清单经 CDN 缓存、一天才拉一次, 拿到的总是过期的.
  */
 @OptIn(ExperimentalEncodingApi::class)
 class BangumiEchConfig(
     /** 惰性取, 理由同 [RepoHostedList] 的构造参数. */
     private val client: () -> ScopedHttpClient,
     private val scope: CoroutineScope,
-    private val dohEndpoints: List<String> = DOH_ENDPOINTS,
+    /** 按顺序问的 DoH 地址, 每次拉时取 (见 [BangumiEchDohList]); 第一次真用到时才取, 理由同 [ConscryptEchTransport] 的地址清单. */
+    private val dohEndpoints: () -> List<String> = { BangumiEchDohList.BUNDLED },
     private val now: () -> Long = { currentTimeMillis() },
 ) {
     private val logger = logger<BangumiEchConfig>()
@@ -129,7 +132,7 @@ class BangumiEchConfig(
         val last = fetchedAt
         if (last != null && now() - last < MIN_REFRESH_INTERVAL_MILLIS) return false
         fetchedAt = now()
-        for (endpoint in dohEndpoints) {
+        for (endpoint in dohEndpoints()) {
             val config = try {
                 withTimeoutOrNull(DOH_TIMEOUT) {
                     client().use { get(endpoint) { header(HttpHeaders.Accept, "application/dns-json") }.bodyAsText() }
@@ -152,14 +155,6 @@ class BangumiEchConfig(
     }
 
     companion object {
-        private const val QUERY_NAME = "crypto.cloudflare.com"
-
-        val DOH_ENDPOINTS = listOf(
-            "https://dns.alidns.com/resolve?name=$QUERY_NAME&type=65",
-            "https://cloudflare-dns.com/dns-query?name=$QUERY_NAME&type=HTTPS",
-            "https://dns.google/resolve?name=$QUERY_NAME&type=65",
-        )
-
         /**
          * 从 `crypto.cloudflare.com` 取的 (公共名 `cloudflare-ech.com`). Cloudflare 隔几个小时就轮换一次, 所以这份多半已经过期:
          * 第一次握手被拒后经 DoH 换新的再试 (见 [refresh]).
@@ -178,6 +173,45 @@ class BangumiEchConfig(
             val encoded = ECH_PARAM.find(body)?.groupValues?.get(1) ?: return null
             return runCatching { Base64.decode(encoded) }.getOrNull()?.takeIf { it.isNotEmpty() }
         }
+    }
+}
+
+/**
+ * 拉 ECH 配置 ([BangumiEchConfig]) 问哪些 DoH: 仓库根目录的 `bangumi-ech-doh.json`, 内置一份兜底 (见 [RepoHostedList]), 按顺序问.
+ *
+ * 每条是一个完整的地址, 回 DoH 的 JSON 格式 (`application/dns-json`), 问的是带 Cloudflare 公共 ECH 配置的 HTTPS 记录 ——
+ * 换一家 DoH、或者换一个查询的域名, 都只改清单. 大陆连得上的排前面.
+ */
+class BangumiEchDohList(
+    cache: Settings<RepoHostedListCache>,
+    client: () -> ScopedHttpClient,
+    scope: CoroutineScope,
+) : RepoHostedList(SPEC, cache, client, scope) {
+    /** 当前清单. */
+    val endpoints: StateFlow<List<String>> = entries.stateIn(scope, SharingStarted.Eagerly, SPEC.bundled)
+
+    companion object {
+        private const val QUERY_NAME = "crypto.cloudflare.com"
+
+        /** 前两个大陆连得上 (2026-10-15 都回 JSON、带 ech 参数). */
+        val BUNDLED = listOf(
+            "https://dns.alidns.com/resolve?name=$QUERY_NAME&type=65",
+            "https://doh.360.cn/resolve?name=$QUERY_NAME&type=65",
+            "https://cloudflare-dns.com/dns-query?name=$QUERY_NAME&type=HTTPS",
+            "https://dns.google/resolve?name=$QUERY_NAME&type=65",
+        )
+
+        private val HTTPS_URL = Regex("""https://[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+(:\d+)?([/?]\S*)?""")
+
+        /** 只认带域名的 https 地址 (清单是远程内容); 认不出返回 `null`. */
+        fun normalizeEndpoint(input: String): String? = input.trim().takeIf { HTTPS_URL.matches(it) }
+
+        private val SPEC = Spec(
+            fileName = "bangumi-ech-doh.json",
+            field = "endpoints",
+            bundled = BUNDLED,
+            normalize = ::normalizeEndpoint,
+        )
     }
 }
 
