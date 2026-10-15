@@ -15,6 +15,7 @@ import androidx.media3.common.Format
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import java.lang.reflect.Proxy
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -28,26 +29,43 @@ class AudioPassthroughGateTest {
     private val arc = AudioDeviceInfo.TYPE_HDMI_ARC
     private val bus = AudioDeviceInfo.TYPE_BUS
     private val usb = AudioDeviceInfo.TYPE_USB_DEVICE
+    private val bluetooth = AudioDeviceInfo.TYPE_BLUETOOTH_A2DP
 
     @Test
     fun `routed device decides when it is known`() {
-        // 电视自带喇叭: 即使接着 ARC 设备也算
-        assertTrue(AudioOutputRoute.isBuiltInSpeaker(routed = listOf(speaker), outputs = listOf(speaker, arc)))
-        assertFalse(AudioOutputRoute.isBuiltInSpeaker(routed = listOf(arc), outputs = listOf(speaker, arc)))
+        // 电视自带喇叭: 即使接着 ARC 设备也不算外接
+        assertFalse(AudioOutputRoute.isExternal(routed = listOf(speaker), outputs = listOf(speaker, arc)))
+        assertTrue(AudioOutputRoute.isExternal(routed = listOf(arc), outputs = listOf(speaker, arc)))
+        // 蓝牙传不了直通的码流
+        assertFalse(AudioOutputRoute.isExternal(routed = listOf(bluetooth), outputs = listOf(speaker, bluetooth)))
         // 盒子的 HDMI 输出
-        assertFalse(AudioOutputRoute.isBuiltInSpeaker(routed = listOf(hdmi), outputs = listOf(hdmi)))
+        assertTrue(AudioOutputRoute.isExternal(routed = listOf(hdmi), outputs = listOf(hdmi)))
     }
 
     @Test
-    fun `without the routed device only a speaker with no other outputs counts`() {
+    fun `without the routed device only a speaker with no other outputs counts as not external`() {
         // 电视: 只有自带喇叭
-        assertTrue(AudioOutputRoute.isBuiltInSpeaker(routed = null, outputs = listOf(speaker)))
+        assertFalse(AudioOutputRoute.isExternal(routed = null, outputs = listOf(speaker)))
         // 电视接了回音壁
-        assertFalse(AudioOutputRoute.isBuiltInSpeaker(routed = null, outputs = listOf(speaker, arc)))
+        assertTrue(AudioOutputRoute.isExternal(routed = null, outputs = listOf(speaker, arc)))
         // Shield: HDMI 报成 总线 + USB + 喇叭
-        assertFalse(AudioOutputRoute.isBuiltInSpeaker(routed = emptyList(), outputs = listOf(bus, usb, speaker)))
-        assertFalse(AudioOutputRoute.isBuiltInSpeaker(routed = null, outputs = listOf(hdmi)))
-        assertFalse(AudioOutputRoute.isBuiltInSpeaker(routed = null, outputs = emptyList()))
+        assertTrue(AudioOutputRoute.isExternal(routed = emptyList(), outputs = listOf(bus, usb, speaker)))
+        assertTrue(AudioOutputRoute.isExternal(routed = null, outputs = listOf(hdmi)))
+        // 看不出来的照旧当外接
+        assertTrue(AudioOutputRoute.isExternal(routed = null, outputs = emptyList()))
+    }
+
+    @Test
+    fun `dolby and dts skip the device decoders when ffmpeg can decode them`() {
+        val asked = mutableListOf<String>()
+        val device = MediaCodecSelector { mime, _, _ -> asked += mime; emptyList() }
+        val selector = FfmpegForDolbyCodecSelector(device, ffmpegCanDecode = { it != MimeTypes.AUDIO_DTS_HD })
+        selector.getDecoderInfos(MimeTypes.AUDIO_AC3, false, false)
+        selector.getDecoderInfos(MimeTypes.AUDIO_E_AC3, false, false)
+        selector.getDecoderInfos(MimeTypes.AUDIO_AAC, false, false)
+        selector.getDecoderInfos(MimeTypes.AUDIO_DTS_HD, false, false)
+        // AC3 / E-AC3 不问设备; AAC 与 FFmpeg 解不了的照常问
+        assertEquals(listOf(MimeTypes.AUDIO_AAC, MimeTypes.AUDIO_DTS_HD), asked)
     }
 
     @Test
