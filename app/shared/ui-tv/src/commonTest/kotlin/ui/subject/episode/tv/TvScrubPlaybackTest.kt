@@ -52,6 +52,47 @@ class TvScrubPlaybackTest {
     }
 
     @Test
+    fun `a resume the player has not reported yet still counts as playing`() {
+        // 取消会跳回原处再恢复播放: 播放器在过渡期间把这条播放排队, 报出来的状态还是停着
+        val player = FakePlayer(playing = true)
+        var queued = false
+        val scrub = TvScrubPlayback(
+            pauseOnScrub = { true },
+            isPlaying = { player.playing },
+            pause = player::pause,
+            play = {
+                player.calls += "play"
+                queued = true
+            },
+        )
+        scrub.onEnter()
+        scrub.onCancel()
+        assertTrue(queued)
+
+        // 马上再拖: 照样暂停, 取消时再恢复
+        assertEquals(true, scrub.onEnter())
+        scrub.onCancel()
+        assertEquals(listOf("pause", "play", "pause", "play"), player.calls)
+    }
+
+    @Test
+    fun `once the player reports playing a later pause by the user is respected`() {
+        val player = FakePlayer(playing = true)
+        val scrub = scrubPlayback(player) { true }
+        scrub.onEnter()
+        scrub.onCancel()
+        scrub.onPlayingChanged(true)
+
+        player.pause() // 用户自己按了暂停
+        scrub.onPlayingChanged(false)
+        assertEquals(false, scrub.onEnter())
+        scrub.onCancel()
+
+        assertEquals(listOf("pause", "play", "pause"), player.calls)
+        assertEquals(false, player.playing)
+    }
+
+    @Test
     fun `pausing mode leaves a video paused before scrubbing paused after cancel`() {
         val player = FakePlayer(playing = false)
         val scrub = scrubPlayback(player) { true }
