@@ -413,6 +413,8 @@ class DefaultSubjectDetailsStateFactory : SubjectDetailsStateFactory, KoinCompon
             tmdbSummaryOverrideFlow = tmdbEpisodeMediaFlow.map { it.summaryOverride },
             // TMDB 上的播出情况: Bangumi 条目没人维护 (分集没日期 / 没录分集) 时修正详情页的播出状态文字
             tmdbAiringFlow = tmdbEpisodeMediaFlow.map { it.airing },
+            episodesFetchStateFlow = subjectCollectionRepository.episodesFetchStateFlow(subjectId),
+            refetchEpisodes = { subjectCollectionRepository.refreshSubjectCollection(subjectId) },
             // Ani 服务器简介为空时直连 bgm.tv 补 (仅替代不合并); 简介不为空则直接发 "" (已解析、无需兜底).
             // 网络错误 (getSummary 抛出) 也按 "" 处理: 本次进页降级到 TMDB 兜底, 下次进页重试.
             // Lazily 同上, 仅 TV 详情页收集.
