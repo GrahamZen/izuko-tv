@@ -4977,6 +4977,8 @@ private fun TvPlayButton(
     onLongPress: (() -> Unit)? = null,
     /** 按钮所在的首屏此刻已不是显示页 (焦点翻进了下一页). */
     leavingHero: () -> Boolean = { false },
+    /** 按下时分集还没出来, 正在等 (见 [TvPlayEpisodesGate]): 图标换成转圈. */
+    waiting: Boolean = false,
 ) {
     var focused by remember { mutableStateOf(false) }
     val onSurface = MaterialTheme.colorScheme.onSurface
@@ -5014,7 +5016,7 @@ private fun TvPlayButton(
             color = containerColor,
             contentColor = contentColor,
         ) {
-            TvPlayButtonLabel(state)
+            TvPlayButtonLabel(state, waiting)
         }
         val progress = playProgress?.coerceIn(0f, 1f)
         if (progress != null && progress > 0f && progress < 1f) {
@@ -5053,7 +5055,7 @@ private fun TvPlayButton(
  * 按钮聚焦 / 失焦变色的那几次重组不连带重查.
  */
 @Composable
-private fun TvPlayButtonLabel(state: SubjectProgressState) {
+private fun TvPlayButtonLabel(state: SubjectProgressState, waiting: Boolean) {
     val strings = rememberSubjectStatusStrings()
     Row(
         // 文字 titleMedium (行高 24sp) 配 38dp 高: 文字与上下边界各留 7dp,
@@ -5061,7 +5063,12 @@ private fun TvPlayButtonLabel(state: SubjectProgressState) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterHorizontally),
     ) {
-        Icon(Icons.Rounded.PlayArrow, contentDescription = null)
+        if (waiting) {
+            // 与图标同占 24dp, 按钮宽度不变
+            CircularProgressIndicator(Modifier.size(24.dp).padding(4.dp), color = LocalContentColor.current, strokeWidth = 2.dp)
+        } else {
+            Icon(Icons.Rounded.PlayArrow, contentDescription = null)
+        }
         Text(
             state.buttonText(strings),
             style = MaterialTheme.typography.titleSmall,
@@ -5248,27 +5255,32 @@ private fun TvHeroBlock(
                 // 下: 播放按钮 (下方带播放进度条), 宽度与列同宽
                 // (IntrinsicSize.Max: 取"圆钮行 / 按钮文字固有宽"中较大者).
                 // offset 微微上移 (纯视觉, 不占布局, 周围组件与三列底对齐的几何全部不动)
-                // Bangumi 一集都没录时播放页进不去, 按下去弹说明而不是没反应 (见 TvSubjectNoEpisodesDialog)
-                var noEpisodesDialog by remember { mutableStateOf(false) }
+                // 分集还没出来时按下去等分集, Bangumi 一集都没录时弹说明而不是没反应 (见 TvPlayEpisodesGate)
+                val playGate = rememberTvPlayEpisodesGate(
+                    state,
+                    loaded = !uiState.isPlaceholder,
+                    hasEpisodes = uiState.episodeListUiState.allEpisodes.isNotEmpty(),
+                    episodeIdToPlay = subjectProgressState.episodeIdToPlay,
+                    onPlay = onPlay,
+                )
+                val playDialog = playGate.dialog
                 TvPlayButton(
                     subjectProgressState,
-                    onPlay = {
-                        val episodeId = subjectProgressState.episodeIdToPlay
-                        when {
-                            episodeId != null -> onPlay(episodeId)
-                            !uiState.isPlaceholder && uiState.episodeListUiState.allEpisodes.isEmpty() ->
-                                noEpisodesDialog = true
-                        }
-                    },
+                    onPlay = playGate::press,
                     playProgress = playProgress,
                     modifier = Modifier.fillMaxWidth().offset(y = (-4).dp),
                     // 弹窗是独立窗口, 关掉后焦点还回播放键
-                    buttonModifier = primaryButtonModifier.restoreFocusAfter(noEpisodesDialog),
+                    buttonModifier = primaryButtonModifier.restoreFocusAfter(playDialog != null)
+                        .onFocusChanged { if (!it.isFocused) playGate.cancel() },
                     onLongPress = onLongPressPlay,
                     leavingHero = leavingHero,
+                    waiting = playGate.waiting,
                 )
-                if (noEpisodesDialog) {
-                    TvSubjectNoEpisodesDialog { noEpisodesDialog = false }
+                if (playDialog != null) {
+                    TvSubjectNoEpisodesDialog(
+                        fetchFailed = playDialog == TvPlayEpisodesOutcome.FETCH_FAILED,
+                        onDismiss = playGate::dismissDialog,
+                    )
                 }
             }
             middleColumn()
