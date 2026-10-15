@@ -63,6 +63,7 @@ import me.him188.ani.app.domain.player.tracks.AudioTrackSupport
 import me.him188.ani.app.domain.player.tracks.PlayerTrackChooser
 import me.him188.ani.app.domain.player.tracks.TrackChooserHost
 import me.him188.ani.app.platform.PlaybackRequestHints
+import me.him188.ani.app.videoplayer.audio.AudioPassthroughMode
 import me.him188.ani.app.videoplayer.diagnostics.PlayerProbes
 import me.him188.ani.app.videoplayer.player.VideoSurfaceFrameSignal
 import me.him188.ani.app.videoplayer.ui.findAndroidVideoSurface
@@ -123,6 +124,7 @@ class LibassExoPlayerMediampPlayer private constructor(
      * @param configurePlayerBuilder 在 [ExoPlayer.Builder] 构建前调用, 用于自定义原生播放器 (如缓冲策略).
      *   见 [ExoPlayerMediampPlayer] 的同名参数.
      * @param diskCacheEnabled 在线播放时要不要把下过的数据存在本机 (见 [PlaybackDiskCache]), 每打开一个媒体时问一次 (在主线程上)
+     * @param audioPassthrough 编码音轨要不要直通, 每次选音轨时问 (见 [AudioPassthroughGate])
      */
     constructor(
         context: Context,
@@ -131,12 +133,14 @@ class LibassExoPlayerMediampPlayer private constructor(
         configurePlayerBuilder: ((ExoPlayer.Builder) -> Unit)? = null,
         proxyConfig: () -> PlaybackProxyConfig? = { null },
         diskCacheEnabled: () -> Boolean = { false },
+        audioPassthrough: () -> AudioPassthroughMode = { AudioPassthroughMode.ALWAYS },
     ) : this(
         context,
         parentCoroutineContext,
         audioTimeStretch,
         configurePlayerBuilder,
         LibassMediaSourcePipeline(context, parentCoroutineContext, proxyConfig, diskCacheEnabled),
+        AudioPassthroughGate(context, audioPassthrough),
     )
 
     private constructor(
@@ -145,6 +149,7 @@ class LibassExoPlayerMediampPlayer private constructor(
         audioTimeStretch: ExoPlayerAudioTimeStretch,
         configurePlayerBuilder: ((ExoPlayer.Builder) -> Unit)?,
         pipeline: LibassMediaSourcePipeline,
+        passthrough: AudioPassthroughGate,
     ) : this(
         parentCoroutineContext,
         pipeline,
@@ -155,7 +160,7 @@ class LibassExoPlayerMediampPlayer private constructor(
             mediaSourceInterceptor = pipeline::intercept,
             configurePlayerBuilder = { builder ->
                 builder.setDetachSurfaceTimeoutMs(DETACH_SURFACE_TIMEOUT_MILLIS)
-                FfmpegAudioFallback.install(builder, context, audioTimeStretch)
+                FfmpegAudioFallback.install(builder, context, audioTimeStretch, passthrough)
                 configurePlayerBuilder?.invoke(builder)
                 // 缓冲策略只能是管线的 ThrottledSourceLoadControl: 限速源、拖动预览要按媒体切换策略. 放在最后, 自定义不能覆盖它
                 builder.setLoadControl(pipeline.loadControl)
@@ -163,6 +168,7 @@ class LibassExoPlayerMediampPlayer private constructor(
         ),
     ) {
         exoPlayer.addAnalyticsListener(RebufferDiagnostics(context.applicationContext, backgroundScope))
+        exoPlayer.addAnalyticsListener(AudioOutputDiagnostics(context.applicationContext, backgroundScope))
     }
 
     internal val assHandler: AssHandler get() = pipeline.assHandler
@@ -1015,6 +1021,8 @@ class LibassExoPlayerMediampPlayerFactory(
     private val proxyConfig: () -> PlaybackProxyConfig? = { null },
     /** 见 [LibassExoPlayerMediampPlayer] 构造参数里的同名参数. */
     private val diskCacheEnabled: () -> Boolean = { false },
+    /** 见 [LibassExoPlayerMediampPlayer] 构造参数里的同名参数. */
+    private val audioPassthrough: () -> AudioPassthroughMode = { AudioPassthroughMode.ALWAYS },
 ) : MediampPlayerFactory<LibassExoPlayerMediampPlayer> {
     override val forClass: KClass<LibassExoPlayerMediampPlayer>
         get() = LibassExoPlayerMediampPlayer::class
@@ -1035,6 +1043,7 @@ class LibassExoPlayerMediampPlayerFactory(
             audioTimeStretch,
             proxyConfig = proxyConfig,
             diskCacheEnabled = diskCacheEnabled,
+            audioPassthrough = audioPassthrough,
         )
     }
 }

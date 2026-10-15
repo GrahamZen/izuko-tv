@@ -13,6 +13,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.Stable
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
+import me.him188.ani.app.videoplayer.audio.AudioPassthroughMode
 import me.him188.ani.utils.platform.annotations.SerializationOnly
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -231,6 +232,8 @@ data class VideoScaffoldConfig @SerializationOnly constructor(
      * 每打开一个视频时读一次.
      */
     val enablePlaybackDiskCache: Boolean = false,
+    /** 杜比、DTS 这类音轨要不要直通, 见 [AudioPassthroughMode]. 每次选音轨时读. */
+    val audioPassthrough: AudioPassthroughMode = AudioPassthroughMode.AUTO,
     /**
      * 过滤 HLS 播放列表中的插播广告, 见 `HlsManifestFilter`.
      *
