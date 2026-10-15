@@ -83,8 +83,10 @@ WebDAV 列目录不给画面高度与时长：`cloud-drive` 给出候选前读�
 
 - 每段从输入开始（关键词、条目页地址、剧集页地址），步骤改写「当前值」或存取变量：请求（`fetch`）、CSS 取值（`select`）、
   正则（`regex`）、JSON 取值（`json`，路径语法同直链 API 数据源）、模板与变量（`template`、`set`、`query`）、
-  字符串变换（`transform`）、苹果 CMS 播放页（`maccmsPlayer`）、播放请求头（`mediaHeaders`）；`first` 依次尝试几个分支。
-- 搜索段以条目列表步骤结束（`subjects`、`jsonSubjects`），详情段以剧集列表步骤结束（`episodes`、`jsonEpisodes`、`regexEpisodes`）；
+  字符串变换（`transform`）、解密与摘要（`crypto`：AES-CBC 解密、MD5）、苹果 CMS 播放页（`maccmsPlayer`）、播放请求头（`mediaHeaders`）；
+  `first` 依次尝试几个分支。
+- 搜索段以条目列表步骤结束（`subjects`、`jsonSubjects`），详情段以剧集列表步骤结束（`episodes`、`jsonEpisodes`、`regexEpisodes`，
+  以及苹果 CMS 视频接口的 `maccmsEpisodes`：按 `vod_play_from` / `vod_play_url` 拆线路与剧集，与苹果 CMS 数据源共用 `MacCmsEngine.parsePlayLines`）；
   播放段结束时的当前值就是视频地址，以 `sniff`（`goal = video`）结束表示交给 WebView 嗅探。
 
 站点上的东西取到之后，挑出当前这一集、搜索缓存、生成 `Media`、浏览协议都复用 `SelectorMediaSource` 的实现，
@@ -100,7 +102,10 @@ GET 请求被站点验证挡住时改由 `WebSessionManager` 加载，与 `Selec
 匹配器实现 `WebVideoSniffTimeout` 报出它，安卓的解析器取全局设置与它中较大的（它最多算 30 秒，与设置里能选的最长时长相同）。
 
 `AniBakaRuleImporter` 把 AniBaka 的规则（`anx-rule/2`）转换成规则源：两者都是「当前值 + 变量」的步骤流水线，
-多数步骤一一对应；用到规则源没有的步骤（加解密、站点专用步骤、HLS 清单处理、XPath）的规则不转换并说明原因。
+多数步骤一一对应；用到规则源没有的步骤（站点专用步骤、HLS 清单处理）的规则不转换并说明原因。
+XPath（`listXPath` / `roadsXPath` 等）由 `XPathToCss` 换成 CSS 选择器，只认按节点名与属性、文字挑元素的写法，换不了的照样报原因。
+`fetch` 的请求体写成对象时，按 `contentType` 拼成表单字段或 JSON（变量用模板的 `{x:json}` 按 JSON 字符串转义）。
+`jsonSeries` 只给条目 id（AniBaka 由详情段自己拼请求地址）时，条目地址取详情段开头那个用到 `{seriesId}` 的请求的地址，详情段的那个请求改为直接打开条目地址。
 站点专用步骤里能用通用步骤表达的照样翻译：anime1 的三步翻成「番剧表按关键词筛 → 分类页翻页取文章 → 文章里的 token 换视频地址并带上接口发的 Cookie」。
 `keywordMatch` 对到 `filterByKeyword`。
 嗅探的选项照录进 `sniff`：等待时长生效；页面加载好 / 被挡的标志文字（`readyContains` / `rejectContains`）、加载好后再等多久、
