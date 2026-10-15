@@ -1,0 +1,345 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="780" height="634" viewBox="0 0 780 634" fill="none" role="img" aria-labelledby="title description">
+  <title id="title">海报浏览与打开方式</title>
+  <desc id="description">默认选择先看简介：用方向键在海报墙选中番剧，按一次确认显示背景大图和简介，再按一次确认进入详情页。也可以在设置、主题与色彩、海报上按确定中选择直接播放或直接进详情页。直接播放会接着上次看到的那集播放，没看过则从第一集开始。</desc>
+  <defs>
+    <linearGradient id="poster-sky" x1="2" y1="0" x2="25" y2="42" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#9380bc"/><stop offset="1" stop-color="#c7b6d7"/>
+    </linearGradient>
+    <linearGradient id="landscape-sky" x1="35" y1="0" x2="224" y2="140" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8580b4"/><stop offset=".52" stop-color="#a995c3"/><stop offset="1" stop-color="#dfc4cb"/>
+    </linearGradient>
+    <linearGradient id="summary-fade">
+      <stop stop-color="#eee8f4"/><stop offset=".42" stop-color="#eee8f4"/><stop offset=".8" stop-color="#eee8f4" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="summary-bottom" x2="0" y2="1">
+      <stop offset=".4" stop-color="#eee8f4" stop-opacity="0"/><stop offset=".9" stop-color="#eee8f4"/>
+    </linearGradient>
+    <linearGradient id="detail-bottom" x2="0" y2="1">
+      <stop offset=".35" stop-color="#eee8f4" stop-opacity="0"/><stop offset=".8" stop-color="#eee8f4"/>
+    </linearGradient>
+    <linearGradient id="play-bottom" x2="0" y2="1">
+      <stop offset=".3" stop-color="#211b32" stop-opacity="0"/><stop offset="1" stop-color="#211b32" stop-opacity=".85"/>
+    </linearGradient>
+    <filter id="screen-shadow" x="-10%" y="-10%" width="120%" height="135%">
+      <feDropShadow dx="0" dy="5" stdDeviation="5" flood-color="#342441" flood-opacity=".12"/>
+    </filter>
+    <clipPath id="screen-clip"><rect width="224" height="140" rx="16"/></clipPath>
+    <g id="landscape">
+      <rect width="224" height="140" fill="url(#landscape-sky)"/>
+      <circle cx="177" cy="34" r="22" fill="#ead2dd" opacity=".16"/>
+      <circle cx="177" cy="34" r="16" fill="#f4ddd9" opacity=".94"/>
+      <path d="M0 101 49 61 79 85 119 42 169 88 195 64 224 88v52H0Z" fill="#807297"/>
+      <path d="m0 120 44-30 37 25 41-35 32 23 35-20 35 24v33H0Z" fill="#665e80"/>
+      <path d="m0 140 53-31 34 18 44-20 37 19 37-14 19 11v17Z" fill="#48465f"/>
+      <path d="m147 20 10-10" stroke="#f6e6ef" stroke-width="1.5" stroke-linecap="round" opacity=".7"/>
+      <circle cx="130" cy="26" r="1" fill="#eee5f5"/>
+      <circle cx="206" cy="15" r=".8" fill="#eee5f5"/>
+    </g>
+    <g id="navigation">
+      <rect width="22" height="140" fill="#e2daeb" opacity=".6"/>
+      <g stroke="#9b8bab" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="23" r="3.5"/>
+        <circle cx="10" cy="43" r="3"/><path d="m12 45 3 3"/>
+        <path d="m7 65 4-4 4 4m-6-1v5h4v-5"/>
+        <path d="m11 80 1.2 3 3.2.3-2.4 2 1 3.2-3-1.8-3 1.8 1-3.2-2.4-2 3.2-.3Z"/>
+        <path d="m7 107 3 3 5-6"/>
+      </g>
+      <circle cx="11" cy="127" r="3.5" fill="#a595b6"/>
+      <circle cx="11" cy="127" r="1.5" fill="#e2daeb"/>
+    </g>
+    <g id="poster-wall">
+      <g clip-path="url(#screen-clip)">
+        <rect width="224" height="140" fill="#eee8f4"/>
+        <use href="#navigation"/>
+        <g transform="translate(32 12)">
+
+      <rect width="26" height="42" rx="4" fill="#cbc4da"/>
+      <circle cx="18" cy="11" r="4" fill="#f3edf7" opacity=".85"/>
+      <path d="M0 29 10 18 19 28 26 23v15a4 4 0 0 1-4 4H4a4 4 0 0 1-4-4Z" fill="#8e7caa" opacity="0.55"/>
+      <path d="m0 36 9-7 10 6 7-4v7a4 4 0 0 1-4 4H4a4 4 0 0 1-4-4Z" fill="#8e7caa"/>
+    </g>
+    <rect x="33" y="59" width="18" height="3" rx="1.5" fill="#b3a8c0"/>
+    <g transform="translate(62 12)">
+
+      <rect width="26" height="42" rx="4" fill="#c5d1d5"/>
+      <circle cx="18" cy="11" r="4" fill="#f3edf7" opacity=".85"/>
+      <path d="M0 29 10 18 19 28 26 23v15a4 4 0 0 1-4 4H4a4 4 0 0 1-4-4Z" fill="#879da8" opacity="0.55"/>
+      <path d="m0 36 9-7 10 6 7-4v7a4 4 0 0 1-4 4H4a4 4 0 0 1-4-4Z" fill="#879da8"/>
+    </g>
+    <rect x="63" y="59" width="18" height="3" rx="1.5" fill="#b3a8c0"/>
+    <g transform="translate(92 12)">
+
+      <rect width="26" height="42" rx="4" fill="#d7c7cf"/>
+      <circle cx="18" cy="11" r="4" fill="#f3edf7" opacity=".85"/>
+      <path d="M0 29 10 18 19 28 26 23v15a4 4 0 0 1-4 4H4a4 4 0 0 1-4-4Z" fill="#aa889c" opacity="0.55"/>
+      <path d="m0 36 9-7 10 6 7-4v7a4 4 0 0 1-4 4H4a4 4 0 0 1-4-4Z" fill="#aa889c"/>
+    </g>
+    <rect x="93" y="59" width="18" height="3" rx="1.5" fill="#b3a8c0"/>
+    <g transform="translate(122 12)">
+
+      <rect width="26" height="42" rx="4" fill="#cfcbdc"/>
+      <circle cx="18" cy="11" r="4" fill="#f3edf7" opacity=".85"/>
+      <path d="M0 29 10 18 19 28 26 23v15a4 4 0 0 1-4 4H4a4 4 0 0 1-4-4Z" fill="#8b8ba8" opacity="0.55"/>
+      <path d="m0 36 9-7 10 6 7-4v7a4 4 0 0 1-4 4H4a4 4 0 0 1-4-4Z" fill="#8b8ba8"/>
+    </g>
+    <rect x="123" y="59" width="18" height="3" rx="1.5" fill="#b3a8c0"/>
+    <g transform="translate(152 12)">
+
+      <rect width="26" height="42" rx="4" fill="#d9cfbf"/>
+      <circle cx="18" cy="11" r="4" fill="#f3edf7" opacity=".85"/>
+      <path d="M0 29 10 18 19 28 26 23v15a4 4 0 0 1-4 4H4a4 4 0 0 1-4-4Z" fill="#aaa18a" opacity="0.55"/>
+      <path d="m0 36 9-7 10 6 7-4v7a4 4 0 0 1-4 4H4a4 4 0 0 1-4-4Z" fill="#aaa18a"/>
+    </g>
+    <rect x="153" y="59" width="18" height="3" rx="1.5" fill="#b3a8c0"/>
+    <g transform="translate(182 12)">
+
+      <rect width="26" height="42" rx="4" fill="#c5cbd9"/>
+      <circle cx="18" cy="11" r="4" fill="#f3edf7" opacity=".85"/>
+      <path d="M0 29 10 18 19 28 26 23v15a4 4 0 0 1-4 4H4a4 4 0 0 1-4-4Z" fill="#8492af" opacity="0.55"/>
+      <path d="m0 36 9-7 10 6 7-4v7a4 4 0 0 1-4 4H4a4 4 0 0 1-4-4Z" fill="#8492af"/>
+    </g>
+    <rect x="183" y="59" width="18" height="3" rx="1.5" fill="#b3a8c0"/>
+    <g transform="translate(32 77)">
+
+      <rect width="26" height="42" rx="4" fill="#cbc4da"/>
+      <circle cx="18" cy="11" r="4" fill="#f3edf7" opacity=".85"/>
+      <path d="M0 29 10 18 19 28 26 23v15a4 4 0 0 1-4 4H4a4 4 0 0 1-4-4Z" fill="#8e7caa" opacity="0.55"/>
+      <path d="m0 36 9-7 10 6 7-4v7a4 4 0 0 1-4 4H4a4 4 0 0 1-4-4Z" fill="#8e7caa"/>
+    </g>
+    <rect x="33" y="124" width="18" height="3" rx="1.5" fill="#b3a8c0"/>
+    <g transform="translate(62 77)">
+      <rect x="-2.5" y="-2.5" width="31" height="47" rx="6.5" fill="#e8ddf7" stroke="#8c6cb5" stroke-width="1.8"/>
+      <rect width="26" height="42" rx="4" fill="url(#poster-sky)"/>
+      <circle cx="18" cy="11" r="5" fill="#f3e1dd" opacity=".85"/>
+      <path d="M0 29 10 18 19 28 26 23v15a4 4 0 0 1-4 4H4a4 4 0 0 1-4-4Z" fill="#73648e" opacity="1"/>
+      <path d="m0 36 9-7 10 6 7-4v7a4 4 0 0 1-4 4H4a4 4 0 0 1-4-4Z" fill="#484460"/>
+    </g>
+    <rect x="63" y="124" width="23" height="3" rx="1.5" fill="#69527f"/>
+    <g transform="translate(92 77)">
+
+      <rect width="26" height="42" rx="4" fill="#d7c7cf"/>
+      <circle cx="18" cy="11" r="4" fill="#f3edf7" opacity=".85"/>
+      <path d="M0 29 10 18 19 28 26 23v15a4 4 0 0 1-4 4H4a4 4 0 0 1-4-4Z" fill="#aa889c" opacity="0.55"/>
+      <path d="m0 36 9-7 10 6 7-4v7a4 4 0 0 1-4 4H4a4 4 0 0 1-4-4Z" fill="#aa889c"/>
+    </g>
+    <rect x="93" y="124" width="18" height="3" rx="1.5" fill="#b3a8c0"/>
+    <g transform="translate(122 77)">
+
+      <rect width="26" height="42" rx="4" fill="#cfcbdc"/>
+      <circle cx="18" cy="11" r="4" fill="#f3edf7" opacity=".85"/>
+      <path d="M0 29 10 18 19 28 26 23v15a4 4 0 0 1-4 4H4a4 4 0 0 1-4-4Z" fill="#8b8ba8" opacity="0.55"/>
+      <path d="m0 36 9-7 10 6 7-4v7a4 4 0 0 1-4 4H4a4 4 0 0 1-4-4Z" fill="#8b8ba8"/>
+    </g>
+    <rect x="123" y="124" width="18" height="3" rx="1.5" fill="#b3a8c0"/>
+    <g transform="translate(152 77)">
+
+      <rect width="26" height="42" rx="4" fill="#d9cfbf"/>
+      <circle cx="18" cy="11" r="4" fill="#f3edf7" opacity=".85"/>
+      <path d="M0 29 10 18 19 28 26 23v15a4 4 0 0 1-4 4H4a4 4 0 0 1-4-4Z" fill="#aaa18a" opacity="0.55"/>
+      <path d="m0 36 9-7 10 6 7-4v7a4 4 0 0 1-4 4H4a4 4 0 0 1-4-4Z" fill="#aaa18a"/>
+    </g>
+    <rect x="153" y="124" width="18" height="3" rx="1.5" fill="#b3a8c0"/>
+    <g transform="translate(182 77)">
+
+      <rect width="26" height="42" rx="4" fill="#c5cbd9"/>
+      <circle cx="18" cy="11" r="4" fill="#f3edf7" opacity=".85"/>
+      <path d="M0 29 10 18 19 28 26 23v15a4 4 0 0 1-4 4H4a4 4 0 0 1-4-4Z" fill="#8492af" opacity="0.55"/>
+      <path d="m0 36 9-7 10 6 7-4v7a4 4 0 0 1-4 4H4a4 4 0 0 1-4-4Z" fill="#8492af"/>
+    </g>
+    <rect x="183" y="124" width="18" height="3" rx="1.5" fill="#b3a8c0"/>
+      </g>
+    </g>
+    <g id="summary-screen">
+      <g clip-path="url(#screen-clip)">
+        <use href="#landscape"/>
+        <rect width="224" height="140" fill="url(#summary-fade)"/>
+        <rect width="224" height="140" fill="url(#summary-bottom)"/>
+        <use href="#navigation"/>
+        <rect x="33" y="17" width="67" height="7" rx="3.5" fill="#625171"/>
+        <rect x="33" y="32" width="28" height="4" rx="2" fill="#a086bf"/>
+        <rect x="67" y="32" width="29" height="4" rx="2" fill="#b3a5bf"/>
+        <rect x="33" y="45" width="82" height="3" rx="1.5" fill="#a698b3"/>
+        <rect x="33" y="54" width="74" height="3" rx="1.5" fill="#a698b3"/>
+        <rect x="33" y="63" width="80" height="3" rx="1.5" fill="#a698b3"/>
+        <rect x="33" y="72" width="55" height="3" rx="1.5" fill="#a698b3"/>
+        <g transform="translate(32 92)">
+
+      <rect width="26" height="42" rx="4" fill="#cbc4da"/>
+      <circle cx="18" cy="11" r="4" fill="#f3edf7" opacity=".85"/>
+      <path d="M0 29 10 18 19 28 26 23v15a4 4 0 0 1-4 4H4a4 4 0 0 1-4-4Z" fill="#8e7caa" opacity="0.55"/>
+      <path d="m0 36 9-7 10 6 7-4v7a4 4 0 0 1-4 4H4a4 4 0 0 1-4-4Z" fill="#8e7caa"/>
+    </g>
+    <g transform="translate(62 92)">
+      <rect x="-2.5" y="-2.5" width="31" height="47" rx="6.5" fill="#e8ddf7" stroke="#8c6cb5" stroke-width="1.8"/>
+      <rect width="26" height="42" rx="4" fill="url(#poster-sky)"/>
+      <circle cx="18" cy="11" r="5" fill="#f3e1dd" opacity=".85"/>
+      <path d="M0 29 10 18 19 28 26 23v15a4 4 0 0 1-4 4H4a4 4 0 0 1-4-4Z" fill="#73648e" opacity="1"/>
+      <path d="m0 36 9-7 10 6 7-4v7a4 4 0 0 1-4 4H4a4 4 0 0 1-4-4Z" fill="#484460"/>
+    </g>
+    <g transform="translate(92 92)">
+
+      <rect width="26" height="42" rx="4" fill="#d7c7cf"/>
+      <circle cx="18" cy="11" r="4" fill="#f3edf7" opacity=".85"/>
+      <path d="M0 29 10 18 19 28 26 23v15a4 4 0 0 1-4 4H4a4 4 0 0 1-4-4Z" fill="#aa889c" opacity="0.55"/>
+      <path d="m0 36 9-7 10 6 7-4v7a4 4 0 0 1-4 4H4a4 4 0 0 1-4-4Z" fill="#aa889c"/>
+    </g>
+    <g transform="translate(122 92)">
+
+      <rect width="26" height="42" rx="4" fill="#cfcbdc"/>
+      <circle cx="18" cy="11" r="4" fill="#f3edf7" opacity=".85"/>
+      <path d="M0 29 10 18 19 28 26 23v15a4 4 0 0 1-4 4H4a4 4 0 0 1-4-4Z" fill="#8b8ba8" opacity="0.55"/>
+      <path d="m0 36 9-7 10 6 7-4v7a4 4 0 0 1-4 4H4a4 4 0 0 1-4-4Z" fill="#8b8ba8"/>
+    </g>
+    <g transform="translate(152 92)">
+
+      <rect width="26" height="42" rx="4" fill="#d9cfbf"/>
+      <circle cx="18" cy="11" r="4" fill="#f3edf7" opacity=".85"/>
+      <path d="M0 29 10 18 19 28 26 23v15a4 4 0 0 1-4 4H4a4 4 0 0 1-4-4Z" fill="#aaa18a" opacity="0.55"/>
+      <path d="m0 36 9-7 10 6 7-4v7a4 4 0 0 1-4 4H4a4 4 0 0 1-4-4Z" fill="#aaa18a"/>
+    </g>
+    <g transform="translate(182 92)">
+
+      <rect width="26" height="42" rx="4" fill="#c5cbd9"/>
+      <circle cx="18" cy="11" r="4" fill="#f3edf7" opacity=".85"/>
+      <path d="M0 29 10 18 19 28 26 23v15a4 4 0 0 1-4 4H4a4 4 0 0 1-4-4Z" fill="#8492af" opacity="0.55"/>
+      <path d="m0 36 9-7 10 6 7-4v7a4 4 0 0 1-4 4H4a4 4 0 0 1-4-4Z" fill="#8492af"/>
+    </g>
+      </g>
+    </g>
+    <g id="detail-screen">
+      <g clip-path="url(#screen-clip)">
+        <use href="#landscape"/>
+        <rect width="224" height="140" fill="url(#detail-bottom)"/>
+        <use href="#navigation"/>
+        <rect x="34" y="18" width="65" height="8" rx="4" fill="#fbf5fc" opacity=".95"/>
+        <rect x="35" y="31" width="41" height="3" rx="1.5" fill="#f2e9f7" opacity=".6"/>
+        <g fill="#907fa2">
+          <rect x="34" y="98" width="5" height="5" rx="1.5"/>
+          <rect x="45" y="98" width="5" height="5" rx="1.5"/>
+          <rect x="56" y="98" width="5" height="5" rx="1.5"/>
+          <rect x="67" y="98" width="5" height="5" rx="1.5"/>
+        </g>
+        <rect x="32" y="112" width="57" height="17" rx="6" fill="#9174b3"/>
+        <path d="m39 117 6 3.5-6 3.5Z" fill="#fff8ff"/>
+        <text x="49" y="123" fill="#fff8ff" font-size="6.5">开始观看</text>
+        <rect x="101" y="96" width="35" height="4" rx="2" fill="#9685a5"/>
+        <rect x="101" y="104" width="25" height="3" rx="1.5" fill="#b1a1bd"/>
+        <g fill="#d8cce4">
+          <rect x="101" y="113" width="20" height="8" rx="3"/>
+          <rect x="125" y="113" width="22" height="8" rx="3"/>
+          <rect x="101" y="124" width="27" height="6" rx="2.5"/>
+          <rect x="132" y="124" width="15" height="6" rx="2.5"/>
+        </g>
+        <g fill="#a38abb">
+          <rect x="164" y="102" width="5" height="3" rx="1"/>
+          <rect x="172" y="98" width="5" height="7" rx="1"/>
+          <rect x="180" y="89" width="5" height="16" rx="1"/>
+          <rect x="188" y="94" width="5" height="11" rx="1"/>
+          <rect x="196" y="100" width="5" height="5" rx="1"/>
+        </g>
+        <text x="163" y="127" fill="#705581" font-size="18" font-weight="700">8.2</text>
+        <path d="m197 114 1.4 3.1 3.4.4-2.5 2.3.7 3.3-3-1.6-3 1.6.7-3.3-2.5-2.3 3.4-.4Z" fill="#9b7ab9"/>
+      </g>
+    </g>
+    <g id="player-screen">
+      <g clip-path="url(#screen-clip)">
+        <use href="#landscape"/>
+        <rect width="224" height="140" fill="url(#play-bottom)"/>
+        <circle cx="112" cy="61" r="19" fill="#3d2d52" opacity=".55"/>
+        <path d="m107 51 15 10-15 10Z" fill="#f9f0fc"/>
+        <rect x="17" y="104" width="52" height="5" rx="2.5" fill="#eee3f7"/>
+        <rect x="17" y="119" width="190" height="3" rx="1.5" fill="#b3a1c1" opacity=".6"/>
+        <rect x="17" y="119" width="71" height="3" rx="1.5" fill="#eadbf7"/>
+        <circle cx="88" cy="120.5" r="4" fill="#fff8ff"/>
+      </g>
+    </g>
+    <g id="arrow"><path d="M-5 0H5m-4-4 4 4-4 4"/></g>
+  </defs>
+  <style>
+    text { font-family: "Inter", "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; }
+    .canvas { fill: #fcfbfe; stroke: #e7e4ee; }
+    .heading { fill: #282534; font-size: 26px; font-weight: 700; letter-spacing: -.5px; }
+    .eyebrow { fill: #807492; font-size: 10px; font-weight: 600; letter-spacing: 2px; }
+    .subheading { fill: #746e80; font-size: 13px; }
+    .label { fill: #302b3c; font-size: 17px; font-weight: 600; }
+    .detail { fill: #716a7d; font-size: 13px; }
+    .step-label { fill: #62516f; font-size: 14px; font-weight: 600; }
+    .chip { fill: #eee8fa; }
+    .accent { fill: #7860aa; font-size: 12px; font-weight: 600; }
+    .step-number { fill: #7860aa; font-size: 12px; font-weight: 700; text-anchor: middle; }
+    .connector { stroke: #8c71ae; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .option { fill: #f4f0f9; stroke: #e9e1f1; }
+    .divider { stroke: #eae6f0; }
+    .footer { fill: #f2eff8; }
+    .footer-text { fill: #766b89; font-size: 12px; }
+    @media (prefers-color-scheme: dark) {
+      .canvas { fill: #1c1b23; stroke: #37323f; }
+      .heading, .label { fill: #eee8f6; }
+      .eyebrow { fill: #ac9cbe; }
+      .subheading, .detail { fill: #b6acc4; }
+      .step-label { fill: #c7b7d8; }
+      .chip { fill: #383044; }
+      .accent, .step-number { fill: #c6afea; }
+      .connector { stroke: #c6afea; }
+      .option { fill: #2a2533; stroke: #3a3145; }
+      .divider { stroke: #36303f; }
+      .footer { fill: #2a2533; }
+      .footer-text { fill: #b9accb; }
+    }
+  </style>
+
+  <rect class="canvas" x=".5" y=".5" width="779" height="633" rx="24"/>
+  <text class="eyebrow" x="28" y="31">IZUKO TV / BROWSING</text>
+  <text class="heading" x="28" y="66">从海报到详情，两次确认</text>
+  <text class="subheading" x="29" y="90">先看背景大图和简介，再进入详情页。</text>
+  <rect class="chip" x="680" y="35" width="72" height="28" rx="14"/>
+  <text class="accent" x="716" y="53" text-anchor="middle">浏览</text>
+
+  <rect class="chip" x="24" y="113" width="132" height="26" rx="13"/>
+  <circle cx="39" cy="126" r="3" fill="#a18acb"/>
+  <text class="accent" x="51" y="130">默认 · 先看简介</text>
+
+  <!-- 默认浏览顺序：海报墙、背景简介、沉浸式详情页。 -->
+  <circle class="chip" cx="38" cy="163" r="13"/><text class="step-number" x="38" y="167">1</text>
+  <text class="step-label" x="61" y="168">选中海报</text>
+  <circle class="chip" cx="292" cy="163" r="13"/><text class="step-number" x="292" y="167">2</text>
+  <text class="step-label" x="315" y="168">按一次确认</text>
+  <circle class="chip" cx="546" cy="163" r="13"/><text class="step-number" x="546" y="167">3</text>
+  <text class="step-label" x="569" y="168">再按一次确认</text>
+
+  <use href="#poster-wall" transform="translate(24 188)" filter="url(#screen-shadow)"/>
+  <use href="#summary-screen" transform="translate(278 188)" filter="url(#screen-shadow)"/>
+  <use href="#detail-screen" transform="translate(532 188)" filter="url(#screen-shadow)"/>
+  <circle class="chip" cx="263" cy="258" r="12"/>
+  <use href="#arrow" class="connector" transform="translate(263 258)"/>
+  <circle class="chip" cx="517" cy="258" r="12"/>
+  <use href="#arrow" class="connector" transform="translate(517 258)"/>
+
+  <text class="label" x="28" y="358">海报墙</text>
+  <text class="detail" x="28" y="382">用方向键选择想看的番</text>
+  <text class="label" x="282" y="358">背景大图与简介</text>
+  <text class="detail" x="282" y="382">先看简介，海报仍在下方</text>
+  <text class="label" x="536" y="358">详情页</text>
+  <text class="detail" x="536" y="382">查看评分、标签与播放入口</text>
+
+  <path class="divider" d="M28 408H752"/>
+  <text class="label" x="28" y="442">也可以按你的习惯打开</text>
+
+  <!-- 可选的打开方式，对应外观与操作设置。 -->
+  <rect class="option" x="24" y="460" width="356" height="108" rx="20"/>
+  <use href="#player-screen" transform="translate(38 479) scale(.5)"/>
+  <text class="label" x="166" y="490">直接播放</text>
+  <text class="detail" x="166" y="515">接着上次看到的那集播</text>
+  <text class="detail" x="166" y="536">没看过则从第一集开始</text>
+
+  <rect class="option" x="400" y="460" width="356" height="108" rx="20"/>
+  <use href="#detail-screen" transform="translate(414 479) scale(.5)"/>
+  <text class="label" x="542" y="490">直接进详情页</text>
+  <text class="detail" x="542" y="515">按一次确认</text>
+  <text class="detail" x="542" y="536">直接打开详情页</text>
+
+  <rect class="footer" x="24" y="588" width="732" height="28" rx="10"/>
+  <circle cx="41" cy="602" r="3" fill="#a18acb"/>
+  <text class="footer-text" x="53" y="606">设置 → 主题与色彩 → 海报上按确定</text>
+</svg>
+
