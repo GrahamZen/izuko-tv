@@ -16,21 +16,39 @@ import me.him188.ani.app.ui.foundation.focus.tvWindowInitialFocus
 import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
 import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.lang.Lang
+import me.him188.ani.app.ui.lang.subject_details_tv_episodes_fetch_failed_message
+import me.him188.ani.app.ui.lang.subject_details_tv_episodes_fetch_failed_title
 import me.him188.ani.app.ui.lang.subject_details_tv_no_episodes_message
 import me.him188.ani.app.ui.lang.subject_details_tv_no_episodes_ok
 import me.him188.ani.app.ui.lang.subject_details_tv_no_episodes_title
 import org.jetbrains.compose.resources.stringResource
 
 /**
- * 详情页播放键在 Bangumi 一集都没录时弹的说明: 播放页要靠 Bangumi 的分集进入, 没有分集就进不去.
+ * 详情页播放键进不了播放页时弹的说明 (见 [TvPlayEpisodesGate]): 播放页要靠 Bangumi 的分集进入, 没有分集就进不去.
  * 少有人维护的条目 (美漫居多) 常常过了开播日还没录分集; 等 Bangumi 补上就能看.
+ *
+ * @param fetchFailed 不是 Bangumi 没录, 而是分集没取到 (网络); 再按一次播放会重取
  */
 @Composable
-internal fun TvSubjectNoEpisodesDialog(onDismiss: () -> Unit) {
+internal fun TvSubjectNoEpisodesDialog(fetchFailed: Boolean = false, onDismiss: () -> Unit) {
     AniAlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(Lang.subject_details_tv_no_episodes_title)) },
-        text = { Text(stringResource(Lang.subject_details_tv_no_episodes_message)) },
+        title = {
+            Text(
+                stringResource(
+                    if (fetchFailed) Lang.subject_details_tv_episodes_fetch_failed_title
+                    else Lang.subject_details_tv_no_episodes_title,
+                ),
+            )
+        },
+        text = {
+            Text(
+                stringResource(
+                    if (fetchFailed) Lang.subject_details_tv_episodes_fetch_failed_message
+                    else Lang.subject_details_tv_no_episodes_message,
+                ),
+            )
+        },
         confirmButton = {
             AniTextButton(onClick = onDismiss, modifier = Modifier.tvWindowInitialFocus()) {
                 Text(stringResource(Lang.subject_details_tv_no_episodes_ok))
