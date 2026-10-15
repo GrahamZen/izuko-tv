@@ -11,6 +11,7 @@ package me.him188.ani.app.domain.mediasource.rss
 
 import io.ktor.client.request.get
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.datetime.LocalDate
 import kotlinx.serialization.Serializable
 import me.him188.ani.app.data.models.ApiFailure
 import me.him188.ani.app.data.models.fold
@@ -72,7 +73,8 @@ data class RssMediaSourceArguments(
 
 object RssMediaSourceCodec : DefaultMediaSourceCodec<RssMediaSourceArguments>(
     RssMediaSource.FactoryId, RssMediaSourceArguments::class,
-    currentVersion = 1, RssMediaSourceArguments.serializer(),
+    // 2: 加了 titleToLink / searchFallbackKeywords; 不认识它们的旧版本照搜索地址当普通 BT 源用会选错, 按版本号跳过这类源
+    currentVersion = 2, RssMediaSourceArguments.serializer(),
 )
 
 /**
@@ -167,7 +169,8 @@ class RssMediaSource(
     }
 
     override suspend fun fetch(query: MediaFetchRequest): SizedSource<MediaMatch> {
-        return query.subjectNames
+        val names = if (searchConfig.searchFallbackKeywords) (query.subjectNames + query.fallbackSearchKeywords).distinct() else query.subjectNames
+        return names
             .map { name ->
                 startSearch(
                     RssSearchQuery(
@@ -176,6 +179,7 @@ class RssMediaSource(
                         allSubjectNames = query.subjectNames,
                         episodeEp = query.episodeEp,
                         episodeName = query.episodeName,
+                        subjectAirDate = query.firstAirDate(),
                     ),
                 ).map {
                     MediaMatch(it, MatchKind.FUZZY)
@@ -190,6 +194,8 @@ data class RssSearchQuery(
     val episodeSort: EpisodeSort,
     val episodeEp: EpisodeSort?,
     val episodeName: String?,
+    /** 条目开播日期, 标题改写成直链时算季度目录用 (见 [RssTitleToLink]). */
+    val subjectAirDate: LocalDate? = null,
 )
 
 fun RssSearchQuery.toFilterContext() = MediaListFilterContext(
