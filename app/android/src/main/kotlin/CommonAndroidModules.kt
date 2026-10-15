@@ -57,6 +57,10 @@ fun getCommonAndroidModules(coroutineScope: CoroutineScope) = module {
         val playbackDiskCacheEnabled = videoScaffoldConfig.flow
             .map { it.enablePlaybackDiskCache }
             .stateIn(coroutineScope, SharingStarted.Eagerly, VideoScaffoldConfig.Default.enablePlaybackDiskCache)
+        // 每次选音轨时读, 在播放线程上
+        val audioPassthrough = videoScaffoldConfig.flow
+            .map { it.audioPassthrough }
+            .stateIn(coroutineScope, SharingStarted.Eagerly, VideoScaffoldConfig.Default.audioPassthrough)
         MediampPlayerFactoryLoader.register(
             LibassExoPlayerMediampPlayerFactory(
                 enableHighQualityAudioTimeStretch = {
@@ -66,6 +70,7 @@ fun getCommonAndroidModules(coroutineScope: CoroutineScope) = module {
                 },
                 proxyConfig = { playbackProxy.value },
                 diskCacheEnabled = { playbackDiskCacheEnabled.value },
+                audioPassthrough = { audioPassthrough.value },
             ),
         )
         MediampPlayerSurfaceProviderLoader.register(ExoPlayerMediampPlayerSurfaceProvider())
