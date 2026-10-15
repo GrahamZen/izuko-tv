@@ -55,7 +55,8 @@
     <string name="settings_player_pause_on_scrub">Pause while scrubbing</string>
     <string name="settings_player_pause_on_scrub_description">Pause the picture while choosing a position with the remote, and play from there when you press OK. Turn off to keep playing while choosing</string>
     <string name="settings_player_seek_preview_display">Seek preview picture</string>
-    <string name="settings_player_seek_preview_display_description">Shown when scrubbing pauses the video. Window: in the box above the progress bar, and the full screen stays where you were. Full screen: on the full screen, and the box only shows the time. Some devices fail to decode with the window and switch to full screen automatically when that happens</string>
+    <string name="settings_player_seek_preview_display_description">Where to show the picture at the target position while scrubbing. Off: only the time. Full screen: on the full screen, and the box only shows the time. Window: in the box above the progress bar, and the full screen stays where you were. The picture only shows when scrubbing pauses the video. Some devices fail to decode with the window and switch to full screen automatically when that happens</string>
+    <string name="settings_player_seek_preview_display_off">Off</string>
     <string name="settings_player_seek_preview_display_window">Window</string>
     <string name="settings_player_seek_preview_display_full_screen">Full screen</string>
     <string name="settings_player_disk_cache">Save videos while playing</string>

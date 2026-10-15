@@ -93,7 +93,8 @@
     <string name="settings_player_pause_on_scrub">拖動進度條時暫停播放</string>
     <string name="settings_player_pause_on_scrub_description">用遙控器選位置時先暫停畫面，按確認鍵從選中處播放；關閉後邊播邊選</string>
     <string name="settings_player_seek_preview_display">拖動預覽畫面</string>
-    <string name="settings_player_seek_preview_display_description">拖動時暫停才有預覽畫面。小畫面：畫在進度條上方的浮窗裡，全螢幕停在原處；全螢幕：直接畫在全螢幕上，浮窗只顯示時間。部分裝置用小畫面會解碼出錯，出錯時會自動改成全螢幕</string>
+    <string name="settings_player_seek_preview_display_description">拖動進度條時在哪裡顯示目標位置的畫面。不開：只顯示時間；全螢幕：畫面直接出在全螢幕上，浮窗只顯示時間；小畫面：畫在進度條上方的浮窗裡，全螢幕停在原處。拖動時暫停才有畫面。部分裝置用小畫面會解碼出錯，出錯時會自動改成全螢幕</string>
+    <string name="settings_player_seek_preview_display_off">不開</string>
     <string name="settings_player_seek_preview_display_window">小畫面</string>
     <string name="settings_player_seek_preview_display_full_screen">全螢幕</string>
     <string name="settings_player_disk_cache">邊下邊播</string>
