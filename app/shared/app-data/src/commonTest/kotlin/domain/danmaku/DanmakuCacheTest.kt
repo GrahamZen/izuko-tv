@@ -265,6 +265,7 @@ class DanmakuCacheTest {
         override val bangumiEndpointSettings: Settings<BangumiEndpointSettings> by lazy { error("no implemented") }
         override val bangumiMirrorCache: Settings<RepoHostedListCache> by lazy { error("no implemented") }
         override val bangumiEchAddressCache: Settings<RepoHostedListCache> by lazy { error("no implemented") }
+        override val bangumiEchDohCache: Settings<RepoHostedListCache> by lazy { error("no implemented") }
         override val danmakuSettings: Settings<DanmakuSettings> by lazy { error("no implemented") }
         override val uiSettings: Settings<UISettings> by lazy { error("no implemented") }
         override val themeSettings: Settings<ThemeSettings> by lazy { error("no implemented") }
