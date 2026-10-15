@@ -24,6 +24,10 @@ package me.him188.ani.app.ui.subject.episode.tv
  * 取消只撤销这里自己做的暂停, 进来之前就停着的保持停着.
  *
  * 设置在进入那一刻读: 预览途中改了设置, 取消时仍按进来时做过什么来撤销.
+ *
+ * 播放器的「播放 / 暂停」在跳转等过渡期间会排队稍后执行, 报出来的播放状态也要等真执行了才变: 取消 (跳回原处并恢复播放) 后马上再拖,
+ * [isPlaying] 还是「停着」. 所以这里恢复播放后、播放器报出「在播」之前 (见 [onPlayingChanged]), 进入时仍算在播, 照样暂停 —— 暂停也排在
+ * 那条播放后面, 最后是停着的.
  */
 internal class TvScrubPlayback(
     private val pauseOnScrub: () -> Boolean,
@@ -34,21 +38,40 @@ internal class TvScrubPlayback(
     /** 这次预览开始时是否由这里暂停了播放. */
     private var pausedByScrub = false
 
-    /** 进入拖拽预览时调用一次. 已经在预览中、只是再挪圆点时不要调. */
-    fun onEnter() {
-        pausedByScrub = pauseOnScrub() && isPlaying()
+    /** 这里恢复了播放, 播放器还没报出「在播」. */
+    private var resumePending = false
+
+    /**
+     * 进入拖拽预览时调用一次. 已经在预览中、只是再挪圆点时不要调.
+     * @return 进来之前是否在播 (含这里刚恢复、播放器还没报出来的那次)
+     */
+    fun onEnter(): Boolean {
+        val playing = isPlaying() || resumePending
+        resumePending = false
+        pausedByScrub = pauseOnScrub() && playing
         if (pausedByScrub) pause()
+        return playing
     }
 
     /** 确认: 跳到圆点并播放. */
     fun onCommit() {
         pausedByScrub = false
-        play()
+        resume()
     }
 
     /** 取消: 丢弃圆点, 进来时被这里暂停的恢复播放. */
     fun onCancel() {
-        if (pausedByScrub) play()
+        if (pausedByScrub) resume()
         pausedByScrub = false
+    }
+
+    /** 播放器报出的播放意图变了: 报出「在播」说明恢复已经生效, 之后以它为准 (随后用户自己暂停也看得出来). */
+    fun onPlayingChanged(playing: Boolean) {
+        if (playing) resumePending = false
+    }
+
+    private fun resume() {
+        play()
+        resumePending = true
     }
 }
