@@ -16,6 +16,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.hours
 
 /**
  * 「分享搜索」: 查固定的分享、搜站点、打开分享、按文件名对集.
@@ -242,6 +243,51 @@ class CloudDriveShareSearchTest {
         assertEquals(1, shares.listed.count { it.second == TestDrive.SHARE_ROOT })
         assertEquals(1, shares.listed.count { it.second == "autumn" })
         assertEquals(0, shares.listed.count { it.second == "other" })
+    }
+
+    /** 存在内存里的 [DriveShareIndexStore]: 当作应用重启前后都在的那份. */
+    private class MemoryIndexStore : DriveShareIndexStore {
+        val saved = HashMap<String, DriveShareIndex>()
+        override suspend fun get(shareId: String): DriveShareIndex? = saved[shareId]
+        override suspend fun put(shareId: String, index: DriveShareIndex) {
+            saved[shareId] = index
+        }
+    }
+
+    /** 每个都是新的搜索 (内存里什么也没有), 等于应用重启过. */
+    private fun fixedEngine(shares: DriveShareBrowser, store: DriveShareIndexStore, now: Long, depth: Int = 2) =
+        DriveShareSearchEngine(fixedConfig.copy(shareIndexDepth = depth), shares, links, indexStore = store, now = { now }) { null }
+
+    @Test
+    fun `fixed share index is stored and reused after a restart`() = runTest {
+        val shares = shares(mapOf("coll" to collection))
+        val store = MemoryIndexStore()
+        fixedEngine(shares, store, now = 1_000).search(request("葬送的芙莉莲"))
+        assertEquals(setOf("coll"), store.saved.keys)
+
+        val matched = fixedEngine(shares, store, now = 1_000 + 5.hours.inWholeMilliseconds).search(request("偶像大师"))
+        assertEquals(listOf("i01"), matched.map { it.file.fid })
+        assertEquals(1, shares.listed.count { it.second == TestDrive.SHARE_ROOT })
+    }
+
+    @Test
+    fun `stored fixed share index older than six hours is listed again`() = runTest {
+        val shares = shares(mapOf("coll" to collection))
+        val store = MemoryIndexStore()
+        fixedEngine(shares, store, now = 1_000).search(request("葬送的芙莉莲"))
+        val later = 1_000 + 7.hours.inWholeMilliseconds
+        fixedEngine(shares, store, now = later).search(request("偶像大师"))
+        assertEquals(2, shares.listed.count { it.second == TestDrive.SHARE_ROOT })
+        assertEquals(later, store.saved.getValue("coll").indexedAtMillis)
+    }
+
+    @Test
+    fun `stored fixed share index listed to another depth is listed again`() = runTest {
+        val shares = shares(mapOf("coll" to collection))
+        val store = MemoryIndexStore()
+        fixedEngine(shares, store, now = 1_000).search(request("葬送的芙莉莲"))
+        fixedEngine(shares, store, now = 2_000, depth = 1).search(request("偶像大师"))
+        assertEquals(2, shares.listed.count { it.second == TestDrive.SHARE_ROOT })
     }
 
     @Test

@@ -61,10 +61,9 @@ import me.him188.ani.utils.ktor.ScopedHttpClient
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
+import me.him188.ani.utils.platform.currentTimeMillis
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.seconds
-import kotlin.time.TimeMark
-import kotlin.time.TimeSource
 
 /**
  * 「分享搜索」的配置: 去哪里找网盘分享. 两种来源可以单用, 也可以一起用 (先查固定的分享, 当前这一集找到了就不再搜站点):
@@ -155,6 +154,10 @@ internal class DriveShareSearchEngine(
     numbering: TmdbEpisodeNumbering = TmdbEpisodeNumbering.None,
     /** 列记下的分享文件夹 ([matchRemembered]): 每次现列, 分享取消了、新集上传了马上就知道. 搜索用 [shares]. */
     rememberedShares: DriveShareBrowser = shares,
+    /** 列出的分享文件夹另存一份在这里, 应用重启后不用重列 (见 [indexOf]). */
+    private val indexStore: DriveShareIndexStore = DriveShareIndexStore.None,
+    /** 墙上时间 (毫秒): 存下来的索引跨重启比新旧. */
+    private val now: () -> Long = { currentTimeMillis() },
     /** 请求站点搜索接口; 失败返回 null. */
     private val fetch: suspend (url: String) -> ByteArray?,
 ) {
@@ -176,13 +179,8 @@ internal class DriveShareSearchEngine(
 
     // region 固定的分享
 
-    /** 一个分享里列出来的文件夹 (从分享根起的名字). */
-    private class IndexedFolder(val fid: String, val path: List<String>)
-
-    private class ShareIndex(val folders: List<IndexedFolder>, val time: TimeMark)
-
     private val indexLock = Mutex()
-    private val indexes = HashMap<String, ShareIndex>()
+    private val indexes = HashMap<String, DriveShareIndex>()
 
     private suspend fun searchFixedShares(request: MediaFetchRequest): List<DriveShareMatch> {
         val keywords = DriveSubjectMatcher.keywordsOf(DriveSubjectMatcher.subjectNamesOf(request))
@@ -225,18 +223,27 @@ internal class DriveShareSearchEngine(
         }
     }
 
-    /** 分享 [link] 前几层的文件夹, 缓存 [SHARE_INDEX_TTL]. 打不开时为 null (下次再试). */
-    private suspend fun indexOf(link: DriveShareLink): ShareIndex? {
-        indexLock.withLock { indexes[link.shareId]?.takeIf { it.time.elapsedNow() < SHARE_INDEX_TTL }?.let { return it } }
+    /**
+     * 分享 [link] 前几层的文件夹, [SHARE_INDEX_TTL] 内不重列: 先看内存, 再看 [indexStore] (应用重启后), 都没有才列.
+     * 打不开时为 null (下次再试).
+     */
+    private suspend fun indexOf(link: DriveShareLink): DriveShareIndex? {
+        val depth = config.shareIndexDepth.coerceIn(1, MAX_INDEX_DEPTH)
+        fun DriveShareIndex.isFresh() = this.depth == depth && now() - indexedAtMillis in 0 until SHARE_INDEX_TTL.inWholeMilliseconds
+        indexLock.withLock { indexes[link.shareId]?.takeIf { it.isFresh() }?.let { return it } }
+        indexStore.get(link.shareId)?.takeIf { it.isFresh() }?.let { saved ->
+            indexLock.withLock { indexes[link.shareId] = saved }
+            return saved
+        }
         val folders = try {
             val title = shares.open(link.shareId, link.passcode)
-            val result = ArrayList<IndexedFolder>()
-            suspend fun walk(folderId: String, path: List<String>, depth: Int) {
+            val result = ArrayList<DriveShareIndexedFolder>()
+            suspend fun walk(folderId: String, path: List<String>, level: Int) {
                 for (child in shares.listFolder(link.shareId, link.passcode, folderId)) {
                     if (!child.dir || result.size >= MAX_INDEXED_FOLDERS) continue
                     val childPath = path + child.fileName
-                    result += IndexedFolder(child.fid, childPath)
-                    if (depth + 1 < config.shareIndexDepth.coerceIn(1, MAX_INDEX_DEPTH)) walk(child.fid, childPath, depth + 1)
+                    result += DriveShareIndexedFolder(child.fid, childPath)
+                    if (level + 1 < depth) walk(child.fid, childPath, level + 1)
                 }
             }
             walk(shares.rootFolderId, listOf(title), 0)
@@ -248,8 +255,9 @@ internal class DriveShareSearchEngine(
             return null
         }
         logger.info { "Indexed share ${link.shareId}: ${folders.size} folders" }
-        return ShareIndex(folders, TimeSource.Monotonic.markNow()).also { index ->
+        return DriveShareIndex(depth, now(), folders).also { index ->
             indexLock.withLock { indexes[link.shareId] = index }
+            indexStore.put(link.shareId, index)
         }
     }
 
@@ -469,6 +477,7 @@ class CloudDriveShareSearchMediaSource(
                     DriveShareSearchEngine(
                         arguments.config, drive.shareSearchBrowser, drive.shareLinks, drive.episodeNumbering,
                         rememberedShares = drive.shareBrowser,
+                        indexStore = registry.shareIndexStore,
                         fetch = ::fetchBytes,
                     ),
                 ).also { engine = it }
