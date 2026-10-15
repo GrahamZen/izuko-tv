@@ -53,6 +53,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import me.him188.ani.app.domain.foundation.BangumiLoginPath
 import me.him188.ani.app.domain.foundation.LoadError
 import me.him188.ani.app.domain.session.auth.BangumiOAuthManager
 import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
@@ -90,8 +91,8 @@ sealed interface AuthState {
 @Composable
 fun BangumiAuthorizeLayout(
     authorizeState: AuthState,
-    /** 经第三方镜像连着: 授权登录走不通, 不给授权按钮, 换成去手机控制台用个人令牌登录的指引. */
-    viaMirror: Boolean,
+    /** 不是 [BangumiLoginPath.BROWSER] 时授权登录走不通, 不给授权按钮, 换成去手机控制台登录的指引. */
+    loginPath: BangumiLoginPath,
     contactActions: @Composable () -> Unit,
     onClickAuthorize: () -> Unit,
     onClickAuthorizeExternally: () -> Unit,
@@ -123,9 +124,11 @@ fun BangumiAuthorizeLayout(
                         style = MaterialTheme.typography.titleMedium,
                     )
                 }
-                if (viaMirror) {
+                if (loginPath != BangumiLoginPath.BROWSER) {
                     Text(
-                        stringResource(Lang.oauth_bangumi_via_mirror),
+                        stringResource(
+                            if (loginPath == BangumiLoginPath.PERSONAL_TOKEN) Lang.oauth_bangumi_via_mirror else Lang.oauth_bangumi_via_ech,
+                        ),
                         modifier = Modifier
                             .padding(top = 24.dp)
                             .widthIn(max = 720.dp),
