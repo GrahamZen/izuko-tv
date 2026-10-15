@@ -73,6 +73,11 @@ import me.him188.ani.app.ui.lang.settings_player_auto_play_next
 import me.him188.ani.app.ui.lang.settings_player_auto_skip_op_ed
 import me.him188.ani.app.ui.lang.settings_player_auto_skip_op_ed_description
 import me.him188.ani.app.ui.lang.settings_player_auto_switch_media_on_error
+import me.him188.ani.app.ui.lang.settings_player_audio_passthrough
+import me.him188.ani.app.ui.lang.settings_player_audio_passthrough_auto
+import me.him188.ani.app.ui.lang.settings_player_audio_passthrough_always
+import me.him188.ani.app.ui.lang.settings_player_audio_passthrough_off
+import me.him188.ani.app.ui.lang.settings_player_audio_passthrough_description
 import me.him188.ani.app.ui.lang.settings_player_disk_cache
 import me.him188.ani.app.ui.lang.settings_player_disk_cache_description
 import me.him188.ani.app.ui.lang.settings_player_enable_regex_filter
@@ -218,6 +223,7 @@ import me.him188.ani.app.ui.lang.video_player_quality
 import me.him188.ani.app.ui.remote.TvRemoteControl
 import me.him188.ani.app.ui.theme.DefaultSeedColor
 import me.him188.ani.app.ui.theme.themeColorOptions
+import me.him188.ani.app.videoplayer.audio.AudioPassthroughMode
 import me.him188.ani.app.utils.formatSpeedValue
 import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.seconds
@@ -695,6 +701,21 @@ private fun TvSettingsItemsBuilder.playerItems() {
         player, Lang.settings_player_disk_cache, Lang.settings_player_disk_cache_description,
         read = { it.enablePlaybackDiskCache },
         write = { copy(enablePlaybackDiskCache = it) },
+    )
+    choice(
+        player, Lang.settings_player_audio_passthrough, Lang.settings_player_audio_passthrough_description,
+        options = { AudioPassthroughMode.entries },
+        label = {
+            tvText(
+                when (it) {
+                    AudioPassthroughMode.AUTO -> Lang.settings_player_audio_passthrough_auto
+                    AudioPassthroughMode.ALWAYS -> Lang.settings_player_audio_passthrough_always
+                    AudioPassthroughMode.OFF -> Lang.settings_player_audio_passthrough_off
+                },
+            )
+        },
+        read = { it.audioPassthrough },
+        write = { copy(audioPassthrough = it) },
     )
     toggle(
         player, Lang.settings_player_hls_ad_filter, Lang.settings_player_hls_ad_filter_description,
