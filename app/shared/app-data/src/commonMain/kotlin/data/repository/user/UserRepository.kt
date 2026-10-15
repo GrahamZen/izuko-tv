@@ -54,6 +54,8 @@ class UserRepository(
     private val sessionStateProvider: SessionStateProvider,
     private val sessionManager: SessionManager,
     coroutineContext: CoroutineContext = Dispatchers.Default,
+    /** 退出登录 ([clearSelfInfo]) 前调用, 会话还在: 撤掉电视自己生成的令牌 (见 BangumiWebLogin.revokeOnLogout). */
+    private val beforeLogout: suspend () -> Unit = {},
 ) {
     private val logger = logger<UserRepository>()
     private val scope = CoroutineScope(coroutineContext)
@@ -124,6 +126,7 @@ class UserRepository(
      * 所有参数都是 `nullable`, 传入 `null` 则表示不修改对应的字段.
      */
     suspend fun clearSelfInfo() {
+        beforeLogout()
         dataStore.updateData {
             null
         }
