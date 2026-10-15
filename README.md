@@ -18,139 +18,58 @@
 
 ## 功能
 
-- **Bangumi 同步**：番剧信息与评论，收藏、评分和观看进度直接读写你的 Bangumi 账号
-- **多数据源**：BT（[动漫花园][dmhy]、[Mikan]）、在线源和网盘，支持订阅和自定义，自动选源
+- **Bangumi 同步**：番剧信息与评论，收藏、评分和观看进度直接读写你的 Bangumi 账号；官方连不上时自动改用加密直连或社区镜像
+- **多数据源**：BT（[动漫花园][dmhy]、[Mikan]）、在线源、规则源、苹果 CMS、网盘（含 WebDAV / NAS）、Jellyfin / Emby，支持订阅和自定义，自动选源
 - **弹幕**：来自[弹弹play][ddplay]，也可以发送
-- **离线缓存**：提前把剧集缓存到本地；BT 资源边下边播
-- **播放器**：拖动进度时预览画面，长按倍速，片尾自动接下一集
+- **播放器**：拖动进度时预览画面，长按倍速，片尾自动接下一集；字幕和音轨按语言自动选；BT 资源边下边播，也能提前缓存到本地
 - **找番**：首页按你的收藏推荐，另有新番时间表和按标签、年份的搜索
-- **手机操作**：扫电视上的二维码打开 Web 控制台，不用装应用，在手机上打字搜索、登录、控制播放、管理缓存和设置
+- **手机操作**：扫电视上的二维码打开 Web 控制台，不用装应用，在手机上打字搜索、登录、控制播放、管理缓存和设置，也能在手机上跟着电视同步播放
+- **多用户**：家里每人一份收藏、进度和 Bangumi 登录，开机选人；不想登录也能用本地用户，收藏只存在电视上，以后可以导入 Bangumi
+- **换电视**：新电视经局域网把旧电视的用户、设置和数据源一次搬过来；设置也能导出成文件备份
 - **系统集成**：主屏幕频道、屏保、应用内更新
-- **网络检测**：首次打开时检测能否连上 Bangumi，连不上可以改用代理或社区镜像
 
 ## 界面预览
 
-探索、搜索、追番和新番时间表都是海报墙。
-
-### 探索页
-
-| <img src=".readme/images/features/tv-explore-hero.png" alt="探索页首屏" width="380"/> | <img src=".readme/images/features/tv-explore-backdrop.png" alt="在海报上按确认" width="380"/> |
+| <img src=".readme/images/features/tv-explore-hero.png" alt="探索页首屏" width="380"/> | <img src=".readme/images/features/tv-explore-more.png" alt="更多推荐" width="380"/> |
 |:---:|:---:|
-| 首屏是热门动画轮播，下面是推荐 | 在海报上按确认，先显示背景大图和简介 |
-| <img src=".readme/images/features/tv-explore-recommend.png" alt="推荐" width="380"/> | <img src=".readme/images/features/tv-explore-scroll.png" alt="往下翻" width="380"/> |
-| 推荐区（未登录时显示默认推荐） | 往下翻还有更多 |
-| <img src=".readme/images/features/tv-explore-ui-scale.png" alt="界面缩放调小" width="380"/> | |
-| 「界面缩放」调小后，一屏能放更多海报 | |
-
-### 追番页
-
-| <img src=".readme/images/features/tv-collection.png" alt="追番页" width="380"/> |
-|:---:|
-| 想看、在看、看过等分类，顺序可以自定义 |
-
-### 搜索页
-
-| <img src=".readme/images/features/tv-search-results.png" alt="搜索结果" width="380"/> | <img src=".readme/images/features/tv-search-backdrop.png" alt="在搜索结果上按确认" width="380"/> |
-|:---:|:---:|
-| 按关键词、标签、年份筛选 | 在结果上按确认，先看背景大图和简介 |
-
-### 详情页
-
+| 探索页：热门动画轮播与推荐 | 「因为你喜欢」推荐行，按确认推荐更多相似的作品 |
 | <img src=".readme/images/features/tv-details.png" alt="详情页" width="380"/> | <img src=".readme/images/features/tv-details-episodes.png" alt="选集" width="380"/> |
-|:---:|:---:|
-| 评分、标签与收藏人数 | 分集剧照与剧情简介 |
-| <img src=".readme/images/features/tv-details-cast.png" alt="角色与制作人员" width="380"/> | <img src=".readme/images/features/tv-details-reviews.png" alt="评价与关联条目" width="380"/> |
-| 角色与制作人员 | Bangumi 评价与关联条目 |
-
-### Web 控制台
-
-| <img src=".readme/images/features/tv-web-console.png" alt="Web 控制台" width="380"/> |
-|:---:|
-| 手机扫码打开，不用装应用：打字搜索、控制播放、管理缓存和设置、登录 Bangumi |
-
-### 播放器
+| 详情页：评分、标签与收藏人数 | 剧情简介与分集剧照：长按剧照看完整单集介绍 |
+| <img src=".readme/images/features/tv-poster-wall.png" alt="海报墙" width="380"/> | <img src=".readme/images/features/tv-web-console.png" alt="Web 控制台" width="380"/> |
+| 海报墙：卡片大小可自由调整 | 手机扫码打开 Web 控制台 |
 
 https://github.com/user-attachments/assets/7f9fe051-a904-4157-a317-b13284390fec
 
-### 主屏幕频道与屏保
-
-| <img src=".readme/images/features/tv_preview_channels.png" alt="主屏幕频道" width="380"/> | <img src=".readme/images/features/tv_screen_saver.png" alt="屏保" width="380"/> |
-|:---:|:---:|
-| 主屏幕上的「热门动画」频道和「继续观看」行，点卡片直达详情页（首次启动时按系统提示允许添加频道） | 屏保轮播在看和热门动画的剧照，按确认键进入详情页（在系统设置 → 屏保中选择 Izuko TV） |
+追番页、搜索页、主屏幕频道与屏保等更多截图见[界面预览](docs/guide/screenshots.md)。
 
 ## 下载安装
 
-- **第一次装**：下载[安装助手](https://github.com/GrahamZen/izuko-tv/releases/download/installer/install-izuko.apk)（`install-izuko.apk`，约 120 KB，Android 4.4 及以上都能装），装到电视或电视盒子上打开。它按电视的系统版本和架构挑安装包，下载、校验后装上 Izuko TV；装不上时说明原因，并列出反馈问题要用的设备信息。
-- **更新**：有新版本时首页会提示，在「设置 → 软件更新」里可以直接更新；也可以在 [Releases](https://github.com/GrahamZen/izuko-tv/releases/latest) 下载新版覆盖安装。
-- **自己选安装包**：在 [Releases](https://github.com/GrahamZen/izuko-tv/releases/latest) 下载 APK（手机、平板也能装）。默认下 `universal`（包含全部架构）；确切知道设备系统架构的，可以直接下对应的分架构包，体积更小。
-- **装不上**：个别盒子会拒装 `universal`（如腾讯极光盒子 7S），这时改下 `armeabi-v7a`，还不行再试 `arm64-v8a`。设备信息里显示 64 位，不代表能装 64 位的包：不少电视和盒子的系统是 32 位的，装 `arm64-v8a` 会失败。
-- **系统要求**：Android 8.1 及以上。Android 7.1 请下文件名带 `legacy` 的兼容包（同样优先选 `legacy-universal`），7.1 上应用退到后台后 BT 下载可能被系统停掉。Android 10 及以下测试得较少，遇到问题欢迎反馈。
+- **第一次装**：下载[安装助手](https://github.com/GrahamZen/izuko-tv/releases/download/installer/install-izuko.apk)（`install-izuko.apk`），装到电视或电视盒子上打开，它会挑对安装包，下载并装上 Izuko TV
+- **更新**：有新版本时首页会提示，在「设置 → 软件更新」里直接更新
+- **自己选安装包**：在 [Releases](https://github.com/GrahamZen/izuko-tv/releases/latest) 下载 APK，默认下 `universal`；需要 Android 8.1 及以上，Android 7.1 用文件名带 `legacy` 的兼容包
 
 Windows、macOS、Linux 和 iOS 请使用[上游 Animeko](https://github.com/open-ani/animeko)。
 
 ### 装不上怎么办
 
-- **提示「解析软件包时出现问题」**：多半是电视系统低于安装包的要求（正式包要 Android 8.1，兼容包要 7.1），或者文件没下完整、U 盘里的文件读不出来。先装安装助手，它会挑对安装包并自己下载
-- **提示「软件包与现有软件包存在冲突」或签名不一致**：电视上已经装了签名不同的 Izuko TV（比如从第三方网站或市场下载的），先卸载它再装。卸载会清掉本地数据
-- **提示「软件包似乎无效」**：文件下坏了，重新下载，或改用安装助手
-- **文件管理器里看不到安装包**：部分电视把 APK 藏起来了，康佳在文件管理里连按 5 次菜单键，飞利浦按隐藏键，海信 / Vidda 要先打开「商场模式」
-- **系统拦下安装**：部分品牌只认自家的安装渠道或带黑名单，别的应用（包括安装助手）发起的安装会被拦：
-
-  | 品牌 | 能走的路 |
-  |---|---|
-  | 小米 / Redmi | 手机「小米电视助手」推送，或 ADB 安装 |
-  | TCL / 雷鸟 | 安装包拷到 U 盘根目录，在「电视卫士 → 极速安装」里装 |
-  | 海信 / Vidda | 打开「商场模式」后用 U 盘装，或用手机「海信爱家」投送 |
-  | 创维 / 酷开 | 只认「应用圈」，要在工厂模式里打开 ADB 安装 |
-  | 华为 / 荣耀智慧屏 | HarmonyOS 4.3 及以前安装时选「信任」；HarmonyOS 5（MateTV）不能装 APK |
-  | 长虹 / 乐视 / 运营商盒子 | 多数禁止第三方应用，只能 ADB 或刷机 |
-
-- **反馈问题**：安装助手装不上时会显示一屏诊断信息（系统、品牌型号、架构、系统安装器等），拍下这一屏一起发来
+解析错误、签名冲突、文件管理器里看不到安装包、各品牌电视拦截安装的办法，见[安装指南](docs/guide/install.md#装不上怎么办)。
 
 ## 使用说明
 
-基本操作和其他电视应用一样。在探索、搜索、追番页的海报上按确认，先显示背景大图和简介，再按一次进详情页。在播放器以外**长按返回键**或**长按播放键**会打开动作面板：回到正在播放的那一集或接着看上次的，也能回首页、刷新、换一批推荐、退出，右上角是 Web 控制台的二维码（长按的作用可以在「设置 → 界面」里改）。
+在海报上按确认，先看背景大图和简介，再按一次进详情页；也可以设置为直接进详情页或直接播放。在播放器以外，**长按返回键或播放键**打开动作面板。
 
-### 播放器
+播放时，常用操作都在这几个按键上：
 
-| 按键 | 作用 |
-|:--|:--|
-| 确认 / 播放暂停键 | 播放、暂停 |
-| 按住确认键 | 倍速播放，松开恢复（默认 2.5 倍） |
-| 左 / 右 | 快退、快进 5 秒 |
-| 按住或连按左 / 右 | 拖动进度并预览画面，确认键跳转，返回键取消 |
-| 上 / 下 | 显示进度条和控制按钮 |
-| 快进 / 快退键 | 下一集、上一集 |
-| 返回 | 逐层收起面板和控制按钮，最后退出播放 |
-| 长按返回 | 直接收起所有面板，回到画面 |
+<img src="docs/guide/images/remote-player.svg" alt="播放器遥控器指南：上键打开选源；确认键播放或暂停，按住默认 2.5 倍速、松开恢复；左右键快退或快进 5 秒，按住或连按预览进度，确认跳转、返回取消；下键显示进度条与控制按钮，方向键在按钮间移动；返回键逐层收起，最后退出播放，长按直接回到画面；播放键播放或暂停，预览时从该位置播放；独立快退、快进键切换上一集、下一集" width="780"/>
 
-控制按钮显示时，方向键用来在按钮之间移动。
-
-退出播放页后，这一集会保留在后台，能播放时有气泡提示，回来不用重新找源；不需要的话在「设置 → 播放器和弹幕过滤」里关闭。
-
-### 小提示
-
-- **界面太大或太小**：「设置 → 界面 → 界面缩放」可以在 50% ~ 250% 之间调整。
-- **设备较卡**：「设置 → 主题与色彩 → 视觉效果」选「流畅」；探索页和详情页也可以分别关掉沉浸式布局，新番时间表可以在「新番时间表版式」里换成经典列表。
-- **电视上登录不方便**：扫登录页上的二维码，在手机上登录。
-- **数据源排序**：在「设置 → 数据源管理」长按一行进入多选，再长按任意一行选「排序」，上下键移动，确认键放下。
-- **网页验证码**（部分在线数据源需要）：先按方向键唤出光标，确认键点击；验证通过后一般会自动关闭，没关就长按确认键。
+动作面板示意图、浏览流程和小提示见[使用说明](docs/guide/usage.md)。
 
 ## 常见问题
 
-### 和 Animeko 有什么区别？
-
-界面为电视重新设计；番剧信息、收藏和观看进度直接读写 Bangumi，不经过 Animeko 服务器。因此依赖这个服务器的功能都没有：Animeko 弹幕池、一起看、跨设备同步播放进度、举报评论、众包的片头片尾时间点。Bangumi 上的评论可以看，发表可以使用控制台跳转到对应的 Bangumi 网页完成。
-
-### 视频从哪里来？
-
-全部视频数据都来自网络，Izuko TV 本身不存储、也不提供任何视频资源。数据源分 BT 和在线两类：BT 源来自公共 BitTorrent 网络，每个人都可以分享自己拥有的资源；在线源来自其他视频网站，默认只带几个，更多的可以自行添加订阅，例如 [creamycake ani-subs](https://github.com/creamycake-anime/ani-subs)。
-
-本着互助精神，使用 BT 源时 Izuko TV 会自动做种（分享数据）。
-
-### 弹幕从哪里来？
-
-弹幕来自[弹弹play][ddplay]，其中包括它从哔哩哔哩港澳台、巴哈姆特等平台获取的弹幕。在 Izuko TV 里发送的弹幕也发到弹弹play。
+- [和 Animeko 有什么区别？](docs/guide/faq.md#和-animeko-有什么区别)
+- [视频从哪里来？](docs/guide/faq.md#视频从哪里来)
+- [连不上 Bangumi、手机上登录不了怎么办？](docs/guide/faq.md#连不上-bangumi-怎么办)
+- [弹幕从哪里来？](docs/guide/faq.md#弹幕从哪里来)
 
 ## 参与开发
 

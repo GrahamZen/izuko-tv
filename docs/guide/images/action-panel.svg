@@ -1,0 +1,166 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="780" height="578" viewBox="0 0 780 578" fill="none" role="img" aria-labelledby="title description">
+  <title id="title">动作面板指南</title>
+  <desc id="description">在播放器以外长按返回键或播放键打开动作面板。屏幕右上角是 Web 控制台二维码，手机扫码即可使用；播放卡片显示正在播放的一集，确认返回继续观看，关闭按钮结束播放，没有播放时显示接下来播放；服务状态显示条目、搜索、背景图和图床的连通情况；快捷按钮包括回到主界面、退出应用，中间的操作随页面变化；面板底部显示当前选中项的名称。</desc>
+  <defs>
+    <linearGradient id="scene" x1="24" y1="112" x2="410" y2="514" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#343144"/><stop offset=".5" stop-color="#252333"/><stop offset="1" stop-color="#191923"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="58" y1="264" x2="368" y2="490" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#f3eefb"/><stop offset="1" stop-color="#e0d8ed"/>
+    </linearGradient>
+    <linearGradient id="play-card" x1="60" y1="278" x2="370" y2="342" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#d8c9f0"/><stop offset="1" stop-color="#c6b5e4"/>
+    </linearGradient>
+    <linearGradient id="thumbnail" x1="68" y1="282" x2="140" y2="332" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#64648f"/><stop offset="1" stop-color="#b09bb9"/>
+    </linearGradient>
+    <filter id="panel-shadow" x="-20%" y="-25%" width="150%" height="165%">
+      <feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#0a0813" flood-opacity=".28"/>
+    </filter>
+    <clipPath id="scene-clip"><rect x="24" y="112" width="386" height="402" rx="28"/></clipPath>
+    <clipPath id="thumbnail-clip"><rect x="69" y="283" width="72" height="50" rx="9"/></clipPath>
+    <g id="home"><path d="m-9 0 9-8 9 8M-6-2V9h4V3h4v6h4V-2"/></g>
+    <g id="refresh"><path d="M7-4A8 8 0 1 0 8 4M2-4h6v-6"/></g>
+    <g id="shuffle"><path d="M-9-6h4L5 6h5M-9 6h4L5-6h5m-4-4 4 4-4 4m0 4 4 4-4 4"/></g>
+    <g id="grid"><rect x="-8" y="-8" width="6" height="6" rx="1.5"/><rect x="2" y="-8" width="6" height="6" rx="1.5"/><rect x="-8" y="2" width="6" height="6" rx="1.5"/><rect x="2" y="2" width="6" height="6" rx="1.5"/></g>
+    <g id="power"><path d="M-5-6a9 9 0 1 0 10 0M0-10V0"/></g>
+  </defs>
+  <style>
+    text { font-family: "Inter", "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; }
+    .canvas { fill: #fcfbfe; stroke: #e7e4ee; }
+    .heading { fill: #282534; font-size: 26px; font-weight: 700; letter-spacing: -.5px; }
+    .eyebrow { fill: #807492; font-size: 10px; font-weight: 600; letter-spacing: 2px; }
+    .subheading { fill: #746e80; font-size: 13px; }
+    .label { fill: #302b3c; font-size: 17px; font-weight: 600; }
+    .detail { fill: #716a7d; font-size: 14px; }
+    .chip { fill: #eee8fa; }
+    .number { fill: #7860aa; font-size: 12px; font-weight: 700; text-anchor: middle; }
+    .marker { fill: #8868b1; stroke: #e7dbf8; stroke-width: 1.5; }
+    .marker-number { fill: #ffffff; font-size: 11px; font-weight: 700; text-anchor: middle; }
+    .divider { stroke: #eae6f0; }
+    .footer { fill: #f2eff8; }
+    .footer-text { fill: #766b89; font-size: 12px; }
+    .ui-icon { stroke: #635470; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+    .ui-small { fill: #786784; font-size: 9px; }
+    @media (prefers-color-scheme: dark) {
+      .canvas { fill: #1c1b23; stroke: #37323f; }
+      .heading, .label { fill: #eee8f6; }
+      .eyebrow { fill: #ac9cbe; }
+      .subheading, .detail { fill: #b6acc4; }
+      .chip { fill: #383044; }
+      .number { fill: #c6afea; }
+      .divider { stroke: #36303f; }
+      .footer { fill: #2a2533; }
+      .footer-text { fill: #b9accb; }
+    }
+  </style>
+
+  <rect class="canvas" x=".5" y=".5" width="779" height="577" rx="24"/>
+  <text class="eyebrow" x="28" y="31">IZUKO TV / QUICK ACTIONS</text>
+  <text class="heading" x="28" y="66">常用操作，一处就够</text>
+  <text class="subheading" x="29" y="90">打开动作面板，继续观看，也能随手处理当前页面。</text>
+  <rect class="chip" x="664" y="35" width="88" height="28" rx="14"/>
+  <text class="number" x="708" y="53" font-weight="500">动作面板</text>
+
+  <!-- 屏幕布局：右上角控制台入口与下方的动作面板。 -->
+  <g clip-path="url(#scene-clip)">
+    <rect x="24" y="112" width="386" height="402" rx="28" fill="url(#scene)"/>
+    <circle cx="95" cy="123" r="130" fill="#8f78ad" opacity=".09"/>
+    <circle cx="354" cy="301" r="164" fill="#a587c6" opacity=".05"/>
+    <path d="M24 234c86-64 165-18 244-76s131-24 154-26v153H24Z" fill="#a18cbb" opacity=".045"/>
+    <text x="46" y="144" fill="#e3d9f1" font-size="10" font-weight="600" letter-spacing="1.5">IZUKO TV</text>
+    <rect x="47" y="167" width="86" height="6" rx="3" fill="#a99aba" opacity=".2"/>
+    <rect x="47" y="183" width="57" height="4" rx="2" fill="#a99aba" opacity=".13"/>
+    <rect x="47" y="205" width="55" height="69" rx="8" fill="#73647f" opacity=".15"/>
+    <rect x="111" y="205" width="55" height="69" rx="8" fill="#867194" opacity=".12"/>
+    <rect x="175" y="205" width="55" height="69" rx="8" fill="#73647f" opacity=".1"/>
+    <rect x="239" y="205" width="55" height="69" rx="8" fill="#867194" opacity=".08"/>
+  </g>
+
+  <!-- 二维码是入口位置示意，不包含可扫描的地址。 -->
+  <rect x="302" y="132" width="86" height="107" rx="16" fill="#ebe4f4" stroke="#ffffff" stroke-opacity=".3"/>
+  <text x="345" y="150" text-anchor="middle" fill="#665275" font-size="9" font-weight="600">Web 控制台</text>
+  <rect x="316" y="158" width="58" height="58" rx="8" fill="#faf7ff"/>
+  <g fill="#665079">
+    <path fill-rule="evenodd" d="M322 164h14v14h-14Zm3 3v8h8v-8ZM354 164h14v14h-14Zm3 3v8h8v-8ZM322 196h14v14h-14Zm3 3v8h8v-8Z"/>
+    <path d="M327 169h4v4h-4Zm32 0h4v4h-4Zm-32 32h4v4h-4ZM340 164h5v5h-5Zm6 7h4v8h-4Zm-6 10h5v5h-5Zm-18 1h5v7h-5Zm8 3h6v5h-6Zm10 6h5v5h-5Zm7-8h8v5h-8Zm10-1h5v4h-5Zm7 5h4v7h-4Zm-15 5h5v7h-5Zm8 1h5v5h-5Zm-16 8h5v9h-5Zm9 2h7v4h-7Zm10 0h8v7h-8Z"/>
+  </g>
+  <text x="345" y="229" text-anchor="middle" fill="#786784" font-size="8">手机扫码打开</text>
+  <circle class="marker" cx="383" cy="134" r="12"/>
+  <text class="marker-number" x="383" y="138">1</text>
+
+  <!-- 播放卡片、服务状态、快捷按钮与焦点说明。 -->
+  <rect x="44" y="258" width="344" height="232" rx="25" fill="url(#panel)" stroke="#ffffff" stroke-opacity=".5" filter="url(#panel-shadow)"/>
+  <rect x="58" y="272" width="316" height="72" rx="16" fill="url(#play-card)" stroke="#a188be" stroke-width="1.5"/>
+  <g clip-path="url(#thumbnail-clip)">
+    <rect x="69" y="283" width="72" height="50" rx="9" fill="url(#thumbnail)"/>
+    <circle cx="123" cy="296" r="8" fill="#efdcce" opacity=".9"/>
+    <path d="m65 332 27-30 21 20 15-12 21 23Z" fill="#555371"/>
+    <path d="m65 336 32-19 23 15 28-10v15Z" fill="#393b55"/>
+  </g>
+  <text x="154" y="291" fill="#78618f" font-size="9">正在播放</text>
+  <text x="154" y="310" fill="#49365f" font-size="14" font-weight="600">第 06 话</text>
+  <rect x="154" y="322" width="116" height="3" rx="1.5" fill="#b49bce"/>
+  <rect x="154" y="322" width="43" height="3" rx="1.5" fill="#78608e"/>
+  <circle cx="350" cy="307" r="13" fill="#c0acd9"/>
+  <path d="m346 303 8 8m0-8-8 8" stroke="#6a527f" stroke-width="1.6" stroke-linecap="round"/>
+
+  <g class="ui-small">
+    <circle cx="72" cy="367" r="3" fill="#62977e"/><text x="80" y="370">条目</text>
+    <circle cx="131" cy="367" r="3" fill="#62977e"/><text x="139" y="370">搜索</text>
+    <circle cx="190" cy="367" r="3" fill="#62977e"/><text x="198" y="370">背景图</text>
+    <circle cx="259" cy="367" r="3" fill="#62977e"/><text x="267" y="370">图床</text>
+  </g>
+  <use href="#refresh" class="ui-icon" transform="translate(349 367) scale(.65)"/>
+  <path d="M64 384H368" stroke="#cec3db"/>
+
+  <g fill="#f7f3fb">
+    <circle cx="88" cy="414" r="21"/><circle cx="150" cy="414" r="21"/>
+    <circle cx="212" cy="414" r="21"/><circle cx="274" cy="414" r="21"/>
+  </g>
+  <circle cx="336" cy="414" r="21" fill="#efdce4"/>
+  <use href="#home" class="ui-icon" transform="translate(88 413)"/>
+  <use href="#refresh" class="ui-icon" transform="translate(150 414)"/>
+  <use href="#shuffle" class="ui-icon" transform="translate(212 414) scale(.85)"/>
+  <use href="#grid" fill="#766184" transform="translate(274 414)"/>
+  <use href="#power" class="ui-icon" style="stroke:#ab6b80" transform="translate(336 414)"/>
+  <rect x="146" y="451" width="140" height="24" rx="12" fill="#d8cce6"/>
+  <text x="216" y="467" text-anchor="middle" fill="#77618b" font-size="11">回到正在播放</text>
+
+  <circle class="marker" cx="46" cy="291" r="12"/><text class="marker-number" x="46" y="295">2</text>
+  <circle class="marker" cx="46" cy="367" r="12"/><text class="marker-number" x="46" y="371">3</text>
+  <circle class="marker" cx="46" cy="414" r="12"/><text class="marker-number" x="46" y="418">4</text>
+  <circle class="marker" cx="46" cy="463" r="12"/><text class="marker-number" x="46" y="467">5</text>
+  <path d="M59 463H136" stroke="#af9ac2" stroke-dasharray="2 4" stroke-linecap="round"/>
+
+  <!-- 编号说明与面板区域一一对应。 -->
+  <circle class="chip" cx="442" cy="140" r="13"/><text class="number" x="442" y="144">1</text>
+  <text class="label" x="466" y="145">手机上的控制台</text>
+  <text class="detail" x="466" y="169">右上角扫码打开，无需安装应用</text>
+  <path class="divider" d="M466 191H752"/>
+
+  <circle class="chip" cx="442" cy="218" r="13"/><text class="number" x="442" y="222">2</text>
+  <text class="label" x="466" y="223">回到正在播放</text>
+  <text class="detail" x="466" y="247">确认接着看，点 × 结束播放</text>
+  <text class="detail" x="466" y="268">没有在播时，显示「接下来播放」</text>
+  <path class="divider" d="M466 289H752"/>
+
+  <circle class="chip" cx="442" cy="316" r="13"/><text class="number" x="442" y="320">3</text>
+  <text class="label" x="466" y="321">服务连通状态</text>
+  <text class="detail" x="466" y="345">查看条目、搜索、背景图、图床</text>
+  <text class="detail" x="466" y="366">是否能正常连接</text>
+  <path class="divider" d="M466 387H752"/>
+
+  <circle class="chip" cx="442" cy="414" r="13"/><text class="number" x="442" y="418">4</text>
+  <text class="label" x="466" y="419">当前页面的快捷操作</text>
+  <text class="detail" x="466" y="443">回主界面、退出应用；中间随页面变</text>
+  <text class="detail" x="466" y="464">例如刷新、换推荐、调整海报墙大小</text>
+  <path class="divider" d="M466 485H752"/>
+
+  <circle class="chip" cx="442" cy="510" r="13"/><text class="number" x="442" y="514">5</text>
+  <text class="label" x="466" y="515">底部显示当前选中项的名称</text>
+
+  <rect class="footer" x="24" y="536" width="732" height="28" rx="10"/>
+  <circle cx="41" cy="550" r="3" fill="#a18acb"/>
+  <text class="footer-text" x="53" y="554">打开方式：在播放器以外，长按返回键或播放键。</text>
+</svg>
