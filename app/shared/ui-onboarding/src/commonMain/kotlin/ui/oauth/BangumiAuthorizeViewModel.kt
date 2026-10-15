@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterIsInstance
 import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
+import me.him188.ani.app.domain.foundation.BangumiLoginPath
 import me.him188.ani.app.domain.foundation.LoadError
 import me.him188.ani.app.domain.session.SessionEvent
 import me.him188.ani.app.domain.session.SessionManager
@@ -41,10 +42,10 @@ class BangumiAuthorizeViewModel : AbstractViewModel(), KoinComponent {
     }
 
     /**
-     * 现在是不是经第三方镜像连 bangumi. 这时授权登录走不通 (镜像把授权页与换 token 挡在反爬验证后面),
-     * 界面不给授权按钮, 指到手机控制台用个人令牌登录.
+     * 怎么登录 (见 [BangumiLoginPath]). 不是 [BangumiLoginPath.BROWSER] 时授权登录走不通 (加密直连浏览器做不了, 镜像把授权页挡在
+     * 反爬验证后面), 界面不给授权按钮, 指到手机控制台登录.
      */
-    val viaMirror: StateFlow<Boolean> get() = endpoints.viaThirdPartyMirror
+    val loginPath: StateFlow<BangumiLoginPath> get() = endpoints.loginPath
 
     /** 应用内浏览器能不能用. 电视上只有它能用 (跳出去就回不来). */
     val inAppBrowserSupported: Boolean get() = manager.inAppBrowserSupported

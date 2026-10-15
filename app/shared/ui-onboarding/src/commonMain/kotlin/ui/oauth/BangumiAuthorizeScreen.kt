@@ -16,6 +16,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
+import me.him188.ani.app.domain.foundation.BangumiLoginPath
 import me.him188.ani.app.platform.LocalContext
 import me.him188.ani.app.platform.navigation.rememberAsyncBrowserNavigator
 import me.him188.ani.app.ui.foundation.tv.LocalTvLoginSidePanel
@@ -32,7 +33,7 @@ fun BangumiAuthorizeScreen(
     contactActions: @Composable () -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle(AuthState.NoAniAccount)
-    val viaMirror by vm.viaMirror.collectAsStateWithLifecycle()
+    val loginPath by vm.loginPath.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val browserNavigator = rememberAsyncBrowserNavigator()
     val context = LocalContext.current
@@ -45,7 +46,7 @@ fun BangumiAuthorizeScreen(
 
     BangumiAuthorizeScreen(
         state = state,
-        viaMirror = viaMirror,
+        loginPath = loginPath,
         onClickAuthorize = {
             if (state !is AuthState.AwaitingResult) {
                 // 应用内浏览器优先 (电视上唯一可行的一条: 跳去外部浏览器就回不来了);
@@ -72,7 +73,7 @@ fun BangumiAuthorizeScreen(
 @Composable
 internal fun BangumiAuthorizeScreen(
     state: AuthState,
-    viaMirror: Boolean,
+    loginPath: BangumiLoginPath,
     onClickAuthorize: () -> Unit,
     onClickAuthorizeExternally: () -> Unit,
     onCancelAuthorize: () -> Unit,
@@ -86,12 +87,12 @@ internal fun BangumiAuthorizeScreen(
         onNavigateBack = onNavigateBack,
         title = { Text(stringResource(Lang.oauth_authorize_title, "Bangumi")) },
         showThirdPartyLogin = false,
-        // TV: 右侧放手机控制台的码 (扫码在手机上登录; 经镜像时是唯一的路)
+        // TV: 右侧放手机控制台的码 (扫码在手机上登录; 加密直连与经镜像时是唯一的路)
         sidePanel = LocalTvLoginSidePanel.current,
     ) { scrollState ->
         BangumiAuthorizeLayout(
             authorizeState = state,
-            viaMirror = viaMirror,
+            loginPath = loginPath,
             contactActions = contactActions,
             onClickAuthorize = onClickAuthorize,
             onClickAuthorizeExternally = onClickAuthorizeExternally,

@@ -393,7 +393,7 @@
     <string name="tv_onboarding_login_description">Signing in is optional: you can find, watch and cache anime without it. Once signed in, your collections, watch progress, ratings and comments sync with your Bangumi account. You can sign in later from Settings at any time.</string>
     <string name="tv_onboarding_login_on_tv">Sign in on the TV</string>
     <string name="tv_onboarding_login_on_tv_hint">Opens the Bangumi sign-in page; type your account and password with the remote.</string>
-    <string name="tv_onboarding_login_phone_hint">Or scan the code on the right with your phone and sign in from the Web console under Settings → Account; typing is easier on a phone.</string>
+    <string name="tv_onboarding_login_password_hint">Scan the code on the right with your phone to open the Web console, tap “Sign in with email and password” under Settings → Account, and the TV signs in for you. It works even if your phone can’t open Bangumi.</string>
     <string name="tv_onboarding_login_qr_title">Sign in with your phone</string>
     <string name="tv_onboarding_login_qr_hint">Or scan the code on the right with your phone, sign in and authorize on the Bangumi page that opens, and the TV signs in by itself. Your phone must be on the same Wi-Fi as the TV.</string>
     <string name="tv_onboarding_login_qr_retry">That sign-in didn’t finish. Scan the new code to try again</string>
@@ -496,6 +496,7 @@
     <string name="settings_network_endpoint_custom_url_invalid">Unrecognized address. Enter https://domain (a path is fine) or a template containing {path}</string>
     <string name="settings_network_proxy_service_tmdb_image">Backdrop image CDN</string>
     <string name="oauth_bangumi_via_mirror">You are connected to Bangumi through a mirror, where signing in by authorization does not work. Scan the code on the right to open the Web console, go to Settings → Account and tap “Sign in with a personal token”, then follow the steps: first turn on “Also send sign-in and collection sync through the mirror”, then create a token on the official Bangumi site and paste it in.</string>
+    <string name="oauth_bangumi_via_ech">Bangumi is reached through encrypted direct, so your phone probably can’t open the authorization page. Scan the code on the right to open the Web console, tap “Sign in with email and password” under Settings → Account and enter your Bangumi account, and the TV signs in for you.</string>
     <string name="oauth_bangumi_authorize_external_browser">Sign in with system browser</string>
     <string name="oauth_bangumi_stage_opening">Opening the sign-in page…</string>
     <string name="oauth_bangumi_stage_authorizing">Waiting for you to authorize on the sign-in page…</string>

@@ -1168,11 +1168,11 @@ object TvRemoteControl {
             put("lang", RemoteI18n.lang.tag)
             // 电视现在是哪个用户: 和网页加载时的不一样 (电视上或网页上换了人, 应用重启过) 就整页重载, 各标签里的数据都是按人的
             put("user", UserProfiles.currentId)
-            // Bangumi 走哪条线路: 变了 (电视上改了连接方式、自动改成用镜像) 网页重读账号卡片 —— 经镜像时只给个人令牌登录
+            // Bangumi 走哪条线路: 变了 (电视上改了连接方式、自动改成用镜像) 网页重读账号卡片 —— 登录方式跟着线路换 (见 BangumiLoginPath)
             val endpoints = bangumiEndpoints
             put(
                 "bgm",
-                listOf(endpoints.currentRouting?.hashCode(), endpoints.viaThirdPartyMirror.value, endpoints.trustedMirrorRoot.value)
+                listOf(endpoints.currentRouting?.hashCode(), endpoints.loginPath.value, endpoints.trustedMirrorRoot.value)
                     .joinToString("|"),
             )
         }
