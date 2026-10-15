@@ -422,6 +422,9 @@ fun TvEpisodeScreenContent(
             play = { vm.player.play() },
         )
     }
+    LaunchedEffect(vm, scrubPlayback) {
+        vm.player.state.map { it.playWhenReady }.distinctUntilChanged().collect { scrubPlayback.onPlayingChanged(it) }
+    }
 
     /**
      * 进入拖拽预览 (已经在预览中就什么都不做): 暂停与否交给 [TvScrubPlayback].
@@ -430,8 +433,7 @@ fun TvEpisodeScreenContent(
      */
     fun beginScrub() {
         if (progressSliderState.isPreviewing) return
-        val playing = vm.player.state.value.playWhenReady
-        scrubPlayback.onEnter()
+        val playing = scrubPlayback.onEnter()
         if (playing && !vm.videoScaffoldConfig.pauseVideoOnScrub) return
         seekPreview?.begin(onFullScreen = vm.videoScaffoldConfig.seekPreviewDisplay == SeekPreviewDisplay.FULL_SCREEN)
     }
