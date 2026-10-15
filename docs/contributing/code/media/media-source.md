@@ -76,6 +76,22 @@ WebDAV 列目录不给画面高度与时长：`cloud-drive` 给出候选前读�
 蜜柑按条目 id 找番剧页，不需要这一步。
 协议的 `legacy` 段可以声明这个网盘以前由专门代码支持时留下的设置键与数据源类型，`CloudDriveRegistry` 第一次见到协议时把它们认领过来。
 
+### RSS 源：从标题算出直链
+
+有的视频在另一个文件站上按发布标题存放，地址哪里都不直接给，只能从种子站的标题算出来（如 ANi 的文件站）。
+RSS 源配置的 `titleToLink`（`RssTitleToLink`）在解析出条目之后、生成资源之前改写条目：`pattern` 整个匹配标题，
+对不上的条目丢掉；它的命名分组在 `url`、`title` 模板里用 `{名字}` 取（`url` 里做 URL 编码，`{名字:raw}` 原样）。
+文件站按番开播的季度分目录时用 `{seasonYear}` / `{seasonMonth}` / `{seasonMonth2}`：开播日期取条目正片里最早的 Bangumi 播出日期
+（`MediaFetchRequest.firstAirDate`，经 `RssSearchQuery.subjectAirDate` 传进来），不知道时用同一部番（命名分组 `groupBy`）里最早一条的发布日期。
+种子站的搜索结果常常只有最近的几十条，而且续作常与第一季同名，所以优先用条目的日期；比它早一个月以上发布的条目是更早的季，丢掉。
+`seasonRoundUpDays` 让季末几天首播的番归到下一季，`maxAgeDays` 丢掉开播太久、文件站已经删掉的。
+改写出的视频地址放在条目的 enclosure 上，原来的链接留作来源页。
+配置了 `titleToLink` 的 RSS 源结果全是直链，算在线源（`rssSourceKindOf`），其余 RSS 源算 BT：选源面板按数据源的类别分栏，
+在线源那一排只收在线源、BT 栏只收种子，类别不对的源两边都显示不出来。
+
+`searchFallbackKeywords` 让 RSS 源在条目名之外也用回退关键词搜，其中有对应表里的港台译名（`withRegionalNames`），
+只认台湾译名的种子站要靠它。
+
 ### 规则源
 
 规则源（`domain/mediasource/rule`，类型 `rule`）用一份 JSON 规则（`RuleConfig`）抓取网站，适合 `SelectorMediaSource`
