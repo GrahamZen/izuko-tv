@@ -126,6 +126,7 @@ import me.him188.ani.app.domain.media.player.PlaybackActivity
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceCodecManager
 import me.him188.ani.app.data.repository.media.MediaSourceInstanceRepository
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveRegistry
+import me.him188.ani.app.domain.mediasource.clouddrive.DriveShareIndexFileStore
 import me.him188.ani.app.domain.mediasource.clouddrive.LegacyPreferences
 import me.him188.ani.app.domain.mediasource.subscription.MediaSourceSubscriptionRequesterImpl
 import me.him188.ani.app.domain.mediasource.subscription.MediaSourceSubscriptionUpdater
@@ -705,6 +706,7 @@ private fun KoinApplication.otherModules(
             },
             tmdbSubjectMap = get<TmdbSubjectMapRepository>(),
             parentCoroutineContext = coroutineScope.childScopeContext(),
+            shareIndexStore = DriveShareIndexFileStore(getContext().files.cacheDir.resolve("drive-share-indexes.json"), coroutineScope.childScopeContext()),
         )
     }
     single<MediaSourceManager> {
