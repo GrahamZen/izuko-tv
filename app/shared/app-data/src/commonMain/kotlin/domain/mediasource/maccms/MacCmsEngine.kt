@@ -142,13 +142,20 @@ internal class MacCmsEngine(
                 val item = element as? JsonObject ?: return@mapNotNull null
                 val name = item.string("vod_name")?.trim().orEmpty()
                 if (name.isEmpty()) return@mapNotNull null
-                val froms = item.string("vod_play_from").orEmpty().split("$$$")
-                val urls = item.string("vod_play_url").orEmpty().split("$$$")
-                val lines = urls.mapIndexed { index, line ->
-                    val from = froms.getOrNull(index)?.trim().orEmpty().ifEmpty { "${index + 1}" }
-                    from to line.split('#').mapNotNull { parseEpisode(it) }
-                }
+                val lines = parsePlayLines(item.string("vod_play_from").orEmpty(), item.string("vod_play_url").orEmpty())
                 MacCmsVod(item.string("vod_id").orEmpty(), name, lines)
+            }
+        }
+
+        /**
+         * 一部片子的线路: `vod_play_from` 是各线路的代号, `vod_play_url` 是各线路的剧集, 线路之间都用 `$$$` 分隔,
+         * 剧集之间用 `#`. 代号缺了的线路按序号叫. 规则源的苹果 CMS 剧集步骤也用它.
+         */
+        fun parsePlayLines(playFrom: String, playUrl: String): List<Pair<String, List<MacCmsEpisode>>> {
+            val froms = playFrom.split("$$$")
+            return playUrl.split("$$$").mapIndexed { index, line ->
+                val from = froms.getOrNull(index)?.trim().orEmpty().ifEmpty { "${index + 1}" }
+                from to line.split('#').mapNotNull { parseEpisode(it) }
             }
         }
 

@@ -30,13 +30,13 @@ import me.him188.ani.datasources.api.topic.SubtitleLanguage
  * [RuleStep.First] 依次尝试几个分支, 用第一个成功的.
  *
  * - 搜索段以条目列表步骤 ([RuleStep.Subjects] / [RuleStep.JsonSubjects]) 结束, 产出站点上的条目 (名字与地址).
- * - 详情段以剧集列表步骤 ([RuleStep.Episodes] / [RuleStep.JsonEpisodes] / [RuleStep.RegexEpisodes]) 结束,
+ * - 详情段以剧集列表步骤 ([RuleStep.Episodes] / [RuleStep.JsonEpisodes] / [RuleStep.RegexEpisodes] / [RuleStep.MacCmsEpisodes]) 结束,
  *   产出线路与各线路的剧集 (名字与地址).
  * - 播放段结束时的当前值就是视频地址; 以 [RuleStep.Sniff] (`goal = video`) 结束表示交给 WebView 打开剧集页嗅探.
  *   播放段为空时剧集地址本身就是视频地址.
  *
  * 模板 (地址、请求体、[RuleStep.Template] 等) 里用 `{名字}` 取变量: `keyword` 默认做 URL 编码, 其余默认原样;
- * 写成 `{名字:url}` / `{名字:raw}` 可以指定. 没有这个变量的 `{...}` 原样保留 (可能是 JSON 里本来的花括号).
+ * 写成 `{名字:url}` / `{名字:raw}` 可以指定, `{名字:json}` 按 JSON 字符串转义 (拼 JSON 请求体用). 没有这个变量的 `{...}` 原样保留 (可能是 JSON 里本来的花括号).
  * 内置变量还有 `baseUrl`, 以及最近一次请求的最终地址 `pageUrl`.
  *
  * 搜到条目之后怎么挑出当前这一集, 与网页抓取 (Selector) 数据源相同: [autoMatch] 与 [matchEpisodeSortFromName] 的含义也相同.
@@ -220,6 +220,27 @@ sealed interface RuleStep {
         val transforms: List<Transform>,
     ) : RuleStep
 
+    /**
+     * 解密或摘要, 当前值变成结果. [input] 是模板, 默认是当前值.
+     *
+     * - [algorithm] = `aes-cbc`: AES-CBC 解密 (PKCS#7 填充). 输入是密文的 base64 (也认十六进制);
+     *   [key] 与 [iv] 是模板, 展开后的文本按 UTF-8 取字节 (密钥 16 / 24 / 32 字节, IV 16 字节). 结果按 UTF-8 解成文本.
+     * - [algorithm] = `md5`: 输入 (UTF-8) 的 MD5, 小写十六进制.
+     */
+    @Serializable
+    @SerialName("crypto")
+    data class Crypto(
+        val algorithm: String,
+        val input: String = "{value}",
+        val key: String = "",
+        val iv: String = "",
+    ) : RuleStep {
+        companion object {
+            const val AES_CBC = "aes-cbc"
+            const val MD5 = "md5"
+        }
+    }
+
     /** 依次尝试几个分支, 用第一个成功的分支的结果. 都失败则这一步失败. */
     @Serializable
     @SerialName("first")
@@ -338,5 +359,21 @@ sealed interface RuleStep {
     data class RegexEpisodes(
         val pattern: String,
         val ignoreCase: Boolean = false,
+    ) : RuleStep
+
+    /**
+     * 线路与剧集列表, 来自苹果 CMS (MacCMS) 的视频接口 (`/api.php/provide/vod/?ac=detail&ids=…`):
+     * 把当前值当作 JSON, 取 [listPath] 下的第一部片子 (为空表示当前值本身就是列表), 按它的 `vod_play_from` / `vod_play_url`
+     * 拆出线路与剧集 (线路之间用 `$$$` 分隔, 剧集之间用 `#`, 每集是 `名字$地址`). 剧集地址就是播放地址, 不是 `http` 开头的不要.
+     *
+     * @property directOnly 为 `true` 时只要直接能播的地址 (`.m3u8` / `.mp4` 等), 站点自己的网页播放器地址不要
+     * @property preferHls 为 `true` 时 m3u8 线路排在前面
+     */
+    @Serializable
+    @SerialName("maccmsEpisodes")
+    data class MacCmsEpisodes(
+        val listPath: String = "list",
+        val directOnly: Boolean = false,
+        val preferHls: Boolean = false,
     ) : RuleStep
 }
