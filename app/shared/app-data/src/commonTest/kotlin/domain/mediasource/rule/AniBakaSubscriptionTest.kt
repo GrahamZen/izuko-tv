@@ -32,7 +32,7 @@ class AniBakaSubscriptionTest {
     private val hub = """
         {"format": "anx-rulehub/2", "entries": [
           {"key": "ok", "title": "能转的", "ref": "ok.json"},
-          {"key": "crypto", "title": "加密站", "ref": "crypto.json"}
+          {"key": "special", "title": "专用步骤站", "ref": "special.json"}
         ]}
     """.trimIndent()
 
@@ -43,18 +43,18 @@ class AniBakaSubscriptionTest {
          "play": [{"op": "sniff", "goal": "video"}]}
     """.trimIndent()
 
-    private val cryptoRule = """
-        {"format": "anx-rule/2", "name": "加密站", "baseUrl": "https://www.example.com",
+    private val specialRule = """
+        {"format": "anx-rule/2", "name": "专用步骤站", "baseUrl": "https://www.example.com",
          "search": [{"op": "fetch", "url": "/s?wd={keyword}"}, {"op": "searchList", "selectors": [".item"]}],
          "detail": [{"op": "follow"}, {"op": "episodes", "listSelectors": [".eps"]}],
-         "play": [{"op": "follow"}, {"op": "crypto", "algo": "md5"}]}
+         "play": [{"op": "follow"}, {"op": "ecPlayer"}]}
     """.trimIndent()
 
     @Test
     fun `hub becomes subscription data of rule sources`() = runTest {
-        val files = mapOf("https://rules.example.com/repo/ok.json" to okRule, "https://rules.example.com/repo/crypto.json" to cryptoRule)
+        val files = mapOf("https://rules.example.com/repo/ok.json" to okRule, "https://rules.example.com/repo/special.json" to specialRule)
         val data = checkNotNull(AniBakaSubscription.decodeOrNull(hub, hubUrl) { files.getValue(it) })
-        val sources = data.exportedMediaSourceDataList.mediaSources
+        val sources = data.mediaSources
         // 转换不了的规则跳过, 不算失败
         assertEquals(listOf(RuleMediaSource.FactoryId), sources.map { it.factoryId })
         val arguments = MediaSourceCodecManager.json.decodeFromJsonElement(RuleMediaSourceArguments.serializer(), sources.single().arguments)
@@ -90,13 +90,13 @@ class AniBakaSubscriptionTest {
             val body = when (request.url.toString()) {
                 hubUrl -> hub
                 "https://rules.example.com/repo/ok.json" -> okRule
-                "https://rules.example.com/repo/crypto.json" -> cryptoRule
+                "https://rules.example.com/repo/special.json" -> specialRule
                 else -> return@MockEngine respondError(HttpStatusCode.NotFound)
             }
             respond(body, HttpStatusCode.OK, headersOf("Content-Type", "application/json"))
         }
         val requester = MediaSourceSubscriptionRequesterImpl(HttpClient(engine).asScopedHttpClient())
         val data = requester.request(MediaSourceSubscription(subscriptionId = "s", url = hubUrl))
-        assertEquals(1, data.exportedMediaSourceDataList.mediaSources.size)
+        assertEquals(1, data.mediaSources.size)
     }
 }
