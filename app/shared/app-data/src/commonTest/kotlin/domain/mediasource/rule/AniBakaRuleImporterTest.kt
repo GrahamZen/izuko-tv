@@ -161,16 +161,16 @@ class AniBakaRuleImporterTest {
         val converted = AniBakaRuleImporter.convert(
             rule(
                 """
-                {"format": "anx-rule/2", "name": "加密站", "baseUrl": "https://www.example.com",
+                {"format": "anx-rule/2", "name": "专用步骤站", "baseUrl": "https://www.example.com",
                  "search": [{"op": "fetch", "url": "/s?wd={keyword}"}, {"op": "searchList", "selectors": [".item"]}],
-                 "detail": [{"op": "follow"}, {"op": "episodes", "roadsXPath": "//div", "itemsXPath": ".//a"}],
-                 "play": [{"op": "follow"}, {"op": "crypto", "algo": "aes-cbc", "key": "k", "iv": "v"}]}
+                 "detail": [{"op": "follow"}, {"op": "episodes", "roadsXPath": "//div/following-sibling::ul", "itemsXPath": ".//a"}],
+                 "play": [{"op": "follow"}, {"op": "ecPlayer"}]}
                 """.trimIndent(),
             ),
         )
         assertIs<AniBakaRuleImporter.Converted.Unsupported>(converted)
-        assertEquals("加密站", converted.name)
-        assertTrue(converted.reasons.any { "crypto" in it }, converted.reasons.toString())
+        assertEquals("专用步骤站", converted.name)
+        assertTrue(converted.reasons.any { "ecPlayer" in it }, converted.reasons.toString())
         assertTrue(converted.reasons.any { "roadsXPath" in it }, converted.reasons.toString())
     }
 
@@ -378,5 +378,122 @@ class AniBakaRuleImporterTest {
     fun `other json is not taken`() = runTest {
         assertNull(AniBakaRuleImporter.import("""{"factoryId": "web-selector", "arguments": {}}""") { error("no download") })
         assertNull(AniBakaRuleImporter.import("not json") { error("no download") })
+    }
+    /** 苹果 CMS 视频接口的站点 (站点是虚构的): 搜索结果只给 id, 详情段自己拼接口地址, 剧集地址就是 m3u8. */
+    private val macCmsApiRule = """
+        {
+          "format": "anx-rule/2", "name": "接口站", "baseUrl": "https://dm.example.com",
+          "headers": {"Referer": "https://www.example.com/"},
+          "search": [
+            {"op": "first", "branches": [
+              [{"op": "fetch", "url": "/api.php/provide/vod/?ac=list&wd={keyword}"},
+               {"op": "jsonSeries", "listPath": "list", "idKey": "vod_id", "nameKey": "vod_name", "imageKey": "vod_pic"}],
+              [{"op": "sniff", "goal": "html", "url": "/api.php/provide/vod/?ac=list&wd={keyword}"},
+               {"op": "select", "css": "body", "attr": "text"},
+               {"op": "jsonSeries", "listPath": "list", "idKey": "vod_id", "nameKey": "vod_name"}]
+            ]}
+          ],
+          "detail": [
+            {"op": "fetch", "url": "/api.php/provide/vod/?ac=detail&ids={seriesId:raw}"},
+            {"op": "maccmsApiEpisodes", "preferHls": true, "directOnly": true}
+          ],
+          "play": [{"op": "template", "value": "{episodeId:raw}", "filterHlsAds": true}]
+        }
+    """.trimIndent()
+
+    @Test
+    fun `json series with only ids takes the address of the detail request`() = runTest {
+        val converted = AniBakaRuleImporter.convert(rule(macCmsApiRule))
+        assertIs<AniBakaRuleImporter.Converted.Ok>(converted)
+        val config = converted.arguments.rule
+        // 详情段的请求改为直接打开条目地址
+        assertEquals(RuleStep.Fetch(), config.detail.first())
+        assertEquals(RuleStep.MacCmsEpisodes(listPath = "list", directOnly = true, preferHls = true), config.detail[1])
+
+        val pages = mapOf(
+            "https://dm.example.com/api.php/provide/vod/?ac=list&wd=%E7%A4%BA%E4%BE%8B" to
+                """{"list":[{"vod_id":12,"vod_name":"示例动画","vod_pic":""}]}""",
+            "https://dm.example.com/api.php/provide/vod/?ac=detail&ids=12" to
+                """{"list":[{"vod_id":12,"vod_name":"示例动画","vod_play_from":"ffm3u8","vod_play_url":"第01集${'$'}https://cdn.example.com/12/1.m3u8"}]}""",
+        )
+        val engine = RuleEngine(config, RuleHttp { request -> RuleHttpResponse(request.url, if (request.url in pages) 200 else 404, pages[request.url].orEmpty()) })
+        val subject = engine.search("示例").single()
+        assertEquals("https://dm.example.com/api.php/provide/vod/?ac=detail&ids=12", subject.url)
+        val episode = engine.detail(subject.url).single().episodes.single()
+        assertEquals("第01集", episode.name)
+        val play = engine.play(episode.url)
+        assertIs<RulePlayResult.Direct>(play)
+        assertEquals("https://cdn.example.com/12/1.m3u8", play.url)
+    }
+
+    @Test
+    fun `crypto and xpath steps are converted`() {
+        val converted = AniBakaRuleImporter.convert(
+            rule(
+                """
+                {"format": "anx-rule/2", "name": "解密站", "baseUrl": "https://www.example.com",
+                 "search": [{"op": "fetch", "url": "/s?wd={keyword}"},
+                            {"op": "searchList", "listXPath": "//a[contains(@class,\"topic-list-item\")]", "nameXPath": ".//div[contains(@class,\"h3\")]", "linkXPath": ""}],
+                 "detail": [{"op": "follow"},
+                            {"op": "episodes", "roadsXPath": "//section[contains(@class, 'anthology')]", "itemsXPath": ".//a[contains(@class, 'circuit_switch1')]"}],
+                 "play": [{"op": "follow"},
+                          {"op": "regex", "pattern": "^(.{9})", "group": 1},
+                          {"op": "crypto", "algo": "md5"},
+                          {"op": "setVar", "name": "key", "value": "{url:raw}"},
+                          {"op": "crypto", "algo": "aes-cbc", "mode": "decrypt", "input": "{token:raw}", "key": "{key:raw}", "iv": "5re6a)@&wfDCMS^A"}]}
+                """.trimIndent(),
+            ),
+        )
+        assertIs<AniBakaRuleImporter.Converted.Ok>(converted)
+        val config = converted.arguments.rule
+        assertEquals(
+            RuleStep.Subjects(list = listOf("a[class*=\"topic-list-item\"]"), name = "div[class*=\"h3\"]"),
+            config.search[1],
+        )
+        val episodes = config.detail[1]
+        assertIs<RuleStep.Episodes>(episodes)
+        assertEquals(listOf("section[class*=\"anthology\"]"), episodes.lists)
+        assertEquals("a[class*=\"circuit_switch1\"]", episodes.items)
+        assertEquals(RuleStep.Crypto(RuleStep.Crypto.MD5, input = "{value}"), config.play[2])
+        assertEquals(RuleStep.Crypto(RuleStep.Crypto.AES_CBC, input = "{token}", key = "{key}", iv = "5re6a)@&wfDCMS^A"), config.play[4])
+    }
+
+    @Test
+    fun `encryption and unconvertible xpath are reported`() {
+        val converted = AniBakaRuleImporter.convert(
+            rule(
+                """
+                {"format": "anx-rule/2", "name": "加密站", "baseUrl": "https://www.example.com",
+                 "search": [{"op": "fetch", "url": "/s?wd={keyword}"}, {"op": "searchList", "listXPath": "//a/@href"}],
+                 "detail": [{"op": "follow"}, {"op": "episodes", "listSelectors": [".eps"]}],
+                 "play": [{"op": "crypto", "algo": "aes-cbc", "mode": "encrypt", "key": "k", "iv": "v"}]}
+                """.trimIndent(),
+            ),
+        )
+        assertIs<AniBakaRuleImporter.Converted.Unsupported>(converted)
+        assertTrue(converted.reasons.any { "crypto 的 mode encrypt" in it }, converted.reasons.toString())
+        assertTrue(converted.reasons.any { "listXPath" in it }, converted.reasons.toString())
+    }
+    @Test
+    fun `object bodies of json requests become json`() {
+        val converted = AniBakaRuleImporter.convert(
+            rule(
+                """
+                {"format": "anx-rule/2", "name": "接口站", "baseUrl": "https://www.example.com",
+                 "search": [{"op": "fetch", "url": "https://api.example.com/rpc/search", "method": "POST", "contentType": "application/json",
+                             "body": {"search_term": "{keyword:raw}", "limit": 10}},
+                            {"op": "jsonSeries", "idKey": "id", "nameKey": "title", "detailUrlTemplate": "/anime/{id}"}],
+                 "detail": [{"op": "follow"}, {"op": "episodes", "listSelectors": [".eps"]}]}
+                """.trimIndent(),
+            ),
+        )
+        assertIs<AniBakaRuleImporter.Converted.Ok>(converted)
+        val fetch = converted.arguments.rule.search.first()
+        assertIs<RuleStep.Fetch>(fetch)
+        assertEquals("""{"search_term":"{keyword:json}","limit":10}""", fetch.body)
+        assertEquals(
+            """{"search_term":"示\"例","limit":10}""",
+            RuleText.substitute(fetch.body, mapOf("keyword" to "示\"例")),
+        )
     }
 }
