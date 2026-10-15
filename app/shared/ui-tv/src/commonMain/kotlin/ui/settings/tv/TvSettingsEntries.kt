@@ -76,8 +76,6 @@ import me.him188.ani.app.ui.lang.settings_player_auto_switch_media_on_error
 import me.him188.ani.app.ui.lang.settings_player_disk_cache
 import me.him188.ani.app.ui.lang.settings_player_disk_cache_description
 import me.him188.ani.app.ui.lang.settings_player_enable_regex_filter
-import me.him188.ani.app.ui.lang.settings_player_frame_preview
-import me.him188.ani.app.ui.lang.settings_player_frame_preview_description
 import me.him188.ani.app.ui.lang.settings_player_hide_selector_on_select
 import me.him188.ani.app.ui.lang.settings_player_hls_ad_filter
 import me.him188.ani.app.ui.lang.settings_player_hls_ad_filter_description
@@ -104,6 +102,7 @@ import me.him188.ani.app.ui.lang.settings_player_pause_on_scrub_description
 import me.him188.ani.app.ui.lang.settings_player_seek_preview_display
 import me.him188.ani.app.ui.lang.settings_player_seek_preview_display_description
 import me.him188.ani.app.ui.lang.settings_player_seek_preview_display_full_screen
+import me.him188.ani.app.ui.lang.settings_player_seek_preview_display_off
 import me.him188.ani.app.ui.lang.settings_player_seek_preview_display_window
 import me.him188.ani.app.ui.lang.settings_player_skip_op_ed_auto
 import me.him188.ani.app.ui.lang.settings_player_skip_op_ed_auto_then_manual
@@ -702,29 +701,38 @@ private fun TvSettingsItemsBuilder.playerItems() {
         read = { it.enableHlsAdFiltering },
         write = { copy(enableHlsAdFiltering = it) },
     )
-    toggle(
-        player, Lang.settings_player_frame_preview, Lang.settings_player_frame_preview_description,
-        read = { it.enableFramePreview },
-        write = { copy(enableFramePreview = it) },
+    // 拖动预览画面: 不开 / 全屏 / 小画面. 存的是「显示画面预览」开关加画在哪 (SeekPreviewDisplay), 两个合成一项
+    choice(
+        player, Lang.settings_player_seek_preview_display, Lang.settings_player_seek_preview_display_description,
+        options = { SeekPreviewChoice.entries },
+        label = {
+            tvText(
+                when (it) {
+                    SeekPreviewChoice.OFF -> Lang.settings_player_seek_preview_display_off
+                    SeekPreviewChoice.FULL_SCREEN -> Lang.settings_player_seek_preview_display_full_screen
+                    SeekPreviewChoice.WINDOW -> Lang.settings_player_seek_preview_display_window
+                },
+            )
+        },
+        read = {
+            when {
+                !it.enableFramePreview -> SeekPreviewChoice.OFF
+                it.seekPreviewDisplay == SeekPreviewDisplay.FULL_SCREEN -> SeekPreviewChoice.FULL_SCREEN
+                else -> SeekPreviewChoice.WINDOW
+            }
+        },
+        write = {
+            when (it) {
+                SeekPreviewChoice.OFF -> copy(enableFramePreview = false)
+                SeekPreviewChoice.FULL_SCREEN -> copy(enableFramePreview = true, seekPreviewDisplay = SeekPreviewDisplay.FULL_SCREEN)
+                SeekPreviewChoice.WINDOW -> copy(enableFramePreview = true, seekPreviewDisplay = SeekPreviewDisplay.WINDOW)
+            }
+        },
     )
     toggle(
         player, Lang.settings_player_pause_on_scrub, Lang.settings_player_pause_on_scrub_description,
         read = { it.pauseVideoOnScrub },
         write = { copy(pauseVideoOnScrub = it) },
-    )
-    choice(
-        player, Lang.settings_player_seek_preview_display, Lang.settings_player_seek_preview_display_description,
-        options = { SeekPreviewDisplay.entries },
-        label = {
-            tvText(
-                when (it) {
-                    SeekPreviewDisplay.WINDOW -> Lang.settings_player_seek_preview_display_window
-                    SeekPreviewDisplay.FULL_SCREEN -> Lang.settings_player_seek_preview_display_full_screen
-                },
-            )
-        },
-        read = { it.seekPreviewDisplay },
-        write = { copy(seekPreviewDisplay = it) },
     )
     // 进播放器时的倍速: 第一档 = 记住上次 (在播放器里调过的倍速跨剧集、重启保持), 往后是固定的起始倍速 (单位 0.01x)
     choice(
@@ -854,3 +862,6 @@ private val TvBackdropBlurLevel.labelRes
         TvBackdropBlurLevel.Medium -> Lang.settings_theme_tv_backdrop_blur_medium
         TvBackdropBlurLevel.Strong -> Lang.settings_theme_tv_backdrop_blur_strong
     }
+
+/** 设置页「拖动预览画面」的三档, 按显示顺序. */
+private enum class SeekPreviewChoice { OFF, FULL_SCREEN, WINDOW }
