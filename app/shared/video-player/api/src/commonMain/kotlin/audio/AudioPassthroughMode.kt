@@ -15,8 +15,8 @@ package me.him188.ani.app.videoplayer.audio
  */
 enum class AudioPassthroughMode {
     /**
-     * 立体声与单声道一律解码 (直通它们没有好处); 多声道在电视自带喇叭出声时解码, 其余情况直通.
-     * 有些电视声称自带喇叭能直通 AC3, 实际放出来没有声音.
+     * 立体声与单声道一律解码 (直通它们没有好处); 多声道只在送到外接设备 (HDMI、ARC / eARC、光纤) 时直通, 自带喇叭、蓝牙等解码.
+     * 有些电视声称能直通 AC3, 实际放出来没有声音.
      */
     AUTO,
 
