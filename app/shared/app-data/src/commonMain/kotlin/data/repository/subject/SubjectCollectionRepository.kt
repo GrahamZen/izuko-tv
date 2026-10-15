@@ -36,6 +36,7 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.retry
@@ -139,6 +140,9 @@ abstract class SubjectCollectionRepository(
      * 「刷新本页」上 (见 `SubjectDetailsTvPage`).
      */
     abstract suspend fun refreshSubjectCollection(subjectId: Int)
+
+    /** 这个条目的分集在本进程里取过没有, 见 [EpisodesFetchState]. fake 默认按「取完了, 没有分集」. */
+    open fun episodesFetchStateFlow(subjectId: Int): Flow<EpisodesFetchState> = flowOf(EpisodesFetchState.Fetched(0))
 
     abstract fun subjectCollectionsPager(
         query: CollectionsFilterQuery = CollectionsFilterQuery.Empty,
@@ -284,6 +288,10 @@ class SubjectCollectionRepositoryImpl(
 
     private val subjectFetcher = StaleKeyedFetcher<Int>(scope)
 
+    private val episodesFetchTracker = EpisodesFetchTracker()
+
+    override fun episodesFetchStateFlow(subjectId: Int): Flow<EpisodesFetchState> = episodesFetchTracker.stateFlow(subjectId)
+
     private val recurrenceFiller = SubjectRecurrenceFiller(animeScheduleRepository, subjectCollectionDao, scope, getCurrentDate)
 
     /**
@@ -402,10 +410,11 @@ class SubjectCollectionRepositoryImpl(
         } else {
             null
         }
-        val subject = subjectService.getSubjectCollection(subjectId)
+        val subject = episodesFetchTracker.failedOnError(subjectId) { subjectService.getSubjectCollection(subjectId) }
         if (subject == null) {
             // 服务端没有这个条目的收藏记录: 分集也就没用了, 别让它白跑完
             episodesDeferred?.cancel()
+            episodesFetchTracker.recordFailed(subjectId)
             return@coroutineScope false
         }
         // p1 的条目里没有 recurrence 与 relations (那两个是 Ani 服务端自己算的). 在它们各自的替代
@@ -443,6 +452,7 @@ class SubjectCollectionRepositoryImpl(
             subjectCollectionDao.upsert(savedSubject)
             logger.info { "bgm-direct: fetched subject $subjectId (分集还新鲜, 没重取)" }
         }
+        if (episodesDeferred != null) episodesFetchTracker.recordFetched(subjectId, episodeEntities, getEpisodeTypeFiltersUseCase().first())
         if (recurrence == null) {
             recurrenceFiller.fillLater(
                 subjectId,
@@ -486,6 +496,10 @@ class SubjectCollectionRepositoryImpl(
                     if (existing == null && subjectCollectionDao.findById(subjectId).first() == null) {
                         throw RepositorySubjectNotAccessibleException(subjectId)
                     }
+                }
+                // 这次没取分集 (库里的不用重取) 时也给出结论, 见 [EpisodesFetchTracker.settleIfPending]
+                episodesFetchTracker.settleIfPending(subjectId) {
+                    episodeCollectionDao.filterBySubjectId(subjectId, epTypes).first().size
                 }
             }
             .filterNotNull()
