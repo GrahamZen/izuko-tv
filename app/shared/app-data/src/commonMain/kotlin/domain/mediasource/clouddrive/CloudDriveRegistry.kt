@@ -64,6 +64,8 @@ class CloudDriveRegistry(
     tmdbSubjectMap: TmdbSubjectMapRepository?,
     parentCoroutineContext: CoroutineContext,
     private val httpClient: () -> HttpClient = CloudDriveApi::createHttpClient,
+    /** 分享搜索列出的分享文件夹存在哪 (见 [DriveShareSearchEngine]), 所有分享搜索源共用. */
+    val shareIndexStore: DriveShareIndexStore = DriveShareIndexStore.None,
 ) {
     private val numbering = tmdbSubjectMap?.let { TmdbEpisodeNumbering.of(it) } ?: TmdbEpisodeNumbering.None
 
