@@ -23,6 +23,7 @@ import me.him188.ani.app.domain.mediasource.directapi.JsonNode
 import me.him188.ani.app.domain.mediasource.directapi.applyTransforms
 import me.him188.ani.app.domain.mediasource.directapi.selectByPath
 import me.him188.ani.app.domain.mediasource.directapi.stringByPath
+import me.him188.ani.app.domain.mediasource.maccms.MacCmsEngine
 import me.him188.ani.app.domain.mediasource.toSimplifiedChinese
 import me.him188.ani.app.domain.mediasource.web.BlockedException
 import me.him188.ani.datasources.api.util.namedGroup
@@ -311,6 +312,7 @@ class RuleEngine(
                 ok(label, state.copy(value = value))
             }
 
+            is RuleStep.Crypto -> crypto(state, label, step)
             is RuleStep.First -> {
                 for ((index, branch) in step.branches.withIndex()) {
                     runSteps(branch, state, "$label/$index", errors)?.let { return ok(label, it, "分支 $index") }
@@ -343,6 +345,7 @@ class RuleEngine(
             is RuleStep.Episodes -> episodes(state, label, step)
             is RuleStep.JsonEpisodes -> jsonEpisodes(state, label, step)
             is RuleStep.RegexEpisodes -> regexEpisodes(state, label, step)
+            is RuleStep.MacCmsEpisodes -> macCmsEpisodes(state, label, step)
         }
 
     // region 请求
@@ -445,6 +448,19 @@ class RuleEngine(
         is JsonNull -> null
         is JsonPrimitive -> element.contentOrNull
         else -> element.toString()
+    }
+
+    /** 解不出来 (密钥不对、密文认不出) 算这一步没取到, 不当作请求出错. */
+    private fun crypto(state: RuleState, label: String, step: RuleStep.Crypto): RuleState? {
+        val input = substitute(step.input, state)
+        val value = runCatching {
+            when (step.algorithm.trim().lowercase()) {
+                RuleStep.Crypto.MD5 -> RuleCrypto.md5Hex(input)
+                RuleStep.Crypto.AES_CBC -> RuleCrypto.aesCbcDecrypt(input, substitute(step.key, state), substitute(step.iv, state))
+                else -> return fail(label, "不支持的算法 ${step.algorithm}")
+            }
+        }.getOrElse { return fail(label, "${step.algorithm} 失败: ${it.message ?: it::class.simpleName}") }
+        return ok(label, state.copy(value = value))
     }
 
     @OptIn(ExperimentalEncodingApi::class)
@@ -624,6 +640,21 @@ class RuleEngine(
         return finishChannels(state, label, byChannel.map { (name, episodes) -> RuleChannel(name, episodes) })
     }
 
+    private fun macCmsEpisodes(state: RuleState, label: String, step: RuleStep.MacCmsEpisodes): RuleState? {
+        val vod = jsonItems(state.value, step.listPath).firstOrNull()?.element as? JsonObject
+            ?: return fail(label, "${step.listPath.ifEmpty { "当前值" }} 里没有片子")
+        fun field(key: String) = (vod[key] as? JsonPrimitive)?.contentOrNull.orEmpty()
+        val channels = MacCmsEngine.parsePlayLines(field("vod_play_from"), field("vod_play_url")).map { (from, episodes) ->
+            val kept = if (step.directOnly) episodes.filter { MacCmsEngine.isMediaUrl(it.url) } else episodes
+            RuleChannel(from, kept.mapIndexed { index, episode -> RuleEpisode(episode.label.ifEmpty { "第${index + 1}集" }, episode.url) })
+        }
+        // sortedBy 是稳定的: 同类线路保持站点给的顺序
+        val ordered = if (step.preferHls) channels.sortedBy { channel -> channel.episodes.none { isHls(it.url) } } else channels
+        return finishChannels(state, label, ordered)
+    }
+
+    private fun isHls(url: String): Boolean = url.substringBefore('?').substringBefore('#').endsWith(".m3u8", ignoreCase = true)
+
     private fun optionalGroup(match: MatchResult, regex: Regex, name: String): String? = try {
         match.namedGroup(regex, name)?.value
     } catch (_: IllegalArgumentException) {
@@ -685,6 +716,7 @@ class RuleEngine(
         is RuleStep.SetVar -> "set"
         is RuleStep.Query -> "query"
         is RuleStep.Transforms -> "transform"
+        is RuleStep.Crypto -> "crypto"
         is RuleStep.First -> "first"
         is RuleStep.MacCmsPlayer -> "maccmsPlayer"
         RuleStep.VideoUrl -> "videoUrl"
@@ -694,6 +726,7 @@ class RuleEngine(
         is RuleStep.Episodes -> "episodes"
         is RuleStep.JsonEpisodes -> "jsonEpisodes"
         is RuleStep.RegexEpisodes -> "regexEpisodes"
+        is RuleStep.MacCmsEpisodes -> "maccmsEpisodes"
     }
 
     companion object {
