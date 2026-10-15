@@ -27,6 +27,7 @@ import me.him188.ani.app.data.models.subject.SubjectCollectionStats
 import me.him188.ani.app.data.models.subject.SubjectInfo
 import me.him188.ani.app.data.models.subject.SubjectProgressInfo
 import me.him188.ani.app.data.network.TmdbAiring
+import me.him188.ani.app.data.repository.subject.EpisodesFetchState
 import me.him188.ani.app.ui.comment.CommentReportState
 import me.him188.ani.app.ui.comment.CommentState
 import me.him188.ani.app.ui.rating.EditableRatingActions
@@ -93,6 +94,10 @@ class SubjectDetailsState(
     val playProgressFlow: Flow<Map<Int, Float>> = flowOf(emptyMap()),
     /** TMDB 上的播出情况, TV 详情页据此修正播出状态文字 (见 rememberTmdbAiringLabelState); null = 没匹配到或加载中. 惰性同上. */
     val tmdbAiringFlow: Flow<TmdbAiring?> = flowOf(null),
+    /** 分集在本进程里取过没有 (见 [EpisodesFetchState]): TV 播放键在分集还没出来时据此等着或弹说明. */
+    val episodesFetchStateFlow: Flow<EpisodesFetchState> = flowOf(EpisodesFetchState.Fetched(0)),
+    /** 连同分集重取本条目; 分集上次没取到时 TV 播放键按下去用. */
+    val refetchEpisodes: suspend () -> Unit = {},
     actions: SubjectDetailsActions = SubjectDetailsActions.Noop,
 ) : SubjectDetailsActions by actions {
     val detailsTabLazyListState = LazyListState()
