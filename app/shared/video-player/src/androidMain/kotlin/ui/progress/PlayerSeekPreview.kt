@@ -9,9 +9,6 @@
 
 package me.him188.ani.app.videoplayer.ui.progress
 
-import android.graphics.SurfaceTexture
-import android.view.Surface
-import android.view.TextureView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.CircularProgressIndicator
@@ -30,10 +27,13 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.viewinterop.AndroidView
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.transformLatest
 import me.him188.ani.app.domain.media.player.MediaCacheProgressInfo
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.player_frame_preview_stay_to_load
@@ -72,6 +72,15 @@ class PlayerSeekPreviewState internal constructor(
     internal var active: SeekPreview? by mutableStateOf(null)
         private set
 
+    /** 小画面上最近画出的那一帧带的时间戳 (见 [SeekPreview.shownFrameTimestampNs]). 只在主线程上写. */
+    internal val drawnFrameTimestampNs = MutableStateFlow(Long.MIN_VALUE)
+
+    /** 小画面的中转在这台设备上建不起来 (见 [onRelayFailed]): 之后的预览直接画在全屏上. */
+    private var relayUnavailable = false
+
+    /** 这一次预览最近挪到的位置 (见 [seekTo]): 中转建不起来、改画在全屏上时接着跳到这里. */
+    private var lastSeekMillis: Long? = null
+
     /** 全屏还停在开始那一帧的预览 (进行中, 或取消后正跳回原处), 见 [holdsFrame]. */
     internal var holding: SeekPreview? by mutableStateOf(null)
 
@@ -99,17 +108,38 @@ class PlayerSeekPreviewState internal constructor(
     fun begin(onFullScreen: Boolean = false) {
         if (active != null) return
         val libassPlayer = player as? LibassExoPlayerMediampPlayer ?: return
-        val preview = libassPlayer.startSeekPreview(isAvailable(), onFullScreen) ?: return
+        val fullScreen = onFullScreen || relayUnavailable
+        val preview = libassPlayer.startSeekPreview(isAvailable(), fullScreen) ?: return
         active = preview
         holding = preview
-        if (onFullScreen) return
+        lastSeekMillis = null
+        drawnFrameTimestampNs.value = Long.MIN_VALUE
+        if (fullScreen) return
         // 在挪圆点之前接上: 浮窗出现时画面位就是小画面, 不先按缩略图收起
-        framePreview.liveFrame = { modifier -> SeekPreviewFrame(preview, modifier) }
+        framePreview.liveFrame = { modifier ->
+            SeekPreviewFrame(preview, ::onFrameDrawn, onRelayFailed = { onRelayFailed(preview) }, modifier)
+        }
     }
 
     /** 挪圆点: 主播放器精确跳到 [positionMillis], 画进小画面. 没在预览时什么也不做. */
     fun seekTo(positionMillis: Long) {
-        active?.seekTo(positionMillis)
+        val preview = active ?: return
+        lastSeekMillis = positionMillis
+        preview.seekTo(positionMillis)
+    }
+
+    /**
+     * 小画面的中转建不起来 (EGL 出错): 这一次预览改画在全屏上并接着跳到圆点, 之后的预览也直接画在全屏上.
+     * 不退回把视频输出直接接到小画面上 —— 那正是慢电视上拖动卡住界面的画法. 中转在小画面接上之前就失败了, 播放器还没跳过, 不用跳回.
+     */
+    private fun onRelayFailed(preview: SeekPreview) {
+        if (active !== preview) return
+        relayUnavailable = true
+        val target = lastSeekMillis
+        closePopupFrame()
+        preview.cancel()
+        begin(onFullScreen = true)
+        if (target != null) seekTo(target)
     }
 
     /**
@@ -156,6 +186,10 @@ class PlayerSeekPreviewState internal constructor(
         }
     }
 
+    private fun onFrameDrawn(timestampNs: Long) {
+        if (timestampNs > drawnFrameTimestampNs.value) drawnFrameTimestampNs.value = timestampNs
+    }
+
     internal fun syncOverlay(preview: SeekPreview, overlay: SeekPreviewOverlay) {
         if (preview.onFullScreen) {
             fullScreenOverlay = overlay
@@ -186,7 +220,20 @@ fun rememberPlayerSeekPreviewState(
     // 在协程里看进行中的预览, 不在组合里读: 开始 / 结束预览时不必让整个页面重组
     LaunchedEffect(state) {
         snapshotFlow { state.active }.collectLatest { preview ->
-            preview?.overlay?.collect { state.syncOverlay(preview, it) }
+            preview ?: return@collectLatest
+            combine(preview.overlay, preview.shownFrameTimestampNs, state.drawnFrameTimestampNs) { overlay, shown, drawn ->
+                overlay to (overlay == SeekPreviewOverlay.None && !preview.onFullScreen && shown > drawn)
+            }.transformLatest { (overlay, notDrawnYet) ->
+                if (!notDrawnYet) {
+                    emit(overlay)
+                    return@transformLatest
+                }
+                // 这一帧小画面上还没画出来 (慢电视上缩一张 4K 要一两秒): 接着标加载中, 别露出空的或上一个位置的小画面.
+                // 时间戳对不上的设备上别一直转圈: 等够了照常显示
+                emit(SeekPreviewOverlay.Loading)
+                delay(FRAME_DRAW_TIMEOUT_MILLIS)
+                emit(overlay)
+            }.collect { state.syncOverlay(preview, it) }
         }
     }
     LaunchedEffect(state) {
@@ -202,42 +249,23 @@ fun rememberPlayerSeekPreviewState(
     return state
 }
 
+/** 小画面上那一帧要等这么久还没画出来, 就不再标加载中 (见 [rememberPlayerSeekPreviewState]). */
+private const val FRAME_DRAW_TIMEOUT_MILLIS = 6_000L
+
 /**
- * 预览浮窗里的小画面: 预览期间主播放器的视频输出接到这里 (见 [SeekPreview.attachFrameSurface]), 解出的帧由 GPU 缩小画进来.
+ * 预览浮窗里的小画面: 预览期间主播放器的视频输出接到这里 (见 [SeekPreview.attachFrameSurface]), 解出的帧缩小后画进来 (见 [SeekPreviewRelayFrame]).
  * 画面没了 (浮窗收起) 时交还, 输出哪儿也不画, 直到预览结束接回全屏.
  */
 @Composable
 private fun SeekPreviewFrame(
     preview: SeekPreview,
+    onFrameDrawn: (timestampNs: Long) -> Unit,
+    onRelayFailed: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // 换一次预览就换一个视图: 回调里认的是建视图时那一次预览
     key(preview) {
-        AndroidView(
-            factory = { context ->
-                TextureView(context).apply {
-                    surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-                        private var surface: Surface? = null
-
-                        override fun onSurfaceTextureAvailable(texture: SurfaceTexture, width: Int, height: Int) {
-                            surface = Surface(texture).also { preview.attachFrameSurface(it) }
-                        }
-
-                        override fun onSurfaceTextureSizeChanged(texture: SurfaceTexture, width: Int, height: Int) {}
-
-                        override fun onSurfaceTextureDestroyed(texture: SurfaceTexture): Boolean {
-                            preview.attachFrameSurface(null)
-                            surface?.release()
-                            surface = null
-                            return true
-                        }
-
-                        override fun onSurfaceTextureUpdated(texture: SurfaceTexture) {}
-                    }
-                }
-            },
-            modifier = modifier,
-        )
+        SeekPreviewRelayFrame(preview, onFrameDrawn, onRelayFailed, modifier)
     }
 }
 
