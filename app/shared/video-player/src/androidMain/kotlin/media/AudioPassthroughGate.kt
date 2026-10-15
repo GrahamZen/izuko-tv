@@ -15,25 +15,31 @@ import android.media.AudioAttributes
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Build
+import android.os.Handler
 import androidx.annotation.OptIn
 import androidx.annotation.RequiresApi
 import androidx.media3.common.Format
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.audio.AudioProcessorChain
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.decoder.ffmpeg.FfmpegLibrary
 import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.Renderer
+import androidx.media3.exoplayer.audio.AudioRendererEventListener
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.audio.ForwardingAudioSink
+import androidx.media3.exoplayer.mediacodec.MediaCodecInfo
+import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import me.him188.ani.app.videoplayer.audio.AudioPassthroughMode
 
 /**
  * 决定杜比、DTS 这类编码音轨能不能直通 (原样交给系统, 由后面的设备解码), 见 [AudioPassthroughMode].
  *
- * 「自动」: 有的电视 (见过小米电视, Android 14) 声称自带喇叭能直通 AC3, 播放器照做后系统一切照常 (位置在走、不报错) 却没有声音,
+ * 「自动」: 有的电视 (见过小米电视, Android 14, 声音走蓝牙) 声称能直通 AC3, 播放器照做后系统一切照常 (位置在走、不报错) 却没有声音,
  * 应用这边察觉不到, 所以不等出问题:
  * - 立体声与单声道一律解码: 直通它们没有任何好处;
- * - 多声道在电视自带喇叭出声时解码 ([AudioOutputRoute.isBuiltInSpeaker]), 其余 (盒子接电视或功放、电视接回音壁、看不出来的) 照旧直通.
+ * - 多声道只在送到外接设备时直通 ([AudioOutputRoute.isExternal]): 盒子的 HDMI、电视的 ARC / eARC / 光纤; 自带喇叭、蓝牙等解码.
  */
 internal class AudioPassthroughGate(
     context: Context,
@@ -45,7 +51,7 @@ internal class AudioPassthroughGate(
     fun allowsPassthrough(format: Format): Boolean = when (mode()) {
         AudioPassthroughMode.ALWAYS -> true
         AudioPassthroughMode.OFF -> false
-        AudioPassthroughMode.AUTO -> format.channelCount > 2 && !runCatching { AudioOutputRoute.isBuiltInSpeaker(context) }.getOrDefault(false)
+        AudioPassthroughMode.AUTO -> format.channelCount > 2 && runCatching { AudioOutputRoute.isExternal(context) }.getOrDefault(true)
     }
 }
 
@@ -53,21 +59,21 @@ internal class AudioPassthroughGate(
  * 媒体声音往哪个设备出. Android 13 起能查到实际走的设备; 更早的版本只能看接着哪些设备.
  */
 internal object AudioOutputRoute {
-    /** 声音从设备自带喇叭出 (电视), 见 [isBuiltInSpeaker] 的另一个重载. */
-    fun isBuiltInSpeaker(context: Context): Boolean {
-        val manager = context.getSystemService(AudioManager::class.java) ?: return false
+    /** 声音送到外接设备 (直通才有人解码), 见 [isExternal] 的另一个重载. */
+    fun isExternal(context: Context): Boolean {
+        val manager = context.getSystemService(AudioManager::class.java) ?: return true
         val routed = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) Api33.routedDevices(manager).map { it.type } else null
-        return isBuiltInSpeaker(routed, manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).map { it.type })
+        return isExternal(routed, manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).map { it.type })
     }
 
     /**
-     * @param routed 媒体声音实际走的设备类型 (Android 13 起); null 或空 = 查不到, 按 [outputs] 推断
-     * @param outputs 接着的全部输出设备类型. 推断时只认「有自带喇叭、且没有任何能接外部设备的输出」: Shield 这类盒子的 HDMI 不一定报成 HDMI
-     *   (见过 总线 + USB + 喇叭), 接着别的输出就当看不出来
+     * @param routed 媒体声音实际走的设备类型 (Android 13 起); 查得到时只认 [EXTERNAL_TYPES] (蓝牙传不了直通的码流)
+     * @param outputs 接着的全部输出设备类型; [routed] 为 null 或空时按它推断: 只有「有自带喇叭、且没有任何能接外部设备的输出」算不是外接
+     *   (Shield 这类盒子的 HDMI 不一定报成 HDMI, 见过 总线 + USB + 喇叭), 其余看不出来的照旧当外接
      */
-    fun isBuiltInSpeaker(routed: List<Int>?, outputs: List<Int>): Boolean {
-        if (!routed.isNullOrEmpty()) return routed.all { it == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
-        return AudioDeviceInfo.TYPE_BUILTIN_SPEAKER in outputs && outputs.none { it in EXTERNAL_TYPES }
+    fun isExternal(routed: List<Int>?, outputs: List<Int>): Boolean {
+        if (!routed.isNullOrEmpty()) return routed.any { it in EXTERNAL_TYPES }
+        return !(AudioDeviceInfo.TYPE_BUILTIN_SPEAKER in outputs && outputs.none { it in EXTERNAL_TYPES })
     }
 
     /** 诊断日志用 (见 [AudioOutputDiagnostics]): Android 13 起是实际走的设备 (`route`), 更早是接着的全部输出 (`outputs`). */
@@ -133,7 +139,7 @@ internal class PassthroughGatedAudioSink(
 
 /**
  * 音频输出带 [PassthroughGatedAudioSink] 的渲染器工厂. [processorChain] 非空时挂在输出上 (mediamp 的 WSOLA 变速链, 见 [FfmpegAudioFallback]),
- * 建法与 mediamp 的 WSOLA 工厂、media3 默认工厂相同, 只多外面一层.
+ * 建法与 mediamp 的 WSOLA 工厂、media3 默认工厂相同, 只多外面一层. 音频渲染器的解码器选择换成 [FfmpegForDolbyCodecSelector].
  */
 @OptIn(UnstableApi::class)
 internal class PassthroughGatedRenderersFactory(
@@ -141,11 +147,47 @@ internal class PassthroughGatedRenderersFactory(
     private val processorChain: AudioProcessorChain?,
     private val gate: AudioPassthroughGate,
 ) : DefaultRenderersFactory(context) {
+    override fun buildAudioRenderers(
+        context: Context,
+        extensionRendererMode: Int,
+        mediaCodecSelector: MediaCodecSelector,
+        enableDecoderFallback: Boolean,
+        audioSink: AudioSink,
+        eventHandler: Handler,
+        eventListener: AudioRendererEventListener,
+        out: ArrayList<Renderer>,
+    ) {
+        val selector = FfmpegForDolbyCodecSelector(mediaCodecSelector, FfmpegLibrary::supportsFormat)
+        super.buildAudioRenderers(context, extensionRendererMode, selector, enableDecoderFallback, audioSink, eventHandler, eventListener, out)
+    }
+
     override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): AudioSink {
         val builder = DefaultAudioSink.Builder(context)
             .setEnableFloatOutput(enableFloatOutput)
             .setEnableAudioOutputPlaybackParameters(enableAudioTrackPlaybackParams)
         processorChain?.let(builder::setAudioProcessorChain)
         return PassthroughGatedAudioSink(builder.build(), gate::allowsPassthrough)
+    }
+}
+
+/**
+ * 杜比 (AC3 / E-AC3 / TrueHD)、DTS 不用设备自带的解码器, 交给 FFmpeg ([FfmpegAudioFallback]): 有的设备带着这类解码器却解出静音
+ * (见过小米电视的 `c2.amlogic.audio.decoder.ac3`, 系统照常报告在放, 没有声音; 多半是没有杜比授权的空壳), 应用察觉不到.
+ * 直通不经过这里 (播放器直通时用的是只转发的解码器), 不受影响. [ffmpegCanDecode] 为假的格式照常用设备的解码器.
+ */
+@OptIn(UnstableApi::class)
+internal class FfmpegForDolbyCodecSelector(
+    private val delegate: MediaCodecSelector,
+    private val ffmpegCanDecode: (String) -> Boolean,
+) : MediaCodecSelector {
+    override fun getDecoderInfos(mimeType: String, requiresSecureDecoder: Boolean, requiresTunnelingDecoder: Boolean): List<MediaCodecInfo> =
+        if (mimeType in DOLBY_DTS && ffmpegCanDecode(mimeType)) emptyList()
+        else delegate.getDecoderInfos(mimeType, requiresSecureDecoder, requiresTunnelingDecoder)
+
+    private companion object {
+        val DOLBY_DTS = setOf(
+            MimeTypes.AUDIO_AC3, MimeTypes.AUDIO_E_AC3, MimeTypes.AUDIO_E_AC3_JOC, MimeTypes.AUDIO_TRUEHD,
+            MimeTypes.AUDIO_DTS, MimeTypes.AUDIO_DTS_HD,
+        )
     }
 }
