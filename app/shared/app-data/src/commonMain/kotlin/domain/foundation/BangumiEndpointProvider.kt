@@ -169,6 +169,13 @@ class BangumiEndpointProvider(
         .distinctUntilChanged()
         .stateIn(scope, SharingStarted.Eagerly, false)
 
+    /** 用户怎么登录 (见 [BangumiLoginPath]): 按请求落在的线路定, 还没落地时按排在最前的那条. */
+    val loginPath: StateFlow<BangumiLoginPath> = combine(routing, activeRoute) { routing, active ->
+        BangumiLoginPath.of(active ?: routing.routes.first())
+    }
+        .distinctUntilChanged()
+        .stateIn(scope, SharingStarted.Eagerly, BangumiLoginPath.BROWSER)
+
     companion object {
         /** 设置 + 镜像清单 + 平台能力 → 依次尝试的线路. 一条都没开 (或开着的都用不了) 时只连官方. */
         fun computeRouting(settings: BangumiEndpointSettings, mirrors: List<String>, echAvailable: Boolean): BangumiRouting {

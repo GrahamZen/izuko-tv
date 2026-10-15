@@ -42,6 +42,7 @@ import me.him188.ani.app.domain.foundation.BangumiEchFeature
 import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
 import me.him188.ani.app.domain.foundation.BangumiMirrorConsent
 import me.him188.ani.app.domain.foundation.BangumiMirrorConsent.onlyThirdPartyRoutes
+import me.him188.ani.app.domain.foundation.BangumiLoginPath
 import me.him188.ani.app.domain.foundation.BangumiMirrorListRepository
 import me.him188.ani.app.domain.foundation.CandidatesCheck
 import me.him188.ani.app.domain.foundation.HttpClientProvider
@@ -289,6 +290,12 @@ class TvOnboardingLoginViewModel(assumeViaMirror: Boolean) : AbstractViewModel()
      * (个人令牌).
      */
     val originUnreachable: Boolean = TvOnboardingViewModel.rememberedBangumi.value?.origin == Reachability.Unreachable
+
+    /**
+     * 怎么登录 (见 [BangumiLoginPath]): 只有 [BangumiLoginPath.BROWSER] 给手机扫码授权与电视上的浏览器; 加密直连给 Web 控制台的码,
+     * 在那里填账号密码由电视登录.
+     */
+    val loginPath: StateFlow<BangumiLoginPath> get() = endpoints.loginPath
 
     /** 最近一次发起的是哪一种登录: 授权进行到哪一步只在发起的那一边显示. */
     val lastStart: StateFlow<LoginStart?> get() = _lastStart
