@@ -11,6 +11,10 @@ package me.him188.ani.app.domain.mediasource.rule
 
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import me.him188.ani.app.domain.mediasource.web.SelectorSearchConfig
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
@@ -412,5 +416,100 @@ class RuleEngineTest {
         assertEquals(RuleMediaSourceArguments.Example, json.decodeFromString(RuleMediaSourceArguments.serializer(), text))
         assertTrue(text.contains("\"op\":\"maccmsPlayer\""), text)
         assertTrue(text.contains("\"op\":\"subjects\""), text)
+    }
+    /** 苹果 CMS 视频接口里的一部片子: 三条线路, 第一条是站点的网页播放器, 第三条的剧集没写名字. */
+    private val macCmsVod = buildJsonObject {
+        put("vod_id", 12)
+        put("vod_name", "示例动画")
+        put("vod_play_from", "web\$\$\$ffmp4\$\$\$ffm3u8")
+        put(
+            "vod_play_url",
+            listOf(
+                "第01集\$https://www.example.com/play/12-1",
+                "第01集\$https://cdn.example.com/1.mp4#第02集\$https://cdn.example.com/2.mp4",
+                "https://cdn.example.com/1.m3u8#https://cdn.example.com/2.m3u8",
+            ).joinToString("\$\$\$"),
+        )
+    }
+
+    @Test
+    fun `maccms episodes keep direct links with hls lines first`() = runTest {
+        val api = "https://www.example.com/api.php/provide/vod/?ac=detail&ids=12"
+        val site = FakeSite(mapOf(api to buildJsonObject { putJsonArray("list") { add(macCmsVod) } }.toString()))
+        val config = RuleConfig(
+            baseUrl = "https://www.example.com",
+            detail = listOf(RuleStep.Fetch(), RuleStep.MacCmsEpisodes(directOnly = true, preferHls = true)),
+        )
+        val channels = engine(config, site).detail(api)
+        // 网页播放器那条线路没有能直接播的地址, 整条不要; m3u8 线路排到前面
+        assertEquals(listOf("ffm3u8", "ffmp4"), channels.map { it.name })
+        assertEquals(listOf("第1集", "第2集"), channels[0].episodes.map { it.name })
+        assertEquals("https://cdn.example.com/2.m3u8", channels[0].episodes[1].url)
+        assertEquals(listOf("第01集", "第02集"), channels[1].episodes.map { it.name })
+    }
+
+    @Test
+    fun `maccms episodes read a bare list and keep page links unless direct only`() = runTest {
+        val config = RuleConfig(
+            detail = listOf(RuleStep.Template(buildJsonArray { add(macCmsVod) }.toString()), RuleStep.MacCmsEpisodes(listPath = "")),
+        )
+        val channels = engine(config, FakeSite(emptyMap())).detail("https://www.example.com/detail/12")
+        assertEquals(listOf("web", "ffmp4", "ffm3u8"), channels.map { it.name })
+        assertEquals("https://www.example.com/play/12-1", channels[0].episodes.single().url)
+    }
+
+    @Test
+    fun `crypto decrypts aes cbc from base64 or hex with keys from variables`() = runTest {
+        for (cipherText in listOf(AES_CIPHER_BASE64, AES_CIPHER_HEX)) {
+            val config = RuleConfig(
+                play = listOf(
+                    RuleStep.SetVar("iv", "hZ3kM7fD8qR1wEaV"),
+                    RuleStep.Template(cipherText),
+                    RuleStep.Crypto(RuleStep.Crypto.AES_CBC, key = "p9sBvL2gJkR5tWcX", iv = "{iv}"),
+                    RuleStep.Json("url"),
+                ),
+            )
+            val play = engine(config, FakeSite(emptyMap())).play("https://www.example.com/ep/1")
+            assertIs<RulePlayResult.Direct>(play)
+            assertEquals("https://cdn.example.com/v/1.m3u8", play.url)
+        }
+    }
+
+    @Test
+    fun `failed decryption falls through to the next branch`() = runTest {
+        val config = RuleConfig(
+            play = listOf(
+                RuleStep.First(
+                    listOf(
+                        listOf(RuleStep.Template(AES_CIPHER_BASE64), RuleStep.Crypto(RuleStep.Crypto.AES_CBC, key = "short", iv = "hZ3kM7fD8qR1wEaV")),
+                        listOf(RuleStep.Template("https://cdn.example.com/fallback.mp4")),
+                    ),
+                ),
+            ),
+        )
+        val play = engine(config, FakeSite(emptyMap())).play("https://www.example.com/ep/1")
+        assertIs<RulePlayResult.Direct>(play)
+        assertEquals("https://cdn.example.com/fallback.mp4", play.url)
+    }
+
+    @Test
+    fun `md5 is lowercase hex of utf8`() {
+        assertEquals("900150983cd24fb0d6963f7d28e17f72", RuleCrypto.md5Hex("abc"))
+        assertEquals("ecc424357c9f358b1f86e7adbfff8790", RuleCrypto.md5Hex("番薯"))
+    }
+
+    @Test
+    fun `json mode escapes values for json bodies`() {
+        assertEquals(
+            """{"q":"a\"b\\c"}""",
+            RuleText.substitute("""{"q":"{keyword:json}"}""", mapOf("keyword" to "a\"b\\c")),
+        )
+    }
+
+    private companion object {
+        /** `{"url":"https://cdn.example.com/v/1.m3u8"}` 用密钥 `p9sBvL2gJkR5tWcX`、IV `hZ3kM7fD8qR1wEaV` AES-CBC 加密 (PKCS#7). */
+        const val AES_CIPHER_BASE64 = "WW14BiZaU64yBDyy1dR3KIQ15kgDpRebkAEys/TReR5trzhBXPieDV/qCnYkpLVc"
+        const val AES_CIPHER_HEX =
+            "596d7806265a53ae32043cb2d5d477288435e64803a5179b900132b3f4d1791e6daf38415cf89e0d5fea0a7624a4b55c"
     }
 }

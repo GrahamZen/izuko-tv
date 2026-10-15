@@ -26,9 +26,9 @@ import kotlin.coroutines.cancellation.CancellationException
 /**
  * 把 AniBaka 的规则 (`anx-rule/2`) 转换成规则源.
  *
- * AniBaka 规则的三段也是步骤列表, 「当前值」与变量的模型和规则源相同, 大部分步骤一一对应. 少数步骤 (加解密、站点专用的、
- * 处理 HLS 清单的) 没有对应, 用到它们的规则整条不转, 并说明原因. 嗅探的选项 (等待时长、页面加载好的标志等) 照录进 [RuleStep.Sniff].
- * 站点专用步骤里能用通用步骤表达的 (anime1 的三步) 翻译过来, 见 [Context.anime1Search].
+ * AniBaka 规则的三段也是步骤列表, 「当前值」与变量的模型和规则源相同, 大部分步骤一一对应. 少数步骤 (站点专用的、处理 HLS 清单的)
+ * 没有对应, 用到它们的规则整条不转, 并说明原因. 嗅探的选项 (等待时长、页面加载好的标志等) 照录进 [RuleStep.Sniff].
+ * 站点专用步骤里能用通用步骤表达的 (anime1 的三步) 翻译过来, 见 [Context.anime1Search]; XPath 换成 CSS 选择器 (见 [XPathToCss]).
  *
  * 请求头里的 `User-Agent` 不转: 规则源的请求与 WebView 共用一套按站点对齐的身份, 自己指定 UA 会让过站点验证得到的 Cookie 失效.
  */
@@ -171,7 +171,12 @@ object AniBakaRuleImporter {
         // 有的规则把三段与请求头包在 pipeline 里
         val body = (rule["pipeline"] as? JsonObject) ?: rule
         // anime1 的三步互相引用 (搜索段拼条目地址要用详情段的地址模板, 播放段取 token 要用详情段的选择器), 先找出详情段那一步
-        val context = Context(anime1Detail = topLevelStep(body["detail"], "anime1Detail"))
+        val context = Context(
+            anime1Detail = topLevelStep(body["detail"], "anime1Detail"),
+            detailEntryFetch = (body["detail"] as? JsonArray)?.firstOrNull()
+                ?.let { it as? JsonObject }
+                ?.takeIf { it.string("op") == "fetch" && it.string("url")?.contains(SERIES_ID) == true },
+        )
         val headers = (body["headers"] as? JsonObject ?: rule["headers"] as? JsonObject)
             .orEmpty().mapNotNull { (key, value) ->
                 val text = (value as? JsonPrimitive)?.contentOrNull ?: return@mapNotNull null
@@ -205,8 +210,19 @@ object AniBakaRuleImporter {
     private class Context(
         /** 详情段的 `anime1Detail` 步骤 (没有为 `null`). */
         val anime1Detail: JsonObject? = null,
+        /**
+         * 详情段开头那个用到 `{seriesId}` 的请求 (没有为 `null`). 搜索段的 `jsonSeries` 只给了条目 id 时, 条目地址就是这个请求的地址
+         * (见 [subjectUrlFromDetailEntry]).
+         */
+        val detailEntryFetch: JsonObject? = null,
     ) {
         val reasons = mutableListOf<String>()
+
+        /**
+         * 条目地址取的是 [detailEntryFetch] 的地址 (AniBaka 的条目可以只有 id, 由详情段自己拼请求地址; 规则源的条目要有地址):
+         * 详情段的那个请求于是直接打开条目地址.
+         */
+        var subjectUrlFromDetailEntry = false
 
         /** 翻译出来的步骤要求的集号正则 (见 [RuleConfig.matchEpisodeSortFromName]); `null` 用默认的. */
         var matchEpisodeSortFromName: String? = null
@@ -229,12 +245,12 @@ object AniBakaRuleImporter {
             return when (op) {
                 "fetch" -> listOf(
                     RuleStep.Fetch(
-                        url = template(obj.string("url").orEmpty()),
+                        url = if (obj === detailEntryFetch && subjectUrlFromDetailEntry) "" else template(obj.string("url").orEmpty()),
                         method = obj.string("method") ?: "GET",
                         headers = requestHeaders(obj["headers"]),
                         body = when (val body = obj["body"]) {
-                            // 对象是表单字段
-                            is JsonObject -> formBody(body)
+                            // 对象: JSON 类型时是 JSON 对象, 否则是表单字段
+                            is JsonObject -> if (obj.string("contentType")?.contains("json", ignoreCase = true) == true) jsonBody(body) else formBody(body)
                             else -> template(obj.string("body").orEmpty())
                         },
                         contentType = obj.string("contentType").orEmpty(),
@@ -258,21 +274,42 @@ object AniBakaRuleImporter {
                     }
                 }
 
-                "searchList" -> listOf(
-                    RuleStep.Subjects(
-                        list = stringList(obj["selectors"]).ifEmpty { return unsupported("searchList 没有 selectors") },
-                        linkPattern = obj.string("detailPattern").orEmpty(),
-                        filterByKeyword = obj.boolean("keywordMatch") == true,
-                    ),
-                )
+                "searchList" -> {
+                    // 写了 listXPath 的按 XPath 取: 卡片、卡片里的名字与链接 (没写链接时卡片本身就是链接)
+                    val listXPath = obj.string("listXPath")?.takeIf { it.isNotBlank() }
+                    listOf(
+                        RuleStep.Subjects(
+                            list = if (listXPath != null) {
+                                listOf(css(listXPath, "searchList 的 listXPath") ?: return emptyList())
+                            } else {
+                                stringList(obj["selectors"]).ifEmpty { return unsupported("searchList 没有 selectors") }
+                            },
+                            name = obj.string("nameXPath")?.takeIf { listXPath != null && it.isNotBlank() }
+                                ?.let { css(it, "searchList 的 nameXPath") ?: return emptyList() }.orEmpty(),
+                            link = obj.string("linkXPath")?.takeIf { listXPath != null && it.isNotBlank() }
+                                ?.let { css(it, "searchList 的 linkXPath") ?: return emptyList() }.orEmpty(),
+                            linkPattern = obj.string("detailPattern").orEmpty(),
+                            filterByKeyword = obj.boolean("keywordMatch") == true,
+                        ),
+                    )
+                }
 
-                "episodes" -> listOf(
-                    RuleStep.Episodes(
-                        lists = stringList(obj["listSelectors"]).ifEmpty { return unsupported("episodes 没有 listSelectors") },
-                        tabs = stringList(obj["tabSelectors"]),
-                        reverse = obj.boolean("reverse") == true || obj.boolean("reverseEpisodes") == true,
-                    ),
-                )
+                "episodes" -> {
+                    val roadsXPath = obj.string("roadsXPath")?.takeIf { it.isNotBlank() }
+                    listOf(
+                        RuleStep.Episodes(
+                            lists = if (roadsXPath != null) {
+                                listOf(css(roadsXPath, "episodes 的 roadsXPath") ?: return emptyList())
+                            } else {
+                                stringList(obj["listSelectors"]).ifEmpty { return unsupported("episodes 没有 listSelectors") }
+                            },
+                            tabs = stringList(obj["tabSelectors"]),
+                            items = obj.string("itemsXPath")?.takeIf { roadsXPath != null && it.isNotBlank() }
+                                ?.let { css(it, "episodes 的 itemsXPath") ?: return emptyList() } ?: "a",
+                            reverse = obj.boolean("reverse") == true || obj.boolean("reverseEpisodes") == true,
+                        ),
+                    )
+                }
 
                 "select" -> listOf(
                     RuleStep.Select(
@@ -346,16 +383,31 @@ object AniBakaRuleImporter {
 
                 // 校验交给规则源自己的条目名匹配
                 "maccmsVerify" -> emptyList()
-                "jsonSeries" -> listOf(
-                    jsonSubjects(
+                "jsonSeries" -> {
+                    fun subjects(urlKey: String?, urlTemplate: String?) = jsonSubjects(
                         listPath = obj.string("listPath").orEmpty(),
                         idKey = obj.string("idKey") ?: "id",
                         nameKey = obj.string("nameKey") ?: "name",
-                        urlKey = obj.string("urlKey"),
-                        urlTemplate = obj.string("detailUrlTemplate"),
-                    )?.copy(filterByKeyword = obj.boolean("keywordMatch") == true)
-                        ?: return unsupported("jsonSeries 没有 urlKey 或 detailUrlTemplate"),
+                        urlKey = urlKey,
+                        urlTemplate = urlTemplate,
+                    )
+                    val step = subjects(obj.string("urlKey"), obj.string("detailUrlTemplate"))
+                        ?: detailEntryFetch?.string("url")
+                            ?.let { url -> subjects(null, SERIES_ID.replace(url) { "{id${it.groupValues[1]}}" }) }
+                            ?.also { subjectUrlFromDetailEntry = true }
+                        ?: return unsupported("jsonSeries 没有 urlKey 或 detailUrlTemplate")
+                    listOf(step.copy(filterByKeyword = obj.boolean("keywordMatch") == true))
+                }
+
+                "maccmsApiEpisodes" -> listOf(
+                    RuleStep.MacCmsEpisodes(
+                        listPath = obj.string("listPath") ?: "list",
+                        directOnly = obj.boolean("directOnly") == true,
+                        preferHls = obj.boolean("preferHls") == true,
+                    ),
                 )
+
+                "crypto" -> crypto(obj)
 
                 "anime1Search" -> anime1Search(obj)
                 "anime1Detail" -> anime1Detail(obj)
@@ -459,6 +511,35 @@ object AniBakaRuleImporter {
             )
         }
 
+        /** 解密 / 摘要: AniBaka 不写 `mode` 时是解密, 规则里也只用到解密. 输入默认是当前值. */
+        fun crypto(obj: JsonObject): List<RuleStep> {
+            val input = template(obj.string("input") ?: "{url:raw}")
+            return when (val algorithm = obj.string("algo")?.lowercase()) {
+                "md5" -> listOf(RuleStep.Crypto(RuleStep.Crypto.MD5, input = input))
+                "aes-cbc" -> {
+                    val mode = obj.string("mode")?.lowercase()
+                    if (mode != null && mode != "decrypt") return unsupported("crypto 的 mode $mode")
+                    listOf(
+                        RuleStep.Crypto(
+                            RuleStep.Crypto.AES_CBC,
+                            input = input,
+                            key = template(obj.string("key") ?: return unsupported("crypto 没有 key")),
+                            iv = template(obj.string("iv") ?: return unsupported("crypto 没有 iv")),
+                        ),
+                    )
+                }
+
+                else -> unsupported("crypto 的 algo $algorithm")
+            }
+        }
+
+        /** XPath 换成 CSS; 换不了时记下原因 ([what] 是哪一项). */
+        private fun css(xpath: String, what: String): String? =
+            XPathToCss.convert(xpath) ?: run {
+                reasons += "$what 转不成 CSS ($xpath)"
+                null
+            }
+
         private fun jsonSubjects(
             listPath: String,
             idKey: String,
@@ -504,6 +585,30 @@ object AniBakaRuleImporter {
             if (match.groupValues[2] == "raw") "{$name}" else "{$name:url}"
         }
 
+        /** JSON 请求体: 字符串字段里的变量按 JSON 字符串转义 (`{x:json}`), 其余照原样写成 JSON. */
+        private fun jsonBody(fields: JsonObject): String = fields.entries.joinToString(",", "{", "}") { (key, value) ->
+            val text = (value as? JsonPrimitive)?.takeIf { it.isString }?.content
+            val encoded = if (text == null) {
+                value.toString()
+            } else {
+                buildString {
+                    append('"')
+                    var last = 0
+                    for (match in VARIABLE.findAll(text)) {
+                        append(jsonEscape(text.substring(last, match.range.first)))
+                        val name = match.groupValues[1]
+                        append("{${VARIABLE_NAMES[name] ?: name}:json}")
+                        last = match.range.last + 1
+                    }
+                    append(jsonEscape(text.substring(last)))
+                    append('"')
+                }
+            }
+            "${JsonPrimitive(key)}:$encoded"
+        }
+
+        private fun jsonEscape(text: String): String = JsonPrimitive(text).toString().removeSurrounding("\"")
+
         /** 表单字段 (值是模板) 拼成 `a=1&b=2`, 字段值里的变量一律 URL 编码. */
         private fun formBody(fields: JsonObject): String = fields.entries.joinToString("&") { (key, value) ->
             val text = (value as? JsonPrimitive)?.contentOrNull.orEmpty()
@@ -547,6 +652,9 @@ object AniBakaRuleImporter {
     // 安卓的正则 (ICU) 不认没转义的 `}`
     private val VARIABLE = Regex("""\{([A-Za-z_][A-Za-z0-9_]*)(?::(raw|url))?\}""")
 
+    /** 模板里的 `{seriesId}` (带不带 `:raw` / `:url`). */
+    private val SERIES_ID = Regex("""\{seriesId(:raw|:url)?\}""")
+
     private val VARIABLE_NAMES = mapOf(
         "url" to RuleEngine.VAR_VALUE,
         "seriesId" to RuleEngine.VAR_SUBJECT_URL,
@@ -564,8 +672,8 @@ object AniBakaRuleImporter {
             "goal", "url", "readyContains", "rejectContains", "timeoutMs", "settleMs", "followEmbeddedPlayer",
             "resolveMediaRedirects",
         ),
-        "searchList" to setOf("selectors", "detailPattern", "keywordMatch"),
-        "episodes" to setOf("listSelectors", "tabSelectors", "reverse", "reverseEpisodes"),
+        "searchList" to setOf("selectors", "detailPattern", "keywordMatch", "listXPath", "nameXPath", "linkXPath"),
+        "episodes" to setOf("listSelectors", "tabSelectors", "reverse", "reverseEpisodes", "roadsXPath", "itemsXPath"),
         "select" to setOf("css", "attr"),
         "json" to setOf("path"),
         "regex" to setOf("pattern", "group", "ignoreCase"),
@@ -582,6 +690,8 @@ object AniBakaRuleImporter {
         "jsonEpisodes" to setOf("episodesPath", "idKey", "nameKey", "episodeNameKey", "detailUrlTemplate", "episodeIdTemplate", "sourceName"),
         "setMediaHeaders" to setOf("headers", "remove"),
         "videoUrl" to emptySet(),
+        "crypto" to setOf("algo", "mode", "input", "key", "iv"),
+        "maccmsApiEpisodes" to setOf("listPath", "preferHls", "directOnly"),
         "anime1Search" to setOf("url", "idIndex", "nameIndex", "caseSensitive"),
         "anime1Detail" to setOf(
             "url", "itemSelector", "tokenAttribute", "nextSelector", "maxPages", "reverse", "sourceName", "episodeNameTemplate",
