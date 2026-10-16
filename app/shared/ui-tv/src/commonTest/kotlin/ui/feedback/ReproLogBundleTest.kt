@@ -35,7 +35,7 @@ class ReproLogBundleTest {
     private fun at(text: String) = LocalDateTime.parse(text.replace(' ', 'T'))
 
     @Test
-    fun `截时间段里的行, 跨天的滚动文件也算, 续行跟着上一行`() {
+    fun `截时间段里的行，跨天的滚动文件也算，续行跟着上一行`() {
         write(
             "app.2026-10-14.log",
             "2026-10-14 23:59:00 INFO  a 早于时间段",
@@ -79,7 +79,7 @@ class ReproLogBundleTest {
     }
 
     @Test
-    fun `几段时间 — 重叠的合并, 报告原文放在日志前面`() {
+    fun `几段时间 — 重叠的合并，报告原文放在日志前面`() {
         write(
             "app.log",
             "2026-10-15 10:00:00 INFO  a",
