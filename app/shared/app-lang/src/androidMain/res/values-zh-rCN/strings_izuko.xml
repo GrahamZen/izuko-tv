@@ -67,6 +67,9 @@
     <string name="settings_player_audio_passthrough_always">总是直通</string>
     <string name="settings_player_audio_passthrough_off">关闭</string>
     <string name="player_disk_cache_hint">在设置里打开「边下边播」，往回拖不用再等</string>
+    <string name="player_buffer_wait_start">网盘视频先缓冲 %1$d 秒再开始播放，免得刚播就卡</string>
+    <string name="player_buffer_wait_stall">下载速度跟不上这个视频的码率，先缓冲 %1$d 秒再接着播</string>
+    <string name="player_buffer_wait_stall_again">下载速度一直跟不上这个视频的码率（已卡 %2$d 次），这次先缓冲 %1$d 秒再接着播</string>
     <string name="settings_player_start_playback_speed">播放倍速</string>
     <string name="settings_player_start_playback_speed_description">每次进入播放器时的倍速。最左一格「记住上次」：在播放器里调过的倍速跨剧集、重启保持</string>
     <string name="settings_player_start_playback_speed_remember">记住上次</string>

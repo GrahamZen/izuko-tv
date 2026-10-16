@@ -105,6 +105,9 @@
     <string name="settings_player_audio_passthrough_always">總是直通</string>
     <string name="settings_player_audio_passthrough_off">關閉</string>
     <string name="player_disk_cache_hint">在設定裡打開「邊下邊播」，往回拖不用再等</string>
+    <string name="player_buffer_wait_start">網盤影片先緩衝 %1$d 秒再開始播放，免得剛播就卡</string>
+    <string name="player_buffer_wait_stall">下載速度跟不上這個影片的位元率，先緩衝 %1$d 秒再接著播</string>
+    <string name="player_buffer_wait_stall_again">下載速度一直跟不上這個影片的位元率（已卡 %2$d 次），這次先緩衝 %1$d 秒再接著播</string>
     <string name="settings_player_start_playback_speed">播放倍速</string>
     <string name="settings_player_start_playback_speed_description">每次進入播放器時的倍速。最左一格「記住上次」：在播放器裡調過的倍速跨劇集、重啟保持</string>
     <string name="settings_player_start_playback_speed_remember">記住上次</string>
