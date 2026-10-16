@@ -90,7 +90,7 @@ class TvSourcePanelState(
     private val canOpenDownloads: Boolean = false,
     /** 这一集的缓存, 见 [TvSourcePanelInput.downloads]. */
     downloads: Flow<List<TvSourceCacheItem>> = flowOf(emptyList()),
-    /** 打开时左栏落在哪一项 (落回上次隐藏时的位置, 见 TvSourceResume); null = 按正在播放的资源落. */
+    /** 打开时胶囊行落在哪个源 (落回上次隐藏时的位置, 见 TvSourceResume); null = 按正在播放的资源落. */
     initialRailKey: String? = null,
     /** 见 [TvSourcePanelInput.playbackDiskCache]. */
     private val playbackDiskCache: Boolean = false,
@@ -100,6 +100,9 @@ class TvSourcePanelState(
 
     /** 开着的详情弹窗是哪一行的 (见 TvSourceDetailsDialog); null = 没开. 弹窗里左右键换行就是改它. */
     val detailsTarget: MutableStateFlow<TvSourceAction.ShowDetails?> = MutableStateFlow(null)
+
+    /** 筛选弹窗开着 (表头的「筛选」, 见 TvSourceFilterDialog). */
+    val filterOpen = MutableStateFlow(false)
 
     private val inputs: Flow<TvSourcePanelInput> = run {
         val core = combine(
@@ -167,7 +170,7 @@ class TvSourcePanelState(
         if (key == TvSourceRailKeys.MANUAL) manual?.searchIfNeeded()
     }
 
-    /** 焦点进右栏: 钉住此刻的行序 (见 [applyFrozenOrder]); 出右栏: 放开. */
+    /** 焦点进内容 (列表与它顶上的小胶囊): 钉住此刻的行序 (见 [applyFrozenOrder]); 出来: 放开. */
     fun onRightFocusChanged(inRight: Boolean) {
         nav.update { current ->
             if (!inRight) {
@@ -178,7 +181,7 @@ class TvSourcePanelState(
         }
     }
 
-    /** 右栏里的返回: 退出进去的那一层 / 手动查找的条目页. 没有可退的返回 false. */
+    /** 内容里的返回: 退出进去的那一层 / 手动查找的条目页. 没有可退的返回 false. */
     fun backInRight(): Boolean {
         val current = nav.value
         if (current.drill != null) {
@@ -210,6 +213,7 @@ class TvSourcePanelState(
             TvSourceAction.ToggleEpisodeFilter -> selector.btFilterState.episodeFilterEnabled.update { !it }
             TvSourceAction.ToggleExcluded -> nav.update { it.copy(showExcluded = !it.showExcluded, frozenOrder = null) }
             is TvSourceAction.Open -> nav.update { it.copy(drill = action.drill, frozenOrder = null) }
+            TvSourceAction.OpenFilter -> filterOpen.value = true
             is TvSourceAction.ShowDetails -> detailsTarget.value = action
             is TvSourceAction.PickFilter -> {
                 pickFilter(action.filter, action.value)

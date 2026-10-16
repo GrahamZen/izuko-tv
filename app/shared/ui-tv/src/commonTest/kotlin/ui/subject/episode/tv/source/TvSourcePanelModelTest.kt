@@ -421,14 +421,14 @@ class TvSourcePanelModelTest {
         )
         val key = TvSourceRailKeys.web("web-d")
 
-        // 「筛选」在左栏最顶上, 与下面隔开; 没选时右端不写
+        // 「筛选」排在 rail 最前面 (视图放进表头), 与后面隔开; 没选时右端不写
         val none = buildTvSourcePanel(withResolution(null), TvSourceNav(railKey = key), strings)
         assertEquals(TvSourceRailKeys.FILTER, none.rail.first().id)
         assertEquals("", none.rail.first().trailing)
         assertTrue(none.rail[1].dividerAbove)
         assertEquals(listOf("file:uhd", "file:fhd"), none.right.rows.map { it.id })
 
-        // 选了 1080P: 4K 的调暗排到后面写「低于偏好」, 左栏只数符合的
+        // 选了 1080P: 4K 的调暗排到后面写「低于偏好」, 胶囊上只数符合的
         val filtered = buildTvSourcePanel(withResolution("1080P"), TvSourceNav(railKey = key), strings)
         assertEquals("1080P", filtered.rail.first().trailing)
         assertEquals(listOf("file:fhd", "file:uhd"), filtered.right.rows.map { it.id })
@@ -441,21 +441,24 @@ class TvSourcePanelModelTest {
         assertEquals(listOf("file:uhd", "file:fhd"), absent.right.rows.map { it.id })
         assertTrue(absent.right.rows.none { it.dimmed })
 
-        // 「筛选」的分支: 分辨率 (BT 与网盘文件里有的, 高的在前) 与字幕两组, 确定就改这部番的偏好
-        val pane = buildTvSourcePanel(withResolution("1080P"), TvSourceNav(railKey = TvSourceRailKeys.FILTER), strings).right
+        // 筛选弹窗: 分辨率 (BT 与网盘文件里有的, 高的在前) 与字幕两组, 确定就改这部番的偏好; 表头的「筛选」确定打开它
+        assertEquals(TvSourceAction.OpenFilter, filtered.rail.first().action)
+        val options = filtered.filter
         assertEquals(
             listOf(
                 "filter:Resolution:", "filter:Resolution:4K", "filter:Resolution:1080P", "filter:Resolution:720P",
                 "filter:Subtitle:", "filter:Subtitle:CHS",
             ),
-            pane.rows.filter { it.focusable }.map { it.id },
+            options.filter { it.focusable }.map { it.id },
         )
-        assertEquals("filter:Resolution:1080P", pane.focusId)
-        assertEquals(TvSourceAction.PickFilter(TvSourceFilter.Resolution, "4K"), pane.rows.single { it.id == "filter:Resolution:4K" }.action)
+        assertEquals("filter:Resolution:1080P", options.single { it.selected && it.id.startsWith("filter:Resolution:") }.id)
+        assertEquals(TvSourceAction.PickFilter(TvSourceFilter.Resolution, "4K"), options.single { it.id == "filter:Resolution:4K" }.action)
 
-        // 只有线路式的在线源: 没东西可筛, 不列「筛选」
+        // 只有线路式的在线源: 没东西可筛, 不列「筛选」, 也没有弹窗内容
         val linesOnly = input(bt = BtListPresentation.Placeholder, sources = MediaSourceResultListPresentation(sources.list.filter { it.kind == MediaSourceKind.WEB }))
-        assertTrue(buildTvSourcePanel(linesOnly, TvSourceNav(), strings).rail.none { it.id == TvSourceRailKeys.FILTER })
+        val linesOnlyPanel = buildTvSourcePanel(linesOnly, TvSourceNav(), strings)
+        assertTrue(linesOnlyPanel.rail.none { it.id == TvSourceRailKeys.FILTER })
+        assertTrue(linesOnlyPanel.filter.isEmpty())
     }
 
     @Test
