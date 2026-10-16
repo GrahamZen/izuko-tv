@@ -31,6 +31,7 @@ import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.audio.ForwardingAudioSink
 import androidx.media3.exoplayer.mediacodec.MediaCodecInfo
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
+import androidx.media3.exoplayer.video.VideoRendererEventListener
 import me.him188.ani.app.videoplayer.audio.AudioPassthroughMode
 
 /**
@@ -159,6 +160,22 @@ internal class PassthroughGatedRenderersFactory(
     ) {
         val selector = FfmpegForDolbyCodecSelector(mediaCodecSelector, FfmpegLibrary::supportsFormat)
         super.buildAudioRenderers(context, extensionRendererMode, selector, enableDecoderFallback, audioSink, eventHandler, eventListener, out)
+    }
+
+    override fun buildVideoRenderers(
+        context: Context,
+        extensionRendererMode: Int,
+        mediaCodecSelector: MediaCodecSelector,
+        enableDecoderFallback: Boolean,
+        eventHandler: Handler,
+        eventListener: VideoRendererEventListener,
+        allowedVideoJoiningTimeMs: Long,
+        out: ArrayList<Renderer>,
+    ) {
+        super.buildVideoRenderers(context, extensionRendererMode, mediaCodecSelector, enableDecoderFallback, eventHandler, eventListener, allowedVideoJoiningTimeMs, out)
+        UndecodableProfileGuardingVideoRenderer.replaceIn(
+            out, context, codecAdapterFactory, mediaCodecSelector, enableDecoderFallback, eventHandler, eventListener, allowedVideoJoiningTimeMs,
+        )
     }
 
     override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): AudioSink {
