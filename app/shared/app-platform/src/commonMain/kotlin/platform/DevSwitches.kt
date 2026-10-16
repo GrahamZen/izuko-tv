@@ -113,4 +113,12 @@ object DevSwitches {
     }
 
     // ---------------- 调试开关在下面声明, 用完删掉 ----------------
+
+    /** 故障工单服务连哪个 (见 FeedbackTicketService). */
+    val ticketService = choice(
+        "ticketService",
+        "故障工单服务",
+        listOf("正式", "本机 127.0.0.1:8787"),
+        description = "本机: 电脑上在 tools/ticket-worker 跑 wrangler dev --env dev (假 GitHub), 再 adb reverse tcp:8787 tcp:8787",
+    )
 }
