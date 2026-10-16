@@ -18,6 +18,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import me.him188.ani.app.data.models.danmaku.DanmakuFilterConfig
+import me.him188.ani.app.data.models.feedback.FeedbackRecords
 import me.him188.ani.app.data.models.preference.AnalyticsSettings
 import me.him188.ani.app.data.models.preference.AnitorrentConfig
 import me.him188.ani.app.data.models.preference.DanmakuCacheStrategy
@@ -256,6 +257,7 @@ class DanmakuCacheTest {
         override val tmdbImageHostCache: Settings<RepoHostedListCache> by lazy { error("no implemented") }
         override val githubDownloadMirrorCache: Settings<RepoHostedListCache> by lazy { error("no implemented") }
         override val feedbackEndpointCache: Settings<RepoHostedListCache> by lazy { error("no implemented") }
+        override val feedbackRecords: Settings<FeedbackRecords> by lazy { error("no implemented") }
         override val danmakuConfig: Settings<DanmakuConfig> by lazy { error("no implemented") }
         override val danmakuFilterConfig: Settings<DanmakuFilterConfig> by lazy { error("no implemented") }
         override val mediaSelectorSettings: Settings<MediaSelectorSettings> by lazy { error("no implemented") }

@@ -22,13 +22,18 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.coroutines.test.runTest
 import kotlinx.io.IOException
+import me.him188.ani.app.data.models.feedback.FeedbackKind
+import me.him188.ani.app.data.models.feedback.FeedbackRecord
+import me.him188.ani.app.data.models.feedback.FeedbackRecords
 import me.him188.ani.app.data.models.preference.RepoHostedListCache
+import me.him188.ani.app.data.repository.feedback.FeedbackRecordRepository
 import me.him188.ani.app.data.repository.user.Settings
 import me.him188.ani.app.domain.foundation.CloudflareServiceTransport
 import me.him188.ani.utils.ktor.asScopedHttpClient
 import me.him188.ani.utils.platform.currentTimeMillis
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 /** 「反馈」的提交: 中转按顺序试, 挂着不回的到点换下一个; 都连不上与被拒收分开报. */
 class SubjectFeedbackReportTest {
@@ -52,6 +57,7 @@ class SubjectFeedbackReportTest {
         /** 这些地址连接一直挂着, 不回也不断. */
         var hanging: (url: String) -> Boolean = { false }
         val requested = mutableListOf<String>()
+        val records = MemorySettings(FeedbackRecords.Empty)
 
         /** 加密直连握手被拒时换不换得到新配置 (见 SubjectFeedbackService.recoverEch); 每换一次记一次. */
         var recoverable = false
@@ -81,6 +87,8 @@ class SubjectFeedbackReportTest {
                 preferEch = { preferEch },
                 recoverEch = { if (recoverable) true.also { recoverable = false; recovered++ } else false },
             ),
+            records = FeedbackRecordRepository(records),
+            clock = { 1000L },
         )
 
         suspend fun report() = service.reportEntry(1, null)
@@ -163,4 +171,57 @@ class SubjectFeedbackReportTest {
         assertEquals(SubjectFeedbackService.Result.Unreachable, harness.report())
         assertEquals(listOf("https://a.example.com/entry-report", "https://b.example.com/entry-report"), harness.requested)
     }
+
+    @Test
+    fun `提交成功 — 记进本机的反馈记录`() = runTest {
+        val harness = Harness(testScheduler, relays)
+        harness.replies = { 200 to """{"status": "created", "issue": 42}""" }
+        harness.service.reportLogo(7, "tv/1", "ja", null, subjectName = "作品")
+        harness.replies = { 200 to """{"status": "pending", "issue": 9}""" }
+        harness.service.reportEntry(8, null)
+        assertEquals(
+            listOf(
+                FeedbackRecord(FeedbackKind.ENTRY, 9, 8, null, submittedAt = 1000L, joinedExisting = true, requested = FeedbackRecord.REQUESTED_NONE),
+                FeedbackRecord(FeedbackKind.LOGO, 42, 7, "作品", language = "ja", submittedAt = 1000L, requested = FeedbackRecord.REQUESTED_NONE),
+            ),
+            harness.records.state.value.items,
+        )
+    }
+
+    @Test
+    fun `查处理结果 — 一批问一次，解析中转的回答`() = runTest {
+        val harness = Harness(testScheduler, relays)
+        harness.replies = { url ->
+            if ("a.example.com" in url) null
+            else 200 to """{"issues": [{"issue": 65, "state": "closed", "reason": "completed"},
+                {"issue": 70, "state": "closed", "reason": "not_planned", "note": "另一季的", "note_at": "2026-10-16T06:20:00Z"},
+                {"issue": 9, "error": "not_found"}]}"""
+        }
+        assertEquals(
+            listOf(
+                SubjectFeedbackService.IssueStatus(65, "closed", "completed"),
+                SubjectFeedbackService.IssueStatus(70, "closed", "not_planned", "另一季的", "2026-10-16T06:20:00Z"),
+                SubjectFeedbackService.IssueStatus(9, error = "not_found"),
+            ),
+            harness.service.status(listOf(65, 70, 9, 65)),
+        )
+        assertEquals(listOf("https://a.example.com/status", "https://b.example.com/status"), harness.requested)
+    }
+
+    @Test
+    fun `查处理结果 — 中转还没有这个接口时当作没查成`() = runTest {
+        val harness = Harness(testScheduler, relays)
+        harness.replies = { 404 to """{"error": "not_found"}""" }
+        assertNull(harness.service.status(listOf(1)))
+        assertEquals(1, harness.requested.size)
+    }
+
+    @Test
+    fun `没提交成功 — 不记`() = runTest {
+        val harness = Harness(testScheduler, relays)
+        harness.replies = { 429 to "" }
+        assertEquals(SubjectFeedbackService.Result.RateLimited, harness.report())
+        assertEquals(emptyList(), harness.records.state.value.items)
+    }
 }
+
