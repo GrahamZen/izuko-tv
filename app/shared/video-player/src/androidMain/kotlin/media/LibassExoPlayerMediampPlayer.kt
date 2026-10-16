@@ -821,10 +821,17 @@ private class LibassMediaSourcePipeline(
                         boosted = { loadControl.boosted },
                         knownLength = resourceLength, lengthHint = lengthHint,
                     )
+                    // 外挂字幕不是这个视频, 不能共用上面的总长 (共用时按视频的长度分块去要字幕文件, 一个字节也拿不到): 一个连接直接下
                     if (key == null || cache == null) {
                         fontsDataSourceFactory = fonts
                         // 拖动预览时 (见 SeekPreview) 联网之前先过这道门
-                        networkGate.wrap(playback)
+                        networkGate.wrap(
+                            RoutingDataSourceFactory(
+                                routesToPrimary = { it.uri.toString() == data.uri },
+                                primaryDataSourceFactory = playback,
+                                fallbackDataSourceFactory = upstream,
+                            ),
+                        )
                     } else {
                         cacheKey = key
                         logger.info { "Caching $key on disk while playing" }
@@ -834,7 +841,7 @@ private class LibassMediaSourcePipeline(
                             routesToPrimary = { it.key != null },
                             // 拖动预览时 (见 SeekPreview) 本机有的直接读, 没存的部分要联网时先过这道门
                             primaryDataSourceFactory = PlaybackDiskCache.cacheDataSourceFactory(cache, networkGate.wrap(playback)),
-                            fallbackDataSourceFactory = playback,
+                            fallbackDataSourceFactory = upstream,
                         )
                     }
                 } else {
