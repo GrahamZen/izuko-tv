@@ -12,6 +12,7 @@ package me.him188.ani.app.domain.mediasource.clouddrive
 import me.him188.ani.datasources.api.EpisodeSort
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -109,6 +110,10 @@ class DriveNameParserTest {
         assertNull(DriveNameParser.singleDeclaredSeason("第一部"))
         assertNull(DriveNameParser.singleDeclaredSeason("葬送的芙莉莲2"))
         assertNull(DriveNameParser.singleDeclaredSeason("Specials"))
+        // 按季分的文件夹用罗马数字写季
+        assertEquals(4, DriveNameParser.singleDeclaredSeason("在地下城寻求邂逅是否搞错了什么 IV"))
+        assertEquals(1, DriveNameParser.singleDeclaredSeason("在地下城寻求邂逅是否搞错了什么 I"))
+        assertNull(DriveNameParser.singleDeclaredSeason("Part II"))
     }
 
     @Test
@@ -137,6 +142,29 @@ class DriveNameParserTest {
         assertNull(DriveNameParser.parseFolderSeason("4K"))
         assertNull(DriveNameParser.parseFolderSeason("1080P"))
         assertNull(DriveNameParser.parseFolderSeason("动漫"))
+        assertEquals(1, DriveNameParser.parseFolderSeason("在地下城寻求邂逅是否搞错了什么 I"))
+        assertEquals(3, DriveNameParser.parseFolderSeason("在地下城寻求邂逅是否搞错了什么 III"))
+        assertEquals(4, DriveNameParser.parseFolderSeason("在地下城寻求邂逅是否搞错了什么 IV"))
+        assertEquals(5, DriveNameParser.parseFolderSeason("在地下城寻求邂逅是否搞错了什么 V"))
+        assertEquals(4, DriveNameParser.parseFolderSeason("在地下城寻求邂逅是否搞错了什么Ⅳ 新章 迷宫篇"))
+        // 一季的上下半、分卷与压制组名里的字母不是季
+        assertNull(DriveNameParser.parseFolderSeason("Part II"))
+        assertNull(DriveNameParser.parseFolderSeason("Vol.III"))
+        assertNull(DriveNameParser.parseFolderSeason("[VCB-Studio] DanMachi [Ma10p_1080p]"))
+        assertNull(DriveNameParser.parseFolderSeason("Fate Zero [V2]"))
+    }
+
+    @Test
+    fun `work kinds`() {
+        assertEquals(setOf(DriveNameParser.WorkKind.MOVIE), DriveNameParser.workKindsOf("剧场版 -俄里翁之箭-"))
+        assertEquals(setOf(DriveNameParser.WorkKind.MOVIE), DriveNameParser.workKindsOf("[JYFanSub][Gekijouban Danmachi - Orion no Ya][01][GB][1080P][MP4].mp4"))
+        assertEquals(setOf(DriveNameParser.WorkKind.SPIN_OFF), DriveNameParser.workKindsOf("在地下城寻求邂逅是否搞错了什么 外传 剑姬神圣谭"))
+        assertEquals(setOf(DriveNameParser.WorkKind.OVA), DriveNameParser.workKindsOf("在地下城寻求邂逅是否搞错了什么 第二季 OVA"))
+        assertEquals(emptySet(), DriveNameParser.workKindsOf("在地下城寻求邂逅是否搞错了什么 IV"))
+        assertEquals(emptySet(), DriveNameParser.workKindsOf("Movies and Novas"))
+        assertTrue(DriveNameParser.isCollectionName("在地下城寻求邂逅是否搞错了什么 TV+剧场版"))
+        assertTrue(DriveNameParser.isCollectionName("在地下城寻求邂逅是否搞错了什么 1-4季全 1080P"))
+        assertFalse(DriveNameParser.isCollectionName("剧场版 -俄里翁之箭-"))
     }
 
     @Test

@@ -74,6 +74,8 @@ internal fun interface TmdbEpisodeNumbering {
  *    否则不是这个条目.
  * 5. 展开文件夹时, 按季分好的一层里不是这个条目的季的文件夹 (见 [otherSeasonFolders]) 不往下列:
  *    里面没写季的视频认的都是那一季, 最后也会按季去掉.
+ * 6. 文件夹或文件名写明是剧场版、外传、OVA ([DriveNameParser.workKindsOf]) 而条目不是这一类的不要: 整个系列的合集里
+ *    它们的视频也从 01 编起. 写着「TV+剧场版」「1-4季」这类合集名的文件夹不算.
  *
  * 季的规则 (条目的季来自条目名里的 `第二季` / `Season 2` 之类的写法):
  * - 条目没写季 (第一季或只有一季): 文件写明是第 2 季及以后的去掉, 其余保留.
@@ -298,6 +300,9 @@ internal class DriveSubjectMatcher(
                 .map { it.sort }
                 .toSet()
             val onlyEpisode = request.episodes.singleOrNull()?.sort
+            // 剧场版、外传、OVA 的文件夹与文件 (合集名除外) 不是条目的正片; 条目本身是这一类、或只有一集 (剧场版条目) 时不查
+            val ownKinds = subjectNamesOf(request).flatMapTo(HashSet()) { DriveNameParser.workKindsOf(it) }
+            val checkKinds = !trustFolders && request.episodes.size != 1
 
             // 没对上的按原因记几个例子, 搜到了却一集都没有时看得出卡在哪
             val dropped = LinkedHashMap<String, MutableList<String>>()
@@ -310,6 +315,7 @@ internal class DriveSubjectMatcher(
                 if (otherWork != null && otherWork.isOtherWork((candidate.folders + candidate.file.fileName).joinToString("/"))) {
                     return@mapNotNull drop("other work", candidate)
                 }
+                if (checkKinds && (otherKindsOf(candidate) - ownKinds).isNotEmpty()) return@mapNotNull drop("other kind", candidate)
                 val parsed = DriveNameParser.parseFile(candidate.file.fileName)
                 if (parsed.isExtra) return@mapNotNull drop("extra", candidate)
                 val episode = parsed.episode ?: onlyEpisode ?: return@mapNotNull drop("no episode number", candidate)
@@ -340,6 +346,11 @@ internal class DriveSubjectMatcher(
             }
             return matched
         }
+
+        /** 候选的文件夹 (合集名不算) 与文件名写明的作品类别. */
+        private fun otherKindsOf(candidate: Candidate): Set<DriveNameParser.WorkKind> =
+            (candidate.folders.filterNot(DriveNameParser::isCollectionName) + candidate.file.fileName)
+                .flatMapTo(HashSet()) { DriveNameParser.workKindsOf(it) }
 
         /**
          * 这个条目的剧集可能写在哪些季里: 条目名写的季 (没写当第 1 季), 以及对应表里这个条目用到的 TMDB 季
