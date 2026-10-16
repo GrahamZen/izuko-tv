@@ -93,6 +93,7 @@ import me.him188.ani.app.ui.lang.settings_media_web_search_cache_ttl_description
 import me.him188.ani.app.ui.lang.settings_tab_media_source
 import me.him188.ani.app.ui.lang.tv_settings_delete
 import me.him188.ani.app.ui.lang.tv_settings_drive_login_hint
+import me.him188.ani.app.ui.lang.tv_settings_drive_login_hint_shares
 import me.him188.ani.app.ui.lang.tv_settings_drive_logout_confirm
 import me.him188.ani.app.ui.lang.tv_settings_drive_logout_hint
 import me.him188.ani.app.ui.lang.tv_settings_drive_not_logged_in
@@ -276,7 +277,7 @@ internal fun TvSettingsItemsBuilder.mediaSourceItems() {
     action(
         Lang.tv_settings_drive_webdav_add, Lang.tv_settings_drive_webdav_add_description,
         value = { tvText(Lang.tv_settings_on_phone) },
-        qr = { consoleQr(it, "#sources") },
+        qr = { consoleQr(it, "#sources/webdav") },
     ) { emptyList() }
     entries(
         listOf(keys.drives, keys.driveQr),
@@ -295,6 +296,7 @@ internal fun TvSettingsItemsBuilder.mediaSourceItems() {
                 when {
                     drive.account.isLoggedIn -> Lang.tv_settings_drive_logout_hint
                     drive.service.protocol.supportsPasswordLogin -> Lang.tv_settings_drive_webdav_login_hint
+                    drive.service.protocol.supportsShares -> Lang.tv_settings_drive_login_hint_shares
                     else -> Lang.tv_settings_drive_login_hint
                 },
             )
