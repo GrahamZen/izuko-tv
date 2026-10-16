@@ -19,6 +19,7 @@ import me.him188.ani.app.data.models.subject.SplitSeason
 import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
 import me.him188.ani.app.data.models.subject.SubjectSeriesInfo
 import me.him188.ani.app.data.network.SubjectRelationIndex
+import me.him188.ani.app.data.network.sortsSpanSeriesOf
 import me.him188.ani.app.data.network.splitSeasonOf
 import me.him188.ani.app.data.network.toSubjectRelations
 import me.him188.ani.app.data.repository.subject.SubjectRelationsRepository
@@ -73,6 +74,24 @@ internal fun Flow<SubjectCollectionInfo>.withSeriesRelations(
             },
         )
     }
+}
+
+/**
+ * 开播用的系列信息: [attach] 给条目填上系列关系 (同 [withSeriesRelations]), [seriesInfoOf] 由填好的条目算 [SubjectSeriesInfo],
+ * 并用同一份系列索引补上 [SubjectSeriesInfo.sortsSpanSeries] (要主线上各条目的集数, 条目的 relations 里没有).
+ * 系列索引没等到、条目没填上系列关系时也不补.
+ */
+internal class PlaybackSeriesInfo(
+    private val subjectId: Int,
+    private val index: suspend (Int) -> SubjectRelationIndex,
+) {
+    private var relationIndex: SubjectRelationIndex? = null
+
+    fun attach(subjects: Flow<SubjectCollectionInfo>): Flow<SubjectCollectionInfo> =
+        subjects.withSeriesRelations(subjectId, { id -> index(id).also { relationIndex = it } })
+
+    fun seriesInfoOf(subject: SubjectCollectionInfo): SubjectSeriesInfo =
+        SubjectSeriesInfo.compute(subject).copy(sortsSpanSeries = relationIndex?.sortsSpanSeriesOf(subject))
 }
 
 /**
