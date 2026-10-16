@@ -211,6 +211,9 @@ Sealed class [`MaybeExcludedMedia`][MaybeExcludedMedia] 表示一个可能被排
 `sort` 与 `ep` 不同、且资源的 `episodeRange` 包含 `sort` 时，视为本条目的资源，上面两类排除都不适用。
 `sort` 在整个系列中唯一，两者不同即说明本条目不是第一季，因此这个条件挡得住系列内其他季度的资源；
 WEB 的条目名检查还额外要求条目名去掉季号后与资源的条目名相同，以免无关长篇因为同样有这个序号而混入。
+`sort` 也可能只在一季之内接着编：一季拆成两段时，第二段常接着第一段编号（从 12 起），系列页面上的同号集是前面某季的。
+`SubjectSeriesInfo.sortsSpanSeries` 判断本条目正片第一集的 `sort` 是否接在系列主线上前面各条目的正片之后（集数取系列关系图），
+判为否时不以系列内序号认领。播放页的选源上下文 (`PlaybackSeriesInfo`) 与 `SubjectRelationsRepository.subjectSeriesInfoFlow` 都带上这一项。
 
 `MediaSelector.subjectCandidates` 跳过第 0 条规则、保留其余规则与排序，
 提供整个条目的候选，供[批量下载](media-downloads.md#添加下载)按线路规划各集的资源，

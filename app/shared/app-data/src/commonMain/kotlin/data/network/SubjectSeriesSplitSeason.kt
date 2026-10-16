@@ -53,3 +53,26 @@ fun SubjectRelationIndex.splitSeasonOf(requestingSubject: SubjectCollectionInfo)
     }
     return SplitSeasonDetector.detect(selfId, mainLine)
 }
+
+/**
+ * [requestingSubject] 的 sort 是不是全系列的序号 ([me.him188.ani.app.data.models.subject.SubjectSeriesInfo.sortsSpanSeries]):
+ * 正片第一集的 sort 接在系列主线上前面各条目的正片之后 (大于前面的集数之和).
+ * 「凡人修仙传 第四季」从第 125 集起 (前三季共 124 集) 是; 「地错 第四季 深章 灾厄篇」从 12 起, 只接着第四季的前一段 (前面四段共 48 集), 不是.
+ * 主线上的第一个条目、前面有条目不知道集数、自己不知道第一集的 sort 时答不出, 为 `null`.
+ */
+fun SubjectRelationIndex.sortsSpanSeriesOf(requestingSubject: SubjectCollectionInfo): Boolean? {
+    val selfIndex = seriesMainSubjectIds.indexOf(requestingSubject.subjectId)
+    if (selfIndex <= 0) return null
+    val nodes = seriesMainNodes.associateBy { it.id }
+    var before = 0
+    for (id in seriesMainSubjectIds.subList(0, selfIndex)) {
+        before += nodes[id]?.episodes ?: return null
+    }
+    val firstSort = requestingSubject.episodes
+        .filter { it.episodeInfo.type == EpisodeType.MainStory }
+        .mapNotNull { it.episodeInfo.sort.number }
+        .minOrNull()?.toInt()
+        ?: nodes[requestingSubject.subjectId]?.firstSort
+        ?: return null
+    return firstSort > before
+}

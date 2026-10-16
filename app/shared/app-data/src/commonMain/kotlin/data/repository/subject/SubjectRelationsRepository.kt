@@ -30,6 +30,7 @@ import me.him188.ani.app.data.models.subject.RelatedPersonInfo
 import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
 import me.him188.ani.app.data.models.subject.SubjectSeriesInfo
 import me.him188.ani.app.data.network.SubjectSeriesIndexService
+import me.him188.ani.app.data.network.sortsSpanSeriesOf
 import me.him188.ani.app.data.network.splitSeasonOf
 import me.him188.ani.app.data.network.toSubjectRelations
 import me.him188.ani.app.data.network.BatchSubjectRelations
@@ -125,6 +126,7 @@ class DefaultSubjectRelationsRepository(
         // 条目库里的 relations 原本由 Ani 服务端随条目下发, 直连后没人填: 用刚走出来的系列索引
         val relations = index.toSubjectRelations().copy(splitSeason = index.splitSeasonOf(requestingSubject))
         SubjectSeriesInfo.compute(requestingSubject.copy(relations = relations))
+            .copy(sortsSpanSeries = index.sortsSpanSeriesOf(requestingSubject))
     }.flowOn(defaultDispatcher)
 
 //    override fun subjectSequelSubjectNamesFlow(subjectId: Int): Flow<Set<String>> {

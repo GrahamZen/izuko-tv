@@ -78,8 +78,9 @@ class MediaSelectionTrace(
         val sequelNames: Set<String>,
         val otherNames: Set<String>,
         val splitSeason: SplitSeason? = null,
+        val sortsSpanSeries: Boolean? = null,
     ) {
-        fun restore(): SubjectSeriesInfo = SubjectSeriesInfo(seasonSort, sequelNames, otherNames, splitSeason)
+        fun restore(): SubjectSeriesInfo = SubjectSeriesInfo(seasonSort, sequelNames, otherNames, splitSeason, sortsSpanSeries)
     }
 
     @Serializable
@@ -112,7 +113,7 @@ class MediaSelectionTrace(
                 context.subjectFinished, context.mediaSourcePrecedence,
                 context.subtitlePreferences?.let { preferences -> SubtitleKind.entries.associateWith { preferences[it] } },
                 context.subjectSeriesInfo?.let {
-                    Series(it.seasonSort, it.sequelSubjectNames, it.seriesSubjectNamesWithoutSelf, it.splitSeason)
+                    Series(it.seasonSort, it.sequelSubjectNames, it.seriesSubjectNamesWithoutSelf, it.splitSeason, it.sortsSpanSeries)
                 },
                 context.subjectInfo?.let { Subject(it.subjectId, it.name, it.nameCn, it.aliases) },
                 context.episodeInfo?.copy(desc = ""),

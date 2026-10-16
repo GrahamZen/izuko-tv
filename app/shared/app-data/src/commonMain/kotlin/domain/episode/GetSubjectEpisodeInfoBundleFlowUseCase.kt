@@ -48,9 +48,10 @@ class GetSubjectEpisodeInfoBundleFlowUseCaseImpl(
     override fun invoke(idsFlow: Flow<GetSubjectEpisodeInfoBundleFlowUseCase.SubjectIdAndEpisodeId>): Flow<SubjectEpisodeInfoBundle> {
         return idsFlow.flatMapLatest { (subjectId, episodeId) ->
             // 这里只需要查询一个网络请求 — subject collection. 
+            val series = PlaybackSeriesInfo(subjectId, seriesIndexService::getSubjectRelationIndex)
             subjectEpisodeInfoBundleFlow(
-                subjectCollectionRepository.subjectCollectionFlow(subjectId).withSeriesRelations(subjectId, seriesIndexService::getSubjectRelationIndex),
-                subjectId, episodeId,
+                series.attach(subjectCollectionRepository.subjectCollectionFlow(subjectId)),
+                subjectId, episodeId, seriesInfoOf = series::seriesInfoOf,
             )
         }.flowOn(flowContext)
     }
@@ -74,6 +75,7 @@ internal fun subjectEpisodeInfoBundleFlow(
     subjectId: Int,
     episodeId: Int,
     episodeWait: Duration = EPISODE_ARRIVAL_WAIT,
+    seriesInfoOf: (SubjectCollectionInfo) -> SubjectSeriesInfo = { SubjectSeriesInfo.compute(it) },
 ): Flow<SubjectEpisodeInfoBundle> = flow {
     fun notFound() = NoSuchElementException("Episode $episodeId not found in subject $subjectId")
     var found = false
@@ -97,7 +99,7 @@ internal fun subjectEpisodeInfoBundleFlow(
                     subjectId, episodeId,
                     subject,
                     episodeCollectionInfo,
-                    seriesInfo = SubjectSeriesInfo.compute(subject),
+                    seriesInfo = seriesInfoOf(subject),
                     subjectCompleted = EpisodeCollections.isSubjectCompleted(
                         subject.episodes.map { it.episodeInfo },
                         subject.recurrence,
