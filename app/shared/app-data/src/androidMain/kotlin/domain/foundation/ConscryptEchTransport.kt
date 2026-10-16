@@ -14,7 +14,6 @@ import io.ktor.client.HttpClientConfig
 import io.ktor.client.engine.HttpClientEngineConfig
 import io.ktor.client.engine.okhttp.OkHttpConfig
 import kotlinx.coroutines.runBlocking
-import me.him188.ani.app.data.models.preference.BangumiMirrorHosts
 import me.him188.ani.app.platform.currentAniBuildConfig
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
@@ -51,7 +50,7 @@ import kotlin.concurrent.thread
  * 安卓上的加密直连: 系统自带的 TLS 不支持 ECH, 用随包的 Conscrypt (2.7 起支持) 握手.
  *
  * 加密直连的请求由单独一个 OkHttp 客户端发 (见 [echClient]). 共用的客户端只多装一个拦截器 ([EchForwarder]):
- * 发往 [BangumiRoute.Ech.HOST_ROOT] 之下的请求换回真实域名转给它, 其他请求原样放行 —— 共用客户端的解析、TLS、证书校验、
+ * 发往加密直连域名 (见 [EchSites]) 的请求换回真实域名转给它, 其他请求原样放行 —— 共用客户端的解析、TLS、证书校验、
  * 连接池一概不碰, 不走加密直连的请求 (直连 bangumi 也在内) 与没有这条线路时一样.
  */
 class ConscryptEchTransport(
@@ -73,7 +72,7 @@ class ConscryptEchTransport(
      * 加密直连的请求都由它发. 第一次用到时才建, 这时才加载 Conscrypt; 建不出来 (原生库加载不了) 记下原因, 之后的请求直接失败.
      *
      * - **解析**: 一律换成 [BangumiEchAddressList] 里的 Cloudflare 地址 (IP 字面量, 不查 DNS) —— 大陆的 DNS 对 bangumi 是污染的,
-     *   而转到这里的只有 bangumi 的请求;
+     *   而转到这里的只有 Cloudflare 上的站 (见 [EchSites]);
      * - **握手**: Conscrypt + 要求 ECH ([EchRequiredTrustManager]). 内层 (加密的) 用真实域名, 外层只露出 ECH 配置里的公共名;
      * - **证书**: OkHttp 默认的校验, 按真实域名. api / next / lain / 主站是同一组地址、同一张证书, OkHttp 照常把它们合到一条 HTTP/2 连接上;
      * - **连接池**: 自己一个. 加密的连接与共用客户端的连接互不复用, 也不占共用连接池的空闲名额;
@@ -107,7 +106,7 @@ class ConscryptEchTransport(
     private val selfChecked = AtomicBoolean(false)
 
     /**
-     * debug 包里第一次用到加密直连时自检一次, 结果只记日志: 握手到底用没用上 ECH. 判据是 Cloudflare 的 `/cdn-cgi/trace`
+     * debug 包里第一次用到加密直连时自检一次 ([EchSites.selfCheckHosts] 逐个), 结果只记日志: 握手到底用没用上 ECH. 判据是 Cloudflare 的 `/cdn-cgi/trace`
      * (`sni=encrypted` / `sni=plaintext`) —— Conscrypt 没认到要求 ECH 的策略时会退回明文的域名, 请求照样成功, 光看成败测不出来.
      */
     private fun selfCheckOnce(client: OkHttpClient) {
@@ -115,15 +114,16 @@ class ConscryptEchTransport(
         thread(isDaemon = true, name = "ech-self-check") {
             // 包里那份配置可能已经轮换掉了, 先换上最新的再测
             runBlocking { echConfig.refresh() }
-            val url = "https://api.${BangumiMirrorHosts.ORIGIN_ROOT}/cdn-cgi/trace"
-            val result = runCatching {
-                client.newCall(Request.Builder().url(url).build()).execute().use { response ->
-                    response.body?.string().orEmpty().lines()
-                        .filter { line -> SELF_CHECK_FIELDS.any { line.startsWith("$it=") } }
-                        .joinToString(" ")
+            for (host in EchSites.selfCheckHosts) {
+                val result = runCatching {
+                    client.newCall(Request.Builder().url("https://$host/cdn-cgi/trace").build()).execute().use { response ->
+                        response.body?.string().orEmpty().lines()
+                            .filter { line -> SELF_CHECK_FIELDS.any { line.startsWith("$it=") } }
+                            .joinToString(" ")
+                    }
                 }
+                logger.info { "ECH self-check: ${result.getOrElse { "$host failed (${it::class.simpleName}: ${it.message})" }}" }
             }
-            logger.info { "ECH self-check: ${result.getOrElse { "failed (${it::class.simpleName}: ${it.message})" }}" }
         }
     }
 
@@ -146,7 +146,7 @@ class ConscryptEchTransport(
     private inner class EchForwarder : Interceptor {
         override fun intercept(chain: Interceptor.Chain): Response {
             val request = chain.request()
-            val origin = BangumiRoute.Ech.originHostOf(request.url.host) ?: return chain.proceed(request)
+            val origin = EchSites.originHostOf(request.url.host) ?: return chain.proceed(request)
             val client = echClient.getOrElse { throw IOException("ECH is unavailable", it) }
             echConfig.refreshInBackgroundOnce()
             selfCheckOnce(client)
