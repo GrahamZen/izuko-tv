@@ -34,6 +34,7 @@ import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.media.player.data.MediaDataProvider
 import me.him188.ani.app.domain.media.resolver.WebViewVideoExtractor.Instruction
 import me.him188.ani.app.domain.mediasource.web.captcha.WebSessionManager
+import me.him188.ani.app.domain.player.toLogText
 import me.him188.ani.app.domain.settings.ProxyProvider
 import me.him188.ani.app.platform.LocalContext
 import me.him188.ani.datasources.api.Media
@@ -137,7 +138,7 @@ class AndroidWebMediaResolver(
         val config = allMatchers.fold(WebViewConfig.Empty) { acc, matcher ->
             matcher.patchConfig(acc)
         }
-        logger.info { "Final config: $config" }
+        logger.info { "Final config: ${config.toLogText()}" }
         val timeoutMillis = allMatchers.sniffTimeoutMillis(settingsRepository.videoResolverSettings.flow.first().effectiveResourceExtractionTimeoutMillis)
         // WebView 的代理是进程级的, 每次解析前按当前设置更新一次 (必须在主线程设, 且要赶在加载之前)
         val proxyConfig = proxyProvider.proxy.first()
