@@ -107,7 +107,10 @@ RSS 源配置的 `titleToLink`（`RssTitleToLink`）在解析出条目之后、�
   播放段结束时的当前值就是视频地址，以 `sniff`（`goal = video`）结束表示交给 WebView 嗅探。
 
 站点上的东西取到之后，挑出当前这一集、搜索缓存、生成 `Media`、浏览协议都复用 `SelectorMediaSource` 的实现，
-匹配相关的配置（`autoMatch`、`matchEpisodeSortFromName`、`matchVideo`）含义相同。资源的 `download` 是剧集页（`WebVideo`），
+匹配相关的配置（`autoMatch`、`matchEpisodeSortFromName`、`matchVideo`）含义相同。
+自动匹配每个关键词最多打开 `maxSubjects` 个条目页，顺序是名字对得上请求条目的在前（判据同选择器过滤 WEB 资源，
+其中再按 `autoMatch.preferShorterName` 排）、对不上的在后并保持站点的顺序（`orderRuleSubjects`）：
+有的站搜索结果固定是一整页按相关度排的条目，整页按名字长短排会把最短的那几个无关条目排到最前面。资源的 `download` 是剧集页（`WebVideo`），
 播放时 `WebVideoDirectResolver.resolveDirectly` 执行播放段；取不到或要求嗅探时，播放器按 `matchVideo` 用 WebView 打开剧集页。
 GET 请求被站点验证挡住时改由 `WebSessionManager` 加载，与 `SelectorMediaSource` 共用验证码会话。
 
