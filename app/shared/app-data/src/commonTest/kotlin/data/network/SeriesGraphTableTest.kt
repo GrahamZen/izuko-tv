@@ -221,7 +221,7 @@ class SeriesGraphTableTest {
     )
 
     @Test
-    fun `sort 是不是全系列序号 - 只在一季里接着编的不是, 接着前面所有季编的是, 主线第一部答不出`() = runTest {
+    fun `sort 是不是全系列序号 - 只在一季里接着编的不是，接着前面所有季编的是，主线第一部答不出`() = runTest {
         val danMachi = assertNotNull(SeriesGraphTable.parse(danMachiTsv().encodeToByteArray()))
         val danMachiIndex = SubjectSeriesIndexService(noNetwork(), scope = backgroundScope, graph = { danMachi }).getSubjectRelationIndex(402223)
         // 前面四段共 48 集, 第二段从 12 起
