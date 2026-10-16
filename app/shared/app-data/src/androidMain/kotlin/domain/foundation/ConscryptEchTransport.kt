@@ -75,7 +75,7 @@ class ConscryptEchTransport(
      *   而转到这里的只有 Cloudflare 上的站 (见 [EchSites]);
      * - **握手**: Conscrypt + 要求 ECH ([EchRequiredTrustManager]). 内层 (加密的) 用真实域名, 外层只露出 ECH 配置里的公共名;
      * - **证书**: OkHttp 默认的校验, 按真实域名. api / next / lain / 主站是同一组地址、同一张证书, OkHttp 照常把它们合到一条 HTTP/2 连接上;
-     * - **连接池**: 自己一个. 加密的连接与共用客户端的连接互不复用, 也不占共用连接池的空闲名额;
+     * - **连接池**: 自己一个. 加密的连接与共用客户端的连接互不复用, 也不占共用连接池的空闲名额; 图床另有一个 (见 [imageClient]);
      * - **跳转**: 不跟, 与共用客户端一样交回 Ktor —— 跳到哪儿由 [BangumiRoutingFeatureHandler] 重新按线路决定.
      */
     private val echClient: Result<OkHttpClient> by lazy {
@@ -96,6 +96,12 @@ class ConscryptEchTransport(
                 .build()
         }.onFailure { logger.warn(it) { "ECH is unavailable on this device, requests on it fail over to the next route" } }
     }
+
+    /**
+     * 图床 ([EchSites.isImageHost]) 的请求: 同 [echClient], 只是连接池另一个 —— 不与接口合到一条 HTTP/2 连接上,
+     * 带宽小时详情页的接口不用排在一屏封面后面.
+     */
+    private val imageClient: Result<OkHttpClient> by lazy { echClient.map { it.newBuilder().connectionPool(ConnectionPool()).build() } }
 
     /** 外层请求被取消时把转过去的那个也取消; 只有加密直连的请求在等时才有任务. */
     private val cancelWatcher by lazy {
@@ -147,13 +153,16 @@ class ConscryptEchTransport(
         override fun intercept(chain: Interceptor.Chain): Response {
             val request = chain.request()
             val origin = EchSites.originHostOf(request.url.host) ?: return chain.proceed(request)
-            val client = echClient.getOrElse { throw IOException("ECH is unavailable", it) }
+            val apiClient = echClient.getOrElse { throw IOException("ECH is unavailable", it) }
             echConfig.refreshInBackgroundOnce()
-            selfCheckOnce(client)
-            // 超时照外层的: 调度试线路时缩过的超时 (见 BangumiRoutingFeatureHandler) 在这里也生效
+            selfCheckOnce(apiClient)
+            val image = EchSites.isImageHost(origin)
+            val client = if (image) imageClient.getOrElse { throw IOException("ECH is unavailable", it) } else apiClient
+            // 超时照外层的: 调度试线路时缩过的超时 (见 BangumiRoutingFeatureHandler) 在这里也生效; 图床的读超时至少 IMAGE_READ_TIMEOUT_MILLIS
+            val readTimeout = chain.readTimeoutMillis().toLong().let { if (image) maxOf(it, IMAGE_READ_TIMEOUT_MILLIS) else it }
             val call = client.newBuilder()
                 .connectTimeout(chain.connectTimeoutMillis().toLong(), TimeUnit.MILLISECONDS)
-                .readTimeout(chain.readTimeoutMillis().toLong(), TimeUnit.MILLISECONDS)
+                .readTimeout(readTimeout, TimeUnit.MILLISECONDS)
                 .writeTimeout(chain.writeTimeoutMillis().toLong(), TimeUnit.MILLISECONDS)
                 .build()
                 .newCall(request.newBuilder().url(request.url.newBuilder().host(origin).build()).build())
@@ -207,6 +216,13 @@ class ConscryptEchTransport(
 
     private companion object {
         const val CANCEL_CHECK_MILLIS = 100L
+
+        /**
+         * 加密直连上图床请求的读超时下限. 图片请求自己设的是 3 秒 (直连时「连上了却不来数据」多半是假死, 断开换连接重来, 见 ScopedHttpClientHttpStack);
+         * 加密直连上一屏封面同走一条连接, 带宽小时一张封面 3 秒还没等到数据是在排队, 掐断重来只会更慢.
+         * 不再放得更长: 加密直连还没通过时调度试它的读超时是 5 秒, 这里只多 1 秒, 换线路不会明显变慢.
+         */
+        const val IMAGE_READ_TIMEOUT_MILLIS = 6_000L
 
         /** `/cdn-cgi/trace` 里自检要看的几行: 连到哪个站、TLS 版本、HTTP 版本、SNI 加没加密. */
         val SELF_CHECK_FIELDS = listOf("h", "tls", "http", "sni")

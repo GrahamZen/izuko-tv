@@ -41,6 +41,12 @@ object EchSites {
         return URLBuilder(parsed).apply { host = echHostOf(parsed.host) }.buildString()
     }
 
+    /**
+     * [host] (真实域名) 是图床. 图床与接口 (api / next) 是同一组地址、同一张证书, 加密直连上不分开的话合在一条 HTTP/2 连接上:
+     * 带宽小的网络里一屏封面的数据挤在前面, 详情页的接口排在后面等好几秒. 所以图床另走一条连接, 读超时也放宽 (见 ConscryptEchTransport).
+     */
+    fun isImageHost(host: String): Boolean = host.startsWith("lain.")
+
     /** debug 包里加密直连第一次用到时自检的站 (见 ConscryptEchTransport): bangumi 与反馈中转. */
     val selfCheckHosts: List<String> = listOfNotNull(
         "api.${BangumiMirrorHosts.ORIGIN_ROOT}",
