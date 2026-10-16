@@ -112,7 +112,7 @@ fun TvDownloadSourcePanel(args: TvDownloadMediaPickerArgs) {
                 .fillMaxSize()
                 // 面板背后不铺暗底 (在播放器里画面要露出来); 缓存页上背后是剧集列表, 压暗免得和卡片混在一起
                 .background(Color.Black.copy(alpha = 0.85f))
-                // 返回键先给面板 (右栏退一层 / 回左栏), 面板不要了才关窗口
+                // 返回键先给面板 (退出筛选 / 内容里退一层), 面板不要了才关窗口
                 .onPreviewKeyEvent { event ->
                     if (event.key != Key.Back && event.key != Key.Escape) return@onPreviewKeyEvent false
                     if (event.type == KeyEventType.KeyUp && !controller.back()) currentArgs.onDismiss()
