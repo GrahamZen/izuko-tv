@@ -31,6 +31,7 @@ import java.util.Locale
  * - `POST api/diag/record` (seconds): 开始录制; 期间用户在电视上照常操作.
  * - `POST api/diag/stop`: 提前结束录制 (录到的照样分析).
  * - `GET api/diag/report/<id>`: 整份报告 (JSON, 网页展开详情与下载都用它).
+ * - `POST api/diag/delete` (id): 删掉一份报告 (网页上左滑).
  * - `POST api/diag/trace` (seconds, us): 方法采样 ([TvMethodTrace]); 状态在 `api/diag` 的 `trace` 里, 结果 `GET api/diag/trace/file` 下载.
  */
 internal object RemotePerfDiagnostics {
@@ -54,6 +55,7 @@ internal object RemotePerfDiagnostics {
             path == "api/diag/health" && post -> json(health())
             path == "api/diag/record" && post -> json(record(request))
             path == "api/diag/stop" && post -> json(stop())
+            path == "api/diag/delete" && post -> json(delete(request))
             path == "api/diag/trace" && post -> json(trace(request))
             path == "api/diag/trace/file" && get -> traceFile()
             path.startsWith("api/diag/report/") && get -> report(path.removePrefix("api/diag/report/"))
@@ -118,6 +120,12 @@ internal object RemotePerfDiagnostics {
     private fun stop(): JsonObject {
         TvPerfDiagnostics.stopRecording()
         return result(true, tr("已结束录制，正在分析"))
+    }
+
+    private fun delete(request: LanHttpRequest): JsonObject {
+        val id = request.formFields()["id"].orEmpty()
+        if (!ID.matches(id) || !TvPerfDiagnostics.deleteReport(id)) return result(false, tr("这份报告已经不在了"))
+        return result(true, "")
     }
 
     private fun trace(request: LanHttpRequest): JsonObject {

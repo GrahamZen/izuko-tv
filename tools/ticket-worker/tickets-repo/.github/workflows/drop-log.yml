@@ -1,0 +1,20 @@
+# 放进私有工单仓库: 关单后删掉这张单的附件 (release「ticket-logs」上的 <n>-*: 日志、照片, 补充里的也算).
+name: 关单删日志
+on:
+  issues:
+    types: [closed]
+permissions:
+  contents: write
+jobs:
+  drop:
+    if: contains(github.event.issue.labels.*.name, '故障反馈')
+    runs-on: ubuntu-latest
+    steps:
+      - name: 删附件
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          # 还没有日志 release (一张单都没传过日志) 时什么都不删
+          ids=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/ticket-logs" --jq ".assets[] | select(.name | startswith(\"$ISSUE-\")) | .id" 2>/dev/null || true)
+          for id in $ids; do gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$id"; done

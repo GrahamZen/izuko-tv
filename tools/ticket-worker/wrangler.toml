@@ -1,0 +1,58 @@
+name = "izuko-tickets"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+workers_dev = true
+
+[vars]
+# 私有工单仓库 (owner/name)
+TICKETS_REPO = "GrahamZen/izuko-tickets"
+
+# 每个 IP 的限频 (period 只能 10 或 60 秒). 写: 开单、补充说明; 传附件; 读: 查处理结果
+[[ratelimits]]
+name = "TICKET_LIMITER"
+namespace_id = "7301"
+simple = { limit = 6, period = 60 }
+
+[[ratelimits]]
+name = "STATUS_LIMITER"
+namespace_id = "7302"
+simple = { limit = 6, period = 60 }
+
+[[ratelimits]]
+name = "UPLOAD_LIMITER"
+namespace_id = "7303"
+simple = { limit = 10, period = 60 }
+
+# 全站每天开单、补充的计数 (见 src/tickets.js 开头)
+[[kv_namespaces]]
+binding = "COUNTERS"
+id = "4f1310511ec042c3976b2a99f4d3c180"
+
+# 本地调试: wrangler dev --env dev. 不连 GitHub, 内存里的假仓库; /__fake/ 下模拟维护者回复、关单、拉黑.
+# 绑定不从顶层继承, 要再写一遍
+[env.dev]
+name = "izuko-tickets-dev"
+
+[env.dev.vars]
+TICKETS_REPO = "fake/izuko-tickets"
+FAKE_GITHUB = "1"
+TICKET_SECRET = "dev-only-secret"
+
+[[env.dev.ratelimits]]
+name = "TICKET_LIMITER"
+namespace_id = "7301"
+simple = { limit = 6, period = 60 }
+
+[[env.dev.ratelimits]]
+name = "STATUS_LIMITER"
+namespace_id = "7302"
+simple = { limit = 6, period = 60 }
+
+[[env.dev.ratelimits]]
+name = "UPLOAD_LIMITER"
+namespace_id = "7303"
+simple = { limit = 10, period = 60 }
+
+[[env.dev.kv_namespaces]]
+binding = "COUNTERS"
+id = "4f1310511ec042c3976b2a99f4d3c180"
