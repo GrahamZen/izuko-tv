@@ -66,6 +66,7 @@ import me.him188.ani.app.data.repository.episode.EpisodeSubjectRepository
 import me.him188.ani.app.data.repository.episode.EpisodeCollectionSyncer
 import me.him188.ani.app.data.repository.media.MediaSourceSaves
 import me.him188.ani.app.data.repository.media.MediaSourceSubscriptionRepository
+import me.him188.ani.app.domain.foundation.CloudflareServiceTransport
 import me.him188.ani.app.domain.mediasource.profile.SourceProfiles
 import me.him188.ani.app.domain.mediasource.subscription.BundledSubscriptions
 import me.him188.ani.app.data.repository.repositoryModules
@@ -293,11 +294,20 @@ private fun KoinApplication.otherModules(
             scope = coroutineScope,
         )
     }
+    // 自家放在 Cloudflare 上的服务 (反馈中转、故障工单): 直连不通走加密直连, 条件同 bangumi 那条线路 (平台支持且没设代理)
+    single<CloudflareServiceTransport> {
+        CloudflareServiceTransport(
+            echUsable = { getOrNull<BangumiEchTransport>()?.available == true && get<ProxyProvider>().proxy.first() == null },
+            preferEch = { get<BangumiEndpointProvider>().currentRouting?.routes?.firstOrNull() == BangumiRoute.Ech },
+            recoverEch = { cause -> getOrNull<BangumiEchTransport>()?.recover(cause) == true },
+        )
+    }
     single<SubjectFeedbackService> {
         SubjectFeedbackService(
             listCache = get<SettingsRepository>().feedbackEndpointCache,
             client = { get<HttpClientProvider>().get() },
             scope = coroutineScope,
+            transport = get(),
         )
     }
     single<BangumiMirrorConsentRequests> { BangumiMirrorConsentRequests() }
