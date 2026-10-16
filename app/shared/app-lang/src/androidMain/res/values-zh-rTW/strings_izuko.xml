@@ -759,6 +759,7 @@
     <string name="tv_settings_drive_not_logged_in">未登入</string>
     <string name="tv_settings_drive_logout_hint">按確定登出這個帳號。登入在手機上的 Web 控制台裡（掃碼或填 Cookie）。</string>
     <string name="tv_settings_drive_login_hint">用手機上的網盤 App 掃右邊的碼登入。也可以在 Web 控制台裡填 Cookie。</string>
+    <string name="tv_settings_drive_login_hint_shares">登入後，你網盤裡的影片和別人分享的網盤資源都能播（分享的在播放時轉存到你的網盤）。用手機上的網盤 App 掃右邊的碼登入，也可以在 Web 控制台裡填 Cookie。</string>
     <string name="tv_settings_drive_logout_confirm">登出%1$s的帳號「%2$s」？之後要在手機上重新登入。</string>
     <string name="tv_settings_drive_webdav_add">新增 WebDAV（NAS）</string>
     <string name="tv_settings_drive_webdav_add_description">把區域網路裡的 NAS（或任何 WebDAV 服務）當資料源：在 NAS 的系統設定裡開啟 WebDAV，再掃右邊的碼，在 Web 控制台裡填位址和帳號密碼。播放的是原始檔案。</string>
