@@ -11,6 +11,8 @@ package me.him188.ani.app.ui.settings.tv
 
 import me.him188.ani.app.data.models.danmaku.DanmakuFilterConfig
 import me.him188.ani.app.data.models.danmaku.DanmakuRegexFilter
+import me.him188.ani.app.data.models.feedback.FeedbackKind
+import me.him188.ani.app.data.models.feedback.FeedbackRecord
 import me.him188.ani.app.data.models.preference.AnitorrentConfig
 import me.him188.ani.app.data.models.preference.BangumiEndpointSettings
 import me.him188.ani.app.data.models.preference.DebugSettings
@@ -317,6 +319,9 @@ class TvSettingsModelTest {
                 TvAppSettingKeys.update to UpdateSettings.Default,
                 TvAppSettingKeys.metered to false,
                 TvAppSettingKeys.perfStatus to TvOptionalText(null),
+                TvFeedbackRecordsKey to TvFeedbackList(
+                    listOf(FeedbackRecord(FeedbackKind.TICKET, issue = 3, summary = "黑屏", submittedAt = 0, unread = true)),
+                ),
                 TvSourceSettingKeys.selector to MediaSelectorSettings.Default,
                 TvSourceSettingKeys.preference to MediaPreference.PlatformDefault,
                 TvSourceSettingKeys.resolver to VideoResolverSettings.Default,

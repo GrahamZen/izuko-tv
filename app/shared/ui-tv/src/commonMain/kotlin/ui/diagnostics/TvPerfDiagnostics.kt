@@ -328,6 +328,16 @@ internal object TvPerfDiagnostics {
     fun reportFile(id: String): File? =
         dir()?.listFiles { f -> f.name == "$id.json" }?.firstOrNull()
 
+    /** 删掉一份报告 (网页上左滑); 删成了回 `true`. */
+    fun deleteReport(id: String): Boolean {
+        val deleted = reportFile(id)?.delete() == true
+        if (deleted) {
+            cachedReports = null
+            refreshLatestHeadline()
+        }
+        return deleted
+    }
+
     private fun refreshLatestHeadline() {
         _latestHeadline.value = reports().firstOrNull()?.let(::headlineOf)
     }

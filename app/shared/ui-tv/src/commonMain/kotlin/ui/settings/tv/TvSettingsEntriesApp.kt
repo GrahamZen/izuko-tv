@@ -197,7 +197,7 @@ internal data class TvLogShare(val state: LogLanShareState?)
 // ---- 账号 ----
 
 /**
- * 账号: 你是谁、退出登录; 本地用户可以清除收藏记录. 多用户的增删改在手机控制台里.
+ * 账号: 「我的反馈」(主页点头像就到这一页, 见 feedbackItems)、你是谁、退出登录; 本地用户可以清除收藏记录. 多用户的增删改在手机控制台里.
  * 没登录 (或登录失效) 时这里就是登录页: 扫码登录 (手机扫码授权, 经 Worker 跳回电视)、在电视上登录、注册与登录的常见问题.
  */
 internal fun TvSettingsItemsBuilder.accountItems() {
@@ -205,6 +205,7 @@ internal fun TvSettingsItemsBuilder.accountItems() {
     val keys = listOf(account)
     fun TvSettingsValues.isLocal() = this[account]?.selfInfo?.isLocalProfile == true
     loginItems()
+    feedbackItems(showHeader = { it.needsLogin() })
     action(
         Lang.settings_account_profile_nickname, keys = keys,
         visible = { !it.needsLogin() },

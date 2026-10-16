@@ -24,13 +24,13 @@ import java.util.Locale
 
 /**
  * 「设置」标签底部的「日志」: 列出电视上的日志文件, 点文件名直接下载到手机 —— 与设置 → 日志 →「扫码传到手机」同一批文件,
- * 手机已经连着 Web 控制台就不必再去电视上开那个弹窗. 目录由 TV 根组合登记 ([TvRemoteControl.logsDirProvider]), 没登记时 (桌面) 不显示.
+ * 手机已经连着 Web 控制台就不必再去电视上开那个弹窗. 目录见 [TvRemoteControl.logsDir].
  */
 internal object RemoteLogs {
     /** `api/logs` 列表 (JSON) 与 `api/logs/<文件名>` 下载; 不是 GET / HEAD 时返回 null. */
     fun handle(request: LanHttpRequest): LanHttpResponse? {
         if (request.method != "GET" && request.method != "HEAD") return null
-        val dir = TvRemoteControl.logsDirProvider?.invoke()
+        val dir = TvRemoteControl.logsDir()
         if (request.path == "api/logs") {
             return LanHttpResponse.bytes(list(dir).toString().toByteArray(), "application/json; charset=utf-8")
         }

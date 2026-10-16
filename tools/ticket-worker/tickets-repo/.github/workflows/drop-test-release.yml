@@ -1,0 +1,34 @@
+# 放进私有工单仓库: 关单后删掉这张单回复里给过的测试包 (公开仓库 izuko-tv 上 tag 为 test-… 的预发布, 连 tag 一起删);
+# 别的还开着的工单也在用同一个包时留着. 只认 test- 开头的 tag, 版本号的 release 碰不到.
+# 要 secret IZUKO_TV_RELEASES_TOKEN: fine-grained 令牌, 只给 izuko-tv 的 Contents 读写 (删别的仓库的 release 内置令牌做不到).
+name: 关单删测试包
+on:
+  issues:
+    types: [closed]
+permissions:
+  issues: read
+jobs:
+  drop:
+    if: contains(github.event.issue.labels.*.name, '故障反馈')
+    runs-on: ubuntu-latest
+    steps:
+      - name: 删测试包
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TV_TOKEN: ${{ secrets.IZUKO_TV_RELEASES_TOKEN }}
+          ISSUE: ${{ github.event.issue.number }}
+          TV_REPO: GrahamZen/izuko-tv
+        run: |
+          # 一张单的回复里给过的测试包 tag
+          tags_of() {
+            gh api "repos/$GITHUB_REPOSITORY/issues/$1/comments" --paginate --jq '.[].body' \
+              | { grep -oE "https://github\.com/$TV_REPO/releases/download/test-[^/ )\"']+" || true; } \
+              | sed 's#.*/download/##' | sort -u
+          }
+          mine=$(tags_of "$ISSUE")
+          if [ -z "$mine" ]; then echo "这张单没给过测试包"; exit 0; fi
+          inuse=$(for n in $(gh issue list -R "$GITHUB_REPOSITORY" --label 故障反馈 --state open --limit 200 --json number --jq '.[].number'); do tags_of "$n"; done | sort -u)
+          for tag in $mine; do
+            if grep -qx "$tag" <<< "$inuse"; then echo "$tag: 还有开着的单在用, 留着"; continue; fi
+            GH_TOKEN="$TV_TOKEN" gh release delete "$tag" -R "$TV_REPO" --yes --cleanup-tag || echo "$tag: 没删成 (可能已经删了)"
+          done

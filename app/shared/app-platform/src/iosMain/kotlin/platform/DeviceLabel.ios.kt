@@ -10,3 +10,8 @@
 package me.him188.ani.app.platform
 
 actual fun Context.deviceLabel(): String = "iOS"
+
+/** iOS 不发 (只有电视包会提交反馈). */
+actual fun Context.feedbackDeviceId(): String = ""
+
+actual fun Context.feedbackEnvironment(): Map<String, String> = emptyMap()

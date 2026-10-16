@@ -13,6 +13,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.graphicsLayer
+import me.him188.ani.app.ui.feedback.rememberTvFeedbackUnread
 import me.him188.ani.app.ui.foundation.NSFW_OBSCURED_COVER_LONG_EDGE_PX
 import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
 import me.him188.ani.app.ui.foundation.dialogs.DialogWindowDimAmount
@@ -354,6 +355,7 @@ fun TvMainScreenLayout(
         TvNavigationSideRail(
             selfInfo = selfInfo,
             avatarActions = avatarActions,
+            avatarBadge = rememberTvFeedbackUnread(),
             // 点头像一律进设置的账号页, 不管登没登录、是不是本地用户: 没登录时那里就是登录页; 切换用户在浮出按钮里
             onAvatarClick = { onNavigateToSettings(SettingsTab.PROFILE) },
             // 返回/右键: 还原回进入侧边栏之前内容区最后聚焦的元素 (经内容区 enter, 页面

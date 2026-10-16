@@ -52,7 +52,9 @@ import me.him188.ani.app.ui.update.NewVersion
 import me.him188.ani.app.ui.update.UpdateCheckProgress
 import me.him188.ani.app.ui.update.UpdateChecker
 import me.him188.ani.app.ui.update.releaseNotesStore
+import me.him188.ani.utils.io.SystemPath
 import me.him188.ani.utils.io.createDirectories
+import me.him188.ani.utils.io.resolve
 import me.him188.ani.utils.io.toFile
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
@@ -79,6 +81,8 @@ import java.util.UUID
  *
  * 授权页与安装确认界面都只能在 Izuko 在前台时打开: 在后台时系统不报错、只是不打开 (日志 `Abort background activity starts`).
  * 不在前台就先叫回来 ([TvRemoteControl.bringToFrontForInstall]), 叫不回来 (没开「叫到前台」) 就等它回到前台再开 ([onTvForeground]).
+ *
+ * 故障工单的回复里维护者给的测试包, 在「反馈」页点「装到电视」后交到这里 ([offer]), 同样在这张卡片里下载、安装 ([startOfferInstall]).
  *
  * 只装本项目的包 (包名以 [PROJECT_PACKAGE_PREFIX] 开头: 正式包、测试包、加后缀的对比包), 用户有时会装测试版.
  * 装自己是更新, 签名要与已装的一致; 装成功时进程会被系统结束: 提交前记下时刻, 下次启动 ([attach]) 按应用的
@@ -180,7 +184,16 @@ internal object RemoteAppUpdate {
     /** 正在接收的上传, 一次只有一个; 读写都在 [lock] 里 */
     private var upload: Upload? = null
 
-    /** 从上传的包发起的安装; 没装成时网页可以用它再装一次 ([retryUpload]). 新的上传 / 下载安装开始、装成了都清掉 */
+    /**
+     * 工单回复里维护者给的测试包 (见 [offer]): [url] 是原地址, [sha256] 是工单服务查到的 GitHub 附件摘要 (没有为 `null`, 退回来源旁边的 .sha1).
+     * 网页上显示它和「下载并安装」, 换一个才替换.
+     */
+    private class Offer(val url: String, val name: String, val sha256: String?, val issue: Int)
+
+    @Volatile
+    private var offered: Offer? = null
+
+    /** 从上传的包或测试包发起的安装; 没装成时网页可以用它再装一次 ([retryUpload]). 新的上传 / 下载安装开始、装成了都清掉 */
     private class Retry(val file: File, val version: String?, val pkg: String?)
 
     @Volatile
@@ -231,6 +244,7 @@ internal object RemoteAppUpdate {
                 request.path == "api/update/upload/chunk" -> uploadChunk(request)
                 request.path == "api/update/upload/finish" -> uploadFinish(request)
                 request.path == "api/update/retry" -> retryUpload(request)
+                request.path == "api/update/install-offer" -> startOfferInstall(request)
                 else -> null
             }
         }.getOrElse {
@@ -296,6 +310,13 @@ internal object RemoteAppUpdate {
                     put("size", u.size)
                     u.version?.let { put("version", it) }
                     u.pkg?.takeIf { it != ctx?.packageName }?.let { put("otherPkg", it) }
+                }
+            }
+            // 工单回复里的测试包: 网页给「下载并安装测试包」
+            offered?.let { o ->
+                putJsonObject("offer") {
+                    put("name", o.name)
+                    put("issue", o.issue)
                 }
             }
             // 上传的包没装成: 网页给「用这个安装包再装一次」
@@ -433,9 +454,7 @@ internal object RemoteAppUpdate {
      */
     private suspend fun download(ver: NewVersion, line: String): File {
         val koin = KoinPlatform.getKoin()
-        val downloader = DefaultFileDownloader(koin.get<HttpClientProvider>().get())
         val mirrors = koin.get<GitHubDownloadMirrors>()
-        val dir = koin.get<UpdateManager>().saveDir
         // 装好后第一次打开时介绍新功能用这份说明 (见 ReleaseNotesStore)
         koin.get<UpdateManager>().releaseNotesStore().save(ver)
         val packages = ver.downloadUrlAlternatives.map { url ->
@@ -444,6 +463,15 @@ internal object RemoteAppUpdate {
             DownloadPackage(fileName, sources, ver.sha256ByFileName[fileName])
         }.filter { it.sources.isNotEmpty() }
         if (packages.isEmpty()) throw DownloadFailure(tr("这条下载线路用不了了，换一条再试"), null)
+        return fetch(packages, koin.get<UpdateManager>().saveDir, rememberLines = true)
+    }
+
+    /**
+     * 下 [packages] 里第一个下得成的到 [dir], 状态行跟着报进度; [rememberLines] = 把各条线路的结果记给网页的线路下拉框
+     * (只有检查到的新版本有线路可挑).
+     */
+    private suspend fun fetch(packages: List<DownloadPackage>, dir: SystemPath, rememberLines: Boolean): File {
+        val downloader = DefaultFileDownloader(KoinPlatform.getKoin().get<HttpClientProvider>().get())
         // 状态那一行写到哪一步 (挑线路 3/5、38/79 MB · 2.1 MB/s、换线路、校验); 进度条只在知道总长、真在收数据时有
         val progress = scope.launch {
             downloader.stage.collect { stage ->
@@ -463,9 +491,64 @@ internal object RemoteAppUpdate {
             throw DownloadFailure(downloadFailureText(e, downloader.lastOutcomes), e)
         } finally {
             progress.cancel()
-            rememberLineNotes(downloader.lastOutcomes)
+            if (rememberLines) rememberLineNotes(downloader.lastOutcomes)
         }
         return file?.toFile() ?: throw DownloadFailure(tr("已有别的下载在进行"), null)
+    }
+
+    // ============================ 工单回复里的测试包 ============================
+
+    /**
+     * 「反馈」页点了工单回复里的「装到电视」([url] 由 RemoteFeedback 核对过是那张单的回复里的链接): 记下, 网页转到这张卡片,
+     * 由用户在这里点安装 (授权、进度、出错与平时的更新一样). [sha256] 是工单服务查到的附件摘要.
+     */
+    fun offer(url: String, sha256: String?, issue: Int) {
+        offered = Offer(url, url.substringAfterLast('/').substringBefore('?').ifEmpty { "test.apk" }, sha256, issue)
+        logger.info { "Remote update: test package from ticket #$issue offered (${if (sha256 != null) "with" else "without"} SHA-256)" }
+    }
+
+    /**
+     * 下载并安装 [offered]: GitHub 上的走下载镜像, 只认本项目的包; 装另一个包或比现在旧的不先问
+     * (维护者让装的就是它; 比现在旧的系统会拒, 原因照常显示). 没装成时可以「用这个安装包再装一次」.
+     */
+    private fun startOfferInstall(request: LanHttpRequest): JsonObject {
+        val o = offered ?: return result(false, tr("测试包已经不在了，回到「反馈」页再点一次「装到电视」"))
+        val ctx = context ?: return result(false, NOT_READY)
+        needPermission(ctx, request)?.let { return it }
+        synchronized(lock) {
+            if (state.phase in BUSY) return result(false, tr("正在安装，等这次完成后再试"))
+            abandonSession(ctx)
+            lastResult = null
+            retry = null
+            uploaded = null
+            state = State(Phase.DOWNLOADING, version = o.name)
+        }
+        scope.launch {
+            val file = try {
+                val mirrors = KoinPlatform.getKoin().get<GitHubDownloadMirrors>()
+                val sources = if (o.url.startsWith("https://github.com/")) mirrors.sourcesOf(o.url) else listOf(o.url)
+                val dir = KoinPlatform.getKoin().get<UpdateManager>().saveDir.resolve(OFFER_DIR)
+                // 只留这一个: 测试包一个几十 MB, 换过几个就不少了
+                dir.toFile().listFiles()?.filter { it.name != o.name }?.forEach { it.delete() }
+                fetch(listOf(DownloadPackage(o.name, sources, o.sha256)), dir, rememberLines = false)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.warn(e) { "Remote update: downloading the test package of ticket #${o.issue} failed" }
+                fail(tr("下载失败：{0}", (e as? DownloadFailure)?.text ?: updateErrorReason(e)))
+                return@launch
+            }
+            setState(state.copy(phase = Phase.VERIFYING, progress = null, download = null))
+            val verified = verify(ctx, file, sameAppOnly = false)
+            if (verified.error != null) {
+                fail(verified.error)
+                return@launch
+            }
+            val other = verified.packageName.takeIf { it != ctx.packageName }
+            retry = Retry(file, verified.versionName, other)
+            install(ctx, file, verified.versionName, other)
+        }
+        return result(true, "")
     }
 
     /**
@@ -969,6 +1052,9 @@ internal object RemoteAppUpdate {
      */
     private const val CHUNK_BYTES = 1024 * 1024
     private const val CHUNK_PATH = "api/update/upload/chunk"
+
+    /** 工单回复里的测试包下到更新目录下的这个子目录 */
+    private const val OFFER_DIR = "tickets"
     private const val MAX_UPLOAD_BYTES = 300L * 1024 * 1024
 
     /** 网页上显示的文件名最长多少字 (名字是手机传来的) */

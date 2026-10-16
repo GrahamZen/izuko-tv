@@ -51,6 +51,7 @@ class RemoteControlPageSettingsTest {
                 "network" to listOf("set-proxy", "set-bangumi", "set-tmdb"),
                 "resources" to listOf("set-generic", "set-pikpak", "set-dmfilter"),
                 "maintain" to listOf("set-update", "set-logs", "set-perf", "set-backup", "set-migrate"),
+                "feedback" to listOf("set-feedback"),
             ),
             groups,
         )
@@ -102,4 +103,17 @@ class RemoteControlPageSettingsTest {
         assertTrue(texts.size > 10)
         for (t in texts) assertTrue(t in keys, "没有译文：$t")
     }
+
+    /** 「反馈」那一组: 卡片脚本在页面里, 进组时读一次; 网页上的文案与分类行的静态文字都在译文表里 */
+    @Test
+    fun `feedback group is wired and translated`() {
+        assertContains(page, FEEDBACK_SCRIPT)
+        assertContains(page, "if (g === 'feedback' && window.loadFeedback) window.loadFeedback();")
+        val keys = REMOTE_I18N_TABLE.map { it.zh }.toSet()
+        val texts = Regex("""(?<![\w.])T\('([^']+)'""").findAll(FEEDBACK_SCRIPT).map { it.groupValues[1] }.toList()
+        assertTrue(texts.size > 10)
+        for (t in texts) assertTrue(t in keys, "没有译文：$t")
+        for (t in listOf("反馈", "故障反馈，以及标题 logo、对应作品修正的处理进度")) assertTrue(t in keys, "没有译文：$t")
+    }
 }
+

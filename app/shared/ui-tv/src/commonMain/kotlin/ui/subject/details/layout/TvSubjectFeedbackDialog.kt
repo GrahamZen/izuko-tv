@@ -229,17 +229,17 @@ internal fun TvSubjectFeedbackDialog(
                                         is FeedbackPick.Logo -> {
                                             tmdb.chooseTitleLogo(subjectId, language, pick.candidates, pick.logo)
                                             FeedbackSubmit.Done(
-                                                feedback.reportLogo(subjectId, pick.candidates.ref, pick.candidates.language, pick.logo),
+                                                feedback.reportLogo(subjectId, pick.candidates.ref, pick.candidates.language, pick.logo, subjectName = displayName),
                                                 FeedbackKind.Logo,
                                             )
                                         }
 
                                         is FeedbackPick.LogoNotListed -> FeedbackSubmit.Done(
-                                            feedback.reportLogoNotListed(subjectId, pick.candidates.ref, pick.candidates.language),
+                                            feedback.reportLogoNotListed(subjectId, pick.candidates.ref, pick.candidates.language, subjectName = displayName),
                                             FeedbackKind.LogoNotListed,
                                         )
 
-                                        is FeedbackPick.Entry -> FeedbackSubmit.Done(feedback.reportEntry(subjectId, pick.option), FeedbackKind.Entry)
+                                        is FeedbackPick.Entry -> FeedbackSubmit.Done(feedback.reportEntry(subjectId, pick.option, subjectName = displayName), FeedbackKind.Entry)
                                     }
                                 }
                             },

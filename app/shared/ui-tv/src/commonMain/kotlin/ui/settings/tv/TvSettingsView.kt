@@ -84,6 +84,11 @@ data class TvSettingsStyle(
     val drillTitle: TvNativeTextStyle,
     val infoTitle: TvNativeTextStyle,
     val infoBody: TvNativeTextStyle,
+    /** 说明栏气泡 (见 [TvSettingsBubble]) 的抬头 (谁、什么时候) 与正文. */
+    val bubbleMeta: TvNativeTextStyle,
+    val bubbleText: TvNativeTextStyle,
+    /** 自己发的气泡的底 (主题色淡淡一层); 别人的用 [activeBg]. */
+    val bubbleMineBg: Int,
     val activeBg: Int,
     val focusedBg: Int,
     /** 二维码的底与模块 (浅底深码, 老扫码器也认). */
@@ -149,6 +154,10 @@ class TvSettingsView(
     private val listAdapter = TvSettingsRowAdapter(style)
     private val infoTitleView = TvNativeTextView(context)
     private val infoBodyView = TvNativeTextView(context)
+
+    /** 说明下面的气泡 (见 [TvSettingsBubble]); 没有时藏起来. */
+    private val infoBubblesView = TvSettingsBubblesView(context, style)
+    private var infoBubbles: List<TvSettingsBubble> = emptyList()
 
     /** 说明栏的二维码与它上下的字 (见 [TvSettingsQr]): 状态 (码上面) / 码 / 码下面的一行. */
     private val infoQrStatusView = TvNativeTextView(context)
@@ -235,7 +244,7 @@ class TvSettingsView(
         infoBodyView.ellipsize = TextUtils.TruncateAt.END
         infoQrStatusView.maxLines = 3
         infoQrCaptionView.maxLines = 2
-        for (v in arrayOf(infoQrStatusView, infoQrView, infoQrCaptionView, infoImageView)) v.visibility = GONE
+        for (v in arrayOf(infoQrStatusView, infoQrView, infoQrCaptionView, infoImageView, infoBubblesView)) v.visibility = GONE
 
         rail.adapter = railAdapter
         list.adapter = listAdapter
@@ -272,6 +281,7 @@ class TvSettingsView(
         addView(infoImageView)
         addView(infoTitleView)
         addView(infoBodyView)
+        addView(infoBubblesView)
         addView(infoQrStatusView)
         addView(infoQrView)
         addView(infoQrCaptionView)
@@ -289,6 +299,7 @@ class TvSettingsView(
         infoQrStatusView.setTextColor(style.text)
         style.infoBody.applyTo(infoQrCaptionView)
         infoQrView.setColors(style.qrBg, style.qrFg, style.cornerPx)
+        infoBubblesView.applyStyle(style)
         rail.verticalSpacing = style.rowGapPx
         list.verticalSpacing = style.rowGapPx
         val bleed = style.focusBleedPx
@@ -431,15 +442,25 @@ class TvSettingsView(
     private fun showInfo(rowId: String?) {
         if (rowId == null) return
         val info = content?.info?.get(rowId)
-        setInfo(info?.title.orEmpty(), info?.body.orEmpty(), info?.qr, info?.image)
+        setInfo(info?.title.orEmpty(), info?.body.orEmpty(), info?.qr, info?.image, info?.bubbles.orEmpty())
     }
 
     /**
      * 换说明栏的字与二维码. 焦点常在布局途中落下 (布局完成回调里送焦): 那时字视图要重新测量的标记会在这一轮排到它时被清掉,
      * 下一轮按旧的测量结果排 (说明的框还是上一段字的高度, 多出的行被截掉) —— 排到下一帧, 直接对字视图再要一次布局.
      */
-    private fun setInfo(title: String, body: String, qr: TvSettingsQr? = null, image: TvImage? = null) {
-        if (infoTitleView.text.toString() == title && infoBodyView.text.toString() == body && infoQr == qr && infoImage == image) return
+    private fun setInfo(
+        title: String,
+        body: String,
+        qr: TvSettingsQr? = null,
+        image: TvImage? = null,
+        bubbles: List<TvSettingsBubble> = emptyList(),
+    ) {
+        if (infoTitleView.text.toString() == title && infoBodyView.text.toString() == body && infoQr == qr && infoImage == image &&
+            infoBubbles == bubbles
+        ) {
+            return
+        }
         if (infoImage != image) {
             infoImage = image
             infoImageView.setImage(null, round = false)
@@ -448,6 +469,9 @@ class TvSettingsView(
         }
         infoTitleView.text = title
         infoBodyView.text = body
+        infoBubbles = bubbles
+        infoBubblesView.setBubbles(bubbles)
+        infoBubblesView.visibility = if (bubbles.isEmpty()) GONE else VISIBLE
         infoQr = qr
         infoQrStatusView.text = qr?.status.orEmpty()
         infoQrStatusView.visibility = if (qr?.status.isNullOrEmpty()) GONE else VISIBLE
@@ -456,7 +480,9 @@ class TvSettingsView(
         infoQrCaptionView.text = qr?.caption.orEmpty()
         infoQrCaptionView.visibility = if (qr?.content == null || qr.caption.isEmpty()) GONE else VISIBLE
         val relayout = {
-            for (v in arrayOf(infoImageView, infoTitleView, infoBodyView, infoQrStatusView, infoQrView, infoQrCaptionView)) v.requestLayout()
+            for (v in arrayOf(infoImageView, infoTitleView, infoBodyView, infoBubblesView, infoQrStatusView, infoQrView, infoQrCaptionView)) {
+                v.requestLayout()
+            }
         }
         if (isInLayout || isLayoutRequested) post(relayout) else relayout()
     }
@@ -863,6 +889,14 @@ class TvSettingsView(
             MeasureSpec.makeMeasureSpec(infoWidth, MeasureSpec.EXACTLY),
             MeasureSpec.makeMeasureSpec(bodyHeight, MeasureSpec.AT_MOST),
         )
+        if (infoBubblesView.visibility != GONE) {
+            // 气泡用说明下面剩下的高度, 放不下的由它自己截
+            val room = (bodyHeight - infoBodyView.measuredHeight - s.qrGapPx).coerceAtLeast(0)
+            infoBubblesView.measure(
+                MeasureSpec.makeMeasureSpec(infoWidth, MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec(room, MeasureSpec.AT_MOST),
+            )
+        }
         setMeasuredDimension(w, h)
     }
 
@@ -894,6 +928,10 @@ class TvSettingsView(
         val bodyTop = infoTop + infoTitleView.measuredHeight + s.infoTitleGapPx
         infoBodyView.layout(infoLeft, bodyTop, infoLeft + infoBodyView.measuredWidth, bodyTop + infoBodyView.measuredHeight)
         var y = bodyTop + infoBodyView.measuredHeight + s.qrGapPx
+        if (infoBubblesView.visibility != GONE) {
+            infoBubblesView.layout(infoLeft, y, infoLeft + infoBubblesView.measuredWidth, y + infoBubblesView.measuredHeight)
+            y += infoBubblesView.measuredHeight + s.qrGapPx
+        }
         for (v in arrayOf(infoQrStatusView, infoQrView, infoQrCaptionView)) {
             if (v.visibility == GONE) continue
             v.layout(infoLeft, y, infoLeft + v.measuredWidth, y + v.measuredHeight)

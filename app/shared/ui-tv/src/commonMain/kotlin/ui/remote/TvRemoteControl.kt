@@ -71,6 +71,7 @@ import me.him188.ani.utils.logging.warn
 import me.him188.ani.app.domain.episode.GetAnimeSeasonIdsFlowUseCase
 import me.him188.ani.app.domain.media.fetch.MediaFetchSessionRefresh
 import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
+import me.him188.ani.app.ui.settings.tabs.log.getLogsDir
 import org.koin.mp.KoinPlatform
 import java.io.File
 import java.io.IOException
@@ -583,9 +584,14 @@ object TvRemoteControl {
     @Volatile
     var playingCacheProvider: (() -> PlayingCacheInfo?)? = null
 
-    /** 日志目录 (与设置 → 日志同一个); TV 根组合登记. 手机「设置」标签底部据此列出日志、直接下载, 见 [RemoteLogs]. */
-    @Volatile
-    var logsDirProvider: (() -> File?)? = null
+    /**
+     * 日志目录 (与设置 → 日志同一个): 进程起来 ([ensureStarted]) 就有, 不随电视界面 (控制台在 Izuko 不在前台时照样用).
+     * 手机「设置」标签底部据此列出日志、直接下载 ([RemoteLogs]); 故障工单据此截复现日志 ([RemoteFeedback]).
+     */
+    fun logsDir(): File? = appContext?.getLogsDir()
+
+    /** 应用的私有文件目录; 进程起来 ([ensureStarted]) 就有. 反馈附的照片存在这下面 ([RemoteFeedback]). */
+    fun filesDir(): File? = appContext?.filesDir
 
     /**
      * 电视上 Ani 的界面在不在前台 (由 [TrackTvRemoteForeground] 维护): 屏保、切到别的应用、息屏时为 false, 网页顶上一条
@@ -808,8 +814,10 @@ object TvRemoteControl {
         }
         fun create(port: Int) = LanHttpServer(
             ::handle, port = port, token = token,
-            // 放宽请求体上限的只有上传安装包的分块与导入设置备份两处
-            maxBodyBytes = { path -> RemoteSettingsBackup.maxBodyBytes(path) ?: RemoteAppUpdate.maxBodyBytes(path) },
+            // 放宽请求体上限的只有上传安装包的分块、导入设置备份与反馈的照片三处
+            maxBodyBytes = { path ->
+                RemoteSettingsBackup.maxBodyBytes(path) ?: RemoteFeedback.maxBodyBytes(path) ?: RemoteAppUpdate.maxBodyBytes(path)
+            },
             // 手机授权完经 Worker 跳回来的那一跳带不了 token, 见 RemoteAccount.relayReturn
             publicHandlers = mapOf(BangumiOAuthRelay.RETURN_PATH to RemoteAccount::relayReturn),
             // 发给手机的视频文件 (见 RemoteFileStream): 一路播放能持续很久, 不当成卡住的请求
@@ -967,6 +975,10 @@ object TvRemoteControl {
             path == "api/sources" || path.startsWith("api/sources/") ->
                 RemoteSources.handle(request)?.let(::json) ?: LanHttpResponse.status(405, "Method Not Allowed")
             // 「设置」标签底部的日志 (列表 / 下载), 见 RemoteLogs
+            // 「设置 → 反馈」: 提交过的反馈与工单, 见 RemoteFeedback
+            path == "api/feedback" || path.startsWith("api/feedback/") ->
+                RemoteFeedback.handleFile(request) ?: RemoteFeedback.handle(request)?.let(::json)
+                    ?: LanHttpResponse.status(405, "Method Not Allowed")
             path == "api/logs" || path.startsWith("api/logs/") ->
                 RemoteLogs.handle(request) ?: LanHttpResponse.status(405, "Method Not Allowed")
             // 「设置 → 维护」里的性能诊断 (体检 / 录制 / 报告), 见 RemotePerfDiagnostics

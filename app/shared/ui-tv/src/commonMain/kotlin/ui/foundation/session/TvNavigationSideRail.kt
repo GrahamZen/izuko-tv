@@ -11,6 +11,8 @@ package me.him188.ani.app.ui.foundation.session
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -367,6 +369,8 @@ fun TvNavigationSideRail(
     enterRequester: FocusRequester? = null,
     /** 头像关联动作 (按登录态由调用方组装); 焦点在头像簇上时于其上方浮现这些图标+文字按钮. */
     avatarActions: List<TvRailAvatarAction> = emptyList(),
+    /** 头像右上角画红点 (如反馈有新回复, 见 rememberTvFeedbackUnread). */
+    avatarBadge: Boolean = false,
     /** 展开遮罩面板底色覆盖 (如详情页按封面调色板取色, 使遮罩跟随背景/主题); null 用默认 surface. */
     scrimColor: Color? = null,
     /** 同 [scrimColor], 在绘制阶段取, 优先于它: 页面底色逐帧在变 (海报墙进出 hero 态, 见 TvPosterWallTone) 时用. */
@@ -485,7 +489,7 @@ fun TvNavigationSideRail(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (selfInfo != null) {
-                TvRailAvatar(selfInfo, expanded, onExitFocus, onAvatarClick, avatarActions)
+                TvRailAvatar(selfInfo, expanded, onExitFocus, onAvatarClick, avatarActions, avatarBadge)
             } else {
                 // 不显示头像时保留等高占位, 使其余按钮位置不变
                 Box(Modifier.size(TV_RAIL_ITEM_SIZE))
@@ -577,6 +581,7 @@ private fun TvRailAvatar(
     onExitFocus: (() -> Unit)?,
     onClick: () -> Unit,
     avatarActions: List<TvRailAvatarAction>,
+    badge: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val loggedIn = selfInfo.selfInfo != null && selfInfo.isSessionValid != false
@@ -587,6 +592,7 @@ private fun TvRailAvatar(
     val focusHighlight by animateColorAsState(
         if (avatarFocused) MaterialTheme.colorScheme.primary else Color.Transparent,
     )
+    val badgeColor = MaterialTheme.colorScheme.error
     Box(modifier.onFocusChanged { clusterFocused = it.hasFocus }) {
         // 头像在整列最上, 只能往上长
         TvRailFloatingActionCluster(clusterFocused, avatarActions, onExitFocus = onExitFocus)
@@ -608,7 +614,8 @@ private fun TvRailAvatar(
                             indication = null,
                             onClick = onClick,
                         )
-                        .border(2.dp, focusHighlight, CircleShape),
+                        .border(2.dp, focusHighlight, CircleShape)
+                        .railBadge(badge, badgeColor),
                     contentAlignment = Alignment.Center,
                 ) {
                     // 照片比高亮框 (32dp) 略小并居中, 使聚焦圆环成为其外圈, 不超出高亮尺寸
@@ -630,7 +637,8 @@ private fun TvRailAvatar(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
                             onClick = onClick,
-                        ),
+                        )
+                        .railBadge(badge, badgeColor),
                 )
             }
             if (expanded) {
@@ -831,6 +839,16 @@ private val TV_RAIL_ITEM_CORNER = 6.dp
 
 /** 头像照片尺寸: 比高亮框 (32dp) 略小并居中, 使聚焦圆环成为其外圈, 不超出高亮尺寸. */
 private val TV_RAIL_AVATAR_IMAGE_SIZE = 24.dp
+
+/** 头像右上角红点的直径. */
+private val TV_RAIL_BADGE_SIZE = 8.dp
+
+/** [show] 时在右上角画红点 (见 [TvNavigationSideRail] 的 avatarBadge): 照片 (24dp) 比框 (32dp) 小, 点落在照片圆外, 不压住脸. */
+private fun Modifier.railBadge(show: Boolean, color: Color): Modifier = if (!show) this else drawWithContent {
+    drawContent()
+    val radius = TV_RAIL_BADGE_SIZE.toPx() / 2
+    drawCircle(color, radius, Offset(size.width - radius, radius))
+}
 
 /** 图标字形尺寸 (32dp 容器 / 20dp 字形). */
 private val TV_RAIL_ICON_GLYPH_SIZE = 20.dp
