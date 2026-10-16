@@ -74,11 +74,17 @@ internal class DriveShareReader(
     /**
      * 从 [videos] 里挑出 [request] 这个条目的剧集 (规则同自己网盘的数据源, 见 [DriveSubjectMatcher]).
      * [FoundShare.siteTitle] 放在最外层: 分享里没写季的文件, 按它 (例如「…第二季」) 认季.
+     * 给了 [otherWork] 时路径 (含站点标题) 是同系列别的作品的去掉 (自动搜到的分享才给, 用户添加的不给).
      */
-    suspend fun match(request: MediaFetchRequest, share: FoundShare, videos: List<Entry>): List<DriveShareMatch> {
+    suspend fun match(
+        request: MediaFetchRequest,
+        share: FoundShare,
+        videos: List<Entry>,
+        otherWork: OtherWorkGuard? = null,
+    ): List<DriveShareMatch> {
         val byFid = videos.associateBy { it.file.fid }
         val candidates = videos.map { DriveSubjectMatcher.Candidate(it.file, listOf(share.siteTitle) + it.folders) }
-        return DriveSubjectMatcher.matchEpisodes(request, candidates, numbering.of(request)).mapNotNull { matched ->
+        return DriveSubjectMatcher.matchEpisodes(request, candidates, numbering.of(request), otherWork = otherWork).mapNotNull { matched ->
             val entry = byFid[matched.file.fid] ?: return@mapNotNull null
             DriveShareMatch(share, entry.file, entry.folders, matched.episode)
         }
