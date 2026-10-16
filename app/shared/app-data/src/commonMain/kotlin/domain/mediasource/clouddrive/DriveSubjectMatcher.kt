@@ -84,6 +84,8 @@ internal fun interface TmdbEpisodeNumbering {
 internal class DriveSubjectMatcher(
     private val browser: DriveBrowser,
     private val numbering: TmdbEpisodeNumbering = TmdbEpisodeNumbering.None,
+    /** 自动搜索 ([match]) 与自动记下的文件夹 ([matchRememberedFolder]) 排除同系列别的作品; 用户指定的文件夹不查 */
+    private val otherWorks: OtherWorks = OtherWorks.None,
 ) {
     class MatchedFile(
         val file: DriveFile,
@@ -100,7 +102,8 @@ internal class DriveSubjectMatcher(
 
         val hits = searchAll(keywords)
         val tmdbEpisodes = numbering.of(request)
-        return matchEpisodes(request, collectCandidates(hits, otherSeasonFolders(request, tmdbEpisodes)), tmdbEpisodes)
+        val candidates = collectCandidates(hits, otherSeasonFolders(request, tmdbEpisodes))
+        return matchEpisodes(request, candidates, tmdbEpisodes, otherWork = otherWorks.of(request))
     }
 
     private class Hit(val keyword: String, val file: DriveFile)
@@ -128,6 +131,11 @@ internal class DriveSubjectMatcher(
      * [path] 是它从搜到的那个文件夹起的路径. 文件夹打不开 (被删了、改了位置) 时返回 null.
      */
     suspend fun matchRememberedFolder(request: MediaFetchRequest, folderId: String, path: List<String>): List<MatchedFile>? {
+        // 自动选错过一次的会被记下 (系列里别的作品): 当作打不开, 由调用方忘掉它
+        if (otherWorks.of(request)?.isOtherWork(path.joinToString("/")) == true) {
+            logger.info { "Remembered drive folder ${path.joinToString("/")} is another work, forgetting it" }
+            return null
+        }
         val tmdbEpisodes = numbering.of(request)
         val candidates = try {
             listCandidates(folderId, path, otherSeasonFolders(request, tmdbEpisodes))
@@ -275,12 +283,14 @@ internal class DriveSubjectMatcher(
          *
          * @param tmdbEpisodes TMDB (季, 集) → 条目的集 (见 [TmdbEpisodeNumbering]); null = 表里没有, 只按条目名认季
          * @param trustFolders 候选来自用户指定的文件夹: 不再按条目名认季 (对应表照样用)
+         * @param otherWork 路径 (文件夹与文件名) 是同系列别的作品的去掉; 自动按名字找时才给
          */
         fun matchEpisodes(
             request: MediaFetchRequest,
             candidates: List<Candidate>,
             tmdbEpisodes: Map<Pair<Int, Int>, EpisodeSort>? = null,
             trustFolders: Boolean = false,
+            otherWork: OtherWorkGuard? = null,
         ): List<MatchedFile> {
             val targetSeason = subjectNamesOf(request).firstNotNullOfOrNull { DriveNameParser.parseSubjectSeason(it) }
             val absoluteSorts = request.episodes
@@ -297,6 +307,9 @@ internal class DriveSubjectMatcher(
             }
 
             val matched = candidates.mapNotNull { candidate ->
+                if (otherWork != null && otherWork.isOtherWork((candidate.folders + candidate.file.fileName).joinToString("/"))) {
+                    return@mapNotNull drop("other work", candidate)
+                }
                 val parsed = DriveNameParser.parseFile(candidate.file.fileName)
                 if (parsed.isExtra) return@mapNotNull drop("extra", candidate)
                 val episode = parsed.episode ?: onlyEpisode ?: return@mapNotNull drop("no episode number", candidate)

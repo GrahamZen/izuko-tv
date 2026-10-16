@@ -152,6 +152,8 @@ internal class DriveShareSearchEngine(
     private val shares: DriveShareBrowser,
     internal val links: DriveShareLinks,
     numbering: TmdbEpisodeNumbering = TmdbEpisodeNumbering.None,
+    /** 搜到的分享、合集里的文件夹、自动记下的分享文件夹是同系列别的作品的不要 (见 [OtherWorkGuard]) */
+    private val otherWorks: OtherWorks = OtherWorks.None,
     /** 列记下的分享文件夹 ([matchRemembered]): 每次现列, 分享取消了、新集上传了马上就知道. 搜索用 [shares]. */
     rememberedShares: DriveShareBrowser = shares,
     /** 列出的分享文件夹另存一份在这里, 应用重启后不用重列 (见 [indexOf]). */
@@ -172,9 +174,10 @@ internal class DriveShareSearchEngine(
 
     /** 先查固定的分享; 当前这一集在里面找到了就不再搜站点. */
     suspend fun search(request: MediaFetchRequest): List<DriveShareMatch> {
-        val fixed = if (fixedShares.isEmpty()) emptyList() else searchFixedShares(request)
+        val otherWork = otherWorks.of(request)
+        val fixed = if (fixedShares.isEmpty()) emptyList() else searchFixedShares(request, otherWork)
         if (fixed.any { it.isEpisodeOf(request) } || config.searchUrl.isBlank()) return fixed
-        return fixed + searchSites(request)
+        return fixed + searchSites(request, otherWork)
     }
 
     // region 固定的分享
@@ -182,7 +185,7 @@ internal class DriveShareSearchEngine(
     private val indexLock = Mutex()
     private val indexes = HashMap<String, DriveShareIndex>()
 
-    private suspend fun searchFixedShares(request: MediaFetchRequest): List<DriveShareMatch> {
+    private suspend fun searchFixedShares(request: MediaFetchRequest, otherWork: OtherWorkGuard?): List<DriveShareMatch> {
         val keywords = DriveSubjectMatcher.keywordsOf(DriveSubjectMatcher.subjectNamesOf(request))
             .map { DriveNameParser.normalize(it) }
             .filter { it.length >= 2 }
@@ -195,7 +198,9 @@ internal class DriveShareSearchEngine(
         }
         // 有和番名完全相同的文件夹就只要它: 合集里同系列的作品挨着放 (「偶像大师」与「偶像大师 灰姑娘女孩」)
         val hits = keywords.flatMap { keyword ->
-            val matched = indexed.filter { (_, folder) -> folderMatches(folder.path.last(), keyword) }
+            val matched = indexed.filter { (_, folder) ->
+                folderMatches(folder.path.last(), keyword) && otherWork?.isOtherWork(folder.path.joinToString("/")) != true
+            }
             matched.filter { (_, folder) -> folderTitle(folder.path.last()) == keyword }.ifEmpty { matched }
         }.distinctBy { (link, folder) -> link.shareId to folder.fid }
         // 外层文件夹对上了, 里层就不用再单独列
@@ -210,7 +215,7 @@ internal class DriveShareSearchEngine(
                     semaphore.withPermit {
                         try {
                             val videos = reader.readFolder(link.shareId, link.passcode, folder.fid, folder.path.drop(1), skipFolders)
-                            reader.match(request, FoundShare(link.shareId, link.passcode, folder.path.last()), videos)
+                            reader.match(request, FoundShare(link.shareId, link.passcode, folder.path.last()), videos, otherWork)
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Throwable) {
@@ -265,7 +270,7 @@ internal class DriveShareSearchEngine(
 
     // region 站点搜索
 
-    private suspend fun searchSites(request: MediaFetchRequest): List<DriveShareMatch> {
+    private suspend fun searchSites(request: MediaFetchRequest, otherWork: OtherWorkGuard?): List<DriveShareMatch> {
         val names = DriveSubjectMatcher.subjectNamesOf(request)
         val keywords = DriveSubjectMatcher.keywordsOf(names).take(config.maxKeywords.coerceAtLeast(1))
         if (keywords.isEmpty() || config.searchUrl.isBlank()) return emptyList()
@@ -275,7 +280,7 @@ internal class DriveShareSearchEngine(
         for ((index, keyword) in keywords.withIndex()) {
             // 网页站 (苹果 CMS 模板) 默认要求两次搜索隔 3 秒, 挨着搜只会拿到「系统提示」页
             if (index > 0 && config.detailLinkSelector.isNotBlank()) delay(PAGE_SEARCH_INTERVAL)
-            for (share in searchSite(keyword)) found.putIfAbsent(share.shareId, share)
+            for (share in searchSite(keyword, otherWork)) found.putIfAbsent(share.shareId, share)
             if (found.isNotEmpty()) break
         }
         val season = names.firstNotNullOfOrNull { DriveNameParser.parseSubjectSeason(it) } ?: 1
@@ -286,7 +291,7 @@ internal class DriveShareSearchEngine(
         val semaphore = Semaphore(SHARE_CONCURRENCY)
         return coroutineScope {
             selected.map { share ->
-                async { semaphore.withPermit { matchShare(request, share, skipFolders) } }
+                async { semaphore.withPermit { matchShare(request, share, skipFolders, otherWork) } }
             }.awaitAll().flatten()
         }
     }
@@ -296,6 +301,12 @@ internal class DriveShareSearchEngine(
      * 别的错误 (网络) 当这次没有, 由调用方照常去搜.
      */
     suspend fun matchRemembered(request: MediaFetchRequest, remembered: DriveRememberedShare): List<DriveShareMatch>? {
+        // 自动选错过一次的会被记下 (系列里别的作品): 当作失效, 由调用方忘掉它、照常搜
+        val path = (listOf(remembered.siteTitle) + remembered.path).joinToString("/")
+        if (otherWorks.of(request)?.isOtherWork(path) == true) {
+            logger.info { "Remembered share ${remembered.shareId} ($path) is another work, forgetting it" }
+            return null
+        }
         val share = FoundShare(remembered.shareId, remembered.passcode, remembered.siteTitle)
         val videos = try {
             rememberedReader.readFolder(
@@ -314,15 +325,36 @@ internal class DriveShareSearchEngine(
     }
 
     /** 搜一个关键词, 返回剧名对得上的结果里的全部分享链接. */
-    internal suspend fun searchSite(keyword: String): List<FoundShare> {
+    internal suspend fun searchSite(keyword: String, otherWork: OtherWorkGuard? = null): List<FoundShare> {
         val url = config.searchUrl.replace("{keyword}", keyword.encodeURLParameter())
         val bytes = fetch(url) ?: return emptyList()
         val normalizedKeyword = DriveNameParser.normalize(keyword)
-        if (config.detailLinkSelector.isNotBlank()) return searchPages(url, bytes, normalizedKeyword)
+        val rejected = mutableListOf<String>()
+        // 剧名对得上, 而且不是同系列别的作品 (「机动战士高达SEED」不是「机动战士高达」)
+        fun accepts(title: String): Boolean {
+            if (!titleMatches(title, normalizedKeyword)) return false
+            if (otherWork?.rejectsTitle(title) == true) {
+                rejected += title
+                return false
+            }
+            return true
+        }
+        val found = if (config.detailLinkSelector.isNotBlank()) {
+            searchPages(url, bytes, ::accepts)
+        } else {
+            searchApi(bytes, ::accepts)
+        }
+        if (rejected.isNotEmpty()) {
+            logger.info { "Share search: ${rejected.size} titles of other works dropped for $keyword, e.g. ${rejected.take(LOGGED_REJECTED)}" }
+        }
+        return found
+    }
+
+    private fun searchApi(bytes: ByteArray, accepts: (String) -> Boolean): List<FoundShare> {
         val root = parseResponse(bytes, config.format, json) ?: return emptyList()
         return root.selectByPath(config.itemsPath).flatMap { item ->
             val title = item.stringByPath(config.titlePath).orEmpty()
-            if (!titleMatches(title, normalizedKeyword)) return@flatMap emptyList()
+            if (!accepts(title)) return@flatMap emptyList()
             config.linkPaths
                 .flatMap { path -> item.selectByPath(path).mapNotNull { it.asStringOrNull() } }
                 .flatMap { text -> links.extract(text) }
@@ -331,13 +363,13 @@ internal class DriveShareSearchEngine(
     }
 
     /** 搜索结果是网页: 打开剧名对得上的详情页, 取出页面里的分享链接. */
-    private suspend fun searchPages(url: String, bytes: ByteArray, normalizedKeyword: String): List<FoundShare> {
+    private suspend fun searchPages(url: String, bytes: ByteArray, accepts: (String) -> Boolean): List<FoundShare> {
         val selector = QueryParser.parseSelectorOrNull(config.detailLinkSelector) ?: return emptyList()
         val html = bytes.decodeToString()
         val pageLinks = Html.parse(html, url).select(selector)
             .map { link -> link.attr("abs:href") to link.attr("title").ifBlank { link.text() }.trim() }
         val pages = pageLinks
-            .filter { (href, title) -> href.startsWith("http") && titleMatches(title, normalizedKeyword) }
+            .filter { (href, title) -> href.startsWith("http") && accepts(title) }
             .distinctBy { (href, _) -> href }
             .take(MAX_DETAIL_PAGES)
         logger.info {
@@ -354,6 +386,7 @@ internal class DriveShareSearchEngine(
         request: MediaFetchRequest,
         share: FoundShare,
         skipFolders: (List<String>) -> Set<String>,
+        otherWork: OtherWorkGuard?,
     ): List<DriveShareMatch> {
         val videos = try {
             reader.read(share.shareId, share.passcode, skipFolders).videos
@@ -366,7 +399,7 @@ internal class DriveShareSearchEngine(
             logger.warn(e) { "Failed to read share ${share.shareId}" }
             return emptyList()
         }
-        return reader.match(request, share, videos)
+        return reader.match(request, share, videos, otherWork)
     }
 
     // endregion
@@ -375,6 +408,9 @@ internal class DriveShareSearchEngine(
         private val logger = logger<DriveShareSearchEngine>()
 
         private const val SHARE_CONCURRENCY = 2
+
+        /** 日志里列几个被当成别的作品去掉的标题 */
+        private const val LOGGED_REJECTED = 3
 
         /** 搜索结果是网页时, 最多打开几个详情页. */
         private const val MAX_DETAIL_PAGES = 3
@@ -476,6 +512,7 @@ class CloudDriveShareSearchMediaSource(
                     drive,
                     DriveShareSearchEngine(
                         arguments.config, drive.shareSearchBrowser, drive.shareLinks, drive.episodeNumbering,
+                        otherWorks = drive.otherWorks,
                         rememberedShares = drive.shareBrowser,
                         indexStore = registry.shareIndexStore,
                         fetch = ::fetchBytes,

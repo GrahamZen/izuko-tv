@@ -250,6 +250,54 @@ class SeriesGraphTable private constructor(
     /** 表里这个条目的节点; 不在表里为 `null`. */
     fun nodeOf(subjectId: Int): SeriesNode? = rowOf(subjectId)?.node
 
+    /**
+     * 原名或中文名里原样含有 [fragment] 的条目. 整表的字节扫一遍, 只拆命中的那几行 (同 [rowOf], 不把九千多行都拆成对象);
+     * 用来找名字以某部番为前缀的别的作品.
+     */
+    fun nodesContaining(fragment: String): List<SeriesNode> {
+        val needle = fragment.encodeToByteArray()
+        if (needle.isEmpty()) return emptyList()
+        val found = LinkedHashSet<Int>()
+        var lineStart = 0
+        while (lineStart < bytes.size && bytes[lineStart] != NEWLINE) lineStart++ // 跳过表头
+        lineStart++
+        var pos = lineStart
+        var tabs = 0
+        while (pos <= bytes.size - needle.size) {
+            when (bytes[pos]) {
+                NEWLINE -> {
+                    lineStart = pos + 1
+                    tabs = 0
+                }
+
+                TAB -> tabs++
+                else -> if (tabs in 1..2 && bytes[pos] == needle[0] && matchesAt(pos, needle)) {
+                    // 第 2、3 列 (原名、中文名) 里命中: 记下行首的 id, 这一行余下的不再看
+                    idAt(lineStart)?.let(found::add)
+                    while (pos < bytes.size && bytes[pos] != NEWLINE) pos++
+                    continue
+                }
+            }
+            pos++
+        }
+        return found.mapNotNull { rowOf(it)?.node }
+    }
+
+    private fun matchesAt(pos: Int, needle: ByteArray): Boolean {
+        for (i in needle.indices) if (bytes[pos + i] != needle[i]) return false
+        return true
+    }
+
+    private fun idAt(lineStart: Int): Int? {
+        var id = 0L
+        var i = lineStart
+        while (i < bytes.size && bytes[i] in '0'.code.toByte()..'9'.code.toByte() && i - lineStart < 10) {
+            id = id * 10 + (bytes[i] - '0'.code.toByte())
+            i++
+        }
+        return if (i > lineStart && id <= Int.MAX_VALUE) id.toInt() else null
+    }
+
     internal class Row(val node: SeriesNode, val prequels: List<Int>, val sequels: List<Int>)
 
     private fun rowOf(subjectId: Int): Row? {
