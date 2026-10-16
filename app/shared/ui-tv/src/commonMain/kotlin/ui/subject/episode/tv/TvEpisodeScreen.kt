@@ -14,8 +14,8 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import me.him188.ani.app.ui.foundation.animation.LocalAniMotionScheme
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
@@ -224,7 +224,7 @@ private const val TV_DETAILS_FADE_OUT_MS = 500
 /** 选源面板进出的时长. */
 private const val TV_SOURCES_FADE_MS = 220
 
-/** 选源面板进出时横移面板宽度的几分之一 (从左边滑进来一小段, 不是整块飞进来). */
+/** 选源面板进出时竖移面板高度的几分之一 (从上沿落下来一小段, 不是整块飞进来). */
 private const val TV_SOURCES_SLIDE_DIVISOR = 12
 
 /**
@@ -525,7 +525,7 @@ fun TvEpisodeScreenContent(
     val focus = rememberTvFocusScope()
 
     // 关选源面板: 回纯视频态 (面板是从那儿按上键开的), 焦点回根节点. [keepPosition] = 按返回隐藏的, 记下焦点停在哪
-    // (左栏那一项 / 右栏那一行), 再按上键打开时落回去; 别的方式关的照常落在正在播放的源上
+    // (胶囊行那个源 / 列表那一行), 再按上键打开时落回去; 别的方式关的照常落在正在播放的源上
     fun closeSourcePanel(keepPosition: Boolean = false) {
         if (overlay.layer != TvPlayerLayer.SOURCES) return
         if (keepPosition) sourcePanel.rememberPosition(vm.episodeSelectorState.current?.episodeId) else sourcePanel.forgetPosition()
@@ -588,7 +588,7 @@ fun TvEpisodeScreenContent(
     // 每一档都换一层 (图标行 -> 选集条 -> 详情层), 连发会一路跳到底 —— 观感是选集条刚滑出来就
     // 闪进了详情页. 松手 (KeyUp) 才解锁. 只锁"换层"的那几档, 面板内按住下键滚列表不受影响
     var downKeyLatched by remember { mutableStateOf(false) }
-    // 纯视频态按上键开了选源面板: 这次按住剩下的连发与抬起归开面板那一下, 不交给面板 (否则按住上键会一路把左栏往上翻)
+    // 纯视频态按上键开了选源面板: 这次按住剩下的连发与抬起归开面板那一下, 不交给面板 (否则按住上键会从列表一路翻到表头)
     var upKeyOpenedSources by remember { mutableStateOf(false) }
     // 左右键按住期间的连发计数 + 当前按住的是哪一边: 挪圆点的步长据此加速 (见 scrubStepMillis),
     // 松手归零. 维护放在路由最前面而不是各分支里 —— 下面每一层都有 `if (!isKeyDown) return false`,
@@ -1835,15 +1835,15 @@ fun TvEpisodeScreenContent(
                     }
                 }
 
-                // 选源面板: 画面右侧, 左边画面露出来. 退场时吞掉按键 (焦点交还图标行之前那一两帧)
+                // 选源面板: 从上沿垂下来, 下面露出画面与字幕. 退场时吞掉按键 (焦点交还图标行之前那一两帧)
                 PrewarmTvSourcePanelStrings()
                 PrewarmTvSourcePanelView(canPrewarmNow = { overlay.layer == TvPlayerLayer.HIDDEN })
                 AniAnimatedVisibility(
                     visible = overlay.layer == TvPlayerLayer.SOURCES,
                     modifier = Modifier.matchParentSize(),
-                    // 从左边缘伸出来 (面板贴左边, 见 TvSourcePanelView)
-                    enter = fadeIn(tween(TV_SOURCES_FADE_MS)) + slideInHorizontally(tween(TV_SOURCES_FADE_MS)) { -it / TV_SOURCES_SLIDE_DIVISOR },
-                    exit = fadeOut(tween(TV_SOURCES_FADE_MS)) + slideOutHorizontally(tween(TV_SOURCES_FADE_MS)) { -it / TV_SOURCES_SLIDE_DIVISOR },
+                    // 从上沿垂下来 (面板贴上边, 见 TvSourcePanelView)
+                    enter = fadeIn(tween(TV_SOURCES_FADE_MS)) + slideInVertically(tween(TV_SOURCES_FADE_MS)) { -it / TV_SOURCES_SLIDE_DIVISOR },
+                    exit = fadeOut(tween(TV_SOURCES_FADE_MS)) + slideOutVertically(tween(TV_SOURCES_FADE_MS)) { -it / TV_SOURCES_SLIDE_DIVISOR },
                 ) {
                     TvPlayerSourcePanel(
                         vm = vm,
