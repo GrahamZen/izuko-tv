@@ -12,6 +12,8 @@ package me.him188.ani.app.data.network
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.HttpTimeoutCapability
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -57,6 +59,9 @@ class SubjectFeedbackReportTest {
         /** 这些地址连接一直挂着, 不回也不断. */
         var hanging: (url: String) -> Boolean = { false }
         val requested = mutableListOf<String>()
+
+        /** 每个请求设的连接超时 (没设为 null). */
+        val connectTimeouts = mutableListOf<Long?>()
         val records = MemorySettings(FeedbackRecords.Empty)
 
         /** 加密直连握手被拒时换不换得到新配置 (见 SubjectFeedbackService.recoverEch); 每换一次记一次. */
@@ -65,11 +70,13 @@ class SubjectFeedbackReportTest {
 
         // 引擎跑在测试调度器上: 请求与超时走同一个虚拟时钟 (默认的 IO 线程上回响应时, 测试调度器以为没事可做, 直接把时间拨过超时)
         private val client = HttpClient(MockEngine) {
+            install(HttpTimeout)
             engine {
                 dispatcher = StandardTestDispatcher(scheduler)
                 addHandler { request ->
                     val url = request.url.toString()
                     requested += url
+                    connectTimeouts += request.getCapabilityOrNull(HttpTimeoutCapability)?.connectTimeoutMillis
                     if (hanging(url)) awaitCancellation()
                     val (status, body) = replies(url) ?: throw IOException("blocked")
                     respond(body, HttpStatusCode.fromValue(status))
@@ -163,6 +170,25 @@ class SubjectFeedbackReportTest {
         harness.replies = { url -> if (".ech.invalid" in url && harness.recovered > 0) 200 to """{"issue": 7}""" else null }
         assertEquals(SubjectFeedbackService.Result.Created(7), harness.report())
         assertEquals(List(2) { "https://a.example.com.ech.invalid/entry-report" }, harness.requested)
+    }
+
+    @Test
+    fun `上次加密直连通了 — 这个服务下次先走加密直连`() = runTest {
+        val harness = Harness(testScheduler, listOf("https://a.example.com"), ech = true)
+        harness.replies = { url -> if (".ech.invalid" in url) 200 to """{"issue": 7}""" else null }
+        assertEquals(SubjectFeedbackService.Result.Created(7), harness.report())
+        assertEquals(listOf("https://a.example.com/entry-report", "https://a.example.com.ech.invalid/entry-report"), harness.requested)
+        harness.requested.clear()
+        assertEquals(SubjectFeedbackService.Result.Created(7), harness.report())
+        assertEquals(listOf("https://a.example.com.ech.invalid/entry-report"), harness.requested)
+    }
+
+    @Test
+    fun `先试的那种 — 只把连接超时缩短，最后一种照常`() = runTest {
+        val harness = Harness(testScheduler, listOf("https://a.example.com"), ech = true)
+        harness.replies = { url -> if (".ech.invalid" in url) 200 to """{"issue": 7}""" else null }
+        harness.report()
+        assertEquals(listOf(CloudflareServiceTransport.PROBE_CONNECT_MILLIS, null), harness.connectTimeouts)
     }
 
     @Test
