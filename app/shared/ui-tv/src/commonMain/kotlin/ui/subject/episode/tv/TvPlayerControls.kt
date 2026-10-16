@@ -224,6 +224,9 @@ internal const val TV_PLAYER_TOP_SCRIM_ALPHA = 0.64f
 /** 顶部信息里数据源图标的尺寸. */
 private val TV_PLAYER_SOURCE_ICON_SIZE = 18.dp
 
+/** 浮出面板开合时左上角标题块淡出 / 淡回的时长 (同面板进出的 200ms). */
+private const val TV_PLAYER_TITLE_FADE_MILLIS = 200
+
 /**
  * 顶部那行"数据源 · 资源标题"里, **非精确匹配**的资源标题用色 (暖琥珀).
  *
@@ -386,10 +389,11 @@ internal fun TvPlayerControlsOverlay(
                 ),
         )
 
-        // 面板向上生长的边界实测: 顶部信息 (标题/时钟) 的下缘与胶囊行的上缘.
-        // 面板最大高度 = 两者间距 (见 TvPlayerPanelHost), 4K 一类大逻辑分辨率下不再锁死小窗.
+        // 面板向上生长的边界实测: 顶部信息 (左上标题块 / 右上时钟) 的上沿与胶囊行的上缘. 面板开着时左上角的标题块淡出
+        // (见 TvPlayerTopInfo), 面板一直长到标题块原来的上沿 —— 有没有标题 logo、标题块多高都不用管.
+        // 面板最大高度 = 两者间距 (见 TvPlayerPanelHost), 4K 一类大逻辑分辨率下不锁死小窗.
         // 写的是 window 坐标原始 px; 只在面板的测量阶段读, 位置变化不触发本层重组
-        val topInfoBottomPx = remember { mutableFloatStateOf(Float.NaN) }
+        val topInfoTopPx = remember { mutableFloatStateOf(Float.NaN) }
         // 记在状态机里: 播放器还拿它把底部字幕挪到控制层上面 (见 TvPlayerOverlayState.subtitleObstructionTopPx)
         val pillsRowTopPx = overlay.pillsRowTopPx
 
@@ -400,8 +404,9 @@ internal fun TvPlayerControlsOverlay(
                 .align(Alignment.TopStart)
                 .fillMaxWidth()
                 .padding(horizontal = TV_PLAYER_HORIZONTAL_PAD, vertical = 28.dp)
-                // 放在 padding 之后: 量的是标题块本体的下缘 (可见元素边界), 不含留白
-                .onGloballyPositioned { topInfoBottomPx.floatValue = it.boundsInWindow().bottom },
+                // 放在 padding 之后: 量的是标题块本体的上沿 (可见元素边界), 不含留白
+                .onGloballyPositioned { topInfoTopPx.floatValue = it.boundsInWindow().top },
+            titleHidden = { overlay.activePanel != null },
         )
 
         // 底部区域: 控制行 (胶囊/进度条/图标行) 与选集条二选一, 在 Box 里底对齐重叠
@@ -571,7 +576,7 @@ internal fun TvPlayerControlsOverlay(
                             pillFocusRequesters = pillFocusRequesters,
                             pillOrder = pillOrder,
                             // NaN (尚未测得) 由面板侧兜底成固定高度
-                            availableHeightPx = { pillsRowTopPx.floatValue - topInfoBottomPx.floatValue },
+                            availableHeightPx = { pillsRowTopPx.floatValue - topInfoTopPx.floatValue },
                         )
                         // 弹窗要在 PeoplePreviewHost **之内**: 点卡片走的是 rememberPeopleClickHandler,
                         // 拿不到 host 时它会退化成"导航去人物详情页" —— 那是直接离开播放器
@@ -721,18 +726,24 @@ private fun TvEpisodeStripLoadingHint(overlay: TvPlayerOverlayState, modifier: M
 /** 选集加载提示离屏幕底边的距离 (大致是选集条卡片行所在的高度). */
 private val TV_EPISODE_STRIP_LOADING_HINT_BOTTOM = 40.dp
 
-/** 顶部信息: 左上大标题 + 集号副标题 (Prime 风格), 右上系统时钟. */
+/**
+ * 顶部信息: 左上大标题 + 集号副标题 + 数据源 (Prime 风格), 右上系统时钟. [titleHidden] (浮出面板开着) 时左上角那一块淡出,
+ * 把位置让给往上长的面板; 时钟在另一侧, 不让.
+ */
 @Composable
 private fun TvPlayerTopInfo(
     page: EpisodePageState,
     modifier: Modifier = Modifier,
+    titleHidden: () -> Boolean = { false },
 ) {
     Row(modifier, verticalAlignment = Alignment.Top) {
         val episode = page.episodePresentation
         val subject = page.subjectPresentation
+        val titleAlpha by animateFloatAsState(if (titleHidden()) 0f else 1f, tween(TV_PLAYER_TITLE_FADE_MILLIS), label = "playerTitle")
         Column(
             Modifier
                 .weight(1f)
+                .graphicsLayer { alpha = titleAlpha }
                 .placeholder(episode.isPlaceholder || subject.isPlaceholder),
         ) {
             // 作品名: 有标题 logo 时是 logo

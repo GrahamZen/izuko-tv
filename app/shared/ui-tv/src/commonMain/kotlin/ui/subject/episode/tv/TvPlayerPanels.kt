@@ -179,16 +179,18 @@ private val TV_PANEL_WIDTH = 420.dp
 private val TV_PANEL_CARD_WIDTH = 240.dp
 
 /**
- * 面板最大高度的**下限兜底** (条目少时仍按内容收缩).
+ * 还没量到空隙 (首帧) 时面板的最大高度 (条目少时仍按内容收缩).
  *
- * 实际上限按屏实算: 上到顶部信息 (标题/时钟) 下缘、下到胶囊行上缘, 由
+ * 实际上限按屏实算: 上到左上角标题块的上沿 (面板开着时标题块淡出, 见 TvPlayerTopInfo)、下到胶囊行上缘, 由
  * [TvPlayerControlsOverlay] 实测两者位置传入 (见 [TvPlayerPanelHost] 的 `availableHeightPx`).
- * 固定 300dp 在 960x540dp (正常 1080p TV) 上约等于这段空隙, 但 4K 上报原生 density 时
- * 逻辑高度翻倍, 锁死就只剩三分之一屏. 本值仅在未测得 (首帧) 或屏幕过小时兜底, 保证不比旧版差.
+ * 4K 上报原生 density 时逻辑高度翻倍, 锁死一个固定值就只剩三分之一屏, 所以量到了就按量的.
  */
 private val TV_PANEL_FALLBACK_MAX_HEIGHT = 300.dp
 
-/** 面板上缘与顶部信息下缘之间保留的间隙. */
+/** 量出来的空隙再小 (屏很矮), 面板也给这么高: 露得出一两张卡. */
+private val TV_PANEL_MIN_HEIGHT = 120.dp
+
+/** 面板上缘与顶部信息上沿之间保留的间隙. */
 private val TV_PANEL_TOP_GAP = 16.dp
 
 private data class TvPanelEntryFocus(val panel: TvPlayerPanel) : TvFocusKey
@@ -243,7 +245,7 @@ internal fun TvPlayerPanelHost(
      */
     pillOrder: List<TvPlayerPanel>,
     /**
-     * 面板可向上生长的空间 (window px): 胶囊行上缘 − 顶部信息下缘, 由调用方实测.
+     * 面板可向上生长的空间 (window px): 胶囊行上缘 − 顶部信息上沿 (面板开着时左上角标题块淡出让位), 由调用方实测.
      * NaN (尚未测得) 时兜底 [TV_PANEL_FALLBACK_MAX_HEIGHT]. Provider 形式 + 测量阶段才读:
      * 位置变化只触发面板重测量, 不重组控制层.
      */
@@ -343,15 +345,13 @@ internal fun TvPlayerPanelHost(
         }
         val panelModifier = Modifier
             .width(panelWidth)
-            // 最大高度按屏实算 (顶到顶部信息下缘为止); 在测量阶段读位置, 不因位置变化重组
+            // 最大高度按屏实算 (顶到顶部信息上沿为止); 在测量阶段读位置, 不因位置变化重组
             .layout { measurable, constraints ->
                 val available = availableHeightPx()
-                val fallbackPx = TV_PANEL_FALLBACK_MAX_HEIGHT.roundToPx()
                 val maxHeightPx = if (available.isNaN()) {
-                    fallbackPx
+                    TV_PANEL_FALLBACK_MAX_HEIGHT.roundToPx()
                 } else {
-                    // 小屏算出来比兜底还小时用兜底: 行为不比固定 300dp 的旧版差
-                    max(fallbackPx, (available - TV_PANEL_TOP_GAP.toPx()).roundToInt())
+                    max(TV_PANEL_MIN_HEIGHT.roundToPx(), (available - TV_PANEL_TOP_GAP.toPx()).roundToInt())
                 }
                 val placeable = measurable.measure(
                     constraints.copy(maxHeight = min(constraints.maxHeight, maxHeightPx)),
