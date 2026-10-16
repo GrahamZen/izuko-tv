@@ -32,6 +32,21 @@ internal object FeedbackPhotoStore {
         else -> null
     }
 
+    /** 存着的照片的类型 (按开头几个字节认, 同 [typeOf]); 读不了为 `null`. */
+    fun typeOf(file: File): String? = runCatching {
+        // 不用 InputStream.readNBytes: 安卓 13 才有, 之前的系统上抛 NoSuchMethodError
+        val head = ByteArray(12)
+        var n = 0
+        file.inputStream().use { input ->
+            while (n < head.size) {
+                val read = input.read(head, n, head.size - n)
+                if (read < 0) break
+                n += read
+            }
+        }
+        typeOf(head.copyOf(n))
+    }.getOrNull()
+
     /** 存一张; 不是认得的图片或存不了为 `null`. */
     fun save(bytes: ByteArray): FeedbackPhoto? {
         val type = typeOf(bytes) ?: return null
