@@ -17,6 +17,8 @@ internal val PERF_STYLE = """
 .perf-tabs { margin: 16px 0 0; }
 .perf-list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
 .perf-item { border-radius: 12px; background: var(--soft); }
+/* 每份报告可左滑删除 (外层 .sw 见 SCRIPT 的 swRow): 这里的行是卡片里的浅底块, 不要 .sw 默认的投影 */
+#set-perf .sw { box-shadow: none; }
 /* 标题行是展开 / 收起的按钮: 右端箭头, 展开时朝上 (同 .req 卡片) */
 .perf-item-h { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 14px; background: none; color: inherit; text-align: left; font-size: 14px; font-weight: 600; }
 .perf-item-h > span { flex: 1; min-width: 0; }
@@ -40,8 +42,8 @@ a.perf-trace-dl { display: flex; align-items: center; justify-content: center; t
 """.trimIndent()
 
 /**
- * 可下载整份 JSON). 录制中每秒读一次状态; 其余时候只在进「维护」与点按钮时读.
  * 「设置 → 维护 → 性能诊断」: 设备体检 / 录制 N 秒 / 方法采样 (下载 .trace), 报告按类型分两个标签列出 (默认收起只显示结论, 点标题行展开看关键数字,
+ * 可下载整份 JSON; 左滑删除, 同播放记录). 录制中每秒读一次状态; 其余时候只在进「维护」与点按钮时读.
  */
 internal val PERF_SCRIPT = """
 (function () {
@@ -176,15 +178,20 @@ internal val PERF_SCRIPT = """
       var list = data.reports.filter(function (r) { return kindOf(r) === tab; });
       h += list.length ? '<div class="perf-list">' + list.map(function (r) {
         var o = !!open[r.id];
-        return '<div class="perf-item"><button type="button" class="perf-item-h" data-perf-id="' + esc(r.id) + '" aria-expanded="' + o + '"><span>' + kindText(r) +
+        // 左滑露出「删除」(滑到底松手直接删), 同播放记录
+        return window.swRow('', '<button type="button" class="sw-btn del" data-perf-del="' + esc(r.id) + '">' + window.ICONS.trash + T('删除') + '</button>',
+          '<div class="perf-item sw-row" data-perf-row="' + esc(r.id) + '"><button type="button" class="perf-item-h" data-perf-id="' + esc(r.id) + '" aria-expanded="' + o + '"><span>' + kindText(r) +
           (r.kind === 'health' ? '' : ' · ' + esc(r.page)) + '</span><small>' + esc(r.time) + '</small></button>' +
           (o ? '<div class="perf-detail">' + (details[r.id] ? detailHtml(details[r.id]) : '<p class="hint">' + T('读取中…') + '</p>') + '</div>'
-            : (r.headline ? '<div class="perf-head">' + esc(r.headline) + '</div>' : '')) + '</div>';
+            : (r.headline ? '<div class="perf-head">' + esc(r.headline) + '</div>' : '')) + '</div>');
       }).join('') + '</div>' : '<p class="hint">' + T('还没有诊断报告') + '</p>';
     } else if (idle) {
       h += '<p class="hint">' + T('还没有诊断报告') + '</p>';
     }
+    // 开着的行 / 正在拖时别重画 (录制中每秒刷新), 不然行被弹回去
+    if (window.swBusy(box)) return;
     setHtml(box, h + '</div>');
+    window.swPeek(box, 'perf');
   }
   function toggle(id) {
     open[id] = !open[id];
@@ -227,6 +234,21 @@ internal val PERF_SCRIPT = """
           load();
         }, function () { busy = false; fail(); load(); });
       }
+      return;
+    }
+    // 左滑露出的「删除」: 删成了这一行收起来, 再读一次列表; 没删成行放回去
+    var del = e.target.closest('[data-perf-del]');
+    if (del) {
+      var id = del.getAttribute('data-perf-del'), sw = del.closest('.sw');
+      window.post('api/diag/delete', { id: id }).then(function (r) {
+        if (!r.ok) { if (r.message) toast(r.message); window.swClose(sw); load(); return; }
+        delete open[id];
+        delete details[id];
+        sw.style.height = sw.offsetHeight + 'px';
+        void sw.offsetHeight;
+        sw.classList.add('gone');
+        setTimeout(load, 260);
+      }, function () { window.swClose(sw); fail(); });
       return;
     }
     var t = e.target.closest('[data-perf-tab]');

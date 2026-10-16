@@ -285,6 +285,8 @@ internal fun TvText.resolve(): String = when (this) {
         val resolvedArgs = args.map { if (it is TvText) it.resolve() else it }
         stringResource(res, *resolvedArgs.toTypedArray())
     }
+
+    is TvText.Join -> parts.map { it.resolve() }.joinToString(separator)
 }
 
 /** 上次在设置页停的位置 (进程内): 下次打开 (没指定去哪一类时) 落回去. */
@@ -348,6 +350,9 @@ fun rememberTvSettingsStyle(): TvSettingsStyle {
                 drillTitle = typography.titleSmall.toTvNativeTextStyle(density, secondary),
                 infoTitle = typography.titleMedium.copy(fontWeight = FontWeight.Bold).toTvNativeTextStyle(density, onSurface),
                 infoBody = typography.bodyMedium.toTvNativeTextStyle(density, secondary),
+                bubbleMeta = typography.labelMedium.toTvNativeTextStyle(density, secondary),
+                bubbleText = typography.bodyMedium.toTvNativeTextStyle(density, onSurface),
+                bubbleMineBg = colors.primary.copy(alpha = if (darkTheme) 0.24f else 0.14f).toArgb(),
                 activeBg = onSurface.copy(alpha = 0.1f).toArgb(),
                 focusedBg = (if (darkTheme) focusedBg else glass.focusedPlatter).toArgb(),
                 // 浅底深码 (同 Web 控制台的二维码): 深色主题的 primary 本身是浅色, 当底、onPrimary 画码; 浅色主题换 primaryContainer

@@ -1,0 +1,10 @@
+{
+  "name": "izuko-tickets",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "dev": "npx wrangler@4 dev --env dev --ip 0.0.0.0 --port 8787",
+    "deploy": "npx wrangler@4 deploy --env=\"\""
+  }
+}
