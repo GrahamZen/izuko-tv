@@ -31,18 +31,25 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import me.him188.ani.app.data.models.feedback.FeedbackKind
+import me.him188.ani.app.data.models.feedback.FeedbackRecord
 import me.him188.ani.app.data.models.preference.RepoHostedListCache
+import me.him188.ani.app.data.repository.feedback.FeedbackRecordRepository
 import me.him188.ani.app.data.repository.user.Settings
 import me.him188.ani.app.domain.foundation.CloudflareServiceTransport
 import me.him188.ani.app.domain.foundation.GitHubFileSources
 import me.him188.ani.app.domain.foundation.RepoHostedList
+import me.him188.ani.app.domain.foundation.probeConnectTimeout
 import me.him188.ani.app.platform.currentAniBuildConfig
 import me.him188.ani.utils.ktor.ScopedHttpClient
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
+import me.him188.ani.utils.platform.currentTimeMillis
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration.Companion.seconds
 
@@ -54,6 +61,7 @@ import kotlin.time.Duration.Companion.seconds
  * 中转的根地址放在对应表仓库根目录的 `report-endpoints.json` (字段 `endpoints`, 按顺序试, 连不上换下一个; 中转部署时由那边的 worker
  * 工作流写进去): workers.dev 在大陆多半连不上, 换地址、加自定义域名都不用发版.
  * 中转在 Cloudflare 上, 怎么连见 [CloudflareServiceTransport] (直连不通再走加密直连).
+ * 报告成功 (开了 issue, 或同一处已经有请求开着) 记进 [records], Web 控制台「设置 → 反馈」里列出来; 处理结果经中转查 ([status]).
  *
  * 「对应的作品不对」的备选 ([entryCandidates]) 取自对应表的核对页数据 (`docs/data/s/<id / 2000>.json`, 与核对页上「备选」同一份).
  */
@@ -62,6 +70,8 @@ class SubjectFeedbackService(
     private val client: () -> ScopedHttpClient,
     scope: CoroutineScope,
     private val transport: CloudflareServiceTransport = CloudflareServiceTransport.DirectOnly,
+    private val records: FeedbackRecordRepository? = null,
+    private val clock: () -> Long = { currentTimeMillis() },
 ) {
     private val endpoints = RepoHostedList(SPEC, listCache, client, scope, repository = { TMDB_SUBJECT_MAP_REPOSITORY })
 
@@ -87,10 +97,29 @@ class SubjectFeedbackService(
     }
 
     /**
-     * 报告条目 [subjectId] 的 [language] 标题 logo 应该是 [logo] (null = 这种语言没有合适的, 显示文字); [tmdbRef] = logo 取自的 TMDB 条目
-     * (如 `tv/65844`).
+     * 一条修正请求的处理结果 (见 [status]): [state] 为 `open` / `closed`, [reason] 为 `completed` / `not_planned` / null;
+     * [note] = 维护者在审核页写的不采纳理由 ([noteAt] 为它的 ISO 时间). 没查成时只有 [error] (`not_found` = issue 不在了).
      */
-    suspend fun reportLogo(subjectId: Int, tmdbRef: String, language: String, logo: TmdbTitleLogo?): Result = report(
+    data class IssueStatus(
+        val issue: Int,
+        val state: String? = null,
+        val reason: String? = null,
+        val note: String? = null,
+        val noteAt: String? = null,
+        val error: String? = null,
+    )
+
+    /**
+     * 报告条目 [subjectId] 的 [language] 标题 logo 应该是 [logo] (null = 这种语言没有合适的, 显示文字); [tmdbRef] = logo 取自的 TMDB 条目
+     * (如 `tv/65844`). [subjectName] 只记在本机的反馈记录里, 不发出去.
+     */
+    suspend fun reportLogo(
+        subjectId: Int,
+        tmdbRef: String,
+        language: String,
+        logo: TmdbTitleLogo?,
+        subjectName: String? = null,
+    ): Result = report(
         "logo-report",
         buildJsonObject {
             put("bgm_id", subjectId)
@@ -99,13 +128,19 @@ class SubjectFeedbackService(
             put("logo", logo?.filePath?.let(::JsonPrimitive) ?: JsonNull)
             put("app", currentAniBuildConfig.versionName)
         },
+        record = {
+            FeedbackRecord(
+                FeedbackKind.LOGO, it, subjectId, subjectName, language = language, submittedAt = clock(),
+                requested = logo?.filePath ?: FeedbackRecord.REQUESTED_NONE,
+            )
+        },
     )
 
     /**
      * 报告条目 [subjectId] 的 [language] 标题 logo 在列出的候选里没有 (TMDB 网页上有、接口不列的那种, 如 SVG 格式的): 请求里不带图,
      * 维护者审核时到 TMDB 上找到对的那张补进去, 之后照常生成修正. [tmdbRef] 同 [reportLogo].
      */
-    suspend fun reportLogoNotListed(subjectId: Int, tmdbRef: String, language: String): Result = report(
+    suspend fun reportLogoNotListed(subjectId: Int, tmdbRef: String, language: String, subjectName: String? = null): Result = report(
         "logo-report",
         buildJsonObject {
             put("bgm_id", subjectId)
@@ -115,10 +150,11 @@ class SubjectFeedbackService(
             put("not_listed", true)
             put("app", currentAniBuildConfig.versionName)
         },
+        record = { FeedbackRecord(FeedbackKind.LOGO, it, subjectId, subjectName, language = language, submittedAt = clock()) },
     )
 
     /** 报告条目 [subjectId] 对应的 TMDB 作品应该是 [option] (null = TMDB 上没有对应). */
-    suspend fun reportEntry(subjectId: Int, option: SubjectEntryOption?): Result = report(
+    suspend fun reportEntry(subjectId: Int, option: SubjectEntryOption?, subjectName: String? = null): Result = report(
         "entry-report",
         buildJsonObject {
             put("bgm_id", subjectId)
@@ -126,22 +162,59 @@ class SubjectFeedbackService(
             put("backdrop", option?.backdropPath?.let(::JsonPrimitive) ?: JsonNull)
             put("app", currentAniBuildConfig.versionName)
         },
+        record = {
+            FeedbackRecord(FeedbackKind.ENTRY, it, subjectId, subjectName, submittedAt = clock(), requested = option?.ref ?: FeedbackRecord.REQUESTED_NONE)
+        },
     )
 
-    private suspend fun report(path: String, body: JsonObject): Result {
-        // 清单在本对象建好时才开始拉 (第一次打开反馈弹窗): 还是空的就等这一次拉完, 别把「还没拉到」当成「没有地址」
-        var bases = endpoints.entries.first()
-        if (bases.isEmpty()) {
-            endpoints.refreshIfStale()
-            bases = endpoints.entries.first()
+    /**
+     * 查报告过的修正请求 [issues] 处理得怎样 (按 [MAX_STATUS] 个一批). 中转按顺序试; 有一批都连不上、被限频, 或中转还没有这个接口时为 `null`.
+     */
+    suspend fun status(issues: List<Int>): List<IssueStatus>? {
+        val bases = bases()
+        if (bases.isEmpty()) return null
+        return issues.distinct().chunked(MAX_STATUS).flatMap { chunk -> statusOf(bases, chunk) ?: return null }
+    }
+
+    private suspend fun statusOf(bases: List<String>, issues: List<Int>): List<IssueStatus>? {
+        val text = buildJsonObject { putJsonArray("issues") { for (i in issues) add(i) } }.toString()
+        for (base in bases) {
+            val url = "$base/status"
+            val (status, answer) = transport.request(url) { candidate, probe -> send(candidate, text, probe) } ?: continue
+            when (status) {
+                200 -> return runCatching { parseIssueStatuses(answer) }
+                    .onFailure { logger.warn(it) { "feedback status: unreadable answer from $url" } }
+                    .getOrNull()
+
+                // 限频, 或中转还是没有这个接口的旧版本: 这次不查了
+                in 400..499 -> {
+                    logger.info { "feedback status: $url answered $status" }
+                    return null
+                }
+
+                else -> logger.info { "feedback status: $url answered $status, trying next" }
+            }
         }
-        // 这次也没拉到: GitHub 与 jsDelivr 都连不上
+        return null
+    }
+
+    /** 中转的根地址. 清单在本对象建好时才开始拉: 还是空的就等这一次拉完, 别把「还没拉到」当成「没有地址」; 这次也没拉到 (GitHub 与 jsDelivr 都连不上) 为空. */
+    private suspend fun bases(): List<String> {
+        val bases = endpoints.entries.first()
+        if (bases.isNotEmpty()) return bases
+        endpoints.refreshIfStale()
+        return endpoints.entries.first()
+    }
+
+    /** [record]: 拿 issue 编号造本机的反馈记录. */
+    private suspend fun report(path: String, body: JsonObject, record: (issue: Int) -> FeedbackRecord): Result {
+        val bases = bases()
         if (bases.isEmpty()) return Result.Unreachable
         val text = body.toString()
         var answered = false
         for (base in bases) {
             val url = "$base/$path"
-            val reply = transport.request(url) { send(it, text) } ?: continue
+            val reply = transport.request(url) { candidate, probe -> send(candidate, text, probe) } ?: continue
             answered = true
             val (status, answer) = reply
             when (status) {
@@ -149,11 +222,13 @@ class SubjectFeedbackService(
                     val json = runCatching { Json.parseToJsonElement(answer) as? JsonObject }.getOrNull()
                     val issue = json?.get("issue")?.jsonPrimitive?.intOrNull ?: 0
                     logger.info { "feedback $path -> issue $issue" }
-                    return when (json?.get("status")?.jsonPrimitive?.content) {
+                    val result = when (json?.get("status")?.jsonPrimitive?.content) {
                         "duplicate" -> Result.Duplicate(issue)
                         "pending" -> Result.Pending(issue)
                         else -> Result.Created(issue)
                     }
+                    if (issue > 0) records?.add(record(issue).copy(joinedExisting = result !is Result.Created))
+                    return result
                 }
                 429 -> return Result.RateLimited
                 in 400..499 -> {
@@ -166,12 +241,13 @@ class SubjectFeedbackService(
         return if (answered) Result.Failed else Result.Unreachable
     }
 
-    /** 发一次报告, 回 (状态码, 回应体); 超时为 `null`, 连不上抛异常 (由 [transport] 换下一种连法). */
-    private suspend fun send(url: String, text: String): Pair<Int, String>? =
+    /** 发一次报告, 回 (状态码, 回应体); 超时为 `null`, 连不上抛异常 (由 [transport] 换下一种连法). [probe] 见 [CloudflareServiceTransport.request]. */
+    private suspend fun send(url: String, text: String, probe: Boolean): Pair<Int, String>? =
         withTimeoutOrNull(REPORT_TIMEOUT) {
             client().use {
                 val response = post(url) {
                     expectSuccess = false
+                    probeConnectTimeout(probe)
                     // 中转只收带这个头的请求 (挡随手乱发的, 见 worker/src/index.js)
                     header("X-Izuko-Client", currentAniBuildConfig.versionName)
                     contentType(ContentType.Application.Json)
@@ -209,20 +285,40 @@ class SubjectFeedbackService(
         return null
     }
 
-    private companion object {
+    companion object {
         private val logger = logger<SubjectFeedbackService>()
 
+        /** 中转一次最多查几个修正请求 (同 worker/src/index.js 的 MAX_STATUS). */
+        const val MAX_STATUS = 20
+
+        /** 中转 `/status` 的回答 → 各条的处理结果. */
+        internal fun parseIssueStatuses(text: String): List<IssueStatus> {
+            val list = (Json.parseToJsonElement(text) as JsonObject)["issues"] as JsonArray
+            return list.mapNotNull { element ->
+                val o = element as? JsonObject ?: return@mapNotNull null
+                fun text(key: String) = (o[key] as? JsonPrimitive)?.contentOrNull
+                IssueStatus(
+                    issue = (o["issue"] as? JsonPrimitive)?.intOrNull ?: return@mapNotNull null,
+                    state = text("state"),
+                    reason = text("reason"),
+                    note = text("note"),
+                    noteAt = text("note_at"),
+                    error = text("error"),
+                )
+            }
+        }
+
         /** 核对页数据每个文件放多少个条目 (对应表仓库 merge.py 的 SHARD). */
-        const val REVIEW_SHARD = 2000
+        private const val REVIEW_SHARD = 2000
 
         /**
          * 每个中转最多等多久, 到点换下一个. workers.dev 在大陆常常连接一直挂着, 不限时要等到客户端的默认超时 (几十秒到几分钟),
          * 弹窗就一直停在「正在提交」.
          */
-        val REPORT_TIMEOUT = 15.seconds
+        private val REPORT_TIMEOUT = 15.seconds
 
         /** 核对页数据每个入口最多等多久 (一个文件八百多 KB, 比清单给得宽些). */
-        val CANDIDATES_TIMEOUT = 20.seconds
+        private val CANDIDATES_TIMEOUT = 20.seconds
 
         private val SPEC = RepoHostedList.Spec(
             fileName = "report-endpoints.json",

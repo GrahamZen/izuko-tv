@@ -110,7 +110,6 @@ import me.him188.ani.app.ui.onboarding.TvOnboardingLoginHost
 import me.him188.ani.app.ui.onboarding.TvOnboardingPage
 import me.him188.ani.app.ui.settings.LocalSettingsScreenVariant
 import me.him188.ani.app.ui.settings.SettingsScreenVariant
-import me.him188.ani.app.ui.settings.tabs.log.getLogsDir
 import me.him188.ani.app.ui.settings.tv.TvSettingsPage
 import me.him188.ani.app.ui.settings.tv.ensureTvInAppUpdateDownload
 import me.him188.ani.app.ui.subject.collection.CollectionPageVariant
@@ -246,11 +245,6 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         TvRemoteControl.install(appContext, aniNavigator)
         // 界面销毁 (退出后进程留着): 旧的导航入口作废, 见 TvRemoteControl.detachNavigator
         onDispose { TvRemoteControl.detachNavigator(aniNavigator) }
-    }
-    // 手机「设置」标签底部的日志下载, 与设置 → 日志 →「扫码传到手机」同一个目录
-    DisposableEffect(appContext) {
-        TvRemoteControl.logsDirProvider = { appContext.getLogsDir() }
-        onDispose { TvRemoteControl.logsDirProvider = null }
     }
     // Ani 退到后台 (屏保 / 别的应用 / 息屏) 时 Web 控制台顶上一条提示: 操作照样生效, 只是电视上看不到
     TrackTvRemoteForeground()
