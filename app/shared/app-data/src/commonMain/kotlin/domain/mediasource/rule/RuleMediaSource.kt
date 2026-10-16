@@ -57,12 +57,14 @@ import me.him188.ani.app.domain.mediasource.web.SolveRequest
 import me.him188.ani.app.domain.mediasource.web.WebCaptchaKind
 import me.him188.ani.app.domain.mediasource.web.WebSearchEpisodeInfo
 import me.him188.ani.app.domain.mediasource.web.WebSearchSubjectInfo
+import me.him188.ani.app.domain.mediasource.web.asCandidate
 import me.him188.ani.app.domain.mediasource.web.captcha.WebSessionManager
 import me.him188.ani.app.domain.mediasource.web.distinctFallbackKeywords
 import me.him188.ani.app.domain.mediasource.web.findMatchingEpisodeOrNull
 import me.him188.ani.app.domain.mediasource.web.format.SelectorChannelFormat
 import me.him188.ani.app.domain.mediasource.web.format.parseOrNull
 import me.him188.ani.app.domain.mediasource.web.orderSubjectsForAutoMatch
+import me.him188.ani.app.domain.mediasource.web.toFilterContext
 import me.him188.ani.datasources.api.DefaultMedia
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.Media
@@ -416,7 +418,7 @@ class RuleMediaSource(
         )
         val subjects = engine.search(keyword).map { it.toSubjectInfo() }
         logger.info { "RuleMediaSource '$mediaSourceId': search '$keyword' -> ${subjects.size} subjects" }
-        val ordered = matchConfig.orderSubjectsForAutoMatch(subjects).take(rule.maxSubjects.coerceAtLeast(1))
+        val ordered = matchConfig.orderRuleSubjects(subjects, query).take(rule.maxSubjects.coerceAtLeast(1))
         return buildList {
             for (subject in ordered) {
                 val episodes = try {
@@ -619,6 +621,23 @@ private suspend fun HttpResponse.toRuleResponse() = RuleHttpResponse(
         .map { it.substringBefore(';').trim() }
         .filter { it.substringBefore('=', "").isNotBlank() },
 )
+
+/**
+ * 自动匹配时打开条目页的顺序: 名字对得上请求条目的在前 (其中按 [orderSubjectsForAutoMatch], 「短名字优先」只在这些里面排),
+ * 对不上的在后, 保持站点给的顺序. 有的站的搜索结果固定是一整页 (100 条), 按相关度排, 后面是只沾一两个字的;
+ * 不先按名字挑的话, 全部按名字长短排会把最短的那几个无关条目排到最前面, 只开前 [RuleConfig.maxSubjects] 个就全开错了.
+ * 名字的判据与选择器过滤 WEB 资源的一致 (见 [anySubjectNameMatches]).
+ */
+internal fun SelectorSearchConfig.orderRuleSubjects(
+    subjects: List<WebSearchSubjectInfo>,
+    query: SelectorSearchQuery,
+): List<WebSearchSubjectInfo> {
+    val context = query.toFilterContext()
+    val (matching, others) = subjects.partition { subject ->
+        with(context) { MediaListFilters.ContainsSubjectName.applyOn(subject.asCandidate()) }
+    }
+    return orderSubjectsForAutoMatch(matching) + others
+}
 
 /**
  * 结果里是否有条目名能对上请求条目的. 判据与选择器过滤 WEB 资源的一致, 所以这里认为对上的, 选择器不会以名字不符为由排除.
