@@ -27,6 +27,7 @@ import me.him188.ani.app.data.models.preference.CloudDriveAccounts
 import me.him188.ani.app.data.models.preference.CloudDriveAccount
 import me.him188.ani.app.data.models.preference.CloudDriveAddedShares
 import me.him188.ani.app.data.models.preference.DriveAddedShares
+import me.him188.ani.app.data.network.SeriesGraphTableRepository
 import me.him188.ani.app.data.network.TmdbSubjectMapRepository
 import me.him188.ani.app.data.persistent.DataStoreJson
 import me.him188.ani.app.data.repository.media.MediaSourceInstanceRepository
@@ -63,11 +64,14 @@ class CloudDriveRegistry(
     private val legacyPreferences: LegacyPreferences,
     tmdbSubjectMap: TmdbSubjectMapRepository?,
     parentCoroutineContext: CoroutineContext,
+    /** 系列关系图: 自动按名字找时排除同系列别的作品 (见 [OtherWorkGuard]) */
+    seriesGraph: SeriesGraphTableRepository? = null,
     private val httpClient: () -> HttpClient = CloudDriveApi::createHttpClient,
     /** 分享搜索列出的分享文件夹存在哪 (见 [DriveShareSearchEngine]), 所有分享搜索源共用. */
     val shareIndexStore: DriveShareIndexStore = DriveShareIndexStore.None,
 ) {
     private val numbering = tmdbSubjectMap?.let { TmdbEpisodeNumbering.of(it) } ?: TmdbEpisodeNumbering.None
+    private val otherWorks = seriesGraph?.let { OtherWorks.of(it) } ?: OtherWorks.None
 
     private val lock = SynchronizedObject()
     private val services = LinkedHashMap<String, CloudDriveService>()
@@ -110,7 +114,7 @@ class CloudDriveRegistry(
     /** 网盘 [protocol] 的服务, 没有就新建; 已有时换上这份协议 (订阅更新). */
     fun serviceFor(protocol: CloudDriveProtocol): CloudDriveService = synchronized(lock) {
         services[protocol.id]?.also { it.updateProtocol(protocol) }
-            ?: CloudDriveService(protocol, accounts, httpClient(), numbering).also { services[protocol.id] = it }
+            ?: CloudDriveService(protocol, accounts, httpClient(), numbering, otherWorks).also { services[protocol.id] = it }
     }
 
     /** 已配置的网盘 [driveId]; 没有时为 null. */
