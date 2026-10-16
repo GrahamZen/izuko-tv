@@ -40,7 +40,7 @@ import me.him188.ani.app.ui.subject.episode.SubjectPresentation
  * logo、列表页或详情页判过看不清且设置为「看不清时显示文字」(见 TvTitleLogoUnreadable), 或图加载失败时显示文字. 画面一直在变, 不按画面判:
  * 自动调色时照白字底按色调翻, 别的档原样. 播放器里的内嵌详情页不用 logo (见 SubjectDetailsTvPage 的 videoBackground).
  *
- * 大小同列表页与详情页 (见 rememberTvTitleLogoBox); 标题块的下缘是浮出面板往上长的边界, 标题块越高面板越矮.
+ * 大小同列表页与详情页 (见 rememberTvTitleLogoBox); 浮出面板开着时整个标题块淡出、让给往上长的面板 (见 TvPlayerTopInfo).
  * 还不知道有没有 logo 时 (多半是直接进的播放页, 没经过详情页与列表页的预取) 先空着最多 [TV_PLAYER_TITLE_LOGO_WAIT_MILLIS],
  * 不先出文字再换成 logo.
  */
