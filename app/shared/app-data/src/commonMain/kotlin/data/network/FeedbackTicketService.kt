@@ -36,6 +36,7 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import me.him188.ani.app.data.models.feedback.FeedbackReply
 import me.him188.ani.app.domain.foundation.CloudflareServiceTransport
+import me.him188.ani.app.domain.foundation.probeConnectTimeout
 import me.him188.ani.app.platform.DevSwitches
 import me.him188.ani.app.platform.currentAniBuildConfig
 import me.him188.ani.utils.ktor.ScopedHttpClient
@@ -275,12 +276,13 @@ class FeedbackTicketService(
         var last: Pair<Int, String>? = null
         for (base in endpoints()) {
             val url = base.trimEnd('/') + path
-            val reply = transport.request(url) { candidate ->
+            val reply = transport.request(url) { candidate, probe ->
                 withTimeoutOrNull(timeout) {
                     client().use {
                         val response = request(candidate) {
                             this.method = method
                             expectSuccess = false
+                            probeConnectTimeout(probe)
                             // 服务只收带这个头的请求 (挡随手乱发的)
                             header("X-Izuko-Client", currentAniBuildConfig.versionName)
                             configure()

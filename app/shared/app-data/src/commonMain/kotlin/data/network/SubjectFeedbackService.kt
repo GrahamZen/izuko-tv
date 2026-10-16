@@ -43,6 +43,7 @@ import me.him188.ani.app.data.repository.user.Settings
 import me.him188.ani.app.domain.foundation.CloudflareServiceTransport
 import me.him188.ani.app.domain.foundation.GitHubFileSources
 import me.him188.ani.app.domain.foundation.RepoHostedList
+import me.him188.ani.app.domain.foundation.probeConnectTimeout
 import me.him188.ani.app.platform.currentAniBuildConfig
 import me.him188.ani.utils.ktor.ScopedHttpClient
 import me.him188.ani.utils.logging.info
@@ -179,7 +180,7 @@ class SubjectFeedbackService(
         val text = buildJsonObject { putJsonArray("issues") { for (i in issues) add(i) } }.toString()
         for (base in bases) {
             val url = "$base/status"
-            val (status, answer) = transport.request(url) { send(it, text) } ?: continue
+            val (status, answer) = transport.request(url) { candidate, probe -> send(candidate, text, probe) } ?: continue
             when (status) {
                 200 -> return runCatching { parseIssueStatuses(answer) }
                     .onFailure { logger.warn(it) { "feedback status: unreadable answer from $url" } }
@@ -213,7 +214,7 @@ class SubjectFeedbackService(
         var answered = false
         for (base in bases) {
             val url = "$base/$path"
-            val reply = transport.request(url) { send(it, text) } ?: continue
+            val reply = transport.request(url) { candidate, probe -> send(candidate, text, probe) } ?: continue
             answered = true
             val (status, answer) = reply
             when (status) {
@@ -240,12 +241,13 @@ class SubjectFeedbackService(
         return if (answered) Result.Failed else Result.Unreachable
     }
 
-    /** 发一次报告, 回 (状态码, 回应体); 超时为 `null`, 连不上抛异常 (由 [transport] 换下一种连法). */
-    private suspend fun send(url: String, text: String): Pair<Int, String>? =
+    /** 发一次报告, 回 (状态码, 回应体); 超时为 `null`, 连不上抛异常 (由 [transport] 换下一种连法). [probe] 见 [CloudflareServiceTransport.request]. */
+    private suspend fun send(url: String, text: String, probe: Boolean): Pair<Int, String>? =
         withTimeoutOrNull(REPORT_TIMEOUT) {
             client().use {
                 val response = post(url) {
                     expectSuccess = false
+                    probeConnectTimeout(probe)
                     // 中转只收带这个头的请求 (挡随手乱发的, 见 worker/src/index.js)
                     header("X-Izuko-Client", currentAniBuildConfig.versionName)
                     contentType(ContentType.Application.Json)
