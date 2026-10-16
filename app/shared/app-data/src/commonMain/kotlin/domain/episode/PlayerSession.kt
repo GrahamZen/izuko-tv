@@ -38,6 +38,7 @@ import me.him188.ani.app.domain.media.selector.MediaSelector
 import me.him188.ani.app.domain.mediasource.MediaSourceTags
 import me.him188.ani.app.domain.mediasource.instance.GetMediaSourceInstancesUseCase
 import me.him188.ani.app.domain.player.VideoLoadingState
+import me.him188.ani.app.domain.player.toLogText
 import me.him188.ani.app.domain.settings.GetVideoScaffoldConfigUseCase
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.utils.logging.error
@@ -153,7 +154,7 @@ class PlayerSession(
                 preparedHlsPlaybackProxySession = it.session
             }.data
 
-            logger.info { "Set media data to player at ${startPositionMillis}ms: $preparedData" }
+            logger.info { "Set media data to player at ${startPositionMillis}ms: ${preparedData.toLogText()}" }
             // v2: setMediaData 挂起直到媒体真正打开, 播放意图和起播位置随打开一并生效.
             player.setMediaData(preparedData, playWhenReady = true, startPositionMillis = startPositionMillis)
             hlsPlaybackProxySession = preparedHlsPlaybackProxySession
