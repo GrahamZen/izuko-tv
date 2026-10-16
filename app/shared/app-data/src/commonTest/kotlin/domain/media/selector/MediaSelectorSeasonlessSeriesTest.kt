@@ -158,6 +158,45 @@ class MediaSelectorSeasonlessSeriesTest {
     }
 
     @Test
+    fun `sort 只在一季里接着编时不带季号的系列页面按其他季度排除`() = runSimpleMediaSelectorTestSuite(
+        buildTest = {
+            // 地错第四季的第二段: sort 从 12 起接着第一段, 站点上不带季号的「在地下城寻求邂逅是否搞错了什么」第 13 集是第一季的
+            initSubject("在地下城寻求邂逅是否搞错了什么 第四季 深章 灾厄篇") {
+                episodeSort = EpisodeSort(13)
+                episodeEp = EpisodeSort(2)
+                seriesInfo(seasonSort = 5) {
+                    series("在地下城寻求邂逅是否搞错了什么", "在地下城寻求邂逅是否搞错了什么 第四季 新章 迷宫篇")
+                    sortsSpanSeries = false
+                }
+            }
+            mediaApi.addMedia(
+                media(
+                    kind = MediaSourceKind.WEB,
+                    subjectName = "在地下城寻求邂逅是否搞错了什么",
+                    originalTitle = "在地下城寻求邂逅是否搞错了什么 13",
+                    episodeRange = EpisodeRange.single(EpisodeSort(13)),
+                ),
+            )
+            mediaApi.addMedia(
+                media(
+                    kind = MediaSourceKind.WEB,
+                    subjectName = "在地下城寻求邂逅是否搞错了什么 第四季 深章 灾厄篇",
+                    originalTitle = "在地下城寻求邂逅是否搞错了什么 第四季 深章 灾厄篇 13",
+                    episodeRange = EpisodeRange.single(EpisodeSort(13)),
+                ),
+            )
+        },
+    ) {
+        val candidates = selector.filteredCandidates.first()
+        // 第一季那页排除, 本季那页精确匹配
+        assertEquals(MediaExclusionReason.FromSeriesSeason, candidates.single { it.exclusionReason != null }.exclusionReason)
+        val ownSeason = candidates.single { it.exclusionReason == null }
+        assertIs<MaybeExcludedMedia.Included>(ownSeason)
+        assertEquals("在地下城寻求邂逅是否搞错了什么 第四季 深章 灾厄篇", ownSeason.result.properties.subjectName)
+        assertTrue(ownSeason.isPerfectMatch())
+    }
+
+    @Test
     fun `系列信息已加载时只有条目内序号命中的仍按其他季度排除`() = runSimpleMediaSelectorTestSuite(
         buildTest = {
             initSubject("凡人修仙传 第四季") {
