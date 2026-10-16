@@ -51,7 +51,8 @@ Workers 免费档每天 10 万次请求是整个账号共用的: 有人拿很多
 从头搭:
 
 1. 建私有仓库 (改名的话同时改 `wrangler.toml` 的 `TICKETS_REPO` 与 app 的 `FeedbackTicketService.OFFICIAL_ENDPOINTS`), 建标签「故障反馈」「拉黑」,
-   把 [tickets-repo/](tickets-repo/) 下的工作流拷进去 (`drop-log.yml` 关单后删日志).
+   把 [tickets-repo/](tickets-repo/) 下的工作流拷进去 (`drop-log.yml` 关单后删日志; `drop-test-release.yml` 关单后删 izuko-tv 上这张单给过的
+   `test-…` 测试包, 别的开着的单在用的留着, 要 Actions secret `IZUKO_TV_RELEASES_TOKEN`: fine-grained 令牌, 只给 izuko-tv 的 Contents 读写).
 2. 建 fine-grained 令牌, 只给这个仓库: Issues 读写, Contents 读写.
 3. ```sh
    npx wrangler@4 login
