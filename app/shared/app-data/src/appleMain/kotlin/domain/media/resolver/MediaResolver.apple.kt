@@ -19,6 +19,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.media.player.data.MediaDataProvider
+import me.him188.ani.app.domain.player.toLogText
 import me.him188.ani.app.platform.Context
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.matcher.MediaSourceWebVideoMatcherLoader
@@ -94,7 +95,7 @@ class IosWebMediaResolver(
         val config = allMatchers.fold(WebViewConfig.Empty) { acc, matcher ->
             matcher.patchConfig(acc)
         }
-        logger.info { "Final config: $config" }
+        logger.info { "Final config: ${config.toLogText()}" }
 
         var video: WebVideo? = null
         withContext(Dispatchers.Default) {
