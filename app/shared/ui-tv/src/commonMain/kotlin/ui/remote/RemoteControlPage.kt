@@ -3140,7 +3140,12 @@ private val SCRIPT = """
 
   var h0 = location.hash.slice(1);
   // 旧书签 #sources: 数据源并进了「设置」, 打开设置标签的「数据源」页
-  if (h0 === 'sources') { setSub = 'sources'; h0 = 'settings'; }
+  if (h0 === 'sources' || h0 === 'sources/webdav') {
+    // 电视设置「添加 WebDAV」的二维码: 数据源页的「新增数据源」直接选上 WebDAV (见 renderAdd)
+    if (h0 === 'sources/webdav') window.pendingSourceAdd = 'webdav';
+    setSub = 'sources';
+    h0 = 'settings';
+  }
   // #settings/组名 (在某一组里刷新了页面): 停在那一组. 这条记录是进组时压的 (state 对得上) 就照旧, 底下本来就垫着列表;
   // 否则 (书签、手打的地址) 先把这条换成列表再压一条组, 按返回键回到列表. 「全部」显示方式下没有子页, 只打开设置标签
   if (h0.indexOf('settings/') === 0) {
@@ -4961,8 +4966,19 @@ private val SOURCES_SCRIPT = """
     addBox.innerHTML =
       '<label class="f"><span>' + T('新增数据源') + '</span><select id="src-new"><option value="">' + T('选择类型…') + '</option>' +
       '<option value="import">' + T('导入 JSON（选文件或粘贴）') + '</option>' +
+      (window.webdavAdd ? '<option value="webdav">' + T('WebDAV（NAS）') + '</option>' : '') +
       t.map(function (x, i) { return '<option value="' + i + '">' + esc(x.name) + '</option>'; }).join('') +
       '</select></label><div id="src-new-panel"></div>';
+    // 从电视设置「添加 WebDAV」的二维码进来 (#sources/webdav): 直接选上并打开表单
+    if (window.pendingSourceAdd) {
+      var sel = document.getElementById('src-new');
+      sel.value = window.pendingSourceAdd;
+      window.pendingSourceAdd = null;
+      if (sel.value) {
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+        addBox.scrollIntoView({ block: 'start' });
+      }
+    }
   }
   function clearAdd() {
     var sel = document.getElementById('src-new');
@@ -4988,6 +5004,10 @@ private val SOURCES_SCRIPT = """
         '<textarea name="text" rows="8" spellcheck="false" placeholder="' + T('在这里粘贴 JSON') + '"></textarea>' +
         '<div class="row"><button type="button" class="ghost" data-act="cancel-new">' + T('取消') + '</button>' +
         '<button type="button" class="ghost" data-imp="clear">' + T('清空') + '</button><button type="submit" class="primary">' + T('导入') + '</button></div></form>';
+      return;
+    }
+    if (e.target.value === 'webdav') {
+      panel.innerHTML = '<form class="src-new-form" data-kind="webdav">' + window.webdavAdd.form() + btns('cancel-new', T('添加')) + '</form>';
       return;
     }
     var t = data.templates[+e.target.value];
@@ -5037,6 +5057,16 @@ private val SOURCES_SCRIPT = """
         toast(r.message);
         if (r.ok) { clearAdd(); lastTemplates = ''; load(); }
       }).catch(function () { done(); fail(); });
+      return;
+    }
+    if (form.getAttribute('data-kind') === 'webdav') {
+      var add = form.querySelector('button[type="submit"]');
+      if (add.disabled) return;
+      add.disabled = true;
+      window.webdavAdd.submit(form).then(function (r) {
+        add.disabled = false;
+        if (r && r.ok) clearAdd();
+      });
       return;
     }
     var t = data.templates[+document.getElementById('src-new').value];
@@ -5711,15 +5741,33 @@ private val CLOUD_DRIVE_SCRIPT = """
       '<button type="button" class="ghost" data-cd="remove">' + T('删除这台服务器') + '</button></div>';
     return h + '</div>';
   }
-  function addCard() {
-    return '<form class="card set-card cd-webdav-add"><div class="set-title">' + T('添加 WebDAV（NAS）') + '<small>' + T('局域网里的 NAS，或者任何 WebDAV 服务') + '</small></div>' +
-      '<p class="hint">' + T('在 NAS 的系统设置里打开 WebDAV 服务，把地址填在这里。添加后，播放时会在服务器上按番名找视频，直接播放原文件。') + '</p>' +
-      '<label class="f"><span>' + T('名字') + '</span><input type="text" name="name" autocomplete="off" placeholder="' + T('例如：家里的 NAS') + '"></label>' +
-      '<label class="f"><span>' + T('WebDAV 地址') + '</span><input type="text" name="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="http://192.168.1.10:5005/"></label>' +
-      '<label class="f"><span>' + T('用户名') + '</span><input type="text" name="username" autocomplete="off" spellcheck="false"></label>' +
-      '<label class="f"><span>' + T('密码') + '</span><input type="password" name="password" autocomplete="new-password"></label>' +
-      '<div class="row"><button type="submit" class="primary">' + T('添加') + '</button></div></form>';
-  }
+  // 「新增数据源」下拉里选 WebDAV 时的表单与提交 (见数据源脚本的 renderAdd). 添加成功后滚到新服务器的卡片, 打开选媒体文件夹
+  var driveIds = {};
+  window.webdavAdd = {
+    form: function () {
+      return '<p class="hint">' + T('在 NAS 的系统设置里打开 WebDAV 服务，把地址填在这里。添加后，播放时会在服务器上按番名找视频，直接播放原文件。') + '</p>' +
+        '<label class="f"><span>' + T('名字') + '</span><input type="text" name="name" autocomplete="off" placeholder="' + T('例如：家里的 NAS') + '"></label>' +
+        '<label class="f"><span>' + T('WebDAV 地址') + '</span><input type="text" name="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="http://192.168.1.10:5005/"></label>' +
+        '<label class="f"><span>' + T('用户名') + '</span><input type="text" name="username" autocomplete="off" spellcheck="false"></label>' +
+        '<label class="f"><span>' + T('密码') + '</span><input type="password" name="password" autocomplete="new-password"></label>' +
+        '<p class="hint">' + T('添加后会打开这台服务器的文件夹，选上放动画的文件夹（媒体文件夹），找番更快也更准。') + '</p>';
+    },
+    submit: function (form) {
+      var v = { name: form.elements.name.value.trim(), url: form.elements.url.value.trim(), username: form.elements.username.value.trim(), password: form.elements.password.value };
+      if (!v.url) { toast(T('先填 WebDAV 地址')); return Promise.resolve(null); }
+      if (!v.username) { toast(T('先填用户名')); return Promise.resolve(null); }
+      var before = driveIds;
+      return act('api/drive/webdav/add', v, true).then(function (r) {
+        var added = r && r.ok && r.drives ? r.drives.filter(function (x) { return x.type === 'webdav' && !before[x.id]; })[0] : null;
+        if (added) {
+          var c = box.querySelector('.card[data-drive="' + CSS.escape(added.id) + '"]');
+          if (c) c.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          if (added.loggedIn) openFolder(added.id, '');
+        }
+        return r;
+      });
+    }
+  };
   // 浏览服务器文件夹的面板: 当前路径、上一级、子文件夹 (点进去), 把当前文件夹加为媒体文件夹
   function renderBrowse(drive) {
     var panel = box.querySelector('.cd-browse[data-drive="' + CSS.escape(drive) + '"]');
@@ -5749,7 +5797,7 @@ private val CLOUD_DRIVE_SCRIPT = """
     var q = d.qr || null, name = esc(d.name), id = esc(d.id), source = esc(d.sourceName);
     var app = d.appName ? esc(d.appName) : T('{0} App', name);
     var h = '<div class="card set-card" data-drive="' + id + '" data-name="' + name + '"><div class="set-title">' +
-      window.srcIcon(d.sourceId, d.name) + name + '<small>' + T('在你自己的{0}里找番', name) + '</small></div>';
+      window.srcIcon(d.sourceId, d.name) + name + '<small>' + (d.shares ? T('你网盘里的和别人分享的都能看') : T('在你自己的{0}里找番', name)) + '</small></div>';
     if (!d.enabled) h += disabledNotice(d);
     if (d.loggedIn) {
       var who = [d.nickname, d.tier].filter(Boolean).join(' · ');
@@ -5761,7 +5809,10 @@ private val CLOUD_DRIVE_SCRIPT = """
           '<p class="hint">' + T('关闭时播放原文件；打开时播放网盘转码后的流，取账号能用的最高清晰度') + '</p>';
       }
     } else {
-      h += '<p class="hint">' + T('登录后，播放时会按番名在你的{0}里找视频，找到的出现在选源列表的「{1}」里。', name, source) + '</p>';
+      // 能播别人分享的网盘 (分享合集、网盘搜索、添加的分享链接都要登录才能转存), 不只是自己存的
+      h += '<p class="hint">' + (d.shares
+        ? T('登录后，播放时会按番名在你的{0}里找视频（选源列表里的「{1}」）；别人分享的{0}资源也能播：分享合集、网盘搜索这类数据源找到的，和你添加的分享链接，播放时转存到你的网盘。', name, source)
+        : T('登录后，播放时会按番名在你的{0}里找视频，找到的出现在选源列表的「{1}」里。', name, source)) + '</p>';
     }
     if (!d.loggedIn || d.expired) {
       if (q && q.state === 'waiting') {
@@ -5798,9 +5849,11 @@ private val CLOUD_DRIVE_SCRIPT = """
   }
   function render(d) {
     if (!d || d.drives === undefined) return;
+    driveIds = {};
+    d.drives.forEach(function (x) { driveIds[x.id] = true; });
     var h = (d.drives.some(function (x) { return x.type !== 'webdav'; }) ? '' : '<div class="card set-card"><div class="set-title">' + T('网盘') + '</div><p class="hint">' +
-        T('网盘的接入方式来自订阅或导入的数据源。加上带网盘的数据源后，在这里登录。') + '</p></div>') +
-      d.drives.map(card).join('') + addCard();
+        T('网盘的接入方式来自订阅或导入的数据源。加上带网盘的数据源后，在这里登录。') + '</p><p class="hint">' + T('WebDAV（NAS）在下面的「新增数据源」里添加。') + '</p></div>') +
+      d.drives.map(card).join('');
     if (h !== last) {
       // 重画保住正在填的输入框、展开的「修改」与焦点 (按表单与网盘对回去)
       var typed = {}, focused = null, opened = {};
@@ -5884,21 +5937,6 @@ private val CLOUD_DRIVE_SCRIPT = """
       if (!form.elements.username.value.trim()) { toast(T('先填用户名')); return; }
       act('api/drive/password', { drive: form.getAttribute('data-drive'), username: form.elements.username.value.trim(), password: form.elements.password.value }).then(function (r) {
         if (r && r.ok) form.elements.password.value = '';
-      });
-      return;
-    }
-    if (form.classList.contains('cd-webdav-add')) {
-      e.preventDefault();
-      var v = { name: form.elements.name.value.trim(), url: form.elements.url.value.trim(), username: form.elements.username.value.trim(), password: form.elements.password.value };
-      if (!v.url) { toast(T('先填 WebDAV 地址')); return; }
-      if (!v.username) { toast(T('先填用户名')); return; }
-      var btn = form.querySelector('button[type=submit]');
-      btn.disabled = true;
-      act('api/drive/webdav/add', v, true).then(function (r) {
-        btn.disabled = false;
-        // 成功时卡片已经重画过 (填的值被保住了), 清空的是新画出来的表单
-        var added = box.querySelector('.cd-webdav-add');
-        if (r && r.ok && added) added.reset();
       });
       return;
     }
