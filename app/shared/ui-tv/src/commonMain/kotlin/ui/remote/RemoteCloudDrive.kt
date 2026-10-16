@@ -237,6 +237,8 @@ internal object RemoteCloudDrive {
             }
         }
         put("cookieHint", protocol.login.cookieHint)
+        // 能播别人分享的 (登录后转存): 卡片说明要讲清不只是自己存的
+        put("shares", protocol.supportsShares)
         put("type", protocol.type)
         put("supportsPassword", protocol.supportsPasswordLogin)
         put("username", account.username)
