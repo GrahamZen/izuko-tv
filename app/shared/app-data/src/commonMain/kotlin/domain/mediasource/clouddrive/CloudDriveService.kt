@@ -62,6 +62,8 @@ class CloudDriveService internal constructor(
     httpClient: HttpClient,
     /** 按 TMDB 季集整理的文件换算成条目的集 (这个网盘的三种数据源共用) */
     internal val episodeNumbering: TmdbEpisodeNumbering = TmdbEpisodeNumbering.None,
+    /** 自动按名字找时排除同系列别的作品 (这个网盘的自己网盘搜索与分享搜索共用) */
+    internal val otherWorks: OtherWorks = OtherWorks.None,
 ) {
     @Volatile
     var protocol: CloudDriveProtocol = protocol
@@ -163,7 +165,7 @@ class CloudDriveService internal constructor(
 
     // region 手动指定 (Web 控制台「从网盘挑」)
 
-    private val pickMatcher by lazy { DriveSubjectMatcher(browser, episodeNumbering) }
+    private val pickMatcher by lazy { DriveSubjectMatcher(browser, episodeNumbering, otherWorks) }
 
     suspend fun picksOf(subjectId: Int): DriveSubjectPicks = currentAccount().subjectPicks[subjectId] ?: DriveSubjectPicks()
 

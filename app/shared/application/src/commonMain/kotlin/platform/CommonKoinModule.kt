@@ -743,6 +743,7 @@ private fun KoinApplication.otherModules(
             },
             tmdbSubjectMap = get<TmdbSubjectMapRepository>(),
             parentCoroutineContext = coroutineScope.childScopeContext(),
+            seriesGraph = get<SeriesGraphTableRepository>(),
             shareIndexStore = DriveShareIndexFileStore(getContext().files.cacheDir.resolve("drive-share-indexes.json"), coroutineScope.childScopeContext()),
         )
     }
