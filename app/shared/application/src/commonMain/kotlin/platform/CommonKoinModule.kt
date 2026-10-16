@@ -302,7 +302,7 @@ private fun KoinApplication.otherModules(
     single<CloudflareServiceTransport> {
         CloudflareServiceTransport(
             echUsable = { getOrNull<BangumiEchTransport>()?.available == true && get<ProxyProvider>().proxy.first() == null },
-            preferEch = { get<BangumiEndpointProvider>().currentRouting?.routes?.firstOrNull() == BangumiRoute.Ech },
+            preferEch = { !get<BangumiEndpointProvider>().usingOrigin },
             recoverEch = { cause -> getOrNull<BangumiEchTransport>()?.recover(cause) == true },
         )
     }
