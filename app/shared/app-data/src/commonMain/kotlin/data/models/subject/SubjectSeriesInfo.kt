@@ -37,6 +37,11 @@ data class SubjectSeriesInfo(
      * 当前条目所在的拆分季, 由服务端识别. 不是拆分季的一段时为 `null`.
      */
     val splitSeason: SplitSeason? = null,
+    /**
+     * 本条目的 sort 是不是全系列的序号 (正片第一集的 sort 接在系列主线上前面各条目的正片之后). 不知道时为 `null`.
+     * 不是时 (只在一季里接着编, 如「地错 第四季 深章 灾厄篇」从 12 起) 不能按 sort 认领不带季号的系列页面, 那里的同号集是第一季的.
+     */
+    val sortsSpanSeries: Boolean? = null,
 ) {
     companion object {
         fun compute(
@@ -87,6 +92,7 @@ fun SubjectSeriesInfo.toBuilder() = SubjectSeriesInfoBuilder(seasonSort).apply {
     sequel(*sequelSubjectNames.toTypedArray())
     series(*seriesSubjectNamesWithoutSelf.toTypedArray())
     splitSeason = this@toBuilder.splitSeason
+    sortsSpanSeries = this@toBuilder.sortsSpanSeries
 }
 
 // mainly designed for tests
@@ -104,6 +110,11 @@ class SubjectSeriesInfoBuilder(
      * @see SubjectSeriesInfo.splitSeason
      */
     var splitSeason: SplitSeason? = null
+
+    /**
+     * @see SubjectSeriesInfo.sortsSpanSeries
+     */
+    var sortsSpanSeries: Boolean? = null
 
     /**
      * 添加一个续集番名.
@@ -125,6 +136,7 @@ class SubjectSeriesInfoBuilder(
     fun build() = SubjectSeriesInfo(
         seasonSort, sequelSubjectNames = sequelNames.toSet(), seriesSubjectNamesWithoutSelf = seriesNames.toSet(),
         splitSeason = splitSeason,
+        sortsSpanSeries = sortsSpanSeries,
     )
 }
 
