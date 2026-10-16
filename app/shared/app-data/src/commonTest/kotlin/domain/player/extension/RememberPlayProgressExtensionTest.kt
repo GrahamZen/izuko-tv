@@ -679,7 +679,7 @@ class RememberPlayProgressExtensionTest : AbstractPlayerExtensionTest() {
     }
 
     @Test
-    fun `同一集换源时照旧从头打开，开播后跳回换源前的进度`() = runTest {
+    fun `同一集换源时直接从换源前播到的位置打开，不另外 seek`() = runTest {
         val (testScope, suite, state) = createCase()
         advanceUntilIdle()
         loadSelectedMedia(suite, state, mediaIndex = 0)
@@ -690,11 +690,11 @@ class RememberPlayProgressExtensionTest : AbstractPlayerExtensionTest() {
             suite.player.events.collect { if (it is PlaybackEvent.SeekCompleted) seeks += it.positionMillis }
         }
 
-        // 换源前保存的进度与新资源打开前读进度没有先后保证: 不带起始位置, 开播后由恢复进度跳回去
         loadSelectedMedia(suite, state, mediaIndex = 1)
 
         assertEquals(3000, suite.player.currentPositionMillis.value)
-        assertEquals(listOf(3000L), seeks)
+        // 开播后再 seek 一次的话, 真播放器会把刚缓冲的扔掉重来
+        assertEquals(emptyList(), seeks)
         testScope.cancel()
     }
 

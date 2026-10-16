@@ -100,6 +100,10 @@
    播放中卡住缓冲时 `RebufferDiagnostics`（挂在播放器上的 `AnalyticsListener`）往日志写两行 `[Rebuffer]`：卡住那一刻的缓冲余量、
    最近 30 秒实收与最慢请求、片源码率、网络（Wi-Fi 信号与协商速率），恢复时卡了多久、期间整机与本 app 各收了多少；
    开播、拖动、换媒体后的第一次缓冲不算。平时只在内存里记取数据记录，查系统信息与写日志都在后台线程。
+   实收按播放器实际从网络读到的字节算：播放器的测速器换成 `DeliveredBytesMeter`，所有数据源读到的字节都经它按秒累计
+   （网盘直链一次打开读到文件尾，测速采样要等读完才报）。
+   网盘直链（解析器给了并发提示）的缓冲策略是 `ThrottledSourceLoadControl`：开播 / 跳转后攒够 5 秒才播，播放中卡住后攒够 10 秒，
+   同一个媒体每多卡一次翻倍（最多 60 秒）；在等这些门槛时它报出要攒多少，电视播放页的 `TvThrottledBufferHint` 据此说明原因。
 9. 播放器时钟开始走时，`PauseMediaFetchWhilePlayingExtension` 暂停仍在查询的数据源
    （`MediaFetchSession.pauseSearching` / `MediaSourceFetchResult.pause`，状态 `MediaSourceFetchState.Paused`），
    `ObserveWebMediaSourcePreferenceExtension` 把正在播的 Web 源记为本条目的记忆源。

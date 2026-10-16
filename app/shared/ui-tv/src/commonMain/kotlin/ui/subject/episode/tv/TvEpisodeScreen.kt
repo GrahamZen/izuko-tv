@@ -1926,6 +1926,7 @@ private fun TvPlayerLoadingLayer(
                 torrentOpen = torrentOpen,
             ),
         )
+        TvThrottledBufferHint(vm.player, buffering = playerState.isBuffering)
         TvPlayerSourcesHint(
             loading = shouldShowVideoLoadingIndicator(videoLoadingState, playerState.isBuffering, playerError),
             urgent = playerError || videoLoadingState is VideoLoadingState.Failed || sourceSearch?.stuck != null,

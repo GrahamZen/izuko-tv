@@ -164,10 +164,11 @@ class LibassExoPlayerMediampPlayer private constructor(
                 configurePlayerBuilder?.invoke(builder)
                 // 缓冲策略只能是管线的 ThrottledSourceLoadControl: 限速源、拖动预览要按媒体切换策略. 放在最后, 自定义不能覆盖它
                 builder.setLoadControl(pipeline.loadControl)
+                builder.setBandwidthMeter(pipeline.bandwidthMeter)
             },
         ),
     ) {
-        exoPlayer.addAnalyticsListener(RebufferDiagnostics(context.applicationContext, backgroundScope))
+        exoPlayer.addAnalyticsListener(RebufferDiagnostics(context.applicationContext, backgroundScope, pipeline.bandwidthMeter.delivered))
         exoPlayer.addAnalyticsListener(AudioOutputDiagnostics(context.applicationContext, backgroundScope))
     }
 
@@ -184,6 +185,9 @@ class LibassExoPlayerMediampPlayer private constructor(
 
     override val unplayableAudioTracks: StateFlow<Map<String, String>> get() = preferredTracks.unplayableAudio
     override val allAudioUnplayable: StateFlow<List<String>?> get() = preferredTracks.allAudioUnplayable
+
+    /** 限速的网盘直链正在按加长的门槛攒缓冲时要攒到多少 (见 [ThrottledSourceLoadControl]); 页面据此说明为什么在等. */
+    val throttledBufferWait: StateFlow<ThrottledBufferWait?> get() = pipeline.loadControl.bufferWait
 
     /** 进行中的拖动预览 (见 [startSeekPreview]); 只在主线程读写. */
     private var seekPreview: SeekPreview? = null
@@ -720,6 +724,9 @@ private class LibassMediaSourcePipeline(
 
     /** 拖动预览期间挡住存本机的媒体的联网读取 (见 [SeekPreview]). */
     val networkGate = PlaybackNetworkGate()
+
+    /** 播放器的测速器, 顺带记下实际读到的字节 (卡住时的诊断用, 见 [RebufferDiagnostics]). */
+    val bandwidthMeter = DeliveredBytesMeter(context)
 
     /** 每准备一个新媒体时先调 (主线程): 播放器借此结束进行中的拖动预览. */
     var onNewMedia: (() -> Unit)? = null
