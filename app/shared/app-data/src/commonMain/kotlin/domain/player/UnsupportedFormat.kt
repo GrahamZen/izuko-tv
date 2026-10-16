@@ -18,7 +18,8 @@ package me.him188.ani.app.domain.player
  * `format_supported=YES` 的不算: 那是格式支持、解码器自己出了错 (换个时机可能就好了).
  *
  * @param isAudio 是音频的格式; 否则是画面的
- * @param name 格式名 (见 [MediaFormatNames]); 画面的带上分辨率, 如 `HEVC 2160p`
+ * @param name 格式名 (见 [MediaFormatNames]); 画面的带上分辨率, 如 `HEVC 2160p`; H.264 的 10-bit、4:2:2、4:4:4 规格也写上 (`H.264 10-bit 1080p`),
+ *   否则看着像连普通 H.264 都放不了
  */
 data class UnsupportedFormat(
     val isAudio: Boolean,
@@ -27,6 +28,12 @@ data class UnsupportedFormat(
     companion object {
         private val RENDERER_ERROR = Regex("""format=Format\((.*)\), format_supported=(\w+)""")
         private val MIME = Regex("""\b(?:audio|video)/[\w.+\-]+(?:;[\w=.\-]+)?""")
+
+        /** Format 里编码串 `avc1.6E0029` 的 profile_idc (`6E`) */
+        private val AVC_PROFILE = Regex("""\bavc[13]\.([0-9A-Fa-f]{2})""")
+
+        /** 硬解多半不支持、值得写出来的 H.264 规格 */
+        private val AVC_PROFILE_NAMES = mapOf(0x6E to "10-bit", 0x7A to "4:2:2", 0xF4 to "4:4:4", 0x2C to "4:4:4")
 
         /** Format 里 `[宽, 高, 帧率, 色彩]` 那一组 */
         private val VIDEO_SIZE = Regex("""\[(-?\d+), (-?\d+), """)
@@ -55,7 +62,9 @@ data class UnsupportedFormat(
             val name = MediaFormatNames.of(mime) ?: return null
             if (mime.startsWith("audio/")) return UnsupportedFormat(isAudio = true, name = name)
             val height = VIDEO_SIZE.find(format)?.groupValues?.get(2)?.toIntOrNull()?.takeIf { it > 0 }
-            return UnsupportedFormat(isAudio = false, name = if (height == null) name else "$name ${height}p")
+            val profile = if (mime == "video/avc") AVC_PROFILE.find(format)?.groupValues?.get(1)?.toIntOrNull(16)?.let(AVC_PROFILE_NAMES::get) else null
+            val fullName = listOfNotNull(name, profile, height?.let { "${it}p" }).joinToString(" ")
+            return UnsupportedFormat(isAudio = false, name = fullName)
         }
     }
 }
