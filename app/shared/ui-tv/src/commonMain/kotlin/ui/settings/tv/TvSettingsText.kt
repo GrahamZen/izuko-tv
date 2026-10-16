@@ -22,6 +22,9 @@ sealed interface TvText {
     data class Res(val res: StringResource, val args: List<Any> = emptyList()) : TvText
 
     data class Plain(val text: String) : TvText
+
+    /** 几段字接起来, 中间夹 [separator] (如反馈详情: 状态行与一条条回复). */
+    data class Join(val parts: List<TvText>, val separator: String = "") : TvText
 }
 
 fun tvText(res: StringResource, vararg args: Any): TvText = TvText.Res(res, args.toList())
@@ -46,6 +49,8 @@ class TvTextResolver(private val template: (StringResource) -> String?) {
                 formatTvTemplate(unescapeQuotes(t), text.args.map { arg -> if (arg is TvText) resolve(arg) else arg.toString() })
             }
         }
+
+        is TvText.Join -> text.parts.joinToString(text.separator) { resolve(it) }
     }
 }
 

@@ -65,9 +65,21 @@ data class TvSettingsScreen(
     val focusId: String?,
 )
 
-/** 说明栏: 焦点所在那一行的标题与说明, 有的还画一个二维码 ([qr]), 标题上面画一张图 ([image]). */
+/**
+ * 说明栏: 焦点所在那一行的标题与说明, 有的还画一个二维码 ([qr]), 标题上面画一张图 ([image]), 说明下面一串气泡 ([bubbles], 如反馈的会话).
+ */
 @Immutable
-data class TvSettingsInfo(val title: String, val body: String, val qr: TvSettingsQr? = null, val image: TvImage? = null)
+data class TvSettingsInfo(
+    val title: String,
+    val body: String,
+    val qr: TvSettingsQr? = null,
+    val image: TvImage? = null,
+    val bubbles: List<TvSettingsBubble> = emptyList(),
+)
+
+/** 说明栏里的一个气泡 (字已换好, 见 [TvBubble]). */
+@Immutable
+data class TvSettingsBubble(val meta: String, val text: String, val mine: Boolean)
 
 /** 说明栏的二维码 (字已换好, 见 [TvQr]): [content] 为 null 时不画码, 只写 [status]. */
 @Immutable
@@ -278,7 +290,7 @@ private fun itemRows(
         val movable = item.move != null
         item.rows(values).map { entry ->
             val id = TvSettingsRowIds.entry(item.id, entry.key)
-            info[id] = itemInfo(entry.title, entry.description, resolver, entry.qr, entry.image)
+            info[id] = itemInfo(entry.title, entry.description, resolver, entry.qr, entry.image, entry.bubbles)
             TvSettingsRow(
                 id, TvSettingsRowKind.Item, resolver.resolve(entry.title),
                 value = entry.value?.let { resolver.resolve(it) }.orEmpty(),
@@ -299,7 +311,7 @@ private fun itemRows(
     }
 
     is TvSettingItem.Group -> {
-        info[item.id] = itemInfo(item.title, item.description(values), resolver)
+        info[item.id] = itemInfo(item.title, item.description(values), resolver, item.qr?.invoke(values))
         listOf(
             TvSettingsRow(
                 item.id, TvSettingsRowKind.Item, resolver.resolve(item.title),
@@ -367,10 +379,17 @@ private fun sorterScreen(
 
 internal fun tvOnOff(on: Boolean): TvText = tvText(if (on) Lang.tv_settings_on else Lang.tv_settings_off)
 
-private fun itemInfo(title: TvText, description: TvText?, resolver: TvTextResolver, qr: TvQr? = null, image: TvImage? = null) =
-    TvSettingsInfo(
-        resolver.resolve(title),
-        description?.let { resolver.resolve(it) }.orEmpty(),
-        qr?.let { TvSettingsQr(it.content, it.caption?.let(resolver::resolve).orEmpty(), it.status?.let(resolver::resolve).orEmpty()) },
-        image,
-    )
+private fun itemInfo(
+    title: TvText,
+    description: TvText?,
+    resolver: TvTextResolver,
+    qr: TvQr? = null,
+    image: TvImage? = null,
+    bubbles: List<TvBubble> = emptyList(),
+) = TvSettingsInfo(
+    resolver.resolve(title),
+    description?.let { resolver.resolve(it) }.orEmpty(),
+    qr?.let { TvSettingsQr(it.content, it.caption?.let(resolver::resolve).orEmpty(), it.status?.let(resolver::resolve).orEmpty()) },
+    image,
+    bubbles.map { TvSettingsBubble(resolver.resolve(it.meta), it.text?.let(resolver::resolve).orEmpty(), it.mine) },
+)
