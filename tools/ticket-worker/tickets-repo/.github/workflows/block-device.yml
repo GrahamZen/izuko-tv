@@ -1,0 +1,36 @@
+# 放进私有工单仓库: 给故障反馈 issue 打上「拉黑」标签 → 设备号写进 blocklist.txt (Worker 几分钟内生效), 删这张单的附件, 关单.
+# 这里用内置令牌关单不会再触发「关单删日志」(GitHub 不让内置令牌的事件触发别的工作流), 所以附件在这里删.
+name: 拉黑设备
+on:
+  issues:
+    types: [labeled]
+permissions:
+  contents: write
+  issues: write
+concurrency: blocklist
+jobs:
+  block:
+    if: github.event.label.name == '拉黑'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 写进 blocklist.txt、删日志、关单
+        env:
+          BODY: ${{ github.event.issue.body }}
+          ISSUE: ${{ github.event.issue.number }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          device=$(printf '%s' "$BODY" | grep -oE 'izuko-ticket device=[0-9a-f]{16}' | head -1 | cut -d= -f2)
+          if [ -z "$device" ]; then echo "正文里没有设备号"; exit 1; fi
+          touch blocklist.txt
+          if ! grep -q "^$device" blocklist.txt; then
+            echo "$device  # #$ISSUE" >> blocklist.txt
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add blocklist.txt
+            git commit -m "拉黑 ${device:0:8} (#$ISSUE)"
+            git push
+          fi
+          ids=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/ticket-logs" --jq ".assets[] | select(.name | startswith(\"$ISSUE-\")) | .id" 2>/dev/null || true)
+          for id in $ids; do gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$id"; done
+          gh issue close "$ISSUE" --reason "not planned" --comment "该设备已拉黑。"
