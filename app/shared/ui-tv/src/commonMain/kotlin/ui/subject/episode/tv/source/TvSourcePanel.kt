@@ -43,8 +43,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filterNotNull
@@ -56,7 +58,6 @@ import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tv.AniOutlinedTextField
 import me.him188.ani.app.ui.foundation.tv.TV_REDUCED_MARQUEE_ITERATIONS
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeHost
-import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeTextStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativeIcon
 import me.him188.ani.app.ui.foundation.tv.nativeview.toTvNativeTextStyle
 import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
@@ -195,11 +196,11 @@ class TvSourcePanelController {
 
     /**
      * 上次按返回隐藏时焦点停的位置 (见 [rememberPosition]): 下次打开落回那里. 用一次就清 ([takeResume]);
-     * 别的方式关的 (左栏按左、选完自动关) 不记, 下次照常落在正在播放的源上.
+     * 别的方式关的 (触屏点画面、选完自动关) 不记, 下次照常落在正在播放的源上.
      */
     private var resume: TvSourceResume? = null
 
-    /** 关面板前记下焦点停在哪 (左栏那一项, 或右栏那一行). [episodeId] = 此刻播的那一集, 换了集就不落回去. */
+    /** 关面板前记下焦点停在哪 (胶囊行那个源, 或列表那一行). [episodeId] = 此刻播的那一集, 换了集就不落回去. */
     fun rememberPosition(episodeId: Int?) {
         resume = view?.focusPosition()?.let { (railKey, rowId) -> TvSourceResume(railKey, rowId, episodeId) }
     }
@@ -221,7 +222,7 @@ class TvSourcePanelController {
     }
 }
 
-/** 面板隐藏时焦点停的位置: 左栏 [railKey] 那一项 ([rowId] 为 null), 或它右栏里的 [rowId] 那一行; 当时播的是 [episodeId]. */
+/** 面板隐藏时焦点停的位置: 胶囊行 [railKey] 那个源 ([rowId] 为 null), 或它列表里的 [rowId] 那一行; 当时播的是 [episodeId]. */
 data class TvSourceResume(val railKey: String, val rowId: String?, val episodeId: Int?)
 
 /**
@@ -229,8 +230,8 @@ data class TvSourceResume(val railKey: String, val rowId: String?, val episodeId
  * 搜索途中上游状态一秒变好几次, 走重组就是每次把整棵 AndroidView 的 update 跑一遍.
  *
  * @param leaving 面板正在退场 (见 [TvSourcePanelView.leaving]).
- * @param onClose 要关面板: 在左栏按了左键, 或触屏点了面板外面的画面.
- * @param resumeRow 打开时落回的右栏那一行 (左栏项, 行 id), 见 [TvSourcePanelView.resumeRow].
+ * @param onClose 要关面板: 触屏点了面板下面的画面.
+ * @param resumeRow 打开时落回的位置 (源, 行 id; 行 id 为 null = 那个源的胶囊), 见 [TvSourcePanelView.resumeRow].
  */
 @Composable
 fun TvSourcePanel(
@@ -239,7 +240,7 @@ fun TvSourcePanel(
     leaving: Boolean,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
-    resumeRow: Pair<String, String>? = null,
+    resumeRow: Pair<String, String?>? = null,
 ) {
     val sketch = LocalSketch.current
     val currentOnClose by rememberUpdatedState(onClose)
@@ -275,6 +276,8 @@ fun TvSourcePanel(
     }
     val detailsTarget by state.detailsTarget.collectAsState()
     detailsTarget?.let { TvSourceDetailsHost(state, it, controller) }
+    val filterOpen by state.filterOpen.collectAsState()
+    if (filterOpen) TvSourceFilterDialog(state, onDismiss = { state.filterOpen.value = false })
 }
 
 /**
@@ -333,9 +336,6 @@ fun rememberTvSourcePanelStyle(): TvSourcePanelStyle {
         visualEffects.ambient -> -1
         else -> TV_REDUCED_MARQUEE_ITERATIONS
     }
-    // 右栏宽度的下限按「完成验证」那一行量 (见 TvSourcePanelStyle.rightSampleTitle)
-    val rightSampleTitle = stringResource(Lang.tv_source_captcha_action)
-    val rightSampleMeta = stringResource(Lang.tv_source_captcha_hint)
     val icons = TvSourceRowIcon.entries.associateWith { icon ->
         rememberTvNativeIcon(
             when (icon) {
@@ -356,59 +356,57 @@ fun rememberTvSourcePanelStyle(): TvSourcePanelStyle {
             TV_SOURCE_ICON_SIZE,
         )
     }
-    return remember(density, typography, transitions, marqueeRepeat, icons, rightSampleTitle, rightSampleMeta) {
+    return remember(density, typography, transitions, marqueeRepeat, icons) {
         with(density) {
             val white = Color.White
             val ink = Color(0xFF111111)
-            val rowTitle = typography.bodyMedium.toTvNativeTextStyle(density, white)
-            val rowMeta = typography.bodySmall.toTvNativeTextStyle(density, white.copy(alpha = 0.62f))
-            val textGapPx = 2.dp.roundToPx()
+            // 字比主题的正文小一档 (新番时间表日期胶囊 14.5): 面板盖在画面上, 一屏要放下更多行
+            fun TextStyle.sized(size: Float, line: Float) = copy(fontSize = size.sp, lineHeight = line.sp)
             TvSourcePanelStyle(
-                rightSampleTitle = rightSampleTitle,
-                rightSampleMeta = rightSampleMeta,
-                rightMinWidthPx = 200.dp.roundToPx(),
-                rightSlackPx = 12.dp.roundToPx(),
-                maxRightWidthPx = 520.dp.roundToPx(),
-                // 与控制层的左边距一致
+                // 与控制层的左右边距一致
                 paddingStartPx = 48.dp.roundToPx(),
                 paddingEndPx = 48.dp.roundToPx(),
-                paddingTopPx = 36.dp.roundToPx(),
-                paddingBottomPx = 24.dp.roundToPx(),
-                headerGapPx = 12.dp.roundToPx(),
-                railWidthPx = 184.dp.roundToPx(),
-                columnGapPx = 12.dp.roundToPx(),
-                rowGapPx = 6.dp.roundToPx(),
-                dividerGapPx = 14.dp.roundToPx(),
+                paddingTopPx = 24.dp.roundToPx(),
+                // 下面两成多留给画面与底部字幕
+                maxBottomFraction = 0.78f,
+                headerGapPx = 10.dp.roundToPx(),
+                railGapPx = 12.dp.roundToPx(),
+                // 同新番时间表的日期胶囊
+                railPillHeightPx = 34.dp.roundToPx(),
+                railPillGapPx = 8.dp.roundToPx(),
+                railPillMaxWidthPx = 220.dp.roundToPx(),
+                fadeLengthPx = 32.dp.roundToPx(),
+                rowGapPx = 5.dp.roundToPx(),
+                dividerGapPx = 12.dp.roundToPx(),
                 dividerColor = white.copy(alpha = 0.12f).toArgb(),
-                cornerPx = 12.dp.toPx(),
-                rowPaddingHPx = 14.dp.roundToPx(),
+                cornerPx = 10.dp.toPx(),
+                rowPaddingHPx = 12.dp.roundToPx(),
                 iconSizePx = TV_SOURCE_ICON_SIZE.roundToPx(),
-                iconGapPx = 12.dp.roundToPx(),
-                trailingGapPx = 10.dp.roundToPx(),
-                spinnerSizePx = 16.dp.roundToPx(),
-                railRowHeightPx = 44.dp.roundToPx(),
-                lineRowHeightPx = 58.dp.roundToPx(),
-                // 标题三行 + 信息一行 + 上下留白
-                resourceRowHeightPx = lineHeightPx(rowTitle) * 3 + lineHeightPx(rowMeta) + textGapPx + 24.dp.roundToPx(),
-                fileRowPaddingVPx = 9.dp.roundToPx(),
-                optionRowHeightPx = 46.dp.roundToPx(),
-                cellHeightPx = 46.dp.roundToPx(),
-                statusPaddingVPx = 10.dp.roundToPx(),
-                textGapPx = textGapPx,
-                pillHeightPx = 34.dp.roundToPx(),
-                pillPaddingHPx = 14.dp.roundToPx(),
-                pillGapPx = 8.dp.roundToPx(),
-                pillsBottomGapPx = 12.dp.roundToPx(),
-                drillTitleBottomGapPx = 10.dp.roundToPx(),
+                iconGapPx = 10.dp.roundToPx(),
+                trailingGapPx = 8.dp.roundToPx(),
+                spinnerSizePx = 14.dp.roundToPx(),
+                lineRowHeightPx = 40.dp.roundToPx(),
+                fileRowPaddingVPx = 8.dp.roundToPx(),
+                metaGapPx = 16.dp.roundToPx(),
+                metaSplitWidthPx = 150.dp.roundToPx(),
+                branchMinWidthPx = 120.dp.roundToPx(),
+                optionRowHeightPx = 38.dp.roundToPx(),
+                cellHeightPx = 38.dp.roundToPx(),
+                statusPaddingVPx = 8.dp.roundToPx(),
+                pillHeightPx = 28.dp.roundToPx(),
+                pillPaddingHPx = 12.dp.roundToPx(),
+                pillGapPx = 6.dp.roundToPx(),
+                pillsBottomGapPx = 10.dp.roundToPx(),
+                drillTitleBottomGapPx = 8.dp.roundToPx(),
                 focusBleedPx = 8.dp.roundToPx(),
-                status = typography.bodySmall.toTvNativeTextStyle(density, white.copy(alpha = 0.8f)),
-                drillTitle = typography.titleSmall.toTvNativeTextStyle(density, white.copy(alpha = 0.8f)),
-                railTitle = typography.bodyMedium.toTvNativeTextStyle(density, white),
-                rowTitle = rowTitle,
-                rowMeta = rowMeta,
-                trailing = typography.labelMedium.toTvNativeTextStyle(density, white.copy(alpha = 0.62f)),
-                pill = typography.labelLarge.toTvNativeTextStyle(density, white),
-                cell = typography.labelLarge.copy(fontWeight = FontWeight.Medium).toTvNativeTextStyle(density, white),
+                status = typography.bodySmall.sized(11.5f, 16f).toTvNativeTextStyle(density, white.copy(alpha = 0.8f)),
+                drillTitle = typography.titleSmall.sized(13f, 18f).toTvNativeTextStyle(density, white.copy(alpha = 0.8f)),
+                railTitle = typography.bodyMedium.sized(13f, 18f).toTvNativeTextStyle(density, white),
+                rowTitle = typography.bodyMedium.sized(13f, 18f).toTvNativeTextStyle(density, white),
+                rowMeta = typography.bodySmall.sized(11.5f, 16f).toTvNativeTextStyle(density, white.copy(alpha = 0.62f)),
+                trailing = typography.labelMedium.sized(11.5f, 16f).toTvNativeTextStyle(density, white.copy(alpha = 0.62f)),
+                pill = typography.labelLarge.sized(12.5f, 17f).toTvNativeTextStyle(density, white),
+                cell = typography.labelLarge.sized(13f, 18f).copy(fontWeight = FontWeight.Medium).toTvNativeTextStyle(density, white),
                 // 同控制层的胶囊: 半透明玻璃白字, 聚焦近白实底黑字 + 放大. 背后没有暗底, 未聚焦的底偏黑一点 (亮画面上字才压得住)
                 idleBg = Color.Black.copy(alpha = 0.35f).toArgb(),
                 activeBg = Color.Black.copy(alpha = 0.6f).toArgb(),
@@ -424,7 +422,6 @@ fun rememberTvSourcePanelStyle(): TvSourcePanelStyle {
                 dimmedAlpha = 0.5f,
                 chipPaddingHPx = 12.dp.roundToPx(),
                 chipPaddingVPx = 6.dp.roundToPx(),
-                branchShiftPx = 16.dp.roundToPx(),
                 branchFadeMillis = 160,
                 focusScale = 1.03f,
                 marqueeRepeat = marqueeRepeat,
@@ -438,11 +435,7 @@ fun rememberTvSourcePanelStyle(): TvSourcePanelStyle {
 }
 
 /** 行首图标的边长. */
-private val TV_SOURCE_ICON_SIZE = 20.dp
-
-/** 一行字的高度 (px): 排版给了行高用行高, 没给按字号 1.4 倍估. */
-private fun lineHeightPx(style: TvNativeTextStyle): Int =
-    if (style.lineHeightPx > 0) style.lineHeightPx else (style.sizePx * 1.4f).toInt()
+private val TV_SOURCE_ICON_SIZE = 16.dp
 
 /** [TvSourceStrings] 的各个字段的字符串资源, 顺序同字段. */
 private val TV_SOURCE_STRING_RESOURCES: List<StringResource> = listOf(

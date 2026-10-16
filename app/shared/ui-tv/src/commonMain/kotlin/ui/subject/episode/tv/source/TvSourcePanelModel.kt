@@ -43,15 +43,15 @@ import kotlin.time.Instant
 
 /*
  * TV 选源面板 (TvSourcePanelView) 的数据模型: 上游选源状态 (MediaSelectorState / BT 列表投影 / 数据源状态 / 手动查找) 加上面板自己的
- * 导航状态 ([TvSourceNav]), 由 [buildTvSourcePanel] 拼成两栏要画的行. 纯函数, 不碰 Compose 与视图.
+ * 导航状态 ([TvSourceNav]), 由 [buildTvSourcePanel] 拼成面板要画的行. 纯函数, 不碰 Compose 与视图.
  *
- * 两栏的分工: 左栏 = 去哪里找 (BT 与缓存、下载、各个在线源、查询失败的源、手动查找、几个操作), 右栏 = 左栏聚焦的那一项里有什么.
- * 最顶上是「筛选」(分辨率 / 字幕, 对下面各个源一起生效, 见 TvSourcePanelFilters), 其下是 BT: 不用的人往下一按就滑走了,
- * 用的人不用在一长串在线源后面找.
- * 右栏还能「进去一层」(筛选的取值、资源的长按菜单、资源详情、手动查找的数据源与线路), 见 [TvSourceDrill]; 整块面板最多三层.
+ * 分工: [TvSourcePanelContent.rail] = 去哪里找 (BT 与缓存、下载、各个在线源、查询失败的源、手动查找, 视图排成胶囊行) 加上表头的命令
+ * (「筛选」与几个操作, 见 isCommandKey), [TvSourcePanelContent.right] = 选中的那一项里有什么 (视图排在胶囊行下面).
+ * 「筛选」(分辨率 / 字幕, 对各个源一起生效, 见 TvSourcePanelFilters) 排最前, 其后是 BT: 不用的人一按就过去了, 用的人不用在一长串在线源后面找.
+ * 内容还能「进去一层」(筛选的取值、资源的长按菜单、资源详情、手动查找的数据源与线路), 见 [TvSourceDrill]; 整块面板最多三层.
  */
 
-/** 左栏各项的键. 在线源是 `web:` + 数据源实例 id. */
+/** rail 各项的键. 在线源是 `web:` + 数据源实例 id; 操作都以 [ACTION_PREFIX] 开头. */
 internal object TvSourceRailKeys {
     const val WEB_PREFIX = "web:"
     const val BT = "bt"
@@ -59,9 +59,10 @@ internal object TvSourceRailKeys {
     const val FAILED = "failed"
     const val DOWNLOADS = "downloads"
     const val FILTER = "filter"
-    const val ACTION_REFRESH = "action:refresh"
-    const val ACTION_FULL_SEARCH = "action:full-search"
-    const val ACTION_KEYWORDS = "action:keywords"
+    const val ACTION_PREFIX = "action:"
+    const val ACTION_REFRESH = ACTION_PREFIX + "refresh"
+    const val ACTION_FULL_SEARCH = ACTION_PREFIX + "full-search"
+    const val ACTION_KEYWORDS = ACTION_PREFIX + "keywords"
 
     fun web(instanceId: String) = WEB_PREFIX + instanceId
 }
@@ -218,6 +219,9 @@ sealed interface TvSourceAction {
     /** 进入一层 (筛选取值 / 手动查找的数据源与线路). */
     data class Open(val drill: TvSourceDrill) : TvSourceAction
 
+    /** 打开筛选弹窗 (表头的「筛选」, 取值见 [TvSourcePanelContent.filter]). */
+    data object OpenFilter : TvSourceAction
+
     /**
      * 打开 [rowId] 那一行的详情弹窗; [inRail] = 那一行在左栏. [railKey] = 右栏的行属于左栏哪一项 (不同在线源的线路 id 会重),
      * 左栏的行为 null. 弹窗里左右键换行就是换成序列里的另一条 (见 [buildTvSourceDetailsSequence]).
@@ -297,9 +301,9 @@ data class TvSourceRight(
     val pills: List<TvSourceRow> = emptyList(),
     val rows: List<TvSourceRow> = emptyList(),
     val columns: Int = 1,
-    /** 进右栏时的落点 (正在播放的那一条 / 当前值); null = 第一条可聚焦的. */
+    /** 进列表时的落点 (正在播放的那一条 / 当前值); null = 第一条可聚焦的. */
     val focusId: String? = null,
-    /** 标题普遍很长 (BT 资源、下载): 分支用固定的宽框, 标题折三行; 其余的分支按内容定宽、字只占一行. */
+    /** 标题普遍很长 (BT 资源、下载、一个文件一行的在线源): 列表占满宽度; 其余按内容定宽, 对齐到它的胶囊下面. */
     val wide: Boolean = false,
 )
 
@@ -307,9 +311,11 @@ data class TvSourceRight(
 data class TvSourcePanelContent(
     val status: String,
     val rail: List<TvSourceRow>,
-    /** 左栏落在哪一项 ([TvSourceNav.railKey] 生效后的值). */
+    /** 选中的源 ([TvSourceNav.railKey] 生效后的值). */
     val railKey: String?,
     val right: TvSourceRight,
+    /** 筛选弹窗的内容 (分组小标题 + 取值, 见 [filterOptions]); 空 = 没东西可筛 (表头没有「筛选」). */
+    val filter: List<TvSourceRow> = emptyList(),
 )
 
 /**
@@ -594,17 +600,18 @@ fun buildTvSourcePanel(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvS
         }
     }.let { if (filterable) it.withFilterRow(filterRailRow(input, strings)) else it }
 
-    // 左栏落点: 用户选过的 (还在) → 正在播放的资源所在的那一项 → 初始模式是 BT 时 BT → 第一个在线源 (BT 虽在最顶上, 不用它的人不该一打开就落在它上面) → 第一项
+    // 落点: 用户选过的 (还在) → 正在播放的资源所在的源 → 初始模式是 BT 时 BT → 第一个在线源 (BT 虽在最前面, 不用它的人不该一打开就落在它上面) → 第一个源.
+    // 表头的命令 (「筛选」与几个操作) 不当落点
     val playingKey = when {
         playingWebSource != null && !playingWebSource.isError -> TvSourceRailKeys.web(playingWebSource.instanceId)
         playingInBt && hasBt -> TvSourceRailKeys.BT
         else -> null
     }
-    val railKey = nav.railKey?.takeIf { key -> rail.any { it.id == key } }
+    val railKey =nav.railKey?.takeIf { key -> !isCommandKey(key) && rail.any { it.id == key } }
         ?: playingKey
         ?: TvSourceRailKeys.BT.takeIf { input.initialMode == MediaSelectorMode.BT && hasBt }
         ?: liveWebSources.firstOrNull()?.let { TvSourceRailKeys.web(it.instanceId) }
-        ?: rail.firstOrNull { it.id != TvSourceRailKeys.FILTER }?.id
+        ?: rail.firstOrNull { !isCommandKey(it.id) }?.id
 
     val right = when {
         railKey == null -> TvSourceRight(key = "empty")
@@ -617,7 +624,6 @@ fun buildTvSourcePanel(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvS
         railKey == TvSourceRailKeys.DOWNLOADS -> downloadsPane(input, strings)
         railKey == TvSourceRailKeys.MANUAL -> manualPane(manual ?: ManualBrowsePresentation.Empty, nav, strings)
         railKey == TvSourceRailKeys.FAILED -> failedPane(failedSources, strings)
-        railKey == TvSourceRailKeys.FILTER -> filterPane(input, fileSources.flatMap { it.matched }, strings)
         else -> TvSourceRight(key = railKey)
     }
 
@@ -631,6 +637,7 @@ fun buildTvSourcePanel(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvS
         rail = rail,
         railKey = railKey,
         right = right.copy(rows = applyFrozenOrder(right.rows, nav.frozenOrder)),
+        filter = if (filterable) filterOptions(input, fileSources.flatMap { it.matched }, strings) else emptyList(),
     )
 }
 
@@ -872,7 +879,7 @@ private fun webPane(
         key = key,
         rows = rows,
         focusId = rows.firstOrNull { it.selected }?.id,
-        // 一个文件一行的源标题是文件名 (常带文件夹路径), 同 BT 用宽框
+        // 一个文件一行的源标题是文件名 (常带文件夹路径), 同 BT 占满宽度
         wide = webFilesOf(source, input, strings) != null,
     )
 }

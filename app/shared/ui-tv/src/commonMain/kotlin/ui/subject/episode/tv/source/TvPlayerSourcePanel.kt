@@ -156,7 +156,7 @@ internal fun TvPlayerSourcePanel(
         leaving = leaving,
         onClose = onClose,
         modifier = modifier,
-        resumeRow = resume?.rowId?.let { resume.railKey to it },
+        resumeRow = resume?.let { it.railKey to it.rowId },
     )
 
     if (editingKeywords) {
