@@ -98,4 +98,41 @@ class RebufferDiagnosticsTest {
         assertEquals(1_500_000, summary.transferredBytes)
         assertEquals(4_000_000, summary.receivedBitsPerSecond)
     }
+
+    @Test
+    fun `window counts the bytes the player actually read since the media changed`() {
+        val window = LoadWindow()
+        window.addTransfer(1_000, 9_000_000) // 上一个媒体的
+        window.clear(10_000)
+        // 网盘直链一次打开读到底: 一直没有「取完」也没有测速采样, 实收只能按实际读到的算
+        val spans = mutableListOf<Long>()
+        val summary = window.summary(16_000) { span -> spans += span; 6_000_000 }
+        assertEquals(listOf(6_000L), spans)
+        assertEquals(6_000, summary.spanMillis)
+        assertEquals(6_000_000, summary.transferredBytes)
+        assertEquals(8_000_000, summary.receivedBitsPerSecond)
+        assertEquals(0, summary.requests)
+    }
+
+    @Test
+    fun `recent bytes are counted per second and old seconds drop out`() {
+        var now = 0L
+        val bytes = RecentBytes { now }
+        bytes.add(1_000)
+        now = 500
+        bytes.add(1_000)
+        now = 10_200
+        bytes.add(5_000)
+        now = 30_900
+        bytes.add(7_000)
+        assertEquals(14_000, bytes.total())
+        // 最近 30 秒 = 第 0 秒之后: 0 秒那两次不算
+        assertEquals(12_000, bytes.bytesInLast(30_000))
+        assertEquals(7_000, bytes.bytesInLast(1_000))
+        // 同一个桶一圈之后再用, 旧的清掉
+        now = 30_900 + RecentBytes.BUCKETS * 1_000L
+        bytes.add(1)
+        assertEquals(1, bytes.bytesInLast(1_000))
+        assertEquals(14_001, bytes.total())
+    }
 }
