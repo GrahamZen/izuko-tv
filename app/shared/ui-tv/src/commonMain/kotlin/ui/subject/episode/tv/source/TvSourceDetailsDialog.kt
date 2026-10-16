@@ -48,7 +48,7 @@ import org.jetbrains.compose.resources.stringResource
 
 /**
  * 详情弹窗的宿主: 跟着面板内容走 (弹窗开着时结果还在陆续到), [target] 那一行没了就关. 左右键在序列里换上一条 / 下一条
- * (右栏开的跨数据源, 见 [buildTvSourceDetailsSequence]), **背后面板的焦点跟着走** (同详情页选集卡长按弹窗): 单按当场跟,
+ * (列表里开的跨数据源, 见 [buildTvSourceDetailsSequence]), **背后面板的焦点跟着走** (同详情页选集卡长按弹窗): 单按当场跟,
  * 按住连发时合并成松手后一次跳过去 ([TvNavigationSettle], 与 hero 背景同一条规则), 免得每一发都让面板换屏重排.
  * 关掉 (或按了按钮) 时面板的焦点落到最后看的那一行.
  */
