@@ -34,6 +34,16 @@ class UnsupportedFormatTest {
     }
 
     @Test
+    fun `10-bit H264 is named so it does not read as plain H264`() {
+        // Shield 原文: 网盘 BD 压制的 10-bit H.264 (avc1.6E = High 10)
+        val message = "MediaCodecVideoRenderer error, index=0, format=Format(1, null, video/x-matroska, video/avc, avc1.6E0029, -1, und, " +
+            "[1920, 1080, -1.0, ColorInfo(BT709, Limited range, SDR SMPTE 170M, false, NA, NA)], [-1, -1]), format_supported=NO_EXCEEDS_CAPABILITIES"
+        assertEquals(UnsupportedFormat(isAudio = false, name = "H.264 10-bit 1080p"), UnsupportedFormat.of(error(message)))
+        val high = message.replace("avc1.6E0029", "avc1.640029").replace("[1920, 1080", "[3840, 2160")
+        assertEquals(UnsupportedFormat(isAudio = false, name = "H.264 2160p"), UnsupportedFormat.of(error(high)))
+    }
+
+    @Test
     fun `found down the cause chain and without a container`() {
         val inner = error(
             "MediaCodecAudioRenderer error, index=1, format=Format(3, null, null, audio/vnd.dts.hd;profile=lbr, null, -1, en, " +

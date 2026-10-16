@@ -122,7 +122,11 @@
     所以连 FFmpeg 也放不了的音轨记成 `TrackCandidate.isPlayable = false`，选音轨时不选；
     它们也经 `AudioTrackSupport` 交给选音轨的界面（电视底栏 `TvAudioSwitcher`、手机控制中心）注明并拦下，切过去会报错并被自动换源换掉整个资源。
     播放器报错是因为设备放不了某种编码格式时，`UnsupportedFormat` 从渲染器异常里认出是音频还是画面、哪种格式，
-    加载提示据此写成「这台电视放不了…」。音轨全都放不了时播放器不选音轨、照常放画面，不报错，
+    加载提示据此写成「这台电视放不了…」（H.264 的 10-bit、4:2:2、4:4:4 规格写进名字，如「H.264 10-bit 1080p」）。
+    这几种 H.264 规格硬件解码器基本都解不了，有的设备照样解、不报错，只输出一片片错位的色块：
+    `UndecodableProfileGuardingVideoRenderer`（`PassthroughGatedRenderersFactory` 换上的系统解码器视频渲染器）在没有解码器声明支持时
+    不开解码器，解码器初始化报错，之后同样提示并自动换源。日志 `[VideoDecoder]` 在每次开解码器时记下格式与各解码器认不认它，
+    每个进程第一次建播放器时列出本机全部视频解码器声明的最大尺寸、10-bit 与否和 profile。音轨全都放不了时播放器不选音轨、照常放画面，不报错，
     `AudioTrackSupport.allAudioUnplayable` 让电视弹提示请用户手动换源（`TvUnplayableAudioNotice`）。
     字幕的字节在交给解析器与 libass 之前就理顺，下游（`SubtitleView`、libass 画的 `LiftableAssSubtitleView`、
     手机控制中心的截图、控件出现时上移字幕）都只读理顺后的数据，不各自处理压缩与编码：mkv 内封的轨在
