@@ -32,6 +32,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
+import me.him188.ani.app.data.models.feedback.FeedbackDevice
 import me.him188.ani.app.data.models.preference.PikPakConfig
 import me.him188.ani.app.data.network.AniEpisodeCommentService
 import me.him188.ani.app.data.network.AniSubjectSearchService
@@ -44,6 +45,7 @@ import me.him188.ani.app.data.network.EpisodeServiceImpl
 import me.him188.ani.app.data.network.GitHubDownloadMirrors
 import me.him188.ani.app.data.network.RemoteSubjectService
 import me.him188.ani.app.data.network.SeriesGraphTableRepository
+import me.him188.ani.app.data.network.FeedbackTicketService
 import me.him188.ani.app.data.network.SubjectFeedbackService
 import me.him188.ani.app.data.network.SubjectSeriesIndexService
 import me.him188.ani.app.data.network.SubjectService
@@ -64,8 +66,10 @@ import me.him188.ani.app.data.persistent.database.databaseFile
 import me.him188.ani.app.data.repository.episode.EpisodeCollectionRepository
 import me.him188.ani.app.data.repository.episode.EpisodeSubjectRepository
 import me.him188.ani.app.data.repository.episode.EpisodeCollectionSyncer
+import me.him188.ani.app.data.repository.feedback.FeedbackRecordRepository
 import me.him188.ani.app.data.repository.media.MediaSourceSaves
 import me.him188.ani.app.data.repository.media.MediaSourceSubscriptionRepository
+import me.him188.ani.app.domain.feedback.FeedbackTickets
 import me.him188.ani.app.domain.foundation.CloudflareServiceTransport
 import me.him188.ani.app.domain.mediasource.profile.SourceProfiles
 import me.him188.ani.app.domain.mediasource.subscription.BundledSubscriptions
@@ -298,17 +302,32 @@ private fun KoinApplication.otherModules(
     single<CloudflareServiceTransport> {
         CloudflareServiceTransport(
             echUsable = { getOrNull<BangumiEchTransport>()?.available == true && get<ProxyProvider>().proxy.first() == null },
-            preferEch = { get<BangumiEndpointProvider>().currentRouting?.routes?.firstOrNull() == BangumiRoute.Ech },
+            preferEch = { !get<BangumiEndpointProvider>().usingOrigin },
             recoverEch = { cause -> getOrNull<BangumiEchTransport>()?.recover(cause) == true },
         )
     }
+    single<FeedbackRecordRepository> { FeedbackRecordRepository(get<SettingsRepository>().feedbackRecords) }
+    single<FeedbackDevice> { FeedbackDevice(getContext().feedbackDeviceId(), getContext().feedbackEnvironment()) }
     single<SubjectFeedbackService> {
         SubjectFeedbackService(
             listCache = get<SettingsRepository>().feedbackEndpointCache,
             client = { get<HttpClientProvider>().get() },
             scope = coroutineScope,
             transport = get(),
+            records = get(),
         )
+    }
+    single<FeedbackTicketService> {
+        FeedbackTicketService({ get<HttpClientProvider>().get() }, get(), FeedbackTicketService::configuredEndpoints)
+    }
+    // 启动就建: 每天查一次故障工单与修正请求的处理结果
+    single<FeedbackTickets>(createdAtStart = true) {
+        FeedbackTickets(
+            get(), get(), get(), coroutineScope,
+            // 用到时才取: 中转的服务一建好就去拉地址清单, 没有开着的修正请求的人不为它多发请求
+            subjectStatus = { ids -> get<SubjectFeedbackService>().status(ids) },
+            subjectMap = { id -> get<TmdbSubjectMapRepository>().lookup(id) },
+        ).also { it.start() }
     }
     single<BangumiMirrorConsentRequests> { BangumiMirrorConsentRequests() }
     // 加密直连的配置与地址; 连接层 BangumiEchTransport 由支持的平台的模块提供 (安卓: ConscryptEchTransport)
