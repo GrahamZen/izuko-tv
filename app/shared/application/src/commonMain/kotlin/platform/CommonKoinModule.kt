@@ -324,8 +324,9 @@ private fun KoinApplication.otherModules(
     single<FeedbackTickets>(createdAtStart = true) {
         FeedbackTickets(
             get(), get(), get(), coroutineScope,
-            subjectStatus = get<SubjectFeedbackService>()::status,
-            subjectMap = get<TmdbSubjectMapRepository>()::lookup,
+            // 用到时才取: 中转的服务一建好就去拉地址清单, 没有开着的修正请求的人不为它多发请求
+            subjectStatus = { ids -> get<SubjectFeedbackService>().status(ids) },
+            subjectMap = { id -> get<TmdbSubjectMapRepository>().lookup(id) },
         ).also { it.start() }
     }
     single<BangumiMirrorConsentRequests> { BangumiMirrorConsentRequests() }
