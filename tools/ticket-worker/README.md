@@ -77,3 +77,7 @@ curl -X POST localhost:8787/__fake/issues/1/close -d '{"reason":"completed"}'   
 curl -X POST localhost:8787/__fake/block -d '{"device":"<16 位设备号>"}'
 curl localhost:8787/__fake/assets/1-log.gz | gunzip | less                         # 看传上来的日志
 ```
+
+## 查一张工单
+
+`./fetch-ticket.sh <编号> [输出目录]`: 正文与回复写成 `ticket.md`, 附件 (release `ticket-logs` 里 `<编号>-*`) 下载下来、日志解压成 `.log`。要 `gh` 登录能读工单仓库的账号; 关单后附件已删, 只有正文与回复。
