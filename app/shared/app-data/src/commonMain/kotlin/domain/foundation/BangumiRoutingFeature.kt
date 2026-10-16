@@ -160,6 +160,7 @@ class BangumiRoutingFeatureHandler(
         var timeoutsChanged = false
 
         var lastCall: HttpClientCall? = null
+        var answeredWithWebPage = false
         var originConnectFailed = false
         var recovered = false
         var i = 0
@@ -213,7 +214,6 @@ class BangumiRoutingFeatureHandler(
                 i++
                 continue
             }
-            lastCall = thisCall
             if (route == BangumiRoute.Origin) originAnswered.value = signature
 
             val status = thisCall.response.status.value
@@ -221,15 +221,18 @@ class BangumiRoutingFeatureHandler(
             if (root != null && status in 300..399) {
                 warnIfMirrorMoved(request, root, thisCall)
             }
-            // API 地址回了网页 = 没回答这个请求: 镜像前面挂着反机器人验证页, 状态码照样是 200.
-            // 当这条线路不通, 接着试下一条, 也不粘住 —— 否则调用方拿网页去解析, 整个会话停在只回网页的那条上
+            // API 地址回了网页 = 没回答这个请求: 镜像前面挂着反机器人验证页, 或者把 bangumi 的 5xx 包成一张网页, 状态码照样是 200.
+            // 当这条线路不通, 接着试下一条, 也不粘住 —— 否则调用方拿网页去解析, 整个会话停在只回网页的那条上.
+            // 也不记成 lastCall: 全都不通时交出去的必须是真正的回应, 不是这张网页
             if (status < 400 && isApiHost(originalHost) &&
                 thisCall.response.contentType()?.match(ContentType.Text.Html) == true
             ) {
                 logger.info { "Bangumi: ${route.label} answered an API request with a web page, trying the next route" }
+                answeredWithWebPage = true
                 i++
                 continue
             }
+            lastCall = thisCall
             if (status < 400) {
                 if (sticky.value?.let { it.signature == signature && it.route == route } != true) {
                     logger.info { "Bangumi endpoint settled on ${route.label}" }
@@ -259,9 +262,11 @@ class BangumiRoutingFeatureHandler(
             if (status < 500) return thisCall
             i++
         }
-        // 全都不通: 把最后一次的失败交出去, 让上层看到真实的错误
+        // 全都不通: 把最后一次真正的失败 (5xx) 交出去, 让上层看到真实的错误; 只有连不上与回网页的, 当成连不上
         return lastCall ?: throw IOException(
-            "All bangumi endpoints failed for $originalHost. Tried: " + candidates.joinToString { it.label },
+            "All bangumi endpoints failed for $originalHost" +
+                (if (answeredWithWebPage) " (some answered with a web page)" else "") +
+                ". Tried: " + candidates.joinToString { it.label },
         )
     }
 
