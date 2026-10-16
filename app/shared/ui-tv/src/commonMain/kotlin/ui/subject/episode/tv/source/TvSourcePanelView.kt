@@ -19,11 +19,11 @@ import android.graphics.Paint
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
 import android.graphics.Rect
-import android.graphics.drawable.GradientDrawable
 import android.graphics.RectF
+import android.graphics.drawable.GradientDrawable
 import android.os.SystemClock
-import android.util.Log
 import android.text.TextUtils
+import android.util.Log
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -32,8 +32,10 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.ProgressBar
+import androidx.annotation.VisibleForTesting
 import androidx.compose.runtime.Immutable
 import androidx.leanback.widget.BaseGridView
+import androidx.leanback.widget.HorizontalGridView
 import androidx.leanback.widget.VerticalGridView
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
@@ -51,30 +53,31 @@ import me.him188.ani.app.ui.foundation.tv.nativeview.tvNativeTypeface
 import me.him188.ani.app.ui.foundation.tv.nativeview.tvNativeWithAlpha
 import kotlin.math.ceil
 import kotlin.math.max
+import kotlin.math.min
 
 /**
  * 原生选源面板的尺寸 (px) 与配色 (ARGB), 由 rememberTvSourcePanelStyle 按界面缩放与视觉效果档位算好. 配色固定是播放器那一套黑白
- * (与控制层的胶囊同一种玻璃底, 背后不铺暗底): 未聚焦是半透明白底白字, 聚焦是近白实底黑字 —— 一眼就能找到焦点.
+ * (与控制层的胶囊同一种玻璃底, 背后不铺暗底): 未聚焦是半透明黑底白字, 聚焦是近白实底黑字 —— 一眼就能找到焦点.
  */
 @Immutable
 data class TvSourcePanelStyle(
-    /**
-     * 右栏宽度的下限按这两行字量 (「完成验证」那一行的标题与说明): 内容再短也放得下它们, 说明行不至于折成一长条; 不小于 [rightMinWidthPx].
-     * 实际宽度按这一屏的内容定 (每行的标题 / 信息刚好放下), 不超过 [maxRightWidthPx]; 放不下的聚焦时跑马灯.
-     */
-    val rightSampleTitle: String,
-    val rightSampleMeta: String,
-    val rightMinWidthPx: Int,
-    val rightSlackPx: Int,
-    /** 按内容定宽的上限; 宽一档的分支 ([TvSourceRight.wide], BT 资源与下载) 固定用这个宽度. */
-    val maxRightWidthPx: Int,
     val paddingStartPx: Int,
     val paddingEndPx: Int,
     val paddingTopPx: Int,
-    val paddingBottomPx: Int,
+    /** 面板下缘最低到屏幕高度的几成: 下面留给画面与底部字幕, 列表再长就在面板里滚. */
+    val maxBottomFraction: Float,
+    /** 表头 (状态卡片与命令按钮) 与胶囊行之间的间距. */
     val headerGapPx: Int,
-    val railWidthPx: Int,
-    val columnGapPx: Int,
+    /** 胶囊行与下面的内容之间的间距. */
+    val railGapPx: Int,
+    val railPillHeightPx: Int,
+    val railPillGapPx: Int,
+    /** 胶囊行一颗最宽多少, 名字再长聚焦时跑马灯. */
+    val railPillMaxWidthPx: Int,
+    /**
+     * 渐隐的长度: 胶囊行两头 (滚出去的胶囊在左右边距里渐隐, 不大于 [paddingStartPx] / [paddingEndPx]) 与列表上下 (被面板截住的那一头).
+     */
+    val fadeLengthPx: Int,
     val rowGapPx: Int,
     val dividerGapPx: Int,
     val dividerColor: Int,
@@ -84,23 +87,31 @@ data class TvSourcePanelStyle(
     val iconGapPx: Int,
     val trailingGapPx: Int,
     val spinnerSizePx: Int,
-    val railRowHeightPx: Int,
+    /** 线路 / 资源 / 文件行的最低高度; 行高按内容 (标题折两行时更高). */
     val lineRowHeightPx: Int,
-    val resourceRowHeightPx: Int,
-    /** 文件行 ([TvSourceRowStyle.File]) 上下的留白; 行高按内容, 不矮于 [lineRowHeightPx]. */
+    /** 线路 / 资源 / 文件行上下的留白. */
     val fileRowPaddingVPx: Int,
+    /** 标题与靠右的信息 (分辨率、大小、日期…) 之间至少空这么多. */
+    val metaGapPx: Int,
+    /** 靠右的信息排一行比这宽就断成上下两行 (见 [splitTvSourceMeta]). */
+    val metaSplitWidthPx: Int,
+    /**
+     * 不占满宽度的内容 (线路式的在线源、查询失败、手动查找…, 见 [TvSourceRight.wide]) 按这一屏的行定宽, 不窄于 [branchMinWidthPx] 与它的胶囊、
+     * 最宽同占满宽度的 (BT 那么宽), 再放不下的聚焦时跑马灯.
+     */
+    val branchMinWidthPx: Int,
     val optionRowHeightPx: Int,
     val cellHeightPx: Int,
     val statusPaddingVPx: Int,
-    val textGapPx: Int,
+    /** 表头的命令按钮与内容顶上的小胶囊的高度. */
     val pillHeightPx: Int,
     val pillPaddingHPx: Int,
     val pillGapPx: Int,
     val pillsBottomGapPx: Int,
     val drillTitleBottomGapPx: Int,
-    /** 列表左右多留的一截: 聚焦行放大后不被列表的边界裁掉. */
+    /** 列表四周多留的一截: 聚焦行放大后不被列表的边界裁掉. */
     val focusBleedPx: Int,
-    /** 顶上那张状态卡片 (「已查询 22 个数据源」) 与右栏小标题的字. */
+    /** 表头的状态卡片 (「已查询 22 个数据源」) 与内容小标题的字. */
     val status: TvNativeTextStyle,
     val drillTitle: TvNativeTextStyle,
     val railTitle: TvNativeTextStyle,
@@ -111,7 +122,7 @@ data class TvSourcePanelStyle(
     val cell: TvNativeTextStyle,
     val idleBg: Int,
     /**
-     * 选中但没聚焦: 左栏里右栏正在显示的那一项 (焦点在右栏时)、正在播放的、当前生效的筛选. 底比未聚焦的深一档再描一圈细白边 ——
+     * 选中但没聚焦: 胶囊行里下面正在显示的那个源、正在播放的、当前生效的筛选. 底比未聚焦的深一档再描一圈细白边 ——
      * 背后没有暗底, 用更浅的底的话白字在亮画面上就糊了.
      */
     val activeBg: Int,
@@ -125,14 +136,13 @@ data class TvSourcePanelStyle(
     val error: Int,
     val focusedError: Int,
     val dimmedAlpha: Float,
-    /** 状态卡片 / 右栏小标题的内边距. */
+    /** 状态卡片 / 内容小标题的内边距. */
     val chipPaddingHPx: Int,
     val chipPaddingVPx: Int,
-    /** 右栏换屏时新内容从左栏那边滑进来的距离. */
-    val branchShiftPx: Int,
+    /** 下面的内容换屏时新内容原地淡入的时长. */
     val branchFadeMillis: Long,
     val focusScale: Float,
-    /** 一行放不下的字聚焦一会儿后跑马灯的圈数: 0 = 不跑 (流畅档), -1 = 一直跑. BT 资源的标题不跑 (三行, 全文在详情里). */
+    /** 一行放不下的字聚焦一会儿后跑马灯的圈数: 0 = 不跑 (流畅档), -1 = 一直跑. BT 资源的标题不跑 (两行, 全文在详情里). */
     val marqueeRepeat: Int,
     val focusInMillis: Long,
     val focusOutMillis: Long,
@@ -142,32 +152,40 @@ data class TvSourcePanelStyle(
 
 /** 面板报给宿主的事件. 都在主线程. */
 interface TvSourcePanelListener {
-    /** 左栏焦点换到 [key] (右栏要跟着换). */
+    /** 胶囊行选中的换成 [key] (下面的内容跟着换). */
     fun onRailFocused(key: String)
 
-    /** 焦点进出右栏 (进右栏时宿主钉住行序, 见 applyFrozenOrder). */
+    /** 焦点进出下面的内容 (列表与它顶上的小胶囊; 进去时宿主钉住行序, 见 applyFrozenOrder). */
     fun onRightFocusChanged(inRight: Boolean)
 
     fun onAction(action: TvSourceAction)
 
-    /** 右栏里按返回: 宿主退出进去的那一层就返回 true; false = 面板把焦点送回左栏. */
+    /** 内容里按返回: 宿主退出进去的那一层就返回 true; false = 该关面板了. */
     fun onBackInRight(): Boolean
 
-    /** 要关面板: 在左栏按了左键, 或触屏点了面板外面 (画面). */
+    /** 要关面板: 触屏点了面板下面 (画面). */
     fun onCloseRequested()
 }
 
 /**
- * 选源面板 (原生 View): 铺满播放器, 像一棵从屏幕左边缘伸出来的树 —— 左栏 (数据源这一组) 贴边, 右栏 (那一项下面的线路 / 资源) 是从左栏那一行
- * 伸出来的分支, 顶边与那一行对齐 (放不下时往上让), 背后不压暗, 只有一张张玻璃卡片. 两栏都是 leanback 的 [VerticalGridView] —— 它从不回收持焦的
- * 那一行, 列表在搜索途中整表更新时焦点不丢.
+ * 选源面板 (原生 View): 铺满播放器, 从屏幕上沿垂下来, 背后不压暗, 只有一张张玻璃卡片. 自上而下三层:
+ * - 表头: 左边状态卡片, 右边命令按钮 (筛选、重新搜索、完整搜索、修改搜索词 —— 内容里 rail 的筛选与操作项, 见 [isCommandKey]);
+ * - 胶囊行: 数据源横排 (BT 与缓存、下载、各在线源、查询失败、手动查找), 滚出去的在左右边距里渐隐;
+ * - 内容: 胶囊行选中的那个源的小标题 / 小胶囊 / 列表. 标题长的 (BT、下载、网盘类, 见 [TvSourceRight.wide]) 占满宽度, 其余按内容定宽、
+ *   对齐到它的胶囊下面, 跟着胶囊行走; 面板下缘不低于屏幕高度的 [TvSourcePanelStyle.maxBottomFraction],
+ *   列表再长就滚, 被截住的那一头渐隐.
+ * 胶囊行与列表都是 leanback 的列表 ([HorizontalGridView] / [VerticalGridView]) —— 它从不回收持焦的那一项, 搜索途中整表更新时焦点不丢.
+ *
+ * 胶囊行沿用「上面胶囊、下面内容」的选中规则 (同追番页标签、时间表日期行): 单按松手就换下面的内容, 按住左右只挪胶囊, 松手换一次.
+ * 列表里按左右 = 换到相邻的数据源 (同样松手才换), 焦点留在列表里, 落在新那一屏的第一行. 选中的胶囊靠左停 (下面的内容跟着靠左,
+ * 少挡画面), 到了最后几颗才往右走. 关面板只有返回键 (表头按上不收, 免得往上多按一下就误关). 「筛选」是弹窗 (TvSourceFilterDialog).
  *
  * **方向键全部在这里判, 一个都不放给 Compose**: 视图挂在 Compose 的 AndroidView 里, 没被消费的方向键会交给 Compose 按屏幕位置找下一个焦点
  * (原生列表自己的焦点搜索根本走不到), 会跳到底下被藏起来的播放器控件上. 到边的键也吞掉. 确定键 (短按 / 长按) 同样自己判, 只认见过按下的那一次
  * (打开面板的那次确定键抬起落在这里时不算).
  *
- * 数据走 [submit]: 宿主在内容变化时把整份 [TvSourcePanelContent] 交过来, 两栏按行 id 做差异更新 (后台线程算). 右栏换了一屏 (右栏 key 变了)
- * 而焦点在右栏时, 焦点先停在面板自己身上, 新内容排好再交给落点 —— 不停的话持焦的行一被删, 系统会把焦点塞给随便哪个视图.
+ * 数据走 [submit]: 宿主在内容变化时把整份 [TvSourcePanelContent] 交过来, 胶囊行与列表按行 id 做差异更新 (后台线程算). 下面的内容换了一屏
+ * (key 变了) 而焦点在内容里时, 焦点先停在面板自己身上, 新内容排好再交给落点 —— 不停的话持焦的行一被删, 系统会把焦点塞给随便哪个视图.
  */
 @SuppressLint("ViewConstructor")
 class TvSourcePanelView(
@@ -182,35 +200,25 @@ class TvSourcePanelView(
 
     private val panel = PanelLayout(context)
     private val statusView = TvNativeTextView(context)
-    private val rail = createGrid(context)
-    private val railAdapter = TvSourceRowAdapter(sketch, style)
+    private val header = TvSourcePillFlow(context, sketch, style, singleLine = true)
+    private val rail = createRail(context)
+    private val railAdapter = TvSourceRowAdapter(sketch, style, horizontal = true)
     private val drillTitleView = TvNativeTextView(context)
     private val pills = TvSourcePillFlow(context, sketch, style)
-    private val list = createGrid(context)
+    private val list = createList(context)
     private val listAdapter = TvSourceRowAdapter(sketch, style)
-
-    /** 右栏宽度的下限 (px), 随样式重算 (见 [TvSourcePanelStyle.rightSampleTitle]). */
-    private var rightWidthPx = 0
-
-    /** 分支按这一屏 ([branchWidthKey]) 定的宽度, 见 [updateBranchWidth]; 0 = 还没有内容. */
-    private var branchFitWidthPx = 0
-    private var branchWidthKey: String? = null
-
-    /** 分支此刻的宽度. */
-    private val branchWidthPx: Int
-        get() = if (branchFitWidthPx > 0) branchFitWidthPx else rightWidthPx
 
     private var content: TvSourcePanelContent? = null
 
-    /** 右栏列表里此刻排着的是哪一屏 (差异更新提交之后才换); [incomingRightKey] 是最新交来的那一屏. */
+    /** 列表里此刻排着的是哪一屏 (差异更新提交之后才换); [incomingRightKey] 是最新交来的那一屏. */
     private var rightKey: String? = null
     private var incomingRightKey: String? = null
 
-    /** 右栏一行几个 (leanback 的网格没有 getter, 记一份), 与此刻设给它的列宽. */
+    /** 列表一行几个 (leanback 的网格没有 getter, 记一份), 与此刻设给它的列宽. */
     private var listColumns = 1
     private var listColumnWidth = -1
 
-    /** 每一屏右栏上次聚焦的行 (id; 胶囊带 `pill:` 前缀): 退出一层、切回某一项时落回原处. */
+    /** 每一屏上次聚焦的行 (id; 小胶囊带 `pill:` 前缀): 退出一层、切回某个源时落回原处. */
     private val focusMemory = HashMap<String, String>()
 
     /** 等内容到了 / 排好了再送的焦点. */
@@ -221,39 +229,51 @@ class TvSourcePanelView(
     private var press: Press? = null
     private var lastInRight = false
 
-    /** 左栏此刻聚焦的那一项 (内容里的 railKey 要等状态拼完才跟上). */
+    /**
+     * 胶囊行此刻选中的那个源: 焦点停的那一颗, 或在列表里按左右挪到的那一颗. 内容里的 railKey 要等换过去 ([commitRail])、状态拼完才跟上.
+     */
     private var focusedRailKey: String? = null
 
+    /** [focusedRailKey] 还没换过去: 左右键按住期间只挪胶囊, 松手再换. */
+    private var railCommitPending = false
+
+    /** 左右键正按着. */
+    private var horizontalHeld = false
+
+    /** 最后一次请宿主换成的那一项 (见 [requestRail]); 交来的内容换到它了就清掉. */
+    private var requestedRailKey: String? = null
+
     /**
-     * 右栏这一屏进来时列表还没有能聚焦的行 (还在加载), 落点临时给了胶囊: 行到了而用户还没动过, 就把焦点挪到行上 ——
+     * 这一屏进来时列表还没有能聚焦的行 (还在加载), 落点临时给了小胶囊: 行到了而用户还没动过, 就把焦点挪到行上 ——
      * 不然手动查找进条目时焦点停在「返回结果」上, 一按确定就退回去了. 值是那一屏的 key, 用户一按方向键就作废.
      */
     private var pillFallbackScreen: String? = null
 
-    /** 右栏此刻显示的那一屏属于左栏哪一项: 分支从那一行伸出来 (见 [updateBranch]). 随右栏换屏的提交更新. */
-    private var branchRailKey: String? = null
-
-    /** 分支往下挪了多少 (px, 跟着左栏那一行). */
-    private var branchOffset = 0f
-
-    /** 右栏换了一屏、还没排出来: 排好后在新位置淡入. */
+    /** 下面的内容换了一屏、还没排出来: 排好后淡入 (见 [revealBranch]). */
     private var branchEntering = false
 
-    /** 分支此刻藏着 (换屏时先藏, 等新的一屏提交). */
+    /** 下面的内容此刻藏着 (换屏时先藏, 等新的一屏提交). */
     private var branchHidden = false
 
-    /** [moveFocusTo] 时那一行还没排出来: 跳过去之后, 等那一栏排好再把焦点给这一行 (见 [resolvePendingFocus]). */
-    private var pendingFocusGrid: VerticalGridView? = null
+    /** 这一屏按内容定的宽度 (见 [updateBranchWidth]); 0 = 占满宽度. [branchWidthKey] = 量的是哪一屏. */
+    private var branchFitWidthPx = 0
+    private var branchWidthKey: String? = null
+
+    /** 量宽度时这一屏有几行: 行变少了就允许收窄 (见 [updateBranchWidth]). */
+    private var branchRowCount = 0
+
+    /** 下面的内容往右挪了多少 (px), 对齐到它的胶囊下面 (见 [updateBranchOffset]). */
+    private var branchOffsetX = 0f
+
+    /** 列表上按左右换的源: 新的一屏到了落在第一行 (不按这一屏的记忆、正在播放). */
+    private var landFirstRow = false
+
+    /** [moveFocusTo] 时那一项还没排出来: 跳过去之后, 等那一栏排好再把焦点给它 (见 [resolvePendingFocus]). */
+    private var pendingFocusGrid: BaseGridView? = null
     private var pendingFocusId: String? = null
 
-    /** 这次左键是在左栏按下的: 抬起时关面板 (从右栏按左回到左栏的那一下, 抬起落在左栏上, 不算). */
-    private var leftDownInRail = false
-
-    /**
-     * 右栏上下走出了这一项的头 / 尾, 正跨到左栏相邻的数据源: +1 = 往下 (落新一屏的第一行), -1 = 往上 (落最后一行); 0 = 没在跨.
-     * 见 [crossRail].
-     */
-    private var crossing = 0
+    /** 表头上次聚焦的按钮: 从胶囊行按上回到它. */
+    private var headerFocusId: String? = null
 
     private class Press(val rowId: String, val downAt: Long) {
         var fired = false
@@ -272,8 +292,8 @@ class TvSourcePanelView(
 
         rail.adapter = railAdapter
         list.adapter = listAdapter
-        rail.addItemDecoration(DividerDecoration(railAdapter))
-        list.addItemDecoration(DividerDecoration(listAdapter))
+        rail.addItemDecoration(DividerDecoration(railAdapter, horizontal = true))
+        list.addItemDecoration(DividerDecoration(listAdapter, horizontal = false))
         railAdapter.onRowFocused = { _, row -> onRailRowFocused(row) }
         listAdapter.onRowFocused = { _, row ->
             rightKey?.let {
@@ -283,7 +303,11 @@ class TvSourcePanelView(
             reportRegion()
         }
         pills.onPillFocused = { row -> rightKey?.let { focusMemory[it] = PILL_PREFIX + row.id }; reportRegion() }
-        // 触屏: 左栏点一下 = 换到那一项 (有动作的直接做), 右栏点一下 = 做那一行的动作, 长按 = 长按动作
+        header.onPillFocused = { row ->
+            headerFocusId = row.id
+            reportRegion()
+        }
+        // 触屏: 胶囊点一下 = 换到那个源, 表头点一下 = 那个命令, 列表点一下 = 做那一行的动作, 长按 = 长按动作
         railAdapter.onRowClicked = { row, long ->
             val longAction = if (long) longActionOf(row, inRail = true) else null
             if (longAction != null) {
@@ -291,10 +315,10 @@ class TvSourcePanelView(
             } else if (row.action != null) {
                 listener?.onAction(row.action)
             } else {
-                railAdapter.activeId = row.id
-                listener?.onRailFocused(row.id)
+                followRail(row.id)
             }
         }
+        header.onPillClicked = { row -> row.action?.let { listener?.onAction(it) } }
         listAdapter.onRowClicked = { row, long ->
             (if (long) longActionOf(row, inRail = false) ?: row.action else row.action)?.let { listener?.onAction(it) }
         }
@@ -302,53 +326,65 @@ class TvSourcePanelView(
         rail.addOnLayoutCompletedListener {
             resolvePendingFocus(rail)
             resolvePending()
-            updateBranch()
+            // 量这一屏的宽度时胶囊还没排出来: 排出来了再撑到不窄于它
+            val anchorWidth = branchAnchor()?.width ?: 0
+            if (branchFitWidthPx in 1 until anchorWidth) {
+                branchFitWidthPx = anchorWidth
+                panel.requestLayout()
+            }
+            updateBranchOffset()
         }
         list.addOnLayoutCompletedListener {
             resolvePendingFocus(list)
             resolvePending()
-            updateBranch()
+            revealBranch()
         }
-        // 左栏滚动时分支跟着那一行走
+        // 胶囊行滚动途中下面的内容不跟着动 (换胶囊时会先动一下再停): 新的一屏一出来就摆在停稳后的位置, 停稳时再对一下
         rail.addOnScrollListener(
             object : RecyclerView.OnScrollListener() {
-                override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) = updateBranch()
+                override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
+                    if (newState == RecyclerView.SCROLL_STATE_IDLE) onRailSettled()
+                }
             },
         )
 
-        // 状态卡片最后加 = 最后画: 压在两栏上面
-        panel.addView(rail)
+        // 状态卡片最后加 = 最后画
         panel.addView(list)
         panel.addView(drillTitleView)
         panel.addView(pills)
+        panel.addView(rail)
+        panel.addView(header)
         panel.addView(statusView)
         addView(panel, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         applyStyle(style)
     }
 
     fun applyStyle(style: TvSourcePanelStyle) {
-        val changed = this.style != style || rightWidthPx == 0
+        val changed = this.style != style
         this.style = style
-        if (changed) {
-            rightWidthPx = measureRightWidth(style)
-            branchWidthKey = null
-            content?.right?.let { updateBranchWidth(it) }
-        }
         style.status.applyTo(statusView)
         style.drillTitle.applyTo(drillTitleView)
+        // 状态卡片与表头的按钮同一排, 同样画成胶囊; 内容小标题会折两行, 用圆角矩形
+        statusView.background = chipBackground(style, style.pillHeightPx.toFloat())
+        drillTitleView.background = chipBackground(style, style.cornerPx)
         for (chip in arrayOf(statusView, drillTitleView)) {
-            chip.background = GradientDrawable().apply {
-                setColor(style.idleBg)
-                cornerRadius = style.cornerPx
-            }
             chip.setPadding(style.chipPaddingHPx, style.chipPaddingVPx, style.chipPaddingHPx, style.chipPaddingVPx)
         }
-        rail.verticalSpacing = style.rowGapPx
+        rail.horizontalSpacing = style.railPillGapPx
+        rail.setRowHeight(style.railPillHeightPx)
+        // 左右的内边距就是渐隐带: 胶囊行伸进左右边距, 停着时第一颗的左缘与下面的列表对齐, 滚出去的在边距里渐隐
+        rail.setPadding(style.fadeLengthPx, style.focusBleedPx, style.fadeLengthPx, style.focusBleedPx)
+        rail.windowAlignmentOffset = style.fadeLengthPx
+        rail.fadingLeftEdgeLength = style.fadeLengthPx
+        rail.fadingRightEdgeLength = style.fadeLengthPx
         list.verticalSpacing = style.rowGapPx
         list.horizontalSpacing = style.rowGapPx
+        list.setFadingEdgeLength(style.fadeLengthPx)
+        list.setPadding(style.focusBleedPx, style.focusBleedPx, style.focusBleedPx, style.focusBleedPx)
         railAdapter.style = style
         listAdapter.style = style
         pills.style = style
+        header.style = style
         if (changed) {
             requestLayout()
             invalidate()
@@ -359,17 +395,21 @@ class TvSourcePanelView(
     fun submit(content: TvSourcePanelContent) {
         val previous = this.content
         this.content = content
+        if (requestedRailKey == content.railKey) requestedRailKey = null
         statusView.text = content.status
 
-        railAdapter.activeId = content.railKey
-        railAdapter.submitList(content.rail) {
-            // 持焦的那一项没了 (查询失败挪进了「查询失败」): 落到左栏落点
+        val (commands, sources) = content.rail.partition { isCommandKey(it.id) }
+        header.submit(commands)
+        if (!railCommitPending) railAdapter.activeId = content.railKey
+        railAdapter.submitList(sources) {
+            // 持焦的那颗没了 (查询失败挪进了「查询失败」): 落到选中的那颗
             if (regionOf(findFocus()) == Region.NONE && previous != null && lastRegion == Region.RAIL) {
-                focusRail(content.railKey)
+                focusRail(selectedRailKey())
             }
-            // 焦点不在左栏 (打开时直接落回右栏那一行): 左栏直接对到右栏所属的那一项 —— 否则左栏还停在顶上, 按左回去时整栏一跳
+            // 焦点不在胶囊行 (打开时直接落进列表、在列表里换源): 胶囊行对到选中的那颗, 滚到眼前
             if (regionOf(findFocus()) != Region.RAIL) {
-                val index = content.rail.indexOfFirst { it.id == content.railKey }
+                val key = selectedRailKey()
+                val index = sources.indexOfFirst { it.id == key }
                 if (index >= 0 && rail.selectedPosition != index) rail.setSelectedPosition(index)
             }
             resolvePending()
@@ -383,11 +423,13 @@ class TvSourcePanelView(
             park()
             pendingRightFocus = true
         }
-        if (newScreen && style.animated) {
-            // 新的一屏要等列表排好才知道分支落在哪儿: 先藏起来, 排好后在新位置淡入 (见 updateBranch)
-            branchAnimator?.cancel()
-            for (view in branchViews) view.alpha = 0f
-            branchHidden = true
+        if (newScreen) {
+            if (style.animated) {
+                // 新的一屏排好再淡入 (见 revealBranch): 先藏起来, 不让旧的一屏在新位置上闪一下
+                branchAnimator?.cancel()
+                for (view in branchViews) view.alpha = 0f
+                branchHidden = true
+            }
         }
         drillTitleView.text = right.title.orEmpty()
         drillTitleView.visibility = if (right.title.isNullOrEmpty()) GONE else VISIBLE
@@ -399,10 +441,10 @@ class TvSourcePanelView(
         }
         // 此刻停在顶上 (第一行排着): 新结果插到前面时要把它们露出来; 往下翻过的就不动
         val listAtTop = listAdapter.itemCount == 0 || list.findViewHolderForAdapterPosition(0) != null
+        listAdapter.reserveIconSlot = right.rows.any { showsIcon(it) }
         listAdapter.submitList(right.rows) {
             val inRight = regionOf(findFocus()).let { it == Region.LIST || it == Region.PILLS }
             updateBranchWidth(right)
-            branchRailKey = content.railKey
             if (rightKey != right.key) {
                 rightKey = right.key
                 branchEntering = true
@@ -411,57 +453,179 @@ class TvSourcePanelView(
                 // 换屏又换回来 (A → B → A): 中间那次提交被差异计算丢掉了, 这一屏还是原来的 key, 照样要淡入
                 branchEntering = true
             } else if (!inRight && !isFocused && listAtTop) {
-                // 用户没在右栏里、列表停在顶上: 搜索途中新结果插到前面时列表会保持原来的首行, 新来的那几条被顶到视口上方看不见 —— 回到顶上.
-                // 用户往下翻过 (比如从 BT 中间按左回了左栏) 就留在原处, 不然再按右进来, 记住的那一行已经被滚到很远
+                // 用户没在列表里、列表停在顶上: 搜索途中新结果插到前面时列表会保持原来的首行, 新来的那几条被顶到视口上方看不见 —— 回到顶上.
+                // 用户往下翻过 (比如从 BT 中间按上回了胶囊行) 就留在原处, 不然再按下进来, 记住的那一行已经被滚到很远
                 list.scrollToPosition(0)
             }
             if (pillFallbackScreen == right.key && regionOf(findFocus()) == Region.PILLS && right.rows.any { it.focusable }) {
                 pillFallbackScreen = null
-                // 胶囊得焦时记成了这一屏停的位置, 不清掉的话落点又按记忆回到胶囊上
+                // 小胶囊得焦时记成了这一屏停的位置, 不清掉的话落点又按记忆回到小胶囊上
                 focusMemory.remove(right.key)
                 // 行刚提交还没排出来: 排好时 (布局完成回调) 再送
                 if (focusRightTarget(content) == FocusResult.Pending) pendingRightFocus = true
             }
             resolvePending()
+            revealBranch()
         }
         resolvePending()
     }
 
     /**
-     * 分支定宽 (行提交时): 宽一档的 (BT 资源与下载) 固定用上限; 其余按这一屏的内容, 短的刚好放下, 长的放宽到上限为止, 不窄于下限.
-     * 同一屏里只放宽不收窄 —— 查询途中结果陆续到、展开又收起时, 框不来回伸缩; 换一屏重新量.
+     * 这一屏的宽度 (行提交时): 占满宽度的 ([TvSourceRight.wide]、多列的方块) 为 0; 其余按内容, 不窄于 [TvSourcePanelStyle.branchMinWidthPx]
+     * 与它的胶囊 (看着像从胶囊垂下来), 最宽到占满宽度 (排版时按屏宽截). 同一屏里行只多不少时只放宽不收窄 —— 查询途中结果陆续到,
+     * 框不来回伸缩; 行变少了 (收起「其余 N 条」) 或换了一屏就重新量.
      */
     private fun updateBranchWidth(right: TvSourceRight) {
-        val cap = max(rightWidthPx, style.maxRightWidthPx)
-        val width = if (right.wide) {
-            cap
+        val width = if (right.wide || right.columns > 1) {
+            0
         } else {
-            val measured = measureBranchContentWidth(right, style).coerceIn(rightWidthPx, cap)
-            if (branchWidthKey == right.key) max(branchFitWidthPx, measured) else measured
+            val anchorWidth = branchAnchor()?.width
+                ?: railAdapter.currentList.firstOrNull { it.id == content?.railKey }?.let { railPillWidth(it) } ?: 0
+            val min = max(style.branchMinWidthPx, anchorWidth)
+            val measured = measureBranchContentWidth(right, style).coerceAtLeast(min)
+            val growing = branchWidthKey == right.key && right.rows.size >= branchRowCount
+            if (growing && branchFitWidthPx > 0) max(branchFitWidthPx, measured) else measured
         }
         branchWidthKey = right.key
+        branchRowCount = right.rows.size
         if (width != branchFitWidthPx) {
             branchFitWidthPx = width
             panel.requestLayout()
         }
     }
 
-    /** 打开面板 / 焦点不在面板里时: 落左栏 (正在播放的资源所在的那一项, 它下面正在播的那一条在分支里亮着). 内容没到就等内容到了再送. */
+    /**
+     * 不占满宽度的内容对齐到它的胶囊下面 (左缘对齐, 放不下往左让, 见 [branchAnchor]). 胶囊行滚动、两边排完时调.
+     * 那一颗此刻不在屏上 (滚出去了) 就留在原处.
+     */
+    private fun updateBranchOffset() {
+        // 胶囊行正在滚: 等停稳 (见 onRailSettled)
+        if (rail.scrollState != RecyclerView.SCROLL_STATE_IDLE) return
+        val target = branchTargetOffset() ?: return
+        if (target != branchOffsetX) {
+            branchOffsetX = target
+            applyBranchX()
+        }
+    }
+
+    /** 胶囊行停稳了: 还没出来的那一屏在胶囊下面淡入; 已经出来的对不上它的胶囊 (估的位置差了一点、挪了又挪回来) 就滑过去. */
+    private fun onRailSettled() {
+        if (branchEntering) {
+            revealBranch()
+            return
+        }
+        val target = branchTargetOffset() ?: return
+        if (target == branchOffsetX) return
+        branchOffsetAnimator?.cancel()
+        if (!style.animated) {
+            branchOffsetX = target
+            applyBranchX()
+            return
+        }
+        branchOffsetAnimator = ValueAnimator.ofFloat(branchOffsetX, target).apply {
+            duration = style.branchFadeMillis
+            interpolator = TV_NATIVE_FAST_OUT_SLOW_IN
+            addUpdateListener {
+                branchOffsetX = it.animatedValue as Float
+                applyBranchX()
+            }
+            start()
+        }
+    }
+
+    private var branchOffsetAnimator: ValueAnimator? = null
+
+    /** 下面的内容对齐的那一颗: 胶囊行里 content.railKey 那一颗; 此刻没排出来为 null. */
+    private fun branchAnchor(): View? {
+        val key = content?.railKey ?: return null
+        val index = railAdapter.currentList.indexOfFirst { it.id == key }
+        if (index < 0) return null
+        return rail.findViewHolderForAdapterPosition(index)?.itemView
+    }
+
+    /**
+     * 对齐到它的胶囊下面该往右挪多少; [settled] = 按胶囊行停稳以后那一颗的位置算 (还在滚的时候用, 见 [railSettledLeft]),
+     * 否则按它此刻的位置. 那一颗此刻没排出来 (按此刻的位置算时) 为 null.
+     */
+    private fun branchTargetOffset(settled: Boolean = false): Float? {
+        val fit = branchFitWidthPx
+        if (fit <= 0) return 0f
+        val anchorLeft = if (settled) {
+            val index = railAdapter.currentList.indexOfFirst { it.id == content?.railKey }
+            if (index < 0) return 0f
+            railSettledLeft(index)
+        } else {
+            val anchor = branchAnchor() ?: return null
+            (anchor.parent as View).left + anchor.left + anchor.translationX
+        }
+        val room = (panel.width - style.paddingStartPx - style.paddingEndPx - fit).coerceAtLeast(0)
+        return (anchorLeft - style.paddingStartPx).coerceIn(0f, room.toFloat())
+    }
+
+    /**
+     * 胶囊行滚完以后 [index] 那一颗的左缘 (面板坐标). 选中的胶囊停在左内边距处的对齐线上 (见 createRail), 到头的不再滚 ——
+     * 开头几颗留在原处, 末尾几颗右边贴边. 宽度用排出来的胶囊的, 没排出来的按字量 (见 [railPillWidth]).
+     */
+    private fun railSettledLeft(index: Int): Float {
+        val rows = railAdapter.currentList
+        fun width(i: Int) = rail.findViewHolderForAdapterPosition(i)?.itemView?.width ?: railPillWidth(rows[i])
+        // 第 i 颗与前一颗之间: 间距, 带分隔线的多一截 (见 DividerDecoration)
+        fun lead(i: Int) = style.railPillGapPx + if (rows[i].dividerAbove) style.dividerGapPx else 0
+        var before = 0
+        for (i in 0 until index) before += width(i) + lead(i + 1)
+        var total = before + width(index)
+        for (i in index + 1 until rows.size) total += lead(i) + width(i)
+        val visible = rail.width - rail.paddingLeft - rail.paddingRight
+        val scroll = before.coerceIn(0, max(0, total - visible))
+        return (rail.left + rail.paddingLeft + before - scroll).toFloat()
+    }
+
+    /** 胶囊行停稳以后 [key] 那一颗的左缘 (面板坐标, 见 [railSettledLeft]); 设备测试核对估的位置用. */
+    @VisibleForTesting
+    internal fun settledPillLeft(key: String): Float? =
+        railAdapter.currentList.indexOfFirst { it.id == key }.takeIf { it >= 0 }?.let { railSettledLeft(it) }
+
+    /** 胶囊的宽度按字量 (同 [TvSourceRowView] 按内容定宽: 图标 + 名字 + 右端的数 / 转圈, 不超过 [TvSourcePanelStyle.railPillMaxWidthPx]). */
+    private fun railPillWidth(row: TvSourceRow): Int {
+        val s = style
+        val paints = railPaints?.takeIf { it.first == s } ?: (s to (textPaint(s.railTitle) to textPaint(s.trailing))).also { railPaints = it }
+        val (titlePaint, trailingPaint) = paints.second
+        var width = s.rowPaddingHPx * 2 + s.iconSizePx + s.iconGapPx + ceil(titlePaint.measureText(row.title)).toInt()
+        if (row.loading) {
+            width += s.spinnerSizePx + s.trailingGapPx
+        } else if (row.trailing.isNotEmpty()) {
+            width += ceil(trailingPaint.measureText(row.trailing)).toInt() + s.trailingGapPx
+        }
+        return min(width, s.railPillMaxWidthPx)
+    }
+
+    private var railPaints: Pair<TvSourcePanelStyle, Pair<Paint, Paint>>? = null
+
+    private fun applyBranchX() {
+        for (view in branchViews) view.translationX = branchOffsetX
+    }
+
+    /**
+     * 打开面板 / 焦点不在面板里时: 落进列表 (正在播的那一行, 见 [focusRightTarget]); 列表里没有能选的行就落胶囊行选中的那颗.
+     * 内容没到就等内容到了再送.
+     */
     fun requestEntryFocus() {
         pendingEntry = true
         resolvePending()
     }
 
     /**
-     * 返回键. true = 面板自己处理了 (退出进去的那一层 / 手动查找的条目页); false = 该关面板了 —— 右栏本身与左栏上按的都是,
-     * 宿主记下焦点停在哪 ([focusPosition]), 再打开时落回去.
+     * 返回键. true = 面板自己处理了 (进去的那一层 / 手动查找的条目页); false = 该关面板了 —— 宿主记下焦点停在哪
+     * ([focusPosition]), 再打开时落回去.
      */
-    fun handleBack(): Boolean = when (regionOf(findFocus())) {
-        Region.LIST, Region.PILLS -> listener?.onBackInRight() == true
-        else -> false
+    fun handleBack(): Boolean {
+        return when (regionOf(findFocus())) {
+            Region.LIST, Region.PILLS -> listener?.onBackInRight() == true
+            else -> false
+        }
     }
 
-    /** 焦点在右栏 (左栏那一项本身那一屏, 不是进去的那一层) 的哪一行: (左栏项, 行 id); 不在右栏为 null. */
+    /** 焦点在列表 (那个源本身那一屏, 不是进去的那一层) 的哪一行: (源, 行 id); 不在列表里为 null. */
     fun rightRowPosition(): Pair<String, String>? {
         val focused = findFocus() as? TvSourceRowView ?: return null
         if (regionOf(focused) != Region.LIST) return null
@@ -471,7 +635,7 @@ class TvSourcePanelView(
     }
 
     /**
-     * 焦点停在哪: (左栏项, 右栏那一行的 id); 在左栏时行 id 为 null (左栏那一项), 在右栏的胶囊上同样只记左栏那一项. 不在面板里为 null.
+     * 焦点停在哪: (源, 列表那一行的 id); 在胶囊行与内容顶上的小胶囊上时行 id 为 null (那个源本身). 在表头、进去的那一层里、不在面板里为 null.
      */
     fun focusPosition(): Pair<String, String?>? {
         rightRowPosition()?.let { return it }
@@ -483,20 +647,24 @@ class TvSourcePanelView(
         }
     }
 
-    /** 打开时要落回的右栏那一行 (上次按返回隐藏时停的, 见 [focusPosition]); 落过一次 (或那一行没了) 就作废, 照常落左栏. */
-    var resumeRow: Pair<String, String>? = null
+    /**
+     * 打开时要落回的位置 (上次按返回隐藏时停的, 见 [focusPosition]): (源, 行 id), 行 id 为 null = 那个源的胶囊.
+     * 落过一次 (或那一行没了) 就作废, 照常落.
+     */
+    var resumeRow: Pair<String, String?>? = null
 
     /** 面板里有没有焦点 (根路由据此判断要不要先把焦点送进来). */
     fun hasPanelFocus(): Boolean = hasFocus()
 
     // ---- 焦点 ----
 
-    private enum class Region { NONE, RAIL, PILLS, LIST }
+    private enum class Region { NONE, HEADER, RAIL, PILLS, LIST }
 
     private var lastRegion = Region.NONE
 
     private fun regionOf(view: View?): Region = when {
         view == null -> Region.NONE
+        tvNativeIsInside(view, header) -> Region.HEADER
         tvNativeIsInside(view, rail) -> Region.RAIL
         tvNativeIsInside(view, pills) -> Region.PILLS
         tvNativeIsInside(view, list) -> Region.LIST
@@ -514,14 +682,36 @@ class TvSourcePanelView(
     }
 
     private fun onRailRowFocused(row: TvSourceRow) {
-        crossing = 0
         focusedRailKey = row.id
+        landFirstRow = false
         reportRegion()
-        if (content?.railKey != row.id) {
-            railAdapter.activeId = row.id
-            listener?.onRailFocused(row.id)
-        }
+        railCommitPending = true
+        if (!horizontalHeld) commitRail()
     }
+
+    /** 把胶囊行选中的那颗 ([focusedRailKey]) 换过去: 下面的内容跟着换. 左右键按着时等松手再调. */
+    private fun commitRail() {
+        if (!railCommitPending) return
+        railCommitPending = false
+        val key = focusedRailKey ?: return
+        railAdapter.activeId = key
+        // 不用换 (挪了又挪回原来那颗): 不会有新的一屏, 「落第一行」作废
+        if (!requestRail(key)) landFirstRow = false
+    }
+
+    /**
+     * 请宿主把内容换成 [key]. 跟「最后要过的」比, 不跟此刻的内容比: 快速右、左两下时第一次要的内容还没到, 按此刻的内容 (还是原来那个)
+     * 会把换回来的那一下当成不用换, 结果胶囊停在原来那颗、下面换成了右边那个.
+     */
+    private fun requestRail(key: String): Boolean {
+        if ((requestedRailKey ?: content?.railKey) == key) return false
+        requestedRailKey = key
+        listener?.onRailFocused(key)
+        return true
+    }
+
+    /** 胶囊行选中的那个源: 还没换过去的那颗, 否则是内容里的. */
+    private fun selectedRailKey(): String? = if (railCommitPending) focusedRailKey else content?.railKey
 
     private fun resolvePending() {
         val content = content ?: return
@@ -532,50 +722,39 @@ class TvSourcePanelView(
                 FocusResult.Focused -> {
                     pendingRightFocus = false
                     unpark()
-                    // 焦点一直在右栏 (没经过左栏), 宿主没收到「进右栏」: 给新的一屏钉住行序
+                    // 焦点一直在内容里 (没经过胶囊行), 宿主没收到「进内容」: 给新的一屏钉住行序
                     listener?.onRightFocusChanged(true)
                 }
 
                 FocusResult.Pending -> {} // 落点还没排出来: 等排好 (布局完成回调)
                 FocusResult.None -> {
-                    val direction = crossing
-                    crossing = 0
-                    if (direction != 0) {
-                        // 跨过来的源右边暂时没有能选的 (还在查 / 限流 / 没结果): 接着往下一个有右栏的跨, 焦点还停在面板上
-                        val next = content.railKey?.let { nextCrossable(it, direction) }
-                        if (next != null) {
-                            crossing = direction
-                            rearmParkWatchdog()
-                            followRail(next.id)
-                            return
-                        }
-                        // 再往下没有有右栏的了: 回左栏落在紧挨着的那一项上
-                        pendingRightFocus = false
-                        val neighbor = content.railKey?.let { railNeighbor(it, direction) }
-                        focusRail(neighbor?.id ?: content.railKey)
-                        unpark()
-                        return
-                    }
-                    // 新的一屏没有能聚焦的: 回左栏
+                    // 新的一屏没有能聚焦的 (还在查 / 限流 / 没结果): 回胶囊行那个源上
                     pendingRightFocus = false
                     unpark()
-                    focusRail(content.railKey)
+                    focusRail(selectedRailKey())
                 }
             }
             return
         }
         if (pendingEnterRight) {
-            // 左栏刚换项, 右栏还是上一项的内容: 等对得上再进
+            // 胶囊行刚换了源, 列表还是上一个的内容: 等对得上再进
             if (!rightMatchesRail(content) || rightKey != incomingRightKey) return
             if (focusRightTarget(content) != FocusResult.Pending) pendingEnterRight = false
             return
         }
         if (pendingEntry && isAttachedToWindow) {
+            if (railAdapter.currentList.isEmpty() && content.rail.any { !isCommandKey(it.id) }) return // 胶囊行还没提交
             val resume = resumeRow
             if (resume != null && content.railKey == resume.first) {
-                // 等这一项的右栏那一屏提交、排出来
+                val rowId = resume.second
+                if (rowId == null) {
+                    resumeRow = null
+                    enterRail(resume.first)
+                    return
+                }
+                // 等这个源的那一屏提交、排出来
                 if (rightKey != incomingRightKey || !rightMatchesRail(content)) return
-                val index = listAdapter.currentList.indexOfFirst { it.id == resume.second && it.focusable }
+                val index = listAdapter.currentList.indexOfFirst { it.id == rowId && it.focusable }
                 if (index >= 0) {
                     if (moveFocusTo(list, index)) {
                         resumeRow = null
@@ -585,42 +764,52 @@ class TvSourcePanelView(
                 }
             }
             resumeRow = null
-            if (focusRail(content.railKey)) pendingEntry = false
+            if (content.railKey == null) {
+                enterRail(content.railKey)
+                return
+            }
+            if (rightKey != incomingRightKey || !rightMatchesRail(content)) return
+            when (focusRightTarget(content)) {
+                FocusResult.Focused -> pendingEntry = false
+                FocusResult.Pending -> {}
+                FocusResult.None -> enterRail(content.railKey)
+            }
         }
+    }
+
+    /** 打开时落胶囊行 [key] 那颗 (胶囊行是空的就落表头). 那一颗还没排出来时等排好再给 (见 [moveFocusTo]), 这次打开的落点就算定了. */
+    private fun enterRail(key: String?) {
+        pendingEntry = false
+        if (railAdapter.itemCount == 0) header.focusPill(null) else focusRail(key)
     }
 
     private enum class FocusResult { Focused, Pending, None }
 
     private fun rightMatchesRail(content: TvSourcePanelContent): Boolean {
         val railKey = content.railKey ?: return false
-        // 用户刚在左栏换了项, 内容还是上一项的
+        // 用户刚在胶囊行换了源, 内容还是上一个的
         if (focusedRailKey != null && focusedRailKey != railKey) return false
         val key = rightKey ?: return false
-        return key == railKey || key.startsWith("$railKey/") || (railKey == TvSourceRailKeys.MANUAL && key.startsWith(TvSourceRailKeys.MANUAL))
+        return key == railKey || key.startsWith("$railKey/")
     }
 
     /**
-     * 右栏的落点: 这一屏上次停的 → 内容给的落点 (正在播放 / 当前值) → 第一条能聚焦的行 → 第一个胶囊.
+     * 进内容的落点: 这一屏上次停的 → 内容给的落点 (正在播放 / 当前值) → 第一条能聚焦的行 → 第一个小胶囊.
      * [FocusResult.Pending] = 落点那一行还没排出来 (已选中, 排到时 leanback 给焦点; 调用方等布局完成再试).
      */
     private fun focusRightTarget(content: TvSourcePanelContent): FocusResult {
         val right = content.right
-        if (crossing != 0) {
-            val rows = listAdapter.currentList
-            val index = if (crossing > 0) rows.indexOfFirst { it.focusable } else rows.indexOfLast { it.focusable }
-            if (index >= 0) {
-                if (!moveFocusTo(list, index)) return FocusResult.Pending
-                crossing = 0
-                return FocusResult.Focused
+        if (landFirstRow) {
+            // 列表上按左右换过来的: 落第一行 (没有能选的行交给调用方, 回胶囊行那颗). 快速连按时中途那几屏也落第一行,
+            // 等最后要的那一屏到了 (requestedRailKey 清掉) 才算落完
+            val first = listAdapter.currentList.indexOfFirst { it.focusable }
+            if (first < 0) {
+                if (requestedRailKey == null) landFirstRow = false
+                return FocusResult.None
             }
-            // 内容里这一屏有能选的行, 列表还没换过来: 等它提交 (不当成「没有」, 否则快速往下走时会跳过有结果的源)
-            if (right.rows.any { it.focusable }) return FocusResult.Pending
-            // 没有行: 往上跨进来的有胶囊就停在胶囊上, 否则交给调用方接着跨
-            if (crossing < 0 && pills.focusPill(null)) {
-                crossing = 0
-                return FocusResult.Focused
-            }
-            return FocusResult.None
+            if (!moveFocusTo(list, first)) return FocusResult.Pending
+            if (requestedRailKey == null) landFirstRow = false
+            return FocusResult.Focused
         }
         val remembered = rightKey?.let { focusMemory[it] }
         if (remembered != null && remembered.startsWith(PILL_PREFIX)) {
@@ -646,11 +835,11 @@ class TvSourcePanelView(
     }
 
     /**
-     * 排出来了当场给 (leanback 按窗口对齐平滑滚过去). 没排出来 (远处的行、刚换的一屏): 直接跳到那个位置, 排好时 (布局完成回调,
+     * 排出来了当场给 (leanback 按窗口对齐平滑滚过去). 没排出来 (远处的那一项、刚换的一屏): 直接跳到那个位置, 排好时 (布局完成回调,
      * [resolvePendingFocus]) 再把焦点给它, 返回 false. 不平滑滚过去: 平滑滚动不触发布局完成回调, 而栏里没有焦点时 leanback 滚到了也不给焦点 ——
      * 焦点就一直等不到, 要再按一次才过去. 也不对整栏 requestFocus: 换屏途中它会把焦点给马上要被移走的旧行, 旧行一移走焦点就丢了.
      */
-    private fun moveFocusTo(grid: VerticalGridView, index: Int): Boolean {
+    private fun moveFocusTo(grid: BaseGridView, index: Int): Boolean {
         pendingFocusGrid = null
         pendingFocusId = null
         val view = grid.findViewHolderForAdapterPosition(index)?.itemView
@@ -662,7 +851,7 @@ class TvSourcePanelView(
         return false
     }
 
-    private fun resolvePendingFocus(grid: VerticalGridView) {
+    private fun resolvePendingFocus(grid: BaseGridView) {
         if (pendingFocusGrid !== grid) return
         val id = pendingFocusId
         pendingFocusGrid = null
@@ -673,7 +862,7 @@ class TvSourcePanelView(
         grid.findViewHolderForAdapterPosition(index)?.itemView?.requestFocus()
     }
 
-    /** 焦点暂停在面板自己身上 (右栏换屏期间). */
+    /** 焦点暂停在面板自己身上 (下面的内容换屏期间). */
     private fun park() {
         descendantFocusability = FOCUS_BEFORE_DESCENDANTS
         isFocusable = true
@@ -684,26 +873,19 @@ class TvSourcePanelView(
 
     /**
      * 停在面板自己身上太久 (新的一屏 / 落点一直没等到): 停着的时候方向键全不理, 用户看到的就是「焦点没了、按什么都没反应」.
-     * 保险: 放弃这次落点, 焦点回左栏那一项. 正常流程到不了这里 (新的一屏几十毫秒就到), 到了就记一笔.
+     * 保险: 放弃这次落点, 焦点回胶囊行选中的那颗. 正常流程到不了这里 (新的一屏几十毫秒就到), 到了就记一笔.
      */
     private val parkWatchdog = Runnable {
         if (!isFocused) return@Runnable
         Log.w(
             LOG_TAG,
-            "focus parked for ${PARK_TIMEOUT_MILLIS}ms, releasing: pendingRightFocus=$pendingRightFocus crossing=$crossing " +
+            "focus parked for ${PARK_TIMEOUT_MILLIS}ms, releasing: pendingRightFocus=$pendingRightFocus " +
                 "rightKey=$rightKey incomingRightKey=$incomingRightKey railKey=${content?.railKey} pendingFocusId=$pendingFocusId",
         )
-        crossing = 0
         pendingRightFocus = false
-        focusRail(content?.railKey)
+        landFirstRow = false
+        focusRail(selectedRailKey())
         unpark()
-    }
-
-    /** 停着等的又换了一屏 (跨数据源时跳过空的源): 重新计时. */
-    private fun rearmParkWatchdog() {
-        if (!isFocused) return
-        removeCallbacks(parkWatchdog)
-        postDelayed(parkWatchdog, PARK_TIMEOUT_MILLIS)
     }
 
     private fun unpark() {
@@ -713,8 +895,8 @@ class TvSourcePanelView(
         val focusedSelf = isFocused
         isFocusable = false
         if (focusedSelf && !hasFocus()) {
-            // 落点没给出去: 回左栏, 不让焦点空着
-            focusRail(content?.railKey)
+            // 落点没给出去: 回胶囊行, 不让焦点空着
+            focusRail(selectedRailKey())
         }
     }
 
@@ -731,17 +913,21 @@ class TvSourcePanelView(
                 code == KeyEvent.KEYCODE_NUMPAD_ENTER
         if (!dpad && !confirm) return super.dispatchKeyEvent(event)
         if (leaving) return true
-        if (dpad) {
-            if (code == KeyEvent.KEYCODE_DPAD_LEFT) {
-                if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
-                    leftDownInRail = !isFocused && regionOf(findFocus()) == Region.RAIL
-                } else if (event.action == KeyEvent.ACTION_UP) {
-                    // 抬起时才关: 按下就关的话, 抬起落到纯视频态那一档会被当成「左键快退」
-                    val close = leftDownInRail && regionOf(findFocus()) == Region.RAIL
-                    leftDownInRail = false
-                    if (close) listener?.onCloseRequested()
+        if (code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT) {
+            when (event.action) {
+                KeyEvent.ACTION_DOWN -> horizontalHeld = true
+                KeyEvent.ACTION_UP -> {
+                    horizontalHeld = false
+                    commitRail()
+                    return true
                 }
             }
+        } else if (event.action == KeyEvent.ACTION_DOWN && railCommitPending) {
+            // 按着左右时按了别的键: 先把胶囊行选中的换过去, 这一下不动 (下面的内容马上要换)
+            commitRail()
+            return true
+        }
+        if (dpad) {
             if (event.action == KeyEvent.ACTION_DOWN) navigate(code)
             return true
         }
@@ -750,28 +936,45 @@ class TvSourcePanelView(
     }
 
     private fun navigate(code: Int) {
-        // 焦点正停在面板自己身上 (右栏换屏中): 落点马上会给出去, 这一下不动
+        // 焦点正停在面板自己身上 (下面的内容换屏中): 落点马上会给出去, 这一下不动
         if (isFocused) return
+        val focused = findFocus()
+        val region = regionOf(focused)
+        if (region == Region.NONE) {
+            requestEntryFocus()
+            return
+        }
+        // 用户动过了: 打开时还没落定的落点作废, 不再把焦点拽回去
+        pendingEntry = false
         pillFallbackScreen = null
         pendingFocusGrid = null
         pendingFocusId = null
-        val focused = findFocus()
-        when (regionOf(focused)) {
-            Region.NONE -> requestEntryFocus()
+        when (region) {
+            Region.NONE -> {}
+            Region.HEADER -> {
+                val index = header.indexOfPill(focused)
+                when (code) {
+                    KeyEvent.KEYCODE_DPAD_LEFT -> if (index > 0) header.focusPillAt(index - 1)
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> if (index < header.pillCount - 1) header.focusPillAt(index + 1)
+                    KeyEvent.KEYCODE_DPAD_DOWN -> focusRail(selectedRailKey())
+                }
+            }
+
             Region.RAIL -> {
                 val index = rail.getChildAdapterPosition(rowViewOf(focused, rail) ?: return)
                 when (code) {
-                    KeyEvent.KEYCODE_DPAD_UP -> stepVertical(rail, railAdapter, index, -1, 1)
-                    KeyEvent.KEYCODE_DPAD_DOWN -> stepVertical(rail, railAdapter, index, 1, 1)
-                    KeyEvent.KEYCODE_DPAD_RIGHT -> enterRight()
+                    KeyEvent.KEYCODE_DPAD_LEFT -> if (index > 0) moveFocusTo(rail, index - 1)
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> if (index < railAdapter.itemCount - 1) moveFocusTo(rail, index + 1)
+                    KeyEvent.KEYCODE_DPAD_UP -> header.focusPill(headerFocusId)
+                    KeyEvent.KEYCODE_DPAD_DOWN -> enterRight()
                 }
             }
 
             Region.PILLS -> {
                 val index = pills.indexOfPill(focused)
                 when (code) {
-                    KeyEvent.KEYCODE_DPAD_UP -> crossRail(-1)
-                    KeyEvent.KEYCODE_DPAD_LEFT -> if (index > 0) pills.focusPillAt(index - 1) else focusRail(content?.railKey)
+                    KeyEvent.KEYCODE_DPAD_UP -> leaveContentUp()
+                    KeyEvent.KEYCODE_DPAD_LEFT -> if (index > 0) pills.focusPillAt(index - 1)
                     KeyEvent.KEYCODE_DPAD_RIGHT -> if (index < pills.pillCount - 1) pills.focusPillAt(index + 1)
                     KeyEvent.KEYCODE_DPAD_DOWN -> {
                         val rows = listAdapter.currentList
@@ -789,24 +992,26 @@ class TvSourcePanelView(
                 if (index < 0) return
                 val cols = listColumns.coerceAtLeast(1)
                 when (code) {
-                    KeyEvent.KEYCODE_DPAD_UP -> if (!stepVertical(list, listAdapter, index, -1, cols)) {
+                    KeyEvent.KEYCODE_DPAD_UP -> if (!stepVertical(index, -1, cols)) {
                         if (pills.pillCount > 0) {
                             rightKey?.let { focusMemory["$it$LIST_SUFFIX"] = listAdapter.currentList[index].id }
                             pills.focusPill(null)
                         } else {
-                            crossRail(-1)
+                            leaveContentUp()
                         }
                     }
 
-                    KeyEvent.KEYCODE_DPAD_DOWN -> if (!stepVertical(list, listAdapter, index, 1, cols)) crossRail(1)
+                    KeyEvent.KEYCODE_DPAD_DOWN -> stepVertical(index, 1, cols)
                     KeyEvent.KEYCODE_DPAD_LEFT -> if (cols > 1 && index % cols > 0) {
                         moveFocusTo(list, index - 1)
                     } else {
-                        focusRail(content?.railKey)
+                        switchSource(-1)
                     }
 
                     KeyEvent.KEYCODE_DPAD_RIGHT -> if (cols > 1 && index % cols < cols - 1 && index + 1 < listAdapter.itemCount) {
                         moveFocusTo(list, index + 1)
+                    } else {
+                        switchSource(1)
                     }
                 }
             }
@@ -814,11 +1019,11 @@ class TvSourcePanelView(
     }
 
     /**
-     * 竖着走一格 ([cols] > 1 时是一行): 跳过不能聚焦的说明行. 网格往下没有整行时落到最后一个. 返回 false = 到头了
+     * 列表里竖着走一格 ([cols] > 1 时是一行): 跳过不能聚焦的说明行. 网格往下没有整行时落到最后一个. 返回 false = 到头了
      * (那一行还没排出来也算走了, 排好时焦点过去, 见 [moveFocusTo]).
      */
-    private fun stepVertical(grid: VerticalGridView, adapter: TvSourceRowAdapter, index: Int, direction: Int, cols: Int): Boolean {
-        val rows = adapter.currentList
+    private fun stepVertical(index: Int, direction: Int, cols: Int): Boolean {
+        val rows = listAdapter.currentList
         if (cols > 1) {
             val target = index + direction * cols
             val clamped = when {
@@ -826,70 +1031,54 @@ class TvSourcePanelView(
                 direction > 0 && index / cols < (rows.size - 1) / cols -> rows.size - 1
                 else -> return false
             }
-            moveFocusTo(grid, clamped)
+            moveFocusTo(list, clamped)
             return true
         }
         var i = index + direction
         while (i in rows.indices && !rows[i].focusable) i += direction
         if (i !in rows.indices) return false
-        moveFocusTo(grid, i)
+        moveFocusTo(list, i)
         return true
+    }
+
+    /** 从内容的最上面往上走: 回胶囊行选中的那颗. */
+    private fun leaveContentUp() {
+        focusRail(selectedRailKey())
     }
 
     /**
-     * 右栏上下走出了这一项的头 / 尾: 跨到左栏紧挨着的那一项, 落在它右栏的第一行 (往下) 或最后一行 (往上). 焦点不回左栏 —— 左栏那一项只是
-     * 跟着亮起来、滚到眼前, 焦点在面板上停一下等新的一屏 (同右栏换屏). 本来就没有右栏的 (手动查找、几个操作) 跳过, 跨到下一个有右栏的
-     * (如最后一个在线源往下跨到「查询失败」); 跨到的源右边暂时没有能选的 (还在查 / 限流 / 没结果) 就接着往下一个跨 (见 resolvePending).
-     * 往这个方向再也没有有右栏的了, 焦点回左栏落在紧挨着的那一项上 (同追番页标签: 内容到头就回标签).
-     * 左栏顶上的「筛选」不在这一串里: 它的取值走到头就停, BT 往上走到头停在胶囊上 (不跨进筛选, 也不回左栏落到它上面).
-     * 进去的那一层 (BT 胶囊的取值) 与手动查找里不跨. 返回 false = 到头了.
+     * 列表里按左右: 胶囊行选中的挪到相邻的数据源, 焦点留在列表上, 松手时换过去 ([commitRail]); 新的一屏到了焦点落在第一行
+     * ([landFirstRow]), 没有能选的行就回胶囊行那颗. 进去的那一层 (BT 小胶囊的取值、手动查找的换源 / 换线路 / 条目页) 里不换.
      */
-    private fun crossRail(direction: Int): Boolean {
-        val content = content ?: return false
-        val from = content.railKey ?: return false
-        if (!crossable(from) || rightKey != from) return false
-        val target = nextCrossable(from, direction)
-        if (target == null) {
-            val neighbor = railNeighbor(from, direction)?.takeIf { it.id != TvSourceRailKeys.FILTER } ?: return false
-            focusRail(neighbor.id)
-            return true
-        }
-        crossing = direction
-        followRail(target.id)
-        return true
-    }
-
-    /** 从 [key] 往 [direction] 走的下一个有右栏的项 (跳过手动查找、几个操作); 没有了为 null. */
-    private fun nextCrossable(key: String, direction: Int): TvSourceRow? {
+    private fun switchSource(direction: Int) {
+        val content = content ?: return
+        val railKey = content.railKey ?: return
+        val key = rightKey ?: return
+        if (key != railKey && !key.startsWith(TvSourceRailKeys.MANUAL + "/search/")) return
         val rows = railAdapter.currentList
-        var i = rows.indexOfFirst { it.id == key }
-        if (i < 0) return null
-        i += direction
-        while (i in rows.indices && !crossable(rows[i].id)) i += direction
-        return rows.getOrNull(i)
+        val from = rows.indexOfFirst { it.id == (if (railCommitPending) focusedRailKey else railKey) }
+        if (from < 0) return
+        val target = rows.getOrNull(from + direction) ?: return
+        focusedRailKey = target.id
+        railCommitPending = true
+        landFirstRow = true
+        railAdapter.activeId = target.id
+        rail.setSelectedPositionSmooth(from + direction)
+        if (!horizontalHeld) commitRail()
     }
 
-    private fun railNeighbor(key: String, direction: Int): TvSourceRow? {
-        val rows = railAdapter.currentList
-        val index = rows.indexOfFirst { it.id == key }
-        return if (index < 0) null else rows.getOrNull(index + direction)
-    }
-
-    private fun crossable(key: String) =
-        key == TvSourceRailKeys.BT || key == TvSourceRailKeys.DOWNLOADS || key.startsWith(TvSourceRailKeys.WEB_PREFIX) ||
-            key == TvSourceRailKeys.FAILED
-
-    /** 右栏换成左栏 [key] 那一项, 焦点留在右栏 (不经过左栏): 左栏那一项亮起来、滚到眼前, 新的一屏到了由 submit 那边接着落焦点. */
+    /** 胶囊行换到 [key] (焦点不动): 那一颗亮起来、滚到眼前, 下面的内容当场换. */
     private fun followRail(key: String) {
         val index = railAdapter.currentList.indexOfFirst { it.id == key }
         if (index < 0) return
         focusedRailKey = key
-        railAdapter.activeId = key
+        railCommitPending = true
         rail.setSelectedPositionSmooth(index)
-        listener?.onRailFocused(key)
+        commitRail()
     }
 
     private fun enterRight() {
+        commitRail()
         val content = content ?: return
         if (!rightMatchesRail(content) || rightKey != incomingRightKey) {
             pendingEnterRight = true
@@ -934,13 +1123,13 @@ class TvSourcePanelView(
         }
     }
 
-    /** 长按的动作: 行自己给的; 没给但有详情就开详情弹窗. 右栏的行带上它属于左栏哪一项 (右栏此刻显示的就是 content.railKey 那一屏). */
+    /** 长按的动作: 行自己给的; 没给但有详情就开详情弹窗. 列表的行带上它属于哪个源 (列表此刻显示的就是 content.railKey 那一屏). */
     private fun longActionOf(row: TvSourceRow, inRail: Boolean): TvSourceAction? =
         row.longAction ?: row.details?.let { TvSourceAction.ShowDetails(row.id, inRail, railKey = if (inRail) null else content?.railKey) }
 
     /**
-     * 把焦点送到一行: 左栏 ([inRail]) 的 [id], 或右栏里左栏 [railKey] 那一项下的 [id] —— 详情弹窗换条时背后的面板跟着走、关掉后落在最后看的那一条.
-     * 是左栏另一项下的: 右栏换成那一项 (焦点在右栏就不经过左栏, 见 [followRail]), 新的一屏到了再落到那一行 (落点按这一屏的记忆给).
+     * 把焦点送到一行: 胶囊行 ([inRail]) 的 [id], 或源 [railKey] 下面列表里的 [id] —— 详情弹窗换条时背后的面板跟着走、关掉后落在最后看的那一条.
+     * 是另一个源下的: 胶囊行换过去 (焦点在内容里就留在内容里, 见 [followRail]), 新的一屏到了再落到那一行 (落点按这一屏的记忆给).
      * 那一行不在了就不动.
      */
     fun focusRow(railKey: String?, id: String, inRail: Boolean) {
@@ -960,7 +1149,6 @@ class TvSourcePanelView(
         focusMemory[railKey] = id
         focusMemory[railKey + LIST_SUFFIX] = id
         pillFallbackScreen = null
-        crossing = 0
         if (regionOf(findFocus()).let { it == Region.LIST || it == Region.PILLS }) {
             followRail(railKey)
         } else {
@@ -980,98 +1168,64 @@ class TvSourcePanelView(
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        // 落在面板之外 (画面上): 收起
-        if (event.x > panel.contentRight) {
+        // 落在面板下面 (画面上): 收起
+        if (event.y > panel.contentBottom) {
             if (event.actionMasked == MotionEvent.ACTION_UP) listener?.onCloseRequested()
             return true
         }
         return super.onTouchEvent(event)
     }
 
-    // ---- 分支 ----
+    // ---- 换屏 ----
 
     private val branchViews: Array<View> get() = arrayOf(drillTitleView, pills, list)
     private var branchAnimator: ValueAnimator? = null
 
     /**
-     * 分支 (右栏) 跟着左栏里它那一项走: 顶边与那一行的顶边对齐, 内容放不下时往上让 (长列表如 BT 就从顶上开始, 撑满整列). 左栏滚动、
-     * 两栏排完时调. 右栏刚换了一屏 ([branchEntering]): 直接摆到新位置, 再从左栏那边滑一小段淡入.
+     * 下面的内容换了一屏 ([branchEntering]) 且排出来了: 摆到它的胶囊下面 (胶囊行还在滚就按停稳后的位置) 原地淡入 —— 不滑、不等胶囊行停,
+     * 一出来就在最后的位置 (滑一小段、跟着胶囊行走都看着像条目动了一下才停).
      */
-    private fun updateBranch() {
-        // 那一行此刻不在屏上: 留在原处 (换屏的照样淡入, 不一直藏着)
-        val target = branchTargetOffset() ?: if (branchEntering) branchOffset else return
-        if (branchEntering) {
-            if (listAdapter.itemCount > 0 && list.childCount == 0) return // 行还没排出来
-            branchEntering = false
-            branchHidden = false
-            branchOffset = target
-            branchAnimator?.cancel()
-            for (view in branchViews) view.translationY = target
-            if (!style.animated) {
-                for (view in branchViews) {
-                    view.alpha = 1f
-                    view.translationX = 0f
-                }
-                return
-            }
-            branchAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
-                duration = style.branchFadeMillis
-                interpolator = TV_NATIVE_FAST_OUT_SLOW_IN
-                addUpdateListener {
-                    val f = it.animatedValue as Float
-                    for (view in branchViews) {
-                        view.alpha = f
-                        view.translationX = -style.branchShiftPx * (1f - f)
-                    }
-                }
-                start()
-            }
+    private fun revealBranch() {
+        if (!branchEntering) return
+        if (listAdapter.itemCount > 0 && list.childCount == 0) return // 行还没排出来
+        branchOffsetAnimator?.cancel()
+        branchEntering = false
+        branchHidden = false
+        branchAnimator?.cancel()
+        // 胶囊行还在滚: 直接摆到那一颗停稳以后的位置下面 (不等它停, 也不跟着它动); 停稳时对不上的再轻轻对齐 (见 onRailSettled)
+        val scrolling = rail.scrollState != RecyclerView.SCROLL_STATE_IDLE
+        (branchTargetOffset(settled = scrolling) ?: branchTargetOffset(settled = true))?.let {
+            branchOffsetX = it
+            applyBranchX()
+        }
+        if (!style.animated) {
+            for (view in branchViews) view.alpha = 1f
             return
         }
-        if (target != branchOffset) {
-            branchOffset = target
-            for (view in branchViews) view.translationY = target
+        branchAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = style.branchFadeMillis
+            interpolator = TV_NATIVE_FAST_OUT_SLOW_IN
+            addUpdateListener {
+                val f = it.animatedValue as Float
+                for (view in branchViews) view.alpha = f
+            }
+            start()
         }
-    }
-
-    /** 分支该往下挪多少; null = 它那一行此刻不在屏上 (滚出去了), 留在原处. */
-    private fun branchTargetOffset(): Float? {
-        val key = branchRailKey ?: return 0f
-        val index = railAdapter.currentList.indexOfFirst { it.id == key }
-        if (index < 0) return 0f
-        val anchor = rail.findViewHolderForAdapterPosition(index)?.itemView ?: return null
-        val available = rail.height - rail.paddingTop - rail.paddingBottom
-        val room = (available - branchContentHeight()).coerceAtLeast(0)
-        return (anchor.top + anchor.translationY - rail.paddingTop).coerceIn(0f, room.toFloat())
-    }
-
-    /** 分支内容的高度 (小标题 + 胶囊 + 列表的行); 列表的行没全排出来 = 比一屏长. */
-    private fun branchContentHeight(): Int {
-        val s = style
-        var height = 0
-        if (drillTitleView.visibility != GONE) height += drillTitleView.measuredHeight + s.drillTitleBottomGapPx
-        if (pills.pillCount > 0) height += pills.measuredHeight - s.focusBleedPx * 2 + s.pillsBottomGapPx
-        val count = listAdapter.itemCount
-        if (count > 0) {
-            val first = list.findViewHolderForAdapterPosition(0)?.itemView
-            val last = list.findViewHolderForAdapterPosition(count - 1)?.itemView
-            height += if (first == null || last == null) list.height else last.bottom - first.top
-        }
-        return height
     }
 
     // ---- 布局 ----
 
     /**
-     * 面板内容: 左上角是状态卡片, 下面左栏贴着左边距, 分支 (右栏小标题 / 胶囊 / 列表) 排在左栏右边, 基准位置与左栏顶边齐平, 再由
-     * [updateBranch] 按 translationY 挪到它那一行旁边. 分支宽度见 [TvSourcePanelStyle.rightSampleTitle] 与 [updateBranchWidth].
+     * 面板内容, 自上而下: 表头 (状态卡片靠左、命令按钮靠右), 胶囊行 (占满左右边距之间), 下面的内容 (小标题 / 小胶囊 / 列表: 占满宽度,
+     * 或按内容定宽、由 [updateBranchOffset] 挪到它的胶囊下面);
+     * 列表的下缘在屏幕高度的 [TvSourcePanelStyle.maxBottomFraction] 处.
      *
-     * 裁剪靠本层的 clipChildren: 它让每个子视图只画在自己的框里, 两栏滚上去的行不压到状态卡片上、不越过底边 (框四周留的 focusBleedPx
-     * 内边距给聚焦行放大用). 不给列表设 clipBounds: Android 11 (Shield) 上实测不生效.
+     * 裁剪靠本层的 clipChildren: 它让每个子视图只画在自己的框里, 列表滚上去的行不压到胶囊行上 (框四周留的 focusBleedPx 内边距给聚焦行放大用,
+     * 胶囊行左右的内边距是渐隐带). 不给列表设 clipBounds: Android 11 (Shield) 上实测不生效.
      */
     private inner class PanelLayout(context: Context) : ViewGroup(context) {
-        /** 面板内容的右缘 (分支的右边; 触屏点在它右边 = 点在画面上). */
-        var contentRight = 0
+        /** 面板内容的下缘 (列表的底边; 触屏点在它下面 = 点在画面上). */
+        var contentBottom = 0
             private set
 
         init {
@@ -1079,35 +1233,39 @@ class TvSourcePanelView(
             clipToPadding = false
         }
 
+        private fun headerHeight() = max(statusView.measuredHeight, style.pillHeightPx)
+
         override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
             val w = MeasureSpec.getSize(widthMeasureSpec)
             val h = MeasureSpec.getSize(heightMeasureSpec)
             val s = style
-            val unspecified = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
-            // 宽一档的分支也不越过右边距
-            val rightWidth = branchWidthPx.coerceAtMost(w - s.paddingStartPx - s.railWidthPx - s.columnGapPx - s.paddingEndPx)
-            statusView.measure(MeasureSpec.makeMeasureSpec(s.railWidthPx + s.columnGapPx + rightWidth, MeasureSpec.AT_MOST), unspecified)
             val bleed = s.focusBleedPx
-            val top = s.paddingTopPx + statusView.measuredHeight + s.headerGapPx
-            val columnHeight = (h - s.paddingBottomPx - top).coerceAtLeast(0)
+            val unspecified = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
+            val contentWidth = (w - s.paddingStartPx - s.paddingEndPx).coerceAtLeast(0)
+            header.measure(MeasureSpec.makeMeasureSpec(contentWidth + bleed * 2, MeasureSpec.AT_MOST), unspecified)
+            val headerWidth = if (header.pillCount == 0) 0 else header.measuredWidth - bleed * 2 + s.headerGapPx
+            statusView.measure(MeasureSpec.makeMeasureSpec((contentWidth - headerWidth).coerceAtLeast(0), MeasureSpec.AT_MOST), unspecified)
             rail.measure(
-                MeasureSpec.makeMeasureSpec(s.railWidthPx + bleed * 2, MeasureSpec.EXACTLY),
-                MeasureSpec.makeMeasureSpec(columnHeight + bleed * 2, MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec(contentWidth + s.fadeLengthPx * 2, MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec(s.railPillHeightPx + bleed * 2, MeasureSpec.EXACTLY),
             )
-            drillTitleView.measure(MeasureSpec.makeMeasureSpec(rightWidth, MeasureSpec.AT_MOST), unspecified)
-            pills.measure(MeasureSpec.makeMeasureSpec(rightWidth + bleed * 2, MeasureSpec.EXACTLY), unspecified)
-            var used = 0
-            if (drillTitleView.visibility != GONE) used += drillTitleView.measuredHeight + s.drillTitleBottomGapPx
-            if (pills.pillCount > 0) used += pills.measuredHeight - bleed * 2 + s.pillsBottomGapPx
+            // 下面的内容: 占满宽度, 或按内容定宽 (对齐到胶囊下面靠 translationX, 见 updateBranchOffset)
+            val branchWidth = if (branchFitWidthPx > 0) min(branchFitWidthPx, contentWidth) else contentWidth
+            drillTitleView.measure(MeasureSpec.makeMeasureSpec(branchWidth, MeasureSpec.AT_MOST), unspecified)
+            pills.measure(MeasureSpec.makeMeasureSpec(branchWidth + bleed * 2, MeasureSpec.EXACTLY), unspecified)
+            var top = s.paddingTopPx + headerHeight() + s.headerGapPx + s.railPillHeightPx + s.railGapPx
+            if (drillTitleView.visibility != GONE) top += drillTitleView.measuredHeight + s.drillTitleBottomGapPx
+            if (pills.pillCount > 0) top += pills.measuredHeight - bleed * 2 + s.pillsBottomGapPx
             val cols = listColumns.coerceAtLeast(1)
-            val columnWidth = ((rightWidth - s.rowGapPx * (cols - 1)) / cols).coerceAtLeast(1)
+            val columnWidth = ((branchWidth - s.rowGapPx * (cols - 1)) / cols).coerceAtLeast(1)
             if (listColumnWidth != columnWidth) {
                 listColumnWidth = columnWidth
                 list.setColumnWidth(columnWidth)
             }
+            val bottom = (h * s.maxBottomFraction).toInt()
             list.measure(
-                MeasureSpec.makeMeasureSpec(rightWidth + bleed * 2, MeasureSpec.EXACTLY),
-                MeasureSpec.makeMeasureSpec((columnHeight - used).coerceAtLeast(0) + bleed * 2, MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec(branchWidth + bleed * 2, MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec((bottom - top).coerceAtLeast(0) + bleed * 2, MeasureSpec.EXACTLY),
             )
             setMeasuredDimension(w, h)
         }
@@ -1115,29 +1273,50 @@ class TvSourcePanelView(
         override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
             val s = style
             val left = s.paddingStartPx
+            val right = r - l - s.paddingEndPx
             val bleed = s.focusBleedPx
-            statusView.layout(left, s.paddingTopPx, left + statusView.measuredWidth, s.paddingTopPx + statusView.measuredHeight)
-            val y = s.paddingTopPx + statusView.measuredHeight + s.headerGapPx
-            rail.layout(left - bleed, y - bleed, left - bleed + rail.measuredWidth, y - bleed + rail.measuredHeight)
-            val rightLeft = left + s.railWidthPx + s.columnGapPx
-            var ry = y
+            var y = s.paddingTopPx
+            val headerHeight = headerHeight()
+            val statusTop = y + (headerHeight - statusView.measuredHeight) / 2
+            statusView.layout(left, statusTop, left + statusView.measuredWidth, statusTop + statusView.measuredHeight)
+            val headerTop = y + (headerHeight - s.pillHeightPx) / 2 - bleed
+            header.layout(right + bleed - header.measuredWidth, headerTop, right + bleed, headerTop + header.measuredHeight)
+            y += headerHeight + s.headerGapPx
+            rail.layout(left - s.fadeLengthPx, y - bleed, left - s.fadeLengthPx + rail.measuredWidth, y - bleed + rail.measuredHeight)
+            y += s.railPillHeightPx + s.railGapPx
             if (drillTitleView.visibility != GONE) {
-                drillTitleView.layout(rightLeft, ry, rightLeft + drillTitleView.measuredWidth, ry + drillTitleView.measuredHeight)
-                ry += drillTitleView.measuredHeight + s.drillTitleBottomGapPx
+                drillTitleView.layout(left, y, left + drillTitleView.measuredWidth, y + drillTitleView.measuredHeight)
+                y += drillTitleView.measuredHeight + s.drillTitleBottomGapPx
             }
             if (pills.pillCount > 0) {
-                pills.layout(rightLeft - bleed, ry - bleed, rightLeft - bleed + pills.measuredWidth, ry - bleed + pills.measuredHeight)
-                ry += pills.measuredHeight - bleed * 2 + s.pillsBottomGapPx
+                pills.layout(left - bleed, y - bleed, left - bleed + pills.measuredWidth, y - bleed + pills.measuredHeight)
+                y += pills.measuredHeight - bleed * 2 + s.pillsBottomGapPx
             } else {
-                pills.layout(rightLeft - bleed, ry - bleed, rightLeft - bleed + pills.measuredWidth, ry - bleed)
+                pills.layout(left - bleed, y - bleed, left - bleed + pills.measuredWidth, y - bleed)
             }
-            list.layout(rightLeft - bleed, ry - bleed, rightLeft - bleed + list.measuredWidth, ry - bleed + list.measuredHeight)
-            contentRight = rightLeft + list.measuredWidth - bleed
-            updateBranch()
+            list.layout(left - bleed, y - bleed, left - bleed + list.measuredWidth, y - bleed + list.measuredHeight)
+            contentBottom = list.bottom - bleed
+            updateBranchOffset()
+            revealBranch()
         }
     }
 
-    private fun createGrid(context: Context): VerticalGridView = VerticalGridView(context).apply {
+    private fun createRail(context: Context): HorizontalGridView = HorizontalGridView(context).apply {
+        clipChildren = false
+        clipToPadding = false
+        isFocusable = false
+        itemAnimator = null
+        // 选中的那颗靠左停 (对齐线在左内边距处, 见 applyStyle), 下面对齐在它下面的内容也就靠左、少挡画面; 两头贴边: 最后几颗不再往左滚,
+        // 选中的往右走
+        windowAlignment = BaseGridView.WINDOW_ALIGN_BOTH_EDGE
+        windowAlignmentOffsetPercent = 0f
+        itemAlignmentOffsetPercent = 0f
+        setSmoothScrollByBehavior(TvNativeSpringScroll())
+        fadingLeftEdge = true
+        fadingRightEdge = true
+    }
+
+    private fun createList(context: Context): VerticalGridView = TvSourceListGridView(context).apply {
         clipChildren = false
         clipToPadding = false
         isFocusable = false
@@ -1147,18 +1326,21 @@ class TvSourcePanelView(
         windowAlignmentOffsetPercent = 33f
         itemAlignmentOffsetPercent = 50f
         setSmoothScrollByBehavior(TvNativeSpringScroll())
-        val bleed = style.focusBleedPx
-        setPadding(bleed, bleed, bleed, bleed)
+        isVerticalFadingEdgeEnabled = true
     }
 
-    /** 分隔线: [TvSourceRow.dividerAbove] 的行上方多留一截, 中间画一条细线. */
-    private inner class DividerDecoration(private val adapter: TvSourceRowAdapter) : RecyclerView.ItemDecoration() {
+    /** 分隔线: [TvSourceRow.dividerAbove] 的那一项前面多留一截, 中间画一条细线 (列表里横线, 胶囊行里竖线). */
+    private inner class DividerDecoration(
+        private val adapter: TvSourceRowAdapter,
+        private val horizontal: Boolean,
+    ) : RecyclerView.ItemDecoration() {
         private val paint = Paint()
 
         override fun getItemOffsets(outRect: Rect, view: View, parent: RecyclerView, state: RecyclerView.State) {
             val position = parent.getChildAdapterPosition(view)
             val row = adapter.currentList.getOrNull(position) ?: return
-            if (row.dividerAbove && position > 0) outRect.top = style.dividerGapPx
+            if (!row.dividerAbove || position <= 0) return
+            if (horizontal) outRect.left = style.dividerGapPx else outRect.top = style.dividerGapPx
         }
 
         override fun onDraw(c: Canvas, parent: RecyclerView, state: RecyclerView.State) {
@@ -1168,8 +1350,15 @@ class TvSourcePanelView(
                 val position = parent.getChildAdapterPosition(child)
                 val row = adapter.currentList.getOrNull(position) ?: continue
                 if (!row.dividerAbove || position <= 0) continue
-                val y = child.top + child.translationY - style.dividerGapPx / 2f - style.rowGapPx / 2f
-                c.drawRect(child.left.toFloat() + style.rowPaddingHPx, y, child.right.toFloat() - style.rowPaddingHPx, y + 1f, paint)
+                if (horizontal) {
+                    val x = child.left + child.translationX - style.dividerGapPx / 2f - style.railPillGapPx / 2f
+                    val half = child.height * DIVIDER_HEIGHT_FRACTION / 2f
+                    val cy = (child.top + child.bottom) / 2f
+                    c.drawRect(x, cy - half, x + 1f, cy + half, paint)
+                } else {
+                    val y = child.top + child.translationY - style.dividerGapPx / 2f - style.rowGapPx / 2f
+                    c.drawRect(child.left.toFloat() + style.rowPaddingHPx, y, child.right.toFloat() - style.rowPaddingHPx, y + 1f, paint)
+                }
             }
         }
     }
@@ -1182,25 +1371,87 @@ class TvSourcePanelView(
 
         const val PILL_PREFIX = "pill:"
 
-        /** 右栏列表 (不含胶囊) 上次停的行, 从胶囊按下时落回去. */
+        /** 列表 (不含小胶囊) 上次停的行, 从小胶囊按下时落回去. */
         const val LIST_SUFFIX = "#list"
+
+        /** 胶囊行里竖分隔线占胶囊高的几成. */
+        const val DIVIDER_HEIGHT_FRACTION = 0.55f
     }
 }
 
+/** 内容里 rail 的这一项在表头 (命令按钮), 不在胶囊行: 「筛选」与几个操作. */
+internal fun isCommandKey(key: String): Boolean = key == TvSourceRailKeys.FILTER || key.startsWith(TvSourceRailKeys.ACTION_PREFIX)
+
+private fun chipBackground(style: TvSourcePanelStyle, corner: Float) = GradientDrawable().apply {
+    setColor(style.idleBg)
+    cornerRadius = corner
+}
+
 /**
- * 一行 (两栏的行、筛选胶囊、剧集方块共用): 自己画圆角底, 自己摆图标、标题、信息、右端字与转圈 —— 不嵌套布局, 列表滚动时测量便宜.
+ * 列表: 比面板留给它的高度长时, 被截住的那一头渐隐 (看得出还能往那边走, 也不留一条看不见的裁切线). leanback 的竖列表没有渐隐, 借 View 自带的
+ * 渐隐边: 强度按头尾那一行露没露全自己算 (leanback 的布局管理器不报滚动范围), 渐隐带画到列表的外框上 (内边距是给聚焦放大留的那一圈).
+ */
+private class TvSourceListGridView(context: Context) : VerticalGridView(context) {
+    override fun getTopFadingEdgeStrength(): Float {
+        if (childCount == 0) return 0f
+        val first = findViewHolderForAdapterPosition(0)?.itemView ?: return 1f
+        return if (first.top + first.translationY < paddingTop - 1) 1f else 0f
+    }
+
+    override fun getBottomFadingEdgeStrength(): Float {
+        val count = adapter?.itemCount ?: 0
+        if (count == 0 || childCount == 0) return 0f
+        val last = findViewHolderForAdapterPosition(count - 1)?.itemView ?: return 1f
+        return if (last.bottom + last.translationY > height - paddingBottom + 1) 1f else 0f
+    }
+
+    override fun isPaddingOffsetRequired(): Boolean = true
+    override fun getLeftPaddingOffset(): Int = -paddingLeft
+    override fun getRightPaddingOffset(): Int = paddingRight
+    override fun getTopPaddingOffset(): Int = -paddingTop
+    override fun getBottomPaddingOffset(): Int = paddingBottom
+}
+
+/**
+ * 一行 (胶囊行的源、表头的按钮、列表的行、小胶囊、剧集方块共用): 自己画圆角底, 自己摆图标、标题、信息、右端字与转圈 —— 不嵌套布局, 列表滚动时测量便宜.
  * 聚焦程度 [focusProgress] 0..1 驱动底色、字色与放大, 失焦比得焦快 (同播放器胶囊).
+ *
+ * 胶囊行与表头的 [TvSourceRowStyle.Rail] 行宽度按内容 (宽度不是 EXACTLY 时: 图标 + 名字 + 右端字, 不超过给的上限 / [TvSourcePanelStyle.railPillMaxWidthPx]),
+ * 高度是 EXACTLY 时用给的.
  */
 internal class TvSourceRowView(context: Context, private val sketch: Sketch, var style: TvSourcePanelStyle) : ViewGroup(context) {
     var row: TvSourceRow? = null
         private set
 
-    /** 左栏里右栏正在显示的那一项 (焦点不在它身上时也亮一档). */
+    /** 胶囊行里下面正在显示的那个源 (焦点不在它身上时也亮一档). */
     var active: Boolean = false
         set(value) {
             if (field == value) return
             field = value
             applyColors()
+        }
+
+    /** 没有图标的行留不留图标位 (见 TvSourceRowAdapter.reserveIconSlot). */
+    var reserveIconSlot: Boolean = true
+        set(value) {
+            if (field == value) return
+            field = value
+            row?.let {
+                applyIconVisibility(it)
+                requestLayout()
+            }
+        }
+
+    private fun applyIconVisibility(row: TvSourceRow) {
+        icon.visibility = if (showsIcon(row)) VISIBLE else if (reserveIconSlot && reservesIconSlot(row)) INVISIBLE else GONE
+    }
+
+    /** 画成胶囊 (圆角 = 高的一半): 胶囊行与表头的按钮. */
+    var capsule: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            invalidate()
         }
 
     private val icon = ImageView(context)
@@ -1226,6 +1477,7 @@ internal class TvSourceRowView(context: Context, private val sketch: Sketch, var
         title.ellipsize = TextUtils.TruncateAt.END
         meta.ellipsize = TextUtils.TruncateAt.END
         meta.maxLines = 1
+        meta.gravity = Gravity.END
         trailing.maxLines = 1
         trailing.gravity = Gravity.END
         addView(icon)
@@ -1256,21 +1508,23 @@ internal class TvSourceRowView(context: Context, private val sketch: Sketch, var
             meta.setSingleLine(true)
         } else {
             title.setSingleLine(false)
+            meta.setSingleLine(false)
             title.maxLines = when (row.style) {
-                TvSourceRowStyle.Resource -> 3
-                TvSourceRowStyle.File -> 2
+                TvSourceRowStyle.Resource, TvSourceRowStyle.File -> 2
                 else -> 6
             }
         }
         title.gravity = if (row.style == TvSourceRowStyle.Cell) Gravity.CENTER else Gravity.START or Gravity.CENTER_VERTICAL
         title.text = row.title
-        meta.text = row.meta
+        val metaText = if (marqueeCapable(row.style)) row.meta else splitMeta(row.meta)
+        meta.maxLines = if ('\n' in metaText) 2 else 1
+        meta.text = metaText
         meta.visibility = if (showsMeta(row)) VISIBLE else GONE
         trailing.text = row.trailing
         trailing.visibility = if (row.trailing.isEmpty() || row.loading) GONE else VISIBLE
         spinner.visibility = if (row.loading) VISIBLE else GONE
 
-        icon.visibility = if (showsIcon(row)) VISIBLE else if (reservesIconSlot(row)) INVISIBLE else GONE
+        applyIconVisibility(row)
         if (row.icon == TvSourceRowIcon.Source && row.iconUrl != null) {
             if (loadedIconUrl != row.iconUrl) {
                 loadedIconUrl = row.iconUrl
@@ -1289,6 +1543,8 @@ internal class TvSourceRowView(context: Context, private val sketch: Sketch, var
         setMarquee(isFocused)
         requestLayout()
     }
+
+    private fun splitMeta(text: String): String = splitTvSourceMeta(text, meta.paint, style.metaSplitWidthPx)
 
     override fun onFocusChanged(gainFocus: Boolean, direction: Int, previouslyFocusedRect: Rect?) {
         super.onFocusChanged(gainFocus, direction, previouslyFocusedRect)
@@ -1312,7 +1568,7 @@ internal class TvSourceRowView(context: Context, private val sketch: Sketch, var
         }
     }
 
-    /** 说明行 (整句) 与 BT 资源的标题 (三行) 会折行, 其余的行字都只占一行. */
+    /** 说明行 (整句) 与资源 / 文件的标题 (两行) 会折行, 其余的行字都只占一行. */
     private fun marqueeCapable(style: TvSourceRowStyle) =
         style != TvSourceRowStyle.Resource && style != TvSourceRowStyle.File && style != TvSourceRowStyle.Status
 
@@ -1332,10 +1588,18 @@ internal class TvSourceRowView(context: Context, private val sketch: Sketch, var
 
     private fun setFocusProgress(value: Float) {
         focusProgress = value
-        val scale = 1f + (style.focusScale - 1f) * value
+        // 占满宽度的行按比例放大会越过四周留的出血边、圆角被裁掉: 放大后多出来的不超过出血边
+        val maxScale = if (width > 0) min(style.focusScale, 1f + style.focusBleedPx * 2f / width) else style.focusScale
+        val scale = 1f + (maxScale - 1f) * value
         scaleX = scale
         scaleY = scale
         applyColors()
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        // 放大的上限按宽度算 (见 setFocusProgress)
+        setFocusProgress(focusProgress)
     }
 
     /** 复用的行换了内容: 聚焦程度按此刻的焦点归位, 不从上一行的中间值接着动. */
@@ -1366,8 +1630,8 @@ internal class TvSourceRowView(context: Context, private val sketch: Sketch, var
         val chosen = row.selected || active
         val rest = if (chosen) s.activeBg else s.idleBg
         bgPaint.color = tvNativeLerpColor(rest, s.focusedBg, p)
-        // 拿着焦点的不描边 (左栏换项时新的那一行同时被标成选中, 聚焦动画开头几帧若照选中画, 会先闪一个框再变白);
-        // 失焦后还是选中的 (进了分支的左栏那一行) 边随底色变暗淡回来
+        // 拿着焦点的不描边 (胶囊行换源时新的那一颗同时被标成选中, 聚焦动画开头几帧若照选中画, 会先闪一个框再变白);
+        // 失焦后还是选中的 (进了列表时胶囊行那一颗) 边随底色变暗淡回来
         borderPaint.color = tvNativeWithAlpha(s.activeBorderColor, if (chosen && !isFocused) 1f - p else 0f)
         borderPaint.strokeWidth = s.activeBorderPx
         invalidate()
@@ -1388,12 +1652,26 @@ internal class TvSourceRowView(context: Context, private val sketch: Sketch, var
             setMeasuredDimension(w, s.pillHeightPx)
             return
         }
-        val width = MeasureSpec.getSize(widthMeasureSpec)
         val iconSlot = if (icon.visibility != GONE) s.iconSizePx + s.iconGapPx else 0
         val iconSpec = MeasureSpec.makeMeasureSpec(s.iconSizePx, MeasureSpec.EXACTLY)
         icon.measure(iconSpec, iconSpec)
         val spinnerSpec = MeasureSpec.makeMeasureSpec(s.spinnerSizePx, MeasureSpec.EXACTLY)
         spinner.measure(spinnerSpec, spinnerSpec)
+        val widthMode = MeasureSpec.getMode(widthMeasureSpec)
+        val width = if (row?.style == TvSourceRowStyle.Rail && widthMode != MeasureSpec.EXACTLY) {
+            // 按内容: 名字与右端字都排得下的宽度
+            title.measure(unspecified, unspecified)
+            var natural = s.rowPaddingHPx * 2 + iconSlot + title.measuredWidth
+            if (trailing.visibility != GONE) {
+                trailing.measure(unspecified, unspecified)
+                natural += trailing.measuredWidth + s.trailingGapPx
+            } else if (spinner.visibility != GONE) {
+                natural += s.spinnerSizePx + s.trailingGapPx
+            }
+            min(natural, if (widthMode == MeasureSpec.AT_MOST) MeasureSpec.getSize(widthMeasureSpec) else s.railPillMaxWidthPx)
+        } else {
+            MeasureSpec.getSize(widthMeasureSpec)
+        }
         var trailingWidth = 0
         if (trailing.visibility != GONE) {
             trailing.measure(MeasureSpec.makeMeasureSpec(width / 2, MeasureSpec.AT_MOST), unspecified)
@@ -1401,17 +1679,25 @@ internal class TvSourceRowView(context: Context, private val sketch: Sketch, var
         } else if (spinner.visibility != GONE) {
             trailingWidth = s.spinnerSizePx + s.trailingGapPx
         }
-        val textWidth = (width - s.rowPaddingHPx * 2 - iconSlot - trailingWidth).coerceAtLeast(0)
+        var textWidth = (width - s.rowPaddingHPx * 2 - iconSlot - trailingWidth).coerceAtLeast(0)
+        if (meta.visibility != GONE) {
+            // 信息靠右: 标题用不完的都可以给它, 标题长时至少也有字区的一小半; 标题用剩下的
+            title.measure(unspecified, unspecified)
+            val metaCap = max((textWidth * META_MIN_FRACTION).toInt(), textWidth - title.measuredWidth - s.metaGapPx)
+            meta.measure(MeasureSpec.makeMeasureSpec(metaCap.coerceAtLeast(0), MeasureSpec.AT_MOST), unspecified)
+            textWidth = (textWidth - meta.measuredWidth - s.metaGapPx).coerceAtLeast(0)
+        }
         val textSpec = MeasureSpec.makeMeasureSpec(textWidth, if (row?.style == TvSourceRowStyle.Cell) MeasureSpec.EXACTLY else MeasureSpec.AT_MOST)
         title.measure(textSpec, unspecified)
-        if (meta.visibility != GONE) meta.measure(MeasureSpec.makeMeasureSpec(textWidth, MeasureSpec.AT_MOST), unspecified)
         val height = when (row?.style) {
-            TvSourceRowStyle.Rail -> s.railRowHeightPx
-            TvSourceRowStyle.Line -> s.lineRowHeightPx
-            TvSourceRowStyle.Resource -> s.resourceRowHeightPx
-            TvSourceRowStyle.File -> {
-                val metaHeight = if (meta.visibility != GONE) meta.measuredHeight + s.textGapPx else 0
-                max(s.lineRowHeightPx, title.measuredHeight + metaHeight + s.fileRowPaddingVPx * 2)
+            TvSourceRowStyle.Rail -> if (MeasureSpec.getMode(heightMeasureSpec) == MeasureSpec.EXACTLY) {
+                MeasureSpec.getSize(heightMeasureSpec)
+            } else {
+                s.railPillHeightPx
+            }
+            TvSourceRowStyle.Line, TvSourceRowStyle.Resource, TvSourceRowStyle.File -> {
+                val metaHeight = if (meta.visibility != GONE) meta.measuredHeight else 0
+                max(s.lineRowHeightPx, max(title.measuredHeight, metaHeight) + s.fileRowPaddingVPx * 2)
             }
             TvSourceRowStyle.Option -> s.optionRowHeightPx
             TvSourceRowStyle.Cell -> s.cellHeightPx
@@ -1446,18 +1732,18 @@ internal class TvSourceRowView(context: Context, private val sketch: Sketch, var
             spinner.layout(right - s.spinnerSizePx, sy, right, sy + s.spinnerSizePx)
             right -= s.spinnerSizePx + s.trailingGapPx
         }
-        val metaHeight = if (meta.visibility != GONE) meta.measuredHeight + s.textGapPx else 0
-        val blockHeight = title.measuredHeight + metaHeight
-        var y = (h - blockHeight) / 2
+        if (meta.visibility != GONE) {
+            val my = (h - meta.measuredHeight) / 2
+            meta.layout(right - meta.measuredWidth, my, right, my + meta.measuredHeight)
+        }
+        val ty = (h - title.measuredHeight) / 2
         val titleLeft = if (row?.style == TvSourceRowStyle.Cell) (w - title.measuredWidth) / 2 else x
-        title.layout(titleLeft, y, titleLeft + title.measuredWidth, y + title.measuredHeight)
-        y += title.measuredHeight + s.textGapPx
-        if (meta.visibility != GONE) meta.layout(x, y, x + meta.measuredWidth, y + meta.measuredHeight)
+        title.layout(titleLeft, ty, titleLeft + title.measuredWidth, ty + title.measuredHeight)
     }
 
     override fun onDraw(canvas: Canvas) {
         // 说明行 (正在查询 / 没有结果) 也垫一张玻璃卡片: 背后没有暗底, 与上下的行连成一列
-        val corner = if (row?.style == TvSourceRowStyle.Pill) height / 2f else style.cornerPx
+        val corner = if (capsule || row?.style == TvSourceRowStyle.Pill) height / 2f else style.cornerPx
         bgRect.set(0f, 0f, width.toFloat(), height.toFloat())
         canvas.drawRoundRect(bgRect, corner, corner, bgPaint)
         if (borderPaint.alpha > 0 && style.activeBorderPx > 0f) {
@@ -1470,15 +1756,18 @@ internal class TvSourceRowView(context: Context, private val sketch: Sketch, var
     override fun hasOverlappingRendering(): Boolean = false
 }
 
-/** 两栏的列表适配器: 按行 id 做差异更新 (后台线程), 行 id 换成稳定的长整数 id. */
+/**
+ * 胶囊行与列表的适配器: 按行 id 做差异更新 (后台线程), 行 id 换成稳定的长整数 id. [horizontal] = 胶囊行 (行按内容定宽、画成胶囊).
+ */
 internal class TvSourceRowAdapter(
     private val sketch: Sketch,
     var style: TvSourcePanelStyle,
+    private val horizontal: Boolean = false,
 ) : ListAdapter<TvSourceRow, TvSourceRowAdapter.Holder>(Diff) {
     var onRowFocused: ((Int, TvSourceRow) -> Unit)? = null
     var onRowClicked: ((TvSourceRow, Boolean) -> Unit)? = null
 
-    /** 左栏里右栏正在显示的那一项. */
+    /** 胶囊行里下面正在显示的那个源. */
     var activeId: String? = null
         set(value) {
             if (field == value) return
@@ -1510,7 +1799,12 @@ internal class TvSourceRowAdapter(
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
         val view = TvSourceRowView(parent.context, sketch, style)
-        view.layoutParams = RecyclerView.LayoutParams(RecyclerView.LayoutParams.MATCH_PARENT, RecyclerView.LayoutParams.WRAP_CONTENT)
+        view.layoutParams = if (horizontal) {
+            RecyclerView.LayoutParams(RecyclerView.LayoutParams.WRAP_CONTENT, RecyclerView.LayoutParams.MATCH_PARENT)
+        } else {
+            RecyclerView.LayoutParams(RecyclerView.LayoutParams.MATCH_PARENT, RecyclerView.LayoutParams.WRAP_CONTENT)
+        }
+        view.capsule = horizontal
         val holder = Holder(view)
         // 回调里现取位置与适配器 (同原生卡片墙: 视图会被复用到别的位置)
         view.setOnFocusChangeListener { _, hasFocus ->
@@ -1529,8 +1823,18 @@ internal class TvSourceRowAdapter(
         return holder
     }
 
+    /** 这一屏有没有带图标的行: 有才给没图标的行留图标位 (字的左缘对齐), 都没有就不留 (短的列表不白占一截). */
+    var reserveIconSlot: Boolean = true
+        set(value) {
+            if (field == value) return
+            field = value
+            val recycler = recycler ?: return
+            for (i in 0 until recycler.childCount) (recycler.getChildAt(i) as? TvSourceRowView)?.reserveIconSlot = value
+        }
+
     override fun onBindViewHolder(holder: Holder, position: Int) {
         val row = getItem(position)
+        holder.view.reserveIconSlot = reserveIconSlot
         holder.view.bind(row, style)
         holder.view.active = row.id == activeId
         holder.view.resetFocusLook()
@@ -1550,11 +1854,15 @@ internal class TvSourceRowAdapter(
     }
 }
 
-/** 右栏顶上那排筛选胶囊: 一行放不下就折到下一行. 左右键按顺序走, 下键进列表 (面板判). */
+/**
+ * 一排胶囊 (方向键由面板判): 内容顶上的小胶囊 (一行放不下就折到下一行), 或 [singleLine] 的表头命令按钮 (排一行, 宽度按内容).
+ * 胶囊的高度都是 [TvSourcePanelStyle.pillHeightPx].
+ */
 internal class TvSourcePillFlow(
     context: Context,
     private val sketch: Sketch,
     style: TvSourcePanelStyle,
+    private val singleLine: Boolean = false,
 ) : ViewGroup(context) {
     var style: TvSourcePanelStyle = style
         set(value) {
@@ -1578,6 +1886,7 @@ internal class TvSourcePillFlow(
     fun submit(rows: List<TvSourceRow>) {
         rows.forEachIndexed { index, row ->
             val view = getChildAt(index) as? TvSourceRowView ?: TvSourceRowView(context, sketch, style).also { v ->
+                v.capsule = true
                 v.setOnFocusChangeListener { _, hasFocus -> if (hasFocus) v.row?.let { onPillFocused?.invoke(it) } }
                 v.setOnClickListener { v.row?.let { onPillClicked?.invoke(it) } }
                 addView(v)
@@ -1613,12 +1922,23 @@ internal class TvSourcePillFlow(
         val bleed = style.focusBleedPx
         val outer = MeasureSpec.getSize(widthMeasureSpec)
         val width = (outer - bleed * 2).coerceAtLeast(0)
+        val heightSpec = MeasureSpec.makeMeasureSpec(style.pillHeightPx, MeasureSpec.EXACTLY)
+        if (singleLine) {
+            var used = 0
+            for (i in 0 until childCount) {
+                val child = getChildAt(i)
+                child.measure(MeasureSpec.makeMeasureSpec((width - used).coerceAtLeast(0), MeasureSpec.AT_MOST), heightSpec)
+                used += child.measuredWidth + style.pillGapPx
+            }
+            if (childCount == 0) setMeasuredDimension(0, 0) else setMeasuredDimension(used - style.pillGapPx + bleed * 2, style.pillHeightPx + bleed * 2)
+            return
+        }
         val childSpec = MeasureSpec.makeMeasureSpec(width, MeasureSpec.AT_MOST)
         var x = 0
         var lines = if (childCount == 0) 0 else 1
         for (i in 0 until childCount) {
             val child = getChildAt(i)
-            child.measure(childSpec, MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
+            child.measure(childSpec, heightSpec)
             if (x > 0 && x + child.measuredWidth > width) {
                 lines++
                 x = 0
@@ -1636,7 +1956,7 @@ internal class TvSourcePillFlow(
         var y = 0
         for (i in 0 until childCount) {
             val child = getChildAt(i)
-            if (x > 0 && x + child.measuredWidth > width) {
+            if (!singleLine && x > 0 && x + child.measuredWidth > width) {
                 x = 0
                 y += style.pillHeightPx + style.pillGapPx
             }
@@ -1646,43 +1966,56 @@ internal class TvSourcePillFlow(
     }
 }
 
-private fun showsIcon(row: TvSourceRow) = row.icon != TvSourceRowIcon.None && row.style != TvSourceRowStyle.Pill &&
-        row.style != TvSourceRowStyle.Cell && row.style != TvSourceRowStyle.Status
+/** 标题长时靠右的信息至少能占一行字区 (去掉图标与右端字) 的几成. */
+private const val META_MIN_FRACTION = 0.45f
 
-/** 左栏与菜单类的行都留着图标位, 字左缘对齐. */
-private fun reservesIconSlot(row: TvSourceRow) =
-    row.style == TvSourceRowStyle.Rail || row.style == TvSourceRowStyle.Option || row.style == TvSourceRowStyle.Line ||
-            row.style == TvSourceRowStyle.Resource || row.style == TvSourceRowStyle.File
-
-private fun showsMeta(row: TvSourceRow) = row.meta.isNotEmpty() && row.style != TvSourceRowStyle.Rail &&
-        row.style != TvSourceRowStyle.Option && row.style != TvSourceRowStyle.Pill && row.style != TvSourceRowStyle.Cell
+/** 信息里各项之间的分隔 (模型拼信息时用的同一个), 断两行时在它这里断. */
+private const val META_SEPARATOR = " · "
 
 /**
- * 这一屏的内容要多宽才都放得下: 每一行 (同 [TvSourceRowView] 的摆法: 图标位 + 标题 / 信息里较长的那个 + 右端字), 胶囊排成一排, 小标题;
- * 取最宽的. 会折行的 (说明行、BT 资源) 不算; 多列的 (选集方块) 不按内容, 返回 0 (= 用下限).
+ * 靠右的信息一行比 [splitWidthPx] 宽时, 在某个「 · 」处断成上下两行 (两行里较宽的那行尽量窄): 字小、两行叠起来比一长行省横向地方,
+ * 标题能多占一截. 只有一段 (一句提示) 或不够宽的原样.
+ */
+internal fun splitTvSourceMeta(text: String, paint: Paint, splitWidthPx: Int): String {
+    val parts = text.split(META_SEPARATOR)
+    if (parts.size < 2) return text
+    if (paint.measureText(text) <= splitWidthPx) return text
+    fun line(from: Int, to: Int) = parts.subList(from, to).joinToString(META_SEPARATOR)
+    val k = (1 until parts.size).minBy { k -> max(paint.measureText(line(0, k)), paint.measureText(line(k, parts.size))) }
+    return line(0, k) + "\n" + line(k, parts.size)
+}
+
+/**
+ * 不占满宽度的那一屏要多宽: 每一行 (同 [TvSourceRowView] 的摆法: 图标位 + 标题 + 靠右的信息 (断两行的按较宽那行) + 右端字), 小胶囊排成一排,
+ * 小标题; 取最宽的. 会折行的说明行不算.
  */
 private fun measureBranchContentWidth(right: TvSourceRight, style: TvSourcePanelStyle): Int {
-    if (right.columns > 1) return 0
     val paints = HashMap<TvNativeTextStyle, Paint>()
+    fun paint(textStyle: TvNativeTextStyle) = paints.getOrPut(textStyle) { textPaint(textStyle) }
     fun width(textStyle: TvNativeTextStyle, text: String): Int =
-        if (text.isEmpty()) 0 else ceil(paints.getOrPut(textStyle) { textPaint(textStyle) }.measureText(text)).toInt()
+        if (text.isEmpty()) 0 else text.lines().maxOf { ceil(paint(textStyle).measureText(it)).toInt() }
 
     var result = 0
+    val reserveIcon = right.rows.any { showsIcon(it) }
     for (row in right.rows) {
-        if (row.style == TvSourceRowStyle.Status || row.style == TvSourceRowStyle.Resource || row.style == TvSourceRowStyle.File) continue
+        if (row.style == TvSourceRowStyle.Status) continue
         val titleStyle = when (row.style) {
             TvSourceRowStyle.Rail -> style.railTitle
             TvSourceRowStyle.Cell -> style.cell
             else -> style.rowTitle
         }
-        val iconSlot = if (showsIcon(row) || reservesIconSlot(row)) style.iconSizePx + style.iconGapPx else 0
+        val iconSlot = if (showsIcon(row) || (reserveIcon && reservesIconSlot(row))) style.iconSizePx + style.iconGapPx else 0
         val trailing = when {
             row.loading -> style.spinnerSizePx + style.trailingGapPx
             row.trailing.isNotEmpty() -> width(style.trailing, row.trailing) + style.trailingGapPx
             else -> 0
         }
-        val text = max(width(titleStyle, row.title), if (showsMeta(row)) width(style.rowMeta, row.meta) else 0)
-        result = max(result, style.rowPaddingHPx * 2 + iconSlot + text + trailing)
+        val meta = if (showsMeta(row)) {
+            width(style.rowMeta, splitTvSourceMeta(row.meta, paint(style.rowMeta), style.metaSplitWidthPx)) + style.metaGapPx
+        } else {
+            0
+        }
+        result = max(result, style.rowPaddingHPx * 2 + iconSlot + width(titleStyle, row.title) + meta + trailing)
     }
     if (right.pills.isNotEmpty()) {
         val pills = right.pills.sumOf { width(style.pill, it.title) + style.pillPaddingHPx * 2 } + style.pillGapPx * (right.pills.size - 1)
@@ -1690,22 +2023,24 @@ private fun measureBranchContentWidth(right: TvSourceRight, style: TvSourcePanel
     }
     right.title?.let { result = max(result, width(style.drillTitle, it) + style.chipPaddingHPx * 2) }
     // 量出来的与 TextView 排版的宽度可能差一两个像素的舍入, 差了就会省略 / 跑马灯
-    return if (result > 0) result + TEXT_ROUNDING_SLACK_PX else 0
+    return result + TEXT_ROUNDING_SLACK_PX
 }
 
 private const val TEXT_ROUNDING_SLACK_PX = 2
-
-/** 右栏宽度的下限: 刚好放下「完成验证」那一行 (行首图标位 + 标题 / 说明里较长的那个), 见 [TvSourcePanelStyle.rightSampleTitle]. */
-private fun measureRightWidth(style: TvSourcePanelStyle): Int {
-    val text = max(measureTextWidth(style.rowTitle, style.rightSampleTitle), measureTextWidth(style.rowMeta, style.rightSampleMeta))
-    val width = style.rowPaddingHPx * 2 + style.iconSizePx + style.iconGapPx + ceil(text).toInt() + style.rightSlackPx
-    return max(style.rightMinWidthPx, width)
-}
-
-private fun measureTextWidth(style: TvNativeTextStyle, text: String): Float = textPaint(style).measureText(text)
 
 private fun textPaint(style: TvNativeTextStyle): Paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
     textSize = style.sizePx
     letterSpacing = style.letterSpacingEm
     typeface = tvNativeTypeface(style.weight)
 }
+
+private fun showsIcon(row: TvSourceRow) = row.icon != TvSourceRowIcon.None && row.style != TvSourceRowStyle.Pill &&
+        row.style != TvSourceRowStyle.Cell && row.style != TvSourceRowStyle.Status
+
+/** 胶囊行与菜单类的行都留着图标位, 字左缘对齐. */
+private fun reservesIconSlot(row: TvSourceRow) =
+    row.style == TvSourceRowStyle.Rail || row.style == TvSourceRowStyle.Option || row.style == TvSourceRowStyle.Line ||
+            row.style == TvSourceRowStyle.Resource || row.style == TvSourceRowStyle.File
+
+private fun showsMeta(row: TvSourceRow) = row.meta.isNotEmpty() && row.style != TvSourceRowStyle.Rail &&
+        row.style != TvSourceRowStyle.Option && row.style != TvSourceRowStyle.Pill && row.style != TvSourceRowStyle.Cell

@@ -15,7 +15,7 @@ import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.topic.Resolution
 
 /*
- * 选源面板左栏最顶上的「筛选」: 分辨率 / 字幕两项, 对 BT 与缓存、一个文件一行的在线源 (网盘类, 见 webFilesOf) 一起生效.
+ * 选源面板表头的「筛选」: 分辨率 / 字幕两项, 对 BT 与缓存、一个文件一行的在线源 (网盘类, 见 webFilesOf) 一起生效.
  *
  * 取值就是这部番的偏好 (选择器的 resolution / subtitleLanguageId, 自动选源也按它), 选中一个资源时选择器会把它的分辨率 / 字幕记成偏好.
  * 所以每个源只认自己结果里有的取值: 播了一个 4K 的网盘文件, 没有 4K 的源照常列, 不会整页变成「低于偏好」(BT 那边同理, 见 projectBtList).
@@ -24,11 +24,11 @@ import me.him188.ani.datasources.api.topic.Resolution
  * 线路式的在线源不筛: 它们的分辨率 / 字幕是数据源配置里写死的默认值 (多半 1080P / 简中), 不是每条结果自己的.
  */
 
-/** 把「筛选」放在左栏最顶上, 与下面各项之间画一道分隔线. */
+/** 把「筛选」放在 rail 最前面 (视图把它排进表头), 后面第一项前画一道分隔线. */
 internal fun List<TvSourceRow>.withFilterRow(row: TvSourceRow): List<TvSourceRow> =
     listOf(row) + mapIndexed { index, it -> if (index == 0) it.copy(dividerAbove = true) else it }
 
-/** 左栏的「筛选」: 右端写当前的取值 (没选不写). */
+/** 表头的「筛选」: 右端写当前的取值 (没选不写), 确定打开筛选弹窗. */
 internal fun filterRailRow(input: TvSourcePanelInput, strings: TvSourceStrings): TvSourceRow {
     val values = listOfNotNull(
         input.resolutionFilter?.let(::resolutionLabel),
@@ -41,14 +41,15 @@ internal fun filterRailRow(input: TvSourcePanelInput, strings: TvSourceStrings):
         icon = TvSourceRowIcon.Filter,
         trailing = values.joinToString(" · "),
         accent = if (values.isEmpty()) TvSourceAccent.None else TvSourceAccent.Attention,
+        action = TvSourceAction.OpenFilter,
     )
 }
 
 /**
- * 「筛选」的分支: 分辨率、字幕两组取值排成一列, 确定就选 ([TvSourceAction.PickFilter], 同 BT 那排原来的胶囊). 取值来自 BT 的结果与
- * 一个文件一行的在线源对得上的文件 ([files]), 再加上当前选的 (万一眼下的结果里没有).
+ * 筛选弹窗的内容: 分辨率、字幕两组, 每组一行小标题 ([TvSourceRowStyle.Status]) 跟着它的取值, 确定就选 ([TvSourceAction.PickFilter]).
+ * 取值来自 BT 的结果与一个文件一行的在线源对得上的文件 ([files]), 再加上当前选的 (万一眼下的结果里没有).
  */
-internal fun filterPane(input: TvSourcePanelInput, files: List<Media>, strings: TvSourceStrings): TvSourceRight {
+internal fun filterOptions(input: TvSourcePanelInput, files: List<Media>, strings: TvSourceStrings): List<TvSourceRow> {
     val resolution = input.resolutionFilter
     val subtitle = input.subtitleFilter
     val resolutions = (input.bt.availableResolutions + files.map { it.properties.resolution } + listOfNotNull(resolution))
@@ -57,17 +58,12 @@ internal fun filterPane(input: TvSourcePanelInput, files: List<Media>, strings: 
         .sortedByDescending { resolutionOf(it)?.size ?: -1 }
     val subtitles = (input.bt.availableSubtitleLanguageIds + files.flatMap { it.properties.subtitleLanguageIds } + listOfNotNull(subtitle))
         .distinct()
-    val rows = buildList {
+    return buildList {
         add(filterHeader(TvSourceFilter.Resolution, strings.resolution, dividerAbove = false))
         addFilterOptions(TvSourceFilter.Resolution, resolution, resolutions.map { it to resolutionLabel(it) }, strings)
         add(filterHeader(TvSourceFilter.Subtitle, strings.subtitle, dividerAbove = true))
         addFilterOptions(TvSourceFilter.Subtitle, subtitle, subtitles.map { it to renderSubtitleLanguage(it, strings.details) }, strings)
     }
-    return TvSourceRight(
-        key = TvSourceRailKeys.FILTER,
-        rows = rows,
-        focusId = rows.firstOrNull { it.selected }?.id,
-    )
 }
 
 /**
