@@ -15,6 +15,7 @@ import me.him188.ani.datasources.api.source.MediaFetchRequest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 class DriveSubjectMatcherTest {
     private class FakeBrowser(
@@ -194,6 +195,51 @@ class DriveSubjectMatcherTest {
         }
         val matched = DriveSubjectMatcher(browser).match(request("葬送的芙莉莲 第二季", episodes = episodes))
         assertEquals(listOf("29.mp4@29", "30.mp4@30"), matched.map { it.summary() })
+    }
+
+    /** 整个系列的合集: 按季分的文件夹用罗马数字写季, 另有外传与剧场版的文件夹, 视频都从 01 编起. */
+    private fun franchiseCollection() = FakeBrowser(
+        searchResults = mapOf("在地下城寻求邂逅是否搞错了什么" to listOf(dir("root", "Z 4k 在地下城寻求邂逅是否搞错了什么"))),
+        folders = mapOf(
+            "root" to listOf(
+                dir("s1", "在地下城寻求邂逅是否搞错了什么 I"),
+                dir("s2", "在地下城寻求邂逅是否搞错了什么 II"),
+                dir("s4", "在地下城寻求邂逅是否搞错了什么 IV"),
+                dir("s5", "在地下城寻求邂逅是否搞错了什么 V"),
+                dir("gaiden", "在地下城寻求邂逅是否搞错了什么 外传 剑姬神圣谭"),
+                dir("movie", "剧场版 -俄里翁之箭-"),
+            ),
+            "s1" to listOf(1, 13).map { video("s1e$it", "[TUDO&Ygm] DanMachi [${two(it)}][Ma10p_2160p].mkv") },
+            "s2" to listOf(video("s2e1", "[TUDO&Ygm] DanMachi II [01][Ma10p_2160p].mkv")),
+            "s4" to listOf(2, 13).map { video("s4e$it", "[TUDO&Ygm] Danmachi IV [${two(it)}][Ma10p_2160p].mkv") },
+            "s5" to listOf(1, 13).map { video("s5e$it", "[Zdm] DanMachi V [${two(it)}][Ma10p_2160p].mkv") },
+            "gaiden" to listOf(video("g1", "[TUDO&Ygm] DanMachi ~Sword Oratoria [01][Ma10p_2160p].mkv")),
+            "movie" to listOf(video("m1", "[JYFanSub][Gekijouban Danmachi - Orion no Ya][01][GB][1080P][MP4].mp4")),
+        ),
+    )
+
+    @Test
+    fun `a franchise collection gives the first season only its own season folder`() = runTest {
+        val browser = franchiseCollection()
+        val matched = DriveSubjectMatcher(browser).match(request("在地下城寻求邂逅是否搞错了什么"))
+        assertEquals(listOf("s1e1", "s1e13"), matched.map { it.file.fid })
+        // 罗马数字写的别的季不往下列; 外传与剧场版的文件夹没写季, 列出来再按类别去掉
+        assertEquals(listOf("root", "s1", "gaiden", "movie"), browser.listed)
+    }
+
+    @Test
+    fun `a franchise collection gives a later season its roman numbered folder`() = runTest {
+        // 第四季的第二段: sort 从 12 起; 第四季的文件夹按整季编号, 由选源按页面的编号方式挑那一集
+        val episodes = (1..11).map { MediaFetchRequest.Episode(episodeId = "$it", sort = EpisodeSort(11 + it), ep = EpisodeSort(it)) }
+        val matched = DriveSubjectMatcher(franchiseCollection()).match(request("在地下城寻求邂逅是否搞错了什么 第四季 深章 灾厄篇", episodes = episodes))
+        assertEquals(listOf("s4e2", "s4e13"), matched.map { it.file.fid })
+    }
+
+    @Test
+    fun `a movie subject keeps the movie folder`() = runTest {
+        val matched = DriveSubjectMatcher(franchiseCollection()).match(request("剧场版 在地下城寻求邂逅是否搞错了什么 -俄里翁之箭-", "在地下城寻求邂逅是否搞错了什么"))
+        assertTrue(matched.any { it.file.fid == "m1" })
+        assertTrue(matched.none { it.file.fid == "g1" })
     }
 
     @Test
