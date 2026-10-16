@@ -382,7 +382,7 @@ class FeedbackTickets(
         return deleted
     }
 
-    /** 控制台看过了: 清掉未读. */
+    /** 看过了 (控制台的「反馈」页、电视设置里的「我的反馈」): 清掉未读. */
     suspend fun markRead() = records.edit {
         if (items.none { it.unread }) this else copy(items = items.map { if (it.unread) it.copy(unread = false) else it })
     }

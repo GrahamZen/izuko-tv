@@ -98,6 +98,12 @@ data class TvQr(val content: String?, val caption: TvText? = null, val status: T
  */
 data class TvImage(val res: DrawableResource, val round: Boolean = true)
 
+/**
+ * 说明栏里画成气泡的一条消息 (如反馈的一条回复): [meta] 写在气泡里的第一行 (谁、什么时候), [text] 是正文 (null = 只有那一行),
+ * [mine] = 自己发的, 靠右.
+ */
+data class TvBubble(val meta: TvText, val text: TvText?, val mine: Boolean)
+
 /** 写之前先问一句 (默认焦点在「取消」上). [destructive] = 确认按钮用红字. */
 class TvSettingsConfirm(
     val title: TvText?,
@@ -225,7 +231,8 @@ sealed class TvSettingItem(
         val onOpen: ((TvSettingsEnv) -> Unit)?,
         visible: (TvSettingsValues) -> Boolean,
         whileFocused: (suspend (TvSettingsEnv) -> Unit)? = null,
-    ) : TvSettingItem(id, emptyList(), visible, whileFocused = whileFocused)
+        qr: ((TvSettingsValues) -> TvQr?)? = null,
+    ) : TvSettingItem(id, emptyList(), visible, qr, whileFocused)
 
     /**
      * 一组随数据变的行 (如数据源、订阅、弹幕过滤规则): [entries] 给出现在有哪些, 每一行按 [key] 认 (行 id 用它, 焦点跟着它走).
@@ -249,9 +256,14 @@ sealed class TvSettingItem(
         private val entryWhileFocused: ((T) -> (suspend (TvSettingsEnv) -> Unit)?)? = null,
         /** 焦点在某一行时说明栏画的图. */
         private val entryImage: ((T) -> TvImage?)? = null,
+        /** 焦点在某一行时说明栏在说明下面画的一串气泡 (见 [TvBubble]). */
+        private val entryBubbles: ((TvSettingsValues, T) -> List<TvBubble>)? = null,
     ) : TvSettingItem(id, keys, visible) {
         fun rows(values: TvSettingsValues): List<TvSettingsEntry> = entries(values).map { e ->
-            TvSettingsEntry(key(e), title(e), value(values, e), description(values, e), entryQr?.invoke(values, e), entryImage?.invoke(e))
+            TvSettingsEntry(
+                key(e), title(e), value(values, e), description(values, e), entryQr?.invoke(values, e), entryImage?.invoke(e),
+                entryBubbles?.invoke(values, e).orEmpty(),
+            )
         }
 
         fun focusTask(values: TvSettingsValues, entryKey: String): (suspend (TvSettingsEnv) -> Unit)? =
@@ -306,6 +318,7 @@ data class TvSettingsEntry(
     val description: TvText?,
     val qr: TvQr? = null,
     val image: TvImage? = null,
+    val bubbles: List<TvBubble> = emptyList(),
 )
 
 /** 这一项与 (是一组时) 它里面的全部项, 一层层展开. */
@@ -541,6 +554,7 @@ class TvSettingsItemsBuilder(private val prefix: String) {
         value: ((TvSettingsValues) -> TvText?)? = null,
         visible: (TvSettingsValues) -> Boolean = { true },
         whileFocused: (suspend (TvSettingsEnv) -> Unit)? = null,
+        qr: ((TvSettingsValues) -> TvQr?)? = null,
         onOpen: ((TvSettingsEnv) -> Unit)? = null,
         items: TvSettingsItemsBuilder.() -> Unit,
     ) {
@@ -554,6 +568,7 @@ class TvSettingsItemsBuilder(private val prefix: String) {
             onOpen = onOpen,
             visible = visible,
             whileFocused = whileFocused,
+            qr = qr,
         )
     }
 
@@ -575,6 +590,7 @@ class TvSettingsItemsBuilder(private val prefix: String) {
         qr: ((TvSettingsValues, T) -> TvQr?)? = null,
         whileFocused: ((T) -> (suspend (TvSettingsEnv) -> Unit)?)? = null,
         image: ((T) -> TvImage?)? = null,
+        bubbles: ((TvSettingsValues, T) -> List<TvBubble>)? = null,
         click: (T) -> List<TvSettingsEdit>,
     ) {
         items += TvSettingItem.Entries(
@@ -592,6 +608,7 @@ class TvSettingsItemsBuilder(private val prefix: String) {
             entryQr = qr,
             entryWhileFocused = whileFocused,
             entryImage = image,
+            entryBubbles = bubbles,
         )
     }
 
