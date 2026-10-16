@@ -39,6 +39,7 @@ import java.util.Locale
  * 正常播放中卡住缓冲时留下线索, 事后从 app.log 搜 `[Rebuffer]` 就能分清是网络没喂上、片源码率太高, 还是设备解码出了问题.
  *
  * 平时只在内存里记最近 [LoadWindow.WINDOW_MILLIS] 的取数据记录与测速采样 (每条几十字节, 不写文件、不查系统);
+ * 实收的字节按播放器实际从网络读到的算 ([delivered], 见 [DeliveredBytesMeter]), 没有时按测速采样.
  * 开播、拖动、换媒体之后的第一次缓冲不算. 播放中卡住满 [MIN_REPORT_MILLIS] 时写一行 (卡死不恢复的也留得下), 恢复 (或停止、换媒体) 时再写一行;
  * 不到 1 秒就恢复的抖动只计数, 每攒 [SHORT_STALL_REPORT_COUNT] 次或换媒体、停止时汇总写一行.
  * 查 Wi-Fi 与整机下载量 (一次系统调用、读 /proc) 与写日志都放在 [ioDispatcher] 上, 不占播放与界面的线程.
@@ -51,6 +52,7 @@ import java.util.Locale
 internal class RebufferDiagnostics(
     private val context: Context,
     private val scope: CoroutineScope,
+    private val delivered: RecentBytes? = null,
     private val clock: () -> Long = SystemClock::elapsedRealtime,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : AnalyticsListener {
@@ -92,7 +94,7 @@ internal class RebufferDiagnostics(
     override fun onMediaItemTransition(eventTime: AnalyticsListener.EventTime, mediaItem: MediaItem?, reason: Int) {
         handle(tracker.onMediaChanged(clock()), eventTime)
         flushShortStalls()
-        window.clear()
+        window.clear(clock())
         droppedFrames = 0
     }
 
@@ -171,9 +173,9 @@ internal class RebufferDiagnostics(
     private fun onStallStarted(event: StallTracker.Event.Started, eventTime: AnalyticsListener.EventTime) {
         val number = event.number
         currentStall = number
-        stallWindowBytes = window.transferredBytesTotal
+        stallWindowBytes = receivedTotal()
         stallAheadMillis = eventTime.totalBufferedDurationMs
-        val summary = window.summary(clock())
+        val summary = window.summary(clock(), receivedBytesIn = delivered?.let { it::bytesInLast })
         val head = buildString {
             append("[Rebuffer] #").append(number).append(" stalled at ").append(formatPosition(eventTime.currentPlaybackPositionMs))
             append(" (buffered ahead ").append(seconds(eventTime.totalBufferedDurationMs)).append(")")
@@ -205,7 +207,7 @@ internal class RebufferDiagnostics(
         }
         reported = null
         shortStalls = 0
-        val playerBytes = window.transferredBytesTotal - stallWindowBytes
+        val playerBytes = receivedTotal() - stallWindowBytes
         val head = buildString {
             append("[Rebuffer] #").append(event.number).append(' ').append(event.outcome.text).append(" after ").append(seconds(event.durationMillis))
             append("; player received ").append(megabytes(playerBytes)).append(" during the stall")
@@ -232,6 +234,9 @@ internal class RebufferDiagnostics(
         shortStalls = 0
         scope.launch(ioDispatcher) { logger.info { line } }
     }
+
+    /** 播放器一共从网络收到的字节, 用来算卡住期间收了多少. */
+    private fun receivedTotal(): Long = delivered?.total() ?: window.transferredBytesTotal
 
     private fun describe(format: Format?): String {
         if (format == null) return "unknown"
@@ -296,7 +301,8 @@ internal class RebufferDiagnostics(
 
 /**
  * 最近 [windowMillis] 内的取数据记录 ([addLoad]: 每次请求取完 / 取消 / 出错) 与测速采样 ([addTransfer]: 播放器测网速时报的这段时间收到的字节).
- * 直链文件播放器不会每块都报「取完」, 实收的字节以测速采样为准. 不是线程安全的.
+ * 直链文件播放器不会每块都报「取完」, 测速采样也要等一次读取结束才报; 实收的字节优先用调用方给的 (播放器实际读到的),
+ * 没有时以测速采样为准, 再没有用请求的字节. 不是线程安全的.
  */
 internal class LoadWindow(private val windowMillis: Long = WINDOW_MILLIS) {
     data class Load(val atMillis: Long, val host: String, val bytes: Long, val durationMillis: Long, val error: String?)
@@ -346,17 +352,21 @@ internal class LoadWindow(private val windowMillis: Long = WINDOW_MILLIS) {
         trim(atMillis)
     }
 
-    fun clear() {
+    /** 换了媒体: 之前的记录都不算, 时间从 [nowMillis] 算起. */
+    fun clear(nowMillis: Long) {
         loads.clear()
         transfers.clear()
-        firstAtMillis = null
+        firstAtMillis = nowMillis
     }
 
-    fun summary(nowMillis: Long): Summary {
+    /** @param receivedBytesIn 最近多少毫秒里实际收到的字节; 调用方不知道时为 null */
+    fun summary(nowMillis: Long, receivedBytesIn: ((spanMillis: Long) -> Long)? = null): Summary {
         trim(nowMillis)
         val first = firstAtMillis
         val span = if (first == null) 0 else (nowMillis - first).coerceIn(0, windowMillis)
-        val transferred = transfers.sumOf { it.second }.takeIf { transfers.isNotEmpty() } ?: loads.sumOf { it.bytes }
+        val transferred = receivedBytesIn?.invoke(span)
+            ?: transfers.sumOf { it.second }.takeIf { transfers.isNotEmpty() }
+            ?: loads.sumOf { it.bytes }
         val errors = loads.filter { it.error != null }
         return Summary(
             spanMillis = span,
