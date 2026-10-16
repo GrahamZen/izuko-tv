@@ -638,7 +638,8 @@ internal val FEEDBACK_SCRIPT = """
     var h = '<div class="fb-chat">' + msg(true, T('我') + ' · ' + clock(x.at), '<b>' + esc(x.summary || '') + '</b>' + (x.description ? '\n' + linkify(x.description) : ''), x.files, pending);
     (x.replies || []).forEach(function (r) {
       h += msg(!r.maintainer, (r.maintainer ? T('维护者') : T('我')) + ' · ' + clock(Date.parse(r.at)), r.body ? linkify(r.body) : '', r.files, pending);
-      var apks = r.maintainer ? (x.apks || []).filter(function (u) { return r.body.indexOf(u) >= 0; }) : [];
+      // 结束了的单不给装: 关单后测试包会被删掉 (工单仓库的「关单删测试包」)
+      var apks = r.maintainer && x.state === 'OPEN' ? (x.apks || []).filter(function (u) { return r.body.indexOf(u) >= 0; }) : [];
       if (apks.length) {
         h += '<div class="fb-apks">' + apks.map(function (u) {
           return '<button type="button" class="ghost" data-act="install" data-issue="' + x.issue + '" data-url="' + esc(u) + '">' +
