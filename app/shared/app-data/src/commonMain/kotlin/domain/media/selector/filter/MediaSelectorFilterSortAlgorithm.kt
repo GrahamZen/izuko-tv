@@ -251,6 +251,8 @@ class MediaSelectorFilterSortAlgorithm {
         // 站点把整个系列放在一个不带季号的条目下、按系列内序号连续编集时就是这样: 站内 "凡人修仙传"
         // 的第 159 集就是 "凡人修仙传 第四季" 的第 35 集.
         val matchedBySeriesEpisodeSort = run {
+            // sort 只在一季里接着编时 (拆成两段的季), 系列页面上的同号集是第一季的, 见 SubjectSeriesInfo.sortsSpanSeries
+            if (context.subjectSeriesInfo?.sortsSpanSeries == false) return@run false
             val episodeInfo = context.episodeInfo.takeIf { context.hasEpisode } ?: return@run false
             val ep = episodeInfo.ep ?: return@run false
             val range = media.episodeRange ?: return@run false

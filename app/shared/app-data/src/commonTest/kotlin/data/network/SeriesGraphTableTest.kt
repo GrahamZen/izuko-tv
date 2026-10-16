@@ -33,6 +33,7 @@ import me.him188.ani.app.data.persistent.MemoryDataStore
 import me.him188.ani.app.data.recommendation.MAX_PREQUEL_HOPS
 import me.him188.ani.app.data.recommendation.isSeasonFormat
 import me.him188.ani.app.data.recommendation.sequelSeasonCandidates
+import me.him188.ani.app.domain.episode.PlaybackSeriesInfo
 import me.him188.ani.app.domain.episode.withSeriesRelations
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.EpisodeType
@@ -196,6 +197,43 @@ class SeriesGraphTableTest {
         assertEquals(12, season.seasonNumberOf(78))
         // 开播用的系列信息 (选源上下文) 也带上
         assertEquals(season, flowOf(subject).withSeriesRelations(633836, { index }).first().relations.splitSeason)
+    }
+
+    /** 地错: 第四季拆成两段 (季名不同, 不算拆分季), 第二段的 sort 从 12 起只接着第一段. */
+    private fun danMachiTsv() = listOf(
+        "# bangumi-series-graph v1 max_id=700000 dump=dump-2026-10-13.210353Z.zip | 列: …",
+        "116287\tダンジョンに出会いを求めるのは間違っているだろうか\t在地下城寻求邂逅是否搞错了什么\t2015-04-03\t13\tTV\t\t\t238004\t\t",
+        "238004\tダンジョンに出会いを求めるのは間違っているだろうかII\t在地下城寻求邂逅是否搞错了什么 第二季\t2019-07-12\t12\tTV\t\t116287\t291412\t\t",
+        "291412\tダンジョンに出会いを求めるのは間違っているだろうかIII\t在地下城寻求邂逅是否搞错了什么 第三季\t2020-10-02\t12\tTV\t\t238004\t326874\t\t",
+        "326874\tダンジョンに出会いを求めるのは間違っているだろうかⅣ 新章 迷宮編\t在地下城寻求邂逅是否搞错了什么 第四季 新章 迷宫篇\t2022-07-22\t11\tTV\t\t291412\t402223\t\t",
+        "402223\tダンジョンに出会いを求めるのは間違っているだろうかⅣ 深章 厄災編\t在地下城寻求邂逅是否搞错了什么 第四季 深章 灾厄篇\t2023-01-06\t11\tTV\t\t326874\t\t12\t",
+    ).joinToString("\n")
+
+    private fun subjectWithSorts(subjectId: Int, sorts: IntRange) = createTestSubjectCollection(
+        subjectId,
+        sorts.mapIndexed { i, sort ->
+            EpisodeCollectionInfo(
+                EpisodeInfo(i + 1, EpisodeType.MainStory, sort = EpisodeSort(sort), ep = EpisodeSort(i + 1)),
+                UnifiedCollectionType.NOT_COLLECTED,
+            )
+        },
+        UnifiedCollectionType.NOT_COLLECTED,
+    )
+
+    @Test
+    fun `sort 是不是全系列序号 - 只在一季里接着编的不是，接着前面所有季编的是，主线第一部答不出`() = runTest {
+        val danMachi = assertNotNull(SeriesGraphTable.parse(danMachiTsv().encodeToByteArray()))
+        val danMachiIndex = SubjectSeriesIndexService(noNetwork(), scope = backgroundScope, graph = { danMachi }).getSubjectRelationIndex(402223)
+        // 前面四段共 48 集, 第二段从 12 起
+        assertEquals(false, danMachiIndex.sortsSpanSeriesOf(subjectWithSorts(402223, 12..22)))
+        // 开播用的系列信息 (播放页的选源上下文) 也带上
+        val playback = PlaybackSeriesInfo(402223) { danMachiIndex }
+        assertEquals(false, playback.seriesInfoOf(playback.attach(flowOf(subjectWithSorts(402223, 12..22))).first()).sortsSpanSeries)
+
+        val reZero = assertNotNull(SeriesGraphTable.parse(reZeroTsv().encodeToByteArray()))
+        val reZeroService = SubjectSeriesIndexService(noNetwork(), scope = backgroundScope, graph = { reZero })
+        assertEquals(true, reZeroService.getSubjectRelationIndex(633836).sortsSpanSeriesOf(subjectWithSorts(633836, 78..85)))
+        assertEquals(null, reZeroService.getSubjectRelationIndex(425998).sortsSpanSeriesOf(subjectWithSorts(425998, 51..58)))
     }
 
     @Test
