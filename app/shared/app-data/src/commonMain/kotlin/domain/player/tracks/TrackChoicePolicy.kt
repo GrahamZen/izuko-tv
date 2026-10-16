@@ -44,7 +44,7 @@ sealed interface TrackPick {
 
 /**
  * 打开一个媒体时选哪条字幕与音轨:
- * - 这部番用户手动换过的, 按语言 (不按轨道序号) 沿用 (见 [rememberValue]);
+ * - 这部番用户手动换过的, 按语言 (不按轨道序号) 沿用; 同一语言有好几条 (多是不同字幕组) 时先认同名的那条 (见 [rememberValue]);
  * - 字幕选界面语言的: 简体界面 简体 > 简日双语 > 没分简繁的中文 > 繁体, 繁体界面反过来, 英文界面选英文;
  * - 音轨选日语原声, 没有日语的选容器里标了默认的; 设备放不了的音轨不选 (选了就是播放出错), 全都放不了时照常选;
  * - 都认不出时不动 (播放器原来的选择).
@@ -56,13 +56,16 @@ object TrackChoicePolicy {
     const val OFF = "off"
     private const val LABEL_PREFIX = "label:"
 
+    /** 记下的语言后面接着轨道名: `zh-Hans#喵萌奶茶屋`. 语言的写法 ([TrackLanguage.key]) 里没有这个字符, 按第一个切开. */
+    private const val LABEL_SEPARATOR = '#'
+
     /**
-     * 用户手动选了 [candidate] (null = 关掉字幕) 时记下的值: 认得出语言记语言 ([TrackLanguage.key]), 认不出记轨道名;
-     * 两样都没有时返回 null (记不住).
+     * 用户手动选了 [candidate] (null = 关掉字幕) 时记下的值: 认得出语言记语言 ([TrackLanguage.key]), 有轨道名时接在后面;
+     * 认不出语言记轨道名; 两样都没有时返回 null (记不住).
      */
     fun rememberValue(candidate: TrackCandidate?): String? = when {
         candidate == null -> OFF
-        candidate.language != null -> candidate.language.key
+        candidate.language != null -> candidate.language.key + candidate.label?.takeIf { it.isNotBlank() }?.let { "$LABEL_SEPARATOR$it" }.orEmpty()
         !candidate.label.isNullOrBlank() -> LABEL_PREFIX + candidate.label
         else -> null
     }
@@ -93,7 +96,7 @@ object TrackChoicePolicy {
      * 打开媒体前就交给播放器的音轨语言偏好 (多数时候让播放器第一次就选对, 不用开播后再切): 记下的语言, 否则日语.
      */
     fun preferredAudioLanguages(remembered: String?): List<String> {
-        val language = remembered?.takeIf { it != OFF && !it.startsWith(LABEL_PREFIX) }?.let { TrackLanguage.parseKey(it) }
+        val language = remembered?.takeIf { it != OFF && !it.startsWith(LABEL_PREFIX) }?.let { TrackLanguage.parseKey(it.substringBefore(LABEL_SEPARATOR)) }
         return listOf(language?.base ?: "ja")
     }
 
@@ -115,7 +118,10 @@ object TrackChoicePolicy {
             val label = remembered.removePrefix(LABEL_PREFIX)
             return candidates.firstOrNull { it.label == label }
         }
-        val want = TrackLanguage.parseKey(remembered) ?: return null
+        val want = TrackLanguage.parseKey(remembered.substringBefore(LABEL_SEPARATOR)) ?: return null
+        // 记下了轨道名: 先找同一语言、同名的那条 (同一语言有好几条时多是不同字幕组, 用户挑的是其中一组; 他挑的哪怕是强制字幕也照选)
+        val label = remembered.substringAfter(LABEL_SEPARATOR, missingDelimiterValue = "")
+        if (label.isNotEmpty()) candidates.firstOrNull { it.language == want && it.label == label }?.let { return it }
         // 一模一样的语言; 没有时退到同一语言同一字体 (记的是简日双语, 这一集只有简体)
         return best(candidates) { if (it.language == want) 0 else null }
             ?: best(candidates) { c -> c.language?.takeIf { it.base == want.base && it.script == want.script }?.let { 0 } }

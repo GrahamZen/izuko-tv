@@ -126,7 +126,7 @@
    播放失败换源（`PlayerLoadErrorHandler.handleError`）也会放开暂停的数据源。
 10. 媒体的轨道出来时，Android 播放器（`LibassExoPlayerMediampPlayer` 里的 `PreferredTrackSelector`）问
     `PreferredTracksExtension` 设置的 `SubjectTrackChooser` 选哪条字幕与音轨（规则见 `TrackChoicePolicy`：
-    字幕跟界面语言，音轨日语原声优先，这部番手动换过的按语言沿用，存在 `EpisodePreferencesRepository.trackChoiceFlow`）。
+    字幕跟界面语言，音轨日语原声优先，这部番手动换过的按语言沿用、同一语言有好几条时先认同名的那条，存在 `EpisodePreferencesRepository.trackChoiceFlow`）。
     轨道的语言从轨道名与容器里的语言码认（`TrackLanguage`）。mediamp 的 ExoPlayer 后端只下发字幕的选择，
     音轨的选择由 `PreferredTrackSelector` 设成 ExoPlayer 的 override。设备自己解不了、HDMI 也接不出直通的音频
     （多数盒子上的 TrueHD、DTS）由 FFmpeg 软解成 PCM：`FfmpegAudioFallback` 在 ExoPlayer 构建前换上打开了扩展渲染器的

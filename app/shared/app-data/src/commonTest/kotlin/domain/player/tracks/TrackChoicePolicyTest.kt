@@ -65,6 +65,25 @@ class TrackChoicePolicyTest {
     }
 
     @Test
+    fun `among several tracks of the remembered language the same named one wins`() {
+        // 合集里两个字幕组的简体, 上一集手动挑了第二组
+        val groupA = track("a", "简体中文 字幕组A", "chi")
+        val groupB = track("b", "简体中文 字幕组B", "chi")
+        val remembered = TrackChoicePolicy.rememberValue(groupB)
+        assertEquals("zh-Hans#简体中文 字幕组B", remembered)
+        assertEquals(TrackPick.Select("b"), subtitle(groupA, groupB, remembered = remembered))
+        // 这一集没有同名的: 按语言, 同档里靠前的
+        assertEquals(TrackPick.Select("a"), subtitle(groupA, track("c", "简体中文 字幕组C", "chi"), remembered = remembered))
+        // 只记了语言的 (以前记下的)
+        assertEquals(TrackPick.Select("a"), subtitle(groupA, groupB, remembered = "zh-Hans"))
+        // 挑的是强制字幕也照选
+        val signs = track("signs", "简体中文 特效", "chi", forced = true)
+        assertEquals(TrackPick.Select("signs"), subtitle(groupA, signs, remembered = TrackChoicePolicy.rememberValue(signs)))
+        // 音轨开流前的语言偏好只看语言
+        assertEquals(listOf("ja"), TrackChoicePolicy.preferredAudioLanguages("ja#日语 FLAC"))
+    }
+
+    @Test
     fun `audio prefers japanese then the container default`() {
         val zhDefault = track("zh", "国语", default = true)
         val ja = track("ja", null, "jpn")
@@ -108,10 +127,11 @@ class TrackChoicePolicyTest {
         chooser.onManualAudio(null)
         assertEquals(
             listOf(
-                SubjectTrackChoice(subtitle = "zh-Hant"),
+                // 语言后面接着轨道名 (同一语言有好几条时认它)
+                SubjectTrackChoice(subtitle = "zh-Hant#繁體中文"),
                 SubjectTrackChoice(subtitle = "off"),
                 SubjectTrackChoice(subtitle = null),
-                SubjectTrackChoice(audio = "zh"),
+                SubjectTrackChoice(audio = "zh#国语"),
                 SubjectTrackChoice(),
             ),
             saved,
