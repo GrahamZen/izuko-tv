@@ -41,7 +41,8 @@ import kotlin.time.Duration.Companion.seconds
 /**
  * 记忆播放进度.
  *
- * 恢复: 第一次装这一集时播放器直接从存下的进度打开 ([startPositionMillis]); 同一集换源后从头打开, 开播后再跳回存下的进度.
+ * 恢复: 第一次装这一集时播放器直接从存下的进度打开 ([startPositionMillis]); 同一集换源时从旧资源最后播到的位置打开 ([LastPlayedPosition]),
+ * 不知道那个位置时从头打开, 开播后再跳回存下的进度.
  *
  * 在以下情况时保存播放进度:
  * - 开始或恢复播放 5 秒后
@@ -71,12 +72,27 @@ class RememberPlayProgressExtension(
      */
     private val openedAtMillis = MutableStateFlow<Long?>(null)
 
+    /** 播放器里这一集最后播到的位置, 同一集换源时用 (见 [startPositionMillis]). */
+    private val lastPlayed = LastPlayedPosition()
+
     /**
-     * 第一次装这一集时从存下的进度打开 (原地重载由调用方直接给位置). 同一集换源时不给, 照旧从头打开、开播后再跳回存下的进度
-     * (见 onStart 里的 restoreSavedPositionOnce): 换源前保存进度与这里读进度没有先后保证, 提前读可能读到一分钟前的进度.
+     * 下一次恢复进度要回到的位置 (哪一集, 毫秒), 不按存下的进度, 用完即清:
+     * - 原地重载 (见 [EpisodeFetchSelectPlayState.MediaReloadEvent]): 重载前播放器出了错, 没法按常规存进度, 而存下的进度最久是一分钟前的;
+     * - 同一集换源: 旧资源最后播到的位置 (见 [startPositionMillis]).
+     */
+    private val reloadPosition = MutableStateFlow<Pair<Int, Long>?>(null)
+
+    /**
+     * 第一次装这一集时从存下的进度打开 (原地重载由调用方直接给位置). 同一集换源时从旧资源最后播到的位置打开, 开播时以它为准:
+     * 换源前保存进度与这里读进度没有先后保证, 存下的可能是一分钟前的. 不知道那个位置时不给, 从头打开、开播后再跳回存下的进度
+     * (见 onStart 里的 restoreSavedPositionOnce).
      */
     override suspend fun startPositionMillis(episodeId: Int): Long? {
-        val positionMillis = if (loadedEpisodeId.value == episodeId) null else playProgressRepository.getResumePositionMillisByEpisodeId(episodeId)
+        val positionMillis = if (loadedEpisodeId.value == episodeId) {
+            lastPlayed.of(episodeId)?.also { reloadPosition.value = episodeId to it }
+        } else {
+            playProgressRepository.getResumePositionMillisByEpisodeId(episodeId)
+        }
         openedAtMillis.value = positionMillis
         return positionMillis
     }
@@ -92,15 +108,14 @@ class RememberPlayProgressExtension(
             }
         }
 
-        /**
-         * 原地重载 (见 [EpisodeFetchSelectPlayState.MediaReloadEvent]) 要回到的位置: 重载前播放器出了错, 没法按常规存进度,
-         * 而存下的进度最久是一分钟前的. 下一次恢复进度用它, 用完即清.
-         */
-        val reloadPositionMillis = MutableStateFlow<Long?>(null)
+        backgroundTaskScope.launch("LastPlayedPosition") {
+            lastPlayed.track(context.player, loadedEpisodeId)
+        }
+
         backgroundTaskScope.launch("MediaReloadListener") {
             context.subscribeEvents<EpisodeFetchSelectPlayState.MediaReloadEvent>().collect { event ->
                 if (event.episodeId == episodeSession.episodeId) {
-                    reloadPositionMillis.value = event.positionMillis
+                    reloadPosition.value = event.episodeId to event.positionMillis
                     openedAtMillis.value = event.positionMillis // 重载从这里打开
                 }
             }
@@ -157,8 +172,8 @@ class RememberPlayProgressExtension(
                     haveResumedOnce = true
                 }
                 if (haveResumedOnce) return false
-                val reloadPosition = reloadPositionMillis.value
-                val positionMillis = reloadPosition
+                val reload = reloadPosition.value?.takeIf { it.first == episodeSession.episodeId }
+                val positionMillis = reload?.second
                     ?: playProgressRepository.getResumePositionMillisByEpisodeId(episodeSession.episodeId)
                 if (positionMillis == null) {
                     if (afterEnded) return false
@@ -171,7 +186,7 @@ class RememberPlayProgressExtension(
                 val durationMillis = player.mediaProperties.mapNotNull { it?.durationMillis }.first { it > 0L }
                 val pastEnd = durationMillis - positionMillis < EpisodeHistory.FINISHED_THRESHOLD_MILLIS
                 if (afterEnded && !pastEnd) return false
-                reloadPositionMillis.compareAndSet(reloadPosition, null)
+                if (reload != null) reloadPosition.compareAndSet(reload, null)
                 return withContext(Dispatchers.Main + NonCancellable) { // android must call in main thread
                     val currentMillis = player.currentPositionMillis.value
                     val openedAt = openedAtMillis.getAndUpdate { null }
