@@ -32,6 +32,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
+import me.him188.ani.app.data.models.feedback.FeedbackDevice
 import me.him188.ani.app.data.models.preference.PikPakConfig
 import me.him188.ani.app.data.network.AniEpisodeCommentService
 import me.him188.ani.app.data.network.AniSubjectSearchService
@@ -44,6 +45,7 @@ import me.him188.ani.app.data.network.EpisodeServiceImpl
 import me.him188.ani.app.data.network.GitHubDownloadMirrors
 import me.him188.ani.app.data.network.RemoteSubjectService
 import me.him188.ani.app.data.network.SeriesGraphTableRepository
+import me.him188.ani.app.data.network.FeedbackTicketService
 import me.him188.ani.app.data.network.SubjectFeedbackService
 import me.him188.ani.app.data.network.SubjectSeriesIndexService
 import me.him188.ani.app.data.network.SubjectService
@@ -63,8 +65,10 @@ import me.him188.ani.app.data.persistent.database.createDatabaseBuilder
 import me.him188.ani.app.data.persistent.database.databaseFile
 import me.him188.ani.app.data.repository.episode.EpisodeCollectionRepository
 import me.him188.ani.app.data.repository.episode.EpisodeCollectionSyncer
+import me.him188.ani.app.data.repository.feedback.FeedbackRecordRepository
 import me.him188.ani.app.data.repository.media.MediaSourceSaves
 import me.him188.ani.app.data.repository.media.MediaSourceSubscriptionRepository
+import me.him188.ani.app.domain.feedback.FeedbackTickets
 import me.him188.ani.app.domain.foundation.CloudflareServiceTransport
 import me.him188.ani.app.domain.mediasource.profile.SourceProfiles
 import me.him188.ani.app.domain.mediasource.subscription.BundledSubscriptions
@@ -302,13 +306,27 @@ private fun KoinApplication.otherModules(
             recoverEch = { cause -> getOrNull<BangumiEchTransport>()?.recover(cause) == true },
         )
     }
+    single<FeedbackRecordRepository> { FeedbackRecordRepository(get<SettingsRepository>().feedbackRecords) }
+    single<FeedbackDevice> { FeedbackDevice(getContext().feedbackDeviceId(), getContext().feedbackEnvironment()) }
     single<SubjectFeedbackService> {
         SubjectFeedbackService(
             listCache = get<SettingsRepository>().feedbackEndpointCache,
             client = { get<HttpClientProvider>().get() },
             scope = coroutineScope,
             transport = get(),
+            records = get(),
         )
+    }
+    single<FeedbackTicketService> {
+        FeedbackTicketService({ get<HttpClientProvider>().get() }, get(), FeedbackTicketService::configuredEndpoints)
+    }
+    // 启动就建: 每天查一次故障工单与修正请求的处理结果
+    single<FeedbackTickets>(createdAtStart = true) {
+        FeedbackTickets(
+            get(), get(), get(), coroutineScope,
+            subjectStatus = get<SubjectFeedbackService>()::status,
+            subjectMap = get<TmdbSubjectMapRepository>()::lookup,
+        ).also { it.start() }
     }
     single<BangumiMirrorConsentRequests> { BangumiMirrorConsentRequests() }
     // 加密直连的配置与地址; 连接层 BangumiEchTransport 由支持的平台的模块提供 (安卓: ConscryptEchTransport)
