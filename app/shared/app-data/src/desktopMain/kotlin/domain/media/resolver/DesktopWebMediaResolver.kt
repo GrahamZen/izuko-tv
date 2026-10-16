@@ -28,6 +28,7 @@ import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.media.player.data.MediaDataProvider
 import me.him188.ani.app.domain.media.resolver.WebViewVideoExtractor.Instruction
 import me.him188.ani.app.domain.mediasource.web.captcha.WebSessionManager
+import me.him188.ani.app.domain.player.toLogText
 import me.him188.ani.app.domain.settings.ProxyProvider
 import me.him188.ani.app.platform.AniCefApp
 import me.him188.ani.app.platform.Context
@@ -102,7 +103,7 @@ class DesktopWebMediaResolver(
             val webViewConfig = allMatchers.fold(WebViewConfig.Empty) { acc, matcher ->
                 matcher.patchConfig(acc)
             }
-            logger.info { "Final config: $webViewConfig" }
+            logger.info { "Final config: ${webViewConfig.toLogText()}" }
 
 
             fun match(url: String): WebVideoMatcher.MatchResult? {
