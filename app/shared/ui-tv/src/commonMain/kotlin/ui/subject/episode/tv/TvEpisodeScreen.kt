@@ -28,12 +28,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemGestures
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.FastForward
@@ -75,6 +77,8 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.panpf.sketch.LocalPlatformContext
@@ -2205,16 +2209,25 @@ private val logger = logger("TvEpisodeScreen")
  * 详情层什么都不做: 那一层的空白处是详情页自己的背景. 只在**空白处**起手: 覆盖层里可点/可滚的节点在 z 序上
  * 压着本层, 命中它们的事件到不了这里. 单击要等一个双击窗口才兑现 (与手机端一样), 代价是控制层晚约 0.3 秒出现.
  * 纵向滑动不做事 (亮度/音量留待以后), 起手后直接放弃本次手势.
+ *
+ * 左右两条系统手势区 (手势导航的返回) 里起手的一概不接: 播放页藏着系统栏, 从屏幕边缘滑进来时系统只把栏叫出来,
+ * 这一下仍会传到本层, 当成横向拖动就跳了进度.
  */
 @Composable
 private fun TvPlayerTouchLayer(handler: TvPlayerTouchHandler, modifier: Modifier = Modifier) {
     val current by rememberUpdatedState(handler)
+    val gestureInsets = WindowInsets.systemGestures
+    val density = LocalDensity.current
+    val layoutDirection = LocalLayoutDirection.current
+    val edgeLeft by rememberUpdatedState(gestureInsets.getLeft(density, layoutDirection))
+    val edgeRight by rememberUpdatedState(gestureInsets.getRight(density, layoutDirection))
     Box(
         modifier.pointerInput(Unit) {
             awaitEachGesture {
                 val h = current
                 val down = awaitFirstDown()
                 if (h.layer() == TvPlayerLayer.DETAILS) return@awaitEachGesture
+                if (down.position.x < edgeLeft || down.position.x > size.width - edgeRight) return@awaitEachGesture
                 val slop = viewConfiguration.touchSlop
                 // 纯视频态的按下 = 确认键按下 (倍速记账); 抬起/滑动起手/取消都要关掉这笔账, 且只关一次
                 var pressOpen = h.layer() == TvPlayerLayer.HIDDEN
