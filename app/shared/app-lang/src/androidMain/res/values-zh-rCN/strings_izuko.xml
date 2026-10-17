@@ -318,6 +318,8 @@
     <string name="settings_theme_tv_ui_scale_description">整体放大或缩小界面。电视 / 盒子上报的屏幕密度不准、导致界面过大或过小时可用此项校正，100% 为跟随系统。离开设置页时界面会重载一次，使弹窗与菜单一并生效</string>
     <string name="settings_theme_tv_retain_playback_session">退出播放页后保留播放状态</string>
     <string name="settings_theme_tv_retain_playback_session_description">退出后保留播放器状态（在动作面板里显示），可以播放时会有气泡提示。关闭则不保留</string>
+    <string name="settings_theme_tv_hide_navigation_bar">藏起导航栏</string>
+    <string name="settings_theme_tv_hide_navigation_bar_description">平板、手机上，除了播放页，其他页面也把底部导航栏藏起来，从屏幕边缘滑一下能临时叫出来。播放页两条栏一直都藏</string>
     <string name="settings_theme_tv_visual_effects">视觉效果</string>
     <string name="settings_theme_tv_visual_effects_description">流畅：焦点滚动瞬间到位、长标题不滚动，只保留进详情页的放大与海报上按确定后的淡入淡出；均衡：全部转场动画；完整：全部效果，4K 界面加载原图</string>
     <string name="settings_theme_tv_visual_effects_smooth">流畅</string>

@@ -392,6 +392,11 @@ data class ThemeSettings(
      */
     val tvRemoteShowOnLaunch: Boolean = true,
     /**
+     * 装了 TV 包的平板 / 手机: 播放页以外的页面也藏起导航栏 (从屏幕边缘滑一下临时出来). 默认关: 这种形态界面内没有返回按钮,
+     * 导航栏是返回的途径. 播放页不看它, 两条栏都藏. 没有触摸屏的设备 (电视) 不列这一项也不读它, 见 `ImmersiveShellSystemBars.kt`.
+     */
+    val tvHideNavigationBar: Boolean = false,
+    /**
      * TV: 界面整体缩放系数, 叠加在系统 density 之上 (1f = 跟随系统).
      *
      * 不少电视 / 盒子上报的 densityDpi 与实际面板不匹配 (常见于强制 4K UI、厂商魔改 ROM),
