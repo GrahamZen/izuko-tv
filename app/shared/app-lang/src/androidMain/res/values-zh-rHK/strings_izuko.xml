@@ -151,7 +151,6 @@
     <string name="exploration_rec_this_season_new">本季新番</string>
     <string name="exploration_rec_change_taste">換換口味</string>
     <string name="exploration_rec_trending">大家最近在看</string>
-    <string name="exploration_rec_loading">正在為你挑選推薦，需要十幾秒</string>
     <string name="exploration_rec_progress_collections_start">正在為你挑選推薦：讀取收藏…</string>
     <string name="exploration_rec_progress_collections">正在為你挑選推薦：讀取收藏 %1$d/%2$d 頁</string>
     <string name="exploration_rec_progress_candidates">正在為你挑選推薦：已完成 %1$d 個請求</string>
