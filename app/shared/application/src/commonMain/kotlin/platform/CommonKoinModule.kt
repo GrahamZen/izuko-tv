@@ -44,7 +44,9 @@ import me.him188.ani.app.data.network.EpisodeService
 import me.him188.ani.app.data.network.EpisodeServiceImpl
 import me.him188.ani.app.data.network.GitHubDownloadMirrors
 import me.him188.ani.app.data.network.RemoteSubjectService
+import me.him188.ani.app.data.network.RecommendationCatalogRepository
 import me.him188.ani.app.data.network.SeriesGraphTableRepository
+import me.him188.ani.app.data.network.SubjectRecommendationsCache
 import me.him188.ani.app.data.network.FeedbackTicketService
 import me.him188.ani.app.data.network.SubjectFeedbackService
 import me.him188.ani.app.data.network.SubjectSeriesIndexService
@@ -457,6 +459,10 @@ private fun KoinApplication.otherModules(
             bangumiApiProvider.subjectApi,
             bangumiApiProvider.collectionApi,
             sessionManager = get(),
+            recommendationsCache = SubjectRecommendationsCache(
+                catalog = { get<RecommendationCatalogRepository>().current() },
+                file = getContext().files.dataDir.resolve("subject-recs.json"),
+            ),
         )
     }
     single<EpisodeService> { EpisodeServiceImpl(bangumiApiProvider.v0Api) }
@@ -501,6 +507,15 @@ private fun KoinApplication.otherModules(
             scope = coroutineScope,
             // 续作换季原先单独下的「续作 → 候选季」表, 换季改由系列关系图在本地算
             obsoleteFiles = listOf(getContext().files.dataDir.resolve("bgm-sequel-seasons.tsv")),
+        )
+    }
+    // 推荐目录: 探索页推荐与「相关推荐」先在本地答; 启动就建, 后台读盘 / 下载
+    single<RecommendationCatalogRepository>(createdAtStart = true) {
+        RecommendationCatalogRepository(
+            dir = getContext().files.dataDir.resolve("rec-catalog"),
+            client = { get<HttpClientProvider>().get() },
+            seriesGraph = { get<SeriesGraphTableRepository>().current() },
+            scope = coroutineScope,
         )
     }
     single<TmdbSubjectMapRepository> {

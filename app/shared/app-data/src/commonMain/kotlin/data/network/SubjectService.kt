@@ -187,6 +187,8 @@ class RemoteSubjectService(
     private val bangumiCollectionApi: ApiInvoker<CollectionBangumiNextApi>,
     private val sessionManager: SessionStateProvider,
     private val ioDispatcher: CoroutineContext = Dispatchers.IO_,
+    /** 「相关推荐」先看推荐目录与问过的缓存 (见 [SubjectRecommendationsCache]); `null` = 每次都问. */
+    private val recommendationsCache: SubjectRecommendationsCache? = null,
 ) : SubjectService, KoinComponent {
     private val logger = logger<RemoteSubjectService>()
 
@@ -336,9 +338,14 @@ class RemoteSubjectService(
     }
 
     override suspend fun getSubjectRecommendations(subjectId: Int, limit: Int): List<SubjectRecommendationItem> {
+        val all = recommendationsCache?.get(subjectId) { fetchSubjectRecommendations(subjectId) } ?: fetchSubjectRecommendations(subjectId)
+        return all.take(limit)
+    }
+
+    private suspend fun fetchSubjectRecommendations(subjectId: Int): List<SubjectRecommendationItem> {
         val recs = bangumiSubjectApi {
-            // `/recs` 的 limit 上限是 10
-            getSubjectRecs(subjectId, limit = limit.coerceAtMost(10)).body().data
+            // `/recs` 的 limit 上限是 10: 一次取满, 缓存的那份才是全的
+            getSubjectRecs(subjectId, limit = 10).body().data
         }
         logger.info { "bgm-direct: subject $subjectId recs -> ${recs.size}" }
         return recs.asSequence()
