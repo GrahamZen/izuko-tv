@@ -50,7 +50,7 @@ import me.him188.ani.app.domain.media.resolver.MediaResolver
 import me.him188.ani.app.domain.media.resolver.CloudDriveMediaResolver
 import me.him188.ani.app.domain.mediasource.web.captcha.CaptchaBrowserFactory
 import me.him188.ani.app.domain.mediasource.web.captcha.ImageCaptchaRecognizer
-import me.him188.ani.app.domain.mediasource.web.captcha.UnsupportedCaptchaBrowserFactory
+import me.him188.ani.app.domain.mediasource.web.captcha.WkWebViewCaptchaBrowserFactory
 import me.him188.ani.app.domain.torrent.DefaultTorrentManager
 import me.him188.ani.app.domain.torrent.TorrentManager
 import me.him188.ani.app.domain.torrent.engines.PikPakEngine
@@ -329,8 +329,8 @@ fun getIosModules(
         GrantedPermissionManager
     }
     single<BrowserNavigator> { IosBrowserNavigator() }
-    // iOS 暂无 CaptchaBrowser 实现: isInteractiveSupported = false, UI 显示降级提示
-    single<CaptchaBrowserFactory> { UnsupportedCaptchaBrowserFactory }
+    // WKWebView: Bangumi 应用内登录 (授权页的回调在浏览器里拦下) 与网页源的人机验证
+    single<CaptchaBrowserFactory> { WkWebViewCaptchaBrowserFactory }
     single<ImageCaptchaRecognizer> { IosOnnxImageCaptchaRecognizer() }
     single<TorrentManager> {
         DefaultTorrentManager.create(

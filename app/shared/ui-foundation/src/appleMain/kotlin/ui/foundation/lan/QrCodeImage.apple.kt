@@ -42,13 +42,14 @@ actual fun encodeQrCode(content: String): QrCodeMatrix? {
     val data = bytes.usePinned { pinned ->
         NSData.create(bytes = pinned.addressOf(0), length = bytes.size.convert())
     }
-    val filter = CIFilter.filterWithName("CIQRCodeGenerator") ?: return null
+    // filterWithName: 标了 NS_SWIFT_NAME(init(name:)), Kotlin/Native 里是构造函数
+    val filter = CIFilter(name = "CIQRCodeGenerator")
     filter.setValue(data, forKey = "inputMessage")
     filter.setValue("M", forKey = "inputCorrectionLevel")
     val image = filter.outputImage ?: return null
     val size = image.extent.useContents { size.width.toInt() }
     if (size <= 0) return null
-    val cgImage = CIContext.contextWithOptions(null).createCGImage(image, fromRect = image.extent) ?: return null
+    val cgImage = CIContext().createCGImage(image, fromRect = image.extent) ?: return null
     val rgba = ByteArray(size * size * 4)
     val colorSpace = CGColorSpaceCreateDeviceRGB()
     try {
