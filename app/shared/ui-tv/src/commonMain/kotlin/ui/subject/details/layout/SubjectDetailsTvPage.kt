@@ -182,6 +182,7 @@ import me.him188.ani.app.data.models.subject.RatingInfo
 import me.him188.ani.app.data.models.subject.SubjectCollectionStats
 import me.him188.ani.app.data.models.subject.SubjectInfo
 import me.him188.ani.app.data.models.subject.Tag
+import me.him188.ani.app.data.models.subject.preferredDisplayName
 import me.him188.ani.app.data.network.TmdbImageService
 import me.him188.ani.app.data.network.TmdbTitleLogo
 import me.him188.ani.app.data.network.tmdbBackdropOriginalSizeUrl
@@ -220,6 +221,8 @@ import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
 import me.him188.ani.app.ui.foundation.theme.GLASS_CONTAINER_ALPHA
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.theme.glassContainerColor
+import me.him188.ani.app.ui.foundation.tv.FillTvTmdbTextsFromCache
+import me.him188.ani.app.ui.foundation.tv.SyncTvTmdbSubjectText
 import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_BOTTOM_FADE_START
 import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_LEFT_FADE_END
 import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_LEFT_FADE_START
@@ -235,6 +238,7 @@ import me.him188.ani.app.ui.foundation.tv.TV_HERO_ZOOM_REVEAL_T
 import me.him188.ani.app.ui.foundation.tv.TV_HERO_ZOOM_TAIL_T
 import me.him188.ani.app.ui.foundation.tv.TV_ICON_GLYPH_SIZE
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_HEADER_GAP
+import me.him188.ani.app.ui.foundation.tv.TV_TMDB_TEXT_WAIT
 import me.him188.ani.app.ui.foundation.tv.TvBackdropFade
 import me.him188.ani.app.ui.foundation.tv.TvBackdropTreatment
 import me.him188.ani.app.ui.foundation.tv.TvCapsuleButton
@@ -255,6 +259,7 @@ import me.him188.ani.app.ui.foundation.tv.rememberTvFocusLandingWindow
 import me.him188.ani.app.ui.foundation.tv.rememberTvImageZoomState
 import me.him188.ani.app.ui.foundation.tv.rememberTvTitleLogo
 import me.him188.ani.app.ui.foundation.tv.rememberTvTitleLogoBox
+import me.him188.ani.app.ui.foundation.tv.rememberTvTmdbTitles
 import me.him188.ani.app.ui.foundation.tv.shownTvTitleLogo
 import me.him188.ani.app.ui.foundation.tv.transformation
 import me.him188.ani.app.ui.foundation.tv.tvBackdropFadeFromBlackStops
@@ -266,7 +271,10 @@ import me.him188.ani.app.ui.foundation.tv.tvHeroContentColor
 import me.him188.ani.app.ui.foundation.tv.tvHeroShrinkEasing
 import me.him188.ani.app.ui.foundation.tv.tvHeroSwapDim
 import me.him188.ani.app.ui.foundation.tv.tvImageZoomKeys
+import me.him188.ani.app.ui.foundation.tv.tvPrefersTmdbText
+import me.him188.ani.app.ui.foundation.tv.tvTitle
 import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
+import me.him188.ani.app.ui.foundation.tv.tvUseOriginalTitle
 import me.him188.ani.app.ui.foundation.tvLongPressKey
 import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
 import me.him188.ani.app.ui.foundation.widgets.AniCenteredPanelDialog
@@ -444,7 +452,7 @@ fun SubjectDetailsTvLoadingPlaceholder(
                         )
                     } else {
                         TvHeroTransitionTitle(
-                            subjectInfo?.displayName ?: navTitle.orEmpty(),
+                            subjectInfo?.tvTitle() ?: navTitle.orEmpty(),
                             color = if (onImage) heroText.title else MaterialTheme.colorScheme.onSurface,
                             shadow = if (onImage) heroText.shadow else null,
                             listColor = heroText.listTitle.takeIf { onImage && zoomSession?.titleBounds != null },
@@ -774,14 +782,29 @@ fun SubjectDetailsTvPage(
     val episodeRuntimes by state.tmdbEpisodeRuntimesFlow.collectAsStateWithLifecycle(emptyMap())
     // TMDB 本地化分集简介 (episodeId -> 简介), 排在 Bangumi 简介前展示
     val episodeOverviews by state.tmdbEpisodeOverviewsFlow.collectAsStateWithLifecycle(emptyMap())
-    // Bangumi 简介整段无中文 (全日文/纯英文) 时用 TMDB 中文整部简介替换; null = 用原文
+    // TMDB 集名 (episodeId -> 集名), 只有非中文界面有, 见 tvEpisodeName
+    val episodeNames by state.tmdbEpisodeNamesFlow.collectAsStateWithLifecycle(emptyMap())
+    // 整段替换 Bangumi 简介的 TMDB 简介 (非中文界面是界面语言的; 中文界面仅当 Bangumi 简介整段无中文); null = 用原文
     val tmdbSummaryOverride by state.tmdbSummaryOverrideFlow.collectAsStateWithLifecycle(null)
+    // 非中文界面的 TMDB 标题与简介写进共享表: 本页各处标题 (见 SubjectInfo.tvTitle)、回到海报墙后的卡片都用它
+    SyncTvTmdbSubjectText(state)
     // Ani 服务器简介为空时的 bgm.tv 兜底 (null = 结果未出, "" = bgm 也没有, 非空 = bgm 简介)
     val bangumiSummaryFallback by state.bangumiSummaryFallbackFlow.collectAsStateWithLifecycle(null)
     // 简介优先级: Ani 服务器 > bgm.tv (仅替代不合并) > TMDB 中文.
     // Ani 有简介时维持原逻辑 (全外文则被 TMDB 中文替换); Ani 为空时等 bgm.tv 结果 (未出结果先按
     // 空显示, 避免先闪 TMDB 再换成 bgm), bgm.tv 也没有才用 TMDB 中文兜底.
-    val displaySummary = if (info.summary.isNotBlank()) {
+    // 非中文界面: TMDB 那段还没出结果时简介先空着 (最多等 TV_TMDB_TEXT_WAIT), 免得先闪 Bangumi 的再换成 TMDB 的
+    val tmdbSubjectText by state.tmdbSubjectTextFlow.collectAsStateWithLifecycle(null)
+    var tmdbWaitOver by remember(state) { mutableStateOf(false) }
+    LaunchedEffect(state) {
+        delay(TV_TMDB_TEXT_WAIT)
+        tmdbWaitOver = true
+    }
+    val tmdbPending = tvPrefersTmdbText() && tmdbSubjectText == null && !tmdbWaitOver
+    val displaySummary = if (tmdbPending) {
+        ""
+    } else if (info.summary.isNotBlank() || (tvPrefersTmdbText() && tmdbSummaryOverride != null)) {
+        // 非中文界面: 有讲本条目的 TMDB 简介就用它, 不等 bgm.tv 兜底 (见 SubjectDetailsStateFactory 的 summaryOverride)
         tmdbSummaryOverride ?: info.summary
     } else when (bangumiSummaryFallback) {
         null -> ""
@@ -1443,6 +1466,7 @@ fun SubjectDetailsTvPage(
                             specialEpisodes = specialEpisodes,
                             currentEpisodeId = currentEpisodeId,
                             episodeRuntimes = episodeRuntimes,
+                            episodeNames = episodeNames,
                             onEpisodeClick = {
                                 showEpisodeGrid = false
                                 onPlay(it.episodeId)
@@ -1597,15 +1621,16 @@ fun SubjectDetailsTvPage(
                     val summaryExtra = subjectAliasesText(info)
                     val summaryMeta = subjectMetaLine(info, mainEpisodes.size.takeIf { it > 0 })
                     Text(
-                        info.displayName,
+                        info.tvTitle(),
                         style = MaterialTheme.typography.headlineLarge,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    // 首屏的标题换成了 logo 时, 原名 (原来在首屏标题下面) 放这里
-                    if (titleLogo != null && info.name.isNotBlank() && info.name != info.displayName) {
+                    // 首屏的标题换成了 logo 时, 另一个名字 (原来在首屏标题下面) 放这里
+                    val secondaryName = info.tvSecondaryName()
+                    if (titleLogo != null && secondaryName != null) {
                         Text(
-                            info.name,
+                            secondaryName,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
@@ -1618,7 +1643,7 @@ fun SubjectDetailsTvPage(
                     // 保持本块始终可聚焦 —— 否则选集页可能没有任何焦点目标, 向下导航整页跳过
                     TvTruncatedSummary(
                         displaySummary.ifBlank { stringResource(Lang.subject_details_no_summary) },
-                        dialogTitle = info.displayName,
+                        dialogTitle = info.tvTitle(),
                         // 撤掉的"作品信息"块并到这里: 别名进正文末尾, 放送日期与话数进底行元信息
                         dialogExtra = summaryExtra,
                         dialogMeta = summaryMeta,
@@ -1692,6 +1717,7 @@ fun SubjectDetailsTvPage(
                 playProgress = playProgress,
                 episodeRuntimes = episodeRuntimes,
                 episodeOverviews = episodeOverviews,
+                episodeNames = episodeNames,
                 // 长按卡片: 标记看过/取消看过
                 onSetEpisodeCollectionType = { item, type ->
                     onEpisodeCollectionUpdate(
@@ -1899,10 +1925,19 @@ fun SubjectDetailsTvPage(
                                 val relationLabels = relatedSnapshot.map { info ->
                                     info?.relation?.let { renderSubjectRelation(it) }.orEmpty()
                                 }
-                                val relatedCards = remember(relatedSnapshot, relationLabels) {
+                                val useOriginalTitle = tvUseOriginalTitle()
+                                // 非中文界面: 查到过 TMDB 标题的番用它 (见 SubjectInfo.tvTitle); 看过的番从持久缓存补
+                                val tmdbTitles = rememberTvTmdbTitles()
+                                FillTvTmdbTextsFromCache(remember(relatedSnapshot) { relatedSnapshot.mapNotNull { it?.subjectId } })
+                                val relatedCards = remember(relatedSnapshot, relationLabels, useOriginalTitle, tmdbTitles) {
                                     relatedSnapshot.mapIndexed { i, info ->
                                         info?.let {
-                                            TvNativeCard(imageUrl = it.image, title = it.displayName, subtitle = relationLabels[i], subjectId = it.subjectId)
+                                            TvNativeCard(
+                                                imageUrl = it.image,
+                                                title = tmdbTitles[it.subjectId] ?: it.preferredDisplayName(useOriginalTitle),
+                                                subtitle = relationLabels[i],
+                                                subjectId = it.subjectId,
+                                            )
                                         }
                                     }
                                 }
@@ -5153,7 +5188,7 @@ private fun TvHeroBlock(
                     )
                 } else {
                     TvHeroTransitionTitle(
-                        info.displayName,
+                        info.tvTitle(),
                         color = if (hasBackdrop) heroText.title else MaterialTheme.colorScheme.onSurface,
                         shadow = titleShadow,
                         listColor = heroText.listTitle.takeIf { hasBackdrop && titleSession?.titleBounds != null },
@@ -5161,9 +5196,10 @@ private fun TvHeroBlock(
                         modifier = titleModifier,
                     )
                 }
-                if (bodyComposed && !showsLogo && info.name.isNotBlank() && info.name != info.displayName) {
+                val secondaryName = info.tvSecondaryName()
+                if (bodyComposed && !showsLogo && secondaryName != null) {
                     Text(
-                        info.name,
+                        secondaryName,
                         Modifier.graphicsLayer { alpha = if (bodyHidden()) 0f else 1f },
                         style = MaterialTheme.typography.bodyMedium.copy(shadow = titleShadow),
                         color = if (hasBackdrop) heroText.subtitle else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -5433,14 +5469,15 @@ private fun TvEmbeddedHeroPage(
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
-                    info.displayName,
+                    info.tvTitle(),
                     style = MaterialTheme.typography.headlineLarge,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
-                if (info.name.isNotBlank() && info.name != info.displayName) {
+                val secondaryName = info.tvSecondaryName()
+                if (secondaryName != null) {
                     Text(
-                        info.name,
+                        secondaryName,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -5467,7 +5504,7 @@ private fun TvEmbeddedHeroPage(
             }
             TvTruncatedSummary(
                 displaySummary.ifBlank { stringResource(Lang.subject_details_no_summary) },
-                dialogTitle = info.displayName,
+                dialogTitle = info.tvTitle(),
                 // 与独立页的简介弹窗同样带上撤掉的「作品信息」(别名进正文末尾, 放送日期与话数进底行):
                 // 这些内容现在**只在这个弹窗里**, 内嵌变体不给的话就彻底够不到了 (用户 2026-09-17)
                 dialogExtra = subjectAliasesText(info),
@@ -5589,3 +5626,13 @@ private val TV_EMBEDDED_BOTTOM_MARGIN = 24.dp
 
 /** 内嵌介绍页收藏统计文字缩放 (数字与小字同步; 1 = 与独立页 Hero 信息带相同大小). */
 private const val TV_EMBEDDED_STATS_TEXT_SCALE = 1f
+
+/**
+ * 番名下面那行的另一个名字: 番名是原名时是中文名, 否则 (中文名或 TMDB 标题, 见 [tvTitle]) 是原名; 两个一样或另一个没有时为 null.
+ */
+@Composable
+private fun SubjectInfo.tvSecondaryName(): String? {
+    val title = tvTitle()
+    val other = if (title == name) nameCn else name
+    return other.takeIf { it.isNotBlank() && it != title }
+}
