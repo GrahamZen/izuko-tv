@@ -28,6 +28,7 @@ import platform.CoreGraphics.kCGBitmapByteOrder32Big
 import platform.CoreGraphics.kCGInterpolationNone
 import platform.CoreImage.CIContext
 import platform.CoreImage.CIFilter
+import platform.CoreImage.filterWithName
 import platform.Foundation.NSData
 import platform.Foundation.create
 import platform.Foundation.setValue
@@ -42,8 +43,8 @@ actual fun encodeQrCode(content: String): QrCodeMatrix? {
     val data = bytes.usePinned { pinned ->
         NSData.create(bytes = pinned.addressOf(0), length = bytes.size.convert())
     }
-    // filterWithName: 标了 NS_SWIFT_NAME(init(name:)), Kotlin/Native 里是构造函数
-    val filter = CIFilter(name = "CIQRCodeGenerator")
+    // filterWithName: 在 CIFilter 的分类 (CIFilterRegistry) 里, Kotlin/Native 导成要单独 import 的扩展
+    val filter = CIFilter.filterWithName("CIQRCodeGenerator") ?: return null
     filter.setValue(data, forKey = "inputMessage")
     filter.setValue("M", forKey = "inputCorrectionLevel")
     val image = filter.outputImage ?: return null
