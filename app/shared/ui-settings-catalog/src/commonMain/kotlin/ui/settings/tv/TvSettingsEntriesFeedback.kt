@@ -12,6 +12,9 @@ package me.him188.ani.app.ui.settings.tv
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.number
+import kotlinx.datetime.toLocalDateTime
 import me.him188.ani.app.data.models.feedback.FeedbackKind
 import me.him188.ani.app.data.models.feedback.FeedbackRecord
 import me.him188.ani.app.data.models.feedback.FeedbackState
@@ -46,9 +49,7 @@ import me.him188.ani.app.ui.lang.tv_settings_feedback_title_entry_id
 import me.him188.ani.app.ui.lang.tv_settings_feedback_title_logo
 import me.him188.ani.app.ui.lang.tv_settings_feedback_title_logo_id
 import me.him188.ani.app.ui.lang.tv_settings_feedback_unread_count
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
+import kotlin.time.Instant
 
 /** 「我的反馈」的数据: 这台电视提交过的反馈 (新的在前), 与这一趟进来时还没看过的那几条 ([fresh], 行 key, 见 [feedbackItems]). */
 internal data class TvFeedbackList(val records: List<FeedbackRecord>, val fresh: Set<String> = emptySet()) {
@@ -153,7 +154,7 @@ internal fun feedbackHeader(r: FeedbackRecord): TvText {
  * 会话气泡, 新的在前 (说明栏放不下时截掉的是最旧的; 全文在手机控制台看); 最后一个是提交时写的 (修正请求写它的标题).
  * 只留文字: 图片、网页标签去掉, 测试包链接换成一句「在手机控制台里装」, 附件不列 (只有附件的写一句).
  */
-internal fun feedbackBubbles(r: FeedbackRecord, zone: ZoneId = ZoneId.systemDefault()): List<TvBubble> {
+internal fun feedbackBubbles(r: FeedbackRecord, zone: TimeZone = TimeZone.currentSystemDefault()): List<TvBubble> {
     val bubbles = ArrayList<TvBubble>()
     for (reply in r.replies.asReversed()) {
         bubbles += feedbackBubble(reply.fromMaintainer, feedbackTime(reply.at, zone), reply.body, reply.files.isNotEmpty(), r.apks)
@@ -180,13 +181,19 @@ private fun feedbackBubble(fromMaintainer: Boolean, time: String, body: String, 
     )
 }
 
-private val TIME_FORMAT = DateTimeFormatter.ofPattern("MM-dd HH:mm")
-
-internal fun feedbackTime(millis: Long, zone: ZoneId): String = TIME_FORMAT.format(Instant.ofEpochMilli(millis).atZone(zone))
+internal fun feedbackTime(millis: Long, zone: TimeZone): String = monthDayTime(millis, zone)
 
 /** 工单服务给的 ISO 时刻; 认不出原样写. */
-internal fun feedbackTime(iso: String, zone: ZoneId): String =
-    runCatching { feedbackTime(Instant.parse(iso).toEpochMilli(), zone) }.getOrDefault(iso)
+internal fun feedbackTime(iso: String, zone: TimeZone): String =
+    runCatching { feedbackTime(Instant.parse(iso).toEpochMilliseconds(), zone) }.getOrDefault(iso)
+
+/** 「月-日 时:分」(`MM-dd HH:mm`), 按 [zone] 的当地时间. */
+internal fun monthDayTime(millis: Long, zone: TimeZone): String {
+    val t = Instant.fromEpochMilliseconds(millis).toLocalDateTime(zone)
+    return "${pad2(t.month.number)}-${pad2(t.day)} ${pad2(t.hour)}:${pad2(t.minute)}"
+}
+
+private fun pad2(value: Int): String = value.toString().padStart(2, '0')
 
 private val HTML_COMMENT = Regex("""<!--[\s\S]*?-->""")
 private val MD_IMAGE = Regex("""!\[[^\]]*]\([^)]*\)""")

@@ -96,7 +96,7 @@ fun TvSettingsPage(
     val sketch = LocalSketch.current
     val last = TvSettingsLastPosition
     val deps = remember {
-        TvSettingsDeps(context, vm, appUpdate, profile, sketch, loadOpenSourceLibrariesJsons, scope)
+        TvSettingsDeps(context, vm, appUpdate, profile, sketch, loadOpenSourceLibrariesJsons, scope, TvSettingsTvPlatform)
     }
     val state = remember {
         TvSettingsState(

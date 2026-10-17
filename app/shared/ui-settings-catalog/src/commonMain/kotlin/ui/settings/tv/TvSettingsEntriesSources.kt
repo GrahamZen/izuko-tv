@@ -10,6 +10,7 @@
 package me.him188.ani.app.ui.settings.tv
 
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.text.intl.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.combine
@@ -18,6 +19,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
+import kotlinx.datetime.TimeZone
 import me.him188.ani.app.data.models.preference.CloudDriveAccount
 import me.him188.ani.app.data.models.preference.VideoResolverSettings
 import me.him188.ani.app.data.repository.media.MediaSourceSubscriptionRepository
@@ -133,10 +135,6 @@ import me.him188.ani.app.ui.lang.tv_settings_value_pair
 import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.datasources.api.topic.Resolution
 import me.him188.ani.datasources.api.topic.SubtitleLanguage
-import java.net.URI
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.hours
@@ -283,7 +281,7 @@ internal fun TvSettingsItemsBuilder.mediaSourceItems() {
         listOf(keys.drives, keys.driveQr),
         entries = { it[keys.drives].orEmpty() },
         key = { it.service.driveId },
-        title = { tvText(it.service.protocol.displayName(Locale.getDefault().toLanguageTag())) },
+        title = { tvText(it.service.protocol.displayName(Locale.current.toLanguageTag())) },
         value = { _, drive ->
             if (drive.account.isLoggedIn) {
                 tvText(drive.account.nickname.ifBlank { drive.account.username.ifBlank { "✓" } })
@@ -319,7 +317,7 @@ internal fun TvSettingsItemsBuilder.mediaSourceItems() {
                     title = null,
                     text = tvText(
                         Lang.tv_settings_drive_logout_confirm,
-                        drive.service.protocol.displayName(Locale.getDefault().toLanguageTag()),
+                        drive.service.protocol.displayName(Locale.current.toLanguageTag()),
                         drive.account.nickname,
                     ),
                     confirmLabel = tvText(Lang.settings_account_logout),
@@ -351,7 +349,7 @@ private fun driveLoginQr(drive: TvDrive, state: CloudDriveQrLoginState?): TvQr =
     null, CloudDriveQrLoginState.Loading -> TvQr(null, status = tvText(Lang.tv_settings_qr_preparing))
     is CloudDriveQrLoginState.WaitingForScan -> {
         val app = drive.service.protocol.login.qr?.appName?.takeIf { it.isNotBlank() }
-            ?: drive.service.protocol.displayName(Locale.getDefault().toLanguageTag())
+            ?: drive.service.protocol.displayName(Locale.current.toLanguageTag())
         TvQr(state.qrContent, caption = tvText(Lang.settings_media_cloud_drive_login_qr_description, app))
     }
 
@@ -391,7 +389,7 @@ private fun subscriptionStatus(sub: MediaSourceSubscription): TvText {
 
 private fun subscriptionUpdatedAt(sub: MediaSourceSubscription): TvText {
     val last = sub.lastUpdated ?: return tvText(Lang.tv_settings_subscription_status_never)
-    val time = SimpleDateFormat("MM-dd HH:mm", Locale.ROOT).format(Date(last.timeMillis))
+    val time = monthDayTime(last.timeMillis, TimeZone.currentSystemDefault())
     return if (last.error != null || last.mediaSourceCount == null) {
         tvText(Lang.tv_settings_subscription_failed_at, time)
     } else {
@@ -400,10 +398,11 @@ private fun subscriptionUpdatedAt(sub: MediaSourceSubscription): TvText {
 }
 
 /** 订阅地址的短名: GitHub 上的取「用户/仓库」, 其余取域名 (订阅记录只存了地址, 没有名字). */
-internal fun subscriptionLabel(url: String): String {
-    val uri = runCatching { URI(url) }.getOrNull() ?: return url
-    val host = uri.host?.removePrefix("www.") ?: return url
-    val segments = uri.path.orEmpty().split('/').filter { it.isNotEmpty() }
+fun subscriptionLabel(url: String): String {
+    val rest = url.substringAfter("://", missingDelimiterValue = "")
+    val authority = rest.substringBefore('/').substringBefore('?').substringBefore('#')
+    val host = authority.substringAfterLast('@').substringBefore(':').lowercase().removePrefix("www.").ifEmpty { return url }
+    val segments = rest.removePrefix(authority).substringBefore('?').substringBefore('#').split('/').filter { it.isNotEmpty() }
     return when {
         (host == "github.com" || host == "raw.githubusercontent.com") && segments.size >= 2 -> "${segments[0]}/${segments[1]}"
         host == "cdn.jsdelivr.net" && segments.firstOrNull() == "gh" && segments.size >= 3 ->

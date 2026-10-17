@@ -51,14 +51,6 @@ fun LogExportLauncher(onDone: () -> Unit) {
     }
 }
 
-/** 扫码把日志传到手机的服务此刻的样子 (见 [runLogLanShare]). */
-sealed interface LogLanShareState {
-    data object Starting : LogLanShareState
-    data object NoNetwork : LogLanShareState
-    data object Failed : LogLanShareState
-    data class Ready(val url: String) : LogLanShareState
-}
-
 /**
  * 起「扫码传到手机」的局域网服务 (同设置 → 日志里那一行的弹窗), 把状态报给 [onState]; 一直挂着服务, 协程取消时关掉 (链接随之失效).
  * 给电视设置页用: 焦点停在那一行时跑, 离开就取消.

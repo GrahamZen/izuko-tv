@@ -9,15 +9,9 @@
 
 package me.him188.ani.app.ui.settings.tv
 
-import android.os.Handler
-import android.os.Looper
 import androidx.compose.ui.platform.UriHandler
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.map
 import me.him188.ani.app.data.models.preference.ProxyConfig
 import me.him188.ani.app.data.network.protocol.ReleaseClass
@@ -33,7 +27,6 @@ import me.him188.ani.app.domain.settings.unreachableProxyOf
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.platform.MeteredNetworkDetector
 import me.him188.ani.app.platform.currentAniBuildConfig
-import me.him188.ani.app.ui.diagnostics.TvPerfDiagnostics
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.oauth_bangumi_help_activation_failed
 import me.him188.ani.app.ui.lang.oauth_bangumi_help_activation_failed_content
@@ -91,11 +84,9 @@ import me.him188.ani.app.ui.lang.settings_update_type
 import me.him188.ani.app.ui.lang.settings_update_type_stable_short
 import me.him188.ani.app.ui.lang.settings_update_up_to_date
 import me.him188.ani.app.ui.lang.settings_update_view_changelog
-import me.him188.ani.app.ui.lang.tv_perf_diag_checking
 import me.him188.ani.app.ui.lang.tv_perf_diag_dialog_hint
 import me.him188.ani.app.ui.lang.tv_perf_diag_latest
 import me.him188.ani.app.ui.lang.tv_perf_diag_none
-import me.him188.ani.app.ui.lang.tv_perf_diag_recording
 import me.him188.ani.app.ui.lang.tv_perf_diag_title
 import me.him188.ani.app.ui.lang.tv_settings_account_bangumi
 import me.him188.ani.app.ui.lang.tv_settings_danmaku_rule_delete_confirm
@@ -134,16 +125,11 @@ import me.him188.ani.app.ui.lang.tv_settings_update_type_test
 import me.him188.ani.app.ui.lang.tv_settings_update_type_test_description
 import me.him188.ani.app.ui.lang.tv_settings_update_whats_new
 import me.him188.ani.app.ui.lang.tv_settings_update_whats_new_description
-import me.him188.ani.app.ui.remote.TvBangumiRelayLogin
 import me.him188.ani.app.ui.settings.tabs.AniHelperDestination
-import me.him188.ani.app.ui.settings.tabs.log.LogExportLauncher
 import me.him188.ani.app.ui.settings.tabs.log.LogLanShareState
-import me.him188.ani.app.ui.settings.tabs.log.hasCurrentLogFile
-import me.him188.ani.app.ui.settings.tabs.log.runLogLanShare
 import me.him188.ani.app.ui.update.AppUpdatePresentation
 import me.him188.ani.app.ui.update.AppUpdateState
 import me.him188.ani.app.ui.update.UpdateCheckProgress
-import me.him188.ani.app.ui.whatsnew.TvWhatsNewSettingsPage
 import org.jetbrains.compose.resources.getString
 import kotlin.math.roundToInt
 
@@ -165,31 +151,17 @@ internal object TvAppSettingKeys {
     /** 「扫码传到手机」的服务此刻的样子 (焦点在那一行时才起). */
     val logShare = TvSettingKey.Live("logShare") { deps -> deps.logShare.map { TvLogShare(it) } }
 
-    /** 最近一次性能诊断的结论 (没有时为 null). */
-    val perfLatest = TvSettingKey.Live("perfLatest") { TvPerfDiagnostics.latestHeadline.map { TvOptionalText(it?.let(::tvText)) } }
+    /** 最近一次性能诊断的结论 (没有时为 null). 没有性能诊断的设备上一直没有值 (那一行不显示). */
+    val perfLatest = TvSettingKey.Live("perfLatest") { deps ->
+        deps.platform.perfLatest?.map { TvOptionalText(it?.let(::tvText)) } ?: emptyFlow()
+    }
 
     /** 性能诊断此刻在做什么 (录制时每半秒更新剩余秒数). */
-    @OptIn(ExperimentalCoroutinesApi::class)
-    val perfStatus = TvSettingKey.Live("perfStatus") {
-        TvPerfDiagnostics.status.flatMapLatest { status ->
-            when (status) {
-                is TvPerfDiagnostics.Status.Recording -> flow {
-                    while (true) {
-                        val left = ((status.endsAtMillis - System.currentTimeMillis() + 999) / 1000).toInt().coerceAtLeast(0)
-                        emit(TvOptionalText(tvText(Lang.tv_perf_diag_recording, left)))
-                        delay(500)
-                    }
-                }
-
-                TvPerfDiagnostics.Status.CheckingHealth -> flowOf(TvOptionalText(tvText(Lang.tv_perf_diag_checking)))
-                TvPerfDiagnostics.Status.Idle -> flowOf(TvOptionalText(null))
-            }
-        }
-    }
+    val perfStatus = TvSettingKey.Live("perfStatus") { deps -> deps.platform.perfStatus?.map { TvOptionalText(it) } ?: emptyFlow() }
 }
 
 /** 可能没有的一段字 (实时值不能是 null). */
-internal data class TvOptionalText(val text: TvText?)
+data class TvOptionalText(val text: TvText?)
 
 /** 「扫码传到手机」的服务; null = 没起 (实时值不能是 null, 包一层). */
 internal data class TvLogShare(val state: LogLanShareState?)
@@ -271,7 +243,7 @@ private fun TvSettingsItemsBuilder.loginItems() {
     header(Lang.tv_settings_login_header, visible = { it.needsLogin() })
     // 焦点停上去就发起一次经 Worker 中转的授权, 授权页地址画成二维码; 离开不取消 (手机上可能正授权到一半), 确定换一张
     action(
-        Lang.tv_settings_login_qr, keys = keys + TvAppSettingKeys.proxy,
+        Lang.tv_settings_login_qr, keys = keys + TvAppSettingKeys.proxy + TvSettingKeys.platform,
         value = { v -> loginStatus(v[oauth]) },
         // 说明只写怎么做 (码占了说明栏一大块, 长了会被截掉); 连不上代理时写怎么办
         details = { v ->
@@ -282,7 +254,7 @@ private fun TvSettingsItemsBuilder.loginItems() {
                 else -> tvText(Lang.tv_settings_login_qr_description)
             }
         },
-        visible = { it.needsLogin() },
+        visible = { it.needsLogin() && it[TvSettingKeys.platform]?.startRelayLogin != null },
         qr = { v -> loginQr(v) },
         whileFocused = { env -> ensureLoginRelay(env) },
     ) { listOf(TvSettingsEdit.Run { env -> startLoginRelay(env) }) }
@@ -349,13 +321,14 @@ private fun ensureLoginRelay(env: TvSettingsEnv) {
     startLoginRelay(env)
 }
 
-/** 发起一次经 Worker 中转的授权 (见 [TvBangumiRelayLogin]), 授权页地址或起不了的原因放进 [TvSettingsDeps.loginRelay]. */
+/** 发起一次经 Worker 中转的授权 (见 [TvSettingsPlatform.startRelayLogin]), 授权页地址或起不了的原因放进 [TvSettingsDeps.loginRelay]. */
 private fun startLoginRelay(env: TvSettingsEnv) {
     if (GlobalKoin.get<BangumiEndpointProvider>().loginPath.value != BangumiLoginPath.BROWSER) return
-    env.deps.loginRelay.value = when (val start = TvBangumiRelayLogin.start()) {
-        is TvBangumiRelayLogin.Start.Ready -> TvLoginRelay(start.url)
-        TvBangumiRelayLogin.Start.Unsupported -> TvLoginRelay(problem = tvText(Lang.tv_settings_login_relay_unsupported))
-        TvBangumiRelayLogin.Start.NoLan -> TvLoginRelay(problem = tvText(Lang.search_tv_remote_unavailable))
+    val startRelay = env.deps.platform.startRelayLogin ?: return
+    env.deps.loginRelay.value = when (val start = startRelay()) {
+        is TvRelayLoginStart.Ready -> TvLoginRelay(start.url)
+        TvRelayLoginStart.Unsupported -> TvLoginRelay(problem = tvText(Lang.tv_settings_login_relay_unsupported))
+        TvRelayLoginStart.NoLan -> TvLoginRelay(problem = tvText(Lang.search_tv_remote_unavailable))
     }
 }
 
@@ -422,8 +395,13 @@ internal fun TvSettingsItemsBuilder.updateItems() {
     val update = TvAppSettingKeys.update
     val presentation = TvAppSettingKeys.updatePresentation
     action(Lang.settings_update_current_version, value = { tvText(currentAniBuildConfig.versionName) }) { emptyList() }
-    run(Lang.tv_settings_update_whats_new, Lang.tv_settings_update_whats_new_description) { env ->
-        env.show(TvSettingsOverlay.Dialog { dismiss -> TvWhatsNewSettingsPage(onDismiss = dismiss) })
+    run(
+        Lang.tv_settings_update_whats_new, Lang.tv_settings_update_whats_new_description,
+        keys = listOf(TvSettingKeys.platform),
+        visible = { it[TvSettingKeys.platform]?.whatsNewPage != null },
+    ) { env ->
+        val page = env.deps.platform.whatsNewPage ?: return@run
+        env.show(TvSettingsOverlay.Dialog { dismiss -> page(dismiss) })
     }
     action(
         Lang.settings_update_check, keys = listOf(presentation),
@@ -510,21 +488,22 @@ internal fun TvSettingsItemsBuilder.logItems() {
     val logShare = TvAppSettingKeys.logShare
     action(
         Lang.settings_log_send_to_phone, Lang.tv_settings_log_send_description, keys = listOf(logShare),
+        visible = { logShareSupported },
         qr = { v -> logShareQr(v[logShare]?.state) },
         whileFocused = { env ->
             try {
-                runLogLanShare(env.context) { env.deps.logShare.value = it }
+                runLogShare(env.context) { env.deps.logShare.value = it }
             } finally {
                 env.deps.logShare.value = null
             }
         },
     ) { emptyList() }
-    run(Lang.settings_log_export_file, Lang.tv_settings_log_export_description) { env ->
-        if (!env.context.hasCurrentLogFile()) {
+    run(Lang.settings_log_export_file, Lang.tv_settings_log_export_description, visible = { logExportSupported }) { env ->
+        if (!currentLogFileExists(env.context)) {
             env.toast(getString(Lang.settings_log_file_not_found))
         } else {
             // 系统选择器开着时要一直留在组合里 (结果才收得到), 导完再关
-            env.show(TvSettingsOverlay.Dialog { dismiss -> LogExportLauncher(onDone = dismiss) })
+            env.show(TvSettingsOverlay.Dialog { dismiss -> LogExport(onDone = dismiss) })
         }
     }
     val perf = TvAppSettingKeys.perfStatus
@@ -576,7 +555,7 @@ internal fun TvSettingsItemsBuilder.debugItems() {
         )
     }
     // 抛在主线程的下一轮, 不被写设置的出错处理接住
-    run(Lang.tv_settings_debug_crash) { Handler(Looper.getMainLooper()).post { throw TvManualCrashException() } }
+    run(Lang.tv_settings_debug_crash) { crashOnMainThread(TvManualCrashException()) }
 }
 
 private class TvManualCrashException : Throwable("Manual crash for testing")

@@ -9,9 +9,6 @@
 
 package me.him188.ani.app.ui.settings.tv
 
-import android.content.pm.PackageManager
-import android.os.Build
-import android.os.LocaleList
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import me.him188.ani.app.data.models.preference.DarkMode
@@ -36,8 +33,8 @@ import me.him188.ani.app.data.repository.player.DanmakuRegexFilterRepository
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.navigation.MainScreenPage
 import me.him188.ani.app.navigation.SettingsTab
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
-import me.him188.ani.app.platform.AppLocales
 import me.him188.ani.app.ui.foundation.lan.TvRemoteSettingsBridge
 import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
 import me.him188.ani.app.ui.lang.Lang
@@ -227,7 +224,6 @@ import me.him188.ani.app.ui.lang.tv_settings_qr_console
 import me.him188.ani.app.ui.lang.video_player_off
 import me.him188.ani.app.ui.lang.video_player_performance
 import me.him188.ani.app.ui.lang.video_player_quality
-import me.him188.ani.app.ui.remote.TvRemoteControl
 import me.him188.ani.app.ui.theme.DefaultSeedColor
 import me.him188.ani.app.ui.theme.themeColorOptions
 import me.him188.ani.app.videoplayer.audio.AudioPassthroughMode
@@ -243,30 +239,23 @@ object TvSettingKeys {
     val danmakuFilter = TvSettingKey.Stored("danmakuFilter") { it.danmakuFilterConfig }
     val debug = TvSettingKey.Stored("debug") { it.debugSettings }
 
-    /** 应用语言的 BCP 47 标签 (多个时取第一个); 空 = 跟随系统. */
-    val language = TvSettingKey.Platform("language") { deps ->
-        AppLocales.get(deps.context).toLanguageTags().substringBefore(',')
-    }
+    /** 应用语言的 BCP 47 标签 (多个时取第一个); 空 = 跟随系统. 不能在应用里换语言的平台 (iOS) 没有. */
+    val language = TvSettingKey.Platform("language") { deps -> appLanguageTag(deps.context) }
 
     /** 屏幕支持的显示模式 (Android 11 起才能取到; 更早为空). */
-    val displayModes = TvSettingKey.Platform("displayModes") { deps ->
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            deps.context.display?.supportedModes.orEmpty().map { TvDisplayMode(it.modeId, it.refreshRate.roundToInt()) }
-        } else {
-            emptyList()
-        }
-    }
+    val displayModes = TvSettingKey.Platform("displayModes") { deps -> displayModes(deps.context) }
+
+    /** 只有电视才有的东西 (见 [TvSettingsPlatform]): 用到它的项据此决定显不显示. 做成实时值是为了跟别的实时值一起到 (系统值要等页面接上才读). */
+    val platform = TvSettingKey.Live("platform") { deps -> flowOf(deps.platform) }
 
     /** 有没有触摸屏: 平板 / 手机装了 TV 包才有, 电视没有 (也没有系统栏). */
-    val touchscreen = TvSettingKey.Platform("touchscreen") { deps ->
-        deps.context.packageManager.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN)
-    }
+    val touchscreen = TvSettingKey.Platform("touchscreen") { deps -> hasTouchscreen(deps.context) }
 
     /** 弹幕正则过滤规则 (逐条). */
     val danmakuRules = TvSettingKey.Live("danmakuRules") { GlobalKoin.get<DanmakuRegexFilterRepository>().flow }
 
     /** Web 控制台的地址 (说明栏里「在手机上设置」的二维码用; 没连局域网时没有). */
-    val consoleUrl = TvSettingKey.Live("consoleUrl") { TvRemoteControl.url.map { TvConsoleUrl(it) } }
+    val consoleUrl = TvSettingKey.Live("consoleUrl") { deps -> deps.platform.consoleUrl.map { TvConsoleUrl(it) } }
 }
 
 /** Web 控制台的地址 (实时值不能是 null, 包一层). */
@@ -277,8 +266,9 @@ data class TvConsoleUrl(val url: String?)
  * 控制台没在运行 (没连局域网) 时只写一句不可用.
  */
 internal fun consoleQr(values: TvSettingsValues, fragment: String): TvQr {
-    val url = values[TvSettingKeys.consoleUrl]?.url ?: return TvQr(null, status = tvText(Lang.search_tv_remote_unavailable))
-    return TvQr("$url$fragment", caption = tvText(Lang.tv_settings_qr_console))
+    val url = values[TvSettingKeys.consoleUrl]?.url
+        ?: return TvQr(null, status = tvText(Lang.search_tv_remote_unavailable), console = fragment)
+    return TvQr("$url$fragment", caption = tvText(Lang.tv_settings_qr_console), console = fragment)
 }
 
 /** 一个显示模式: [id] = 0 表示「自动」(不指定). */
@@ -384,12 +374,7 @@ private fun TvSettingsItemsBuilder.appearanceItems() {
         read = { it[TvSettingKeys.language] },
         write = { tag ->
             listOf(
-                TvSettingsEdit.Run { env ->
-                    val locales = if (tag.isEmpty()) LocaleList.getEmptyLocaleList() else LocaleList.forLanguageTags(tag)
-                    if (AppLocales.get(env.context).toLanguageTags() != locales.toLanguageTags()) {
-                        AppLocales.set(env.context, locales)
-                    }
-                },
+                TvSettingsEdit.Run { env -> setAppLanguage(env.context, tag) },
             )
         },
     )
@@ -485,7 +470,7 @@ private fun TvSettingsItemsBuilder.themeItems() {
             }
         },
     )
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+    if (dynamicColorSupported) {
         toggle(
             theme, Lang.settings_theme_dynamic_colors, Lang.settings_theme_dynamic_colors_description,
             read = { it.useDynamicTheme },
