@@ -94,6 +94,7 @@ kotlin {
         api(projects.app.shared.uiExploration)
         api(projects.app.shared.uiMediaselect)
         api(projects.app.shared.uiSettings)
+        api(projects.app.shared.uiSettingsCatalog) // 设置页的清单 (多平台模块), 本模块只画原生三栏
         api(projects.app.shared.uiDownload)
         api(projects.app.shared.uiComment)
         api(projects.app.shared.appData)

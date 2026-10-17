@@ -9,7 +9,6 @@
 
 package me.him188.ani.app.ui.settings.tv
 
-import android.content.Context
 import androidx.compose.runtime.Composable
 import kotlinx.coroutines.flow.Flow
 import me.him188.ani.app.data.models.preference.NoticeSoundKind
@@ -17,6 +16,7 @@ import me.him188.ani.app.data.repository.user.Settings
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.navigation.BrowserNavigator
 import me.him188.ani.app.navigation.SettingsTab
+import me.him188.ani.app.platform.Context
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.StringResource
 
@@ -47,8 +47,8 @@ class TvSettingsCategory(
 sealed class TvSettingKey<S : Any>(val name: String) {
     class Stored<S : Any>(name: String, val settings: (SettingsRepository) -> Settings<S>) : TvSettingKey<S>(name)
 
-    /** 打开页面时读一次, 每次做完一件事 ([TvSettingsEdit.Run]) 后重读. */
-    class Platform<S : Any>(name: String, val load: (TvSettingsDeps) -> S) : TvSettingKey<S>(name)
+    /** 打开页面时读一次, 每次做完一件事 ([TvSettingsEdit.Run]) 后重读. [load] 给 null = 这台设备上没有 (用到它的设置项不显示). */
+    class Platform<S : Any>(name: String, val load: (TvSettingsDeps) -> S?) : TvSettingKey<S>(name)
 
     class Live<S : Any>(name: String, val flow: (TvSettingsDeps) -> Flow<S>) : TvSettingKey<S>(name)
 
@@ -90,8 +90,16 @@ class TvSettingsEnv(
 /**
  * 说明栏里画的二维码: [content] 为 null 时还没有码 (只写 [status], 如正在准备、没连局域网); [caption] 写在码下面
  * (多是地址本身, 扫不了时能手敲), [status] 写在码上面 (如已确认、已过期).
+ * [console] 非空 = 这是打开 Web 控制台那一页 (值是地址里的 `#` 段) 的码: 要打字才能设的项在手机上设; 没有控制台的端换成自己的入口.
+ * [link] = 码是这一行要打开的网页 (按确定就在本机浏览器打开; 触屏上直接点开, 不画码).
  */
-data class TvQr(val content: String?, val caption: TvText? = null, val status: TvText? = null)
+data class TvQr(
+    val content: String?,
+    val caption: TvText? = null,
+    val status: TvText? = null,
+    val console: String? = null,
+    val link: Boolean = false,
+)
 
 /**
  * 说明栏标题上面画的图 (如开发者头像、鸣谢里各家的标志). [round] = 裁成圆形; false 时整张原样画 (TMDB 的品牌条款要求标志不改形状).

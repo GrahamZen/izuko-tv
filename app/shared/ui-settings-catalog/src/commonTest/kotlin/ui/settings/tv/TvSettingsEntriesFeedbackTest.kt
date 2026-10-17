@@ -9,17 +9,17 @@
 
 package me.him188.ani.app.ui.settings.tv
 
+import kotlinx.datetime.TimeZone
 import me.him188.ani.app.data.models.feedback.FeedbackKind
 import me.him188.ani.app.data.models.feedback.FeedbackRecord
 import me.him188.ani.app.data.models.feedback.FeedbackReply
 import me.him188.ani.app.data.models.feedback.FeedbackState
-import java.time.Instant
-import java.time.ZoneOffset
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Instant
 
 /**
  * @see feedbackItems
@@ -47,11 +47,11 @@ class TvSettingsEntriesFeedbackTest {
     private fun resolve(text: TvText?): String? = text?.let { TvTextResolver { res -> templates[res.key] ?: res.key }.resolve(it) }
 
     /** 气泡写成一行字: 别人的 `<`、自己的 `>` 开头, 抬头与正文之间换行. */
-    private fun bubbles(r: FeedbackRecord): List<String> = feedbackBubbles(r, ZoneOffset.UTC).map { b ->
+    private fun bubbles(r: FeedbackRecord): List<String> = feedbackBubbles(r, TimeZone.UTC).map { b ->
         (if (b.mine) "> " else "< ") + resolve(b.meta) + (b.text?.let { "\n" + resolve(it) } ?: "")
     }
 
-    private fun at(iso: String) = Instant.parse(iso).toEpochMilli()
+    private fun at(iso: String) = Instant.parse(iso).toEpochMilliseconds()
 
     private val apk = "https://github.com/a/b/releases/download/t/app.apk"
 
@@ -130,6 +130,6 @@ class TvSettingsEntriesFeedbackTest {
 
     @Test
     fun `unreadable reply time is shown as is`() {
-        assertEquals("昨天", feedbackTime("昨天", ZoneOffset.UTC))
+        assertEquals("昨天", feedbackTime("昨天", TimeZone.UTC))
     }
 }

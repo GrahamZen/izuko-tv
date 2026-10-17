@@ -319,6 +319,7 @@ class TvSettingsModelTest {
                 TvAppSettingKeys.update to UpdateSettings.Default,
                 TvAppSettingKeys.metered to false,
                 TvAppSettingKeys.perfStatus to TvOptionalText(null),
+                TvAppSettingKeys.perfLatest to TvOptionalText(null),
                 TvFeedbackRecordsKey to TvFeedbackList(
                     listOf(FeedbackRecord(FeedbackKind.TICKET, issue = 3, summary = "黑屏", submittedAt = 0, unread = true)),
                 ),
