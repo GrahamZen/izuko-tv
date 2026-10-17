@@ -66,6 +66,7 @@ import me.him188.ani.app.data.persistent.database.dao.SubjectCollectionEntity
 import me.him188.ani.app.data.network.mapper.toEntity
 import me.him188.ani.app.data.recommendation.InterestProfile
 import me.him188.ani.app.data.recommendation.MAX_PREQUEL_HOPS
+import me.him188.ani.app.data.recommendation.RecommendationCatalog
 import me.him188.ani.app.data.recommendation.RecommendationGroup
 import me.him188.ani.app.data.recommendation.RecommendationGroupKind
 import me.him188.ani.app.data.recommendation.computeInterestProfile
@@ -145,6 +146,11 @@ class RecommendationRepository(
      * 没有 Bangumi 登录, 那两个请求本来也发不出去.
      */
     private val localProfile: Boolean = false,
+    /**
+     * 推荐目录 (见 [RecommendationCatalog]): 按排名 / 热度搜候选与「看过的人还看了」先在本地答, 答不了 (没下下来、过期、超出收录范围)
+     * 才问 bangumi. `null` = 不用目录.
+     */
+    private val catalog: (suspend () -> RecommendationCatalog?)? = null,
 ) : Repository() {
     /**
      * 上次取全的收藏 ([lastCollections]) 落盘的那份: 冷启动后第一次重算照样先取第一页比对, 没变就直接用它,
@@ -737,6 +743,7 @@ class RecommendationRepository(
         val avoidItems = recentBatches.flatMapTo(HashSet()) { it }
 
         val startMillis = currentTimeMillis()
+        val catalogAnswersBefore = catalogAnswers.value
         // **确定要重算了才补数据**: 画像身份串仍然只由本地收藏算 (上面那个 profile), 否则补进来的
         // 东西会让身份串每次都不一样, 变成每次进页都重算.
         //
@@ -844,7 +851,7 @@ class RecommendationRepository(
         logger.info {
             "bgm-direct: recommendations 重算完成 ${rows.size} 条 / ${groups.size} 组 " +
                     "(${groups.joinToString { "${it.kind.key}=${it.items.size}" }}), " +
-                    "${computed.requests} 个请求, ${computedAt - startMillis}ms" +
+                    "${computed.requests} 个请求 (目录答了 ${catalogAnswers.value - catalogAnswersBefore} 个), ${computedAt - startMillis}ms" +
                     if (force) {
                         ", 换一批: 与上一批重复 ${rows.count { it.subjectId in previousItems }} 条 (" +
                                 groups.joinToString { g -> "${g.kind.key}=${g.items.count { it.bangumiId in previousItems }}" } + ")"
@@ -1685,8 +1692,8 @@ class RecommendationRepository(
      * 「本季」「大家最近在看」卖的就是当下在播的那一季, 不换.
      *
      * 换成哪一季: 顺前传走 ([SubjectSeriesIndexService.prequelChain]) 再按 [sequelSeasonCandidates] 挑. 表覆盖到的条目查系列关系图
-     * (见 [SeriesGraphTableRepository]), 当场就知道换不换、换成谁; 比表新的条目才现场一跳一个请求. 要换的取一次那一季的条目信息
-     * (关系图里的节点没有封面; 名字和封面画卡片, 顺手写进本地条目表, 见 [fetchSeason]), 不用换的一个请求都不发.
+     * (见 [SeriesGraphTableRepository]), 当场就知道换不换、换成谁; 比表新的条目才现场一跳一个请求. 关系图里的节点没有封面, 要换的那一季先查推荐目录
+     * (有名字和封面就当场画卡片), 目录里没有才取一次条目信息 (顺手写进本地条目表, 见 [fetchSeason]); 不用换的一个请求都不发.
      *
      * **组装出一行就开始查** ([track]), 不等整批算完: 这些请求打的是 next.bgm.tv, 召回那些搜索打的是
      * api.bgm.tv, 两边不抢同一个 host 的并发名额.
@@ -1737,9 +1744,20 @@ class RecommendationRepository(
                     val chain = seriesIndexService.prequelChain(subjectId, MAX_PREQUEL_HOPS, fetched) { isSeasonFormat(it) }
                     sequelSeasonCandidates(chain).firstOrNull { it.id !in collected }
                 } ?: return@async null
-                // 关系图给的节点没有封面, 卡片要取一次那一季的条目信息; 现场取的关系里带着封面, 直接用
-                if (target.imageLarge.isNotEmpty()) target else seasonOf(target.id).await()
+                // 关系图给的节点没有封面, 卡片要那一季的名字和封面: 推荐目录里有就当场用, 没有才取一次条目信息;
+                // 现场取的关系里带着封面, 直接用
+                if (target.imageLarge.isNotEmpty()) target else catalogSeasonOf(target) ?: seasonOf(target.id).await()
             }
+        }
+
+        /** 推荐目录里这一季的名字与封面; 目录里没有、或没有封面时为 `null`. 不写本地条目表 (同别的推荐卡片, 聚焦时照常取). */
+        private suspend fun catalogSeasonOf(node: SeriesNode): SeriesNode? {
+            val entry = catalog?.invoke()?.entryOf(node.id)?.takeIf { it.cover.isNotEmpty() } ?: return null
+            return node.copy(
+                name = entry.name.ifEmpty { node.name },
+                nameCn = entry.nameCn.ifEmpty { node.nameCn },
+                imageLarge = entry.imageLarge,
+            )
         }
 
         private val seasonsLock = SynchronizedObject()
@@ -2069,7 +2087,32 @@ class RecommendationRepository(
         return intersection.toDouble() / (a.size + b.size - intersection) >= SEED_SIMILARITY_LIMIT
     }
 
-    private suspend fun fetchRecs(subjectId: Int): List<Candidate> = runCatching {
+    private suspend fun fetchRecs(subjectId: Int): List<Candidate> {
+        // 目录里存着这一部的「看过的人还看了」: 推荐到的作品按目录里的数据摆, 字段与下面现场取的那一路一样多 (不多给收藏数, 排序才不变)
+        usableCatalog()?.let { catalog ->
+            val ids = catalog.recsOf(subjectId) ?: return@let
+            catalogAnswers.incrementAndGet()
+            return ids.mapNotNull { id ->
+                val entry = catalog.entryOf(id) ?: return@mapNotNull null
+                if (entry.votes < MIN_RECS_RATING_COUNT) return@mapNotNull null
+                Candidate(
+                    RecommendedSubjectInfo(
+                        bangumiId = entry.id,
+                        nameCn = entry.nameCn.ifEmpty { entry.name },
+                        name = entry.name,
+                        imageLarge = entry.imageLarge,
+                    ),
+                    year = PackedDate.parseFromDate(entry.date).year.takeIf { it > 0 },
+                    format = formatOf(entry.metaTags, emptyList()),
+                    regions = entry.metaTags.filterTo(HashSet()) { it in CanonicalTagKind.Region.values },
+                    episodes = entry.episodes.takeIf { it > 0 },
+                )
+            }
+        }
+        return fetchRecsRemote(subjectId)
+    }
+
+    private suspend fun fetchRecsRemote(subjectId: Int): List<Candidate> = runCatching {
         limited {
             bangumiSubjectApi {
                 coroutineScope { getSubjectRecs(subjectId, limit = RECS_PER_SEED).body().data }
@@ -2303,8 +2346,32 @@ class RecommendationRepository(
     ): Pair<List<Candidate>, Int>? =
         searchPage(filters, sort, what, offset)?.let { page -> page.items.map { it.toCandidate() } to page.total }
 
-    /** 取一页搜索结果 (原样, 连同服务端报的总数); 失败时记一笔, 返回 `null`. */
+    /** 取一页搜索结果 (原样, 连同服务端报的总数); 失败时记一笔, 返回 `null`. 推荐目录能答就不问 bangumi (见 [catalog]). */
     private suspend fun searchPage(
+        filters: SubjectSearchFilters,
+        sort: SearchSort,
+        what: String,
+        offset: Int,
+    ): SubjectSearchPage? {
+        usableCatalog()?.search("", filters, sort, offset, SEARCH_PAGE_SIZE, todayText())?.let {
+            catalogAnswers.incrementAndGet()
+            return it
+        }
+        return searchPageRemote(filters, sort, what, offset)
+    }
+
+    /** 推荐目录现在能不能用: 有、而且「高票标签」的线与这边一致 (目录里只记了每个标签够不够这条线). */
+    private suspend fun usableCatalog(): RecommendationCatalog? =
+        catalog?.invoke()?.takeIf { it.manifest.tagConfidence == TAG_CONFIDENCE }
+
+    /** 推荐目录答了几个查询 (日志用). */
+    private val catalogAnswers = atomic(0)
+
+    private fun todayText(): String = PackedDate.now().let {
+        "${it.year}-${it.month.toString().padStart(2, '0')}-${it.day.toString().padStart(2, '0')}"
+    }
+
+    private suspend fun searchPageRemote(
         filters: SubjectSearchFilters,
         sort: SearchSort,
         what: String,
