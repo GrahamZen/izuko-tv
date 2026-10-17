@@ -54,8 +54,8 @@ object WkWebViewCaptchaBrowserFactory : CaptchaBrowserFactory {
 
     override val recommendedMaxSessions: Int get() = 2
 
-    override suspend fun create(userAgent: String?): CaptchaBrowser =
-        withContext(Dispatchers.Main) { WkWebViewCaptchaBrowser(userAgent) }
+    override suspend fun create(): CaptchaBrowser =
+        withContext(Dispatchers.Main) { WkWebViewCaptchaBrowser(null) }
 }
 
 private class WkWebViewCaptchaBrowser(userAgent: String?) : CaptchaBrowser {
