@@ -23,6 +23,7 @@ import androidx.tvprovider.media.tv.ChannelLogoUtils
 import androidx.tvprovider.media.tv.PreviewProgram
 import androidx.tvprovider.media.tv.TvContractCompat
 import androidx.tvprovider.media.tv.WatchNextProgram
+import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -47,8 +48,13 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import me.him188.ani.app.data.models.episode.EpisodeCollectionInfo
+import me.him188.ani.app.data.models.episode.preferredDisplayName
 import me.him188.ani.app.data.models.player.EpisodeHistory
 import me.him188.ani.app.data.models.preference.NsfwMode
+import me.him188.ani.app.data.models.subject.preferredDisplayName
+import me.him188.ani.app.data.models.subject.tvPrefersTmdbText
+import me.him188.ani.app.data.models.subject.tvUseOriginalTitle
+import me.him188.ani.app.data.network.toTmdbLanguage
 import me.him188.ani.app.data.repository.subject.SubjectNsfw
 import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
 import me.him188.ani.app.data.models.subject.toTmdbMatchHints
@@ -80,6 +86,7 @@ import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Instant
+import androidx.compose.ui.text.intl.Locale as ComposeLocale
 
 /**
  * 向安卓系统主屏 (Android TV / Google TV launcher) 写入预览频道内容:
@@ -211,9 +218,22 @@ object TvHomeChannels {
                     delay(TIME_RECHECK_INTERVAL)
                 }
             },
-        ) { list, _, histories, now ->
+            // 「显示原名」一改, 标题与集名跟着换
+            settingsRepository.uiSettings.flow,
+        ) { list, _, histories, now, ui ->
             val historyByEpisode = histories.associateBy { it.episodeId }
-            list.mapNotNull { info -> info.toWatchNextEntry(historyByEpisode, now)?.let { it to info } }
+            val useOriginalTitle = tvUseOriginalTitle(ui.subjectAppearance.useOriginalTitle, Locale.getDefault().language)
+            // 非中文界面没开「显示原名」: 看过的番用 TMDB 标题 (只查持久缓存, 不发请求; 同 SubjectInfo.tvTitle)
+            val tmdbLanguage = ComposeLocale(Locale.getDefault().toLanguageTag()).toTmdbLanguage()
+            val tmdbTitles = if (!ui.subjectAppearance.useOriginalTitle && tvPrefersTmdbText(tmdbLanguage)) {
+                tmdb.peekCachedEpisodeStills(list.map { it.subjectId }, tmdbLanguage)
+                    .mapNotNull { (id, stills) -> stills.subjectTitle?.let { id to it } }.toMap()
+            } else {
+                emptyMap()
+            }
+            list.mapNotNull { info ->
+                info.toWatchNextEntry(historyByEpisode, now, useOriginalTitle, tmdbTitles[info.subjectId])?.let { it to info }
+            }
         }
         // 这一行只在主屏露出来 (应用退到后台) 时看得到: 应用在前台时不算也不写, 退到后台按最新数据写一次.
         // 在前台照写的话, 播放中每分钟记一次进度就整行删了重插: 系统要拉起被杀掉的频道进程、主屏跟着重载这一行,
@@ -294,8 +314,14 @@ object TvHomeChannels {
      * 排序时间取播出时刻, 在追的番一更新就排到这一行前面.
      *
      * @param historyByEpisode 播放记录 (含墓碑), 按分集 id.
+     * @param tmdbTitle 非中文界面没开「显示原名」时的 TMDB 标题 (见 SubjectInfo.tvTitle); null 时按 [useOriginalTitle] 取 Bangumi 的.
      */
-    private fun SubjectCollectionInfo.toWatchNextEntry(historyByEpisode: Map<Int, EpisodeHistory>, now: Instant): WatchNextEntry? {
+    private fun SubjectCollectionInfo.toWatchNextEntry(
+        historyByEpisode: Map<Int, EpisodeHistory>,
+        now: Instant,
+        useOriginalTitle: Boolean,
+        tmdbTitle: String?,
+    ): WatchNextEntry? {
         val subject = subjectInfo
         if (subject.imageLarge.isBlank()) return null
         if (SubjectNsfw.modeOf(subject.subjectId) != NsfwMode.DISPLAY) return null
@@ -314,6 +340,7 @@ object TvHomeChannels {
                         else -> TvContractCompat.WatchNextPrograms.WATCH_NEXT_TYPE_NEXT
                     },
                     resume = target.resume,
+                    useOriginalTitle = useOriginalTitle,
                 )
             }
             // 还没播的集进播放器也没得放, 去详情页看更新时间
@@ -321,11 +348,12 @@ object TvHomeChannels {
                 link = subjectDeepLink(subject.subjectId).toString(),
                 watchNextType = TvContractCompat.WatchNextPrograms.WATCH_NEXT_TYPE_NEXT,
                 resume = null,
+                useOriginalTitle = useOriginalTitle,
             )
         }
         return WatchNextEntry(
             subjectId = subject.subjectId,
-            title = subject.displayName,
+            title = tmdbTitle ?: subject.preferredDisplayName(useOriginalTitle),
             description = formatDescription(subject.summary),
             posterUri = subject.imageLarge,
             lastEngagementTimeMillis = engagementMillis,
@@ -333,11 +361,16 @@ object TvHomeChannels {
         )
     }
 
-    private fun EpisodeCollectionInfo.toWatchNextEpisode(link: String, watchNextType: Int, resume: EpisodeHistory?) =
+    private fun EpisodeCollectionInfo.toWatchNextEpisode(
+        link: String,
+        watchNextType: Int,
+        resume: EpisodeHistory?,
+        useOriginalTitle: Boolean,
+    ) =
         WatchNextEpisode(
             episodeId = episodeId,
             sort = episodeInfo.sort,
-            title = episodeInfo.nameCn.ifBlank { episodeInfo.name },
+            title = episodeInfo.preferredDisplayName(useOriginalTitle),
             link = link,
             watchNextType = watchNextType,
             positionMillis = resume?.positionMillis,

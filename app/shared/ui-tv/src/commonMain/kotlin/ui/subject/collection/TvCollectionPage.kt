@@ -76,6 +76,7 @@ import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.foundation.LoadError
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.navigation.LocalNavigator
+import me.him188.ani.app.ui.foundation.tv.prefetchTvTmdbSummary
 import me.him188.ani.app.ui.main.TvPosterWallPreviewPage
 import me.him188.ani.app.ui.foundation.AniDisplayTier
 import me.him188.ani.app.ui.foundation.TvPageAdjustAction
@@ -440,6 +441,10 @@ private fun TvCollectionPageContent(
             // 列表自带完整信息 (含分集), 种进进程缓存 —— hero 文字本来就直读列表, 不受媒体链影响
             heroInfo?.takeIf { it.subjectId == s.subjectId }
                 ?.let { TvHeroMediaCache.putSubjectInfo(s.subjectId, it) }
+        },
+        // hero 的简介与标题先用 TMDB 界面语言的 (见 tvHeroTmdbSummary): 列表自带条目信息, 和图同时取
+        afterSettle = { s ->
+            heroInfo?.takeIf { it.subjectId == s.subjectId }?.let { launch { tmdb.prefetchTvTmdbSummary(it) } }
         },
         afterResolve = { s ->
             val info = heroInfo

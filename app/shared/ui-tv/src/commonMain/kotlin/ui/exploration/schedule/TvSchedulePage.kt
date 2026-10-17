@@ -119,6 +119,7 @@ import me.him188.ani.app.domain.foundation.LoadError
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.navigation.LocalNavigator
 import me.him188.ani.app.navigation.SubjectDetailPlaceholder
+import me.him188.ani.app.ui.exploration.schedule.AiringScheduleColumnItem
 import me.him188.ani.app.ui.external.placeholder.PlaceholderHighlight
 import me.him188.ani.app.ui.external.placeholder.fade
 import me.him188.ani.app.ui.external.placeholder.placeholder
@@ -137,6 +138,7 @@ import me.him188.ani.app.ui.foundation.navigation.OnReturnToForeground
 import me.him188.ani.app.ui.foundation.rememberAsyncImageRetryState
 import me.him188.ani.app.ui.foundation.rememberImageCompletionGrace
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
+import me.him188.ani.app.ui.foundation.tv.FillTvTmdbTextsFromCache
 import me.him188.ani.app.ui.foundation.tv.ReportTvScrollActivity
 import me.him188.ani.app.ui.foundation.tv.TV_HERO_MEDIA_DEBOUNCE_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TV_PORTRAIT_CARD_COVER_RATIO
@@ -148,16 +150,24 @@ import me.him188.ani.app.ui.foundation.tv.TvHeroNeighbor
 import me.him188.ani.app.ui.foundation.tv.TvHeroNeighbors
 import me.him188.ani.app.ui.foundation.tv.prefetchTvBackdrop
 import me.him188.ani.app.ui.foundation.tv.prefetchTvSummaryFallback
+import me.him188.ani.app.ui.foundation.tv.prefetchTvTmdbSummary
 import me.him188.ani.app.ui.foundation.tv.rememberTvHeroMediaPipeline
 import me.him188.ani.app.ui.foundation.tv.rememberTvSettledHeroProvider
 import me.him188.ani.app.ui.foundation.tv.tvFocusRingBorder
 import me.him188.ani.app.ui.foundation.tv.tvGridNeighborsOf
 import me.him188.ani.app.ui.foundation.tv.tvHeroBackdropUrl
+import me.him188.ani.app.ui.foundation.tv.tvHeroBangumiSummary
 import me.him188.ani.app.ui.foundation.tv.tvHeroContentColor
 import me.him188.ani.app.ui.foundation.tv.tvHeroSecondaryContentColor
+import me.him188.ani.app.ui.foundation.tv.tvHeroTmdbFallbackSummary
+import me.him188.ani.app.ui.foundation.tv.tvHeroTmdbSummary
+import me.him188.ani.app.ui.foundation.tv.tvHeroTmdbSummaryPending
+import me.him188.ani.app.ui.foundation.tv.tvHeroTmdbTextPending
 import me.him188.ani.app.ui.foundation.tv.tvPlayKeyShortPress
+import me.him188.ani.app.ui.foundation.tv.tvTmdbSubjectTitle
 import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
 import me.him188.ani.app.ui.foundation.tv.tvAnimatedScroll
+import me.him188.ani.app.ui.foundation.tv.tvUseOriginalTitle
 import me.him188.ani.app.ui.foundation.tvLongPressKey
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.showLoadError
@@ -234,6 +244,14 @@ fun TvSchedulePage(
     val toaster = LocalToaster.current
 
     val days = presentation.days
+    // 非中文界面: 看过的番的 TMDB 标题从持久缓存补进共享表 (见 AiringScheduleItemPresentation.tvTitle)
+    FillTvTmdbTextsFromCache(
+        remember(presentation.airingSchedules) {
+            presentation.airingSchedules.flatMap { day ->
+                day.episodes.mapNotNull { (it as? AiringScheduleColumnItem.Data)?.item?.subjectId }
+            }.distinct()
+        },
+    )
     val todayIndex = remember(days) {
         days.indexOfFirst { it.kind == ScheduleDay.Kind.TODAY }.coerceAtLeast(0)
     }
@@ -363,6 +381,10 @@ fun TvSchedulePage(
         },
         // 连发合并之前: 进程缓存里有就先直出, 左栏的字不陪着合并与取图等
         beforeResolve = { s -> TvHeroMediaCache.peekSubjectInfo(s.subjectId)?.let { infoCache[s.subjectId] = it } },
+        // hero 的简介与标题先用 TMDB 界面语言的 (见 tvHeroTmdbSummary): 条目信息已在手就和图同时取, 不排在媒体链后面
+        afterSettle = { s ->
+            (infoCache[s.subjectId] ?: TvHeroMediaCache.peekSubjectInfo(s.subjectId))?.let { launch { tmdb.prefetchTvTmdbSummary(it) } }
+        },
         afterResolve = { s ->
             val info = infoCache[s.subjectId]
                 ?: TvHeroMediaCache.peekSubjectInfo(s.subjectId)?.also { infoCache[s.subjectId] = it }
@@ -378,6 +400,8 @@ fun TvSchedulePage(
             if (info != null && info.subjectInfo.summary.isBlank()) {
                 launch { bangumiSummaryService.prefetchTvSummaryFallback(s.subjectId) }
             }
+            // 条目信息是这条链才拿到的话, 简介在这里取 (afterSettle 取过的直接返回, 在途的合流)
+            if (info != null) launch { tmdb.prefetchTvTmdbSummary(info) }
             // 条目信息没拿到也照常预取邻居: 本页的背景图不靠它
             true
         },
@@ -496,7 +520,8 @@ fun TvSchedulePage(
             subjectId = item.subjectId,
             placeholder = SubjectDetailPlaceholder(
                 id = item.subjectId,
-                name = item.subjectTitle,
+                name = item.subjectName.ifBlank { item.subjectTitle },
+                nameCN = item.subjectTitle,
                 coverUrl = item.imageUrl,
             ),
         )
@@ -837,7 +862,7 @@ private fun TvScheduleDetailPanel(
                     .then(if (item == null) Modifier.placeholder(placeholder, shape = coverShape, highlight = null) else Modifier),
             ) {
                 if (item != null) {
-                    TvScheduleCoverImage(item.imageUrl, item.subjectId, contentDescription = item.subjectTitle)
+                    TvScheduleCoverImage(item.imageUrl, item.subjectId, contentDescription = item.tvTitle())
                 }
             }
             if (c != null && item != null) {
@@ -854,18 +879,20 @@ private fun TvScheduleDetailPanel(
         if (item != null) {
             // 番名紧跟封面, 一行两行都贴着封面排 (用户: "竖屏封面和下面的标题之间似乎有不少空间, 是不是可以调紧凑点" ——
             // 上一版给番名留死两行高、字贴底, 一行的番名上面空出一整行). 番名一行时下面的简介多放一行
+            val title = item.tvTitle()
             Text(
-                item.subjectTitle,
+                title,
                 Modifier.padding(top = TV_SCHEDULE_PANEL_COVER_TO_TITLE_GAP),
                 color = tvHeroContentColor(),
                 style = TvSchedulePanelText.headline,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            // 原名 (与显示名不同时): 日文名常常才是认得出的那个. 没有也留着这一行, 简介的起点不跟着跳
-            val original = item.subjectName.takeIf { it.isNotBlank() && it != item.subjectTitle }
+            // 另一个名字 (与番名不同时): 番名是中文名时这里是原名, 日文名常常才是认得出的那个; 番名是原名时这里是中文名.
+            // 没有也留着这一行, 简介的起点不跟着跳
+            val other = (if (title == item.subjectTitle) item.subjectName else item.subjectTitle).takeIf { it.isNotBlank() && it != title }
             Text(
-                original.orEmpty(),
+                other.orEmpty(),
                 Modifier.padding(top = 2.dp),
                 color = tvHeroSecondaryContentColor(),
                 style = TvSchedulePanelText.body,
@@ -982,7 +1009,7 @@ private fun TvSchedulePanelSide(
             overflow = TextOverflow.Ellipsis,
         )
         Box(Modifier.weight(1f).fillMaxWidth().padding(top = 4.dp)) {
-            val name = item.episodeName?.let(::decodeBasicHtmlEntities)?.takeIf { it.isNotBlank() }
+            val name = item.tvEpisodeName()?.let(::decodeBasicHtmlEntities)?.takeIf { it.isNotBlank() }
             if (name != null) {
                 Text(
                     name,
@@ -1152,7 +1179,18 @@ private fun TvScheduleTagLine(tags: List<String>?, modifier: Modifier = Modifier
 private fun TvSchedulePanelSummary(subjectId: Int, summary: String, modifier: Modifier = Modifier) {
     // 兜底表是进程级共享的快照表, 没有按键订阅粒度: derived 之后别的条目写入不牵动这里
     val fallback by remember(subjectId) { derivedStateOf { TvHeroMediaCache.summaryFallbacks[subjectId] } }
-    val text = remember(summary, fallback) { tvScheduleSummaryText(summary.ifBlank { fallback.orEmpty() }) }
+    // 非中文界面讲本条目的 TMDB 简介排在 Bangumi 的前面 (见 tvHeroTmdbSummary)
+    val tmdbSummary = tvHeroTmdbSummary(subjectId)
+    // Bangumi 与 bgm.tv 都没有简介、或只有日文时用 TMDB 的, 日文在前时从中文起 (见 tvHeroBangumiSummary)
+    val tmdbFallbackSummary = tvHeroTmdbFallbackSummary(subjectId)
+    // 非中文界面 TMDB 那段还没结果时 Bangumi 的先不显示 (见 tvHeroTmdbSummaryPending)
+    val tmdbPending = tvHeroTmdbSummaryPending(subjectId)
+    val tmdbTextPending = tvHeroTmdbTextPending(subjectId)
+    val text = remember(summary, fallback, tmdbSummary, tmdbFallbackSummary, tmdbPending, tmdbTextPending) {
+        tvScheduleSummaryText(
+            tmdbSummary ?: if (tmdbPending) "" else tvHeroBangumiSummary(summary, fallback, tmdbFallbackSummary, tmdbTextPending),
+        )
+    }
     Text(
         text,
         modifier,
@@ -1412,7 +1450,7 @@ private fun TvScheduleRow(
                 Column(Modifier.padding(start = 14.dp).weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            item.subjectTitle,
+                            item.tvTitle(),
                             Modifier.weight(1f, fill = false),
                             color = if (card.aired) tvHeroSecondaryContentColor() else tvHeroContentColor(),
                             style = MaterialTheme.typography.titleMedium.copy(
@@ -1509,9 +1547,18 @@ private fun tvScheduleStatusText(card: TvScheduleCardData, currentTime: LocalTim
 @Composable
 private fun tvScheduleEpisodeLine(item: AiringScheduleItemPresentation): String {
     val label = rememberEpisodeLabel(item)
-    val name = item.episodeName?.let(::decodeBasicHtmlEntities)?.takeIf { it.isNotBlank() }
+    val name = item.tvEpisodeName()?.let(::decodeBasicHtmlEntities)?.takeIf { it.isNotBlank() }
     return if (name == null) label else "$label · $name"
 }
+
+/** 番名: 非中文界面查到过的 TMDB 标题 (见 [tvTmdbSubjectTitle]), 否则原名或中文名 (见 [tvUseOriginalTitle]). */
+@Composable
+internal fun AiringScheduleItemPresentation.tvTitle(): String =
+    tvTmdbSubjectTitle(subjectId) ?: if (tvUseOriginalTitle()) subjectOriginalTitle else subjectTitle
+
+/** 集名, 同 [tvTitle]. */
+@Composable
+private fun AiringScheduleItemPresentation.tvEpisodeName(): String? = if (tvUseOriginalTitle()) episodeOriginalName else episodeName
 
 private fun decodeBasicHtmlEntities(text: String): String {
     if ('&' !in text) return text

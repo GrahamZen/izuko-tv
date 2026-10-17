@@ -61,11 +61,11 @@ import me.him188.ani.app.ui.lang.settings_app_nsfw_hide
 import me.him188.ani.app.ui.lang.settings_app_search
 import me.him188.ani.app.ui.lang.settings_app_subject_title
 import me.him188.ani.app.ui.lang.settings_app_use_original_title
-import me.him188.ani.app.ui.lang.settings_app_use_original_title_description
 import me.him188.ani.app.ui.lang.settings_theme_tv_explore_layout
 import me.him188.ani.app.ui.lang.settings_theme_tv_explore_layout_description
 import me.him188.ani.app.ui.lang.settings_theme_tv_explore_layout_fixed_focus
 import me.him188.ani.app.ui.lang.settings_theme_tv_explore_layout_poster_wall
+import me.him188.ani.app.ui.lang.settings_tv_use_original_title_description
 import me.him188.ani.app.ui.lang.settings_category_app_ui
 import me.him188.ani.app.ui.lang.settings_category_data_playback
 import me.him188.ani.app.ui.lang.settings_category_network_storage
@@ -423,7 +423,7 @@ private fun TvSettingsItemsBuilder.appearanceItems() {
 
     header(Lang.settings_app_subject_title)
     toggle(
-        ui, Lang.settings_app_use_original_title, Lang.settings_app_use_original_title_description,
+        ui, Lang.settings_app_use_original_title, Lang.settings_tv_use_original_title_description,
         read = { it.subjectAppearance.useOriginalTitle },
         write = { copy(subjectAppearance = subjectAppearance.copy(useOriginalTitle = it)) },
     )
