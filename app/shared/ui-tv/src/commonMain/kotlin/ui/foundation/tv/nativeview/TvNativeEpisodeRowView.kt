@@ -30,8 +30,11 @@ import android.graphics.RectF
 import android.graphics.Shader
 import android.os.Build
 import android.text.TextUtils
+import android.view.InputDevice
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
 import android.view.animation.Interpolator
@@ -357,9 +360,77 @@ class TvNativeEpisodeCardView(context: Context, style: TvNativeEpisodeStyle) : T
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean =
         confirmKey.onKey(this, event, null) || super.onKeyUp(keyCode, event)
 
+    /**
+     * 触屏 (平板装了 TV 包) 上的按压由本卡自己处理 (见 [onTouchEvent]); 电视上为 false, 没有触摸事件也不经过这里.
+     * 系统的长按按卡片相对手指的位置判断, 而这里按下就拿焦点、卡片随即滑向聚焦框, 系统会当成手指移出了卡片把长按取消.
+     */
+    var touchFocusOnPress: Boolean = false
+
+    private var touchDownX = 0f
+    private var touchDownY = 0f
+    private var touchWasFocused = false
+    private var touchMoved = false
+    private var touchLongPressFired = false
+    private val touchLongPress = Runnable {
+        touchLongPressFired = true
+        isPressed = false
+        longPressHandler?.invoke()
+    }
+
+    /**
+     * 按下即拿焦点 (行把这张滑进聚焦框, 信息行跟着换); 长按从按下算, 卡片滑走了照样算, 手指挪过触摸阈值才算滑动、取消长按.
+     * 没聚焦时点一下只是选中 (同遥控器移过去), 已聚焦再点才是点击. 移动按屏幕坐标判断: 卡片自己在动, 相对坐标不可靠.
+     */
+    @SuppressLint("ClickableViewAccessibility")
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (!touchFocusOnPress || !event.isFromSource(InputDevice.SOURCE_TOUCHSCREEN)) return super.onTouchEvent(event)
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                touchDownX = event.rawX
+                touchDownY = event.rawY
+                touchWasFocused = isFocused
+                touchMoved = false
+                touchLongPressFired = false
+                if (!isFocused) requestFocus()
+                isPressed = true
+                if (longPressHandler != null) postDelayed(touchLongPress, ViewConfiguration.getLongPressTimeout().toLong())
+            }
+
+            MotionEvent.ACTION_MOVE -> {
+                val slop = ViewConfiguration.get(context).scaledTouchSlop
+                if (!touchMoved && (abs(event.rawX - touchDownX) > slop || abs(event.rawY - touchDownY) > slop)) {
+                    touchMoved = true
+                    removeCallbacks(touchLongPress)
+                    isPressed = false
+                }
+            }
+
+            MotionEvent.ACTION_UP -> {
+                removeCallbacks(touchLongPress)
+                isPressed = false
+                if (!touchLongPressFired && !touchMoved && touchWasFocused) performClick()
+            }
+
+            MotionEvent.ACTION_CANCEL -> {
+                removeCallbacks(touchLongPress)
+                isPressed = false
+            }
+        }
+        return true
+    }
+
+    override fun onDetachedFromWindow() {
+        removeCallbacks(touchLongPress)
+        super.onDetachedFromWindow()
+    }
+
     override fun onFocusChanged(gainFocus: Boolean, direction: Int, previouslyFocusedRect: Rect?) {
         super.onFocusChanged(gainFocus, direction, previouslyFocusedRect)
-        if (!gainFocus) confirmKey.reset()
+        if (!gainFocus) {
+            confirmKey.reset()
+            // 按着的时候焦点被别处拿走 (如页面吸附送焦): 这次长按作废
+            removeCallbacks(touchLongPress)
+        }
         updateMarquee()
         // 行首图标与墨迹补偿随焦点换: 卡里重排一次
         requestLayout()
@@ -452,6 +523,9 @@ class TvNativeEpisodeAdapter(
 
     /** 卡片支持长按确认键; false = 按住也只算点击, 也没有按压反馈. 在绑定之前定. */
     var longPressEnabled: Boolean = true
+
+    /** 触屏 (平板装了 TV 包): 卡片自己处理按压, 按下即聚焦、手指长按也走长按 (见 [TvNativeEpisodeCardView.onTouchEvent]); 电视上为 false. 在绑定之前定. */
+    var touchInput: Boolean = false
 
     /** 长按的触发闸门 (见 [TvNativeConfirmKey.readyToFire]), 绑定时交给每张卡. */
     var readyToFire: (() -> Boolean)? = null
@@ -551,6 +625,7 @@ class TvNativeEpisodeAdapter(
         } else {
             null
         }
+        holder.card.touchFocusOnPress = touchInput
         holder.card.readyToFire = readyToFire
         holder.card.marqueePaused = marqueePaused
         holder.card.setDim(dimOf(position), animate = false)

@@ -138,6 +138,7 @@ import me.him188.ani.app.ui.foundation.tv.ReportTvScrollActivity
 import me.him188.ani.app.ui.foundation.tv.TvFocusRing
 import me.him188.ani.app.ui.foundation.tv.rememberTvCardsScrollingProvider
 import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
+import me.him188.ani.app.ui.foundation.tv.tvTouchTap
 import me.him188.ani.app.ui.foundation.tv.rememberTvScrollSettled
 import me.him188.ani.app.ui.foundation.tv.tvScrollHiddenTextEnabled
 import me.him188.ani.app.ui.foundation.tv.tvContentSwapAnimated
@@ -522,6 +523,7 @@ fun FocusEpisodeCarousel(
                 moveDisplayedBy = moveDisplayedBy,
                 horizontalPadding = horizontalPadding,
                 endPadding = endPadding,
+                onOpenDetails = if (onSetEpisodeCollectionType != null) { item -> actionTarget = item } else null,
             )
         }
         // 长按卡片打开的「本集详情」弹窗: 剧照 + 完整简介 (上下键滚动) + 单个可执行的操作按钮.
@@ -1877,6 +1879,11 @@ private fun FocusEpisodeInfoRow(
     moveDisplayedBy: (Int) -> Unit,
     horizontalPadding: Dp,
     endPadding: Dp,
+    /**
+     * 触屏 (平板装了 TV 包) 上点这一行打开这一集的详情弹窗 (同长按卡片): 简介截断后用户的习惯是点它看全文.
+     * 电视上不挂 (行不可聚焦, 全文在长按卡片里); null = 没有详情弹窗.
+     */
+    onOpenDetails: ((EpisodeListItem) -> Unit)? = null,
 ) {
     // 派生状态: 展示的集真变了才重组本行. 焦点刚进轮播时 (详情页翻进选集页) 聚焦集多半就是当前集, 本行不必动
     val displayedState = remember(episodes, currentEpisodeId, focusedEpisodeId) {
@@ -1902,7 +1909,7 @@ private fun FocusEpisodeInfoRow(
         contentKey = { it?.episodeId },
         label = "episodeInfoRow",
     ) { shown ->
-        Box(Modifier.fillMaxWidth()) {
+        Box(Modifier.fillMaxWidth().tvTouchTap(onTap = { if (shown != null) onOpenDetails?.invoke(shown) })) {
             val desc = shown?.let { mergedEpisodeDesc(episodeOverviews[it.episodeId], it.desc) } ?: ""
             Column(Modifier.fillMaxWidth().padding(end = DETAILS_TEXT_END_RESERVE)) {
                 if (descContent != null) {
