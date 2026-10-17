@@ -25,14 +25,22 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.emptyFlow
 import me.him188.ani.app.data.models.preference.TvTitleLogoDisplay
 import me.him188.ani.app.ui.foundation.AsyncImage
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
+import me.him188.ani.app.ui.foundation.tv.SyncTvTmdbSubjectText
 import me.him188.ani.app.ui.foundation.tv.TvTitleLogoFlip
 import me.him188.ani.app.ui.foundation.tv.TvTitleLogoLookup
 import me.him188.ani.app.ui.foundation.tv.rememberTvTitleLogoBox
 import me.him188.ani.app.ui.foundation.tv.rememberTvTitleLogoLookup
+import me.him188.ani.app.ui.foundation.tv.tvPrefersTmdbText
+import me.him188.ani.app.ui.foundation.tv.tvTmdbSubjectTitleFilled
+import me.him188.ani.app.ui.foundation.tv.tvUseOriginalTitle
+import me.him188.ani.app.ui.subject.details.SubjectDetailsLoadState
+import me.him188.ani.app.ui.subject.episode.EpisodeViewModel
 import me.him188.ani.app.ui.subject.episode.SubjectPresentation
 
 /**
@@ -52,6 +60,9 @@ internal fun TvPlayerTitle(subject: SubjectPresentation, modifier: Modifier = Mo
         rememberTvTitleLogoLookup(subject.info.subjectId, subject.info.name)
     }
     val logo = lookup.logo
+    // 非中文界面没开「显示原名」时先用 TMDB 的标题 (见 SubjectInfo.tvTitle)
+    val tmdbTitle = if (subject.isPlaceholder) null else tvTmdbSubjectTitleFilled(subject.info.subjectId)
+    val title = tmdbTitle ?: if (tvUseOriginalTitle()) subject.originalTitle else subject.title
     var logoFailed by remember(logo) { mutableStateOf(false) }
     val box = rememberTvTitleLogoBox()
     if (logo != null && box != null && !logoFailed) {
@@ -59,7 +70,7 @@ internal fun TvPlayerTitle(subject: SubjectPresentation, modifier: Modifier = Mo
         val density = LocalDensity.current
         AsyncImage(
             logo.url(size.widthPx),
-            contentDescription = subject.title,
+            contentDescription = title,
             modifier.size(with(density) { size.widthPx.toDp() }, with(density) { size.heightPx.toDp() }),
             onError = { logoFailed = true },
             alignment = Alignment.BottomStart,
@@ -81,7 +92,7 @@ internal fun TvPlayerTitle(subject: SubjectPresentation, modifier: Modifier = Mo
         }
     }
     Text(
-        subject.title,
+        title,
         // 等 logo 那一会儿照样占着一行文字的高, 下面的集号与数据源不跳
         modifier.alpha(if (lookup.pending && !waited) 0f else 1f),
         color = Color.White,
@@ -94,3 +105,18 @@ internal fun TvPlayerTitle(subject: SubjectPresentation, modifier: Modifier = Mo
 
 /** 还不知道有没有 logo 时最多等多久再显示文字. */
 private const val TV_PLAYER_TITLE_LOGO_WAIT_MILLIS = 1000L
+
+/**
+ * 播放页的 TMDB 文字: 番的标题与简介写进共享表 (见 [SyncTvTmdbSubjectText]; [TvPlayerTitle] 与回去后的 hero 读它),
+ * 返回 [episodeId] 那一集的 TMDB 集名 (控制层顶部那行, 只有非中文界面有). 详情状态没到或 TMDB 没有时为 null.
+ */
+@Composable
+internal fun rememberTvPlayerTmdbEpisodeName(vm: EpisodeViewModel, episodeId: Int): String? {
+    val loadState by vm.episodeDetailsState.subjectDetailsStateLoader.state.collectAsStateWithLifecycle()
+    val state = (loadState as? SubjectDetailsLoadState.Ok)?.value
+    SyncTvTmdbSubjectText(state)
+    if (!tvPrefersTmdbText()) return null
+    val namesFlow = remember(state) { state?.tmdbEpisodeNamesFlow ?: emptyFlow() }
+    val names by namesFlow.collectAsStateWithLifecycle(emptyMap())
+    return names[episodeId]
+}

@@ -206,7 +206,8 @@ class TvHeroMediaPipelineState internal constructor(
  *
  * 页面提供**数据链**: [resolve]/[resolveNeighbor] 是该页从 subjectId 到"剧照/backdrop 落表"
  * 的完整解析 (探索/追番页 = [resolveTvHeroMedia]; 搜索页只有 backdrop 一跳). 两个钩子给页面
- * 塞私有事: [beforeResolve] 在连发合并**之前**跑 (种缓存, 让 hero 文字不等媒体链);
+ * 塞私有事: [beforeResolve] 在连发合并**之前**跑 (种缓存, 让 hero 文字不等媒体链); [afterSettle] 在停稳后、媒体链之前跑
+ * (与媒体链同时起的取数, 如 TMDB 简介: 排在媒体链后面要多等一整条链);
  * [afterResolve] 在聚焦解析完成后跑 (简介兜底/长驻刷新收集器), 返回 false 表示这次连基础
  * 信息都没拿到, 跳过邻居预取 (下次聚焦重试).
  *
@@ -226,6 +227,7 @@ fun rememberTvHeroMediaPipeline(
     resolve: suspend (TvHeroMediaSpec) -> Unit,
     resolveNeighbor: suspend (TvHeroMediaSpec, TvHeroNeighbor) -> Unit,
     beforeResolve: ((TvHeroMediaSpec) -> Unit)? = null,
+    afterSettle: (CoroutineScope.(TvHeroMediaSpec) -> Unit)? = null,
     afterResolve: (CoroutineScope.(TvHeroMediaSpec) -> Boolean)? = null,
     originalNameOf: (subjectId: Int) -> String? = { TvHeroMediaCache.peekSubjectInfo(it)?.subjectInfo?.name },
     logoOnBlurBackdrop: Boolean = false,
@@ -256,6 +258,7 @@ fun rememberTvHeroMediaPipeline(
     val currentResolve by rememberUpdatedState(resolve)
     val currentResolveNeighbor by rememberUpdatedState(resolveNeighbor)
     val currentBeforeResolve by rememberUpdatedState(beforeResolve)
+    val currentAfterSettle by rememberUpdatedState(afterSettle)
     val currentAfterResolve by rememberUpdatedState(afterResolve)
     val currentOriginalNameOf by rememberUpdatedState(originalNameOf)
 
@@ -288,6 +291,7 @@ fun rememberTvHeroMediaPipeline(
                 }
                 currentBeforeResolve?.invoke(s)
                 settle.awaitTurn()
+                currentAfterSettle?.invoke(this, s)
                 // 慢网络就等 (焦点换卡时 collectLatest 会取消, 等待无害; 挂死自愈见调度器).
                 // 列表自带 info 的页面也走这条, 不各自直呼预取: 直呼绕过调度器 —— 不占前台计数
                 // (后台预取不给它让路)、不合流在途任务 (与邻居预取重复发同一条链)、不受连发

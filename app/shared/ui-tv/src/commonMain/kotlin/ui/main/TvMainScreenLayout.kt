@@ -21,6 +21,7 @@ import me.him188.ani.app.ui.foundation.layout.LocalShellContentStartInset
 import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallTone
 import me.him188.ani.app.ui.foundation.tv.rememberTvPosterWallTone
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallHeroBackground
+import me.him188.ani.app.ui.foundation.tv.tvTmdbSubjectTitleFilled
 import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.MutableTransitionState
@@ -139,6 +140,7 @@ import me.him188.ani.app.ui.foundation.tv.TV_ICON_GLYPH_SIZE_LARGE
 import me.him188.ani.app.ui.foundation.tv.TvCapsuleButton
 import me.him188.ani.app.ui.foundation.tv.TvHeroMediaCache
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallBackground
+import me.him188.ani.app.ui.foundation.tv.tvUseOriginalTitle
 import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_SHAPE
 import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_WINDOW_DIM
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
@@ -775,6 +777,7 @@ private fun TvActionPanelDialog(
                         subjectId = cardSubjectId,
                         episodeId = cardEpisodeId,
                         subjectTitle = session?.subjectTitle ?: upNext?.subjectTitle.orEmpty(),
+                        subjectOriginalTitle = session?.subjectOriginalTitle ?: upNext?.subjectOriginalTitle.orEmpty(),
                         episodeSort = session?.episodeSort ?: upNext?.episodeSort.orEmpty(),
                         // 有会话读实时进度; 没有则是播放进度表里那条记录 (上次看到哪),
                         // 时长不知道就整条线不画 —— 与"正在播放但时长未知"同一条规矩
@@ -1066,6 +1069,7 @@ private fun TvPlaybackCard(
     subjectId: Int,
     episodeId: Int,
     subjectTitle: String,
+    subjectOriginalTitle: String,
     episodeSort: String,
     progress: () -> PlaybackProgress?,
     status: @Composable () -> PlaybackSessionStatusText,
@@ -1138,9 +1142,12 @@ private fun TvPlaybackCard(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        if (subjectTitle.isNotBlank()) {
+                        // 番名跟着「显示原名」与界面语言走 (同各页, 见 SubjectInfo.tvTitle)
+                        val shownTitle = tvTmdbSubjectTitleFilled(subjectId)
+                            ?: if (tvUseOriginalTitle()) subjectOriginalTitle.ifBlank { subjectTitle } else subjectTitle
+                        if (shownTitle.isNotBlank()) {
                             Text(
-                                subjectTitle,
+                                shownTitle,
                                 style = MaterialTheme.typography.titleSmall,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
