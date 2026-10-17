@@ -36,6 +36,8 @@ data class RetainedPlaybackSessionInfo(
     val subjectId: Int,
     val episodeId: Int,
     val subjectTitle: String = "",
+    /** 番的原名, 开了「显示原名」时显示; 空 = 还不知道. */
+    val subjectOriginalTitle: String = "",
     val coverUrl: String = "",
     /** 集号 (如 "12", "20.5"); 空 = 还不知道. */
     val episodeSort: String = "",
