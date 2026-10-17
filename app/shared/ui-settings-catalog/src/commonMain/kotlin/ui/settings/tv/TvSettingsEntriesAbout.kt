@@ -9,8 +9,6 @@
 
 package me.him188.ani.app.ui.settings.tv
 
-import android.content.Intent
-import androidx.core.net.toUri
 import kotlinx.coroutines.flow.map
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.navigation.ChatGroups
@@ -60,7 +58,6 @@ import me.him188.ani.app.ui.lang.tv_settings_rerun_onboarding
 import me.him188.ani.app.ui.lang.tv_settings_rerun_onboarding_confirm
 import me.him188.ani.app.ui.lang.tv_settings_rerun_onboarding_description
 import me.him188.ani.app.ui.lang.tv_settings_rerun_onboarding_restart
-import me.him188.ani.app.ui.onboarding.TvOnboardingGate
 import me.him188.ani.app.ui.settings.tabs.AniHelperDestination
 import me.him188.ani.app.ui.settings.tabs.about.DeveloperCredit
 import me.him188.ani.app.ui.settings.tabs.about.OpenSourceLibraryInfo
@@ -96,17 +93,20 @@ internal fun TvSettingsItemsBuilder.aboutItems() {
             },
         )
     }
-    // 引导只看「做没做过」的标记 (见 TvOnboardingGate): 清掉再重启, 下次启动就是完整的首次引导
+    // 引导只看「做没做过」的标记 (电视版的 TvOnboardingGate): 清掉再重启, 下次启动就是完整的首次引导
     run(
         Lang.tv_settings_rerun_onboarding,
         Lang.tv_settings_rerun_onboarding_description,
+        keys = listOf(TvSettingKeys.platform),
         confirm = TvSettingsConfirm(
             title = null,
             text = tvText(Lang.tv_settings_rerun_onboarding_confirm),
             confirmLabel = tvText(Lang.tv_settings_rerun_onboarding_restart),
         ),
+        visible = { it[TvSettingKeys.platform]?.resetOnboarding != null },
     ) { env ->
-        TvOnboardingGate.reset(env.context)
+        val reset = env.deps.platform.resetOnboarding ?: return@run
+        reset(env.context)
         GlobalKoin.get<AppRestarter>().restart()
     }
     link(Lang.settings_about_feedback) { AniHelperDestination.ISSUE_TRACKER }
@@ -236,10 +236,9 @@ internal fun TvSettingsItemsBuilder.link(
 ) { listOf(openLink(url())) }
 
 /** 网址的码: 码下面印网址 (扫不了还能手敲). */
-private fun linkQr(url: String) = TvQr(url, caption = tvText(url))
+private fun linkQr(url: String) = TvQr(url, caption = tvText(url), link = true)
 
 /** 在电视的浏览器里打开 [url]; 没有浏览器时提示扫码. */
 private fun openLink(url: String) = TvSettingsEdit.Run { env ->
-    val intent = Intent(Intent.ACTION_VIEW, url.toUri()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    runCatching { env.context.startActivity(intent) }.onFailure { env.toast(getString(Lang.tv_settings_link_no_browser)) }
+    if (!openUrlInBrowser(env.context, url)) env.toast(getString(Lang.tv_settings_link_no_browser))
 }

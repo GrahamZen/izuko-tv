@@ -16,12 +16,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import me.him188.ani.app.data.models.preference.PikPakConfig
 import me.him188.ani.app.domain.profile.SelfCollectionRecords
 import me.him188.ani.app.domain.profile.UserProfile
+import me.him188.ani.app.platform.LocalContext
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
 import me.him188.ani.app.ui.foundation.widgets.AniTextButton
@@ -52,7 +52,7 @@ import org.jetbrains.compose.resources.stringResource
  * 新版本的提示与下载进度在「检查更新」那一行上.
  */
 @Composable
-internal fun TvSettingsUpdateHost(viewModel: AppUpdateViewModel) {
+fun TvSettingsUpdateHost(viewModel: AppUpdateViewModel) {
     val context = LocalContext.current
     val presentation by viewModel.presentationFlow.collectAsStateWithLifecycle()
     val state = presentation.state
@@ -83,7 +83,7 @@ internal fun TvSettingsUpdateHost(viewModel: AppUpdateViewModel) {
  * PikPak 开着、登录了、还没回答过时, 看一眼云盘上旧版留下的缓存, 有就问删不删 (同原来设置页 PikPak 那一组的弹窗).
  */
 @Composable
-internal fun TvPikPakLegacyNoticeHost(vm: SettingsViewModel) {
+fun TvPikPakLegacyNoticeHost(vm: SettingsViewModel) {
     val config: PikPakConfig = vm.pikpakSettingsState.value
     val notice = vm.pikpakLegacyNoticeState
     val signedIn = config.username.isNotEmpty() && (config.password.isNotEmpty() || config.refreshToken.isNotEmpty())
