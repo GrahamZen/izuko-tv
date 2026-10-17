@@ -29,10 +29,13 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectWithLifecycle
+import me.him188.ani.app.data.models.episode.preferredDisplayName
 import me.him188.ani.app.data.models.player.EpisodeHistory
 import me.him188.ani.app.data.models.subject.ContinueWatchingStatus
 import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
+import me.him188.ani.app.data.models.subject.preferredDisplayName
 import me.him188.ani.app.tools.WeekFormatter
+import me.him188.ani.app.ui.foundation.tv.FillTvTmdbTextsFromCache
 import me.him188.ani.app.ui.foundation.tv.nativeview.withNsfw
 import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
 import me.him188.ani.app.ui.foundation.focus.TvGridFocusState
@@ -52,8 +55,17 @@ import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeHeroText
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeTextSpan
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeWallBackdropTarget
 import me.him188.ani.app.ui.foundation.tv.rememberTvTitleLogoLookup
+import me.him188.ani.app.ui.foundation.tv.rememberTvTmdbTitles
+import me.him188.ani.app.ui.foundation.tv.tvHeroBangumiSummary
+import me.him188.ani.app.ui.foundation.tv.tvHeroNextEpisodeName
 import me.him188.ani.app.ui.foundation.tv.tvHeroSecondaryContentColor
+import me.him188.ani.app.ui.foundation.tv.tvHeroTmdbFallbackSummary
+import me.him188.ani.app.ui.foundation.tv.tvHeroTmdbSummary
+import me.him188.ani.app.ui.foundation.tv.tvHeroTmdbSummaryPending
+import me.him188.ani.app.ui.foundation.tv.tvHeroTmdbTextPending
 import me.him188.ani.app.ui.foundation.tv.tvPageBackdropTreatment
+import me.him188.ani.app.ui.foundation.tv.tvTitle
+import me.him188.ani.app.ui.foundation.tv.tvUseOriginalTitle
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.collection_tv_empty
 import me.him188.ani.app.ui.lang.exploration_tv_air_date
@@ -109,6 +121,11 @@ internal fun TvCollectionNativeGrid(
     val density = LocalDensity.current
     val tabItems = items.collectWithLifecycle()
     val histories = playHistories()
+    val useOriginalTitle = tvUseOriginalTitle()
+    // 非中文界面: 查到过 TMDB 标题的番用它 (见 SubjectInfo.tvTitle); 看过的番从持久缓存补
+    val tmdbTitles = rememberTvTmdbTitles()
+    val tabSnapshot = tabItems.itemSnapshotList
+    FillTvTmdbTextsFromCache(remember(tabSnapshot) { tabSnapshot.mapNotNull { it?.subjectId } })
     TvNativeGridPageHost(
         state = state,
         metrics = metrics,
@@ -116,11 +133,11 @@ internal fun TvCollectionNativeGrid(
         gridKey = selectedTab,
         slideDirection = { from, to -> if (tabOrderIndex(to) > tabOrderIndex(from)) 1 else -1 },
         items = tabItems,
-        cardsKey = histories,
+        cardsKey = Triple(histories, useOriginalTitle, tmdbTitles),
         cardOf = { info ->
             TvNativeCard(
                 imageUrl = info.subjectInfo.imageLarge,
-                title = info.subjectInfo.displayName,
+                title = tmdbTitles[info.subjectId] ?: info.subjectInfo.preferredDisplayName(useOriginalTitle),
                 progress = tvCollectionCardProgress(info, histories),
                 subjectId = info.subjectId,
             )
@@ -246,18 +263,29 @@ private fun tvCollectionNativeHeroText(
     }
     val status = tvCollectionNativeStatus(info, playHistories, statusColor)
     // 两张表是进程级共享的 (邻居预取会写进来): 收进 derivedStateOf, 写入别的条目时不重组
-    val summary by remember(info) {
+    // 非中文界面讲本条目的 TMDB 简介排在 Bangumi 的前面 (见 tvHeroTmdbSummary)
+    val tmdbSummary = tvHeroTmdbSummary(info.subjectId)
+    // Bangumi 与 bgm.tv 都没有简介、或只有日文时用 TMDB 的, 日文在前时从中文起 (见 tvHeroBangumiSummary)
+    val tmdbFallbackSummary = tvHeroTmdbFallbackSummary(info.subjectId)
+    // 非中文界面 TMDB 那段还没结果时 Bangumi 的先不显示 (见 tvHeroTmdbSummaryPending)
+    val tmdbPending = tvHeroTmdbSummaryPending(info.subjectId)
+    val tmdbTextPending = tvHeroTmdbTextPending(info.subjectId)
+    val summary by remember(info, tmdbSummary, tmdbFallbackSummary, tmdbPending, tmdbTextPending) {
         derivedStateOf {
             val nextEpisodeOverview = info.stillEpisodeIdOrNull()
                 ?.let { episodeStillCache[info.subjectId]?.overview }
                 ?.takeIf { it.isNotBlank() }
-            nextEpisodeOverview ?: info.subjectInfo.summary.trim().ifBlank { summaryFallbackCache[info.subjectId].orEmpty() }
+            nextEpisodeOverview ?: tmdbSummary ?: if (tmdbPending) {
+                ""
+            } else {
+                tvHeroBangumiSummary(info.subjectInfo.summary, summaryFallbackCache[info.subjectId], tmdbFallbackSummary, tmdbTextPending)
+            }
         }
     }
     val logo = rememberTvTitleLogoLookup(info.subjectInfo.subjectId, info.subjectInfo.name)
     return TvNativeHeroText(
         subjectId = info.subjectInfo.subjectId,
-        title = info.subjectInfo.displayName,
+        title = info.subjectInfo.tvTitle(),
         infoReady = true,
         rating = info.subjectInfo.ratingInfo.score.takeIf { (it.toFloatOrNull() ?: 0f) > 0f },
         meta = meta,
@@ -279,7 +307,7 @@ private fun tvCollectionNativeStatus(
     val nextEp = info.progressInfo.nextEpisodeIdToPlay?.let { id -> info.episodes.firstOrNull { it.episodeId == id } }
     if (nextEp == null || status is ContinueWatchingStatus.NotOnAir) return null
     val epLabel = stringResource(Lang.playback_history_episode_label, nextEp.episodeInfo.sort.toString())
-    val epName = nextEp.episodeInfo.nameCn.ifBlank { nextEp.episodeInfo.name }
+    val epName = tvHeroNextEpisodeName(info.subjectId, nextEp.episodeId, nextEp.episodeInfo)
     val caughtUp = status is ContinueWatchingStatus.Watched || status is ContinueWatchingStatus.Done
     val remainingMinutes = if (caughtUp) {
         null

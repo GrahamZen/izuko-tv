@@ -28,6 +28,8 @@ class FocusEpisodeRowSpec(
     /** 正在播放 (详情页: 下一集要看) 的那一集: 卡上画声浪图标、换主色底. */
     val currentEpisodeId: Int?,
     val episodeStills: Map<Int, String>,
+    /** episodeId -> TMDB 集名, 只有非中文界面有 (见 tvEpisodeName). */
+    val episodeNames: Map<Int, String>,
     val playProgress: Map<Int, Float>,
     val cellWidth: Dp,
     val cellHeight: Dp,
