@@ -103,8 +103,15 @@ class EpisodeCollectionRepository(
             entity?.takeIf { !it.isExpired() }
                 ?.toEpisodeCollectionInfo()
                 ?: kotlin.run {
-                    val remote = episodeService.getEpisodeCollectionById(subjectId, episodeId)
-                        ?: throw NoSuchElementException("Episode $episodeId not found")
+                    val remote = try {
+                        episodeService.getEpisodeCollectionById(subjectId, episodeId)
+                    } catch (e: Exception) {
+                        // 刷新失败时照给过期的本地那份: 集号与标题几乎不变, 选源和缓存不必陪着 bangumi 一起失败
+                        if (entity == null) throw e
+                        val wrapped = RepositoryException.wrapOrThrowCancellation(e)
+                        logger.warn { "Failed to refresh episode $episodeId of subject $subjectId, using the expired local copy: $wrapped" }
+                        return@map entity.toEpisodeCollectionInfo()
+                    } ?: throw NoSuchElementException("Episode $episodeId not found")
                     if (localProfile) {
                         // 本地档取到的是匿名结果: 看过状态以库里的为准
                         episodeCollectionDao.upsertKeepingSelfState(remote.toEntity(subjectId)).toEpisodeCollectionInfo()
