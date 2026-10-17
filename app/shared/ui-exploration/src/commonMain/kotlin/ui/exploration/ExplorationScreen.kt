@@ -157,14 +157,7 @@ class ExplorationPageState(
     private val onRefreshFollowedSubjects: () -> Unit = {},
     /** 「换一批」: 立刻重新召回一批推荐 (动作面板里那颗钮). */
     private val onShuffleRecommendations: () -> Unit = {},
-    /**
-     * 推荐是否正在重算.
-     *
-     * 只有**推荐区还空着**的那一次才值得告诉用户 (装完 / 登录后第一次进页, 要等十几秒,
-     * 期间那块是全空的); 已经有内容时的后台重算不该打扰人.
-     */
-    val recommendationsRefreshing: StateFlow<Boolean> = MutableStateFlow(false),
-    /** 真在重算时进行到哪了 (读收藏第几页 / 已完成几个请求), 同样只在推荐区空着时显示. */
+    /** 真在重算时进行到哪了 (读收藏第几页 / 已完成几个请求), 只在推荐区空着时显示; 已经有内容时的后台重算不该打扰人. */
     val recommendationsRefreshProgress: StateFlow<RecommendationRefreshProgress?> = MutableStateFlow(null),
     /** 「更多」: 按这一组出行时的来源接着推荐, 参数是 `RecommendationGroup.key`. */
     private val onExtendRecommendationGroup: (String) -> Unit = {},
