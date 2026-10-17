@@ -95,7 +95,6 @@ open class ExplorationPageViewModel(private val koin: Koin = GlobalKoin) : Abstr
         recommendationGroups = recommendationRepository.recommendationGroups()
             .withoutHiddenNsfwItems()
             .stateIn(backgroundScope, SharingStarted.Eagerly, emptyList()),
-        recommendationsRefreshing = recommendationRepository.isRefreshing,
         recommendationsRefreshProgress = recommendationRepository.refreshProgress,
         onExtendRecommendationGroup = { recommendationRepository.extendGroup(it) },
         extendingRecommendationGroups = recommendationRepository.extendingGroups,

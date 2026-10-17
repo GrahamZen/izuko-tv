@@ -118,7 +118,6 @@
     <string name="exploration_rec_more_loading">正在找…</string>
     <string name="exploration_rec_more_hero_seed">按确定，推荐更多和《%1$s》相似的作品</string>
     <string name="exploration_rec_more_hero_peek">按确定，推荐更多「%1$s」，下一部就是它</string>
-    <string name="exploration_rec_loading">正在为你挑选推荐，需要十几秒</string>
     <string name="exploration_rec_progress_collections_start">正在为你挑选推荐：读取收藏…</string>
     <string name="exploration_rec_progress_collections">正在为你挑选推荐：读取收藏 %1$d/%2$d 页</string>
     <string name="exploration_rec_progress_candidates">正在为你挑选推荐：已完成 %1$d 个请求</string>

@@ -134,7 +134,6 @@ import me.him188.ani.app.ui.lang.exploration_rec_also_watched
 import me.him188.ani.app.ui.lang.exploration_rec_because_you_liked
 import me.him188.ani.app.ui.lang.exploration_rec_change_taste
 import me.him188.ani.app.ui.lang.exploration_rec_for_you_high_rated
-import me.him188.ani.app.ui.lang.exploration_rec_loading
 import me.him188.ani.app.ui.lang.exploration_rec_progress_candidates
 import me.him188.ani.app.ui.lang.exploration_rec_progress_collections
 import me.him188.ani.app.ui.lang.exploration_rec_progress_collections_start
@@ -173,9 +172,6 @@ import me.him188.ani.app.data.network.TrendsRepository
 import me.him188.ani.app.ui.foundation.LocalSketch
 import me.him188.ani.app.ui.foundation.tv.TvHeroImagePrefetch
 import me.him188.ani.app.ui.foundation.tv.isOriginalSizeTmdbUrl
-import me.him188.ani.app.ui.onboarding.TvOnboardingLogin
-import me.him188.ani.app.platform.ProfileSwitchFrame
-import me.him188.ani.app.ui.profile.TvUserProfilePicker
 
 /**
  * TV 沉浸式探索页 (海报墙): 顶上是热门轮播 (轮播条目的 TMDB 背景图 + 标题 / 评分连载 / 简介 + 「立即观看」「新番时间表」两颗按钮
@@ -554,23 +550,6 @@ private fun TvExplorationPageContent(
     val recFlat = remember(recGroups) { recGroups.flatMap { it.items } }
     // 正在「更多」的组: 行尾那张卡画成加载中 (见 rememberTvExplorationNativeItems)
     val extendingGroups by state.extendingRecommendationGroups.collectAsStateWithLifecycle()
-    // 装完 / 登录后第一次进页时推荐区是空的, 而一次重算要十几秒 (二十来个请求) —— 不说一声的话
-    // 新用户看到的就是一片空白, 不知道这儿本来该有七行东西. 只在**真的空着**时提示:
-    // 已经有内容时的后台重算 (TTL 到期、画像变了) 不该打扰人.
-    val recRefreshing by state.recommendationsRefreshing.collectAsStateWithLifecycle()
-    val recLoadingHint = stringResource(Lang.exploration_rec_loading)
-    var recEmptyHintShown by rememberSaveable { mutableStateOf(false) }
-    // 选人页、登录层、换人进来的过场盖在主页上时不提示 (系统 toast 会浮在它们上面), 露出主页时还空着再说
-    val pickerVisible by TvUserProfilePicker.visible.collectAsStateWithLifecycle()
-    val loginLayerVisible = TvOnboardingLogin.request.collectAsStateWithLifecycle().value != null
-    val switchLandingVisible = ProfileSwitchFrame.landing.collectAsStateWithLifecycle().value != null
-    val pageCovered = pickerVisible || loginLayerVisible || switchLandingVisible
-    LaunchedEffect(recRefreshing, recGroups.isEmpty(), pageCovered) {
-        if (recRefreshing && recGroups.isEmpty() && !recEmptyHintShown && !pageCovered) {
-            recEmptyHintShown = true
-            toaster.toast(recLoadingHint)
-        }
-    }
     // 未登录的推荐 (一整组 FEED) 按屏上完整放得下的张数切行: 一行正好排满、不横向溢出, 往下多排几行;
     // 登录后的分组一组一条横滑行 (见 tvRecRowsOf)
     val recRows = remember(recGroups, wallColumns) { tvRecRowsOf(recGroups, wallColumns) }
@@ -582,7 +561,7 @@ private fun TvExplorationPageContent(
             followedSnapshot.mapNotNull { it?.subjectInfo?.subjectId } + recFlat.map { it.bangumiId }
         },
     )
-    // 推荐真的在现算 (有进度才算: 缓存还新鲜时 recRefreshing 也亮一下, 那时推荐只是还没从库里读出来)、又没有继续观看:
+    // 推荐真的在现算 (有进度才算: 缓存还新鲜时不报进度, 那时推荐只是还没从库里读出来)、又没有继续观看:
     // 首屏这会儿没有封面要加载, 冷启动的启动页与换人进来的过场不必等封面 (见 AniStartupProgress)
     // 进度每发完一个请求就变一次, 这里只读「在不在算」, 不让整页跟着重组
     val recProgressState = state.recommendationsRefreshProgress.collectAsStateWithLifecycle()
