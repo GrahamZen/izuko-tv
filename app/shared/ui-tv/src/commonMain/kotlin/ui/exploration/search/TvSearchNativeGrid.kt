@@ -28,6 +28,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.paging.compose.LazyPagingItems
 import me.him188.ani.app.data.models.preference.NsfwMode
+import me.him188.ani.app.ui.foundation.tv.FillTvTmdbTextsFromCache
 import me.him188.ani.app.ui.foundation.tv.nativeview.withNsfw
 import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
 import me.him188.ani.app.ui.foundation.focus.TvGridFocusState
@@ -44,8 +45,16 @@ import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeHeroText
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeTextSpan
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeWallBackdropTarget
 import me.him188.ani.app.ui.foundation.tv.rememberTvTitleLogoLookup
+import me.him188.ani.app.ui.foundation.tv.rememberTvTmdbTitles
+import me.him188.ani.app.ui.foundation.tv.tvHeroBangumiSummary
 import me.him188.ani.app.ui.foundation.tv.tvHeroSecondaryContentColor
+import me.him188.ani.app.ui.foundation.tv.tvHeroTmdbFallbackSummary
+import me.him188.ani.app.ui.foundation.tv.tvHeroTmdbSummary
+import me.him188.ani.app.ui.foundation.tv.tvHeroTmdbSummaryPending
+import me.him188.ani.app.ui.foundation.tv.tvHeroTmdbTextPending
 import me.him188.ani.app.ui.foundation.tv.tvPageBackdropTreatment
+import me.him188.ani.app.ui.foundation.tv.tvTmdbSubjectTitleFilled
+import me.him188.ani.app.ui.foundation.tv.tvUseOriginalTitle
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.search_tv_empty
 import me.him188.ani.app.ui.search.isLoadingFirstPageOrRefreshing
@@ -78,6 +87,11 @@ internal fun TvSearchNativeGrid(
     landingIndex: Int = -1,
 ) {
     val density = LocalDensity.current
+    val useOriginalTitle = tvUseOriginalTitle()
+    // 非中文界面: 查到过 TMDB 标题的番用它 (见 SubjectInfo.tvTitle); 看过的番从持久缓存补
+    val tmdbTitles = rememberTvTmdbTitles()
+    val itemsSnapshot = items.itemSnapshotList
+    FillTvTmdbTextsFromCache(remember(itemsSnapshot) { itemsSnapshot.mapNotNull { it?.subjectId } })
     TvNativeGridPageHost(
         state = state,
         metrics = metrics,
@@ -85,12 +99,12 @@ internal fun TvSearchNativeGrid(
         gridKey = 0,
         slideDirection = { _, _ -> 0 },
         items = items,
-        cardsKey = null,
+        cardsKey = useOriginalTitle to tmdbTitles,
         cardOf = { info ->
             TvNativeCard(
                 // 隐藏条目不显示封面 (占位); NSFW 模糊模式降采样打码
                 imageUrl = info.takeIf { !it.hide }?.imageUrl,
-                title = info.title,
+                title = tmdbTitles[info.subjectId] ?: if (useOriginalTitle) info.originalTitle else info.title,
                 obscure = info.nsfwMode == NsfwMode.BLUR,
                 subjectId = info.subjectId,
             )
@@ -180,11 +194,27 @@ private fun TvSearchNativeSource(
 private fun tvSearchNativeHeroText(hero: SubjectPreviewItemInfo, summaryCache: Map<Int, String>): TvNativeHeroText {
     val secondary = tvHeroSecondaryContentColor().toArgb()
     // 进程级共享表, 邻居预取会写进来: 收进 derivedStateOf, 写入别的条目时不重组
-    val summary by remember(hero.subjectId) { derivedStateOf { summaryCache[hero.subjectId].orEmpty() } }
+    // 非中文界面讲本条目的 TMDB 简介排在 Bangumi 的前面 (见 tvHeroTmdbSummary)
+    val tmdbSummary = tvHeroTmdbSummary(hero.subjectId)
+    // 搜索结果不带简介, Bangumi 那段全靠 bgm.tv 兜底表
+    // Bangumi 与 bgm.tv 都没有简介、或只有日文时用 TMDB 的, 日文在前时从中文起 (见 tvHeroBangumiSummary)
+    val tmdbFallbackSummary = tvHeroTmdbFallbackSummary(hero.subjectId)
+    // 非中文界面 TMDB 那段还没结果时 Bangumi 的先不显示 (见 tvHeroTmdbSummaryPending)
+    val tmdbPending = tvHeroTmdbSummaryPending(hero.subjectId)
+    val tmdbTextPending = tvHeroTmdbTextPending(hero.subjectId)
+    val summary by remember(hero.subjectId, tmdbSummary, tmdbFallbackSummary, tmdbPending, tmdbTextPending) {
+        derivedStateOf {
+            tmdbSummary ?: if (tmdbPending) {
+                ""
+            } else {
+                tvHeroBangumiSummary("", summaryCache[hero.subjectId], tmdbFallbackSummary, tmdbTextPending)
+            }
+        }
+    }
     val logo = rememberTvTitleLogoLookup(hero.subjectId, hero.originalName)
     return TvNativeHeroText(
         subjectId = hero.subjectId,
-        title = hero.title,
+        title = tvTmdbSubjectTitleFilled(hero.subjectId) ?: if (tvUseOriginalTitle()) hero.originalTitle else hero.title,
         infoReady = true,
         rating = hero.rating.score.takeIf { (it.toFloatOrNull() ?: 0f) > 0f },
         meta = if (hero.tags.isBlank()) emptyList() else listOf(TvNativeTextSpan(hero.tags, secondary)),

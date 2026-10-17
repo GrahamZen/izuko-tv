@@ -75,6 +75,10 @@ data class TvNextEpisodeMedia(
     val episodeId: Int,
     val stillUrl: String?,
     val overview: String?,
+    /** 按哪种语言取的 (TMDB 语言码, 决定 [overview] 的语言); 界面换了语言就重取. */
+    val language: String = "",
+    /** TMDB 集名, 只有非中文界面有 (见 TmdbEpisodeMedia.name). */
+    val name: String? = null,
 )
 
 /**
@@ -794,7 +798,9 @@ suspend fun TmdbImageService.prefetchTvNextEpisodeMedia(
     nextEpisodeId: Int,
     settingsRepository: SettingsRepository,
 ) {
-    if (TvHeroMediaCache.nextEpisodeMedia[subjectId]?.episodeId == nextEpisodeId) return
+    val language = (settingsRepository.uiSettings.flow.first().appLanguage ?: Locale.current).toTmdbLanguage()
+    val cached = TvHeroMediaCache.nextEpisodeMedia[subjectId]
+    if (cached?.episodeId == nextEpisodeId && cached.language == language) return
     val media = try {
         // null = 这次没拿到 (网络失败). **不能当成"这一集没有剧照"** —— 写进下面那张进程缓存
         // 之后, 入口第一行的去重会让本进程再不重试, 一次抖动就把该条目的剧照永久降级成整部
@@ -808,7 +814,7 @@ suspend fun TmdbImageService.prefetchTvNextEpisodeMedia(
     }
     TvHeroMediaCache.putNextEpisodeMedia(
         subjectId,
-        TvNextEpisodeMedia(nextEpisodeId, media?.stillUrl, media?.overview),
+        TvNextEpisodeMedia(nextEpisodeId, media?.stillUrl, media?.overview, language, media?.name),
     )
 }
 
