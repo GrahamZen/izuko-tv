@@ -235,7 +235,7 @@ class MainActivity : AniComponentActivity(), PictureInPictureHost {
                 }
             }
         }
-        handleStartIntent(intent)
+        handleStartIntent(intent.withoutReplayedLink(savedInstanceState))
 
         // 本形态 (phone / tv) 的附加初始化, 见各 flavor 下的 FormFactorSetup.kt
         onFormFactorActivityCreated(this)
