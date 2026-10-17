@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import me.him188.ani.app.ui.foundation.LocalImageCrossfade
 import me.him188.ani.app.ui.foundation.LocalSketch
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
+import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.TV_FOCUS_RING_COUNTDOWN_TRACK_ALPHA
 import me.him188.ani.app.ui.foundation.tv.TV_REDUCED_MARQUEE_ITERATIONS
 import me.him188.ani.app.ui.foundation.tv.TvFocusRing
@@ -95,6 +96,7 @@ fun TvNativeEpisodeRow(spec: FocusEpisodeRowSpec) {
             )
         }
     }
+    val touchInput = LocalTvTouchInputEnabled.current
     val target = remember { TvNativeEpisodeRowTarget() }
     TvNativeRowHost(
         factory = { context ->
@@ -125,6 +127,7 @@ fun TvNativeEpisodeRow(spec: FocusEpisodeRowSpec) {
             layout.setStart(startPx)
             layout.row.animatedScroll = animatedScroll
             layout.row.cards.longPressEnabled = spec.longPressEnabled
+            layout.row.cards.touchInput = touchInput
             // 数据第一次到: 选中落点那张, 第一次布局就排在停靠线上 (之后落点的变化由轮播经 controller 滚)
             val first = layout.row.cards.itemCount == 0 && cards.isNotEmpty()
             layout.row.cards.submit(cards)
