@@ -151,7 +151,7 @@ class MainActivity : AniComponentActivity(), PictureInPictureHost {
         super.onCreate(savedInstanceState)
         // 用户主题的外壳底色先铺上: 清单主题只能是固定的纯黑, 浅色主题在第一帧之前也不该露黑
         WindowBackgroundMirror.read(this)?.let { window.setBackgroundDrawable(ColorDrawable(it)) }
-        handleStartIntent(intent)
+        handleStartIntent(intent.withoutReplayedLink(savedInstanceState))
 
         enableEdgeToEdge(
             // 透明状态栏
