@@ -52,6 +52,7 @@ import me.him188.ani.app.data.models.subject.toTmdbMatchHints
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
 import me.him188.ani.app.domain.settings.NetworkTroubleBeacon
 import me.him188.ani.app.data.network.BangumiSummaryService
+import me.him188.ani.app.data.network.TmdbEpisodeMedia
 import me.him188.ani.app.data.network.TmdbImageService
 import me.him188.ani.app.data.network.TmdbMatchHints
 import me.him188.ani.app.data.network.matchToEpisodes
@@ -795,21 +796,11 @@ suspend fun TmdbImageService.prefetchTvNextEpisodeMedia(
 ) {
     if (TvHeroMediaCache.nextEpisodeMedia[subjectId]?.episodeId == nextEpisodeId) return
     val media = try {
-        val language = (settingsRepository.uiSettings.flow.first().appLanguage ?: Locale.current)
-            .toTmdbLanguage()
         // null = 这次没拿到 (网络失败). **不能当成"这一集没有剧照"** —— 写进下面那张进程缓存
         // 之后, 入口第一行的去重会让本进程再不重试, 一次抖动就把该条目的剧照永久降级成整部
         // backdrop, 而且毫无痕迹
-        val stills = getEpisodeStills(
-            subjectId, subjectInfo.name, language,
-            newestWantedAirDate = episodes.newestAiredDateStringOrNull(),
-            // 见 SubjectDetailsStateFactory 同名参数
-            subjectAirDate = subjectInfo.airDate.toLocalDateOrNull()?.toString(),
-            subjectEpisodeCount = episodes.size,
-            subjectEpisodeNames = episodes.map { it.episodeInfo.name },
-            hints = subjectInfo.toTmdbMatchHints(),
-        ) ?: return
-        stills.matchToEpisodes(episodes, subjectInfo.airDate.toLocalDateOrNull()?.toString())[nextEpisodeId]
+        val byEpisode = getTvEpisodeMedia(subjectId, subjectInfo, episodes, settingsRepository) ?: return
+        byEpisode[nextEpisodeId]
     } catch (e: CancellationException) {
         throw e // 见 prefetchTvBackdrop: 吞掉取消会让已取消的流水线继续跑
     } catch (_: Exception) {
@@ -819,6 +810,32 @@ suspend fun TmdbImageService.prefetchTvNextEpisodeMedia(
         subjectId,
         TvNextEpisodeMedia(nextEpisodeId, media?.stillUrl, media?.overview),
     )
+}
+
+/**
+ * 一部番按分集 id 对好的 TMDB 单集媒体 (剧照原图档 URL + 简介), 查询口径与详情页选集卡一致.
+ *
+ * **返回 null = 这次没拿到** (网络失败), 与"拿到了但这一集没有"(表里没有这个 id) 不同, 调用方别当成确认无图记下.
+ */
+suspend fun TmdbImageService.getTvEpisodeMedia(
+    subjectId: Int,
+    subjectInfo: SubjectInfo,
+    episodes: List<EpisodeCollectionInfo>,
+    settingsRepository: SettingsRepository,
+): Map<Int, TmdbEpisodeMedia>? {
+    val language = (settingsRepository.uiSettings.flow.first().appLanguage ?: Locale.current)
+        .toTmdbLanguage()
+    val subjectAirDate = subjectInfo.airDate.toLocalDateOrNull()?.toString()
+    val stills = getEpisodeStills(
+        subjectId, subjectInfo.name, language,
+        newestWantedAirDate = episodes.newestAiredDateStringOrNull(),
+        // 见 SubjectDetailsStateFactory 同名参数
+        subjectAirDate = subjectAirDate,
+        subjectEpisodeCount = episodes.size,
+        subjectEpisodeNames = episodes.map { it.episodeInfo.name },
+        hints = subjectInfo.toTmdbMatchHints(),
+    ) ?: return null
+    return stills.matchToEpisodes(episodes, subjectAirDate)
 }
 
 /**
