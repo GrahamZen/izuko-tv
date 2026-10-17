@@ -137,6 +137,7 @@ import me.him188.ani.app.ui.foundation.layout.isWidthAtLeastMedium
 import me.him188.ani.app.ui.foundation.layout.isWidthCompact
 import me.him188.ani.app.ui.foundation.layout.setRequestFullScreen
 import me.him188.ani.app.ui.foundation.layout.setSystemBarVisible
+import me.him188.ani.app.ui.foundation.layout.setSystemBarsVisible
 import me.him188.ani.app.ui.foundation.navigation.BackHandler
 import me.him188.ani.app.ui.foundation.playback.LocalPlaybackSessionEntry
 import me.him188.ani.app.ui.foundation.playback.PlaybackSessionEntry
@@ -155,6 +156,7 @@ import me.him188.ani.app.ui.lang.episode_send_danmaku
 import me.him188.ani.app.ui.lang.foundation_richtext_external_app_link_warning_prefix
 import me.him188.ani.app.ui.lang.foundation_richtext_open_failed_prefix
 import me.him188.ani.app.ui.lang.subject_details_tab_details
+import me.him188.ani.app.ui.main.rememberImmersiveShellPlayerHidesSystemBars
 import me.him188.ani.app.ui.mediaselect.MediaSelectorMode
 import me.him188.ani.app.ui.mediaselect.common.MediaSelectorDialog
 import me.him188.ani.app.ui.mediaselect.common.MediaSelectorDialogContent
@@ -325,9 +327,11 @@ private fun EpisodeScreenContent(
         }
     }
 
+    val immersiveShellHidesBars = rememberImmersiveShellPlayerHidesSystemBars()
     LaunchedEffect(vm.isFullscreen) {
         // Update system bar visibility whenever fullscreen state changes
         context.setSystemBarVisible(window, !vm.isFullscreen)
+        if (immersiveShellHidesBars) context.setSystemBarsVisible(window, statusBar = false, navigationBar = false)
     }
 
     // 只有在首次进入的时候需要设置

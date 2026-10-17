@@ -164,6 +164,7 @@ fun AniAppContent(aniNavigator: AniNavigator) {
         if (onboarding?.pendingOnLaunch == true) NavRoutes.TvOnboarding else appState.initialNavRoute,
     )
     aniNavigator.setBackStack(backStack)
+    ImmersiveShellSystemBarsEffect()
 
     // 根底色: 页面切换过渡的淡入淡出间隙会露出它, 见 AniUiBehavior.blackRootBackground
     val rootBackground =
