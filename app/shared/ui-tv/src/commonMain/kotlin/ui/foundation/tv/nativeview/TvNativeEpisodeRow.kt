@@ -35,6 +35,8 @@ import me.him188.ani.app.ui.foundation.tv.TV_FOCUS_RING_COUNTDOWN_TRACK_ALPHA
 import me.him188.ani.app.ui.foundation.tv.TV_REDUCED_MARQUEE_ITERATIONS
 import me.him188.ani.app.ui.foundation.tv.TvFocusRing
 import me.him188.ani.app.ui.foundation.tv.rememberTvScrollActivityReporter
+import me.him188.ani.app.ui.foundation.tv.tvPrefersTmdbText
+import me.him188.ani.app.ui.foundation.tv.tvUseOriginalTitle
 import me.him188.ani.app.ui.subject.details.sections.EPISODE_CARD_CORNER
 import me.him188.ani.app.ui.subject.details.sections.EPISODE_CARD_PRESS_SCALE
 import me.him188.ani.app.ui.subject.details.sections.EPISODE_CARD_TEXT_GAP
@@ -63,6 +65,7 @@ import me.him188.ani.app.ui.subject.details.sections.episodeStillImageUrl
 import me.him188.ani.app.ui.subject.details.sections.focusEpisodeCardColors
 import kotlin.math.ceil
 import kotlin.math.min
+import me.him188.ani.app.ui.subject.details.sections.tvEpisodeName
 
 /**
  * 选集轮播 (FocusEpisodeCarousel) 的原生卡片行, 当 rowContent 传: 详情页选集轮播与播放器选集条都用它. 轮播 (大脑) 管数据、落点、
@@ -81,13 +84,16 @@ fun TvNativeEpisodeRow(spec: FocusEpisodeRowSpec) {
     val style = rememberTvNativeEpisodeStyle(spec.cellWidth, spec.cellHeight, spec.cellSpacing, spec.monochrome, spec.glass)
     val startPx = with(density) { spec.horizontalPadding.roundToPx() }
     val bleedPx = with(density) { TV_NATIVE_EPISODE_ROW_BLEED.roundToPx() }
-    val cards = remember(spec.episodes, spec.episodeStills, spec.playProgress, spec.currentEpisodeId) {
+    // 集名见 tvEpisodeName (卡片在 remember 里建, 组合里的值先取出来)
+    val useOriginalTitle = tvUseOriginalTitle()
+    val prefersTmdb = tvPrefersTmdbText()
+    val cards = remember(spec.episodes, spec.episodeStills, spec.episodeNames, spec.playProgress, spec.currentEpisodeId, useOriginalTitle, prefersTmdb) {
         spec.episodes.map { item ->
             val watched = item.isDoneOrDropped
             TvNativeEpisodeCard(
                 id = item.episodeId,
                 sort = item.sort.toString(),
-                name = item.nameCn.ifBlank { item.name },
+                name = item.tvEpisodeName(spec.episodeNames, prefersTmdb, useOriginalTitle),
                 stillUrl = spec.episodeStills[item.episodeId]?.let(::episodeStillImageUrl),
                 playing = item.episodeId == spec.currentEpisodeId,
                 watched = watched,

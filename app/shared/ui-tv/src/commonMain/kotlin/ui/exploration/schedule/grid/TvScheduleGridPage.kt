@@ -88,6 +88,7 @@ import me.him188.ani.app.ui.exploration.schedule.AiringScheduleItemPresentation
 import me.him188.ani.app.ui.exploration.schedule.ScheduleDay
 import me.him188.ani.app.ui.exploration.schedule.ScheduleItemDefaults
 import me.him188.ani.app.ui.exploration.schedule.SchedulePagePresentation
+import me.him188.ani.app.ui.exploration.schedule.tvTitle
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallGrid
 import me.him188.ani.app.ui.foundation.tv.TvPosterWallScaled
@@ -104,6 +105,7 @@ import me.him188.ani.app.ui.foundation.focus.tvFocusRailKeys
 import me.him188.ani.app.ui.foundation.navigation.BackHandler
 import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
 import me.him188.ani.app.ui.foundation.navigation.OnReturnToForeground
+import me.him188.ani.app.ui.foundation.tv.FillTvTmdbTextsFromCache
 import me.him188.ani.app.ui.foundation.tv.TV_CARD_FADE_DISTANCE
 import me.him188.ani.app.ui.foundation.tv.TV_CARD_HERO_BACKDROP_GEOMETRY
 import me.him188.ani.app.ui.foundation.tv.TV_FULLSCREEN_BACKDROP_DIM_ALPHA
@@ -211,6 +213,14 @@ fun TvScheduleGridPage(
     val toaster = LocalToaster.current
 
     val days = presentation.days
+    // 非中文界面: 看过的番的 TMDB 标题从持久缓存补进共享表 (见 AiringScheduleItemPresentation.tvTitle)
+    FillTvTmdbTextsFromCache(
+        remember(presentation.airingSchedules) {
+            presentation.airingSchedules.flatMap { day ->
+                day.episodes.mapNotNull { (it as? AiringScheduleColumnItem.Data)?.item?.subjectId }
+            }.distinct()
+        },
+    )
     val todayIndex = remember(days) {
         days.indexOfFirst { it.kind == ScheduleDay.Kind.TODAY }.coerceAtLeast(0)
     }
@@ -439,7 +449,12 @@ fun TvScheduleGridPage(
             lockNavigation()
             navigator.navigateSubjectDetails(
                 subjectId = item.subjectId,
-                placeholder = SubjectDetailPlaceholder(id = item.subjectId, name = item.subjectTitle, coverUrl = item.imageUrl),
+                placeholder = SubjectDetailPlaceholder(
+                    id = item.subjectId,
+                    name = item.subjectName.ifBlank { item.subjectTitle },
+                    nameCN = item.subjectTitle,
+                    coverUrl = item.imageUrl,
+                ),
             )
         }
     }
@@ -552,7 +567,7 @@ fun TvScheduleGridPage(
         card.item?.let { item ->
             TvNativeCard(
                 imageUrl = item.imageUrl,
-                title = item.subjectTitle,
+                title = item.tvTitle(),
                 subtitle = ScheduleItemDefaults.renderTime(null, item.time, timeUnknownText = timeUnknown) + " · " + rememberEpisodeLabel(item),
                 // 播没播过看那行字本身 (「15:00 · 第 3 话」/「已播出」), 不另给颜色 (照 tvOS: 卡片的字只有主次两档)
                 subtitleColor = null,

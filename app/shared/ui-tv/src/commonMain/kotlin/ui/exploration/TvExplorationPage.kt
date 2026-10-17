@@ -12,9 +12,12 @@ package me.him188.ani.app.ui.exploration
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Job
+import me.him188.ani.app.data.models.recommend.preferredDisplayName
+import me.him188.ani.app.data.models.subject.preferredDisplayName
 import me.him188.ani.app.data.network.RecommendationRefreshProgress
 import me.him188.ani.app.domain.episode.GetAnimeScheduleFlowUseCase
 import me.him188.ani.app.ui.foundation.AniStartupProgress
+import me.him188.ani.app.ui.foundation.tv.FillTvTmdbTextsFromCache
 import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallTone
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Box
@@ -74,6 +77,10 @@ import me.him188.ani.app.domain.foundation.LoadError
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.navigation.LocalNavigator
 import me.him188.ani.app.navigation.SubjectDetailPlaceholder
+import me.him188.ani.app.ui.foundation.tv.prefetchTvTmdbSummary
+import me.him188.ani.app.ui.foundation.tv.tvTmdbTitleOr
+import me.him188.ani.app.ui.foundation.tv.tvUseOriginalTitle
+import me.him188.ani.app.ui.foundation.tv.tvUsesTmdbTitle
 import me.him188.ani.app.ui.main.TvPosterWallPreviewPage
 import me.him188.ani.app.ui.foundation.AniDisplayTier
 import me.him188.ani.app.ui.foundation.LocalTvBackLongPressHost
@@ -211,6 +218,9 @@ private fun TvExplorationPageContent(
     val settingsRepository = remember { GlobalKoin.get<SettingsRepository>() }
     val playHistoryRepository = remember { GlobalKoin.get<EpisodePlayHistoryRepository>() }
     val scope = rememberCoroutineScope()
+    val useOriginalTitle = tvUseOriginalTitle()
+    // 焦点 / 点击回调里报给 hero 与详情页的标题: 非中文界面查到过 TMDB 标题的用它 (见 tvTmdbTitleOr)
+    val usesTmdbTitle = tvUsesTmdbTitle()
     // 新番时间表的数据预取 (两台电视实测, 进时间表 0.73~1.08s 里 0.6~0.8s 在等它): 焦点落到 hero 按钮上就在后台拉一次, 进页时
     // 首帧就是数据. 缓存还新鲜时是空操作; 请求挂在仓库自己的作用域上, 离开本页也会跑完、落进缓存. 落在「新番时间表」上立即拉;
     // 落在「立即观看」上 (开屏默认就在这) 晚一点, 不跟探索页首屏的请求抢
@@ -293,6 +303,10 @@ private fun TvExplorationPageContent(
                 ?: TvHeroMediaCache.peekSubjectInfo(s.subjectId)?.also { infoCache[s.subjectId] = it }
             if (info != null) TvHeroMediaCache.putSubjectInfo(s.subjectId, info)
         },
+        // hero 的简介与标题先用 TMDB 界面语言的 (见 tvHeroTmdbSummary): 条目信息已在手就和图同时取, 不排在媒体链后面
+        afterSettle = { s ->
+            (infoCache[s.subjectId] ?: TvHeroMediaCache.peekSubjectInfo(s.subjectId))?.let { launch { tmdb.prefetchTvTmdbSummary(it) } }
+        },
         afterResolve = { s ->
             var info = infoCache[s.subjectId]
             if (info == null) {
@@ -318,6 +332,8 @@ private fun TvExplorationPageContent(
             if (info.subjectInfo.summary.isBlank()) {
                 launch { bangumiSummaryService.prefetchTvSummaryFallback(s.subjectId) }
             }
+            // 条目信息是这条链才拿到的话, 简介在这里取 (afterSettle 取过的直接返回, 在途的合流)
+            launch { tmdb.prefetchTvTmdbSummary(info) }
             true
         },
     )
@@ -371,7 +387,7 @@ private fun TvExplorationPageContent(
         val peek = group.peek
         val target = when {
             seed != null -> TvHeroTarget(seed, group.titleArg.orEmpty(), coverUrl = group.moreImageUrl.orEmpty(), more = group)
-            peek != null -> TvHeroTarget(peek.bangumiId, peek.nameCn, coverUrl = peek.imageLarge, more = group)
+            peek != null -> TvHeroTarget(peek.bangumiId, tvTmdbTitleOr(peek.bangumiId, usesTmdbTitle) { peek.preferredDisplayName(useOriginalTitle) }, coverUrl = peek.imageLarge, more = group)
             else -> null
         }
         if (target != null && target != heroTarget) {
@@ -559,6 +575,13 @@ private fun TvExplorationPageContent(
     // 登录后的分组一组一条横滑行 (见 tvRecRowsOf)
     val recRows = remember(recGroups, wallColumns) { tvRecRowsOf(recGroups, wallColumns) }
     val hasFollowed = followedItems.itemCount > 0
+    // 非中文界面: 看过的番的 TMDB 标题从持久缓存补进共享表, 卡片直接用 (见 rememberTvTmdbTitles; 中文界面是空操作)
+    val followedSnapshot = followedItems.itemSnapshotList
+    FillTvTmdbTextsFromCache(
+        remember(followedSnapshot, recFlat) {
+            followedSnapshot.mapNotNull { it?.subjectInfo?.subjectId } + recFlat.map { it.bangumiId }
+        },
+    )
     // 推荐真的在现算 (有进度才算: 缓存还新鲜时 recRefreshing 也亮一下, 那时推荐只是还没从库里读出来)、又没有继续观看:
     // 首屏这会儿没有封面要加载, 冷启动的启动页与换人进来的过场不必等封面 (见 AniStartupProgress)
     // 进度每发完一个请求就变一次, 这里只读「在不在算」, 不让整页跟着重组
@@ -633,7 +656,7 @@ private fun TvExplorationPageContent(
             // 同一部也要重报: 去掉「按确定推荐更多」那一行
             if (item.bangumiId == heroTarget?.subjectId && heroTarget?.more == null) return@collect
             onFocusItem(
-                item.bangumiId, item.nameCn, null, false, item.imageLarge,
+                item.bangumiId, tvTmdbTitleOr(item.bangumiId, usesTmdbTitle) { item.preferredDisplayName(useOriginalTitle) }, null, false, item.imageLarge,
                 tvRecNeighborsOf(recFlat, recRows, recRow, cardIndex),
             )
         }
@@ -920,7 +943,7 @@ private fun TvExplorationPageContent(
                 followedItems.peekOrNull(index)?.let {
                     onFocusItem(
                         it.subjectInfo.subjectId,
-                        it.subjectInfo.displayName,
+                        tvTmdbTitleOr(it.subjectInfo.subjectId, usesTmdbTitle) { it.subjectInfo.preferredDisplayName(useOriginalTitle) },
                         it.subjectCollectionInfo,
                         true,
                         it.subjectInfo.imageLarge,
@@ -943,7 +966,7 @@ private fun TvExplorationPageContent(
                         focusMoreHero(row)
                     } else {
                         recFlat.getOrNull(row.start + index)?.let {
-                            onFocusItem(it.bangumiId, it.nameCn, null, false, it.imageLarge, tvRecNeighborsOf(recFlat, recRows, recRow, index))
+                            onFocusItem(it.bangumiId, tvTmdbTitleOr(it.bangumiId, usesTmdbTitle) { it.preferredDisplayName(useOriginalTitle) }, null, false, it.imageLarge, tvRecNeighborsOf(recFlat, recRows, recRow, index))
                         }
                     }
                 }
@@ -961,17 +984,17 @@ private fun TvExplorationPageContent(
             if (rowKey == TV_FOLLOWED_ROW_KEY) {
                 followedItems.peekOrNull(index)?.subjectInfo?.let {
                     if (play) {
-                        navigateToPlay(it.subjectId, it.displayName, it.imageLarge, "home_followed_play")
+                        navigateToPlay(it.subjectId, tvTmdbTitleOr(it.subjectId, usesTmdbTitle) { it.preferredDisplayName(useOriginalTitle) }, it.imageLarge, "home_followed_play")
                     } else {
-                        navigateToSubject(it.subjectId, it.displayName, it.imageLarge, "home_followed")
+                        navigateToSubject(it.subjectId, tvTmdbTitleOr(it.subjectId, usesTmdbTitle) { it.preferredDisplayName(useOriginalTitle) }, it.imageLarge, "home_followed")
                     }
                 }
             } else {
                 nativeRecItemAt(rowKey, index)?.let {
                     if (play) {
-                        navigateToPlay(it.bangumiId, it.nameCn, it.imageLarge, "home_recommendation_play")
+                        navigateToPlay(it.bangumiId, tvTmdbTitleOr(it.bangumiId, usesTmdbTitle) { it.preferredDisplayName(useOriginalTitle) }, it.imageLarge, "home_recommendation_play")
                     } else {
-                        navigateToSubject(it.bangumiId, it.nameCn, it.imageLarge, "home_recommendation")
+                        navigateToSubject(it.bangumiId, tvTmdbTitleOr(it.bangumiId, usesTmdbTitle) { it.preferredDisplayName(useOriginalTitle) }, it.imageLarge, "home_recommendation")
                     }
                 }
             }
@@ -1075,12 +1098,12 @@ private fun TvExplorationPageContent(
                 } ?: false
 
                 rowKey == TV_FOLLOWED_ROW_KEY -> followedItems.peekOrNull(focusedCardIndex)?.subjectInfo?.let {
-                    navigateToPlay(it.subjectId, it.displayName, it.imageLarge, "home_followed_play")
+                    navigateToPlay(it.subjectId, tvTmdbTitleOr(it.subjectId, usesTmdbTitle) { it.preferredDisplayName(useOriginalTitle) }, it.imageLarge, "home_followed_play")
                     true
                 } ?: false
 
                 else -> nativeRecItemAt(rowKey, focusedCardIndex)?.let {
-                    navigateToPlay(it.bangumiId, it.nameCn, it.imageLarge, "home_recommendation_play")
+                    navigateToPlay(it.bangumiId, tvTmdbTitleOr(it.bangumiId, usesTmdbTitle) { it.preferredDisplayName(useOriginalTitle) }, it.imageLarge, "home_recommendation_play")
                     true
                 } ?: false
             }

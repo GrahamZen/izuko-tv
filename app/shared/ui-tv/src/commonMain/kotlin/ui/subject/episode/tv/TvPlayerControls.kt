@@ -12,6 +12,8 @@ package me.him188.ani.app.ui.subject.episode.tv
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import me.him188.ani.app.ui.foundation.tv.tvUseOriginalTitle
+import me.him188.ani.app.ui.lang.playback_history_episode_label
 import me.him188.ani.app.ui.lang.subject_episode_details
 import me.him188.ani.app.ui.lang.video_player_select_episode
 import androidx.compose.material.icons.rounded.Info
@@ -398,8 +400,10 @@ internal fun TvPlayerControlsOverlay(
         val pillsRowTopPx = overlay.pillsRowTopPx
 
         // 顶部信息: 左上标题 + 右上时钟
+        val tmdbEpisodeName = rememberTvPlayerTmdbEpisodeName(vm, page.episodePresentation.episodeId)
         TvPlayerTopInfo(
             page,
+            tmdbEpisodeName,
             chrome
                 .align(Alignment.TopStart)
                 .fillMaxWidth()
@@ -734,6 +738,8 @@ private val TV_EPISODE_STRIP_LOADING_HINT_BOTTOM = 40.dp
 @Composable
 private fun TvPlayerTopInfo(
     page: EpisodePageState,
+    /** 当前集的 TMDB 集名 (非中文界面, 见 [rememberTvPlayerTmdbEpisodeName]); null 时按「显示原名」取 Bangumi 的. */
+    tmdbEpisodeName: String?,
     modifier: Modifier = Modifier,
     titleHidden: () -> Boolean = { false },
 ) {
@@ -751,7 +757,8 @@ private fun TvPlayerTopInfo(
             TvPlayerTitle(subject)
             Spacer(Modifier.height(6.dp))
             Text(
-                "第 ${episode.ep} 集  ${episode.title}",
+                stringResource(Lang.playback_history_episode_label, episode.ep) + "  " +
+                    (tmdbEpisodeName ?: if (tvUseOriginalTitle()) episode.originalTitle else episode.title),
                 color = Color.White.copy(alpha = 0.78f),
                 style = MaterialTheme.typography.titleMedium,
                 maxLines = 1,

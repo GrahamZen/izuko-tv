@@ -121,6 +121,7 @@ import androidx.paging.compose.itemContentType
 import androidx.paging.compose.itemKey
 import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -138,6 +139,7 @@ import me.him188.ani.app.domain.search.SearchSort
 import me.him188.ani.app.domain.search.SubjectSearchQuery
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.navigation.LocalNavigator
+import me.him188.ani.app.ui.foundation.tv.prefetchTvTmdbSummary
 import me.him188.ani.app.ui.main.TvPosterWallPreviewPage
 import me.him188.ani.app.ui.main.TvWallScaleEntry
 import me.him188.ani.app.ui.foundation.TV_CONFIRM_KEYS
@@ -1453,6 +1455,19 @@ private fun TvSearchResultsPane(
     // 本页的解析链最短: 只有整部 backdrop 一跳 —— 必须用原名 (日文) 匹配 TMDB (中文译名命中
     // 率低, 且失败会写持久负缓存); 搜索结果没有分集数据, 拿不到"最新已播集日期"只能不传
     // (连载新番的负缓存因此要等常规过期, 不像另外三页那样能按播出日期限期失效)
+    // hero 的简介与标题先用 TMDB 界面语言的 (见 tvHeroTmdbSummary), 和图同时取; 搜索结果没有分集与开播日, 照背景图那样按原名与提示查.
+    // 搜索结果不带 Bangumi 简介: 中文界面要等 bgm.tv 那份到了才知道用不用得上 TMDB 的 (见 prefetchTvTmdbSummary)
+    val prefetchTmdbSummary: CoroutineScope.(Int) -> Unit = { subjectId ->
+        items.itemSnapshotList.items.firstOrNull { it.subjectId == subjectId }?.let { item ->
+            launch {
+                tmdb.prefetchTvTmdbSummary(
+                    subjectId, item.originalName.ifBlank { item.title },
+                    subjectAirDate = null, hints = item.tmdbHints,
+                    bangumiSummary = TvHeroMediaCache.summaryFallbacks[subjectId],
+                )
+            }
+        }
+    }
     val heroPipeline = rememberTvHeroMediaPipeline(
         tmdb = tmdb,
         fullVisualEffects = false, // 本页无剧照链, 恒 w1280 档
@@ -1483,8 +1498,12 @@ private fun TvSearchResultsPane(
                 )
             }
         },
+        afterSettle = { s -> prefetchTmdbSummary(s.subjectId) },
         afterResolve = { s ->
-            launch { bangumiSummaryService.prefetchTvSummaryFallback(s.subjectId) }
+            launch {
+                bangumiSummaryService.prefetchTvSummaryFallback(s.subjectId)
+                prefetchTmdbSummary(s.subjectId)
+            }
             // 收藏状态供长按菜单高亮当前项, 聚焦时顺带拉取, 菜单操作成功后本地覆盖
             if (s.subjectId !in collectionTypeCache) {
                 launch {
