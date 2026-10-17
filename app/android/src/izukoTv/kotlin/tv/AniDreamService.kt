@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -55,6 +56,13 @@ import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.github.panpf.sketch.Sketch
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.flow.map
+import me.him188.ani.app.data.models.preference.SubjectAppearanceSettings
+import me.him188.ani.app.data.repository.user.SettingsRepository
+import me.him188.ani.app.ui.foundation.LocalSubjectAppearanceSettings
+import me.him188.ani.app.ui.foundation.tv.tvTitle
+import me.him188.ani.app.ui.lang.Lang
+import me.him188.ani.app.ui.lang.tv_dream_open_details_hint
 import okio.Path.Companion.toPath
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -89,6 +97,7 @@ import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 import me.him188.ani.utils.logging.error
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
+import org.jetbrains.compose.resources.stringResource
 import org.koin.core.context.GlobalContext
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -157,8 +166,11 @@ class AniDreamService : DreamService() {
             // 语言见 AppLocales —— 屏保可能在还没有 Activity 的新进程里启动
             ComposeView(AppLocales.wrap(this).withUiScale(UiScaleMirror.read(this))).apply {
                 setContent {
-                    // 屏保是独立 window, 不经过 AniApp, 所以自己 provide 图片加载器
-                    CompositionLocalProvider(LocalSketch provides loader) {
+                    // 屏保是独立 window, 不经过 AniApp, 所以自己 provide 图片加载器与「显示原名」设置
+                    val appearance by remember {
+                        GlobalContext.get().get<SettingsRepository>().uiSettings.flow.map { it.subjectAppearance }
+                    }.collectAsState(SubjectAppearanceSettings.Default)
+                    CompositionLocalProvider(LocalSketch provides loader, LocalSubjectAppearanceSettings provides appearance) {
                         DreamContent()
                     }
                 }
@@ -331,8 +343,9 @@ class AniDreamService : DreamService() {
                             Modifier.align(Alignment.BottomStart).padding(horizontal = 56.dp, vertical = 40.dp),
                             verticalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
+                            val title = subject.tvTitle()
                             Text(
-                                subject.displayName,
+                                title,
                                 color = Color.White,
                                 fontSize = 32.sp,
                                 fontWeight = FontWeight.SemiBold,
@@ -340,10 +353,11 @@ class AniDreamService : DreamService() {
                                 overflow = TextOverflow.Ellipsis,
                                 style = TextStyle(shadow = textShadow),
                             )
-                            // 日语原名 (与显示名相同时不重复)
-                            if (subject.name.isNotBlank() && subject.name != subject.displayName) {
+                            // 另一个名字: 番名是原名时是中文名, 否则 (中文名或 TMDB 标题) 是原名 (两个一样时不重复)
+                            val otherName = if (title == subject.name) subject.nameCn else subject.name
+                            if (otherName.isNotBlank() && otherName != title) {
                                 Text(
-                                    subject.name,
+                                    otherName,
                                     color = Color.White,
                                     fontSize = 16.sp,
                                     maxLines = 1,
@@ -383,7 +397,7 @@ class AniDreamService : DreamService() {
                             }
                         }
                         Text(
-                            "按「确定」查看详情",
+                            stringResource(Lang.tv_dream_open_details_hint),
                             color = Color.White,
                             fontSize = 14.sp,
                             style = TextStyle(shadow = textShadow),

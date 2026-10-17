@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.data.models.player.EpisodeHistory
 import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
+import me.him188.ani.app.data.models.subject.nameOrNameCn
 import me.him188.ani.app.data.models.subject.toTmdbMatchHints
 import me.him188.ani.app.data.network.TmdbImageService
 import me.him188.ani.app.data.network.newestAiredDateStringOrNull
@@ -46,6 +47,8 @@ data class TvUpNextTarget(
     val subjectId: Int,
     val episodeId: Int,
     val subjectTitle: String,
+    /** 番的原名, 开了「显示原名」时显示; 空 = 不知道 (条目信息没拿到). */
+    val subjectOriginalTitle: String = "",
     /** 集号 (如 "12", "20.5"); 空 = 不知道, 卡片那一行就不写. */
     val episodeSort: String,
     /** 上次看到哪; 0 = 这是没看过的下一集. */
@@ -142,6 +145,7 @@ object TvUpNextStore {
                     episodeId = latest.episodeId,
                     subjectTitle = collection?.subjectInfo?.displayName
                         ?: latest.subjectName.orEmpty(),
+                    subjectOriginalTitle = collection?.subjectInfo?.nameOrNameCn.orEmpty(),
                     episodeSort = latest.episodeSort?.renderSort().orEmpty(),
                     positionMillis = latest.positionMillis,
                     durationMillis = latest.durationMillis ?: 0L,
@@ -161,6 +165,7 @@ object TvUpNextStore {
                 subjectId = subjectId,
                 episodeId = next.episodeId,
                 subjectTitle = collection.subjectInfo.displayName,
+                subjectOriginalTitle = collection.subjectInfo.nameOrNameCn,
                 episodeSort = next.episodeInfo.sort.toString(),
                 positionMillis = 0L,
                 durationMillis = 0L,

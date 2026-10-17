@@ -50,10 +50,13 @@ import androidx.compose.ui.unit.dp
 import androidx.paging.compose.LazyPagingItems
 import me.him188.ani.app.data.models.player.EpisodeHistory
 import me.him188.ani.app.data.models.preference.TvPosterConfirmAction
+import me.him188.ani.app.data.models.episode.preferredDisplayName
 import me.him188.ani.app.data.models.recommend.RecommendedSubjectInfo
+import me.him188.ani.app.data.models.recommend.preferredDisplayName
 import me.him188.ani.app.data.models.subject.ContinueWatchingStatus
 import me.him188.ani.app.data.models.subject.FollowedSubjectInfo
 import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
+import me.him188.ani.app.data.models.subject.preferredDisplayName
 import me.him188.ani.app.data.models.subject.subjectInfo
 import me.him188.ani.app.data.recommendation.RecommendationGroup
 import me.him188.ani.app.tools.WeekFormatter
@@ -98,13 +101,22 @@ import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativeWallStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.toTvNativeTextStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.tvNativeWriteSnapshot
 import me.him188.ani.app.ui.foundation.tv.rememberTvTitleLogoLookup
+import me.him188.ani.app.ui.foundation.tv.rememberTvTmdbTitles
+import me.him188.ani.app.ui.foundation.tv.tvHeroBangumiSummary
 import me.him188.ani.app.ui.foundation.tv.tvHeroContentColor
+import me.him188.ani.app.ui.foundation.tv.tvHeroNextEpisodeName
 import me.him188.ani.app.ui.foundation.tv.tvHeroSecondaryContentColor
+import me.him188.ani.app.ui.foundation.tv.tvHeroTmdbFallbackSummary
+import me.him188.ani.app.ui.foundation.tv.tvHeroTmdbSummary
+import me.him188.ani.app.ui.foundation.tv.tvHeroTmdbSummaryPending
+import me.him188.ani.app.ui.foundation.tv.tvHeroTmdbTextPending
 import me.him188.ani.app.ui.foundation.tv.tvPageBackdropTreatment
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallBackground
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallHeaderStyle
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallSecondaryLabelAlpha
 import me.him188.ani.app.ui.foundation.tv.TvPageBackdropGeometry
+import me.him188.ani.app.ui.foundation.tv.tvTitle
+import me.him188.ani.app.ui.foundation.tv.tvUseOriginalTitle
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.exploration_continue_watching
 import me.him188.ani.app.ui.lang.exploration_rec_more
@@ -249,9 +261,12 @@ internal fun rememberTvExplorationNativeItems(
     val followed: List<FollowedSubjectInfo?>? = if (hasFollowed) followedItems.itemSnapshotList else null
     // NSFW 设为模糊时封面打码 (见 withNsfwCards; 隐藏的在数据那头已经去掉了, 见 SubjectNsfw)
     val nsfw = rememberNsfwPolicy()
+    val useOriginalTitle = tvUseOriginalTitle()
+    // 非中文界面: 查到过 TMDB 标题的番用它 (见 SubjectInfo.tvTitle)
+    val tmdbTitles = rememberTvTmdbTitles()
     return remember(
         hasFollowed, followed, recRows, recFlat, playHistories, followedTitle, groupTitles, extending,
-        moreTitle, moreGenericTitle, moreLoadingTitle, nsfw.snapshot,
+        moreTitle, moreGenericTitle, moreLoadingTitle, nsfw.snapshot, useOriginalTitle, tmdbTitles,
     ) {
         val result = ArrayList<TvNativeExploreItem>()
         result.add(TvNativeExploreItem.Spacer(TV_WALL_HERO_SPACER_KEY))
@@ -260,7 +275,7 @@ internal fun rememberTvExplorationNativeItems(
                 item?.subjectInfo?.let { subject ->
                     TvNativeCard(
                         imageUrl = subject.imageLarge,
-                        title = subject.displayName,
+                        title = tmdbTitles[subject.subjectId] ?: subject.preferredDisplayName(useOriginalTitle),
                         progress = followedCardProgress(item, playHistories),
                         subjectId = subject.subjectId,
                     )
@@ -272,7 +287,9 @@ internal fun rememberTvExplorationNativeItems(
         recRows.forEachIndexed { recRow, row ->
             if (row.header) result.add(TvNativeExploreItem.Header(tvRecHeaderKey(recRow), groupTitles[recRow]))
             val cards: List<TvNativeCard?> = List(row.size) { i ->
-                recFlat.getOrNull(row.start + i)?.let { TvNativeCard(imageUrl = it.imageLarge, title = it.nameCn, subjectId = it.bangumiId) }
+                recFlat.getOrNull(row.start + i)?.let {
+                    TvNativeCard(imageUrl = it.imageLarge, title = tmdbTitles[it.bangumiId] ?: it.preferredDisplayName(useOriginalTitle), subjectId = it.bangumiId)
+                }
             }
             // 「更多」卡接在一组的最后一行末尾 (能接着推荐的组都是一组一行; 切成多行的只有匿名推荐, 它不接)
             val lastRowOfGroup = recRows.getOrNull(recRow + 1)?.group !== row.group
@@ -622,17 +639,28 @@ private fun tvExplorationNativeHeroText(
         else -> null
     }
     // 两张表是进程级共享的 (邻居预取会写进来): 收进 derivedStateOf, 写入别的条目时不重组
-    val summary by remember(target, info) {
+    // 非中文界面讲本条目的 TMDB 简介排在 Bangumi 的前面 (见 tvHeroTmdbSummary)
+    val tmdbSummary = tvHeroTmdbSummary(target.subjectId)
+    // Bangumi 与 bgm.tv 都没有简介、或只有日文时用 TMDB 的, 日文在前时从中文起 (见 tvHeroBangumiSummary)
+    val tmdbFallbackSummary = tvHeroTmdbFallbackSummary(target.subjectId)
+    // 非中文界面 TMDB 那段还没结果时 Bangumi 的先不显示 (见 tvHeroTmdbSummaryPending)
+    val tmdbPending = tvHeroTmdbSummaryPending(target.subjectId)
+    val tmdbTextPending = tvHeroTmdbTextPending(target.subjectId)
+    val summary by remember(target, info, tmdbSummary, tmdbFallbackSummary, tmdbPending, tmdbTextPending) {
         derivedStateOf {
             val nextEpOverview = target.takeIf { it.fromFollowed }
                 ?.let { episodeStillCache[it.subjectId]?.overview }
                 ?.takeIf { it.isNotBlank() }
-            nextEpOverview ?: info.subjectInfo.summary.trim().ifBlank { summaryFallbackCache[target.subjectId].orEmpty() }
+            nextEpOverview ?: tmdbSummary ?: if (tmdbPending) {
+                ""
+            } else {
+                tvHeroBangumiSummary(info.subjectInfo.summary, summaryFallbackCache[target.subjectId], tmdbFallbackSummary, tmdbTextPending)
+            }
         }
     }
     return TvNativeHeroText(
         subjectId = target.subjectId,
-        title = target.title,
+        title = info.subjectInfo.tvTitle(),
         infoReady = true,
         rating = score.takeIf { (it.toFloatOrNull() ?: 0f) > 0f },
         meta = meta,
@@ -707,7 +735,7 @@ private fun tvExplorationNativeStatus(
     val nextEp = info.progressInfo.nextEpisodeIdToPlay?.let { nextId -> info.episodes.firstOrNull { it.episodeId == nextId } }
         ?: return null
     val epLabel = stringResource(Lang.playback_history_episode_label, nextEp.episodeInfo.sort.toString())
-    val epName = nextEp.episodeInfo.nameCn.ifBlank { nextEp.episodeInfo.name }
+    val epName = tvHeroNextEpisodeName(info.subjectId, nextEp.episodeId, nextEp.episodeInfo)
     val caughtUp = info.progressInfo.continueWatchingStatus.let {
         it is ContinueWatchingStatus.Watched || it is ContinueWatchingStatus.Done
     }

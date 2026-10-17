@@ -109,6 +109,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import me.him188.ani.app.data.models.subject.nameCn
 import me.him188.ani.app.domain.danmaku.DanmakuLoadingState
+import me.him188.ani.app.domain.episode.preferredDisplayName
 import me.him188.ani.app.navigation.LocalNavigator
 import me.him188.ani.app.navigation.SubjectDetailPlaceholder
 import me.him188.ani.app.tools.LocalTimeFormatter
@@ -132,8 +133,10 @@ import me.him188.ani.app.ui.foundation.tv.ProvideRingOnlyFocus
 import me.him188.ani.app.ui.foundation.tv.TV_PILL_ICON_SIZE
 import me.him188.ani.app.ui.foundation.tv.TvPillFailedIcon
 import me.him188.ani.app.ui.foundation.tv.TvPillShell
+import me.him188.ani.app.ui.foundation.tv.tvTmdbSubjectTitleFilled
 import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
 import me.him188.ani.app.ui.foundation.tv.tvAmbientMarquee
+import me.him188.ani.app.ui.foundation.tv.tvUseOriginalTitle
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFade
 import me.him188.ani.app.ui.lang.Lang
@@ -769,14 +772,19 @@ private fun TvRecommendationsPanel(
                     )
                     Column(Modifier.weight(1f)) {
                         // 单行, 放不下时聚焦跑马灯 (与选集卡片同规矩)
+                        // 非中文界面没开「显示原名」时先用 TMDB 的标题 (见 SubjectInfo.tvTitle)
+                        val tmdbTitle = recommendation.subjectId?.toInt()?.let { tvTmdbSubjectTitleFilled(it) }
+                        val title = tmdbTitle ?: recommendation.preferredDisplayName(tvUseOriginalTitle())
                         Text(
-                            recommendation.nameCn ?: recommendation.name.orEmpty(),
+                            title,
                             Modifier.tvAmbientMarquee(enabled = focused, iterations = Int.MAX_VALUE),
                             style = MaterialTheme.typography.titleSmall,
                             maxLines = 1,
                             overflow = if (focused) TextOverflow.Clip else TextOverflow.Ellipsis,
                         )
-                        recommendation.name?.takeIf { it != recommendation.nameCn }?.let {
+                        // 另一个名字: 番名是原名时是中文名, 否则 (中文名或 TMDB 标题) 是原名
+                        (if (title == recommendation.name) recommendation.nameCn else recommendation.name)
+                            ?.takeIf { it.isNotBlank() && it != title }?.let {
                             Spacer(Modifier.height(2.dp))
                             Text(
                                 it,

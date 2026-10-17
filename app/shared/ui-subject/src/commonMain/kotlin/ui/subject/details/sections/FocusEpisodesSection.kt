@@ -59,6 +59,7 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import me.him188.ani.app.ui.foundation.tv.tvPrefersTmdbText
 import me.him188.ani.app.ui.foundation.widgets.AniFocusActionButton
 import me.him188.ani.app.ui.foundation.widgets.AniFocusIconButton
 import me.him188.ani.app.ui.foundation.widgets.AniFocusSelectableSurface
@@ -190,6 +191,8 @@ fun FocusEpisodeCarousel(
     episodeRuntimes: Map<Int, Int> = emptyMap(),
     /** episodeId -> TMDB 中文分集简介; 有则排在 Bangumi 简介 (多为日文) 之前展示. */
     episodeOverviews: Map<Int, String> = emptyMap(),
+    /** episodeId -> TMDB 集名, 只有非中文界面有; 卡片、详情弹窗的集名见 [tvEpisodeName]. */
+    episodeNames: Map<Int, String> = emptyMap(),
     /**
      * 聚焦集简介的自定义渲染 (如注入 TV 阅读模式组件); null 时用默认 2 行截断文本.
      * [onHorizontalNav] 供简介组件在聚焦时把左右键转为切换聚焦集 (±1, 到两端无效果),
@@ -563,8 +566,8 @@ fun FocusEpisodeCarousel(
                     }
                 }
                 AniScrollableTextDialog(
-                    title = "${target.sort}. ${target.nameCn.ifBlank { target.name }}",
-                    text = mergedEpisodeDesc(episodeOverviews[target.episodeId], target.desc)
+                    title = "${target.sort}. ${target.tvEpisodeName(episodeNames)}",
+                    text = mergedEpisodeDesc(episodeOverviews[target.episodeId], target.desc, tmdbOnly = tvPrefersTmdbText())
                         .ifBlank { stringResource(Lang.subject_details_no_summary) },
                     onDismissRequest = close,
                     // 左右键把弹窗原地切到相邻集的详情 (标题/剧照/简介/按钮全换), 背后的
@@ -672,6 +675,7 @@ fun FocusEpisodeCarousel(
                     episodes = episodes,
                     currentEpisodeId = currentEpisodeId,
                     episodeStills = episodeStills,
+                    episodeNames = episodeNames,
                     playProgress = playProgress,
                     cellWidth = cellWidth,
                     cellHeight = cellHeight,
@@ -789,6 +793,7 @@ fun FocusEpisodeCarousel(
                             FocusEpisodeCard(
                                 item,
                                 stillUrl = episodeStills[item.episodeId],
+                                tmdbNames = episodeNames,
                                 isPlaying = item.episodeId == currentEpisodeId,
                                 onClick = { onEpisodeClick(item) },
                                 monochrome = monochrome,
@@ -1297,6 +1302,8 @@ fun FocusEpisodeCard(
     onPressingChanged: ((Boolean) -> Unit)? = null,
     /** 长按触发的闸门 (见 [tvLongPressKey] 的 `readyToFire`): 卡片还在滑向聚焦框时先别触发. */
     pressReady: (() -> Boolean)? = null,
+    /** episodeId -> TMDB 集名 (见 [tvEpisodeName]). */
+    tmdbNames: Map<Int, String> = emptyMap(),
     /**
      * true 时改用纯黑白配色 (半透明白底 + 白字, 聚焦即白底黑字), 与播放器控制层的胶囊按钮一致.
      *
@@ -1332,7 +1339,7 @@ fun FocusEpisodeCard(
         EPISODE_TEXT_BOTTOM_PADDING_NO_BAR
     }
 
-    val name = item.nameCn.ifBlank { item.name }
+    val name = item.tvEpisodeName(tmdbNames)
 
     // 图标尺寸见 EPISODE_PLAY_ICON_SIZE
     val playIconSize = with(LocalDensity.current) { EPISODE_PLAY_ICON_SIZE.toDp() }
@@ -1558,12 +1565,15 @@ fun FocusEpisodeCard(
     }
 }
 
-/** 展示用分集简介: TMDB 本地化简介 (跟随 APP 语言) 在前, Bangumi 简介 (多为日文) 跟在后面. */
-fun mergedEpisodeDesc(tmdbOverview: String?, bangumiDesc: String): String =
-    listOfNotNull(
-        tmdbOverview?.takeIf { it.isNotBlank() },
-        bangumiDesc.takeIf { it.isNotBlank() },
-    ).joinToString("\n\n")
+/**
+ * 展示用分集简介: TMDB 本地化简介 (跟随 APP 语言) 在前, Bangumi 简介 (多为日文) 跟在后面.
+ * [tmdbOnly] (非中文界面, 见 tvPrefersTmdbText): 有 TMDB 的就只用它 —— 跟在后面的中日文看不懂; 没有才用 Bangumi 的.
+ */
+fun mergedEpisodeDesc(tmdbOverview: String?, bangumiDesc: String, tmdbOnly: Boolean = false): String {
+    val tmdb = tmdbOverview?.takeIf { it.isNotBlank() }
+    if (tmdbOnly && tmdb != null) return tmdb
+    return listOfNotNull(tmdb, bangumiDesc.takeIf { it.isNotBlank() }).joinToString("\n\n")
+}
 
 /**
  * 卡片底部的播放进度条 (细条). [progress] 为 null 或 0 时不绘制;
@@ -1716,6 +1726,8 @@ fun FocusEpisodeGridDropdown(
     specialEpisodes: List<EpisodeListItem> = emptyList(),
     /** episodeId -> 分集时长 (分钟, TMDB), 显示在聚焦集标题右侧; 缺失则不显示. */
     episodeRuntimes: Map<Int, Int> = emptyMap(),
+    /** episodeId -> TMDB 集名 (见 [tvEpisodeName]), 聚焦集标题用. */
+    episodeNames: Map<Int, String> = emptyMap(),
     /** 非 null 时标题行右侧显示缓存入口 (跳转本条目缓存页), 对应旧版选集对话框右上角的下载按钮. */
     onCacheClick: (() -> Unit)? = null,
     /** 非 null 时方格支持长按确认键 (按住 OK): 由调用方关闭菜单并让轮播跳到该集. */
@@ -1800,6 +1812,7 @@ fun FocusEpisodeGridDropdown(
                 currentEpisodeId = currentEpisodeId,
                 focusedEpisodeId = { focusedEpisodeId },
                 episodeRuntimes = episodeRuntimes,
+                episodeNames = episodeNames,
             )
             ProvideScrollFadeFocusMargin {
             LazyVerticalGrid(
@@ -1916,7 +1929,8 @@ private fun FocusEpisodeInfoRow(
         label = "episodeInfoRow",
     ) { shown ->
         Box(Modifier.fillMaxWidth().tvTouchTap(onTap = { if (shown != null) onOpenDetails?.invoke(shown) })) {
-            val desc = shown?.let { mergedEpisodeDesc(episodeOverviews[it.episodeId], it.desc) } ?: ""
+            val tmdbOnly = tvPrefersTmdbText()
+            val desc = shown?.let { mergedEpisodeDesc(episodeOverviews[it.episodeId], it.desc, tmdbOnly) } ?: ""
             Column(Modifier.fillMaxWidth().padding(end = DETAILS_TEXT_END_RESERVE)) {
                 if (descContent != null) {
                     // 简介为空也保持组合: 左右键切到无简介的集时占位仍在, 高度不跳
@@ -1983,6 +1997,7 @@ private fun FocusEpisodeGridHeaderLine(
     currentEpisodeId: Int?,
     focusedEpisodeId: () -> Int?,
     episodeRuntimes: Map<Int, Int>,
+    episodeNames: Map<Int, String>,
 ) {
     val displayed = allEpisodes.firstOrNull { it.episodeId == (focusedEpisodeId() ?: currentEpisodeId) }
         ?: allEpisodes.firstOrNull()
@@ -1993,7 +2008,7 @@ private fun FocusEpisodeGridHeaderLine(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            "${displayed.sort}. ${displayed.nameCn.ifBlank { displayed.name }}",
+            "${displayed.sort}. ${displayed.tvEpisodeName(episodeNames)}",
             Modifier.weight(1f).tvAmbientMarquee(iterations = Int.MAX_VALUE),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodyMedium,

@@ -151,6 +151,7 @@
     <string name="tv_quick_menu_home">回到主界面</string>
     <string name="tv_quick_menu_refresh">刷新本页</string>
     <string name="tv_quick_menu_shuffle">换一批推荐</string>
+    <string name="tv_dream_open_details_hint">按「确定」查看详情</string>
     <string name="tv_shuffle_toast">正在换一批推荐…</string>
     <string name="playback_session_none">没有正在播放的内容</string>
     <string name="playback_nothing_to_play">暂无可播放的内容</string>
@@ -228,6 +229,7 @@
     <string name="settings_theme_tv_title_logo_off">不显示</string>
     <string name="settings_theme_mode_black">纯黑</string>
     <string name="settings_app_nsfw_content_description">成人向作品在所有页面和 Web 控制台里怎么显示：隐藏 = 各处列表里都不出现；模糊 = 封面和背景图打码。缓存和播放记录里的不删，隐藏和模糊都打码；电视主屏的推荐行和屏保里只要不是「显示」就不放</string>
+    <string name="settings_tv_use_original_title_description">番名、集名显示原名（通常是日文）。关闭时跟随界面语言：中文界面显示中文名，其他语言显示原名</string>
     <string name="subject_details_tv_title_logo_dialog_title">选择标题 logo</string>
     <string name="subject_details_tv_title_logo_dialog_description">选这部在%1$s下用哪张，选好立刻换上，同时报给维护者，审核通过后所有人换上。对的那张不在下面，就选最后一格「列表里没有」</string>
     <string name="subject_details_tv_title_logo_hidden">另有 %1$d 张显示不了</string>

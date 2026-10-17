@@ -752,6 +752,7 @@ class RetainedPlaybackSessionHolder : ViewModel(), PlaybackSessionEntry, KoinCom
             episodeSort = episodeSort,
             // placeholder 期间别把已有的剧名/封面覆盖成空
             subjectTitle = subject.title.takeIf { !subject.isPlaceholder } ?: session.info.subjectTitle,
+            subjectOriginalTitle = subject.originalTitle.takeIf { !subject.isPlaceholder } ?: session.info.subjectOriginalTitle,
             coverUrl = subject.info.imageLarge.ifBlank { session.info.coverUrl },
         )
         if (session.info == updated) return
