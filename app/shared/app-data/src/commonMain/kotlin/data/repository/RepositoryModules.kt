@@ -11,6 +11,7 @@ package me.him188.ani.app.data.repository
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.map
+import me.him188.ani.app.data.network.RecommendationCatalogRepository
 import me.him188.ani.app.data.network.RecommendationRepository
 import me.him188.ani.app.data.network.TmdbSubjectMapRepository
 import me.him188.ani.app.data.network.TrendsRepository
@@ -243,6 +244,7 @@ fun KoinApplication.repositoryModules(
             cacheDir = getContext().files.cacheDir,
             collectionsCacheFileName = UserProfiles.current.scopedFileName(UserProfile.RECOMMENDATION_COLLECTIONS_FILE_NAME),
             localProfile = UserProfiles.current.isLocal,
+            catalog = { get<RecommendationCatalogRepository>().current() },
         )
     }
 
