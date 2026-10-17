@@ -14,6 +14,7 @@ import android.os.LocaleList
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import me.him188.ani.app.data.models.preference.DarkMode
+import me.him188.ani.app.data.models.preference.HlsAdFilteringMode
 import me.him188.ani.app.data.models.preference.NoticeSoundKind
 import me.him188.ani.app.data.models.preference.NsfwMode
 import me.him188.ani.app.data.models.preference.SeekPreviewDisplay
@@ -83,7 +84,12 @@ import me.him188.ani.app.ui.lang.settings_player_disk_cache_description
 import me.him188.ani.app.ui.lang.settings_player_enable_regex_filter
 import me.him188.ani.app.ui.lang.settings_player_hide_selector_on_select
 import me.him188.ani.app.ui.lang.settings_player_hls_ad_filter
-import me.him188.ani.app.ui.lang.settings_player_hls_ad_filter_description
+import me.him188.ani.app.ui.lang.settings_player_hls_ad_filter_all
+import me.him188.ani.app.ui.lang.settings_player_hls_ad_filter_all_description
+import me.him188.ani.app.ui.lang.settings_player_hls_ad_filter_off
+import me.him188.ani.app.ui.lang.settings_player_hls_ad_filter_off_description
+import me.him188.ani.app.ui.lang.settings_player_hls_ad_filter_smart
+import me.him188.ani.app.ui.lang.settings_player_hls_ad_filter_smart_description
 import me.him188.ani.app.ui.lang.settings_player_idle_progress_bar
 import me.him188.ani.app.ui.lang.settings_player_idle_progress_bar_description
 import me.him188.ani.app.ui.lang.settings_player_idle_progress_bar_off
@@ -710,10 +716,29 @@ private fun TvSettingsItemsBuilder.playerItems() {
         read = { it.audioPassthrough },
         write = { copy(audioPassthrough = it) },
     )
-    toggle(
-        player, Lang.settings_player_hls_ad_filter, Lang.settings_player_hls_ad_filter_description,
-        read = { it.enableHlsAdFiltering },
-        write = { copy(enableHlsAdFiltering = it) },
+    choice(
+        player, Lang.settings_player_hls_ad_filter,
+        options = { HlsAdFilteringMode.entries },
+        label = {
+            tvText(
+                when (it) {
+                    HlsAdFilteringMode.ALL -> Lang.settings_player_hls_ad_filter_all
+                    HlsAdFilteringMode.SMART -> Lang.settings_player_hls_ad_filter_smart
+                    HlsAdFilteringMode.OFF -> Lang.settings_player_hls_ad_filter_off
+                },
+            )
+        },
+        optionDescription = {
+            tvText(
+                when (it) {
+                    HlsAdFilteringMode.ALL -> Lang.settings_player_hls_ad_filter_all_description
+                    HlsAdFilteringMode.SMART -> Lang.settings_player_hls_ad_filter_smart_description
+                    HlsAdFilteringMode.OFF -> Lang.settings_player_hls_ad_filter_off_description
+                },
+            )
+        },
+        read = { it.effectiveHlsAdFilteringMode },
+        write = { copy(hlsAdFilteringMode = it) },
     )
     // 拖动预览画面: 不开 / 全屏 / 小画面. 存的是「显示画面预览」开关加画在哪 (SeekPreviewDisplay), 两个合成一项
     choice(
