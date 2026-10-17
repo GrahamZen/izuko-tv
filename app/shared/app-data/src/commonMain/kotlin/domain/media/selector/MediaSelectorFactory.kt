@@ -78,13 +78,14 @@ interface MediaSelectorFactory {
             ): MediaSelector {
                 return DefaultMediaSelector(
                     MediaSelectorContextFlowProducer(
-                        episodeCollectionRepository.subjectCompletedFlow(subjectId),
+                        episodeCollectionRepository.subjectCompletedFlow(subjectId).retryAsSelectorInput("completion of subject $subjectId"),
                         mediaSourceManager.allInstances.map { list ->
                             list.map { it.mediaSourceId }
                         },
                         subjectRelationsRepository.subjectSeriesInfoFlow(subjectId),
-                        subjectCollectionRepository.subjectCollectionFlow(subjectId).map { it.subjectInfo },
-                        episodeCollectionRepository.episodeCollectionInfoFlow(subjectId, episodeId).map { it.episodeInfo }.let { episodeInfo ->
+                        subjectCollectionRepository.subjectCollectionFlow(subjectId).retryAsSelectorInput("subject $subjectId").map { it.subjectInfo },
+                        episodeCollectionRepository.episodeCollectionInfoFlow(subjectId, episodeId).retryAsSelectorInput("episode $episodeId")
+                            .map { it.episodeInfo }.let { episodeInfo ->
                             if (fetchRequest == null) episodeInfo else combine(episodeInfo, fetchRequest) { info, request -> info.withRequestedNumbers(request) }
                         },
                         mediaSourceManager.mediaSourceTiersFlow(),
