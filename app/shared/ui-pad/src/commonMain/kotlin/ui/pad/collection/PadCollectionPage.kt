@@ -29,6 +29,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.paging.compose.collectWithLifecycle
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -114,7 +115,8 @@ private fun PadCollectionPageContent(state: UserCollectionsState, modifier: Modi
         HorizontalPager(pagerState, Modifier.fillMaxSize(), key = { tabs[it].name }) { page ->
             val type = tabs[page]
             val typeIndex = COLLECTION_TABS_SORTED.indexOf(type)
-            val items = state.getCollectionLazyPagingItems(typeIndex)
+            // 共享状态只缓存分页实例, 收集由显示它的页面起 (同上游追番页)
+            val items = state.getCollectionLazyPagingItems(typeIndex).collectWithLifecycle()
             if (items.itemCount == 0 && !items.isLoadingFirstPageOrRefreshing) {
                 PadEmptyHint(stringResource(Lang.collection_tv_empty))
             } else {

@@ -10,6 +10,8 @@
 package me.him188.ani.app.ui.pad.exploration
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
@@ -19,9 +21,9 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.snapping.SnapPosition
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
-import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -41,8 +43,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -52,7 +52,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -63,6 +67,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -250,10 +255,12 @@ private fun PadPosterRow(
 }
 
 /**
- * 热门轮播: 背景图跟着手指左右滑, 不动时每 [PAD_CAROUSEL_AUTO_ADVANCE_MILLIS] 自动翻下一部 (手指按着、页面不在前台时不翻).
- * 文字不跟着手指走: 换到下一部后旧的先淡出、新的再淡入并带一点位移 (照电视版 hero: 先背景后文字、旧的先走);
- * 两颗按钮与圆点固定不动. 点画面或「立即观看」进当前这一部的详情页, 「新番时间表」进时间表 —— 同电视版轮播.
+ * 热门轮播, 操作同电视版装在平板上的触屏: 左右滑一下就是一步 (左滑 = 下一部, 同遥控器的右键; 到头滑不动), 换过去的过渡自己播完 ——
+ * 新的一部在旧的上面淡入 (旧的不动、一直不透明, 中间不会变暗), 不跟着手指拖的程度变. 不动时每 [PAD_CAROUSEL_AUTO_ADVANCE_MILLIS]
+ * 自动翻下一部 (页面不在前台时不翻). 文字照电视版 hero 的顺序: 先背景后文字、旧的先走. 两颗按钮与圆点固定不动.
+ * 点画面或「立即观看」进当前这一部的详情页, 「新番时间表」进时间表 —— 同电视版轮播.
  */
+@OptIn(ExperimentalAnimationApi::class)
 @Composable
 private fun PadTrendingCarousel(
     items: LazyPagingItems<TrendingSubjectInfo>,
@@ -266,33 +273,73 @@ private fun PadTrendingCarousel(
     val count = items.itemCount.coerceAtMost(PAD_CAROUSEL_MAX_ITEMS)
     Box(Modifier.fillMaxWidth().height(height)) {
         if (count == 0) return@Box
-        val pagerState = rememberPagerState { count }
-        val dragged by pagerState.interactionSource.collectIsDraggedAsState()
+        var selected by rememberSaveable { mutableIntStateOf(0) }
+        val index = selected.coerceIn(0, count - 1)
         val foreground by LocalPageIsForeground.current
-        LaunchedEffect(pagerState, dragged, foreground, count) {
-            if (dragged || !foreground || count <= 1) return@LaunchedEffect
-            while (true) {
-                delay(PAD_CAROUSEL_AUTO_ADVANCE_MILLIS)
-                pagerState.animateScrollToPage((pagerState.currentPage + 1) % count)
-            }
+        LaunchedEffect(index, foreground, count) {
+            if (!foreground || count <= 1) return@LaunchedEffect
+            delay(PAD_CAROUSEL_AUTO_ADVANCE_MILLIS)
+            selected = (index + 1) % count
         }
-        HorizontalPager(pagerState, Modifier.fillMaxSize(), beyondViewportPageCount = 1) { page ->
-            val item = items[page]
-            if (item != null) {
-                PadCarouselBackdrop(item = item, nsfw = nsfw, onOpen = { onOpen(item) })
+        val swipeThresholdPx = with(LocalDensity.current) { PAD_CAROUSEL_SWIPE_THRESHOLD.toPx() }
+        Box(
+            Modifier.fillMaxSize()
+                .pointerInput(count, swipeThresholdPx) {
+                    var total = 0f
+                    detectHorizontalDragGestures(
+                        onDragStart = { total = 0f },
+                        onDragEnd = {
+                            val from = selected.coerceIn(0, count - 1)
+                            when {
+                                total <= -swipeThresholdPx && from < count - 1 -> selected = from + 1
+                                total >= swipeThresholdPx && from > 0 -> selected = from - 1
+                            }
+                        },
+                        onDragCancel = { total = 0f },
+                    ) { change, dragAmount ->
+                        change.consume()
+                        total += dragAmount
+                    }
+                }
+                .clickable(interactionSource = null, indication = null) {
+                    items.peek(index)?.let(onOpen)
+                },
+        ) {
+            // 前后各备两部 (看不见): 条目信息与横版图先取好, 换过去时直接出图
+            for (page in (index - PAD_CAROUSEL_PREPARED_PAGES)..(index + PAD_CAROUSEL_PREPARED_PAGES)) {
+                if (page == index || page !in 0 until count) continue
+                val item = items.peek(page) ?: continue
+                key(page) {
+                    PadCarouselBackdrop(item = item, nsfw = nsfw, modifier = Modifier.graphicsLayer { alpha = 0f })
+                }
+            }
+            AnimatedContent(
+                targetState = index,
+                transitionSpec = {
+                    fadeIn(tween(PAD_CAROUSEL_CROSSFADE_MILLIS, easing = LinearEasing)) togetherWith
+                            ExitTransition.KeepUntilTransitionsFinished
+                },
+                label = "padCarouselBackdrop",
+            ) { page ->
+                val item = items.peek(page)
+                if (item != null) {
+                    PadCarouselBackdrop(item = item, nsfw = nsfw)
+                }
             }
         }
         AnimatedContent(
-            targetState = pagerState.currentPage,
+            targetState = index,
             modifier = Modifier.align(Alignment.BottomStart)
                 .padding(start = PAD_POSTER_WALL_PAGE_MARGIN, bottom = PAD_CAROUSEL_TEXT_BOTTOM)
                 .width(pageWidth * PAD_CAROUSEL_TITLE_WIDTH_FRACTION),
             transitionSpec = {
-                val direction = if (targetState >= initialState) 1 else -1
-                val textIn = fadeIn(tween(PAD_CAROUSEL_TEXT_IN_MILLIS, delayMillis = PAD_CAROUSEL_TEXT_OUT_MILLIS, easing = LinearEasing)) +
-                        slideInHorizontally(tween(PAD_CAROUSEL_TEXT_OUT_MILLIS + PAD_CAROUSEL_TEXT_IN_MILLIS)) { width ->
-                            direction * width / PAD_CAROUSEL_TEXT_SHIFT_DIVISOR
-                        }
+                val forward = targetState > initialState || (initialState == count - 1 && targetState == 0)
+                val direction = if (forward) 1 else -1
+                val textIn = fadeIn(
+                    tween(PAD_CAROUSEL_TEXT_IN_MILLIS, delayMillis = PAD_CAROUSEL_CROSSFADE_MILLIS / 2, easing = LinearEasing),
+                ) + slideInHorizontally(tween(PAD_CAROUSEL_CROSSFADE_MILLIS)) { width ->
+                    direction * width / PAD_CAROUSEL_TEXT_SHIFT_DIVISOR
+                }
                 textIn togetherWith fadeOut(tween(PAD_CAROUSEL_TEXT_OUT_MILLIS, easing = LinearEasing)) using
                         SizeTransform(clip = false)
             },
@@ -311,7 +358,7 @@ private fun PadTrendingCarousel(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Button(
-                onClick = { items.peek(pagerState.currentPage)?.let(onOpen) },
+                onClick = { items.peek(index)?.let(onOpen) },
                 colors = ButtonDefaults.buttonColors(
                     containerColor = contentColor,
                     contentColor = MaterialTheme.colorScheme.surface,
@@ -331,28 +378,29 @@ private fun PadTrendingCarousel(
         }
         PadCarouselDots(
             count = count,
-            current = { pagerState.currentPage },
+            current = { index },
             modifier = Modifier.align(Alignment.BottomStart)
                 .padding(start = PAD_POSTER_WALL_PAGE_MARGIN, bottom = PAD_CAROUSEL_DOTS_BOTTOM),
         )
     }
 }
 
-/** 轮播一页的画面: 模糊底 + 右上角羽化的横版图 + 顶边压暗; 点画面进详情页. */
+/** 轮播一部的画面: 模糊底 + 右上角羽化的横版图 + 顶边压暗. */
 @Composable
 private fun PadCarouselBackdrop(
     item: TrendingSubjectInfo,
     nsfw: NsfwPolicy,
-    onOpen: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val media by rememberPadHeroMedia(item.bangumiId)
     // 横版图都没有 (已有结论) 才拿竖版封面顶上, 同电视版 hero 的兜底
     val image = media.backdropUrl ?: item.imageLarge.takeIf { media.backdropResolved && it.isNotBlank() }
     val wallColor = MaterialTheme.colorScheme.background
-    Box(Modifier.fillMaxSize().clickable(interactionSource = null, indication = null, onClick = onOpen)) {
-        // 底下铺同一张图的模糊版 (电视版热门轮播开着海报墙模糊时也是这样), 越往下越接近墙的底色
+    Box(modifier.fillMaxSize()) {
+        // 底下铺同一张图的模糊版 (电视版热门轮播开着海报墙模糊时也是这样), 越往下越接近墙的底色. 横版图还没到时先拿竖版封面糊着垫底:
+        // 封面随热门数据就有, 刚滑到的这一部不会露出一整块底色 (前一部淡出时看着像黑了一下)
         AsyncImage(
-            image,
+            media.backdropUrl ?: item.imageLarge.takeIf { it.isNotBlank() },
             contentDescription = null,
             Modifier.fillMaxSize().blur(PAD_CAROUSEL_BLUR_RADIUS),
             contentScale = ContentScale.Crop,
@@ -518,6 +566,9 @@ private const val PAD_CAROUSEL_MAX_ITEMS = 20
 /** 自动翻页间隔, 同电视版. */
 private const val PAD_CAROUSEL_AUTO_ADVANCE_MILLIS = 6_000L
 
+/** 当前这一部前后各提前准备几部的画面 (条目信息、横版图). */
+private const val PAD_CAROUSEL_PREPARED_PAGES = 2
+
 /** 模糊底: 先只解一张长边这么多像素的小图 (同电视版「重」那一档), 再叠一层模糊去掉放大后的块感. */
 private const val PAD_CAROUSEL_BLUR_DECODE_LONG_EDGE_PX = 160
 private val PAD_CAROUSEL_BLUR_RADIUS = 24.dp
@@ -543,10 +594,17 @@ private val PAD_CAROUSEL_DOTS_BOTTOM = 18.dp
 private val PAD_CAROUSEL_BUTTONS_BOTTOM = 40.dp
 private val PAD_CAROUSEL_TEXT_BOTTOM = 96.dp
 
-/** 换一部时文字的过渡: 旧的淡出、新的随后淡入 (都是线性), 新的从翻页方向挪进来宽度的几分之一. */
+/**
+ * 换一部的过渡, 照电视版 (Apple TV 的分段交叉淡入, 线性): 背景图 [PAD_CAROUSEL_CROSSFADE_MILLIS] 淡入; 旧文字先淡出,
+ * 新文字过半再淡入, 从翻页方向挪进来宽度的几分之一.
+ */
+private const val PAD_CAROUSEL_CROSSFADE_MILLIS = 600
 private const val PAD_CAROUSEL_TEXT_OUT_MILLIS = 150
 private const val PAD_CAROUSEL_TEXT_IN_MILLIS = 300
 private const val PAD_CAROUSEL_TEXT_SHIFT_DIVISOR = 12
+
+/** 横滑超过这么远松手才算翻一步. */
+private val PAD_CAROUSEL_SWIPE_THRESHOLD = 48.dp
 
 /** 横版图左缘羽化的起止 (占图宽), 下缘从这个高度起淡到透明; 同电视版 hero 图的羽化. */
 private const val PAD_HERO_LEFT_FADE_START = 0.02f
