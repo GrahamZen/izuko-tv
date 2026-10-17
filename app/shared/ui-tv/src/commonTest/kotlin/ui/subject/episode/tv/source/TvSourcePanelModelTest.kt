@@ -44,6 +44,7 @@ import me.him188.ani.datasources.api.topic.ResourceLocation
 import me.him188.ani.utils.platform.annotations.TestOnly
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -281,6 +282,52 @@ class TvSourcePanelModelTest {
         assertTrue(excludedRow.dimmed)
         assertEquals(TvSourceAccent.Error, excludedRow.metaAccent)
         assertTrue(excludedRow.meta.startsWith("reasonNoSubtitle"), excludedRow.meta)
+    }
+
+    @Test
+    fun `rows hidden by the filter get their own count row that opens the filter`() {
+        val belowFilter = BtRow(btMikan, BtRowExclusion.BelowPreference, false)
+        val excluded = BtRow(btOther, BtRowExclusion.Reason(MediaExclusionReason.MediaWithoutSubtitle), false)
+        val input = input(bt = bt(emptyList(), listOf(belowFilter, excluded), resolution = "1080P"))
+        val collapsed = buildTvSourcePanel(input, TvSourceNav(railKey = TvSourceRailKeys.BT), strings)
+        assertEquals(listOf("bt:hidden-by-filter", "bt:excluded-toggle"), collapsed.right.rows.map { it.id })
+        val (hiddenRow, toggle) = collapsed.right.rows
+        assertEquals("hiddenByFilter 1", hiddenRow.title)
+        assertEquals(TvSourceAction.OpenFilter, hiddenRow.action)
+        assertEquals("showExcluded 1", toggle.title)
+
+        // 展开的只有真被排除的那条
+        val expanded = buildTvSourcePanel(input, TvSourceNav(railKey = TvSourceRailKeys.BT, showExcluded = true), strings)
+        assertEquals(
+            listOf("bt:hidden-by-filter", "bt:excluded-toggle", "bt:" + btGroupKey(btOther)),
+            expanded.right.rows.map { it.id },
+        )
+    }
+
+    @Test
+    fun `bt rows stay listed but marked below preference when the episode lacks the filter value`() {
+        val base = input(bt = bt(listOf(BtRow(btDmhy, null, false))))
+        fun withResolution(resolution: String) =
+            base.copy(selector = base.selector.copy(resolution = MediaPreferenceItemState.Presentation(listOf("4K", "1080P"), resolution)))
+
+        // 筛 4K, 这一集的 BT 只有 1080P: 照样在主列表, 不调暗, 红字写「低于偏好」
+        val row = buildTvSourcePanel(withResolution("4K"), TvSourceNav(railKey = TvSourceRailKeys.BT), strings).right.rows.single()
+        assertTrue(row.meta.startsWith("reasonBelowPreference"), row.meta)
+        assertEquals(TvSourceAccent.Error, row.metaAccent)
+        assertFalse(row.dimmed)
+
+        val matching = buildTvSourcePanel(withResolution("1080P"), TvSourceNav(railKey = TvSourceRailKeys.BT), strings).right.rows.single()
+        assertEquals(TvSourceAccent.None, matching.metaAccent)
+    }
+
+    @Test
+    fun `rows hidden only by the alliance filter open the alliance pill`() {
+        val belowFilter = BtRow(btMikan, BtRowExclusion.BelowPreference, false)
+        val input = input(bt = bt(listOf(BtRow(btDmhy, null, false)), listOf(belowFilter)).copy(alliance = "ANi"))
+        val rows = buildTvSourcePanel(input, TvSourceNav(railKey = TvSourceRailKeys.BT), strings).right.rows
+        val hiddenRow = rows.single { it.id == "bt:hidden-by-filter" }
+        assertTrue(hiddenRow.dividerAbove)
+        assertEquals(TvSourceAction.Open(TvSourceDrill.Filter(TvSourceFilter.Alliance)), hiddenRow.action)
     }
 
     @Test
@@ -679,6 +726,7 @@ class TvSourcePanelModelTest {
         all = "all",
         showExcluded = "showExcluded %1\$d",
         hideExcluded = "hideExcluded %1\$d",
+        hiddenByFilter = "hiddenByFilter %1\$d",
         sourcesCount = "sourcesCount:%1\$d",
         cached = "cached",
         pack = "pack",

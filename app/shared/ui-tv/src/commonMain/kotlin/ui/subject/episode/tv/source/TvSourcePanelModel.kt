@@ -360,6 +360,7 @@ data class TvSourceStrings(
     val all: String,
     val showExcluded: String,
     val hideExcluded: String,
+    val hiddenByFilter: String,
     val sourcesCount: String,
     val cached: String,
     val pack: String,
@@ -1123,16 +1124,35 @@ private fun btPane(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvSourc
         ),
     )
     val included = groupBtRows(bt.included)
-    val excluded = groupBtRows(bt.excluded)
+    // 只是不合筛选 (分辨率 / 字幕 / 字幕组) 的单写一行条数, 确定去改筛选; 真被排除的 (季度不符、没字幕…) 收在下面的开关里
+    val (hidden, excluded) = groupBtRows(bt.excluded).partition { group ->
+        group.rows.any { it.exclusion == BtRowExclusion.BelowPreference }
+    }
     val rows = buildList {
         for (group in included) add(btRow(group, input, strings))
+        if (hidden.isNotEmpty()) {
+            add(
+                TvSourceRow(
+                    id = "bt:hidden-by-filter",
+                    style = TvSourceRowStyle.Option,
+                    title = strings.hiddenByFilter.format(hidden.size),
+                    dividerAbove = included.isNotEmpty(),
+                    // 只有字幕组在筛: 它的胶囊在本页表头; 分辨率 / 字幕在筛选弹窗里
+                    action = if (bt.resolution == null && bt.subtitleLanguageId == null && bt.alliance != null) {
+                        TvSourceAction.Open(TvSourceDrill.Filter(TvSourceFilter.Alliance))
+                    } else {
+                        TvSourceAction.OpenFilter
+                    },
+                ),
+            )
+        }
         if (excluded.isNotEmpty()) {
             add(
                 TvSourceRow(
                     id = "bt:excluded-toggle",
                     style = TvSourceRowStyle.Option,
                     title = (if (nav.showExcluded) strings.hideExcluded else strings.showExcluded).format(excluded.size),
-                    dividerAbove = included.isNotEmpty(),
+                    dividerAbove = included.isNotEmpty() && hidden.isEmpty(),
                     action = TvSourceAction.ToggleExcluded,
                 ),
             )
@@ -1140,7 +1160,7 @@ private fun btPane(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvSourc
                 for (group in excluded) add(btRow(group, input, strings))
             }
         }
-        if (included.isEmpty() && excluded.isEmpty()) {
+        if (included.isEmpty() && hidden.isEmpty() && excluded.isEmpty()) {
             val working = input.sources.btSources.any { it.isWorking }
             add(status("bt-empty", if (working || bt.isPlaceholder) strings.btLoading else strings.btEmpty))
         }
@@ -1248,12 +1268,15 @@ private fun btRow(group: TvBtGroup, input: TvSourcePanelInput, strings: TvSource
     val selected = group.isSelected
     val id = "bt:" + group.key
     val cacheNotReady = exclusion is BtRowExclusion.Reason && exclusion.reason == MediaExclusionReason.CacheNotReady
+    // 筛选的取值这一集能放的里没有 (筛 4K、BT 只有 1080P) 时不筛, 照样列在主列表, 不合的仍标「低于偏好」(见 TvSourcePanelFilters)
+    val reason = exclusion?.let { strings.exclusion(it) }
+        ?: strings.reasonBelowPreference.takeUnless { row.isCached || input.matchesFilters(media) }
     return TvSourceRow(
         id = id,
         style = TvSourceRowStyle.Resource,
         title = media.originalTitle,
-        meta = if (exclusion != null) strings.exclusion(exclusion) + " · " + meta else meta,
-        metaAccent = if (exclusion != null) TvSourceAccent.Error else TvSourceAccent.None,
+        meta = if (reason != null) "$reason · $meta" else meta,
+        metaAccent = if (reason != null) TvSourceAccent.Error else TvSourceAccent.None,
         icon = when {
             selected -> TvSourceRowIcon.Playing
             row.isCached -> TvSourceRowIcon.Download
@@ -1269,7 +1292,7 @@ private fun btRow(group: TvBtGroup, input: TvSourcePanelInput, strings: TvSource
             title = media.originalTitle,
             subtitle = if (row.isCached) strings.cached else "",
             fields = mediaFields(media, strings, sourceNames = group.rows.map { sourceName(it.media.mediaSourceId, input.sources) }.distinct()),
-            note = exclusion?.let { strings.exclusion(it) }.orEmpty(),
+            note = reason.orEmpty(),
             primary = if (cacheNotReady) null else TvSourceButton(strings.pick, TvSourceAction.Play(media), TvSourceRowIcon.Playing),
             secondary = buildList {
                 if (!row.isCached) downloadButton(media, input, strings)?.let { add(it) }

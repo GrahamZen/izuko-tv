@@ -147,7 +147,8 @@ data class BtListPresentation(
 /**
  * 纯函数:
  * base = (episodeFilterEnabled ? candidates.filtered : candidates.subject).filter { original.kind == BitTorrent || original.kind == LocalCache }
- * available*: resolution 非空 distinct / subtitleLanguageIds flatten distinct / alliance 非空 distinct, 按 base 顺序.
+ * available*: base 中 Included 项的 resolution 非空 distinct / subtitleLanguageIds flatten distinct / alliance 非空 distinct, 按 base 顺序.
+ *   Excluded 项 (含别的集) 不算: 它们放不了, 只有它们才有的取值 (如别的集的 4K) 让偏好生效, 会把这一集能放的全判为「低于偏好」.
  * 生效偏好: alliance / resolution / subtitleLanguageId 只在值属于对应 available* 时保留, 否则为 null; mediaSourceId 恒为 null.
  *   选中 WEB 资源会把线路名写进 alliance、把 WEB 源写进 mediaSourceId, 照搬会把全部 BT 行判为「低于偏好」;
  *   BT 页的源维度只由 sourceFilter 表达, 偏好里的源在页面上没有控件, 用户看不到也取消不了.
@@ -173,6 +174,7 @@ fun projectBtList(
     for (item in base) {
         val media = item.original
         sourceCounts[media.mediaSourceId] = (sourceCounts[media.mediaSourceId] ?: 0) + 1
+        if (item !is MaybeExcludedMedia.Included) continue
         media.properties.resolution.takeIf { it.isNotBlank() }?.let { resolutions.add(it) }
         subtitleLanguageIds.addAll(media.properties.subtitleLanguageIds)
         media.properties.alliance.takeIf { it.isNotBlank() }?.let { alliances.add(it) }
