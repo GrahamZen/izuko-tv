@@ -17,33 +17,19 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
 import kotlinx.datetime.DatePeriod
 import kotlinx.datetime.LocalDate
-import kotlinx.datetime.LocalDateTime
-import kotlinx.datetime.LocalTime
 import kotlinx.datetime.TimeZone
-import kotlinx.datetime.isoDayNumber
 import kotlinx.datetime.plus
-import kotlinx.datetime.toInstant
-import kotlinx.datetime.toLocalDateTime
-import me.him188.ani.app.data.models.subject.LightEpisodeInfo
-import me.him188.ani.app.data.models.subject.LightSubjectInfo
 import me.him188.ani.app.data.models.subject.SubjectRecurrence
 import me.him188.ani.app.data.network.schedule.BangumiScheduleSource
+import me.him188.ani.app.data.network.schedule.BroadcastRule
 import me.him188.ani.app.data.network.schedule.ScheduleEpisode
-import me.him188.ani.app.data.network.schedule.ScheduleSubject
 import me.him188.ani.app.data.repository.Repository
 import me.him188.ani.app.domain.episode.AiringScheduleForDate
-import me.him188.ani.app.domain.episode.EpisodeWithAiringTime
-import me.him188.ani.datasources.api.EpisodeSort
-import me.him188.ani.datasources.api.EpisodeType
-import me.him188.ani.datasources.api.PackedDate
-import me.him188.ani.datasources.api.UTC9
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
-import me.him188.ani.utils.serialization.BigNum
 import kotlin.coroutines.CoroutineContext
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
-import kotlin.time.Instant
 
 /**
  * 时间表 (最近两周每天播出哪些番的哪一集).
@@ -71,14 +57,12 @@ class AnimeScheduleRepository(
         val calendar = source.calendar()
         logger.info { "bgm-direct: schedule 名册 ${calendar.values.sumOf { it.size }} 部 (7 天), 窗口 ${dates.first()}..${dates.last()}" }
 
-        // 每天要用到的条目 = 这个星期几在播的那些
-        val subjectsByDate = dates.associateWith { date ->
-            calendar[date.dayOfWeek.isoDayNumber].orEmpty()
-        }
+        // 每天要用到的条目: 名册里前后各一天的也算, 换到本地时区后可能落在这一天 (见 scheduleItemsOn)
+        val subjectsByDate = dates.associateWith { date -> scheduleCandidates(calendar, date) }
 
         // 下面两份只在这个协程里读写; 取分集的那些协程只经 arrivals 交结果
         val episodes = mutableMapOf<Int, List<ScheduleEpisode>>()
-        val rules = mutableMapOf<Int, String?>() // subjectId -> 播出时刻 (ISO), null = 没有
+        val rules = mutableMapOf<Int, BroadcastRule?>() // subjectId -> bangumi-data 播出规则, null = 没有
 
         suspend fun sendCurrent() {
             send(
@@ -86,10 +70,7 @@ class AnimeScheduleRepository(
                     val roster = subjectsByDate.getValue(date)
                     AiringScheduleForDate(
                         date = date,
-                        list = roster.mapNotNull { subject ->
-                            val list = episodes[subject.id] ?: return@mapNotNull null
-                            buildItem(subject, list, date, rules[subject.id], timeZone)
-                        }.sortedBy { it.airingTime },
+                        list = scheduleItemsOn(date, roster, episodes, rules, timeZone),
                         // 名册里还有没拿到分集的条目 = 这一天还没补完. 界面靠它区分"没有新番"与"还在加载"
                         pending = roster.any { it.id !in episodes },
                     )
@@ -99,13 +80,13 @@ class AnimeScheduleRepository(
 
         suspend fun resolveRule(subjectId: Int) {
             if (subjectId in rules) return
-            rules[subjectId] = source.broadcastRuleOf(subjectId, episodes[subjectId]?.firstOrNull()?.airDate)?.startTime
+            rules[subjectId] = source.broadcastRuleOf(subjectId, episodes[subjectId]?.firstOrNull()?.airDate)
         }
 
         // 先把缓存里已有的画出来, 一个请求都不发: 一天内来过第二次时整屏当场就是全的
         val cached = source.cachedEpisodesAndRules(subjectsByDate.values.flatten().map { it.id })
         episodes.putAll(cached.episodes)
-        for ((id, rule) in cached.rules) rules[id] = rule.startTime
+        for ((id, rule) in cached.rules) rules[id] = rule
         sendCurrent()
 
         // 从今天往两边补, 先看到的先补: 各天缺的条目按这个先后一起排队并发取 (见 episodesOfMany), 取到一部放进来一部.
@@ -152,61 +133,12 @@ class AnimeScheduleRepository(
                 if (date in completedDates || roster.any { it.id !in episodes }) continue
                 completedDates += date
                 logger.info {
-                    val items = roster.count { episodes[it.id]?.any { e -> e.airDate == date.toString() } == true }
+                    val items = scheduleItemsOn(date, roster, episodes, rules, timeZone).size
                     "bgm-direct: schedule $date 补完: 名册 ${roster.size} 部 (回源 ${roster.count { it.id in missing }}), 当天有更新 $items 条"
                 }
             }
         }
     }.flowOn(defaultDispatcher)
-
-    /**
-     * 找出 [date] 当天播出的那一集. 找不到 (当天没有这部的更新) 返回 `null`.
-     */
-    private fun buildItem(
-        subject: ScheduleSubject,
-        episodes: List<ScheduleEpisode>,
-        date: LocalDate,
-        broadcastStartTime: String?,
-        timeZone: TimeZone,
-    ): EpisodeWithAiringTime? {
-        val dateString = date.toString()
-        val episode = episodes.firstOrNull { it.airDate == dateString } ?: return null
-        val broadcastTime = broadcastTimeOf(broadcastStartTime, timeZone)
-        return EpisodeWithAiringTime(
-            subject = LightSubjectInfo(
-                subjectId = subject.id,
-                name = subject.name,
-                nameCn = subject.nameCn,
-                imageLarge = subject.imageLarge,
-            ),
-            episode = LightEpisodeInfo(
-                episodeId = episode.id,
-                name = episode.name,
-                nameCn = episode.nameCn,
-                airDate = PackedDate.parseFromDate(episode.airDate),
-                timezone = UTC9,
-                sort = EpisodeSort(BigNum(episode.sort.ifBlank { "0" }), EpisodeType.MainStory),
-                ep = episode.ep?.takeIf { it.isNotBlank() && it != "0" }
-                    ?.let { EpisodeSort(BigNum(it), EpisodeType.MainStory) },
-            ),
-            airingTime = airingTimeOf(date, broadcastTime, timeZone),
-            // 只有 bangumi-data 给出播出时刻才算"时刻已知"; 否则界面上不显示具体时刻
-            timeKnown = broadcastTime != null,
-        )
-    }
-
-    /**
-     * 播出时刻: 有 bangumi-data 的规则就取它那个时刻 (只取时分, 日期用当天的),
-     * 没有就退到日本时间当天 00:00 —— 与 `EpisodeCompletionContext` 判"已播出"的兜底一致.
-     */
-    private fun airingTimeOf(date: LocalDate, broadcastTime: LocalTime?, timeZone: TimeZone): Instant =
-        LocalDateTime(date, broadcastTime ?: LocalTime(0, 0)).toInstant(timeZone)
-
-    /**
-     * bangumi-data 的播出规则里那个时刻 (只取时分); 没有规则或解析不了就是 `null`.
-     */
-    private fun broadcastTimeOf(broadcastStartTime: String?, timeZone: TimeZone): LocalTime? =
-        broadcastStartTime?.let { runCatching { Instant.parse(it).toLocalDateTime(timeZone).time }.getOrNull() }
 
     companion object {
         val OFFSET_DAYS_RANGE = (-7..7)
