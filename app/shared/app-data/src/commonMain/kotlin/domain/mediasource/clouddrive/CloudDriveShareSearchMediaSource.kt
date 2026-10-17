@@ -280,7 +280,7 @@ internal class DriveShareSearchEngine(
         for ((index, keyword) in keywords.withIndex()) {
             // 网页站 (苹果 CMS 模板) 默认要求两次搜索隔 3 秒, 挨着搜只会拿到「系统提示」页
             if (index > 0 && config.detailLinkSelector.isNotBlank()) delay(PAGE_SEARCH_INTERVAL)
-            for (share in searchSite(keyword, otherWork)) found.putIfAbsent(share.shareId, share)
+            for (share in searchSite(keyword, otherWork)) found.getOrPut(share.shareId) { share }
             if (found.isNotEmpty()) break
         }
         val season = names.firstNotNullOfOrNull { DriveNameParser.parseSubjectSeason(it) } ?: 1
