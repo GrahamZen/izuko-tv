@@ -138,6 +138,7 @@ import me.him188.ani.datasources.api.topic.FileSize
 import me.him188.ani.datasources.api.topic.FileSize.Companion.Unspecified
 import me.him188.ani.datasources.api.topic.FileSize.Companion.bytes
 import me.him188.ani.datasources.api.topic.FileSize.Companion.megaBytes
+import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.platform.format1f
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.getString
@@ -172,7 +173,7 @@ internal object TvNetworkSettingKeys {
         deps.imageCacheRefresh.map {
             val caches = listOf(deps.sketch.downloadCache, deps.sketch.resultCache)
             TvImageCacheUsage(caches.sumOf { it.size }.bytes, caches.sumOf { it.maxSize }.bytes)
-        }.flowOn(Dispatchers.IO)
+        }.flowOn(Dispatchers.IO_)
     }
 }
 
@@ -576,7 +577,7 @@ internal fun TvSettingsItemsBuilder.storageItems() {
         listOf(
             TvSettingsEdit.Run { env ->
                 val sketch = env.deps.sketch
-                withContext(Dispatchers.IO) {
+                withContext(Dispatchers.IO_) {
                     sketch.downloadCache.clear()
                     sketch.resultCache.clear()
                     sketch.memoryCache.clear()

@@ -41,6 +41,7 @@ enum class TvSettingsRowKind {
 /**
  * 一行. [value] 是行尾的字 (当前值 / 开关), [chevron] = 行尾画 › (确定进一层或去别处), [checked] = 选项是当前值 (行尾打勾),
  * [swatch] = 字前面画的色块 (ARGB, 调色板). [moveGroup] 非空 = 可以长按确定挪顺序, 只在同一组的相邻行之间挪.
+ * [toggle] 是开关的当前值 (null = 不是开关; 触屏上画成开关, 遥控器上看 [value]).
  */
 @Immutable
 data class TvSettingsRow(
@@ -52,6 +53,7 @@ data class TvSettingsRow(
     val checked: Boolean = false,
     val swatch: Int? = null,
     val moveGroup: String? = null,
+    val toggle: Boolean? = null,
 ) {
     val focusable: Boolean get() = kind != TvSettingsRowKind.Header
 }
@@ -81,9 +83,15 @@ data class TvSettingsInfo(
 @Immutable
 data class TvSettingsBubble(val meta: String, val text: String, val mine: Boolean)
 
-/** 说明栏的二维码 (字已换好, 见 [TvQr]): [content] 为 null 时不画码, 只写 [status]. */
+/** 说明栏的二维码 (字已换好, 见 [TvQr]): [content] 为 null 时不画码, 只写 [status]; [console] / [link] 见 [TvQr]. */
 @Immutable
-data class TvSettingsQr(val content: String?, val caption: String, val status: String)
+data class TvSettingsQr(
+    val content: String?,
+    val caption: String,
+    val status: String,
+    val console: String? = null,
+    val link: Boolean = false,
+)
 
 @Immutable
 data class TvSettingsContent(
@@ -260,6 +268,7 @@ private fun itemRows(
             TvSettingsRow(
                 item.id, TvSettingsRowKind.Item, resolver.resolve(item.title),
                 value = resolver.resolve(tvOnOff(on)),
+                toggle = on,
             ),
         )
     }
@@ -389,7 +398,9 @@ private fun itemInfo(
 ) = TvSettingsInfo(
     resolver.resolve(title),
     description?.let { resolver.resolve(it) }.orEmpty(),
-    qr?.let { TvSettingsQr(it.content, it.caption?.let(resolver::resolve).orEmpty(), it.status?.let(resolver::resolve).orEmpty()) },
+    qr?.let {
+        TvSettingsQr(it.content, it.caption?.let(resolver::resolve).orEmpty(), it.status?.let(resolver::resolve).orEmpty(), it.console, it.link)
+    },
     image,
     bubbles.map { TvSettingsBubble(resolver.resolve(it.meta), it.text?.let(resolver::resolve).orEmpty(), it.mine) },
 )

@@ -9,7 +9,6 @@
 
 package me.him188.ani.app.ui.settings.tv
 
-import android.content.Context
 import com.github.panpf.sketch.Sketch
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -29,6 +28,7 @@ import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveQrLoginState
 import me.him188.ani.app.domain.mediasource.instance.MediaSourceInstance
 import me.him188.ani.app.domain.settings.ProxyTester
 import me.him188.ani.app.domain.settings.ServiceConnectionTester.TestState
+import me.him188.ani.app.platform.Context
 import me.him188.ani.app.ui.settings.SettingsViewModel
 import me.him188.ani.app.ui.settings.account.ProfileViewModel
 import me.him188.ani.app.ui.settings.tabs.about.OpenSourceLibraryInfo
@@ -44,7 +44,7 @@ import kotlin.time.Duration.Companion.seconds
 
 /**
  * 设置页里实时值 ([TvSettingKey.Live]) 与动作 ([TvSettingsEdit.Run]) 用到的东西: 原来设置页的 ViewModel (复用它已经建好的状态),
- * 应用更新与账号的 ViewModel, 以及只在这一页有意义的状态 (一键测试的结果). 跟着设置页一起建、一起走.
+ * 应用更新与账号的 ViewModel, 只有电视才有的东西 ([platform]), 以及只在这一页有意义的状态 (一键测试的结果). 跟着设置页一起建、一起走.
  */
 class TvSettingsDeps(
     val context: Context,
@@ -54,6 +54,7 @@ class TvSettingsDeps(
     val sketch: Sketch,
     val loadOpenSourceLibrariesJsons: suspend () -> List<ByteArray>,
     private val scope: CoroutineScope,
+    val platform: TvSettingsPlatform,
 ) {
     val sourceTests = TvSourceTests(scope)
     val proxyTest = TvProxyTest(scope)
