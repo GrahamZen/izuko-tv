@@ -1,0 +1,147 @@
+# 单独编一次 iOS: 只在 ci/ios-compile-test 分支上跑, 不进 main。
+# 步骤照 build.yml 里上游的 macOS 任务 (那个任务只在上游仓库跑): 编各模块 Kotlin → 链接 framework → 出未签名的 Debug IPA。
+# 用 GitHub 自带的 macOS 机器; arm64 那台内存小 (7 GB), 另开一台内存大的 Intel 机器兜底。
+name: iOS Compile Test
+
+on:
+  push:
+    branches:
+      - 'ci/ios-compile-test'
+
+concurrency:
+  group: ios-compile-test
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  ios:
+    name: 'iOS (${{ matrix.runner }})'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: 'macos-15'
+            heap: '5g'
+            workers: '2'
+            jbr: 'jbrsdk_jcef-21.0.11-osx-aarch64-b1163.116.tar.gz'
+          - runner: 'macos-15-intel'
+            heap: '10g'
+            workers: '4'
+            jbr: 'jbrsdk_jcef-21.0.11-osx-x64-b1163.116.tar.gz'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 机器与 Xcode
+        run: |
+          sw_vers
+          echo "arch=$(uname -m) cpu=$(sysctl -n hw.ncpu) mem=$(( $(sysctl -n hw.memsize) / 1073741824 ))GB"
+          df -h /
+          ls -d /Applications/Xcode*.app
+          XCODE=$(ls -d /Applications/Xcode_*.app | grep -viE 'beta|release_candidate|_rc' | sort -V | tail -1)
+          echo "选用 $XCODE"
+          sudo xcode-select -s "$XCODE/Contents/Developer"
+          xcodebuild -version
+          pod --version
+          # 盘不够时删掉没选用的 Xcode (有的是指向同一份的软链, 只删链接)
+          FREE_GB=$(df -g / | awk 'NR==2 {print $4}')
+          if [ "$FREE_GB" -lt 30 ]; then
+            XREAL=$(cd "$XCODE" && pwd -P)
+            for x in /Applications/Xcode_*.app; do
+              if [ -L "$x" ]; then sudo rm -f "$x"
+              elif [ "$(cd "$x" && pwd -P)" != "$XREAL" ]; then sudo rm -rf "$x"; fi
+            done
+            df -h /
+          fi
+
+      # 构建脚本的工具链要 JetBrains Runtime (vendor = jetbrains), 与 build.yml 用同一版
+      - name: JBR 21
+        run: |
+          BASE_URL="https://cache-redirector.jetbrains.com/intellij-jbr/${{ matrix.jbr }}"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/jbr.tar.gz" "$BASE_URL"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/jbr.checksum" "$BASE_URL.checksum"
+          echo "$(awk '{print $1}' "$RUNNER_TEMP/jbr.checksum")  $RUNNER_TEMP/jbr.tar.gz" | shasum -a 512 -c -
+          mkdir -p "$RUNNER_TEMP/jbr"
+          tar -xzf "$RUNNER_TEMP/jbr.tar.gz" -C "$RUNNER_TEMP/jbr"
+          JAVA_BIN=$(find "$RUNNER_TEMP/jbr" -path '*/bin/java' -type f | head -1)
+          JBR_HOME=$(dirname "$(dirname "$JAVA_BIN")")
+          "$JBR_HOME/bin/java" -version
+          echo "JAVA_HOME=$JBR_HOME" >> "$GITHUB_ENV"
+          echo "$JBR_HOME/bin" >> "$GITHUB_PATH"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: 构建参数
+        run: |
+          rm -f local.properties
+          cat > local.properties <<'EOF'
+          ani.enable.ios=true
+          ani.build.framework=true
+          kotlin.native.ignoreDisabledTargets=true
+          jvm.toolchain.version=21
+          ani.android.abis=arm64-v8a
+          EOF
+          mkdir -p ~/.gradle logs
+          cat >> ~/.gradle/gradle.properties <<EOF
+          org.gradle.jvmargs=-Xmx${{ matrix.heap }} -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8
+          org.gradle.workers.max=${{ matrix.workers }}
+          org.gradle.java.installations.paths=$JAVA_HOME
+          kotlin.compiler.execution.strategy=in-process
+          EOF
+          cat ~/.gradle/gradle.properties
+
+      - name: 编译 Kotlin (iosArm64, 各模块)
+        id: compile
+        run: ./gradlew :app:shared:application:compileKotlinIosArm64 --continue --stacktrace 2>&1 | tee logs/1-compile.log
+
+      - name: 链接 framework (Debug)
+        id: link
+        run: ./gradlew :app:shared:application:linkPodDebugFrameworkIosArm64 --stacktrace 2>&1 | tee logs/2-link.log
+
+      - name: 出未签名的 Debug IPA
+        id: ipa
+        run: |
+          ./gradlew :app:shared:application:generateDummyFramework --stacktrace 2>&1 | tee logs/3-ipa.log
+          ./gradlew :app:ios:podInstall --stacktrace 2>&1 | tee -a logs/3-ipa.log
+          ./gradlew :app:ios:patchInfoPlist --stacktrace 2>&1 | tee -a logs/3-ipa.log
+          ./gradlew :app:ios:buildDebugIpa --stacktrace 2>&1 | tee -a logs/3-ipa.log
+          ls -la app/ios/build/archives/debug/
+
+      - name: 上传 IPA
+        if: steps.ipa.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: 'ani-ios-debug-${{ matrix.runner }}'
+          path: app/ios/build/archives/debug/Animeko.ipa
+          if-no-files-found: error
+
+      - name: 错误汇总
+        if: always()
+        run: |
+          ROOT="$GITHUB_WORKSPACE/"
+          {
+            echo "## ${{ matrix.runner }}"
+            echo "compile=${{ steps.compile.outcome }} link=${{ steps.link.outcome }} ipa=${{ steps.ipa.outcome }}"
+            echo
+            echo '```'
+            cat logs/*.log 2>/dev/null | grep -E '^e: ' | sed "s#file://$ROOT##; s#$ROOT##" | sort -u | head -400 || true
+            echo '```'
+            echo '```'
+            cat logs/*.log 2>/dev/null | grep -E -A8 'What went wrong' | head -200 || true
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY" > logs/summary.md
+
+      - name: 上传日志
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: 'ios-logs-${{ matrix.runner }}'
+          path: logs/
+          if-no-files-found: ignore
