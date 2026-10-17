@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.lang.tv_rail_action_panel
 import me.him188.ani.app.ui.foundation.tv.LocalTvOpenActionPanel
+import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
@@ -594,8 +595,13 @@ private fun TvRailAvatar(
     )
     val badgeColor = MaterialTheme.colorScheme.error
     Box(modifier.onFocusChanged { clusterFocused = it.hasFocus }) {
-        // 头像在整列最上, 只能往上长
-        TvRailFloatingActionCluster(clusterFocused, avatarActions, onExitFocus = onExitFocus)
+        // 头像在整列最上, 只能往上长. 触屏上点头像就进账号页、焦点停不住, 所以一直显示 (侧边栏收起时只有图标)
+        TvRailFloatingActionCluster(
+            visible = clusterFocused || LocalTvTouchInputEnabled.current,
+            showLabels = expanded,
+            actions = avatarActions,
+            onExitFocus = onExitFocus,
+        )
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -666,6 +672,7 @@ private fun TvRailAvatar(
 private fun TvRailFloatingActionButton(
     icon: ImageVector,
     label: String,
+    showLabel: Boolean,
     onClick: () -> Unit,
     onExitFocus: (() -> Unit)?,
 ) {
@@ -684,12 +691,14 @@ private fun TvRailFloatingActionButton(
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         TvRailGlyphBox(focused, icon)
-        Text(
-            label,
-            color = MaterialTheme.colorScheme.onSurface,
-            style = MaterialTheme.typography.labelMedium,
-            softWrap = false,
-        )
+        if (showLabel) {
+            Text(
+                label,
+                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.labelMedium,
+                softWrap = false,
+            )
+        }
     }
 }
 
@@ -773,7 +782,8 @@ private fun TvRailIconItem(
 }
 
 /**
- * **头像的那簇浮出按钮**: 焦点进入头像簇时从头像上方浮现, 离开即隐藏.
+ * **头像的那簇浮出按钮**: 焦点进入头像簇时从头像上方浮现, 离开即隐藏 (触屏上一直显示, 见 [TvRailAvatar]).
+ * [showLabels] 跟侧边栏展开走: 遥控器进头像簇时侧边栏必定展开, 照旧带字; 触屏上收起时只画图标.
  *
  * 曾经条目也有一簇往下长的 (给"正在播放"的关闭用), 所以这里带过一个 `above` 参数; 那个条目
  * 2026-08-16 删掉之后只剩往上长这一种, 参数一并去掉 —— 再要往下长的话, 除了在这里加回方向,
@@ -787,6 +797,7 @@ private fun TvRailIconItem(
 @Composable
 private fun BoxScope.TvRailFloatingActionCluster(
     visible: Boolean,
+    showLabels: Boolean,
     actions: List<TvRailAvatarAction>,
     onExitFocus: (() -> Unit)?,
 ) {
@@ -808,7 +819,7 @@ private fun BoxScope.TvRailFloatingActionCluster(
             verticalArrangement = Arrangement.spacedBy(TV_RAIL_FLOATING_ACTION_SPACING),
         ) {
             for (action in actions) {
-                TvRailFloatingActionButton(action.icon, action.label, action.onClick, onExitFocus)
+                TvRailFloatingActionButton(action.icon, action.label, showLabels, action.onClick, onExitFocus)
             }
         }
     }

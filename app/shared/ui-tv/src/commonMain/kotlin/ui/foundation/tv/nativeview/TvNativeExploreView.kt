@@ -219,9 +219,9 @@ class TvNativeExploreView(
         }
 
     /**
-     * 触屏设备 (平板装了 TV 包) 才为 true, 宿主按 LocalTvTouchInputEnabled 给; 电视上恒 false, 下面三处触摸处理一处都不装.
+     * 触屏设备 (平板装了 TV 包) 才为 true, 宿主按 LocalTvTouchInputEnabled 给; 电视上恒 false, 下面几处触摸处理一处都不装.
      * 列表叠在 hero 之上、按下点在 hero 按钮上时把手势让给按钮 (列表整页大, 不让的话按钮收不到); 按钮按下即聚焦, 第一下点就是点击;
-     * 轮播区左右滑翻轮播 (见 [TvNativeHorizontalSwipe]).
+     * 轮播区左右滑翻轮播 (见 [TvNativeHorizontalSwipe]); hero 态里点卡片之间的空白处退回卡片墙 (见 [TvNativeHeroBlankTap]).
      */
     var touchInput: Boolean = false
         set(value) {
@@ -235,8 +235,16 @@ class TvNativeExploreView(
             } else {
                 null
             }
+            // hero 态里点卡片之间的空白处退回卡片墙 (见 TvNativeHeroBlankTap)
+            heroBlankTap = if (value) TvNativeHeroBlankTap(this, { timeline.active && !wallFocus.opening }) { setHeroActive(false) } else null
         }
     private var carouselSwipe: TvNativeHorizontalSwipe? = null
+    private var heroBlankTap: TvNativeHeroBlankTap? = null
+
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        heroBlankTap?.onTouch(ev)
+        return super.dispatchTouchEvent(ev)
+    }
 
     /**
      * hero 态 (聚焦卡) 在整页底下铺模糊背景 (设置里的「hero 态铺模糊背景」, 同新番时间表): 进 hero 态时整屏背景 ([wallBackdrop]) 随 hero

@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.settings.tv
 
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.LocaleList
 import androidx.compose.ui.graphics.Color
@@ -175,6 +176,8 @@ import me.him188.ani.app.ui.lang.settings_theme_tv_exit_behavior_description
 import me.him188.ani.app.ui.lang.settings_theme_tv_exit_direct
 import me.him188.ani.app.ui.lang.settings_theme_tv_exit_double
 import me.him188.ani.app.ui.lang.settings_theme_tv_exit_panel
+import me.him188.ani.app.ui.lang.settings_theme_tv_hide_navigation_bar
+import me.him188.ani.app.ui.lang.settings_theme_tv_hide_navigation_bar_description
 import me.him188.ani.app.ui.lang.settings_theme_tv_long_press_none
 import me.him188.ani.app.ui.lang.settings_theme_tv_long_press_panel
 import me.him188.ani.app.ui.lang.settings_theme_tv_long_press_resume
@@ -254,6 +257,11 @@ object TvSettingKeys {
         }
     }
 
+    /** 有没有触摸屏: 平板 / 手机装了 TV 包才有, 电视没有 (也没有系统栏). */
+    val touchscreen = TvSettingKey.Platform("touchscreen") { deps ->
+        deps.context.packageManager.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN)
+    }
+
     /** 弹幕正则过滤规则 (逐条). */
     val danmakuRules = TvSettingKey.Live("danmakuRules") { GlobalKoin.get<DanmakuRegexFilterRepository>().flow }
 
@@ -314,6 +322,13 @@ private fun TvSettingsItemsBuilder.appearanceItems() {
         label = { tvText("$it%") },
         read = { (it.effectiveUiScale * 100).roundToInt().roundToStep(UI_SCALE_STEP_PERCENT) },
         write = { copy(uiScale = it / 100f) },
+    )
+    toggleOf(
+        listOf(theme, TvSettingKeys.touchscreen), Lang.settings_theme_tv_hide_navigation_bar,
+        description = { tvText(Lang.settings_theme_tv_hide_navigation_bar_description) },
+        visible = { it[TvSettingKeys.touchscreen] == true },
+        read = { it[theme]?.tvHideNavigationBar == true },
+        write = { on -> listOf(TvSettingsEdit.Update(theme) { it.copy(tvHideNavigationBar = on) }) },
     )
     choice(
         theme, Lang.settings_theme_tv_exit_behavior, Lang.settings_theme_tv_exit_behavior_description,
