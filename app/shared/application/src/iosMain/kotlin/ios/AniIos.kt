@@ -85,6 +85,7 @@ import me.him188.ani.app.ui.foundation.widgets.ToastViewModel
 import me.him188.ani.app.ui.foundation.widgets.Toaster
 import me.him188.ani.app.ui.main.AniApp
 import me.him188.ani.app.ui.main.AniAppContent
+import me.him188.ani.app.ui.pad.InstallPadPageVariants
 import me.him188.ani.app.videoplayer.player.AniAVKitMediampPlayerFactory
 import me.him188.ani.utils.analytics.Analytics
 import me.him188.ani.utils.httpdownloader.HttpDownloader
@@ -284,7 +285,7 @@ fun MainViewController(app: AniIosApplication): UIViewController {
                                     },
                                 ) {
                                     Box(Modifier.padding(all = paddingByWindowSize)) {
-                                        AniAppContent(app.aniNavigator)
+                                        InstallPadPageVariants { AniAppContent(app.aniNavigator) }
                                         Toast({ showing }, { Text(content) })
                                     }
                                 }
