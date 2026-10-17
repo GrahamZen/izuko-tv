@@ -24,7 +24,6 @@ import io.ktor.http.contentType
 import io.ktor.http.encodedPath
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
-import kotlinx.coroutines.withContext
 import kotlinx.io.bytestring.encodeToByteString
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -39,7 +38,6 @@ import me.him188.ani.danmaku.dandanplay.data.DandanplaySeasonSearchResponse
 import me.him188.ani.utils.io.DigestAlgorithm
 import me.him188.ani.utils.io.digest
 import me.him188.ani.utils.ktor.ScopedHttpClient
-import me.him188.ani.utils.platform.currentTimeMillis
 import kotlin.coroutines.CoroutineContext
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
@@ -53,13 +51,15 @@ internal class DandanplayClient(
     private val ioDispatcher: CoroutineContext = Dispatchers.IO,
     /** 作品详情接口记结果、被限额时暂停 (见 [DandanplayBangumiCalls]). */
     val bangumiCalls: DandanplayBangumiCalls = DandanplayBangumiCalls(),
+    /** 签名用的时间, 系统时钟偏了被拒时按服务器时间校正 (见 [DandanplaySigningClock]). */
+    private val signingClock: DandanplaySigningClock = DandanplaySigningClock(),
 ) {
     /**
      * Must be used at the last step of building the request.
      */
     private fun HttpRequestBuilder.addAuthorizationHeaders() {
         header("X-AppId", appId)
-        val time = currentTimeMillis() / 1000
+        val time = signingClock.nowSeconds()
         header("X-Timestamp", time)
         header("X-Signature", generateSignature(appId, time, url.encodedPath, appSecret))
     }
@@ -73,7 +73,7 @@ internal class DandanplayClient(
     suspend fun getSeasonAnimeList(
         year: Int,
         month: Int,
-    ): DandanplaySeasonSearchResponse = withContext(ioDispatcher) {
+    ): DandanplaySeasonSearchResponse = signingClock.signed(ioDispatcher) {
         // https://api.dandanplay.net/api/v2/bangumi/season/anime/2024/04
         client.use {
             val response =
@@ -89,7 +89,7 @@ internal class DandanplayClient(
 
     suspend fun searchSubject(
         subjectName: String,
-    ): DandanplaySearchEpisodeResponse = withContext(ioDispatcher) {
+    ): DandanplaySearchEpisodeResponse = signingClock.signed(ioDispatcher) {
         client.use {
             val response = get("https://api.dandanplay.net/api/v2/search/anime") {
                 configureTimeout()
@@ -99,7 +99,7 @@ internal class DandanplayClient(
             }
 
             if (response.status == HttpStatusCode.NotFound) {
-                return@withContext DandanplaySearchEpisodeResponse()
+                return@signed DandanplaySearchEpisodeResponse()
             }
 
             response.body<DandanplaySearchEpisodeResponse>()
@@ -109,7 +109,7 @@ internal class DandanplayClient(
     suspend fun searchEpisode(
         subjectName: String,
         episodeName: String?,
-    ): DandanplaySearchEpisodeResponse = withContext(ioDispatcher) {
+    ): DandanplaySearchEpisodeResponse = signingClock.signed(ioDispatcher) {
         client.use {
             val response =
                 get("https://api.dandanplay.net/api/v2/search/episodes") {
@@ -127,7 +127,7 @@ internal class DandanplayClient(
     suspend fun getBangumiEpisodes(
         bangumiId: Int, // 注意, 这是 dandanplay 的 id, 不是 Bangumi.tv 的 id
     ): DandanplayGetBangumiResponse = bangumiCalls.anime(bangumiId) {
-        withContext(ioDispatcher) {
+        signingClock.signed(ioDispatcher) {
         client.use {
             val response =
                 get("https://api.dandanplay.net/api/v2/bangumi/$bangumiId") {
@@ -144,7 +144,7 @@ internal class DandanplayClient(
     suspend fun getBangumiEpisodesByBgmtvSubjectId(
         bgmtvSubjectId: Int,
     ): DandanplayGetBangumiResponse = bangumiCalls.bgmtv(bgmtvSubjectId) {
-        withContext(ioDispatcher) {
+        signingClock.signed(ioDispatcher) {
         client.use {
             val response =
                 get("https://api.dandanplay.net/api/v2/bangumi/bgmtv/$bgmtvSubjectId") {
@@ -163,7 +163,7 @@ internal class DandanplayClient(
         fileHash: String?,
         fileSize: Long?,
         videoDuration: Duration
-    ): DandanplayMatchVideoResponse = withContext(ioDispatcher) {
+    ): DandanplayMatchVideoResponse = signingClock.signed(ioDispatcher) {
         client.use {
             val response =
                 post("https://api.dandanplay.net/api/v2/match") {
@@ -187,7 +187,7 @@ internal class DandanplayClient(
 
     suspend fun getDanmakuList(
         episodeId: Long,
-    ): List<DandanplayDanmaku> = withContext(ioDispatcher) {
+    ): List<DandanplayDanmaku> = signingClock.signed(ioDispatcher) {
         // See #122
 //        val chConvert = when (getSystemChineseVariant()) {
 //            ChineseVariant.SIMPLIFIED -> 1
@@ -219,7 +219,7 @@ internal class DandanplayClient(
     suspend fun postAppComment(
         episodeId: Long,
         request: DandanplaySendCommentRequest,
-    ): DandanplaySendCommentResponse = withContext(ioDispatcher) {
+    ): DandanplaySendCommentResponse = signingClock.signed(ioDispatcher) {
         client.use {
             post("https://api.dandanplay.net/api/v2/comment/$episodeId/app") {
                 configureTimeout()
