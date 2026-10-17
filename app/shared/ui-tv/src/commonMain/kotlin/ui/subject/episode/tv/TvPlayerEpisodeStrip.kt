@@ -187,10 +187,12 @@ internal fun TvPlayerEpisodeStrip(
     // (简介是正文, 时长与播出日期在底行右端, 见 FocusEpisodeCarousel 里那个弹窗的 meta)
     val overviewsFlow = remember(state) { state?.tmdbEpisodeOverviewsFlow ?: emptyFlow() }
     val runtimesFlow = remember(state) { state?.tmdbEpisodeRuntimesFlow ?: emptyFlow() }
+    val namesFlow = remember(state) { state?.tmdbEpisodeNamesFlow ?: emptyFlow() }
     val tmdbEpisodeStills by stillsFlow.collectAsStateWithLifecycle(emptyMap())
     val playProgress by progressFlow.collectAsStateWithLifecycle(emptyMap())
     val episodeOverviews by overviewsFlow.collectAsStateWithLifecycle(emptyMap())
     val episodeRuntimes by runtimesFlow.collectAsStateWithLifecycle(emptyMap())
+    val episodeNames by namesFlow.collectAsStateWithLifecycle(emptyMap())
 
     val navigator = LocalNavigator.current
     val toaster = LocalToaster.current
@@ -370,6 +372,7 @@ internal fun TvPlayerEpisodeStrip(
                 playProgress = playProgress,
                 episodeOverviews = episodeOverviews,
                 episodeRuntimes = episodeRuntimes,
+                episodeNames = episodeNames,
                 horizontalPadding = TV_PLAYER_HORIZONTAL_PAD,
                 // 倒计时态: 落点改成下一集 (正在播的那一集仍由 currentEpisodeId 画"正在播放"徽标),
                 // 锚位框走成倒计时环, 落点之后的卡渐隐

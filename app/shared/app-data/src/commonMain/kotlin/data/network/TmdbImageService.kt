@@ -51,6 +51,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
+import me.him188.ani.app.data.models.subject.tvPrefersTmdbText
 import me.him188.ani.app.domain.foundation.HttpClientProvider
 import me.him188.ani.app.domain.foundation.get
 import me.him188.ani.app.domain.foundation.withValue
@@ -538,6 +539,20 @@ class TmdbImageService(
         return withContext(ioDispatcher) {
             readCache().episodeStills[subjectId]?.takeIf { it.language == language }
                 ?.takeIf { mapEntry == null || it.mapRef == mapEntry.stillsBuildKey }
+        }
+    }
+
+    /** 同 [peekCachedEpisodeStills], 一次读盘查一批 (海报墙一批卡片用); 没缓存的不在结果里. */
+    suspend fun peekCachedEpisodeStills(subjectIds: Collection<Int>, language: String): Map<Int, TmdbEpisodeStills> {
+        if (disabledByUser || subjectIds.isEmpty()) return emptyMap()
+        return withContext(ioDispatcher) {
+            val cached = readCache().episodeStills
+            subjectIds.mapNotNull { subjectId ->
+                val mapEntry = subjectMap?.peek(subjectId)
+                cached[subjectId]?.takeIf { it.language == language }
+                    ?.takeIf { mapEntry == null || it.mapRef == mapEntry.stillsBuildKey }
+                    ?.let { subjectId to it }
+            }.toMap()
         }
     }
 
@@ -1153,7 +1168,10 @@ class TmdbImageService(
             if (cached != null) {
                 val refresh = stillsRefreshGate.shouldRefresh(subjectId) {
                     (newestWantedAirDate != null && !cached.coversAirDate(newestWantedAirDate)) ||
-                        (refreshAiring && cached.airingNeedsRefresh(tmdbToday()))
+                        (refreshAiring && cached.airingNeedsRefresh(tmdbToday())) ||
+                        // 文字部分 (本条目的简介与标题、单集名) 按旧规则建的缓存 (见 [TmdbEpisodeStills.textVersion]) 重取一次,
+                        // 取不到照用旧的
+                        cached.textVersion < TmdbEpisodeStills.TEXT_VERSION
                 }
                 if (!refresh) return@withContext cached
             }
@@ -1190,7 +1208,7 @@ class TmdbImageService(
                 fetched.copy(mapRef = mapEntry.stillsBuildKey)
             } else {
                 fetched
-            }
+            }.copy(textVersion = TmdbEpisodeStills.TEXT_VERSION)
 
             // 陈旧重取拿到空结果 (如 TMDB 瞬时搜索不中) 时保留旧缓存, 不用坏数据覆盖好数据
             if (cached != null && stills.isEmpty() && !cached.isEmpty()) {
@@ -1261,6 +1279,8 @@ class TmdbImageService(
             byEpisodeNumber = mapOf(1 to media),
             language = language,
             showOverview = overview,
+            subjectOverview = overview,
+            subjectTitle = if (tvPrefersTmdbText(language)) tmdbLocalizedName(detail.title) else null,
             airing = TmdbAiring(
                 fetchedOn = tmdbToday().toString(),
                 seasonAirDates = releaseDate?.let { listOf(it) },
@@ -1835,12 +1855,21 @@ class TmdbImageService(
         val seasonBodies = indexedSeasons.map { season ->
             prefetched[season.seasonNumber] ?: async { seasonBody(season.seasonNumber, language) }
         }.awaitAll()
+        // 各季的简介 (正片季), 本条目对应那一季的是 [TmdbEpisodeStills.subjectOverview] 的首选
+        val seasonOverviews = mutableMapOf<Int, String>()
+        // 单集名与条目标题只给非中文界面用 (见 [TmdbEpisodeMedia.name]); 中文时不存, 那边的分集数据与相等性照旧
+        val keepLocalizedText = tvPrefersTmdbText(language)
         for ((season, seasonBody) in indexedSeasons.zip(seasonBodies)) {
-            for (ep in json.decodeFromString(TmdbSeasonDetail.serializer(), seasonBody).episodes) {
+            val seasonDetail = json.decodeFromString(TmdbSeasonDetail.serializer(), seasonBody)
+            if (season.seasonNumber > 0) {
+                seasonDetail.overview?.trim()?.takeIf { it.isNotBlank() }?.let { seasonOverviews[season.seasonNumber] = it }
+            }
+            for (ep in seasonDetail.episodes) {
                 val media = TmdbEpisodeMedia(
                     stillUrl = ep.stillPath?.let { "$STILL_IMAGE_BASE_URL$it" },
                     runtimeMinutes = ep.runtime?.takeIf { it > 0 },
                     overview = ep.overview?.trim()?.takeIf { it.isNotBlank() },
+                    name = if (keepLocalizedText) tmdbLocalizedEpisodeName(ep.name) else null,
                 )
                 // 同一天可能有多集 (双集连播首播, 如 無職転生Ⅲ 第1+2话), 按集号顺序追加成列表,
                 // 匹配侧按 Bangumi "当日第几集" 对位取用. 字段全空的集也要占位, 保持对位不错乱.
@@ -1929,11 +1958,32 @@ class TmdbImageService(
             season?.let { it to 1 }
         }
 
+        // 本条目从哪一季第几集开始 (简介与标题用): 照表的是表里写的起点; 否则是上面认领的那一季,
+        // 认不出时看条目开播那天播的是哪一季的哪一集 (从一季中间开始的分篇, 季首播日对不上)
+        val ownStart = if (mapped) {
+            mappedMainStart
+        } else {
+            // 按季名 / 单季认的季也可能从中间开始, 开播那天播的正是这一季时以那一集为起点
+            val byAirDate = tmdbSeasonStartByEpisodeAirDate(seasonAirDates, subjectAirDate)
+            when {
+                numberedSeason == null || byAirDate?.first == numberedSeason -> byAirDate
+                else -> numberedSeason to 1
+            }
+        }
+        val ownSeason = ownStart?.first
+        val showOverview = detail.overview?.trim()?.takeIf { it.isNotBlank() }
+        val ownSeasonOverview = ownSeason?.let { seasonOverviews[it] }
         TmdbEpisodeStills(
             byAirDate,
             byEpisodeNumber,
             language,
-            showOverview = detail.overview?.trim()?.takeIf { it.isNotBlank() },
+            showOverview = showOverview,
+            subjectOverview = tmdbSubjectOverview(ownSeasonOverview, showOverview, ownSeason),
+            subjectTitle = if (keepLocalizedText) {
+                tmdbSubjectTitle(detail.name, ownStart, seasons.firstOrNull { it.seasonNumber == ownSeason }?.name)
+            } else {
+                null
+            },
             byEpisodeName = byName.mapNotNull { (k, v) -> v?.let { k to it } }.toMap(),
             byAirDateOrigin = byAirDateOrigin,
             bySeasonEpisode = bySeasonEpisode,
@@ -2616,6 +2666,12 @@ class TmdbImageService(
             byEpisodeNumber = List(medias.size) { it + 1 }.zip(medias).toMap(),
             language = language,
             showOverview = detail.overview?.trim()?.takeIf { it.isNotBlank() },
+            subjectOverview = detail.overview?.trim()?.takeIf { it.isNotBlank() },
+            subjectTitle = if (tvPrefersTmdbText(language)) {
+                tmdbLocalizedName(detail.name?.replace(COLLECTION_SUFFIX_REGEX, ""))
+            } else {
+                null
+            },
             // 合集的 parts 是一部部电影, 不按季判断播出状态 (沿用 Bangumi 的)
             airing = TmdbAiring(fetchedOn = tmdbToday().toString()),
         )
@@ -2699,6 +2755,12 @@ class TmdbImageService(
             byEpisodeNumber = List(medias.size) { it + 1 }.zip(medias).toMap(),
             language = language,
             showOverview = detail.overview?.trim()?.takeIf { it.isNotBlank() },
+            subjectOverview = detail.overview?.trim()?.takeIf { it.isNotBlank() },
+            subjectTitle = if (tvPrefersTmdbText(language)) {
+                tmdbLocalizedName(detail.name?.replace(COLLECTION_SUFFIX_REGEX, ""))
+            } else {
+                null
+            },
             // 合集的 parts 是一部部电影, 不按季判断播出状态 (沿用 Bangumi 的)
             airing = TmdbAiring(fetchedOn = tmdbToday().toString()),
         )
@@ -3103,6 +3165,11 @@ data class TmdbEpisodeMedia(
     val runtimeMinutes: Int? = null,
     /** 分集简介 (按抓取语言本地化, 见 [TmdbEpisodeStills.language]; TMDB 无该语言翻译时为 null). */
     val overview: String? = null,
+    /**
+     * 集名 (按抓取语言本地化), **只在非中文语言时存** (见 [me.him188.ani.app.data.models.subject.tvPrefersTmdbText]);
+     * TMDB 没翻译时给的「Episode 3」这类占位名不存 (见 [tmdbLocalizedEpisodeName]), 字段全空的占位集仍彼此相等.
+     */
+    val name: String? = null,
 )
 
 @Serializable
@@ -3123,6 +3190,21 @@ data class TmdbEpisodeStills(
     val language: String = "",
     /** 整部剧的本地化简介 ([language] 语言); TMDB 无该语言翻译或未匹配到剧时为 null. */
     val showOverview: String? = null,
+    /**
+     * 讲**本条目自己**的本地化简介 ([language] 语言): 本条目对应那一季的简介; 没有时, 本条目是第一季才用整部的;
+     * 剧场版是电影的简介, 合集是合集的. 续作季只有整部简介、或认不出是哪一季时为 null —— 由 Bangumi 简介兜底.
+     */
+    val subjectOverview: String? = null,
+    /**
+     * 本条目的本地化标题 ([language] 语言), **只在非中文语言时存** (见 [tmdbSubjectTitle]): 剧集第一季是剧名, 续作季拼上季名;
+     * 剧场版是片名, 合集是合集名. 认不出季、特别篇、从一季中间开始的分篇、TMDB 没有这种语言的译名时为 null —— 由 Bangumi 原名兜底.
+     */
+    val subjectTitle: String? = null,
+    /**
+     * 建这份数据时文字部分 ([TmdbEpisodeMedia.name]、[subjectOverview]、[subjectTitle]) 的规则版本;
+     * 低于 [TEXT_VERSION] 的缓存会重取.
+     */
+    val textVersion: Int = 0,
     /**
      * "归一化原语言集名 -> 分集数据" 索引 (重名集已剔除), 覆盖 season 0 与**本条目对应的那一季**.
      *
@@ -3205,9 +3287,12 @@ data class TmdbEpisodeStills(
             ?.value
     }
 
-    private companion object {
+    companion object {
         /** 后缀认领的最短集名, 见 [findByEpisodeNameSuffix]. */
-        const val MIN_SUFFIX_CLAIM_LENGTH = 4
+        private const val MIN_SUFFIX_CLAIM_LENGTH = 4
+
+        /** 见 [textVersion]. */
+        const val TEXT_VERSION = 3
     }
 
     /**
@@ -3849,7 +3934,7 @@ internal fun tmdbOwnSeasonNumber(seasons: List<Pair<Int, String?>>, subjectAirDa
 }
 
 /** 季首播日与条目开播日的容差: 两边记录常差一天 (深夜档跨日), 口径同分集匹配. */
-private const val SEASON_MATCH_TOLERANCE_DAYS = 1
+internal const val SEASON_MATCH_TOLERANCE_DAYS = 1
 
 /**
  * 认领"本条目对应哪一季"的第二判据: **条目名 (剥掉版本后缀) 与季名归一化后逐字相同**.
@@ -4107,6 +4192,8 @@ private data class TmdbAltTitle(val title: String? = null)
 @Serializable
 private data class TmdbTvDetail(
     val seasons: List<TmdbSeasonRef> = emptyList(),
+    /** 剧名 (按请求的 language 本地化; 无该语言译名时 TMDB 给原名). */
+    val name: String? = null,
     /** 整部剧的简介 (按请求的 language 本地化; 无该语言翻译时 TMDB 返回空串). */
     val overview: String? = null,
     /** 剧的原语言 (如 "ja"); S0 集名索引按原语言取名, 与 Bangumi 原名可逐字比较. */
@@ -4155,6 +4242,8 @@ private val COLLECTION_SUFFIX_REGEX =
 
 @Serializable
 private data class TmdbMovieDetail(
+    /** 片名 (按请求的 language 本地化; 无该语言译名时 TMDB 给原名). */
+    val title: String? = null,
     val overview: String? = null,
     /** 片长 (分钟). */
     val runtime: Int? = null,
@@ -4177,6 +4266,8 @@ private data class TmdbSeasonRef(
 @Serializable
 private data class TmdbSeasonDetail(
     val episodes: List<TmdbEpisodeRef> = emptyList(),
+    /** 这一季的简介 (按请求的 language 本地化; 没翻译时为空串). */
+    val overview: String? = null,
 )
 
 @Serializable
