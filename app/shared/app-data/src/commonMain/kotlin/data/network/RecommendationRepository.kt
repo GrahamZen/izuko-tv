@@ -634,24 +634,11 @@ class RecommendationRepository(
 
     private val refreshMutex = Mutex()
 
-    private val _isRefreshing = MutableStateFlow(false)
-
-    /**
-     * 是否正在重算.
-     *
-     * 给 UI 用: 装完/登录后第一次进页时推荐区是空的, 而一次重算要十几秒 (二十来个请求) ——
-     * 不给个交代的话, 新用户看到的就是一片空白, 不知道这儿本来该有东西.
-     *
-     * **`true` 不代表"马上会有结果"**: 缓存还新鲜时 [refreshOnce] 判完就返回, 这个标记也就亮
-     * 一瞬间. 所以消费方要自己加"推荐区确实是空的"这个条件, 别一看它亮就弹提示.
-     */
-    val isRefreshing: StateFlow<Boolean> get() = _isRefreshing
-
     private val _refreshProgress = MutableStateFlow<RecommendationRefreshProgress?>(null)
 
     /**
      * 真的在重算时进行到哪了 (缓存还新鲜、判完就返回的那几轮不报), 其余时候为 `null`.
-     * 与 [isRefreshing] 一样, 只该在推荐区空着时给人看.
+     * 只该在推荐区空着时给人看.
      */
     val refreshProgress: StateFlow<RecommendationRefreshProgress?> get() = _refreshProgress
 
@@ -664,7 +651,6 @@ class RecommendationRepository(
         // 已经有一次在跑就直接算数: 不必排队, 那次跑完的结果是一样的
         if (!refreshMutex.tryLock()) return
         scope.launch {
-            _isRefreshing.value = true
             try {
                 refreshOnce(force)
             } catch (e: CancellationException) {
@@ -673,7 +659,6 @@ class RecommendationRepository(
                 // 推荐算不出来不该牵连别的东西: 缓存里的旧结果照旧显示
                 logger.warn(e) { "bgm-direct: recommendations 重算失败, 保留旧缓存" }
             } finally {
-                _isRefreshing.value = false
                 _refreshProgress.value = null
                 refreshMutex.unlock()
             }
