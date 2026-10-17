@@ -15,6 +15,7 @@ import me.him188.ani.app.data.network.TmdbSubjectMapRef
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class RegionalSubjectNamesTest {
     private fun entry(type: String, vararg names: Pair<String, String>) = TmdbSubjectMapEntry(
@@ -81,6 +82,47 @@ class RegionalSubjectNamesTest {
         // 电影的译名只是它自己的
         val movie = regionalSeriesNames(entry("movie", "tw" to "劇場版"), listOf("剧场版"), SubjectSeriesInfo.Fallback)
         assertEquals(emptySet(), movie.series)
+    }
+
+    @Test
+    fun `series names - sequels named with Season N get a Chinese season marker and never the bare name`() {
+        val grandBlue = entry("tv", "tw" to "GRAND BLUE 碧藍之海", "hk" to "碧藍之海")
+        val third = regionalSeriesNames(
+            grandBlue,
+            listOf("碧蓝之海 第三季", "ぐらんぶる Season 3", "Grand Blue Season 3"),
+            SubjectSeriesInfo(
+                seasonSort = 3,
+                sequelSubjectNames = setOf("ぐらんぶる Season 4", "碧蓝之海 第四季"),
+                seriesSubjectNamesWithoutSelf = setOf(
+                    "ぐらんぶる", "碧蓝之海", "ぐらんぶる Season 2", "碧蓝之海 第二季", "ぐらんぶる Season 4", "碧蓝之海 第四季",
+                ),
+            ),
+        )
+        // 还有简体形式, 繁转简只在安卓上有
+        assertTrue(third.sequels.containsAll(setOf("GRAND BLUE 碧藍之海 第四季", "碧藍之海 第四季")))
+        assertTrue(third.sequels.all { it.endsWith("第四季") })
+        // 选择器对 BT 资源按「标题含续集名」排除: 本季的资源一条都不能命中
+        val titles = listOf(
+            "[绿茶字幕组] 碧蓝之海 第三季 / Grand Blue S3 [08][WebRip][1080p][简繁日内封]",
+            "[ANi] Grand Blue Dreaming / GRAND BLUE 碧蓝之海 3 - 08 [1080P][Baha][WEB-DL][AAC AVC][CHT][MP4]",
+            "[黒ネズミたち] GRAND BLUE 碧藍之海 3 / Grand Blue Season 3 - 08 (Baha 1920x1080 AVC AAC MP4)",
+        )
+        assertTrue(titles.none { title -> third.sequels.any { title.contains(it, ignoreCase = true) } })
+        // 别的季: 第一季是译名本身, 第二季按「Season 2」补上季号
+        assertTrue("碧藍之海" in third.series && "GRAND BLUE 碧藍之海" in third.series)
+        assertTrue("碧藍之海 第二季" in third.series && "GRAND BLUE 碧藍之海 第四季" in third.series)
+    }
+
+    @Test
+    fun `series names - sequel names contained in the own names are dropped`() {
+        val tw = entry("tv", "tw" to "出包王女")
+        // 改了名的续集 (不带季号) 只能用译名本身, 而它是本季名字的一部分
+        val second = regionalSeriesNames(
+            tw,
+            listOf("出包王女 第二季"),
+            SubjectSeriesInfo(seasonSort = 2, sequelSubjectNames = setOf("出包王女 DARKNESS"), seriesSubjectNamesWithoutSelf = setOf("出包王女")),
+        )
+        assertEquals(emptySet(), second.sequels)
     }
 
     @Test
