@@ -19,7 +19,8 @@ import me.him188.ani.datasources.api.topic.Resolution
  *
  * 取值就是这部番的偏好 (选择器的 resolution / subtitleLanguageId, 自动选源也按它), 选中一个资源时选择器会把它的分辨率 / 字幕记成偏好.
  * 所以每个源只认自己结果里有的取值: 播了一个 4K 的网盘文件, 没有 4K 的源照常列, 不会整页变成「低于偏好」(BT 那边同理, 见 projectBtList).
- * 有这个取值的源里, 不符合的调暗排在后面、写「低于偏好」(BT 的收进「已被排除」).
+ * 有这个取值的源里, 不符合的调暗排在后面、写「低于偏好」(BT 的合成一行「被筛选隐藏 N 条」).
+ * BT 这一集能放的里没有这个取值时照常列, 但不符合的行仍用红字写「低于偏好」, 让人知道筛选还开着 (缓存除外: 选择器不按偏好筛缓存).
  *
  * 线路式的在线源不筛: 它们的分辨率 / 字幕是数据源配置里写死的默认值 (多半 1080P / 简中), 不是每条结果自己的.
  */
@@ -79,6 +80,14 @@ internal fun partitionByFilters(files: List<Media>, input: TvSourcePanelInput): 
         (resolution == null || it.properties.resolution == resolution) &&
                 (subtitle == null || subtitle in it.properties.subtitleLanguageIds)
     }
+}
+
+/** [media] 合不合当前的分辨率 / 字幕筛选 (没选的那项不管). */
+internal fun TvSourcePanelInput.matchesFilters(media: Media): Boolean {
+    val resolution = resolutionFilter
+    val subtitle = subtitleFilter
+    return (resolution == null || media.properties.resolution == resolution) &&
+            (subtitle == null || subtitle in media.properties.subtitleLanguageIds)
 }
 
 /** 当前的分辨率 / 字幕筛选; null = 没选 (默认偏好里的「任意」也算没选). */

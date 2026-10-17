@@ -644,6 +644,7 @@
     <string name="tv_source_all">All</string>
     <string name="tv_source_show_excluded">Show %1$d excluded</string>
     <string name="tv_source_hide_excluded">Hide %1$d excluded</string>
+    <string name="tv_source_hidden_by_filter">%1$d hidden by filters</string>
     <string name="tv_source_sources_count">%1$d sources</string>
     <string name="tv_source_pack">Batch</string>
     <string name="tv_source_bt_loading">Searching BT sources…</string>
