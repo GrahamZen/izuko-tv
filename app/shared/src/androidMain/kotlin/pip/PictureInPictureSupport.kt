@@ -12,6 +12,7 @@ package me.him188.ani.app.pip
 import android.app.Activity
 import android.app.ActivityManager
 import android.content.pm.PackageManager
+import android.os.Build
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 
@@ -21,9 +22,13 @@ private val logger = logger("PictureInPictureSupport")
  * 这台设备能不能用画中画. 很多电视 / 盒子没有画中画这项系统功能; 低内存设备上系统也不开 (多窗口被关掉, 声明了功能也一样).
  * 不能用时设置小窗参数、进入小窗, 系统都直接抛 IllegalStateException ("Device doesn't support picture-in-picture mode"),
  * 而播放页一打开就会设置小窗参数.
+ *
+ * 小窗参数 ([android.app.PictureInPictureParams]) 是 Android 8.0 才有的接口. 7.x 电视可以声明画中画功能,
+ * 但兼容包在上面调用参数接口抛的是 NoClassDefFoundError, [runPictureInPictureCall] 接不住, 所以 8.0 以下一律当不支持.
  */
 internal fun Activity?.supportsPictureInPicture(): Boolean {
     if (this == null) return false
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
     if (!packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) return false
     return getSystemService(ActivityManager::class.java)?.isLowRamDevice != true
 }
