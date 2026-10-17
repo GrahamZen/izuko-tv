@@ -21,8 +21,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.unit.dp
 import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -77,16 +79,33 @@ internal fun tvDetailsTouchSnapTarget(
     return if (toNext) TvDetailsSnapTarget(next.page, next.start) else TvDetailsSnapTarget(here.page, here.restEnd)
 }
 
-/** 松手后滚到 [tvDetailsTouchSnapTarget] 挑的位置, 停稳再报 [onSettled] (被新的触摸打断则不报). */
+/**
+ * 松手后滚到 [tvDetailsTouchSnapTarget] 挑的位置, 停稳再报 [onSettled] (被新的触摸打断则不报).
+ *
+ * 吸附途中手指按下会接住滚动 (scrollable 当场起一次拖动), 抬手时再走一次本惯性. 那一下如果只是点 (没拖动、没甩) ——
+ * 多半是去点页面上的东西 —— 接着去被打断前要去的那一页 ([interrupted]); 照松手位置就近挑的话, 刚往下翻就点的那一下会把页面退回上一页,
+ * 而手指下的原生卡片照样收到点击, 弹窗开在退回的那一页上.
+ */
 internal class TvDetailsTouchSnapFling(
     private val scrollState: ScrollState,
     private val pages: () -> List<TvDetailsSnapPage>,
     private val velocityThreshold: Float,
+    /** 被打断后这么近 (px) 以内的抬手算「只是点了一下」. */
+    private val tapSlop: Float,
     private val onSettled: (page: Int, scroll: Int) -> Unit,
 ) : FlingBehavior {
+    /** 被触摸打断的那次吸附: 要去的落点与被打断时的滚动量. */
+    private class Interrupted(val target: TvDetailsSnapTarget, val at: Float)
+
+    private var interrupted: Interrupted? = null
+
     override suspend fun ScrollScope.performFling(initialVelocity: Float): Float {
         val from = scrollState.value.toFloat()
-        val target = tvDetailsTouchSnapTarget(pages(), from, initialVelocity, velocityThreshold) ?: return initialVelocity
+        val resumed = interrupted?.takeIf { abs(from - it.at) <= tapSlop && abs(initialVelocity) < velocityThreshold }
+        interrupted = null
+        val target = resumed?.target
+            ?: tvDetailsTouchSnapTarget(pages(), from, initialVelocity, velocityThreshold)
+            ?: return initialVelocity
         val to = target.scroll.roundToInt().coerceIn(0, scrollState.maxValue).toFloat()
         if (to != from) {
             // 时长按距离 (折算到 1080p) 取, 同遥控器翻页的量级; 先快后慢, 接得上手指的速度
@@ -94,11 +113,16 @@ internal class TvDetailsTouchSnapFling(
             val millis = (TV_DETAILS_SNAP_MIN_MILLIS + (TV_DETAILS_SNAP_MAX_MILLIS - TV_DETAILS_SNAP_MIN_MILLIS) *
                     ((distance1080 - 150f) / 300f).coerceIn(0f, 1f)).roundToInt()
             var last = from
-            AnimationState(from).animateTo(to, tween(millis, easing = LinearOutSlowInEasing)) {
-                val delta = value - last
-                val consumed = scrollBy(delta)
-                last += consumed
-                if (abs(consumed - delta) > 0.5f) cancelAnimation()
+            try {
+                AnimationState(from).animateTo(to, tween(millis, easing = LinearOutSlowInEasing)) {
+                    val delta = value - last
+                    val consumed = scrollBy(delta)
+                    last += consumed
+                    if (abs(consumed - delta) > 0.5f) cancelAnimation()
+                }
+            } catch (e: CancellationException) {
+                interrupted = Interrupted(target, scrollState.value.toFloat())
+                throw e
             }
         }
         onSettled(target.page, scrollState.value)
@@ -118,10 +142,11 @@ internal fun rememberTvDetailsTouchSnap(
 ): FlingBehavior? {
     if (!LocalTvTouchInputEnabled.current) return null
     val threshold = with(LocalDensity.current) { TV_DETAILS_SNAP_VELOCITY_DP.dp.toPx() }
+    val tapSlop = LocalViewConfiguration.current.touchSlop
     val currentPages by rememberUpdatedState(pages)
     val currentOnSettled by rememberUpdatedState(onSettled)
-    return remember(scrollState, threshold) {
-        TvDetailsTouchSnapFling(scrollState, { currentPages() }, threshold) { page, scroll -> currentOnSettled(page, scroll) }
+    return remember(scrollState, threshold, tapSlop) {
+        TvDetailsTouchSnapFling(scrollState, { currentPages() }, threshold, tapSlop) { page, scroll -> currentOnSettled(page, scroll) }
     }
 }
 

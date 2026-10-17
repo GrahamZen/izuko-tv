@@ -48,7 +48,8 @@ import androidx.compose.ui.platform.LocalInputModeManager
  * - [LocalTvTouchInputEnabled]: 设备有触摸屏才为 true (TV 入口按 FEATURE_TOUCHSCREEN 提供). **为 false 时本文件
  *   所有 modifier 都原样返回, 电视上一个节点都不会多** —— 这是"对电视用户零影响"的硬保证.
  * - [tvTouchKeyboardMode]: 挂 TV 根部. 每次按下 (Initial pass, 祖先先收到) 都把输入模式请求回 Keyboard
- *   (Android 上 = `requestFocusFromTouch()`, 同步离开触摸模式). 系统在**每个** ACTION_DOWN 派发前都会重新进入
+ *   (Android 上 = `requestFocusFromTouch()`, 同步离开触摸模式; 焦点在嵌着的原生视图上时由它自己离开, 见
+ *   [rememberTvTouchKeyboardModeRequest]). 系统在**每个** ACTION_DOWN 派发前都会重新进入
  *   触摸模式, 所以每次都要做; Compose 那步"canFocus 变假就清焦点"由 snapshot 观察者异步做, 在同一次派发里
  *   切回来它就看不到 Touch 态, 焦点得以保住.
  * - [tvTouchFocusOnTap]: 挂在可聚焦组件的 clickable **之前** (同一条链上). 按下即把焦点请求到该节点, 抬起由
@@ -70,13 +71,13 @@ val LocalTvTouchInputEnabled = staticCompositionLocalOf { false }
 @Composable
 fun Modifier.tvTouchKeyboardMode(): Modifier {
     if (!LocalTvTouchInputEnabled.current) return this
-    val inputModeManager = LocalInputModeManager.current
-    return pointerInput(inputModeManager) {
+    val requestKeyboardMode = rememberTvTouchKeyboardModeRequest()
+    return pointerInput(requestKeyboardMode) {
         awaitPointerEventScope {
             while (true) {
                 val event = awaitPointerEvent(PointerEventPass.Initial)
                 if (event.type == PointerEventType.Press) {
-                    inputModeManager.requestInputMode(InputMode.Keyboard)
+                    requestKeyboardMode()
                 }
             }
         }
