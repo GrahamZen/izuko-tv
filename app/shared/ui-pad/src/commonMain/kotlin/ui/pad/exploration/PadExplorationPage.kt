@@ -9,6 +9,14 @@
 
 package me.him188.ani.app.ui.pad.exploration
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.snapping.SnapPosition
@@ -242,8 +250,9 @@ private fun PadPosterRow(
 }
 
 /**
- * 热门轮播: 左右滑换一部, 不动时每 [PAD_CAROUSEL_AUTO_ADVANCE_MILLIS] 自动翻下一部 (手指按着、页面不在前台时不翻).
- * 点画面或「立即观看」进详情页, 「新番时间表」进时间表 —— 同电视版轮播的两颗按钮.
+ * 热门轮播: 背景图跟着手指左右滑, 不动时每 [PAD_CAROUSEL_AUTO_ADVANCE_MILLIS] 自动翻下一部 (手指按着、页面不在前台时不翻).
+ * 文字不跟着手指走: 换到下一部后旧的先淡出、新的再淡入并带一点位移 (照电视版 hero: 先背景后文字、旧的先走);
+ * 两颗按钮与圆点固定不动. 点画面或「立即观看」进当前这一部的详情页, 「新番时间表」进时间表 —— 同电视版轮播.
  */
 @Composable
 private fun PadTrendingCarousel(
@@ -270,13 +279,54 @@ private fun PadTrendingCarousel(
         HorizontalPager(pagerState, Modifier.fillMaxSize(), beyondViewportPageCount = 1) { page ->
             val item = items[page]
             if (item != null) {
-                PadCarouselPage(
-                    item = item,
-                    pageWidth = pageWidth,
-                    nsfw = nsfw,
-                    onOpen = { onOpen(item) },
-                    onSchedule = onSchedule,
-                )
+                PadCarouselBackdrop(item = item, nsfw = nsfw, onOpen = { onOpen(item) })
+            }
+        }
+        AnimatedContent(
+            targetState = pagerState.currentPage,
+            modifier = Modifier.align(Alignment.BottomStart)
+                .padding(start = PAD_POSTER_WALL_PAGE_MARGIN, bottom = PAD_CAROUSEL_TEXT_BOTTOM)
+                .width(pageWidth * PAD_CAROUSEL_TITLE_WIDTH_FRACTION),
+            transitionSpec = {
+                val direction = if (targetState >= initialState) 1 else -1
+                val textIn = fadeIn(tween(PAD_CAROUSEL_TEXT_IN_MILLIS, delayMillis = PAD_CAROUSEL_TEXT_OUT_MILLIS, easing = LinearEasing)) +
+                        slideInHorizontally(tween(PAD_CAROUSEL_TEXT_OUT_MILLIS + PAD_CAROUSEL_TEXT_IN_MILLIS)) { width ->
+                            direction * width / PAD_CAROUSEL_TEXT_SHIFT_DIVISOR
+                        }
+                textIn togetherWith fadeOut(tween(PAD_CAROUSEL_TEXT_OUT_MILLIS, easing = LinearEasing)) using
+                        SizeTransform(clip = false)
+            },
+            contentAlignment = Alignment.BottomStart,
+            label = "padCarouselText",
+        ) { page ->
+            val item = items.peek(page)
+            if (item != null) {
+                PadCarouselText(item, pageWidth)
+            }
+        }
+        val contentColor = MaterialTheme.colorScheme.onSurface
+        Row(
+            Modifier.align(Alignment.BottomStart)
+                .padding(start = PAD_POSTER_WALL_PAGE_MARGIN, bottom = PAD_CAROUSEL_BUTTONS_BOTTOM),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Button(
+                onClick = { items.peek(pagerState.currentPage)?.let(onOpen) },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = contentColor,
+                    contentColor = MaterialTheme.colorScheme.surface,
+                ),
+            ) {
+                Text(stringResource(Lang.exploration_tv_watch_now), fontWeight = FontWeight.SemiBold)
+            }
+            FilledTonalButton(
+                onClick = onSchedule,
+                colors = ButtonDefaults.filledTonalButtonColors(
+                    containerColor = contentColor.copy(alpha = PAD_CAROUSEL_SECONDARY_BUTTON_ALPHA),
+                    contentColor = contentColor,
+                ),
+            ) {
+                Text(stringResource(Lang.exploration_schedule), fontWeight = FontWeight.SemiBold)
             }
         }
         PadCarouselDots(
@@ -288,20 +338,17 @@ private fun PadTrendingCarousel(
     }
 }
 
+/** 轮播一页的画面: 模糊底 + 右上角羽化的横版图 + 顶边压暗; 点画面进详情页. */
 @Composable
-private fun PadCarouselPage(
+private fun PadCarouselBackdrop(
     item: TrendingSubjectInfo,
-    pageWidth: Dp,
     nsfw: NsfwPolicy,
     onOpen: () -> Unit,
-    onSchedule: () -> Unit,
 ) {
     val media by rememberPadHeroMedia(item.bangumiId)
     // 横版图都没有 (已有结论) 才拿竖版封面顶上, 同电视版 hero 的兜底
     val image = media.backdropUrl ?: item.imageLarge.takeIf { media.backdropResolved && it.isNotBlank() }
     val wallColor = MaterialTheme.colorScheme.background
-    val contentColor = MaterialTheme.colorScheme.onSurface
-    val info = media.info?.subjectInfo
     Box(Modifier.fillMaxSize().clickable(interactionSource = null, indication = null, onClick = onOpen)) {
         // 底下铺同一张图的模糊版 (电视版热门轮播开着海报墙模糊时也是这样), 越往下越接近墙的底色
         AsyncImage(
@@ -339,65 +386,49 @@ private fun PadCarouselPage(
                 Brush.verticalGradient(0f to Color.Black.copy(alpha = PAD_CAROUSEL_TOP_SCRIM_ALPHA), 1f to Color.Transparent),
             ),
         )
-        Column(
-            Modifier.align(Alignment.BottomStart)
-                .padding(start = PAD_POSTER_WALL_PAGE_MARGIN, bottom = PAD_CAROUSEL_TEXT_BOTTOM)
-                .width(pageWidth * PAD_CAROUSEL_TITLE_WIDTH_FRACTION),
-        ) {
-            PadHeroTitle(
-                title = info?.displayName ?: item.nameCn,
-                logo = rememberPadTitleLogo(item.bangumiId, info?.name),
-                titleWidth = pageWidth * PAD_CAROUSEL_TITLE_WIDTH_FRACTION,
-                color = contentColor,
+    }
+}
+
+/** 轮播的文字: 标题 (或片名 logo)、评分与开播年月、三行简介. */
+@Composable
+private fun PadCarouselText(item: TrendingSubjectInfo, pageWidth: Dp) {
+    val media by rememberPadHeroMedia(item.bangumiId)
+    val info = media.info?.subjectInfo
+    val contentColor = MaterialTheme.colorScheme.onSurface
+    Column(Modifier.fillMaxWidth()) {
+        PadHeroTitle(
+            title = info?.displayName ?: item.nameCn,
+            logo = rememberPadTitleLogo(item.bangumiId, info?.name),
+            titleWidth = pageWidth * PAD_CAROUSEL_TITLE_WIDTH_FRACTION,
+            color = contentColor,
+        )
+        val score = info?.ratingInfo?.score?.takeIf { (it.toFloatOrNull() ?: 0f) > 0f }
+        val airDate = info?.airDate?.takeIf { it.isValid }
+        if (score != null || airDate != null) {
+            Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                if (score != null) {
+                    Text("★ $score", color = contentColor, style = MaterialTheme.typography.labelLarge)
+                }
+                if (airDate != null) {
+                    Text(
+                        stringResource(Lang.exploration_tv_air_date, airDate.year, airDate.month),
+                        color = contentColor.copy(alpha = PAD_CAROUSEL_SECONDARY_ALPHA),
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
+            }
+        }
+        // 简介原文的分段换行在三行里只会空出一行, 压成一段
+        val summary = info?.summary?.lineSequence()?.map { it.trim() }?.filter { it.isNotEmpty() }?.joinToString(" ").orEmpty()
+        if (summary.isNotEmpty()) {
+            Text(
+                summary,
+                Modifier.padding(top = 8.dp).fillMaxWidth(PAD_CAROUSEL_SUMMARY_WIDTH_FRACTION / PAD_CAROUSEL_TITLE_WIDTH_FRACTION),
+                color = contentColor.copy(alpha = PAD_CAROUSEL_SECONDARY_ALPHA),
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
             )
-            val score = info?.ratingInfo?.score?.takeIf { (it.toFloatOrNull() ?: 0f) > 0f }
-            val airDate = info?.airDate?.takeIf { it.isValid }
-            if (score != null || airDate != null) {
-                Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    if (score != null) {
-                        Text("★ $score", color = contentColor, style = MaterialTheme.typography.labelLarge)
-                    }
-                    if (airDate != null) {
-                        Text(
-                            stringResource(Lang.exploration_tv_air_date, airDate.year, airDate.month),
-                            color = contentColor.copy(alpha = PAD_CAROUSEL_SECONDARY_ALPHA),
-                            style = MaterialTheme.typography.labelLarge,
-                        )
-                    }
-                }
-            }
-            // 简介原文的分段换行在三行里只会空出一行, 压成一段
-            val summary = info?.summary?.lineSequence()?.map { it.trim() }?.filter { it.isNotEmpty() }?.joinToString(" ").orEmpty()
-            if (summary.isNotEmpty()) {
-                Text(
-                    summary,
-                    Modifier.padding(top = 8.dp).fillMaxWidth(PAD_CAROUSEL_SUMMARY_WIDTH_FRACTION / PAD_CAROUSEL_TITLE_WIDTH_FRACTION),
-                    color = contentColor.copy(alpha = PAD_CAROUSEL_SECONDARY_ALPHA),
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(
-                    onClick = onOpen,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = contentColor,
-                        contentColor = MaterialTheme.colorScheme.surface,
-                    ),
-                ) {
-                    Text(stringResource(Lang.exploration_tv_watch_now), fontWeight = FontWeight.SemiBold)
-                }
-                FilledTonalButton(
-                    onClick = onSchedule,
-                    colors = ButtonDefaults.filledTonalButtonColors(
-                        containerColor = contentColor.copy(alpha = PAD_CAROUSEL_SECONDARY_BUTTON_ALPHA),
-                        contentColor = contentColor,
-                    ),
-                ) {
-                    Text(stringResource(Lang.exploration_schedule), fontWeight = FontWeight.SemiBold)
-                }
-            }
         }
     }
 }
@@ -507,8 +538,15 @@ private const val PAD_CAROUSEL_SUMMARY_WIDTH_FRACTION = 0.40f
 private const val PAD_CAROUSEL_SECONDARY_ALPHA = 0.75f
 private const val PAD_CAROUSEL_SECONDARY_BUTTON_ALPHA = 0.16f
 private const val PAD_CAROUSEL_DOT_INACTIVE_ALPHA = 0.4f
-private val PAD_CAROUSEL_TEXT_BOTTOM = 44.dp
+/** 圆点、按钮、文字块的下沿离轮播底边多远: 自下而上圆点 → 按钮 (高 40) → 文字, 文字块往上长, 按钮的位置不随文字长短变. */
 private val PAD_CAROUSEL_DOTS_BOTTOM = 18.dp
+private val PAD_CAROUSEL_BUTTONS_BOTTOM = 40.dp
+private val PAD_CAROUSEL_TEXT_BOTTOM = 96.dp
+
+/** 换一部时文字的过渡: 旧的淡出、新的随后淡入 (都是线性), 新的从翻页方向挪进来宽度的几分之一. */
+private const val PAD_CAROUSEL_TEXT_OUT_MILLIS = 150
+private const val PAD_CAROUSEL_TEXT_IN_MILLIS = 300
+private const val PAD_CAROUSEL_TEXT_SHIFT_DIVISOR = 12
 
 /** 横版图左缘羽化的起止 (占图宽), 下缘从这个高度起淡到透明; 同电视版 hero 图的羽化. */
 private const val PAD_HERO_LEFT_FADE_START = 0.02f
