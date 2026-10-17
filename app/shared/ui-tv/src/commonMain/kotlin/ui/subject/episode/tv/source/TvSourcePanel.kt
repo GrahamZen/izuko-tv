@@ -125,6 +125,7 @@ import me.him188.ani.app.ui.lang.tv_source_excluded_toast
 import me.him188.ani.app.ui.lang.tv_source_failed
 import me.him188.ani.app.ui.lang.tv_source_failed_state
 import me.him188.ani.app.ui.lang.tv_source_hide_excluded
+import me.him188.ani.app.ui.lang.tv_source_hidden_by_filter
 import me.him188.ani.app.ui.lang.tv_source_hide_others
 import me.him188.ani.app.ui.lang.tv_source_keywords
 import me.him188.ani.app.ui.lang.tv_source_kind_bt
@@ -471,6 +472,7 @@ private val TV_SOURCE_STRING_RESOURCES: List<StringResource> = listOf(
     Lang.tv_source_all,
     Lang.tv_source_show_excluded,
     Lang.tv_source_hide_excluded,
+    Lang.tv_source_hidden_by_filter,
     Lang.tv_source_sources_count,
     Lang.subject_episode_cached,
     Lang.tv_source_pack,
@@ -582,6 +584,7 @@ fun rememberTvSourceStrings(): TvSourceStrings {
             all = next(),
             showExcluded = next(),
             hideExcluded = next(),
+            hiddenByFilter = next(),
             sourcesCount = next(),
             cached = next(),
             pack = next(),

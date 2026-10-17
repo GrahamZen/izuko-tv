@@ -457,6 +457,7 @@
     <string name="tv_source_all">全部</string>
     <string name="tv_source_show_excluded">顯示已排除的 %1$d 條</string>
     <string name="tv_source_hide_excluded">收起已排除的 %1$d 條</string>
+    <string name="tv_source_hidden_by_filter">被篩選隱藏 %1$d 條</string>
     <string name="tv_source_sources_count">%1$d 個來源</string>
     <string name="tv_source_pack">合集</string>
     <string name="tv_source_bt_loading">正在查詢 BT 資源…</string>
