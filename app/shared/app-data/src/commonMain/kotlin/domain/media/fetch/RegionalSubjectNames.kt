@@ -9,10 +9,12 @@
 
 package me.him188.ani.app.domain.media.fetch
 
+import me.him188.ani.app.data.models.subject.SplitSeason
 import me.him188.ani.app.data.models.subject.SubjectInfo
 import me.him188.ani.app.data.models.subject.SubjectSeriesInfo
 import me.him188.ani.app.data.network.TmdbSubjectMapEntry
 import me.him188.ani.app.data.network.TmdbSubjectMapRepository
+import me.him188.ani.app.domain.mediasource.MediaListFilters
 import me.him188.ani.app.domain.mediasource.toSimplifiedChinese
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import org.koin.core.component.KoinComponent
@@ -62,9 +64,12 @@ internal suspend fun KoinComponent.withRegionalSeriesNames(seriesInfo: SubjectSe
 internal class RegionalSeriesNames(val series: Set<String>, val sequels: Set<String>)
 
 /**
- * 系列里别的季的港台名字, 与 [regionalSubjectAliases] 一一对应: 别的季的 Bangumi 名字带季号就是译名补上那个季号,
- * 不带季号的 (第一季、改了名的续作) 是译名本身 —— 本条目自己就用译名本身作别名时 (第一季) 不算.
- * 同样给出简体形式. 只对剧集: 电影的译名只是它自己的.
+ * 系列里别的季的港台名字, 与 [regionalSubjectAliases] 一一对应: 别的季的 Bangumi 名字带季号就是译名补上那个季号
+ * (「Season 4」「S4」这类写法也认, 补成「第四季」), 完全不带季号的 (第一季、改了名的续作) 是译名本身 ——
+ * 本条目自己就用译名本身作别名时 (第一季) 不算. 同样给出简体形式. 只对剧集: 电影的译名只是它自己的.
+ *
+ * 续集的名字被本条目的名字 (含港台别名) 包含时不算: 选择器对拿不到条目名的 BT 资源按「标题含续集名」排除,
+ * 光译名 (「碧藍之海」) 是本季每条资源的标题里都有的, 会把本季的资源全当成续集. 与 [SubjectSeriesInfo.compute] 对 Bangumi 续集名的处理相同.
  */
 internal fun regionalSeriesNames(entry: TmdbSubjectMapEntry, subjectNames: List<String>, seriesInfo: SubjectSeriesInfo): RegionalSeriesNames {
     if (entry.backdrop?.type != TYPE_TV) return RegionalSeriesNames(emptySet(), emptySet())
@@ -73,13 +78,28 @@ internal fun regionalSeriesNames(entry: TmdbSubjectMapEntry, subjectNames: List<
         for (regional in orderedRegionalNames(entry)) {
             if (SEASON_MARKER.containsMatchIn(regional)) continue
             for (name in names) {
-                val marker = SEASON_MARKER.find(name)?.value
-                add(if (marker != null) "$regional $marker" else regional)
+                val numbers = SplitSeason.seasonNumbersOf(name)
+                val marker = SEASON_MARKER.find(name)?.value ?: numbers.singleOrNull()?.let(::chineseSeasonMarker)
+                when {
+                    marker != null -> add("$regional $marker")
+                    numbers.isEmpty() -> add(regional)
+                    // 写了几个季号, 分不清是哪一季: 不加, 光译名会把每一季都算进来
+                }
             }
         }
     }.flatMapTo(HashSet()) { listOf(it, it.toSimplifiedChinese()) }.filterTo(HashSet()) { it !in own }
-    return RegionalSeriesNames(derive(seriesInfo.seriesSubjectNamesWithoutSelf), derive(seriesInfo.sequelSubjectNames))
+    val ownNames = (subjectNames + own).flatMapTo(HashSet()) { listOf(it, it.toSimplifiedChinese()) }
+    val sequels = derive(seriesInfo.sequelSubjectNames).filterTo(HashSet()) { sequel ->
+        ownNames.none { MediaListFilters.specialContains(it, sequel) }
+    }
+    return RegionalSeriesNames(derive(seriesInfo.seriesSubjectNamesWithoutSelf), sequels)
 }
+
+/** 「第N季」, 十以内用汉字 (港台站点多这样写). */
+private fun chineseSeasonMarker(season: Int): String =
+    "第${CHINESE_NUMBERS.getOrNull(season - 1) ?: season.toString()}季"
+
+private val CHINESE_NUMBERS = listOf("一", "二", "三", "四", "五", "六", "七", "八", "九", "十")
 
 private suspend fun KoinComponent.lookupMapEntry(subjectId: Int): TmdbSubjectMapEntry? {
     if (subjectId <= 0) return null
