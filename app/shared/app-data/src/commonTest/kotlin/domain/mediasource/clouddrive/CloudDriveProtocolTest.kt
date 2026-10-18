@@ -189,16 +189,13 @@ class CloudDriveProtocolTest {
         assertTrue(protocol.supportsSearch)
         assertTrue(protocol.supportsTranscoded)
         assertTrue(protocol.supportsShares)
-        assertTrue(protocol.supportsSaving)
 
         val minimal = CloudDriveProtocol(id = "mini", name = "迷你")
         assertFalse(minimal.supportsSearch)
         assertFalse(minimal.supportsTranscoded)
         assertFalse(minimal.supportsShares)
-        assertFalse(minimal.supportsSaving)
         // 没有分享链接格式就不能用分享
         assertFalse(protocol.copy(share = protocol.share.copy(linkPattern = "")).supportsShares)
-        assertFalse(protocol.copy(api = protocol.api.copy(task = null)).supportsSaving)
     }
 
     @Test

@@ -1663,7 +1663,6 @@ private fun part15() = listOf(
     RemoteText("网页抓取", "Web scraper", "網頁抓取", "網頁抓取"),
     RemoteText("规则源", "Rule source", "規則源", "規則源"),
     RemoteText("直链 API", "Direct-link API", "直鏈 API", "直鏈 API"),
-    RemoteText("苹果 CMS", "MacCMS", "蘋果 CMS", "蘋果 CMS"),
     RemoteText("本地添加", "Added locally", "本地添加", "本地新增"),
     RemoteText("未设置（按 T{0} 处理）", "Not set (treated as T{0})", "未設置（按 T{0} 處理）", "未設定（按 T{0} 處理）"),
     RemoteText("T{0}（最优先）", "T{0} (highest priority)", "T{0}（最優先）", "T{0}（最優先）"),

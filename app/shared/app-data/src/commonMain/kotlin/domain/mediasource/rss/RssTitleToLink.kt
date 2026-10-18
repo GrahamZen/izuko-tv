@@ -9,7 +9,6 @@
 
 package me.him188.ani.app.domain.mediasource.rss
 
-import io.ktor.http.encodeURLParameter
 import kotlinx.datetime.DatePeriod
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
@@ -17,6 +16,8 @@ import kotlinx.datetime.daysUntil
 import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.Serializable
+import me.him188.ani.app.domain.mediasource.TextTemplate
+import me.him188.ani.app.domain.mediasource.web.namedGroupNames
 import me.him188.ani.app.domain.rss.RssEnclosure
 import me.him188.ani.app.domain.rss.RssItem
 import me.him188.ani.datasources.api.EpisodeSort
@@ -29,8 +30,8 @@ import kotlin.time.Instant
  * 把 RSS 条目的标题改写成视频直链 ([RssSearchConfig.titleToLink]).
  *
  * 用于「种子站上有发布标题、视频在另一个文件站上按标题存放」的情况: 文件站的地址哪里都不直接给, 但能从标题算出来.
- * 例如 ANi 的种子标题 `[ANi] Sousou no Frieren S02 /  葬送的芙莉蓮 第二季 - 38 [1080P][Baha][WEB-DL][AAC AVC][CHT][MP4]`,
- * 文件在 `resources.ani.rip/2026-1/[ANi] 葬送的芙莉蓮 第二季 - 38 [1080P][Baha][WEB-DL][AAC AVC][CHT]?d=mp4`.
+ * 例如种子标题 `[某发布组] Sousou no Frieren S02 /  葬送的芙莉蓮 第二季 - 38 [1080P][WEB-DL][CHT][MP4]`,
+ * 文件在 `files.example.com/2026-1/[某发布组] 葬送的芙莉蓮 第二季 - 38 [1080P][WEB-DL][CHT]?d=mp4`.
  *
  * - [pattern] 整个匹配标题 (前后空白不算), 匹配不上的条目丢掉; 它的命名分组 `(?<名字>…)` 在 [url] 与 [title] 里用 `{名字}` 取.
  * - 季度变量: 文件站常按番开播的季度分目录. `{seasonYear}` / `{seasonMonth}` (1、4、7、10) / `{seasonMonth2}` (01、04、07、10)
@@ -74,7 +75,7 @@ fun RssTitleToLink.rewrite(
     now: Instant = Clock.System.now(),
 ): List<RssItem> {
     val regex = runCatching { Regex(pattern) }.getOrNull() ?: return emptyList()
-    val groupNames = GROUP_NAME.findAll(pattern).map { it.groupValues[1] }.toList()
+    val groupNames = namedGroupNames(pattern)
     val usesSeason = SEASON_VARIABLES.any { "{$it" in url || "{$it" in title }
 
     val matched = items.mapNotNull { item ->
@@ -110,9 +111,9 @@ fun RssTitleToLink.rewrite(
             }
         }
         item.copy(
-            title = if (title.isBlank()) item.title else expand(title, variables, encode = false),
+            title = if (title.isBlank()) item.title else TextTemplate.expand(title, variables) { false },
             enclosure = RssEnclosure(
-                url = expand(url, variables, encode = true),
+                url = TextTemplate.expand(url, variables) { true },
                 length = item.enclosure?.length ?: 0,
                 type = mimeType,
             ),
@@ -137,16 +138,6 @@ internal fun seasonOf(date: LocalDate, roundUpDays: Int): AnimeSeason {
     return AnimeSeason(start.year, start.month.ordinal + 1)
 }
 
-/** 展开 `{名字}` / `{名字:raw}`; 没有这个变量的原样留着. */
-private fun expand(template: String, variables: Map<String, String>, encode: Boolean): String =
-    VARIABLE.replace(template) { match ->
-        val value = variables[match.groupValues[1]] ?: return@replace match.value
-        if (encode && match.groupValues[2] != "raw") value.encodeURLParameter() else value
-    }
-
-private val GROUP_NAME = Regex("""\(\?<([A-Za-z][A-Za-z0-9]*)>""")
-// 安卓的正则 (ICU) 不认没转义的 `}`
-private val VARIABLE = Regex("""\{([A-Za-z][A-Za-z0-9]*)(?::(raw|url))?\}""")
 private val SEASON_VARIABLES = listOf("seasonYear", "seasonMonth")
 
 /** 比条目开播早这么多天以上发布的条目, 算更早的一季. */
