@@ -112,7 +112,7 @@ internal fun TvSearchNativeGrid(
         source = null,
         fadeColor = fadeColor,
         treatment = remember(fadeColor) {
-            tvPageBackdropTreatment(1f, topScrim = true, fadeColor = fadeColor, geometry = TV_CARD_HERO_BACKDROP_GEOMETRY)
+            tvPageBackdropTreatment(1f, topScrim = false, fadeColor = fadeColor, geometry = TV_CARD_HERO_BACKDROP_GEOMETRY)
         },
         gridFocus = gridFocus,
         farJump = farJump,
