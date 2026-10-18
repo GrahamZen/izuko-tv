@@ -62,6 +62,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
@@ -88,6 +89,9 @@ import me.him188.ani.app.ui.exploration.schedule.ScheduleDay
 import me.him188.ani.app.ui.exploration.schedule.ScheduleItemDefaults
 import me.him188.ani.app.ui.exploration.schedule.SchedulePagePresentation
 import me.him188.ani.app.ui.exploration.schedule.tvTitle
+import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
+import me.him188.ani.app.ui.foundation.tv.tvPosterWallGrid
+import me.him188.ani.app.ui.foundation.tv.TvPosterWallScaled
 import me.him188.ani.app.ui.foundation.TvPageRefreshHandler
 import me.him188.ani.app.ui.foundation.consumeHeldConfirmKey
 import me.him188.ani.app.ui.foundation.focus.TvFocusKey
@@ -141,8 +145,6 @@ import me.him188.ani.app.ui.foundation.tv.tvHeroContentColor
 import me.him188.ani.app.ui.foundation.tv.tvPageBackdropTreatment
 import me.him188.ani.app.ui.foundation.tv.tvPlayKeyShortPress
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallBackground
-import me.him188.ani.app.ui.foundation.tv.tvPosterWallCardWidth
-import me.him188.ani.app.ui.foundation.tv.tvPosterWallColumns
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallEndMargin
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallLabelHeight
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
@@ -173,6 +175,7 @@ import me.him188.ani.utils.analytics.AnalyticsEvent.Companion.SubjectEnter
 import me.him188.ani.utils.analytics.recordEvent
 import org.jetbrains.compose.resources.stringResource
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
@@ -574,37 +577,61 @@ fun TvScheduleGridPage(
         }
     }
     val density = LocalDensity.current
-    val badgeIcon = rememberTvNativeIcon(Icons.Rounded.Favorite, TV_SCHEDULE_BADGE_ICON_SIZE, tvHeroContentColor())
+    // 海报墙大小 (同探索 / 追番 / 搜索): 卡片 (封面、番名、间距、角标) 按它缩放, 日期行与两侧留白不变 (见 TvPosterWallScaled)
+    val wallScale = LocalThemeSettings.current.effectivePosterWallScale
+    val cardDensity = remember(density, wallScale) { Density(density.density * wallScale, density.fontScale) }
+    val badgeIcon = rememberTvNativeIcon(Icons.Rounded.Favorite, TV_SCHEDULE_BADGE_ICON_SIZE * wallScale, tvHeroContentColor())
     val badgeBackground = MaterialTheme.colorScheme.surface.copy(alpha = TV_SCHEDULE_BADGE_BACKGROUND_ALPHA).toArgb()
-    val badge = remember(badgeIcon, badgeBackground, density) {
-        with(density) {
+    val badge = remember(badgeIcon, badgeBackground, cardDensity) {
+        with(cardDensity) {
             TvNativeCardBadgeStyle(badgeIcon, TV_SCHEDULE_BADGE_SIZE.toPx(), TV_SCHEDULE_BADGE_INSET.toPx(), badgeBackground)
         }
     }
 
     // ---- 几何: 整屏是本页 (没有侧边栏), 照 tvOS 网格 (HIG Layout): 左右安全区 80pt、列距 40pt, 6 列时封面 260pt (1080p 下 40dp / 20dp / 130dp),
     // 顶上的日期行不影响横向排版. 列数的规则同追番页 (tvPosterWallColumns). 这几个量的都是封面: 卡格四周另有聚焦框空隙 (TvFocusRing.Gap),
-    // 所以卡格比封面宽两份空隙、格距比列距窄两份空隙、网格起点往外让一份空隙 ----
+    // 所以卡格比封面宽两份空隙、格距比列距窄两份空隙、网格起点往外让一份空隙. 封面最小宽、列距与聚焦框空隙都乘海报墙大小 (见 tvPosterWallGrid) ----
     val windowSize = LocalWindowInfo.current.containerSize
     val pageWidth = with(density) { if (windowSize.width > 0) windowSize.width.toDp() else 960.dp }
     val pageHeight = with(density) { if (windowSize.height > 0) windowSize.height.toDp() else 540.dp }
     val coverContentWidth = pageWidth - TV_SCHEDULE_SIDE_PAD * 2
-    val columns = with(density) { tvPosterWallColumns(coverContentWidth) }
-    val coverWidth = tvPosterWallCardWidth(coverContentWidth, columns)
-    val cardWidth = coverWidth + TvFocusRing.Gap * 2
-    // 卡格高: 首屏上两行卡块加一个行距正好铺满网格顶线以下, 第二行番名的第二行底边落在屏幕底、整个露出来 (露出下一行, 但不把一行字切成两半).
-    // 番名块定高随系统字号, 现算; 封面宽高比夹在 [TV_SCHEDULE_COVER_RATIO_NARROWEST] 与 [TV_SCHEDULE_COVER_RATIO_WIDEST] 之间 (界面缩放调小时
-    // 页面变高, 不让封面拉得太长; 调大时放不下两行就照这个上限)
+    val wallGrid = with(density) { tvPosterWallGrid(coverContentWidth, wallScale) }
+    val columns = wallGrid.columns
+    val coverWidth = wallGrid.cardWidth
+    val cardGap = TvFocusRing.Gap * wallScale
+    val cardWidth = coverWidth + cardGap * 2
+    // 卡格高: 首屏上整数行卡块正好铺满网格顶线以下, 末行番名的第二行底边落在屏幕底、整个露出来 (露出下一行, 但不把一行字切成两半); 行数见
+    // tvScheduleCoverHeightPx. 番名块定高随系统字号, 现算
     val labelHeight = tvPosterWallLabelHeight()
     val cardHeight = with(density) {
         val gridTopPx = (TV_SCHEDULE_TOP_PAD + TV_SCHEDULE_DATE_RAIL_HEIGHT + TV_SCHEDULE_DATES_TO_GRID_GAP).roundToPx()
-        val fitPx = (pageHeight.roundToPx() - gridTopPx - TV_POSTER_WALL_ROW_SPACING.roundToPx()) / 2 - labelHeight.roundToPx()
-        val gapPx = (TvFocusRing.Gap * 2).roundToPx()
-        val coverPx = coverWidth.toPx()
-        fitPx.coerceIn(
-            (coverPx / TV_SCHEDULE_COVER_RATIO_WIDEST).roundToInt() + gapPx,
-            (coverPx / TV_SCHEDULE_COVER_RATIO_NARROWEST).roundToInt() + gapPx,
-        ).toDp()
+        val gridHeightPx = pageHeight.roundToPx() - gridTopPx
+        // 100% 时的封面宽高比: 调过海报墙大小时按它挑行数, 卡片缩小时封面形状不变、一屏排得更多行
+        val referenceRatio = if (wallScale == 1f) {
+            null
+        } else {
+            val coverPx = tvPosterWallGrid(coverContentWidth, 1f).cardWidth.toPx()
+            val coverHeightPx = tvScheduleCoverHeightPx(
+                gridHeightPx,
+                coverWidthPx = coverPx,
+                labelHeightPx = labelHeight.roundToPx(),
+                rowSpacingPx = TV_POSTER_WALL_ROW_SPACING.roundToPx(),
+                gapPx = (TvFocusRing.Gap * 2).roundToPx(),
+                referenceRatio = null,
+            )
+            coverPx / coverHeightPx
+        }
+        // 番名块、行距与聚焦框空隙按卡片样式里的换算 (见 rememberTvNativeWallStyle)
+        val gapPx = with(cardDensity) { (TvFocusRing.Gap * 2).roundToPx() }
+        val coverHeightPx = tvScheduleCoverHeightPx(
+            gridHeightPx,
+            coverWidthPx = coverWidth.toPx(),
+            labelHeightPx = with(cardDensity) { labelHeight.roundToPx() },
+            rowSpacingPx = with(cardDensity) { TV_POSTER_WALL_ROW_SPACING.roundToPx() },
+            gapPx = gapPx,
+            referenceRatio = referenceRatio,
+        )
+        (coverHeightPx + gapPx).toDp()
     }
     // 错误横幅的高度 (含上间距): 海报墙的顶线跟着它往下让
     var errorCardHeightPx by remember { mutableIntStateOf(0) }
@@ -616,8 +643,8 @@ fun TvScheduleGridPage(
                 if (presentation.error != null) errorCardHeightPx else 0,
             grid = TvNativeGridMetrics(
                 columns = columns,
-                startPx = (TV_SCHEDULE_SIDE_PAD - TvFocusRing.Gap).roundToPx(),
-                endPx = (TV_SCHEDULE_SIDE_PAD - TvFocusRing.Gap).roundToPx(),
+                startPx = (TV_SCHEDULE_SIDE_PAD - cardGap).roundToPx(),
+                endPx = (TV_SCHEDULE_SIDE_PAD - cardGap).roundToPx(),
                 topBleedPx = TV_GRID_TOP_BLEED.roundToPx(),
                 bottomBleedPx = TV_POSTER_WALL_BOTTOM_BLEED.roundToPx(),
                 endMarginPx = tvPosterWallEndMargin(cardHeight, TV_POSTER_WALL_CARD_FOCUS_STYLE.focusScale).roundToPx(),
@@ -649,84 +676,87 @@ fun TvScheduleGridPage(
             .tvFocusNavSignal(focus)
             .then(playKeyModifier),
     ) {
-        TvNativeGridPageHost(
-            state = nativeState,
-            metrics = metrics,
-            cardWidth = cardWidth,
-            gridKey = displayedDayIndex,
-            slideDirection = { from, to -> if (to > from) 1 else -1 },
-            items = dayItems,
-            cards = cards,
-            focusableCount = { if (presentation.isPlaceholder) 0 else dayItems.size },
-            heroEnabled = false,
-            badge = badge,
-            fadeColor = background,
-            treatment = remember(background) {
-                tvPageBackdropTreatment(1f, topScrim = true, fadeColor = background, geometry = TV_CARD_HERO_BACKDROP_GEOMETRY)
-            },
-            gridFocus = gridFocus,
-            farJump = { wallFarJump },
-            onFarJumpConsumed = { wallFarJump = false },
-            callbacks = TvNativeGridPageCallbacks(
-                onCardFocused = { index, item ->
-                    lastFocusedCard = index
-                    anyFocusObtained = true
-                    if (item != null) {
-                        focusedBackdrop = TvScheduleBackdropFocus(item.subjectId, item.imageUrl)
-                        focusedTarget = TvHeroMediaSpec(
-                            item.subjectId,
-                            coverUrl = "",
-                            neighbors = tvGridNeighborsOf(index, columns) { i ->
-                                dayItems.getOrNull(i)?.let { TvHeroNeighbor(it.subjectId) }
-                            },
+        // 卡片样式与原生网格按海报墙大小建 (见 rememberTvNativeWallStyle; 改了整个重建)
+        TvPosterWallScaled(wallScale) {
+            TvNativeGridPageHost(
+                state = nativeState,
+                metrics = metrics,
+                cardWidth = cardWidth,
+                gridKey = displayedDayIndex,
+                slideDirection = { from, to -> if (to > from) 1 else -1 },
+                items = dayItems,
+                cards = cards,
+                focusableCount = { if (presentation.isPlaceholder) 0 else dayItems.size },
+                heroEnabled = false,
+                badge = badge,
+                fadeColor = background,
+                treatment = remember(background) {
+                    tvPageBackdropTreatment(1f, topScrim = true, fadeColor = background, geometry = TV_CARD_HERO_BACKDROP_GEOMETRY)
+                },
+                gridFocus = gridFocus,
+                farJump = { wallFarJump },
+                onFarJumpConsumed = { wallFarJump = false },
+                callbacks = TvNativeGridPageCallbacks(
+                    onCardFocused = { index, item ->
+                        lastFocusedCard = index
+                        anyFocusObtained = true
+                        if (item != null) {
+                            focusedBackdrop = TvScheduleBackdropFocus(item.subjectId, item.imageUrl)
+                            focusedTarget = TvHeroMediaSpec(
+                                item.subjectId,
+                                coverUrl = "",
+                                neighbors = tvGridNeighborsOf(index, columns) { i ->
+                                    dayItems.getOrNull(i)?.let { TvHeroNeighbor(it.subjectId) }
+                                },
+                            )
+                        }
+                    },
+                    onCardClick = { _, item -> navigateToSubject(item) },
+                    onCardPlay = { _, item -> navigateToPlay(item) },
+                    onTopRowUp = {
+                        focusSelectedDate()
+                        true
+                    },
+                    onRowEdge = { direction, row ->
+                        // 时间是一条线: 行末按右接下一行行首, 行首按左接上一行行末, 走到全天两端再跨天. 已是第一天 / 最后一天也吃掉这一下
+                        val count = dayItems.size
+                        if (direction > 0) {
+                            if (row < (count - 1) / columns) nativeState.view?.focusItem((row + 1) * columns)
+                            else switchDay(1, false)
+                        } else {
+                            if (row > 0) nativeState.view?.focusItem(row * columns - 1)
+                            else switchDay(-1, true)
+                        }
+                        true
+                    },
+                    // 触屏左右滑换天 (左滑后一天), 落到那天的首卡
+                    onSwipe = { delta -> switchDay(delta, false) },
+                    onGridFocusChanged = { gridHasFocus = it },
+                    onScrollingChanged = {},
+                ),
+                menuFor = collectionMenuFor,
+                wallBackdrop = wallBackdrop,
+                // 返回本页恢复的那张 (见上方进页恢复): 建网格时就按住聚焦态
+                landingIndex = restoreCardIndex,
+                // 日期行 (连同错误横幅) 跟着海报墙一起滚走, 整块滚出屏幕为止
+                topBarScrollAwayPx = metrics.gridTopPx,
+                columnSpacing = TV_POSTER_WALL_COLUMN_SPACING - TvFocusRing.Gap * 2,
+                cardHeight = cardHeight,
+                // 番名压在整屏模糊背景上: 照 tvOS 的 vibrancy 画
+                labelVibrancy = true,
+            ) {
+                // 空态: 这一天确实没有新番 (占位 / 出错各有自己的表现)
+                if (cards.isEmpty() && !presentation.isPlaceholder && presentation.error == null) {
+                    Box(
+                        Modifier.fillMaxSize().padding(top = with(density) { metrics.gridTopPx.toDp() }),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            stringResource(Lang.exploration_tv_schedule_empty),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyLarge,
                         )
                     }
-                },
-                onCardClick = { _, item -> navigateToSubject(item) },
-                onCardPlay = { _, item -> navigateToPlay(item) },
-                onTopRowUp = {
-                    focusSelectedDate()
-                    true
-                },
-                onRowEdge = { direction, row ->
-                    // 时间是一条线: 行末按右接下一行行首, 行首按左接上一行行末, 走到全天两端再跨天. 已是第一天 / 最后一天也吃掉这一下
-                    val count = dayItems.size
-                    if (direction > 0) {
-                        if (row < (count - 1) / columns) nativeState.view?.focusItem((row + 1) * columns)
-                        else switchDay(1, false)
-                    } else {
-                        if (row > 0) nativeState.view?.focusItem(row * columns - 1)
-                        else switchDay(-1, true)
-                    }
-                    true
-                },
-                // 触屏左右滑换天 (左滑后一天), 落到那天的首卡
-                onSwipe = { delta -> switchDay(delta, false) },
-                onGridFocusChanged = { gridHasFocus = it },
-                onScrollingChanged = {},
-            ),
-            menuFor = collectionMenuFor,
-            wallBackdrop = wallBackdrop,
-            // 返回本页恢复的那张 (见上方进页恢复): 建网格时就按住聚焦态
-            landingIndex = restoreCardIndex,
-            // 日期行 (连同错误横幅) 跟着海报墙一起滚走, 整块滚出屏幕为止
-            topBarScrollAwayPx = metrics.gridTopPx,
-            columnSpacing = TV_POSTER_WALL_COLUMN_SPACING - TvFocusRing.Gap * 2,
-            cardHeight = cardHeight,
-            // 番名压在整屏模糊背景上: 照 tvOS 的 vibrancy 画
-            labelVibrancy = true,
-        ) {
-            // 空态: 这一天确实没有新番 (占位 / 出错各有自己的表现)
-            if (cards.isEmpty() && !presentation.isPlaceholder && presentation.error == null) {
-                Box(
-                    Modifier.fillMaxSize().padding(top = with(density) { metrics.gridTopPx.toDp() }),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        stringResource(Lang.exploration_tv_schedule_empty),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
                 }
             }
         }
@@ -924,9 +954,38 @@ private val TV_SCHEDULE_FOLLOWED_TYPES = setOf(UnifiedCollectionType.DOING, Unif
  */
 private val TV_SCHEDULE_SIDE_PAD = 40.dp
 
-/** 封面宽高比的上下限 (卡格高按首屏放下两行现算, 见几何那一段): 最窄 2:3 (tvOS 海报), 最宽 3:4. */
+/** 封面宽高比的上下限 (卡格高按首屏放下整数行现算, 见 [tvScheduleCoverHeightPx]): 最窄 2:3 (tvOS 海报), 最宽 3:4. */
 private const val TV_SCHEDULE_COVER_RATIO_NARROWEST = 2f / 3f
 private const val TV_SCHEDULE_COVER_RATIO_WIDEST = 0.75f
+
+/** 首屏最多排几行卡 (海报墙大小调到最小时). */
+private const val TV_SCHEDULE_MAX_FIRST_SCREEN_ROWS = 8
+
+/**
+ * 时间表卡格里封面的高 (px, 不含聚焦框空隙 [gapPx]): 网格顶线以下 [gridHeightPx] 正好排下整数行卡块 (封面 + 空隙 + 番名块 [labelHeightPx],
+ * 行与行隔 [rowSpacingPx]). 行数: [referenceRatio] 为 null (海报墙大小 100%) 时两行; 否则挑封面宽高比最接近 [referenceRatio] (100% 时的比例)
+ * 的行数 —— 卡片缩小了一屏排得更多行, 封面形状不变. 宽高比夹在 [TV_SCHEDULE_COVER_RATIO_NARROWEST] 与 [TV_SCHEDULE_COVER_RATIO_WIDEST] 之间
+ * (界面缩放调小时页面变高, 不让封面拉得太长; 卡片大到放不下两行时照这个上限, 末行露不全).
+ */
+internal fun tvScheduleCoverHeightPx(
+    gridHeightPx: Int,
+    coverWidthPx: Float,
+    labelHeightPx: Int,
+    rowSpacingPx: Int,
+    gapPx: Int,
+    referenceRatio: Float?,
+): Int {
+    fun fit(rows: Int) = (gridHeightPx - rowSpacingPx * (rows - 1)) / rows - labelHeightPx - gapPx
+    val rows = if (referenceRatio == null) {
+        2
+    } else {
+        (2..TV_SCHEDULE_MAX_FIRST_SCREEN_ROWS).minBy { abs(coverWidthPx / fit(it).coerceAtLeast(1) - referenceRatio) }
+    }
+    return fit(rows).coerceIn(
+        (coverWidthPx / TV_SCHEDULE_COVER_RATIO_WIDEST).roundToInt(),
+        (coverWidthPx / TV_SCHEDULE_COVER_RATIO_NARROWEST).roundToInt(),
+    )
+}
 
 /** 页顶到日期行: 照 tvOS 标签栏, 顶边离屏幕顶 46pt (HIG Tab bars 的 tvOS 一节; 1080p 下 1pt = 0.5dp). */
 private val TV_SCHEDULE_TOP_PAD = 23.dp
