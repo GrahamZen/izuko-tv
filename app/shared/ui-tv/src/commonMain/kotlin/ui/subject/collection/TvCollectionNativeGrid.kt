@@ -236,8 +236,8 @@ private fun TvCollectionNativeSource(
     )
     // NSFW 设为模糊时背景打码 (见 withNsfw)
     val shown = source.withNsfw(rememberNsfwPolicy())
-    val view = state.view
-    SideEffect { view?.setSource(shown) }
+    val surface = state.surface
+    SideEffect { surface?.setSource(shown) }
 }
 
 /**

@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.subject.collection
 
+import me.him188.ani.app.ui.settings.tv.formatTvTemplate
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import kotlinx.datetime.LocalDate
@@ -71,7 +72,7 @@ internal data class TvProgressStrings(
     }
 
     /** 组标题: 组名 + 几部. */
-    fun headerOf(section: TvProgressSection): String = header.format(groupTitle(section.group), section.entries.size)
+    fun headerOf(section: TvProgressSection): String = header.fill(groupTitle(section.group), section.entries.size)
 }
 
 @Composable
@@ -108,15 +109,15 @@ internal fun TvProgressEntry.cardSubtitle(
     return when (group) {
         TvProgressGroup.NewEpisodes, TvProgressGroup.WishAired -> when {
             airedCount < 0 -> strings.wishStarted
-            nextSort == null -> strings.completed.format(latestSort?.compact().orEmpty())
+            nextSort == null -> strings.completed.fill(latestSort?.compact().orEmpty())
             next == null -> strings.nextUnknown
             else -> {
                 val day = dayLabel(next.date(timeZone))
                 when {
-                    nextIsFinal && next.exact -> strings.finaleAt.format(day, next.clock(timeZone))
-                    nextIsFinal -> strings.finaleDay.format(day)
-                    next.exact -> strings.updatesAt.format(day, next.clock(timeZone))
-                    else -> strings.updatesDay.format(day)
+                    nextIsFinal && next.exact -> strings.finaleAt.fill(day, next.clock(timeZone))
+                    nextIsFinal -> strings.finaleDay.fill(day)
+                    next.exact -> strings.updatesAt.fill(day, next.clock(timeZone))
+                    else -> strings.updatesDay.fill(day)
                 }
             }
         }
@@ -125,19 +126,19 @@ internal fun TvProgressEntry.cardSubtitle(
             strings.nextUnknown
         } else {
             val time = if (next.exact) next.clock(timeZone) else dayLabel(today)
-            strings.next.format(time, nextSort?.compact().orEmpty())
+            strings.next.fill(time, nextSort?.compact().orEmpty())
         }
 
         TvProgressGroup.ThisWeek, TvProgressGroup.CaughtUp -> if (next == null) {
             strings.nextUnknown
         } else {
-            strings.next.format(next.dayAndClock(timeZone, dayLabel), nextSort?.compact().orEmpty())
+            strings.next.fill(next.dayAndClock(timeZone, dayLabel), nextSort?.compact().orEmpty())
         }
 
         TvProgressGroup.Upcoming -> if (next == null) {
             strings.nextUnknown
         } else {
-            strings.premiere.format(next.dayAndClock(timeZone, dayLabel))
+            strings.premiere.fill(next.dayAndClock(timeZone, dayLabel))
         }
     }
 }
@@ -162,3 +163,6 @@ private fun EpisodeSort.compact(): String {
     val n = number ?: return toString()
     return if (n == n.toInt().toFloat()) n.toInt().toString() else n.toString()
 }
+
+/** 按位置填参数 (`%1$s` / `%2$d`), 同 Compose 资源的格式. */
+private fun String.fill(vararg args: Any): String = formatTvTemplate(this, args.map { it.toString() })

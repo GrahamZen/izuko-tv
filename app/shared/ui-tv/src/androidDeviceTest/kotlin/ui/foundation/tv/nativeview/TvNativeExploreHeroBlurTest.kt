@@ -11,7 +11,7 @@ package me.him188.ani.app.ui.foundation.tv.nativeview
 
 import android.animation.ValueAnimator
 import android.graphics.Color
-import android.graphics.Rect
+import androidx.compose.ui.geometry.Rect
 import android.graphics.drawable.ColorDrawable
 import android.os.SystemClock
 import android.view.KeyEvent

@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.subject.collection
 
+import me.him188.ani.app.ui.foundation.tv.tvCollectionProgressAvailable
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
@@ -581,7 +582,7 @@ private fun TvCollectionPageContent(
     // 从网格的第 [row] 行换到「追更」: hero 态里按行号对 (同网格之间换标签; 各行都停在 hero 线上, 屏上高度对不出行), 卡片墙上按屏上高度就近
     // —— 先量出发那张 (换过去之后网格就滑走了). [fromLeft] = 「追更」在右边 (行末按右过去): 落那一行屏上最左边那张, 否则最右边那张
     fun enterProgressFromGrid(row: Int, fromLeft: Boolean = false) {
-        val view = nativeState.view
+        val view = nativeState.surface
         val hero = view?.heroActive == true
         val y = if (hero) null else view?.focusedCardCenterYInWindow()
         tabs.select(null, fromRail = false)
@@ -613,7 +614,7 @@ private fun TvCollectionPageContent(
                     var found: Int? = null
                     while (found == null) {
                         withFrameNanos {}
-                        val view = nativeState.view
+                        val view = nativeState.surface
                         if (!progressSelected && view != null && view.currentKey == COLLECTION_TABS_SORTED.indexOf(enter.type)) {
                             found = view.rowNearestWindowY(y)
                         }
@@ -739,7 +740,7 @@ private fun TvCollectionPageContent(
     }
     BackHandler(enabled = !navLocked && backToFirstCard) {
         // 回首卡还在滚又按了返回 (多半是嫌慢): 当场落到首卡, 同途中按方向键
-        if (nativeState.view?.landFarJump() == true) return@BackHandler
+        if (nativeState.surface?.landFarJump() == true) return@BackHandler
         wallFarJump = true
         gridFocus.focusItem(0)
     }
@@ -795,7 +796,7 @@ private fun TvCollectionPageContent(
     // 动作面板里的「海报墙大小」: 盖在本页上开编辑窗口. 值变了原生网格按新尺寸重建 (TvNativeHost 的 rebuildKey), 打开前焦点在网格上的话回到那张卡
     val wallRefocusPending = TvWallScaleEntry(
         page = TvPosterWallPreviewPage.COLLECTION,
-        wallHasFocus = { if (progressSelected) progressPane.cardsFocused else nativeState.view?.hasFocus() == true },
+        wallHasFocus = { if (progressSelected) progressPane.cardsFocused else nativeState.surface?.hasFocus() == true },
         beforeOpen = { if (progressSelected) progressPane.capture() else nativeState.capture() },
         refocus = { if (progressSelected) focusProgress() else gridFocus.focusItem(lastFocusedCard.coerceAtLeast(0)) },
     )
@@ -1056,7 +1057,7 @@ private fun TvCollectionPageContent(
                                     // 刚换上的那份下一帧才排出来: 按收藏计数判断, 计数没到当有 (送焦等数据, 空了由网格接线取消)
                                     tabs.selected?.let { state.collectionCounts?.getCount(it) } != 0
                                 } else {
-                                    nativeState.view?.firstIndexBelowTopLine() != null
+                                    nativeState.surface?.firstIndexBelowTopLine() != null
                                 }
                             },
                             onNoCards = { runCatching { errorCardFocusRequester.requestFocus() } },
@@ -1338,7 +1339,8 @@ internal fun rememberTvCollectionTabOrder(): List<UnifiedCollectionType> {
 internal fun rememberTvCollectionRailTabs(): List<UnifiedCollectionType?> {
     val tabOrder = rememberTvCollectionTabOrder()
     val progressIndex = LocalThemeSettings.current.tvCollectionProgressTabIndex
-    return remember(tabOrder, progressIndex) { tvCollectionRailTabs(tabOrder, progressIndex) }
+    // 没有「追更」的端 (见 tvCollectionProgressAvailable) 只列分类
+    return remember(tabOrder, progressIndex) { if (tvCollectionProgressAvailable) tvCollectionRailTabs(tabOrder, progressIndex) else tabOrder }
 }
 
 /** 分类 [tabOrder] 中间插上「追更」(null), 排第 [progressIndex] 个 (见 ThemeSettings.tvCollectionProgressTabIndex; 超出两头按排在两头). */

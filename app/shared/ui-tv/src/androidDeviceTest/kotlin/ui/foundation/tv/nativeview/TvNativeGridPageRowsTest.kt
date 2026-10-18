@@ -9,7 +9,7 @@
 
 package me.him188.ani.app.ui.foundation.tv.nativeview
 
-import android.graphics.Rect
+import androidx.compose.ui.geometry.Rect
 import android.view.KeyEvent
 import android.view.View
 import android.widget.FrameLayout

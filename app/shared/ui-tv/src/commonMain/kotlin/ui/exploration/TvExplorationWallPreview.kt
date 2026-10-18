@@ -9,7 +9,7 @@
 
 package me.him188.ani.app.ui.exploration
 
-import android.graphics.Rect as AndroidRect
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -114,8 +114,8 @@ internal fun TvExplorationWallPreview(
         val index = rowStart.getValue(key) + focusedCardIndex
         samples.heroSource(tvWallPreviewSubjectId(index), samples.titleAt(index), secondary, onSurface)
     } ?: carouselSource
-    val view = nativeState.view
-    SideEffect { view?.setSources(carouselSource, cardSource) }
+    val surface = nativeState.surface
+    SideEffect { surface?.setSources(carouselSource, cardSource) }
 
     // 整屏底色 (预览页根画, 见 TvPosterWallScalePage): 黑度与轮播分界线由原生视图逐帧写进来, 同真页面
     val wallTone = LocalTvPosterWallTone.current
@@ -132,7 +132,7 @@ internal fun TvExplorationWallPreview(
             // 预览: 不进详情页 (hero 态里的确认键在根上就吞了, 见下方)
             override fun onCardClick(rowKey: String, index: Int) = Unit
 
-            override fun onCardLongPress(rowKey: String, index: Int, anchor: AndroidRect) = Unit
+            override fun onCardLongPress(rowKey: String, index: Int, anchor: Rect) = Unit
 
             override fun onBindCard(rowKey: String, index: Int) = Unit
 

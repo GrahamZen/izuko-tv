@@ -9,7 +9,6 @@
 
 package me.him188.ani.app.ui.subject.details.layout
 
-import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
@@ -27,25 +26,20 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.IntSize
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import com.github.panpf.sketch.LocalPlatformContext
 import me.him188.ani.app.ui.foundation.LocalSketch
-import me.him188.ani.app.ui.foundation.TvNativeImages
 import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tv.TV_FULLSCREEN_BACKDROP_DIM_ALPHA
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvBackdropBlurSpec
 import me.him188.ani.app.ui.foundation.tv.nativeview.tvBackdropBlurSpec
 import me.him188.ani.app.ui.foundation.tv.nativeview.tvBackdropMaskAlpha
-import me.him188.ani.app.ui.foundation.tv.nativeview.tvBackdropMeasurePixels
-import me.him188.ani.app.ui.foundation.tv.nativeview.tvBackdropWorstLuminance
+import me.him188.ani.app.ui.foundation.tv.nativeview.tvFetchBlurredBackdrop
 import me.him188.ani.app.ui.foundation.tv.nativeview.tvRelativeLuminance
 
 /**
@@ -66,7 +60,7 @@ internal fun TvDetailsBlurredBackdrop(
     modifier: Modifier = Modifier,
 ) {
     val sketch = LocalSketch.current
-    val context = LocalContext.current
+    val context = LocalPlatformContext.current
     val maskColor = AniThemeDefaults.pageContentBackgroundColor.copy(alpha = TV_FULLSCREEN_BACKDROP_DIM_ALPHA)
     val textColor = MaterialTheme.colorScheme.onSurfaceVariant
     val spec = tvBackdropBlurSpec(LocalThemeSettings.current.tvDetailsBackdropBlur)
@@ -75,15 +69,8 @@ internal fun TvDetailsBlurredBackdrop(
     var blurred by remember(url) { mutableStateOf<BlurredBackdrop?>(null) }
     LaunchedEffect(url, size, load, spec) {
         if (!load || size.width <= 0 || size.height <= 0 || blurred?.spec == spec) return@LaunchedEffect
-        val bitmap = TvNativeImages.fetchBlurredBackdrop(
-            sketch, context, url, size.width, size.height,
-            longEdgePx = spec.longEdgePx,
-            blurRadiusPx = spec.radiusPx,
-            // 竖版封面按原地址解: 清晰层铺的就是它, 下载缓存里已经有了
-            coverWidthPx = 0,
-            coverHeightPx = 0,
-        ) ?: return@LaunchedEffect
-        blurred = withContext(Dispatchers.Default) { BlurredBackdrop.of(bitmap, spec) }
+        val image = tvFetchBlurredBackdrop(sketch, context, url, size.width, size.height, spec) ?: return@LaunchedEffect
+        blurred = BlurredBackdrop(image.bitmap, spec, image.worstForLightText, image.worstForDarkText)
         loaded()
     }
     val image = blurred
@@ -120,19 +107,6 @@ private class BlurredBackdrop(
         val textLuminance = tvRelativeLuminance(text.toArgb())
         val lightText = textLuminance >= maskLuminance
         return tvBackdropMaskAlpha(if (lightText) worstForLightText else worstForDarkText, maskLuminance, textLuminance, mask.alpha)
-    }
-
-    companion object {
-        fun of(bitmap: Bitmap, spec: TvBackdropBlurSpec): BlurredBackdrop {
-            // 同海报墙的模糊层量法: 同一张图两边压得一样深
-            val pixels = tvBackdropMeasurePixels(bitmap)
-            return BlurredBackdrop(
-                bitmap.asImageBitmap(),
-                spec,
-                worstForLightText = tvBackdropWorstLuminance(pixels, lightText = true),
-                worstForDarkText = tvBackdropWorstLuminance(pixels, lightText = false),
-            )
-        }
     }
 }
 

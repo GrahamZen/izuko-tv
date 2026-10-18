@@ -27,18 +27,15 @@ import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
@@ -140,6 +137,7 @@ import me.him188.ani.app.domain.search.SubjectSearchQuery
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.navigation.LocalNavigator
 import me.him188.ani.app.ui.foundation.tv.prefetchTvTmdbSummary
+import me.him188.ani.app.ui.foundation.tv.tvImeVisible
 import me.him188.ani.app.ui.main.TvPosterWallPreviewPage
 import me.him188.ani.app.ui.main.TvWallScaleEntry
 import me.him188.ani.app.ui.foundation.TV_CONFIRM_KEYS
@@ -757,8 +755,7 @@ internal fun TvSearchInputPane(
     // **必须用 rememberUpdatedState 保住 state 身份**: 直接 `val v = WindowInsets.isImeVisible`
     // 在组合期就把值解出来了, 效应里的 snapshotFlow 捕获的是那个常量 —— 观察不到任何变化,
     // 两个 await 就是死等 (2026-08-25 第一版即栽在这, 表现是修了等于没修).
-    @OptIn(ExperimentalLayoutApi::class)
-    val imeVisible = rememberUpdatedState(WindowInsets.isImeVisible)
+    val imeVisible = rememberUpdatedState(tvImeVisible())
     LaunchedEffect(editing) {
         if (!editing) return@LaunchedEffect
         snapshotFlow { imeVisible.value }.first { it }
@@ -1685,7 +1682,7 @@ private fun TvSearchResultsPane(
     // 照样报成功, 下键被吞且不再重试, 表现为卡在顶部行下不去); 网格空时退到错误横幅
     val focusGridFromAbove: () -> Boolean = {
         // 网格顶线以下那一张 (出血区里正在淡出的上一行不算, 见 TvNativeGridView.firstIndexBelowTopLine)
-        val firstVisible = nativeState.view?.firstIndexBelowTopLine()
+        val firstVisible = nativeState.surface?.firstIndexBelowTopLine()
         if (firstVisible != null) {
             gridFocus.focusItem((firstVisible / gridColumns) * gridColumns)
             true
@@ -1717,7 +1714,7 @@ private fun TvSearchResultsPane(
     }
     BackHandler(enabled = backToFirstCard) {
         // 回首卡还在滚又按了返回 (多半是嫌慢): 当场落到首卡, 同途中按方向键
-        if (nativeState.view?.landFarJump() == true) return@BackHandler
+        if (nativeState.surface?.landFarJump() == true) return@BackHandler
         wallFarJump = true
         gridFocus.focusItem(0)
     }
@@ -1732,7 +1729,7 @@ private fun TvSearchResultsPane(
     // 动作面板里的「海报墙大小」(只在结果态: 输入态没有海报墙): 盖在本页上开编辑窗口. 值变了网格按新尺寸重建, 打开前焦点在网格上的话回到那张卡
     val wallRefocusPending = TvWallScaleEntry(
         page = TvPosterWallPreviewPage.SEARCH,
-        wallHasFocus = { nativeState.view?.hasFocus() == true },
+        wallHasFocus = { nativeState.surface?.hasFocus() == true },
         beforeOpen = { nativeState.capture() },
         refocus = { gridFocus.focusItem(lastFocusedCard.intValue.coerceAtLeast(0)) },
     )
@@ -2535,8 +2532,6 @@ private val TV_SEARCH_HERO_TO_GRID_GAP = 16.dp
  */
 private val TV_SEARCH_WALL_HERO_INFO_HEIGHT = TV_POSTER_WALL_HERO_ROW_TOP - TV_SEARCH_HERO_TO_GRID_GAP -
         TV_SEARCH_TOP_PAD - TV_SEARCH_TOP_ROW_HEIGHT - TV_SEARCH_TITLE_TO_HERO_GAP
-
-
 
 /**
  * 年份筛选默认摊开的年数, 更早的收在「更多年份」后面 (手机控制台的搜索表单同用这个值).

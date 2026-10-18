@@ -9,7 +9,7 @@
 
 package me.him188.ani.app.ui.foundation.tv
 
-import android.content.Context
+import me.him188.ani.app.platform.Context
 
 /**
  * 有触摸屏的设备用平板模式还是电视模式 (设置「界面」里选, 切换时重启应用). 默认平板模式: 触屏适配、播放时藏系统栏、触屏版设置页
@@ -17,15 +17,9 @@ import android.content.Context
  *
  * 存本机 SharedPreferences 而不是设置仓库: 启动时同步读, 第一帧就按它组合. 没有触摸屏的设备不读它.
  */
-object TvInterfaceModeGate {
-    private const val PREFS = "tv_interface_mode"
-    private const val KEY_TV_MODE = "tv_mode"
-
-    fun isTvMode(context: Context): Boolean =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_TV_MODE, false)
+expect object TvInterfaceModeGate {
+    fun isTvMode(context: Context): Boolean
 
     /** 紧接着要重启进程, 所以同步写盘. */
-    fun setTvMode(context: Context, tvMode: Boolean) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_TV_MODE, tvMode).commit()
-    }
+    fun setTvMode(context: Context, tvMode: Boolean)
 }

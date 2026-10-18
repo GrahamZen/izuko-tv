@@ -59,7 +59,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
-import me.him188.ani.app.platform.ProfileSwitchFrame
+import me.him188.ani.app.ui.profile.tvProfileSwitchLanding
 import me.him188.ani.app.ui.foundation.AniStartupProgress
 import me.him188.ani.app.ui.foundation.Res
 import me.him188.ani.app.ui.foundation.StartupProgressTracker
@@ -201,7 +201,7 @@ object TvStartupLogoHost {
     fun coldStart(onboarding: Boolean): TvStartupLogoState? {
         if (AniStartupProgress.claimColdStart()) {
             state = when {
-                ProfileSwitchFrame.landing.value != null -> null
+                tvProfileSwitchLanding.value != null -> null
                 TvPolishFlags.startupLogo -> TvStartupLogoState(AniStartupProgress, onboarding)
                 else -> {
                     AniStartupProgress.stop()
