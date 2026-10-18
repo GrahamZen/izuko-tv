@@ -81,6 +81,12 @@ data class TvNativeCard(
     val more: TvNativeMore? = null,
 )
 
+/** 封面上的一张图: 地址 + 是否打码 (同一地址打不打码画出来不一样). */
+internal data class TvNativeCoverKey(val url: String, val obscure: Boolean)
+
+/** [TvNativeCard] 的封面是哪张图; 没有封面时 null. */
+internal val TvNativeCard.coverKey: TvNativeCoverKey? get() = imageUrl?.let { TvNativeCoverKey(it, obscure) }
+
 /** 「更多」卡的两种样子, 见 [TvNativeCard.more]. */
 enum class TvNativeMore {
     Idle,
@@ -297,7 +303,7 @@ class TvNativeCardView(context: Context, private val style: TvNativeWallStyle) :
         // 按住方向键连走时普通海报只查图片内存缓存 (见 TvNativeCoverDefer): 命中 (或封面上本来就是这一张) 就当场整张换上; 没命中不读盘、
         // 不解码, 番名也不排字, 整张先顶着上一个条目, 停下再补. 拿到焦点的那张当场换番名 (眼睛看着的那张字是对的)
         if (card.more == null && card.imageUrl != null && TvNativeCoverDefer.active) {
-            if (card.imageUrl == shownUrl) {
+            if (showsCover(card)) {
                 deferredCard = null
                 applyContent(card)
                 return
@@ -309,23 +315,41 @@ class TvNativeCardView(context: Context, private val style: TvNativeWallStyle) :
             return
         }
         deferredCard = null
+        // 封面上已经是这张图 (分页到了新一页等整份重绑时屏上的卡): 只换番名等, 不重载 —— 重载时图若已被挤出内存缓存, 会先清成底色再解码淡入
+        if (card.more == null && showsCover(card)) {
+            applyContent(card)
+            return
+        }
         applyCard(card, sketch)
     }
 
     /** 按住连走时先没换上的那次绑定 (停下后补齐用). */
     private var deferredCard: Pair<TvNativeCard, Sketch>? = null
 
-    /** 封面上此刻显示着的那张图 (加载成功时记下, 清图 / 换图时作废): 按住连走时绑回同一个条目就不用再请求. */
-    private var shownUrl: String? = null
+    /** 封面上此刻显示着的那张图 (加载成功时记下, 清图 / 换图时作废). */
+    private var shownCover: TvNativeCoverKey? = null
+
+    /** 封面视图上最后一次发出的请求要的那张图: Sketch 在卡片重新挂上窗口时会重跑这一次请求. */
+    private var requestedCover: TvNativeCoverKey? = null
 
     /** 测试用: 封面上此刻显示着的那张图. */
-    internal val shownCoverUrl: String? get() = shownUrl
+    internal val shownCoverUrl: String? get() = shownCover?.url
+
+    /**
+     * 封面上已经是 [card] 那张图, 绑回来不用再请求. 最后一次请求也得是它: 换过别的图 (连走时只查内存那次) 而没上屏的话, 重新挂上窗口时
+     * Sketch 会重跑那次请求把封面换走.
+     */
+    private fun showsCover(card: TvNativeCard): Boolean {
+        val key = card.coverKey ?: return false
+        return key == shownCover && key == requestedCover
+    }
 
     private fun applyCard(card: TvNativeCard, sketch: Sketch) {
         applyContent(card)
         val url = card.imageUrl
         if (card.more != null && url != null) {
-            shownUrl = null
+            shownCover = null
+            requestedCover = null
             // 「更多」卡的玻璃底: 那张竖版封面的模糊小图 (解码线程上模糊, 拉伸铺满封面框), 与海报本身同一档缩略图地址
             TvNativeImages.loadBlurredBackdrop(
                 sketch, cover, url, style.coverWidthPx, style.coverHeightPx,
@@ -347,13 +371,15 @@ class TvNativeCardView(context: Context, private val style: TvNativeWallStyle) :
 
     /** [onResult]: true = 封面已上屏. 只查内存没命中时封面不动 (还是上一张), 完整加载时先清图. */
     private fun loadCover(card: TvNativeCard, sketch: Sketch, memoryOnly: Boolean, onResult: ((Boolean) -> Unit)? = null) {
-        if (!memoryOnly) shownUrl = null
+        val key = card.coverKey
+        requestedCover = key
+        if (!memoryOnly) shownCover = null
         TvNativeImages.loadCover(
             sketch, cover, card.imageUrl, style.coverWidthPx, style.coverHeightPx, style.crossfade,
             obscureLongEdgePx = if (card.obscure) TV_OBSCURED_COVER_LONG_EDGE_PX else null,
             memoryOnly = memoryOnly,
             onResult = { ok ->
-                if (ok) shownUrl = card.imageUrl
+                if (ok && key == requestedCover) shownCover = key
                 onResult?.invoke(ok)
             },
         )
@@ -393,6 +419,8 @@ class TvNativeCardView(context: Context, private val style: TvNativeWallStyle) :
         val (card, sketch) = deferredCard ?: return
         deferredCard = null
         TvNativeImages.clearCover(cover)
+        shownCover = null
+        requestedCover = null
         applyCard(card, sketch)
     }
 

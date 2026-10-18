@@ -105,4 +105,29 @@ class TvNativeCoverDeferTest {
             assertEquals("C2", card.contentDescription, "封面上本来就是这一张: 不用等松手")
         }
     }
+
+    @Test
+    fun `rebinding the shown cover keeps it without reloading`() {
+        val url = realCoverUrl("rebind")
+        host.onMain { card.bind(TvNativeCard(imageUrl = url, title = "D1"), host.sketch) }
+        host.waitUntil("封面上屏") { card.shownCoverUrl == url }
+        host.onMain {
+            // 整份重绑 (分页到了新一页) 时这张图可能早被挤出内存缓存: 重载就会先清成底色
+            host.sketch.memoryCache.clear()
+            card.bind(TvNativeCard(imageUrl = url, title = "D2"), host.sketch)
+            assertEquals("D2", card.contentDescription)
+            assertEquals(url, card.shownCoverUrl, "封面上本来就是这一张: 不重载")
+        }
+    }
+
+    @Test
+    fun `rebinding the same url with obscure changed reloads the cover`() {
+        val url = realCoverUrl("obscure")
+        host.onMain { card.bind(TvNativeCard(imageUrl = url, title = "E1"), host.sketch) }
+        host.waitUntil("封面上屏") { card.shownCoverUrl == url }
+        host.onMain {
+            card.bind(TvNativeCard(imageUrl = url, title = "E1", obscure = true), host.sketch)
+            assertEquals(null, card.shownCoverUrl, "打码与否画出来不一样: 重载")
+        }
+    }
 }
