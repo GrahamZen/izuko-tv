@@ -45,6 +45,7 @@ import me.him188.ani.app.domain.mediasource.MediaListFilter
 import me.him188.ani.app.domain.mediasource.MediaListFilterContext
 import me.him188.ani.app.domain.mediasource.MediaListFilters
 import me.him188.ani.app.domain.mediasource.MediaSourceEngineHelpers
+import me.him188.ani.app.domain.mediasource.TextTemplate
 import me.him188.ani.app.domain.mediasource.asCandidate
 import me.him188.ani.app.domain.mediasource.web.format.SelectedChannelEpisodes
 import me.him188.ani.app.domain.mediasource.web.format.SelectorChannelFormat
@@ -519,33 +520,9 @@ abstract class SelectorMediaSourceEngine {
         is JsonObject -> element.values.firstNotNullOfOrNull { firstStringOrNull(it) }
     }
 
-    /**
-     * 把 `{名字}` 换成变量值. 没有对应变量的 `{...}` 原样保留 (可能是 JSON 里本来就有的花括号).
-     */
-    private fun substituteVariables(template: String, variables: Map<String, String>): String {
-        if (template.isEmpty() || !template.contains('{')) return template
-        return buildString(template.length) {
-            var i = 0
-            while (i < template.length) {
-                val open = template.indexOf('{', i)
-                if (open < 0) {
-                    append(template, i, template.length)
-                    break
-                }
-                val close = template.indexOf('}', open + 1)
-                val name = if (close < 0) null else template.substring(open + 1, close)
-                val value = name?.let { variables[it] }
-                if (value == null) {
-                    append(template, i, open + 1)
-                    i = open + 1
-                } else {
-                    append(template, i, open)
-                    append(value)
-                    i = close + 1
-                }
-            }
-        }
-    }
+    /** 把 `{名字}` 换成变量值, 原样不编码 (见 [TextTemplate]). */
+    private fun substituteVariables(template: String, variables: Map<String, String>): String =
+        TextTemplate.expand(template, variables) { false }
 
     /**
      * 发一个请求并拿到响应文本. 默认不支持 (返回 `null`), 由 [DefaultSelectorMediaSourceEngine] 实现.
