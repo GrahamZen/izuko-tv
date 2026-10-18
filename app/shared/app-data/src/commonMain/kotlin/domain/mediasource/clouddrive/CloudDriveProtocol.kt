@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.domain.mediasource.clouddrive
 
+import io.ktor.http.encodeURLParameter
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 
@@ -358,15 +359,26 @@ data class DriveQrLogin(
  * 手机网页上唤起 App 完成扫码确认.
  *
  * @property android 安卓上的唤起链接
+ * @property androidAlternatives 本机上 [android] 唤不起时依次试的唤起链接 (同一网盘的其他 App, 如单独的网盘 App); 控制台网页只用 [android]
  * @property ios iOS 上的唤起链接
  * @property inAppUserAgent 页面本身开在那个 App 里时 UA 带的标记: 这时直接打开二维码内容
  */
 @Serializable
 data class DriveMobileOpen(
     val android: String = "",
+    val androidAlternatives: List<String> = emptyList(),
     val ios: String = "",
     val inAppUserAgent: String = "",
-)
+) {
+    /**
+     * 安卓上唤起 App 打开二维码 [qrContent] 的链接, 按要试的顺序 ([android] 在前): 模板里的 `{url}` 换成 URL 编码后的二维码内容 (同控制台网页).
+     * 协议一条都没给时为空.
+     */
+    fun androidLinks(qrContent: String): List<String> {
+        val encoded = qrContent.encodeURLParameter()
+        return (listOf(android) + androidAlternatives).filter { it.isNotBlank() }.map { it.replace("{url}", encoded) }
+    }
+}
 
 /**
  * @property headers 播放器请求直链、转码地址时带的请求头, 可用 `{cookie}` (账号 Cookie) 与 `{userAgent}` ([DriveHttpConfig.userAgent])
