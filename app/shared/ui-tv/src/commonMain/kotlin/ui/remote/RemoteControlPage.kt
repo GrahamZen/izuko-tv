@@ -421,7 +421,7 @@ button { font: inherit; border: 0; cursor: pointer; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
 /* 尺寸三档 (全页统一): 大按钮与输入框 46px / 行内与标题行的小动作按钮 34px / 选择胶囊 (筛选、排序、贴纸包、表单切换) 32px */
 .chip { box-sizing: border-box; height: 32px; font-size: 14px; line-height: 1.3; padding: 0 14px; border-radius: 16px; background: var(--chip); color: var(--on-chip); }
-.chip.failed, .chip.captcha, .chip.limited { background: var(--err-bg); color: var(--err-fg); }
+.chip.failed, .chip.captcha, .chip.limited, .chip.login { background: var(--err-bg); color: var(--err-fg); }
 .chip.loading { opacity: .6; }
 .chip.on { background: var(--p); color: var(--on-p); opacity: 1; }
 .chip.cur { background: var(--p-soft); color: var(--p); font-weight: 700; box-shadow: inset 0 0 0 2px var(--p); opacity: 1; }
@@ -2811,7 +2811,7 @@ private val SCRIPT = """
         !s.groups.some(function (g) { return g.id === srcFilter; })) srcFilter = null;
     var h = '<div class="chips"><button class="chip' + (srcFilter ? '' : ' on') + '" data-src="">' + T('全部') + '</button>';
     s.sources.forEach(function (x) {
-      var n = x.state === 'loading' ? '…' : x.state === 'captcha' ? T('需验证') : x.state === 'failed' ? T('失败') : x.state === 'limited' ? T('限流') : x.count;
+      var n = x.state === 'loading' ? '…' : x.state === 'captcha' ? T('需验证') : x.state === 'login' ? T('未登录') : x.state === 'failed' ? T('失败') : x.state === 'limited' ? T('限流') : x.count;
       // cur = 正在播的就是这个源 (描边 + ▶), 与筛选选中的 on (实心) 是两回事, 可以同时成立
       var cur = x.id === s.selectedSourceId;
       h += '<button class="chip ' + x.state + (srcFilter === x.id ? ' on' : '') + (cur ? ' cur' : '') + '" data-src="' + esc(x.id) + '">' +
@@ -2925,6 +2925,7 @@ private val SCRIPT = """
         : !one ? T('这个数据源没有匹配的结果')
         : one.state === 'loading' ? T('这个数据源还在搜索…')
         : one.state === 'captcha' ? T('这个数据源需要人机验证，请在电视上处理')
+        : one.state === 'login' ? T('网盘未登录：在电视上选中这个数据源按确定扫码登录，或在「数据源」里登录')
         : one.state === 'failed' ? T('这个数据源搜索失败')
         : one.state === 'limited' ? T('这个数据源被限流了，稍后再试')
         : T('这个数据源没有匹配的结果');
@@ -6798,7 +6799,7 @@ private val CACHE_SCRIPT = """
   function ccChips(d) {
     var h = '<div class="chips"><button type="button" class="chip' + (ccSrc ? '' : ' on') + '" data-cc="">' + T('全部') + '</button>';
     d.sources.forEach(function (x) {
-      var n = x.state === 'loading' ? '…' : x.state === 'captcha' ? T('需验证') : x.state === 'failed' ? T('失败') : x.state === 'limited' ? T('限流') : x.count;
+      var n = x.state === 'loading' ? '…' : x.state === 'captcha' ? T('需验证') : x.state === 'login' ? T('未登录') : x.state === 'failed' ? T('失败') : x.state === 'limited' ? T('限流') : x.count;
       h += '<button type="button" class="chip ' + x.state + (ccSrc === x.id ? ' on' : '') + '" data-cc="' + esc(x.id) + '">' +
         esc(x.name) + ' ' + n + '</button>';
     });
@@ -6881,7 +6882,7 @@ private val CACHE_SCRIPT = """
     var groups = ccSrc ? d.groups.filter(function (g) { return g.id === ccSrc; }) : d.groups;
     var total = 0;
     groups.forEach(function (g) { total += g.total; });
-    var bad = d.sources.filter(function (s) { return s.state === 'failed' || s.state === 'captcha' || s.state === 'limited'; }).length;
+    var bad = d.sources.filter(function (s) { return s.state === 'failed' || s.state === 'login' || s.state === 'captcha' || s.state === 'limited'; }).length;
     // 查询中写查完了几个数据源 (慢的源要十几秒, 光写「正在查找」看不出还要等多久)
     var searched = d.sources.filter(function (s) { return s.state !== 'loading'; }).length;
     var h = '<p class="hint">' + (d.loading ? T('正在查找资源：已查完 {0}/{1} 个数据源，已找到 {2} 条', searched, d.sources.length, total) : T('共 {0} 条', total)) +
@@ -6894,6 +6895,7 @@ private val CACHE_SCRIPT = """
         : src.state === 'loading' ? T('这个数据源还在搜索…')
         : src.state === 'captcha' ? T('这个数据源需要人机验证，请在电视上处理')
         : src.state === 'limited' ? T('这个数据源被限流了，稍后再试')
+        : src.state === 'login' ? T('网盘未登录：在电视上选中这个数据源按确定扫码登录，或在「数据源」里登录')
         : T('这个数据源搜索失败');
       if (why && !fEx && d.excludedCount) why += T('，也可以勾选「显示被排除的资源」看看');
       if (why) h += '<p class="hint">' + why + '</p>';

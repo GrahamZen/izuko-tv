@@ -502,7 +502,7 @@ class CloudDriveServiceTest {
     }
 
     @Test
-    fun `media source gives nothing when not logged in`() = runTest {
+    fun `media source reports the drive login when not logged in`() = runTest {
         var sent = 0
         val (service, _) = service(CloudDriveAccount.Default) {
             sent++
@@ -515,7 +515,11 @@ class CloudDriveServiceTest {
             episodeSort = EpisodeSort(1),
             episodeName = "",
         )
-        assertEquals(emptyList(), CloudDriveMediaSource(service, CloudDriveArguments(protocol = protocol)).fetch(request).results.toList())
+        // 选源面板据此在胶囊上写「未登录」并给扫码登录, 所以要带上是哪个网盘
+        val error = assertFailsWith<CloudDriveAuthException> {
+            CloudDriveMediaSource(service, CloudDriveArguments(protocol = protocol)).fetch(request)
+        }
+        assertEquals(service.driveId, error.driveId)
         assertEquals(0, sent)
     }
 

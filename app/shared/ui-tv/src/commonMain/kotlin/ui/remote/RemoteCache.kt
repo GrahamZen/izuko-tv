@@ -70,6 +70,7 @@ import me.him188.ani.app.domain.media.selector.MediaExclusionReason
 import me.him188.ani.app.domain.media.selector.MediaSelectorFactory
 import me.him188.ani.app.domain.media.selector.UnsafeOriginalMediaAccess
 import me.him188.ani.app.domain.media.selector.blocksSelection
+import me.him188.ani.app.domain.mediasource.clouddrive.cloudDriveLoginRequired
 import me.him188.ani.app.tools.getOrZero
 import me.him188.ani.app.ui.foundation.lan.LanHttpRequest
 import me.him188.ani.app.ui.mediafetch.request.toEditingMediaFetchRequest
@@ -1031,7 +1032,8 @@ internal object RemoteCache {
         MediaSourceFetchState.Idle, MediaSourceFetchState.Working -> "loading"
         is MediaSourceFetchState.CaptchaRequired -> "captcha"
         is MediaSourceFetchState.RateLimited -> "limited"
-        is MediaSourceFetchState.Failed, is MediaSourceFetchState.Abandoned -> "failed"
+        is MediaSourceFetchState.Failed -> if (st.cloudDriveLoginRequired != null) "login" else "failed"
+        is MediaSourceFetchState.Abandoned -> "failed"
         else -> "done"
     }
 

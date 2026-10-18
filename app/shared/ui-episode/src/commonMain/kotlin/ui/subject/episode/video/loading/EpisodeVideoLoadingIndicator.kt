@@ -37,6 +37,7 @@ import kotlinx.coroutines.flow.flowOf
 import me.him188.ani.app.domain.media.cache.engine.MediaCacheEngineKey
 import me.him188.ani.app.domain.media.resolver.MediaResolveDeadline
 import me.him188.ani.app.domain.media.resolver.TorrentOpenProgress
+import me.him188.ani.app.domain.mediasource.clouddrive.isCloudDriveLoginRequired
 import me.him188.ani.app.domain.player.UnsupportedFormat
 import me.him188.ani.app.domain.player.VideoLoadingState
 import me.him188.ani.app.domain.player.downloadSpeedFlow
@@ -53,6 +54,7 @@ import me.him188.ani.app.ui.lang.subject_episode_video_loading_buffering_bt_no_s
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_buffering_bt_too_long
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_buffering_too_long
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_cause_cancelled
+import me.him188.ani.app.ui.lang.subject_episode_video_loading_cause_drive_login
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_cause_http_error
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_cause_http_rejected
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_cause_network_error
@@ -478,6 +480,8 @@ data class VideoLoadingCauseLabels(
     val httpRejected: String,
     /** 服务器回 5xx 时的句子, 状态码处是 [HTTP_STATUS_PLACEHOLDER]. */
     val httpError: String,
+    /** 网盘没登录 (播网盘里的文件要登录, 分享的要转存). */
+    val driveLoginRequired: String,
 ) {
     /** 把每句原因再包一层 (例如套进"后台播放遇到问题: ……"的模板). */
     inline fun map(transform: (String) -> String) = VideoLoadingCauseLabels(
@@ -490,6 +494,7 @@ data class VideoLoadingCauseLabels(
         networkError = transform(networkError),
         httpRejected = transform(httpRejected),
         httpError = transform(httpError),
+        driveLoginRequired = transform(driveLoginRequired),
     )
 }
 
@@ -504,13 +509,15 @@ fun videoLoadingCauseLabels(): VideoLoadingCauseLabels = VideoLoadingCauseLabels
     networkError = stringResource(Lang.subject_episode_video_loading_cause_network_error),
     httpRejected = stringResource(Lang.subject_episode_video_loading_cause_http_rejected, HTTP_STATUS_PLACEHOLDER),
     httpError = stringResource(Lang.subject_episode_video_loading_cause_http_error, HTTP_STATUS_PLACEHOLDER),
+    driveLoginRequired = stringResource(Lang.subject_episode_video_loading_cause_drive_login),
 )
 
 /** [VideoLoadingCauseLabels.httpRejected] 里状态码的位置: 先按它取出句子, 渲染原因时换成真正的状态码. */
 private const val HTTP_STATUS_PLACEHOLDER = "%%ANI_HTTP_STATUS%%"
 
-/** 未知错误里认得出的原因: 连不上网 / 服务器回了 HTTP 错误, 其余照旧是「未知错误」. */
+/** 未知错误里认得出的原因: 网盘没登录 / 连不上网 / 服务器回了 HTTP 错误, 其余照旧是「未知错误」. */
 private fun renderUnknownError(error: Throwable, labels: VideoLoadingCauseLabels): String {
+    if (error.isCloudDriveLoginRequired()) return labels.driveLoginRequired
     if (error.isNetworkFailure()) return labels.networkError
     val status = error.httpErrorStatus() ?: return labels.unknownError
     return (if (status >= 500) labels.httpError else labels.httpRejected).replace(HTTP_STATUS_PLACEHOLDER, status.toString())
