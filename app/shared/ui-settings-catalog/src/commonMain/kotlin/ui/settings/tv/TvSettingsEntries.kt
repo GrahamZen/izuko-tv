@@ -31,6 +31,7 @@ import me.him188.ani.app.data.models.preference.VideoEnhancementDefaultMode
 import me.him188.ani.app.data.models.preference.VideoScaffoldConfig
 import me.him188.ani.app.data.repository.player.DanmakuRegexFilterRepository
 import me.him188.ani.app.domain.usecase.GlobalKoin
+import me.him188.ani.app.platform.AppRestarter
 import me.him188.ani.app.navigation.MainScreenPage
 import me.him188.ani.app.navigation.SettingsTab
 import kotlinx.coroutines.flow.flowOf
@@ -221,6 +222,14 @@ import me.him188.ani.app.ui.lang.tv_settings_dark_mode_description
 import me.him188.ani.app.ui.lang.tv_settings_palette_color
 import me.him188.ani.app.ui.lang.tv_settings_palette_default
 import me.him188.ani.app.ui.lang.tv_settings_qr_console
+import me.him188.ani.app.ui.lang.tv_settings_interface_mode
+import me.him188.ani.app.ui.lang.tv_settings_interface_mode_confirm
+import me.him188.ani.app.ui.lang.tv_settings_interface_mode_description
+import me.him188.ani.app.ui.lang.tv_settings_interface_mode_tablet
+import me.him188.ani.app.ui.lang.tv_settings_interface_mode_tablet_description
+import me.him188.ani.app.ui.lang.tv_settings_interface_mode_tv
+import me.him188.ani.app.ui.lang.tv_settings_interface_mode_tv_description
+import me.him188.ani.app.ui.lang.tv_settings_rerun_onboarding_restart
 import me.him188.ani.app.ui.lang.video_player_off
 import me.him188.ani.app.ui.lang.video_player_performance
 import me.him188.ani.app.ui.lang.video_player_quality
@@ -250,6 +259,9 @@ object TvSettingKeys {
 
     /** 有没有触摸屏: 平板 / 手机装了 TV 包才有, 电视没有 (也没有系统栏). */
     val touchscreen = TvSettingKey.Platform("touchscreen") { deps -> hasTouchscreen(deps.context) }
+
+    /** 有触摸屏时用的是电视模式 (true) 还是平板模式 (false), 见 [TvSettingsPlatform.interfaceMode]; 那一端没有这个选择时不在. */
+    val interfaceMode = TvSettingKey.Platform("interfaceMode") { deps -> deps.platform.interfaceMode?.isTvMode(deps.context) }
 
     /** 弹幕正则过滤规则 (逐条). */
     val danmakuRules = TvSettingKey.Live("danmakuRules") { GlobalKoin.get<DanmakuRegexFilterRepository>().flow }
@@ -313,10 +325,38 @@ private fun TvSettingsItemsBuilder.appearanceItems() {
         read = { (it.effectiveUiScale * 100).roundToInt().roundToStep(UI_SCALE_STEP_PERCENT) },
         write = { copy(uiScale = it / 100f) },
     )
+    // 有触摸屏的设备选平板 / 电视模式; 电视没有触摸屏, 不列. 换了要重启 (各页按模式组合, 中途换不干净)
+    choiceOf(
+        listOf(TvSettingKeys.touchscreen, TvSettingKeys.interfaceMode), Lang.tv_settings_interface_mode,
+        Lang.tv_settings_interface_mode_description,
+        options = { listOf(false, true) },
+        label = { tvMode -> tvText(if (tvMode) Lang.tv_settings_interface_mode_tv else Lang.tv_settings_interface_mode_tablet) },
+        optionDescription = { tvMode ->
+            tvText(if (tvMode) Lang.tv_settings_interface_mode_tv_description else Lang.tv_settings_interface_mode_tablet_description)
+        },
+        read = { it[TvSettingKeys.interfaceMode] },
+        write = { tvMode ->
+            listOf(
+                TvSettingsEdit.Run { env ->
+                    env.deps.platform.interfaceMode?.setTvMode(env.context, tvMode)
+                    GlobalKoin.get<AppRestarter>().restart()
+                },
+            )
+        },
+        visible = { it[TvSettingKeys.touchscreen] == true },
+        confirm = {
+            TvSettingsConfirm(
+                title = null,
+                text = tvText(Lang.tv_settings_interface_mode_confirm),
+                confirmLabel = tvText(Lang.tv_settings_rerun_onboarding_restart),
+            )
+        },
+    )
     toggleOf(
         listOf(theme, TvSettingKeys.touchscreen), Lang.settings_theme_tv_hide_navigation_bar,
         description = { tvText(Lang.settings_theme_tv_hide_navigation_bar_description) },
-        visible = { it[TvSettingKeys.touchscreen] == true },
+        // 只在平板模式下起作用 (电视模式不碰系统栏)
+        visible = { it[TvSettingKeys.touchscreen] == true && it[TvSettingKeys.interfaceMode] != true },
         read = { it[theme]?.tvHideNavigationBar == true },
         write = { on -> listOf(TvSettingsEdit.Update(theme) { it.copy(tvHideNavigationBar = on) }) },
     )
