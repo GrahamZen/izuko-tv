@@ -37,8 +37,19 @@ interface TvSettingsPlatform {
     /** 「本版新功能」整页 (盖在设置页上); null = 没有. */
     val whatsNewPage: (@Composable (dismiss: () -> Unit) -> Unit)? get() = null
 
+    /** 有触摸屏时界面用平板模式还是电视模式 (见 [TvInterfaceModeSwitch]); null = 没有这个选择. */
+    val interfaceMode: TvInterfaceModeSwitch? get() = null
+
     /** 都不给: 没有这些功能的端. */
     object None : TvSettingsPlatform
+}
+
+/** 平板模式 / 电视模式的读写 (见 [TvSettingsPlatform.interfaceMode]); 换了模式要重启应用才生效. */
+interface TvInterfaceModeSwitch {
+    fun isTvMode(context: Context): Boolean
+
+    /** 写下新的模式 (同步写盘: 调用方紧接着重启). */
+    fun setTvMode(context: Context, tvMode: Boolean)
 }
 
 /** 经 Worker 中转发起授权的结果 (见 [TvSettingsPlatform.startRelayLogin]). */

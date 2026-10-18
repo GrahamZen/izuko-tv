@@ -57,6 +57,7 @@ import me.him188.ani.app.ui.foundation.TvKeyLongPressHandler
 import me.him188.ani.app.ui.foundation.tv.LocalTvNavKeyTracker
 import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.ProvideTvScrollActivity
+import me.him188.ani.app.ui.foundation.tv.TvInterfaceModeGate
 import me.him188.ani.app.ui.foundation.tv.TvPosterWallTheme
 import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
 import me.him188.ani.app.ui.foundation.tv.rememberTvNavKeyTracker
@@ -190,10 +191,11 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
     val pageAdjust = remember { TvPageAdjustHost() }
     // 页面里的调整入口打开的编辑页 (盖在页面上的全屏窗口, 见 TvAdjustWindows)
     val adjustWindows = remember { TvAdjustWindows() }
-    // 触屏设备 (平板装了 TV 包) 才打开触摸适配; 电视上为 false, 相关 modifier 一个节点都不装 (见 TvTouchInput.kt)
+    // 触屏设备 (平板装了 TV 包) 才打开触摸适配; 电视上为 false, 相关 modifier 一个节点都不装 (见 TvTouchInput.kt).
+    // 有触摸屏时用户可在设置里换成电视模式 (见 TvInterfaceModeGate), 那样也为 false
     val appContext = LocalContext.current
     val touchInput = remember(appContext) {
-        appContext.packageManager.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN)
+        appContext.packageManager.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN) && !TvInterfaceModeGate.isTvMode(appContext)
     }
     // 引导还没做过就先进引导页 (网络检测 + 手机遥控 + 登录), 见 TvOnboardingGate
     val onboardingPending = remember(appContext) { TvOnboardingGate.isPending(appContext) }

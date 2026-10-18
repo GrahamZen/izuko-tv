@@ -322,6 +322,13 @@
     <string name="settings_theme_tv_retain_playback_session_description">Keeps the player alive after you leave (shown in the action panel), with a toast once it is ready to play. Off: nothing is kept</string>
     <string name="settings_theme_tv_hide_navigation_bar">Hide navigation bar</string>
     <string name="settings_theme_tv_hide_navigation_bar_description">Tablets and phones: hide the bottom navigation bar on every page, not just in the player. Swipe in from the screen edge to show it briefly. The player always hides both bars</string>
+    <string name="tv_settings_interface_mode">Interface mode</string>
+    <string name="tv_settings_interface_mode_description">Which interface to use on a device with a touchscreen. The app restarts when you switch.</string>
+    <string name="tv_settings_interface_mode_tablet">Tablet</string>
+    <string name="tv_settings_interface_mode_tv">TV</string>
+    <string name="tv_settings_interface_mode_tablet_description">Tap, swipe and long-press with your finger. System bars hide during playback, and settings use the touch layout.</string>
+    <string name="tv_settings_interface_mode_tv_description">Exactly as on a TV, operated with the remote only. For boxes and projectors used with a remote.</string>
+    <string name="tv_settings_interface_mode_confirm">The app will restart and switch to the new interface mode.</string>
     <string name="settings_theme_tv_visual_effects">Visual effects</string>
     <string name="settings_theme_tv_visual_effects_description">Smooth: focus scrolling jumps instantly, long titles never scroll, only the detail-page zoom and the fade after selecting a poster are kept; Balanced: all transitions; Full: everything, plus original-size images at 4K</string>
     <string name="settings_theme_tv_visual_effects_smooth">Smooth</string>

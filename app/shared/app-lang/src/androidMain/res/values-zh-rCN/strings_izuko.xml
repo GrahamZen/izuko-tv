@@ -322,6 +322,13 @@
     <string name="settings_theme_tv_retain_playback_session_description">退出后保留播放器状态（在动作面板里显示），可以播放时会有气泡提示。关闭则不保留</string>
     <string name="settings_theme_tv_hide_navigation_bar">藏起导航栏</string>
     <string name="settings_theme_tv_hide_navigation_bar_description">平板、手机上，除了播放页，其他页面也把底部导航栏藏起来，从屏幕边缘滑一下能临时叫出来。播放页两条栏一直都藏</string>
+    <string name="tv_settings_interface_mode">界面模式</string>
+    <string name="tv_settings_interface_mode_description">有触摸屏的设备用哪种界面。切换后应用会重启。</string>
+    <string name="tv_settings_interface_mode_tablet">平板</string>
+    <string name="tv_settings_interface_mode_tv">电视</string>
+    <string name="tv_settings_interface_mode_tablet_description">可以用手指点、滑、长按；播放时藏起系统栏，设置页是触屏的样子。</string>
+    <string name="tv_settings_interface_mode_tv_description">和电视上完全一样，只用遥控器操作；适合接遥控器用的盒子、投影仪。</string>
+    <string name="tv_settings_interface_mode_confirm">应用会重启，然后换成新的界面模式。</string>
     <string name="settings_theme_tv_visual_effects">视觉效果</string>
     <string name="settings_theme_tv_visual_effects_description">流畅：焦点滚动瞬间到位、长标题不滚动，只保留进详情页的放大与海报上按确定后的淡入淡出；均衡：全部转场动画；完整：全部效果，4K 界面加载原图</string>
     <string name="settings_theme_tv_visual_effects_smooth">流畅</string>
