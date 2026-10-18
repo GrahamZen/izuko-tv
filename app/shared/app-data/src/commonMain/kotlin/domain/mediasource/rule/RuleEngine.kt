@@ -563,8 +563,14 @@ class RuleEngine(
         var pageUrl = state.pageUrl
         val lists = step.lists.asSequence().map { document.select(it) }.firstOrNull { it.isNotEmpty() }
             ?: return fail(label, "没有选中剧集列表")
+        val tabRegex = step.tabPattern.takeIf { it.isNotBlank() }?.let { pattern ->
+            runCatching { Regex(pattern) }.getOrElse { return fail(label, "tabPattern 不是有效的正则: $it") }
+        }
         val tabNames = step.tabs.asSequence().map { document.select(it) }.firstOrNull { it.isNotEmpty() }
-            ?.map { it.text().trim() }
+            ?.map { tab ->
+                val text = tab.text().trim()
+                tabRegex?.find(text)?.let { optionalGroup(it, tabRegex, "ch")?.trim() }?.takeIf { it.isNotEmpty() } ?: text
+            }
             .orEmpty()
 
         fun episodesIn(list: Element, pageUrl: String): List<RuleEpisode> = list.select(step.items).mapNotNull { item ->

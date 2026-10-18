@@ -161,6 +161,28 @@ class RuleEngineTest {
     }
 
     @Test
+    fun `tab pattern keeps only the channel name group`() = runTest {
+        val site = FakeSite(
+            mapOf(
+                "https://www.example.com/detail/1" to """
+                    <div class="tabs"><a><i></i>&nbsp;简中<span class="badge">12</span></a><a>杜比</a></div>
+                    <ul class="eps"><li><a href="/play/1-1-1">01</a></li></ul>
+                    <ul class="eps"><li><a href="/play/1-2-1">01</a></li></ul>
+                """.trimIndent(),
+            ),
+        )
+        val config = RuleConfig(
+            detail = listOf(
+                RuleStep.Fetch(),
+                RuleStep.Episodes(lists = listOf(".eps"), tabs = listOf(".tabs a"), tabPattern = """(?<ch>.+?)(\d+?)"""),
+            ),
+        )
+        val channels = engine(config, site).detail("https://www.example.com/detail/1")
+        // 角标里的集数去掉; 匹配不上的用整个文字
+        assertEquals(listOf("简中", "杜比"), channels.map { it.name })
+    }
+
+    @Test
     fun `unnamed channels get numbered names`() = runTest {
         val site = FakeSite(
             mapOf(
