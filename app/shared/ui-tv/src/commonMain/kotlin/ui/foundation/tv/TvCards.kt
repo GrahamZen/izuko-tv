@@ -261,6 +261,7 @@ fun TvHeroButton(
     modifier: Modifier = Modifier,
     focusRequester: FocusRequester? = null,
     onFocusChangedExtra: ((Boolean) -> Unit)? = null,
+    touchFocusOnPress: Boolean = true,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     // 聚焦样式直接读真实焦点 (下面的 onFocusChanged), 不用 interactionSource 的 Focus/Unfocus 事件:
@@ -287,7 +288,7 @@ fun TvHeroButton(
                 if (it.isFocused) onFocused()
                 onFocusChangedExtra?.invoke(it.isFocused)
             }
-            .tvTouchFocusOnTap(),
+            .then(if (touchFocusOnPress) Modifier.tvTouchFocusOnTap() else Modifier),
         shape = RoundedCornerShape(TV_HERO_BUTTON_CORNER),
         color = container,
         border = outline,
@@ -472,6 +473,8 @@ internal fun TvBackdropImage(
      * "详情页那份"的插值, 于是起点逐像素等于本页. 在 onGloballyPositioned 里登记时才取, 不在组合里读.
      */
     zoomTreatment: () -> TvBackdropTreatment? = { null },
+    /** 图解好上屏了. */
+    onLoaded: (() -> Unit)? = null,
 ) {
     // 接管在途预热 (见 TV_BACKDROP_PREFETCH_HANDOFF_MILLIS): 这张图正被预热时先等它.
     // 在组合里取一次, 没有在途的常规情形一帧都不耽误
@@ -506,6 +509,7 @@ internal fun TvBackdropImage(
         decodeAtOriginalSize = !obscure && tvHeroBackdropDecodeAtOriginalSize(url),
         downsampleLongEdgePx = if (obscure) TV_OBSCURED_BACKDROP_LONG_EDGE_PX else null,
         onSuccess = { success ->
+            onLoaded?.invoke()
             // 返回缩回撤层前要等列表页 hero 这张图画得出来 (见 TvHeroZoomHandoff.listReady)
             themeSeedSubjectId?.let { TvHeroZoomHandoff.markSourceLoaded(it, url) }
             // 提前取色: 已经算过的条目直接跳过; 取色本身在后台线程 (与详情页同一条 themeColor)

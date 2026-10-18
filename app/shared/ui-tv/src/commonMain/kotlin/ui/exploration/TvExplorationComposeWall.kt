@@ -17,6 +17,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -71,7 +72,9 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
@@ -82,9 +85,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import me.him188.ani.app.data.models.preference.TvBackdropBlurLevel
 import me.him188.ani.app.data.models.preference.TvPosterConfirmAction
+import me.him188.ani.app.platform.DevSwitches
 import me.him188.ani.app.ui.foundation.focus.TvNoBringIntoViewSpec
 import me.him188.ani.app.ui.foundation.focus.TvScrollAnimator
 import me.him188.ani.app.ui.foundation.focus.TvScrollSpring
@@ -103,6 +108,7 @@ import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeExploreItem
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeExploreListener
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeExploreMetrics
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeHeroSource
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeWallOpenEffects
 import me.him188.ani.app.ui.foundation.tv.nativeview.tvBackdropBlurSpec
 import me.him188.ani.app.ui.foundation.tv.tvHeroContentColor
 import me.him188.ani.app.ui.foundation.tv.tvPageBackdropTreatment
@@ -117,12 +123,21 @@ import me.him188.ani.app.ui.foundation.tv.wall.TvWallCardStyle
 import me.him188.ani.app.ui.foundation.tv.wall.TvWallHeroBackdrop
 import me.him188.ani.app.ui.foundation.tv.wall.TvWallHeroText
 import me.him188.ani.app.ui.foundation.tv.wall.TvWallHeroTimeline
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_HERO_TEXT_BOTTOM
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_HERO_WALL_SUMMARY_LINES
+import me.him188.ani.app.ui.foundation.tv.wall.TvPadHeroLayer
+import me.him188.ani.app.ui.foundation.tv.wall.TvWallOpen
+import me.him188.ani.app.ui.foundation.tv.wall.TvWallTouchScrollLimit
+import me.him188.ani.app.ui.foundation.tv.wall.tvRowFirstFullIndex
+import me.him188.ani.app.ui.foundation.tv.wall.tvWallInputMode
+import me.him188.ani.app.ui.foundation.tv.wall.TvWallSharpLayer
 import me.him188.ani.app.ui.foundation.tv.wall.rememberTvWallCardStyle
 import me.him188.ani.app.ui.foundation.tv.wall.rememberTvWallHeroTimeline
 import me.him188.ani.app.ui.foundation.tv.wall.tvPastAnchorDim
 import me.him188.ani.app.ui.foundation.tv.wall.tvStripLeftIndex
 import me.him188.ani.app.ui.foundation.tv.wall.tvWallPlace
-import me.him188.ani.app.ui.foundation.tv.wall.tvWallTouchGestures
+import me.him188.ani.app.ui.foundation.tv.wall.tvWallBlankTap
+import me.him188.ani.app.ui.foundation.tv.wall.tvWallHorizontalSwipe
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.exploration_schedule
 import me.him188.ani.app.ui.lang.exploration_tv_watch_now
@@ -156,10 +171,12 @@ private fun TvNativeExploreMetrics.wallItemTop(items: List<TvNativeExploreItem>,
 private fun TvNativeExploreMetrics.wallCenteredScroll(items: List<TvNativeExploreItem>, index: Int): Int {
     val rowHeight = rowPx - rowGapPx
     val centered = wallItemTop(items, index) + rowHeight / 2 - viewportPx / 2
-    val contentEnd = wallItemTop(items, items.size) - rowGapPx
-    val max = contentEnd + endMarginPx - viewportPx
-    return centered.coerceAtMost(max).coerceAtLeast(0)
+    return centered.coerceAtMost(wallEndScroll(items)).coerceAtLeast(0)
 }
+
+/** 卡片墙最远滚到哪: 末行贴着视口底边 (留 [TvNativeExploreMetrics.endMarginPx]). 列表末尾补的那一整屏只给 hero 态的停位用. */
+private fun TvNativeExploreMetrics.wallEndScroll(items: List<TvNativeExploreItem>): Int =
+    (wallItemTop(items, items.size) - rowGapPx + endMarginPx - viewportPx).coerceAtLeast(0)
 
 /** hero 态聚焦第 [index] 行时列表该滚到哪: 这一行的组标题位置落在 hero 线上 (同原生的 heroScroll). */
 private fun TvNativeExploreMetrics.wallHeroScroll(items: List<TvNativeExploreItem>, index: Int): Int =
@@ -222,10 +239,16 @@ internal fun TvExplorationComposeWall(
         TvExploreComposeSurface(state, timeline, scope, focusedRowKey(), focusedCardIndex())
     }
     surface.listener = listener
+    surface.touchInput = touchInput
     surface.heroEnabled = heroEnabled
     surface.items = items
     surface.metrics = metrics
     surface.animatedScroll = visualEffects.animatedScroll
+    // 铺着模糊背景时 hero 态里按确定: 卡片淡没、模糊底变清晰再进详情页 (见 TvWallOpen)
+    val wallOpen = remember(surface) { TvWallOpen(scope) }
+    wallOpen.transitions = visualEffects.transitions
+    wallOpen.restoreTarget = { surface.card?.wall }
+    surface.wallOpen = if (heroBlur) wallOpen else null
     DisposableEffect(surface) {
         state.surface = surface
         onDispose {
@@ -249,14 +272,16 @@ internal fun TvExplorationComposeWall(
     }
 
     // 背景图在轮播 (0) 与聚焦卡 (1) 两套尺寸之间
-    val showsCard by remember(surface, timeline) {
+    val showsCardState by remember(surface, timeline) {
         derivedStateOf {
             timeline.visible && surface.focusedRowKey != null && if (timeline.active) timeline.above >= 1f else timeline.content > 0f
         }
     }
+    // 组合里取一次 (换来源时重组): 下面的图层参数块里读它, 不在参数块里读派生状态
+    val showsCard = showsCardState
     val mode = remember { Animatable(if (showsCard) 1f else 0f) }
     LaunchedEffect(mode, visualEffects.transitions) {
-        snapshotFlow { showsCard }.drop(1).collectLatest { card ->
+        snapshotFlow { showsCardState }.drop(1).collectLatest { card ->
             val target = if (card) 1f else 0f
             // 换之前那一路看得见 (hero 态里在首行按上回轮播): 尺寸缩放过去; 看不见时直接到位
             val visibleBefore = if (card) surface.carouselAlpha() > 0f else timeline.content > 0f
@@ -267,15 +292,26 @@ internal fun TvExplorationComposeWall(
             }
         }
     }
+    // 调试开关: 热门轮播换成平板版探索页的画法 (见 TvExplorationPadCarousel.kt), 对比用
+    val padCarousel = DevSwitches.padCarousel.value
+    // 平板版画法的轮播区: 卡片区顶线到首组标题 (列表停在顶上时 hero 占位垫着的那一段)
+    val padCarouselHeightPx = metrics.listTopPx + metrics.spacerPx
     val carouselGone by remember(surface) { derivedStateOf { surface.carouselShift() >= metrics.carouselBottomPx } }
     val source = if (showsCard) surface.card else surface.carousel
-    val backdropTarget = if (!showsCard && carouselGone) null else source?.backdrop
+    // 平板版画法 (轮播与 hero 态都画在 TvPadHeroLayer 里) 不用电视版的背景图与文字块: 透明, 也不登记成放大转场的来源
+    val backdropTarget = if (padCarousel || (!showsCard && carouselGone)) null else source?.backdrop
 
     // 整屏底色 (主壳画): hero 态的黑度与轮播分界线 (跟着轮播背景图的下缘走)
     LaunchedEffect(surface, darkens) {
         snapshotFlow {
-            val tone = if (darkens) timeline.tone else 0f
-            val y = (metrics.carouselBottomPx - surface.carouselShift()).coerceAtLeast(splitFloorPx)
+            val pad = DevSwitches.padCarousel.value
+            // 平板版画法的轮播区 / hero 区自己铺满, 下缘渐变到卡片墙底色: 整屏底色不压暗、不分界
+            val tone = if (darkens && !pad) timeline.tone else 0f
+            val y = if (pad) {
+                splitFloorPx
+            } else {
+                (metrics.carouselBottomPx - surface.carouselShift()).coerceAtLeast(splitFloorPx)
+            }
             tone to y
         }.collect { (tone, y) ->
             state.tone = tone
@@ -286,9 +322,30 @@ internal fun TvExplorationComposeWall(
     LaunchedEffect(surface) {
         snapshotFlow { surface.listState.isScrollInProgress }.collect { currentListener.onScrollingChanged(it) }
     }
+    // 触屏: hero 态里手指一拖列表就退回卡片墙, 卡片跟着手指走 (见 exitHeroInPlace)
+    LaunchedEffect(surface) {
+        surface.listState.interactionSource.interactions.collect { interaction ->
+            if (interaction is DragInteraction.Start && surface.touchMode) surface.exitHeroInPlace()
+        }
+    }
+    // 点开: 途中按返回取消, 进了详情页回到本页倒放
+    LaunchedEffect(wallOpen) { snapshotFlow { wallOpen.opening }.collect { state.wallOpening = it } }
+    if (heroBlur) {
+        TvNativeWallOpenEffects(
+            view = wallOpen,
+            opened = { state.wallOpened },
+            opening = { state.wallOpening },
+            left = { state.wallOpenLeft },
+            markLeft = { state.wallOpenLeft = true },
+            clear = {
+                state.wallOpened = false
+                state.wallOpenLeft = false
+            },
+        )
+    }
     // 进出 hero 态: 聚焦行滚到 hero 线 / 回到正中 (远跳那组 spring)
     LaunchedEffect(surface) {
-        snapshotFlow { timeline.active }.drop(1).collect { surface.updateStop(heroToggled = true) }
+        snapshotFlow { timeline.active }.drop(1).collect { if (!surface.consumeStayInPlace()) surface.updateStop(heroToggled = true) }
     }
     // 页面的程序化落点 (进页恢复 / 返回键分层 / 回到主界面): 请求按实例区分, 同参重发也会再送一次
     LaunchedEffect(surface) {
@@ -318,10 +375,28 @@ internal fun TvExplorationComposeWall(
             .fillMaxSize()
             .onGloballyPositioned { pagePosition = it.positionInWindow() }
             .onFocusChanged { surface.hasAnyFocus = it.hasFocus }
-            .onPreviewKeyEvent { event -> event.type == KeyEventType.KeyDown && surface.handleKey(event.key) },
+            // 触屏设备: 手指按下 / 按方向键分别切到触屏 / 电视的规矩 (见 TvExploreComposeSurface.touchMode); 先于下面的按键处理
+            .tvWallInputMode(touchInput) { surface.lastInputTouch = it }
+            .onPreviewKeyEvent { event -> event.type == KeyEventType.KeyDown && surface.handleKey(event.key) }
+            // 触屏: 点卡片以外的地方
+            .tvWallBlankTap(touchInput) { p ->
+                when {
+                    // hero 态里: 点 hero 区 (聚焦行的组标题以上: 背景图、文字) 进聚焦那张的详情页 (同点它); 点别处 (组标题、空白) 退回卡片墙,
+                    // 卡片留在原地
+                    timeline.active -> if (p.y < metrics.listTopPx + metrics.heroHeaderTopPx) surface.openFocusedCard() else surface.exitHeroInPlace()
+                    // 平板版画法: 点轮播画面进这一部的详情页 (同「立即观看」)
+                    padCarousel && !showsCard && p.y < padCarouselHeightPx - surface.scrolledPx -> currentListener.onHeroButtonClick(0)
+                }
+            }
+            // 触屏: 正显示轮播时, 首行卡片以上左右滑一下翻一部 (同遥控器在 hero 按钮上按左右); 横向先过就整个手势归它, 列表不跟着上下滚
+            .tvWallHorizontalSwipe(
+                enabled = touchInput,
+                area = { p -> !showsCard && !carouselGone && surface.carouselAlpha() >= 0.5f && p.y < surface.firstRowTopPx() },
+                onSwipe = { delta -> currentListener.onSwitchCarousel(delta) },
+            ),
     ) {
         // 页面送焦进来的入口 (页面在侧边栏按右 / 返回、全局兜底时请求它, 同原生视图的 onRequestFocusInDescendants): 拿到焦点就转给上次那张卡,
-        // 否则上次停的那颗 hero 按钮. 页面直接送焦到卡 / 按钮的请求不经过这里
+        // 否则上次停的那颗 hero 按钮. 页面直接送焦到卡 / 按钮的请求不经过这里. 按触屏的规矩走时焦点就停在这里 (见 parkFocus)
         Box(
             Modifier.size(1.dp)
                 .focusRequester(state.focusRequester)
@@ -332,6 +407,8 @@ internal fun TvExplorationComposeWall(
         if (heroBlur && showsCard) {
             TvWallBlurBackdrop(surface.card?.wall, blurSpec, heroBlurMask, heroBlurText, alpha = { timeline.content })
         }
+        // 点开时模糊底上叠的清晰原图
+        TvWallSharpLayer(wallOpen)
         TvWallHeroBackdrop(
             backdropTarget,
             dimming = source?.dimming == true,
@@ -348,11 +425,18 @@ internal fun TvExplorationComposeWall(
                     scaleY = scale
                     translationY = -surface.carouselShift() * (1f - md)
                     val gate = if (darkens) tvPosterWallToneGate(timeline.tone) else 1f
-                    alpha = if (showsCard) timeline.content * gate else surface.carouselAlpha() * currentSplitGate()
+                    alpha = when {
+                        padCarousel -> 0f
+                        showsCard -> timeline.content * gate * (1f - wallOpen.fade.value)
+                        else -> surface.carouselAlpha() * currentSplitGate()
+                    }
                 },
+            // hero 态底下铺着模糊背景: 图的边缘擦成透明露出它 (轮播底下没铺, 照旧渐隐到页面底色)
+            feather = heroBlur && showsCard,
         )
         // hero 文字块 + 轮播按钮块: 块高两档 (有按钮 / 没按钮), 文字吃掉按钮块之外的全部高度
         val heroWidth = metrics.pageWidthPx - metrics.heroStartPx - metrics.heroEndPadPx
+        var buttonsHeightPx by remember { mutableIntStateOf(0) }
         Column(
             Modifier
                 .tvWallPlace(
@@ -363,49 +447,61 @@ internal fun TvExplorationComposeWall(
                 )
                 .graphicsLayer {
                     translationY = -surface.scrolledPx * (1f - mode.value)
-                    alpha = if (showsCard) timeline.text else surface.carouselAlpha()
+                    alpha = when {
+                        padCarousel -> 0f
+                        showsCard -> timeline.text
+                        else -> surface.carouselAlpha()
+                    }
                 },
         ) {
             TvWallHeroText(
-                source?.text,
+                if (padCarousel) null else source?.text,
                 titleMaxLines = 1,
                 titleWidth = with(density) { metrics.titleWidthPx.toDp() },
                 summaryWidth = with(density) { (if (showsCard) metrics.cardSummaryWidthPx else metrics.carouselSummaryWidthPx).toDp() },
                 lineSpacing = 10.dp,
-                // 聚焦卡时没有按钮块, 文字块是矮的那一档; 按钮块照样排在下面 (看不见, 焦点照样送得到)
+                // 点开时标题以外的几行跟着卡片淡没 (标题交给详情页)
+                bodyAlpha = { 1f - wallOpen.fade.value },
+                // 聚焦卡时没有按钮块, 文字块是矮的那一档
                 modifier = Modifier.fillMaxWidth().then(
                     if (showsCard) Modifier.height(with(density) { metrics.heroBlockPx.toDp() }) else Modifier.weight(1f),
                 ),
             )
-            // 轮播按钮: 每次重新出现都从 0 淡入 (hero 态里回轮播时文字在交叉淡入, 按钮不该当帧冒出来). 聚焦卡时只是看不见,
-            // 焦点照样送得到 (首行按上回「新番时间表」时先退出 hero 态)
-            val buttonsAlpha by animateFloatAsState(
-                if (showsCard) 0f else 1f,
-                if (!visualEffects.transitions) snap() else tween(if (showsCard) TV_HERO_BUTTON_FADE_OUT_MILLIS else TV_HERO_BUTTON_FADE_IN_MILLIS),
+            // 按钮块的位置 (按钮另起一层压在卡片列表上面, 见下)
+            if (!showsCard) Spacer(Modifier.height(with(density) { buttonsHeightPx.toDp() }))
+        }
+
+        if (padCarousel) {
+            TvPadCarouselLayer(
+                surface.carousel,
+                carouselCount,
+                carouselIndex(),
+                textStart = with(density) { (metrics.bleedLeftPx + metrics.heroStartPx).toDp() },
+                pageWidth = with(density) { metrics.pageWidthPx.toDp() },
+                modifier = Modifier
+                    .tvWallPlace(x = 0, y = 0, width = -1, height = padCarouselHeightPx)
+                    .graphicsLayer {
+                        // 跟着列表一起滚 (轮播区就是列表顶上那一段)
+                        translationY = -surface.scrolledPx * (1f - mode.value)
+                        alpha = if (showsCard) 0f else surface.carouselAlpha()
+                    },
             )
-            Column(
-                Modifier
-                    .padding(top = with(density) { metrics.buttonsTopGapPx.toDp() })
-                    .graphicsLayer { alpha = buttonsAlpha },
-                verticalArrangement = Arrangement.spacedBy(with(density) { metrics.buttonGapPx.toDp() }),
-            ) {
-                TvHeroButton(
-                    watchNow,
-                    Icons.Rounded.PlayArrow,
-                    filled = true,
-                    onClick = { currentListener.onHeroButtonClick(0) },
-                    onFocused = { surface.onHeroButtonFocused(0) },
-                    focusRequester = surface.primaryRequester,
-                )
-                TvHeroButton(
-                    schedule,
-                    Icons.Rounded.CalendarMonth,
-                    filled = false,
-                    onClick = { currentListener.onHeroButtonClick(1) },
-                    onFocused = { surface.onHeroButtonFocused(1) },
-                    focusRequester = surface.scheduleRequester,
-                )
-            }
+        }
+        // 平板版画法的 hero 态: 同轮播一套画法, 铺到聚焦行的组标题为止, 跟着 hero 时间线显隐 (底下铺着整页模糊背景时不另铺模糊底)
+        if (padCarousel && showsCard) {
+            TvPadHeroLayer(
+                surface.card,
+                textStart = with(density) { (metrics.bleedLeftPx + metrics.heroStartPx).toDp() },
+                textBottom = TV_PAD_HERO_TEXT_BOTTOM,
+                pageWidth = with(density) { metrics.pageWidthPx.toDp() },
+                modifier = Modifier.tvWallPlace(x = 0, y = 0, width = -1, height = metrics.listTopPx + metrics.heroHeaderTopPx),
+                // 没有按钮, 多放几行简介
+                summaryMaxLines = TV_PAD_HERO_WALL_SUMMARY_LINES,
+                ownBlur = !heroBlur,
+                // 点开时跟着卡片淡没, 露出底下变清晰的那张
+                backdropAlpha = { timeline.content * (1f - wallOpen.fade.value) },
+                textAlpha = { timeline.text * (1f - wallOpen.fade.value) },
+            )
         }
 
         // 卡片列表: 顶上出血一截 (离场行越过顶线继续上移), 末尾补一整屏 (任何一行的停位都滚得到)
@@ -415,24 +511,23 @@ internal fun TvExplorationComposeWall(
             }
         }
         val list = items
+        val touchScrollLimit = remember(surface) { TvWallTouchScrollLimit(scrolled = { surface.scrolledPx }, end = { surface.endScrollPx() }) }
         CompositionLocalProvider(LocalBringIntoViewSpec provides TvNoBringIntoViewSpec) {
             LazyColumn(
                 Modifier
                     .tvWallPlace(x = 0, y = listTop, width = -1, height = listHeight)
-                    .tvWallTouchGestures(
-                        enabled = touchInput,
-                        // hero 态里点卡片之间的空白处退回卡片墙
-                        onBlankTap = { if (timeline.active) surface.setHeroActive(false) },
-                        onSwipe = null,
-                    ),
+                    // 触屏: 手指甩不进末尾补的那一整屏
+                    .then(if (touchInput) Modifier.nestedScroll(touchScrollLimit) else Modifier),
                 state = surface.listState,
+                // 自己滚停位的那一下不接手指 (按下会被当成「按住停下滚动」吃掉, 卡片点不到)
+                userScrollEnabled = !surface.autoScrolling,
                 contentPadding = with(density) {
                     PaddingValues(top = metrics.listTopBleedPx.toDp(), bottom = (metrics.viewportPx + metrics.listBottomBleedPx).toDp())
                 },
             ) {
                 items(list.size, key = { list[it].key }) { index ->
                     val item = list[index]
-                    val fade = { surface.itemFade(index) }
+                    val fade = { surface.itemFade(index) * (1f - wallOpen.fade.value) }
                     when (item) {
                         is TvNativeExploreItem.Spacer -> Spacer(Modifier.fillMaxWidth().height(with(density) { metrics.spacerPx.toDp() }))
                         is TvNativeExploreItem.Header -> {
@@ -451,8 +546,81 @@ internal fun TvExplorationComposeWall(
                             }
                         }
 
-                        is TvNativeExploreItem.Row -> TvExploreComposeRow(surface, item, style, timeline, touchInput, fade)
+                        is TvNativeExploreItem.Row -> TvExploreComposeRow(surface, item, style, timeline, fade)
                     }
+                }
+            }
+        }
+
+        // 轮播按钮: 压在卡片列表上面 (列表整页大、叠在 hero 上, 按钮在它底下就点不到), 贴在 hero 块的下缘, 跟着文字块走.
+        // 每次重新出现都从 0 淡入 (hero 态里回轮播时文字在交叉淡入, 按钮不该当帧冒出来). 聚焦卡时挪出屏外 (看不见、点不到),
+        // 焦点照样送得到 (首行按上回「新番时间表」时先退出 hero 态)
+        val buttonsAlpha by animateFloatAsState(
+            if (showsCard) 0f else 1f,
+            if (!visualEffects.transitions) snap() else tween(if (showsCard) TV_HERO_BUTTON_FADE_OUT_MILLIS else TV_HERO_BUTTON_FADE_IN_MILLIS),
+        )
+        if (padCarousel) {
+            Box(Modifier.tvWallPlace(x = 0, y = 0, width = -1, height = padCarouselHeightPx)) {
+                TvPadCarouselButtons(
+                    surface.primaryRequester,
+                    surface.scheduleRequester,
+                    onClick = { currentListener.onHeroButtonClick(it) },
+                    onFocused = { surface.onHeroButtonFocused(it) },
+                    // 触屏上只留「新番时间表」: 点轮播画面就是进详情页 (见上面的 tvWallBlankTap); 平板接着键盘 / 遥控器按键时两颗都在
+                    watchNow = !surface.touchMode,
+                    touchFocusOnPress = !surface.touchMode,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .offset { if (showsCard) IntOffset(0, TV_WALL_BUTTONS_AWAY_PX) else IntOffset.Zero }
+                        .graphicsLayer {
+                            translationY = -surface.scrolledPx * (1f - mode.value)
+                            alpha = buttonsAlpha * surface.carouselAlpha()
+                        }
+                        .padding(
+                            start = with(density) { (metrics.bleedLeftPx + metrics.heroStartPx).toDp() },
+                            bottom = TV_PAD_CAROUSEL_BUTTONS_BOTTOM,
+                        ),
+                )
+            }
+        } else {
+            Box(
+                Modifier.tvWallPlace(
+                    x = metrics.bleedLeftPx + metrics.heroStartPx,
+                    y = metrics.heroTopPx,
+                    width = heroWidth,
+                    height = metrics.heroBlockExpandedPx,
+                ),
+            ) {
+                Column(
+                    Modifier
+                        .align(Alignment.BottomStart)
+                        .offset { if (showsCard) IntOffset(0, TV_WALL_BUTTONS_AWAY_PX) else IntOffset.Zero }
+                        .onSizeChanged { buttonsHeightPx = it.height }
+                        .graphicsLayer {
+                            translationY = -surface.scrolledPx * (1f - mode.value)
+                            alpha = buttonsAlpha * surface.carouselAlpha()
+                        }
+                        .padding(top = with(density) { metrics.buttonsTopGapPx.toDp() }),
+                    verticalArrangement = Arrangement.spacedBy(with(density) { metrics.buttonGapPx.toDp() }),
+                ) {
+                    TvHeroButton(
+                        watchNow,
+                        Icons.Rounded.PlayArrow,
+                        filled = true,
+                        onClick = { currentListener.onHeroButtonClick(0) },
+                        onFocused = { surface.onHeroButtonFocused(0) },
+                        focusRequester = surface.primaryRequester,
+                        touchFocusOnPress = !surface.touchMode,
+                    )
+                    TvHeroButton(
+                        schedule,
+                        Icons.Rounded.CalendarMonth,
+                        filled = false,
+                        onClick = { currentListener.onHeroButtonClick(1) },
+                        onFocused = { surface.onHeroButtonFocused(1) },
+                        focusRequester = surface.scheduleRequester,
+                        touchFocusOnPress = !surface.touchMode,
+                    )
                 }
             }
         }
@@ -462,7 +630,7 @@ internal fun TvExplorationComposeWall(
             if (showsCard) 0f else 1f,
             if (!visualEffects.transitions) snap() else tween(if (showsCard) TV_HERO_BUTTON_FADE_OUT_MILLIS else TV_HERO_BUTTON_FADE_IN_MILLIS),
         )
-        if (carouselCount > 1) {
+        if (carouselCount > 1 && !padCarousel) {
             val selected = carouselIndex()
             val dotColor = MaterialTheme.colorScheme.onSurface
             Box(
@@ -520,7 +688,6 @@ private fun TvExploreComposeRow(
     item: TvNativeExploreItem.Row,
     style: TvWallCardStyle,
     timeline: TvWallHeroTimeline,
-    touchInput: Boolean,
     fade: () -> Float,
 ) {
     val density = LocalDensity.current
@@ -528,14 +695,32 @@ private fun TvExploreComposeRow(
     val rowKey = item.key
     val rowState = surface.rowStateFor(rowKey)
     val animator = remember(surface.animatedScroll) { TvScrollAnimator(animated = surface.animatedScroll) }
+    var autoScrolling by remember { mutableStateOf(false) }
     LaunchedEffect(rowState, animator) {
-        snapshotFlow { surface.rowLeft[rowKey] ?: 0 }.drop(1).collectLatest { left -> animator.animateScrollToItem(rowState, left) }
+        snapshotFlow { surface.rowLeft[rowKey] ?: 0 }.drop(1).collectLatest { left ->
+            // 触屏上照行此刻的位置记下的行首: 行不动 (见 setRowLeftQuietly)
+            if (surface.consumeQuietRowLeft(rowKey, left)) return@collectLatest
+            autoScrolling = true
+            try {
+                animator.animateScrollToItem(rowState, left)
+            } finally {
+                autoScrolling = false
+            }
+        }
+    }
+    // 触屏: 手指把这一行拖停了, 行首照它停下的位置记下 (行不动), 之后按焦点挪行从这里算
+    LaunchedEffect(rowState) {
+        snapshotFlow { rowState.isScrollInProgress }.drop(1).collect { scrolling ->
+            if (!scrolling && surface.touchMode) surface.setRowLeftQuietly(rowKey, tvRowFirstFullIndex(rowState))
+        }
     }
     val fadeDistancePx = metrics.fadeDistancePx
     CompositionLocalProvider(LocalBringIntoViewSpec provides TvNoBringIntoViewSpec) {
         LazyRow(
             Modifier.fillMaxWidth().height(with(density) { metrics.rowPx.toDp() }),
             state = rowState,
+            // 自己挪行首的那一下不接手指 (同列表)
+            userScrollEnabled = !autoScrolling,
             contentPadding = with(density) { PaddingValues(start = metrics.rowStartPx.toDp(), end = metrics.endPadPx.toDp()) },
             horizontalArrangement = Arrangement.spacedBy(TV_POSTER_WALL_COLUMN_SPACING),
             verticalAlignment = Alignment.Top,
@@ -562,6 +747,9 @@ private fun TvExploreComposeRow(
                     holdFocusLook = surface.heldFocus == key,
                     // 卡片墙上点一下 = 聚焦并进 hero 态; hero 态里点另一张只换焦点, 「更多」卡也只聚焦
                     touchTwoStep = !(surface.heroEnabled && !timeline.active && !more),
+                    // 按触屏的规矩走时卡片墙不画聚焦放大 (hero 态里聚焦那张照画), 按下也不动焦点 (点一下怎么走见 onCardClick)
+                    showFocusLook = !surface.touchMode || timeline.active,
+                    touchFocusOnPress = !surface.touchMode,
                 )
             }
         }
@@ -589,6 +777,19 @@ private class TvExploreComposeSurface(
     restoredIndex: Int,
 ) : TvExploreSurface {
     var listener: TvNativeExploreListener? = null
+
+    /** 设备有触摸屏 (LocalTvTouchInputEnabled). */
+    var touchInput = false
+
+    /** 最近一次输入是手指 (见 tvWallInputMode). */
+    var lastInputTouch: Boolean by mutableStateOf(true)
+
+    /**
+     * 此刻按触屏的规矩走 (同上游的平板界面): 列表与各行只由手指滚, 焦点变化不滚动、卡片墙上不画聚焦效果; 程序送来的焦点 (进页落点、恢复落点、
+     * 焦点兜底) 停在入口节点上 ([parkFocus]). 只有点卡片进 hero 态、hero 态里换卡才按焦点挪. 平板接着键盘 / 遥控器按方向键时回到电视的规矩.
+     */
+    val touchMode: Boolean get() = touchInput && lastInputTouch
+
     var heroEnabled: Boolean = true
     var items: List<TvNativeExploreItem> = emptyList()
     lateinit var metrics: TvNativeExploreMetrics
@@ -601,6 +802,13 @@ private class TvExploreComposeSurface(
     var restored = false
 
     val listState = LazyListState()
+
+    /** 点开 (铺着模糊背景时 hero 态里按确定); null = 没铺模糊背景, 当场进. */
+    var wallOpen: TvWallOpen? = null
+
+    /** 列表正在自己滚停位 (这期间不接手指). */
+    var autoScrolling: Boolean by mutableStateOf(false)
+        private set
 
     /** 列表的停位动画 (连按时继承速度, 见 TvScrollAnimator). */
     private var listAnimator = TvScrollAnimator(animated = true)
@@ -650,6 +858,36 @@ private class TvExploreComposeSurface(
     fun rowStateFor(rowKey: String): LazyListState =
         rowStates.getOrPut(rowKey) { LazyListState(firstVisibleItemIndex = rowLeft[rowKey] ?: 0) }
 
+    /** 只记不挪的行首 (行键 → 行首), 见 [setRowLeftQuietly]. */
+    private val quietRowLeft = HashMap<String, Int>()
+
+    /** 把 [rowKey] 行的行首记成 [left], 行不动 (触屏上行停在手指放下的位置). */
+    fun setRowLeftQuietly(rowKey: String, left: Int) {
+        if (rowLeft[rowKey] == left) return
+        quietRowLeft[rowKey] = left
+        rowLeft[rowKey] = left
+    }
+
+    /** 行首换成 [left] 是 [setRowLeftQuietly] 记的 (行不挪). */
+    fun consumeQuietRowLeft(rowKey: String, left: Int): Boolean = quietRowLeft.remove(rowKey) == left
+
+    /**
+     * 让 [rowKey] 行第 [target] 张 (整行 [count] 张) 完整露出: 算出行首记进 [rowLeft] (行跟着挪), 返回行首. 按触屏的规矩走时从行此刻的位置算,
+     * 那张已经完整露出就只记不挪.
+     */
+    private fun revealInRow(rowKey: String, target: Int, count: Int): Int {
+        val columns = metrics.columns.coerceAtLeast(1)
+        if (!touchMode) {
+            val left = tvStripLeftIndex(rowLeft[rowKey] ?: 0, target, count, columns)
+            rowLeft[rowKey] = left
+            return left
+        }
+        val current = tvRowFirstFullIndex(rowStateFor(rowKey))
+        val left = tvStripLeftIndex(current, target, count, columns)
+        if (left == current) setRowLeftQuietly(rowKey, left) else rowLeft[rowKey] = left
+        return left
+    }
+
     // ---- 位置 ----
 
     override val scrolledPx: Int
@@ -662,6 +900,16 @@ private class TvExploreComposeSurface(
     }
 
     fun carouselAlpha(): Float = if (focusedRowKey != null) 1f - timeline.above else 1f
+
+    /** 卡片墙最远滚到哪 (末行贴着视口底边, 见 wallEndScroll). */
+    fun endScrollPx(): Int = metrics.wallEndScroll(items)
+
+    /** 首行卡片的顶边此刻在页面里的位置 (px); 没有卡片行时为无穷大. */
+    fun firstRowTopPx(): Float {
+        val first = items.indexOfFirst { it is TvNativeExploreItem.Row }
+        if (first < 0) return Float.MAX_VALUE
+        return (metrics.listTopPx + metrics.wallItemTop(items, first) - scrolledPx).toFloat()
+    }
 
     /**
      * 第 [index] 项的淡化 (1 = 不淡): hero 态里越过 hero 线的项在 fadeDistancePx 内淡没; 卡片墙上不淡. 进出途中不按位置淡: 聚焦行连同它的组标题
@@ -693,7 +941,12 @@ private class TvExploreComposeSurface(
         stopJob?.cancel()
         stopTarget = target
         stopJob = scope.launch {
-            runCatching { listAnimator.animateScrollBy(listState, (target - scrolledPx).toFloat(), pace) }
+            autoScrolling = true
+            try {
+                runCatching { listAnimator.animateScrollBy(listState, (target - scrolledPx).toFloat(), pace) }
+            } finally {
+                autoScrolling = false
+            }
             if (pace == TvScrollSpring.Far) farJumping = false
         }
     }
@@ -723,24 +976,73 @@ private class TvExploreComposeSurface(
 
     // ---- 焦点 ----
 
-    /** 从页面外进来: 回上次那张卡 (没排出来就先滚过去, 排出来再送), 否则回上次停的那颗 hero 按钮. */
+    /**
+     * 从页面外进来 (入口节点拿到焦点): 回上次那张卡 (没排出来就先滚过去, 排出来再送), 否则回上次停的那颗 hero 按钮. 按触屏的规矩走时卡片墙上
+     * 焦点就停在入口节点上 (见 [parkFocus]).
+     */
     fun enter() {
         val rowKey = focusedRowKey
-        if (rowKey != null && rowKey in rowKeys()) focusCard(rowKey, -1) else focusHeroButton(lastHeroButton)
+        when {
+            touchMode && !timeline.active -> parkFocus(request = false)
+            rowKey != null && rowKey in rowKeys() -> focusCard(rowKey, -1)
+            else -> focusHeroButton(lastHeroButton)
+        }
+    }
+
+    /**
+     * 按触屏的规矩走时程序送来的焦点停在这里: 入口节点 (1dp, 看不见) 拿着焦点, 画面不滚、不画聚焦. 还在 hero 态就退回卡片墙: hero 背景与文字照常淡出,
+     * 列表停在原地; 淡完才对页面报焦点在上次那颗 hero 按钮上 (页面回到轮播态, 轮播照常翻), 这之前聚焦行留着 (hero 层还画着那张卡).
+     * [request] = 把焦点送过去 (入口节点自己拿到焦点时不用再送).
+     */
+    private fun parkFocus(request: Boolean = true) {
+        pending = null
+        deferred = null
+        heldFocus = null
+        if (request) scope.launch { runCatching { state.focusRequester.requestFocus() } }
+        if (parkJob?.isActive == true) return
+        if (!timeline.active) {
+            reportParked()
+            return
+        }
+        stayInPlace = true
+        setHeroActive(false, animated = true)
+        parkJob = scope.launch {
+            snapshotFlow { timeline.active || timeline.visible || timeline.above > 0f }.first { !it }
+            reportParked()
+        }
+    }
+
+    /** 等 hero 态淡完再报停放 (见 [parkFocus]); 这期间卡片拿到了焦点就作废. */
+    private var parkJob: Job? = null
+
+    private fun reportParked() {
+        focusedRowKey = null
+        setCardAreaFocus(false)
+        listener?.onHeroButtonFocused(lastHeroButton)
+        listener?.onFocusParked()
     }
 
     fun focusHeroButton(button: Int) {
         pending = null
         deferred = null
+        if (touchMode) {
+            lastHeroButton = button
+            parkFocus()
+            return
+        }
         val target = if (button == 1) scheduleRequester else primaryRequester
         scope.launch { runCatching { target.requestFocus() } }
     }
 
     /**
      * 送焦到 [rowKey] 行的第 [index] 张 (-1 = 这一行上次停的那张). 那张没排出来就先把列表与那一行滚过去, 排出来再送 ([pending]).
-     * [far] = 远跳: 列表按远跳 spring 滚过去.
+     * [far] = 远跳: 列表按远跳 spring 滚过去. 按触屏的规矩走时卡片墙上不送 (焦点停在入口节点上, 见 [parkFocus]), hero 态里照送.
      */
     fun focusCard(rowKey: String, index: Int, far: Boolean = false) {
+        if (touchMode && !timeline.active) {
+            parkFocus()
+            return
+        }
         val item = items.indexOfFirst { it.key == rowKey }
         val row = items.getOrNull(item) as? TvNativeExploreItem.Row
         if (row == null || row.cards.isEmpty()) {
@@ -749,10 +1051,8 @@ private class TvExploreComposeSurface(
             return
         }
         deferred = null
-        val left = rowLeft[rowKey] ?: 0
-        val target = (if (index >= 0) index else rowFocused[rowKey] ?: left).coerceIn(0, row.cards.size - 1)
-        val columns = metrics.columns.coerceAtLeast(1)
-        rowLeft[rowKey] = tvStripLeftIndex(left, target, row.cards.size, columns)
+        val target = (if (index >= 0) index else rowFocused[rowKey] ?: rowLeft[rowKey] ?: 0).coerceIn(0, row.cards.size - 1)
+        revealInRow(rowKey, target, row.cards.size)
         if (!cardAreaHasFocus) heldFocus = rowKey to target
         pending = rowKey to target
         if (far) farJumping = true
@@ -770,12 +1070,18 @@ private class TvExploreComposeSurface(
 
     fun onCardFocused(rowKey: String, index: Int) {
         heldFocus = null
+        // 按触屏的规矩走时卡片墙上的焦点 (程序以外的来路, 如焦点兜底) 不算数: 不滚不报; 点卡片进 hero 态时才按聚焦走 (见 onCardClick)
+        if (touchMode && !timeline.active) return
+        takeCardFocus(rowKey, index)
+        updateStop(heroToggled = false)
+    }
+
+    /** 焦点到了 [rowKey] 行第 [index] 张: 记下、行按需挪 (走到行尾留白里那张才挪, 挪到它刚好完整露出)、报给页面. */
+    private fun takeCardFocus(rowKey: String, index: Int) {
+        parkJob?.cancel()
         val row = items.firstOrNull { it.key == rowKey } as? TvNativeExploreItem.Row
         val count = row?.cards?.size ?: (index + 1)
-        val columns = metrics.columns.coerceAtLeast(1)
-        // 按需挪之后的行首: 走到行尾留白里那张才挪, 挪到它刚好完整露出
-        val left = tvStripLeftIndex(rowLeft[rowKey] ?: 0, index, count, columns)
-        rowLeft[rowKey] = left
+        val left = revealInRow(rowKey, index, count)
         rowFocused[rowKey] = index
         focusedRowKey = rowKey
         focusedCardIndex = index
@@ -783,17 +1089,18 @@ private class TvExploreComposeSurface(
         if (pending == rowKey to index) pending = null
         setCardAreaFocus(true)
         listener?.onCardFocused(rowKey, index, focusedColumn)
-        updateStop(heroToggled = false)
     }
 
     fun onHeroButtonFocused(button: Int) {
+        parkJob?.cancel()
         heldFocus = null
         lastHeroButton = button
         pending = null
         focusedRowKey = null
         setCardAreaFocus(false)
         listener?.onHeroButtonFocused(button)
-        // 焦点回到轮播按钮: 回卡片墙, 列表按远跳 spring 滚回顶 (轮播随列表一起滑回原位)
+        // 焦点回到轮播按钮: 回卡片墙, 列表按远跳 spring 滚回顶 (轮播随列表一起滑回原位). 按触屏的规矩走时画面不动
+        if (touchMode) return
         if (timeline.active) setHeroActive(false)
         scrollTo(0, TvScrollSpring.Far)
     }
@@ -804,7 +1111,27 @@ private class TvExploreComposeSurface(
         listener?.onCardAreaFocusChanged(has)
     }
 
+    /**
+     * 点 (确认) [rowKey] 行第 [index] 张. 按触屏的规矩走时 (按下不动焦点, 见 TvWallCard 的 touchFocusOnPress): 卡片墙上点一下就聚焦它并进 hero 态
+     * (没有 hero 态就直接进), hero 态里点没聚焦的那张只换焦点.
+     */
     fun onCardClick(rowKey: String, index: Int, more: Boolean) {
+        val key = rowKey to index
+        if (touchMode) {
+            // hero 态里点到聚焦行上面那几行 (淡没在 hero 区里, 看不见): 算点 hero 区
+            if (timeline.active && isAboveFocusedRow(rowKey)) {
+                openFocusedCard()
+                return
+            }
+            if (timeline.active && focusedRowKey to focusedCardIndex != key) {
+                requesters[key]?.let { runCatching { it.requestFocus() } }
+                return
+            }
+            if (!more && heroEnabled && !timeline.active) {
+                requesters[key]?.let { runCatching { it.requestFocus() } }
+                takeCardFocus(rowKey, index)
+            }
+        }
         if (more) {
             listener?.onMoreClick(rowKey)
             return
@@ -815,8 +1142,31 @@ private class TvExploreComposeSurface(
         } else {
             // 进详情页: 焦点交出去之后这张卡仍画成聚焦态, 返回后焦点交还前也不缩
             heldFocus = rowKey to index
-            listener?.onCardClick(rowKey, index)
+            // 铺着模糊背景: 背景此刻是这张卡的、能变清晰就先对焦, 到位再进
+            val src = card
+            val wall = src?.wall
+            val matches = src != null && !src.dimming && wall != null && wall.subjectId != null && wall.subjectId == src.rawSubjectId
+            val opened = matches && wallOpen?.open(wall) {
+                state.wallOpened = true
+                state.wallOpenLeft = false
+                listener?.onCardClick(rowKey, index)
+            } == true
+            if (!opened) listener?.onCardClick(rowKey, index)
         }
+    }
+
+    /** 触屏上 hero 态里点 hero 区 (背景图、文字, 及淡没在那里的上面几行): 同点聚焦的那张 (进详情页). */
+    fun openFocusedCard() {
+        val rowKey = focusedRowKey ?: return
+        val row = items.firstOrNull { it.key == rowKey } as? TvNativeExploreItem.Row ?: return
+        val index = focusedCardIndex
+        onCardClick(rowKey, index, row.cards.getOrNull(index)?.more != null)
+    }
+
+    private fun isAboveFocusedRow(rowKey: String): Boolean {
+        val focused = items.indexOfFirst { it.key == focusedRowKey }
+        val item = items.indexOfFirst { it.key == rowKey }
+        return focused >= 0 && item in 0 until focused
     }
 
     private fun rowKeys(): List<String> = items.filterIsInstance<TvNativeExploreItem.Row>().map { it.key }
@@ -884,10 +1234,32 @@ private class TvExploreComposeSurface(
 
     override val heroActive: Boolean get() = timeline.active
 
-    override fun setHeroActive(active: Boolean) {
+    /** 页面让退出 (hero 态里按返回): 按触屏的规矩走时同 [exitHeroInPlace]. */
+    override fun setHeroActive(active: Boolean) = if (!active && touchMode) exitHeroInPlace() else setHeroActive(active, animated = true)
+
+    /** 下一次退出 hero 态停在原地 (见 [exitHeroInPlace]). */
+    private var stayInPlace = false
+
+    fun consumeStayInPlace(): Boolean = stayInPlace.also { stayInPlace = false }
+
+    /**
+     * 触屏上退出 hero 态 (点卡片以外的地方、拖列表、按返回): hero 背景与文字照常淡出, 列表停在原地 (不滚回正中); 按触屏的规矩走时焦点停回
+     * 入口节点 (见 [parkFocus]).
+     */
+    fun exitHeroInPlace() {
+        if (!timeline.active) return
+        if (touchMode) {
+            parkFocus()
+        } else {
+            stayInPlace = true
+            setHeroActive(false, animated = true)
+        }
+    }
+
+    private fun setHeroActive(active: Boolean, animated: Boolean) {
         if (active && !heroEnabled) return
         if (timeline.active == active) return
-        timeline.active = active
+        timeline.setActive(active, animated)
         state.heroActive = active
         listener?.onHeroActiveChanged(active)
     }
@@ -903,6 +1275,9 @@ private class TvExploreComposeSurface(
 
     override fun hasFocus(): Boolean = hasAnyFocus
 }
+
+/** 聚焦卡时轮播按钮挪到多远 (屏外, 点不到). */
+private const val TV_WALL_BUTTONS_AWAY_PX = -100_000
 
 /** 背景图在轮播与聚焦卡两套尺寸之间缩放的时长. */
 private const val TV_WALL_BACKDROP_RESIZE_MILLIS = 400

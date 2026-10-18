@@ -1044,6 +1044,12 @@ private fun TvExplorationPageContent(
             cardAreaHasFocus = hasFocus
         }
 
+        override fun onFocusParked() {
+            cardFocusRequest = null
+            heroFocusRequest = null
+            wallFarJumpRow = null
+        }
+
         override fun onToneChanged(tone: Float, splitY: Float) = Unit
 
         override fun onScrollingChanged(scrolling: Boolean) {

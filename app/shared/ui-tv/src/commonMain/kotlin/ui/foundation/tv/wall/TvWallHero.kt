@@ -50,12 +50,15 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
@@ -119,8 +122,17 @@ import me.him188.ani.app.ui.foundation.tv.tvHeroContentColor
  */
 @Stable
 internal class TvWallHeroTimeline(initial: Boolean) {
-    /** true = hero 态 (目标), 进出都改它. */
+    /** true = hero 态 (目标), 进出都改它 (要当场到位用 [setActive]). */
     var active: Boolean by mutableStateOf(initial)
+
+    /** 下一次进出不走过渡, 各段当场到位 (见 [setActive]). */
+    internal var snapNext: Boolean = false
+
+    /** 进出 hero 态; [animated] = false 时各段当场到位. */
+    fun setActive(active: Boolean, animated: Boolean = true) {
+        if (!animated) snapNext = true
+        this.active = active
+    }
 
     // 页面重建时恢复成 hero 态的话各段直接到位, 不再淡入一遍
     private val start = if (initial) 1f else 0f
@@ -168,8 +180,9 @@ internal fun rememberTvWallHeroTimeline(initial: Boolean, darkens: Boolean): TvW
     val toneOutMillis = if (darkens) TV_WALL_HERO_TONE_OUT_MILLIS else TV_WALL_HERO_ABOVE_IN_MILLIS
     LaunchedEffect(hero, animated, darkens) {
         snapshotFlow { hero.active }.collectLatest { active ->
-            // 流畅档直接到位, 同其它过渡
-            if (!animated) {
+            // 流畅档直接到位, 同其它过渡; 这一次要求当场到位的也是
+            if (!animated || hero.snapNext) {
+                hero.snapNext = false
                 hero.snapAll(if (active) 1f else 0f)
                 return@collectLatest
             }
@@ -216,6 +229,10 @@ private const val TV_WALL_HERO_TONE_OUT_MILLIS = 350
  * hero 背景图: [target] 那张贴在本层 (大小由调用方给) 里铺满, 换图交叉淡入; 压着 [treatment] 那套遮罩 (渐隐到页面底色; 绘制里读,
  * 探索页在轮播与聚焦卡两套之间过渡). [dimming] 为 true 时 (焦点已经换到别的条目, 展示目标还没跟上) 压暗一层. 登记放大转场
  * (点进详情页时图原地放大, 见 TvBackdropImage).
+ *
+ * [feather] = 底下铺着整屏模糊背景 (hero 态的模糊背景): 遮罩不盖页面底色, 改成按同样的渐变把图擦成透明, 露出底下的模糊背景
+ * (盖底色的话压在模糊背景上就是一块纯色带, 边界很明显); 这时也不压暗, 也不登记成放大转场的来源 (进详情页从整屏模糊底点开, 见 TvWallOpen;
+ * 同原生背景层的 feather).
  */
 @Composable
 internal fun TvWallHeroBackdrop(
@@ -224,22 +241,34 @@ internal fun TvWallHeroBackdrop(
     treatment: () -> TvBackdropTreatment,
     fadeColor: Color,
     modifier: Modifier = Modifier,
+    feather: Boolean = false,
 ) {
     val animated = LocalThemeSettings.current.visualEffects.transitions
     val dim by animateFloatAsState(
-        if (dimming) TV_WALL_HERO_DIMMING_ALPHA else 0f,
+        if (dimming && !feather) TV_WALL_HERO_DIMMING_ALPHA else 0f,
         if (animated) tween(TV_WALL_HERO_DIMMING_MILLIS) else snap(),
     )
     val currentTreatment by rememberUpdatedState(treatment)
     Box(
-        modifier.drawWithCache {
-            onDrawWithContent {
-                drawContent()
-                val painter = tvBackdropTreatmentPainter(size, currentTreatment())
-                with(painter) { draw() }
-                if (dim > 0f) drawRect(fadeColor, alpha = dim)
-            }
-        },
+        modifier
+            // 擦边要在本层自己的离屏缓冲里擦, 只擦图, 不擦底下的模糊背景
+            .graphicsLayer { compositingStrategy = if (feather) CompositingStrategy.Offscreen else CompositingStrategy.Auto }
+            .drawWithCache {
+                val erase = Paint().apply { blendMode = BlendMode.DstOut }
+                onDrawWithContent {
+                    drawContent()
+                    val painter = tvBackdropTreatmentPainter(size, currentTreatment())
+                    if (feather) {
+                        // 渐变只取透明度: 整组画进一层再按 DstOut 合上去, 渐变多浓就把图擦掉多少
+                        drawContext.canvas.saveLayer(Rect(Offset.Zero, size), erase)
+                        with(painter) { draw() }
+                        drawContext.canvas.restore()
+                    } else {
+                        with(painter) { draw() }
+                        if (dim > 0f) drawRect(fadeColor, alpha = dim)
+                    }
+                }
+            },
     ) {
         Crossfade(
             target,
@@ -252,7 +281,7 @@ internal fun TvWallHeroBackdrop(
                     t.underlayUrl?.let { underlay ->
                         AsyncImage(underlay, contentDescription = null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                     }
-                    TvBackdropImage(t.url, t.subjectId, zoomTreatment = { currentTreatment() })
+                    TvBackdropImage(t.url, if (feather) null else t.subjectId, zoomTreatment = { currentTreatment() })
                 }
             }
         }
@@ -337,6 +366,7 @@ private class TvWallBlurred(
  * hero 文字块: 标题 (或标题 logo) → 信息行 (★评分 + 分段着色的一串) → 下一集行 → 简介 (占满剩余高度, 最后一行省略号), 纵向排, 行距
  * [lineSpacing]. 宽度: 标题 [titleWidth], 下一集行与简介 [summaryWidth]. 换条目时旧字淡出、新字从右边滑一小段淡入; [text] 为 null = 藏起来
  * (滚动 / 连发中). 标题的框登记给放大转场 (详情页标题从这里平移过去), 缩回期间按转场层的判定隐藏或平移.
+ * [bodyAlpha] = 标题以外几行的透明度 (绘制里读): 整屏背景点开时它们跟着卡片淡没, 标题留着交给详情页.
  */
 @Composable
 internal fun TvWallHeroText(
@@ -346,6 +376,7 @@ internal fun TvWallHeroText(
     summaryWidth: Dp,
     lineSpacing: Dp,
     modifier: Modifier = Modifier,
+    bodyAlpha: () -> Float = { 1f },
 ) {
     val animated = LocalThemeSettings.current.visualEffects.transitions
     val slidePx = with(LocalDensity.current) { TV_WALL_HERO_TEXT_SLIDE.roundToPx() }
@@ -366,7 +397,7 @@ internal fun TvWallHeroText(
         contentAlignment = Alignment.TopStart,
     ) { shown ->
         if (shown != null) {
-            TvWallHeroTextContent(shown, titleMaxLines, titleWidth, summaryWidth, lineSpacing)
+            TvWallHeroTextContent(shown, titleMaxLines, titleWidth, summaryWidth, lineSpacing, bodyAlpha)
         } else {
             Box(Modifier.fillMaxSize())
         }
@@ -380,14 +411,16 @@ private fun TvWallHeroTextContent(
     titleWidth: Dp,
     summaryWidth: Dp,
     lineSpacing: Dp,
+    bodyAlpha: () -> Float,
 ) {
     val typography = MaterialTheme.typography
     val content = tvHeroContentColor()
     val marquee = LocalThemeSettings.current.visualEffects.marquee
+    val body = Modifier.graphicsLayer { alpha = bodyAlpha() }
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(lineSpacing)) {
         TvWallHeroTitle(text, titleMaxLines, titleWidth)
         if (text.infoReady && (text.rating != null || text.meta.isNotEmpty())) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(body, verticalAlignment = Alignment.CenterVertically) {
                 text.rating?.let { rating ->
                     Icon(Icons.Rounded.Star, contentDescription = null, Modifier.size(TV_HERO_RATING_STAR_SIZE), tint = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.width(TV_HERO_RATING_STAR_GAP))
@@ -416,17 +449,19 @@ private fun TvWallHeroTextContent(
             // 下一集 / 开始观看那一行加粗: 与简介同为主要信息, 靠字重分开
             Text(
                 line,
-                Modifier.width(summaryWidth).then(if (status.wrap) Modifier else Modifier.tvAmbientMarquee(enabled = marquee, iterations = Int.MAX_VALUE)),
+                body.width(summaryWidth).then(if (status.wrap) Modifier else Modifier.tvAmbientMarquee(enabled = marquee, iterations = Int.MAX_VALUE)),
                 color = Color(status.color),
                 style = typography.labelLarge.copy(fontWeight = FontWeight.Bold),
                 maxLines = if (status.wrap) 2 else 1,
                 overflow = if (status.wrap) TextOverflow.Ellipsis else TextOverflow.Clip,
             )
         }
-        if (text.summary.isNotBlank()) {
+        // 段落之间的空行收掉: 简介按高度截断, 截在空行上就只剩一个孤零零的省略号
+        val summary = remember(text.summary) { text.summary.replace(TV_WALL_BLANK_LINES, "\n").trim() }
+        if (summary.isNotEmpty()) {
             Text(
-                text.summary,
-                Modifier.width(summaryWidth),
+                summary,
+                body.width(summaryWidth),
                 color = content,
                 style = typography.bodyMedium,
                 maxLines = if (text.summaryMaxLines > 0) text.summaryMaxLines else Int.MAX_VALUE,
@@ -485,6 +520,9 @@ private fun TvWallHeroTitle(text: TvNativeHeroText, maxLines: Int, width: Dp) {
         )
     }
 }
+
+/** 简介里连着的空行. */
+private val TV_WALL_BLANK_LINES = Regex("""\n\s*\n+""")
 
 /** 新字进场从右边滑多远. */
 private val TV_WALL_HERO_TEXT_SLIDE = 14.dp

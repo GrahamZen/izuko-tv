@@ -77,6 +77,7 @@ import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.foundation.LoadError
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.navigation.LocalNavigator
+import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.prefetchTvTmdbSummary
 import me.him188.ani.app.ui.main.TvPosterWallPreviewPage
 import me.him188.ani.app.ui.foundation.AniDisplayTier
@@ -1302,10 +1303,12 @@ internal fun <T> TvCollectionGlassRailTab(
     // 焦点按 onFocusChanged 记 (见 FocusHighlight.kt 开头: 收集交互事件会丢掉进页那一次 Focus)
     var focused by remember { mutableStateOf(false) }
     val selected by remember(selection, item) { derivedStateOf { selection.selected == item } }
+    // 触屏 (平板 / iPad) 上不画聚焦的样子, 只画选中: 点了别的标签 / 左右滑换了标签之后焦点还停在原来那枚, 画出来就是两枚同时有颜色
+    val touchInput = LocalTvTouchInputEnabled.current
     TvCollectionGlassTab(
         label = label,
         selected = selected,
-        focused = focused,
+        focused = focused && !touchInput,
         detail = detail,
         modifier = modifier
             // 无条件挂: 链上元素个数恒定, 选中态变化不会重建其后的焦点节点
