@@ -45,6 +45,7 @@ import me.him188.ani.app.platform.DevSwitchesAndroid
 import me.him188.ani.app.platform.PreviousExits
 import me.him188.ani.app.videoplayer.media.SeekPreviewCrashMarker
 import me.him188.ani.app.platform.AppStartupTasks
+import me.him188.ani.app.platform.DevSwitches
 import me.him188.ani.app.platform.JvmLogHelper
 import me.him188.ani.app.platform.StartupTimeMonitor
 import me.him188.ani.app.platform.StepName
@@ -135,6 +136,9 @@ class AniApplication : Application() {
             // In service process, we don't need any dependency which is use in app process.
             return
         }
+
+        // 调试开关的状态先在这里建好: 组合与 Web 控制台的线程第一次同时访问时, 状态会建在组合拿的快照之后, 组合一读就抛
+        DevSwitches.all
 
         // 本进程属于哪个用户: 必须在建数据库与配置 (startKoin) 之前定下来, 见 UserProfiles
         UserProfiles.install(

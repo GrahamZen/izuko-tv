@@ -74,6 +74,12 @@ interface TvNativeExploreListener : TvNativeRowWallListener {
 
     fun onHeroButtonClick(button: Int)
 
+    /**
+     * 触屏上程序送来的焦点 (落点请求、焦点兜底) 停在了画面的入口节点上, 没送到卡 / 按钮 (平板上海报墙不按焦点滚动, 见 TvExploreComposeSurface.parkFocus):
+     * 挂着的落点请求作废.
+     */
+    fun onFocusParked() {}
+
     /** hero 按钮上按左 / 右翻轮播; 返回 false = 没翻 (第一项按左: 交给侧边栏). */
     fun onSwitchCarousel(delta: Int): Boolean
 }

@@ -71,6 +71,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.max
 import androidx.compose.ui.zIndex
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filter
 import me.him188.ani.app.ui.foundation.AsyncImage
 import me.him188.ani.app.ui.foundation.focus.TV_SCROLL_STIFFNESS
@@ -79,6 +80,7 @@ import me.him188.ani.app.ui.foundation.focus.TvScrollAnimator
 import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
 import me.him188.ani.app.ui.foundation.tv.TV_CARD_FADE_DISTANCE
 import me.him188.ani.app.ui.foundation.tv.TV_CARD_PAST_DIM_ALPHA
+import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_COLUMN_SPACING
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeCard
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeMonogram
@@ -133,6 +135,18 @@ private class TvWallStripNav {
     var focusedIndex by mutableIntStateOf(-1)
     var leftIndex by mutableIntStateOf(0)
     var hasFocus by mutableStateOf(false)
+
+    /** 设备有触摸屏 (LocalTvTouchInputEnabled). */
+    var touchInput = false
+
+    /** 最近一次输入是手指 (见 tvWallInputMode). */
+    var lastInputTouch by mutableStateOf(true)
+
+    /**
+     * 此刻按触屏的规矩走 (同上游的平板界面): 行只由手指滚, 焦点到哪都不挪行、不画聚焦效果, 按下不动焦点 (点一下就是点击).
+     * 平板接着键盘 / 遥控器按方向键时回到电视的规矩.
+     */
+    val touchMode: Boolean get() = touchInput && lastInputTouch
 }
 
 @Composable
@@ -167,10 +181,18 @@ private fun TvWallStripRow(
     val state = rememberLazyListState(initialFirstVisibleItemIndex = nav.leftIndex)
     val animatedScroll = tvAnimatedScroll()
     val animator = remember(animatedScroll) { TvScrollAnimator(animated = animatedScroll) }
+    val touchInput = LocalTvTouchInputEnabled.current
+    nav.touchInput = touchInput
     LaunchedEffect(animator, state) {
         snapshotFlow { nav.leftIndex to nav.hasFocus }
-            .filter { (_, hasFocus) -> hasFocus }
+            .filter { (_, hasFocus) -> hasFocus && !nav.touchMode }
             .collectLatest { (left, _) -> animator.animateScrollToItem(state, left) }
+    }
+    // 触屏: 手指把行拖停了, 行首照它停下的位置记下 (行不动), 之后按键挪行从这里算
+    LaunchedEffect(state) {
+        snapshotFlow { state.isScrollInProgress }.drop(1).collect { scrolling ->
+            if (!scrolling && nav.touchMode) nav.leftIndex = tvRowFirstFullIndex(state)
+        }
     }
     val enterRequester = remember { FocusRequester() }
     val currentCount by rememberUpdatedState(itemCount)
@@ -180,6 +202,8 @@ private fun TvWallStripRow(
         LazyRow(
             modifier
                 .fillMaxWidth()
+                // 触屏设备: 手指按下 / 按方向键分别切到触屏 / 电视的规矩 (见 TvWallStripNav.touchMode)
+                .tvWallInputMode(touchInput) { nav.lastInputTouch = it }
                 .onFocusChanged { nav.hasFocus = it.hasFocus }
                 // 从行外进来落回上次聚焦那张. onEnter 只在焦点组节点上生效, 所以补 focusGroup()
                 .focusProperties { onEnter = { runCatching { enterRequester.requestFocus() } } }
@@ -205,7 +229,7 @@ private fun TvWallStripRow(
                         if (isEnterTarget) Modifier.focusRequester(enterRequester) else Modifier,
                         {
                             nav.focusedIndex = index
-                            nav.leftIndex = tvStripLeftIndex(nav.leftIndex, index, currentCount, currentColumns)
+                            if (!nav.touchMode) nav.leftIndex = tvStripLeftIndex(nav.leftIndex, index, currentCount, currentColumns)
                         },
                         { tvPastAnchorDim(state, index, fadeDistancePx) },
                     )
@@ -278,6 +302,9 @@ internal fun TvWallPosterStrip(
                 },
                 dimAlpha = dim,
                 holdFocusLook = index == heldIndex,
+                // 按触屏的规矩走时不画聚焦放大, 按下也不动焦点
+                showFocusLook = !nav.touchMode,
+                touchFocusOnPress = !nav.touchMode,
             )
         }
     }
@@ -320,12 +347,16 @@ internal fun TvWallPeopleStrip(
                     if (items != null) focused()
                 },
                 modifier = enter,
+                touchMode = nav.touchMode,
             )
         }
     }
 }
 
-/** 一格圆头像: 照片 (没有照片写姓名首字) / 「查看全部」的箭头 / 数据没到的占位. */
+/**
+ * 一格圆头像: 照片 (没有照片写姓名首字) / 「查看全部」的箭头 / 数据没到的占位. [touchMode] = 按触屏的规矩走 (见 TvWallStripNav.touchMode):
+ * 不画聚焦效果, 按下不动焦点.
+ */
 @Composable
 private fun TvWallMonogramCell(
     item: TvNativeMonogram?,
@@ -333,11 +364,12 @@ private fun TvWallMonogramCell(
     onLongPress: () -> Unit,
     onFocused: () -> Unit,
     modifier: Modifier = Modifier,
+    touchMode: Boolean = false,
 ) {
     var focused by remember { mutableStateOf(false) }
     // 弹簧而不是缓动: 连按方向键时新动画从当前值和当前速度接着走; 刚度同行滚动, 放大与滚动同相
     val progress by animateFloatAsState(
-        if (focused) 1f else 0f,
+        if (focused && !touchMode) 1f else 0f,
         spring(dampingRatio = 0.8f, stiffness = TV_SCROLL_STIFFNESS),
     )
     val scale = 1f + (TV_MONOGRAM_FOCUS_SCALE - 1f) * progress
@@ -354,7 +386,7 @@ private fun TvWallMonogramCell(
                 }
             }
             .tvLongPressKey(onLongPress = onLongPress, onShortPress = onClick)
-            .tvTouchFocusOnTap()
+            .then(if (touchMode) Modifier else Modifier.tvTouchFocusOnTap())
             .combinedClickable(
                 interactionSource = remember { MutableInteractionSource() },
                 // 示焦完全由圆的放大承担
