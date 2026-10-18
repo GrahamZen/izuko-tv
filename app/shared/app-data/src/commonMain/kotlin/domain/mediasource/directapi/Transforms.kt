@@ -55,12 +55,14 @@ private fun apply(value: String, transform: Transform): String? = when (transfor
     TransformOp.Trim -> value.trim()
 }
 
+private fun decodeBase64(value: String): String? = decodeBase64Lenient(value)?.decodeToString()
+
 /**
- * 自动补 `=`; 标准字母表解不出来时再试 URL-safe 字母表.
+ * 宽松地解 base64 (各类数据源共用): 标准与 URL-safe 两种字母表都认, 缺的 `=` 自动补; 解不出来时 `null`.
  */
 @OptIn(ExperimentalEncodingApi::class)
-private fun decodeBase64(value: String): String? {
-    val padded = value + "=".repeat((4 - value.length % 4) % 4)
-    runCatching { Base64.Default.decode(padded).decodeToString() }.getOrNull()?.let { return it }
-    return runCatching { Base64.UrlSafe.decode(padded).decodeToString() }.getOrNull()
+internal fun decodeBase64Lenient(text: String): ByteArray? {
+    val standard = text.trim().replace('-', '+').replace('_', '/').trimEnd('=')
+    val padded = standard + "=".repeat((4 - standard.length % 4) % 4)
+    return runCatching { Base64.Default.decode(padded) }.getOrNull()
 }

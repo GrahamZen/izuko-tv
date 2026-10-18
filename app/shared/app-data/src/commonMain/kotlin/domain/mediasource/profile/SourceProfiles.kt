@@ -16,8 +16,6 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -68,9 +66,6 @@ object SourceProfiles {
     private val resolvedUrls = MutableStateFlow<Map<String, ResolvedUrl>>(emptyMap())
     private val changes = MutableStateFlow(0)
     private val saveScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-
-    /** key 是 [Media.mediaSourceId]. */
-    val observations: StateFlow<Map<String, List<SourceObservation>>> = state.asStateFlow()
 
     /** 最近几次大多要 WebView 嗅探才拿到视频的数据源 (只有规则源记这一项). */
     val webViewSources: Flow<Set<String>> = state.map { all -> all.filterValues { usesWebView(it) == true }.keys }.distinctUntilChanged()
