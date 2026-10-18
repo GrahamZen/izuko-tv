@@ -462,7 +462,7 @@ fun tvBackdropFadeFromBlackStops(
  * 固定延迟重试三次, 比原来 4s hedge 到点才补射恢复得更快. 别再把 hedge 加回来.
  */
 @Composable
-private fun TvBackdropImage(
+internal fun TvBackdropImage(
     url: String,
     themeSeedSubjectId: Int? = null,
     /** 本页盖在这张图上的整层压暗 (全屏背景层有), 随登记交给放大转场, 见 TvHeroZoomHandoff.Session.dim. */

@@ -201,4 +201,11 @@ object DevSwitches {
      * 主线程卡住超过 4 秒时把栈打进日志 (重启后生效). 关着时这些都不记.
      */
     val playDiagnostics = toggle("playDiagnostics", "开播诊断: 时间线、选源追踪、请求耗时与主线程卡顿 (卡顿监视重启生效)", persistent = true)
+
+    /** 海报墙 / 详情页横排换成 Compose 版 (iOS 上画的那一套, 见 ui-tv 的 foundation/tv/wall), 在安卓上对照用. */
+    val tvComposeWalls = toggle(
+        "tvComposeWalls",
+        "海报墙用 Compose 版 (iOS 那套)",
+        description = "探索 / 追番 / 搜索 / 新番时间表的海报墙, 详情页的关联作品与演职人员行; 切换后回到页面重进生效",
+    )
 }
