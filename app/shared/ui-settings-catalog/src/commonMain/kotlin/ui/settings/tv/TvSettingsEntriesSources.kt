@@ -191,27 +191,35 @@ internal data class TvDrive(val service: CloudDriveService, val account: CloudDr
 
 /**
  * 数据源: 订阅 (全部刷新、逐个删除)、网盘 (退出登录)、数据源 (逐个启用 / 停用, 长按挪顺序, 一键测试). 新增与编辑要打字, 在手机控制台里.
+ *
+ * 触屏版 ([TvSettingKeys.touchPage]): 网盘、订阅与数据源列表是嵌进来的原来设置页那一块 (见 TouchSettingsPage), 这里只给它没有的:
+ * 订阅更新时恢复顺序、WebDAV (添加与登录).
  */
 internal fun TvSettingsItemsBuilder.mediaSourceItems() {
     val keys = TvSourceSettingKeys
+    val touchPage = TvSettingKeys.touchPage
     // 数据源
-    header(Lang.settings_tab_media_source)
+    header(Lang.settings_tab_media_source, visible = { it[touchPage] != true })
     action(
         Lang.tv_settings_sources_on_phone, Lang.tv_settings_sources_on_phone_description,
+        keys = listOf(touchPage),
         value = { tvText(Lang.tv_settings_on_phone) },
-        qr = { consoleQr(it, "#sources") },
+        visible = { it[touchPage] != true },
+        qr = { consoleQr(it, "#sources", legacy = true) },
     ) { emptyList() }
     action(
         Lang.tv_settings_sources_test_all, Lang.tv_settings_sources_test_all_description,
-        keys = listOf(keys.sources, keys.sourceTests),
+        keys = listOf(keys.sources, keys.sourceTests, touchPage),
         value = { v -> v[keys.sourceTests]?.let(::testSummary) },
+        visible = { it[touchPage] != true },
     ) { v ->
         val sources = v[keys.sources].orEmpty()
         listOf(TvSettingsEdit.Run { env -> env.deps.sourceTests.testAll(sources) })
     }
+    // 逐个开关、长按挪顺序
     entries(
-        listOf(keys.sources, keys.sourceTests),
-        entries = { it[keys.sources].orEmpty() },
+        listOf(keys.sources, keys.sourceTests, touchPage),
+        entries = { if (it[touchPage] == true) emptyList() else it[keys.sources].orEmpty() },
         key = { it.instanceId },
         title = { tvText(it.source.info.displayName) },
         value = { v, source ->
@@ -233,13 +241,13 @@ internal fun TvSettingsItemsBuilder.mediaSourceItems() {
     header(Lang.settings_media_source_subscription)
     action(
         Lang.settings_media_source_subscription_refresh_all,
-        keys = listOf(keys.subscriptions, keys.subscriptionUpdate),
+        keys = listOf(keys.subscriptions, keys.subscriptionUpdate, touchPage),
         value = { v ->
             val update = v[keys.subscriptionUpdate]
             val progress = update?.progress
             if (update?.running == true && progress != null) tvText(Lang.settings_media_source_subscription_updating, progress.first, progress.second) else null
         },
-        visible = { !it[keys.subscriptions].isNullOrEmpty() },
+        visible = { !it[keys.subscriptions].isNullOrEmpty() && it[touchPage] != true },
     ) { v ->
         if (v[keys.subscriptionUpdate]?.running == true) return@action emptyList()
         listOf(TvSettingsEdit.Run { env -> env.deps.settings.mediaSourceSubscriptionGroupState.updateAll() })
@@ -250,8 +258,8 @@ internal fun TvSettingsItemsBuilder.mediaSourceItems() {
         write = { copy(restoreSubscriptionOrder = it) },
     )
     entries(
-        listOf(keys.subscriptions),
-        entries = { it[keys.subscriptions].orEmpty() },
+        listOf(keys.subscriptions, touchPage),
+        entries = { if (it[touchPage] == true) emptyList() else it[keys.subscriptions].orEmpty() },
         key = { it.subscriptionId },
         title = { tvText(subscriptionLabel(it.url)) },
         value = { _, sub -> subscriptionStatus(sub) },
@@ -277,9 +285,13 @@ internal fun TvSettingsItemsBuilder.mediaSourceItems() {
         value = { tvText(Lang.tv_settings_on_phone) },
         qr = { consoleQr(it, "#sources/webdav") },
     ) { emptyList() }
+    // 触屏版只列 WebDAV 服务器 (账号密码登录); 其余网盘在嵌进来的那一块里
     entries(
-        listOf(keys.drives, keys.driveQr),
-        entries = { it[keys.drives].orEmpty() },
+        listOf(keys.drives, keys.driveQr, touchPage),
+        entries = { v ->
+            val drives = v[keys.drives].orEmpty()
+            if (v[touchPage] == true) drives.filter { it.service.protocol.supportsPasswordLogin } else drives
+        },
         key = { it.service.driveId },
         title = { tvText(it.service.protocol.displayName(Locale.current.toLanguageTag())) },
         value = { _, drive ->

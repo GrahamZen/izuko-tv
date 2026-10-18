@@ -83,7 +83,7 @@ data class TvSettingsInfo(
 @Immutable
 data class TvSettingsBubble(val meta: String, val text: String, val mine: Boolean)
 
-/** 说明栏的二维码 (字已换好, 见 [TvQr]): [content] 为 null 时不画码, 只写 [status]; [console] / [link] 见 [TvQr]. */
+/** 说明栏的二维码 (字已换好, 见 [TvQr]): [content] 为 null 时不画码, 只写 [status]; [console] / [link] / [legacy] 见 [TvQr]. */
 @Immutable
 data class TvSettingsQr(
     val content: String?,
@@ -91,6 +91,7 @@ data class TvSettingsQr(
     val status: String,
     val console: String? = null,
     val link: Boolean = false,
+    val legacy: Boolean = false,
 )
 
 @Immutable
@@ -399,7 +400,7 @@ private fun itemInfo(
     resolver.resolve(title),
     description?.let { resolver.resolve(it) }.orEmpty(),
     qr?.let {
-        TvSettingsQr(it.content, it.caption?.let(resolver::resolve).orEmpty(), it.status?.let(resolver::resolve).orEmpty(), it.console, it.link)
+        TvSettingsQr(it.content, it.caption?.let(resolver::resolve).orEmpty(), it.status?.let(resolver::resolve).orEmpty(), it.console, it.link, it.legacy)
     },
     image,
     bubbles.map { TvSettingsBubble(resolver.resolve(it.meta), it.text?.let(resolver::resolve).orEmpty(), it.mine) },
