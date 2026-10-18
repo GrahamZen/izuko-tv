@@ -64,17 +64,18 @@ import me.him188.ani.app.ui.subject.collection.TvCollectionPage
 import me.him188.ani.app.ui.subject.details.LocalSubjectDetailsPageVariant
 import me.him188.ani.app.ui.subject.details.layout.TvSubjectDetailsPageVariant
 import me.him188.ani.app.ui.tv.TvAniUiBehavior
+import me.him188.ani.app.ui.tv.withTouchNavigation
 
 /**
  * 触屏设备 (iPad) 上跑电视界面时的界面行为: 同电视 ([TvAniUiBehavior]); 播放器用的是共享的那一版, 跟播放器相关的几项取共享的默认值,
- * 不自动装更新 (应用商店管).
+ * 不自动装更新 (应用商店管); 二级页面有带返回按钮的顶栏 (见 withTouchNavigation).
  */
 val TvTouchAniUiBehavior: AniUiBehavior = TvAniUiBehavior.copy(
     supportsWindowedPlayback = AniUiBehavior.Default.supportsWindowedPlayback,
     forceDarkInPlayer = AniUiBehavior.Default.forceDarkInPlayer,
     retainPlaybackSession = false,
     autoInstallUpdates = false,
-)
+).withTouchNavigation()
 
 /**
  * 把电视界面装进各共享页面的插槽, 给触屏设备 (iPad) 用, 样子同电视包装在平板上 (触摸适配打开, 见 LocalTvTouchInputEnabled): 主壳 (侧边栏)、

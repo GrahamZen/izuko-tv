@@ -37,6 +37,7 @@ import me.him188.ani.app.navigation.NavRoutes
 import me.him188.ani.app.data.network.TmdbImageService
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.platform.AppTerminator
+import me.him188.ani.app.platform.DevSwitches
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.tv.TvActionPanelRequests
 import me.him188.ani.app.ui.subject.details.layout.TvViewAllCommentsList
@@ -119,6 +120,7 @@ import me.him188.ani.app.ui.foundation.tv.TvOnboardingVariant
 import me.him188.ani.app.ui.subject.episode.tv.TvEpisodeScreenContent
 import me.him188.ani.app.ui.subject.episode.tv.source.PrepareTvDownloadPickerBackdrop
 import me.him188.ani.app.ui.subject.episode.tv.source.TvDownloadSourcePanel
+import me.him188.ani.app.ui.tv.withTouchNavigation
 import me.him188.ani.app.ui.download.subject.LocalTvDownloadMediaPickerVariant
 import me.him188.ani.app.ui.download.subject.LocalTvDownloadPickerPrewarm
 import me.him188.ani.app.ui.download.subject.TvDownloadMediaPickerVariant
@@ -243,6 +245,8 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         LocalTvPageRefreshHost provides pageRefresh,
         LocalTvNavKeyTracker provides navKeys,
         LocalTvTouchInputEnabled provides touchInput,
+        // 触屏: 二级页面有带返回按钮的顶栏 (见 withTouchNavigation)
+        LocalAniUiBehavior provides LocalAniUiBehavior.current.let { if (touchInput) it.withTouchNavigation() else it },
         LocalTvPageShuffleHost provides pageShuffle,
         LocalTvPageAdjustHost provides pageAdjust,
         LocalTvAdjustWindows provides adjustWindows,
@@ -261,7 +265,8 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
                 modifier = modifier, pageContent = pageContent,
             )
         },
-        LocalEpisodeScreenVariant provides EpisodeScreenVariant {
+        // 调试开关 upstreamPlayer: 不换, 播放页用上游的共享版 (iOS 上那一版), 在平板上对照
+        LocalEpisodeScreenVariant provides if (DevSwitches.upstreamPlayer.value) null else EpisodeScreenVariant {
                 vm, page, danmakuHostState, danmakuEditorState,
                 setShowEditCommentSheet, pauseOnPlaying, modifier,
             ->

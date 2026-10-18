@@ -35,6 +35,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
@@ -52,6 +53,8 @@ import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
@@ -67,7 +70,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
+import com.github.panpf.sketch.LocalPlatformContext
 import me.him188.ani.app.ui.foundation.AsyncImage
+import me.him188.ani.app.ui.foundation.LocalSketch
 import me.him188.ani.app.ui.foundation.rememberAsyncImageRetryState
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallScale
@@ -95,6 +100,8 @@ import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeCard
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeCardBadgeStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeMore
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeMoreGlassStyle
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvBackdropBlurSpec
+import me.him188.ani.app.ui.foundation.tv.nativeview.tvFetchBlurredBackdrop
 import me.him188.ani.app.ui.foundation.tv.tvAmbientMarquee
 import me.him188.ani.app.ui.foundation.tv.tvHeroContentColor
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallLabelHeight
@@ -204,13 +211,17 @@ internal fun rememberTvWallCardStyle(
 /**
  * 海报墙的一张卡 ([card] 为 null = 分页还没到的占位): 海报承载焦点 / 点击 / 长按, 下方定高两行番名; 给了副标题时番名只占第一行
  * (聚焦时放不下跑马灯), 第二行是副标题. 聚焦时海报放大 ([TvWallCardStyle.focusScale]) 并抬起一大片软影, 番名全亮、往下让开放大多伸出的那截.
- * 触屏上点即聚焦再点击 (见 tvTouchFocusOnTap). 焦点请求器挂在 [modifier] 上 (卡片本身就是焦点目标).
+ * 触屏上点即聚焦再点击 (见 tvTouchFocusOnTap; [touchFocusOnPress] 为 false 时点一下只是点击). 焦点与点击只在封面上 (四周的聚焦框空隙、下面的番名都点不到, 同原生卡片);
+ * 焦点请求器挂在 [modifier] 上 (请求委托给封面那个焦点目标).
  *
  * @param onLongPress 长按 (遥控器确定键长按 / 触屏长按), 参数 = 封面在窗口里的框 (菜单的锚点); null = 不认长按.
  * @param dimAlpha 卡片整体的淡化 (0..1, 绘制阶段读): 越过顶线 / hero 态越线的卡. 乘进放大层与番名层, 不在外面另包图层 (投影不吃外层透明度).
  * @param labelAlpha 番名的显隐 (0..1, 绘制阶段读): hero 态里淡出.
  * @param holdFocusLook 不论有没有焦点都画成聚焦的样子 (返回本页时进页落点那张, 焦点到了不再放大一遍).
  * @param touchTwoStep 触屏上没聚焦的卡第一下只聚焦, 已聚焦再点才是点击 (hero 态里换卡只换焦点).
+ * @param showFocusLook 聚焦时画不画放大与抬起的投影: 触屏上卡片墙不画 (没有遥控器, 焦点对用户没意义), hero 态里聚焦那张照画.
+ * @param touchFocusOnPress 触屏上按下即把焦点拿过来 (见 tvTouchFocusOnTap). 海报墙按触屏的规矩走时为 false: 按下不动焦点 (拖动不会先把焦点
+ *   和画面带走), 点一下交给 [onClick], 要不要聚焦由调用方定.
  */
 @Composable
 internal fun TvWallCard(
@@ -224,11 +235,13 @@ internal fun TvWallCard(
     labelAlpha: () -> Float = { 1f },
     holdFocusLook: Boolean = false,
     touchTwoStep: Boolean = false,
+    showFocusLook: Boolean = true,
+    touchFocusOnPress: Boolean = true,
 ) {
     val density = LocalDensity.current
     var focused by remember { mutableStateOf(false) }
     val focusWeight by animateFloatAsState(
-        if (focused || holdFocusLook) 1f else 0f,
+        if (showFocusLook && (focused || holdFocusLook)) 1f else 0f,
         if (style.animated) tween(TV_CARD_FOCUS_TRANSITION_MILLIS) else snap(),
     )
     val coverBounds = remember { CoverBounds() }
@@ -246,16 +259,7 @@ internal fun TvWallCard(
                     focused = it.isFocused
                     onFocusChanged(it.isFocused)
                 }
-            }
-            .then(if (longPress != null) Modifier.tvLongPressKey(onLongPress = longPress, onShortPress = onClick) else Modifier)
-            .tvTouchFocusOnTap(twoStep = touchTwoStep)
-            .combinedClickable(
-                interactionSource = interactionSource,
-                // 聚焦态只由放大与投影表达, 不叠涟漪
-                indication = null,
-                onClick = onClick,
-                onLongClick = longPress,
-            ),
+            },
     ) {
         Box(
             Modifier
@@ -283,6 +287,15 @@ internal fun TvWallCard(
             Box(
                 Modifier.fillMaxSize()
                     .padding(with(density) { style.gapPx.toDp() })
+                    .then(if (longPress != null) Modifier.tvLongPressKey(onLongPress = longPress, onShortPress = onClick) else Modifier)
+                    .then(if (touchFocusOnPress) Modifier.tvTouchFocusOnTap(twoStep = touchTwoStep) else Modifier)
+                    .combinedClickable(
+                        interactionSource = interactionSource,
+                        // 聚焦态只由放大与投影表达, 不叠涟漪
+                        indication = null,
+                        onClick = onClick,
+                        onLongClick = longPress,
+                    )
                     .clip(shape)
                     .background(style.placeholderColor),
             ) {
@@ -314,14 +327,16 @@ internal fun TvWallCard(
     }
 }
 
-/** 封面内容: 海报 (打码的降采样成糊图) / 「更多」卡的玻璃, 进度条, 角标. */
+/** 封面内容: 海报 (打码的降采样成糊图) / 「更多」卡的玻璃 (底下是模糊小图), 进度条, 角标. */
 @Composable
 private fun TvWallCardCover(card: TvNativeCard, style: TvWallCardStyle) {
     val density = LocalDensity.current
     val more = card.more
     Box(Modifier.fillMaxSize()) {
         val url = card.imageUrl
-        if (url != null) {
+        if (url != null && more != null) {
+            TvWallMoreBlur(url, style.coverWidthPx, style.coverHeightPx)
+        } else if (url != null) {
             val retry = rememberAsyncImageRetryState(url)
             AsyncImage(
                 if (retry.suppressed) null else url,
@@ -329,7 +344,7 @@ private fun TvWallCardCover(card: TvNativeCard, style: TvWallCardStyle) {
                 Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
                 onError = { retry.onError() },
-                downsampleLongEdgePx = if (card.obscure || more != null) TV_OBSCURED_COVER_LONG_EDGE_PX else null,
+                downsampleLongEdgePx = if (card.obscure) TV_OBSCURED_COVER_LONG_EDGE_PX else null,
                 crossfade = style.animated,
             )
         }
@@ -374,6 +389,32 @@ private fun TvWallCardCover(card: TvNativeCard, style: TvWallCardStyle) {
         }
     }
 }
+
+/**
+ * 「更多」卡的玻璃底: 那张竖版封面解成小图、在解码线程上模糊, 再拉伸铺满封面框 (同原生「更多」卡; 只降采样不模糊的话放大出来是一格一格的).
+ */
+@Composable
+private fun TvWallMoreBlur(url: String, widthPx: Int, heightPx: Int) {
+    val sketch = LocalSketch.current
+    val context = LocalPlatformContext.current
+    var image by remember(url) { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(url, widthPx, heightPx) {
+        if (widthPx <= 0 || heightPx <= 0) return@LaunchedEffect
+        image = tvFetchBlurredBackdrop(sketch, context, url, widthPx, heightPx, TV_WALL_MORE_BLUR)?.bitmap
+    }
+    val shown = image ?: return
+    Image(
+        shown,
+        contentDescription = null,
+        Modifier.fillMaxSize(),
+        contentScale = ContentScale.Crop,
+        // 模糊后的图没有细节, 双线性放大就看不出是小图
+        filterQuality = FilterQuality.Low,
+    )
+}
+
+/** 「更多」卡玻璃底的小图与模糊半径 (同原生「更多」卡). */
+private val TV_WALL_MORE_BLUR = TvBackdropBlurSpec(longEdgePx = 64, radiusPx = 8)
 
 /** 「更多」卡: 糊图上铺一层玻璃, 中间一枚圆钮托着加号, 加载中换成转着的圆弧. */
 @Composable

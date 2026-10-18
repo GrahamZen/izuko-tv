@@ -283,6 +283,8 @@ fun <T> rememberTvScrollSettled(flushOn: () -> Any? = { null }, target: () -> T)
         state.burst = false
         val settle = TvNavigationSettle(TV_NAV_SETTLE_MILLIS)
         snapshotFlow { latest.value.invoke() }.collectLatest { value ->
+            // 已经当场换上了 (flushOn 与目标在同一帧变, 换挡那条先跑了, 如触屏上点卡片即聚焦并进 hero 态): 不再等滚动停稳、不藏
+            if (value == state.settledValue && !state.pending) return@collectLatest
             state.pending = true
             state.scrolled = false
             state.latched = false
