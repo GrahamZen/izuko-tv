@@ -422,12 +422,26 @@ class TvNativeCardView(context: Context, private val style: TvNativeWallStyle) :
     var tapConfirmsWhileFocusing: (() -> Boolean)? = null
 
     /**
+     * 触摸要接的范围只有封面: 番名淡出时 (hero 态) 卡片四周的留白与番名那一块看着是空白, 点在那里让给页面 (退出 hero 态, 见 TvNativeHeroBlankTap),
+     * 不当成点了这张. 番名在的时候整张都接.
+     */
+    private val touchCoverOnly: Boolean get() = titleVisibility < 0.5f
+
+    /** 触摸要接的范围此刻在窗口里的可见框 (见 [touchCoverOnly]), 填进 [out]; 整块都看不见时返回 false. */
+    internal fun touchTargetVisibleRect(out: Rect): Boolean = (if (touchCoverOnly) cover else this).getGlobalVisibleRect(out)
+
+    /**
      * 触摸屏 (平板装了 TV 包) 上的点按: 触摸模式下可聚焦的视图没聚焦时, 系统的点按只拿焦点不点击 (= 遥控器上移过去). 页面答应
      * ([tapConfirmsWhileFocusing], 卡片墙上进 hero 态) 时按下先聚焦, 抬起就是点击 = 移过去再按确认, 一下进 hero 态.
-     * 电视上没有触摸事件, 不经过这里.
+     * 番名淡出时只接封面上的按下 (见 [touchCoverOnly]). 电视上没有触摸事件, 不经过这里.
      */
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_DOWN && event.isFromSource(InputDevice.SOURCE_TOUCHSCREEN) && touchCoverOnly &&
+            !(event.x >= cover.left && event.x < cover.right && event.y >= cover.top && event.y < cover.bottom)
+        ) {
+            return false
+        }
         if (event.actionMasked == MotionEvent.ACTION_DOWN && event.isFromSource(InputDevice.SOURCE_TOUCHSCREEN) && !isFocused &&
             tapConfirmsWhileFocusing?.invoke() == true
         ) {
