@@ -228,7 +228,7 @@
     <string name="settings_tv_use_original_title_description">Show titles and episode names in their original language (usually Japanese). When off, follows the app language: Chinese names in Chinese, original names in other languages</string>
     <string name="subject_details_tv_title_logo_dialog_title">Choose the title logo</string>
     <string name="subject_details_tv_title_logo_dialog_description">Pick the logo used in %1$s. It changes right away and is reported for review; once approved, everyone gets it. If the right one isn’t below, pick the last card, \u201cNot listed here\u201d</string>
-    <string name="subject_details_tv_title_logo_qr_hint">Scan to see all logos on TMDB</string>
+    <string name="subject_details_tv_title_logo_hidden">%1$d more can’t be shown here</string>
     <string name="subject_details_tv_title_logo_text_option">Show text</string>
     <string name="subject_details_tv_title_logo_not_listed">Not listed here</string>
     <string name="subject_details_tv_title_logo_loading">Loading logos…</string>
