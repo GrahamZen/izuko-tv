@@ -17,6 +17,7 @@ import android.widget.FrameLayout
 import androidx.compose.ui.graphics.Color as ComposeColor
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
+import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_PRESS_DIM_IN_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TV_CARD_HERO_BACKDROP_GEOMETRY
 import me.him188.ani.app.ui.foundation.tv.tvPageBackdropTreatment
 import kotlin.test.AfterTest
@@ -29,8 +30,8 @@ import kotlin.test.fail
 /**
  * 背景图层 ([TvNativeBackdropView]) 的边缘: 平时左缘 / 下缘渐变到遮罩色 (底下是同色的纯色底); 叠在整屏模糊背景上时
  * ([TvNativeBackdropView.feather]) 同样的渐变改成把图擦成透明, 露出底下那一层 —— 每一格各自一层离屏层, 只擦本格, 图层本身不开层.
- * 图层底下铺一整块蓝, 挂一张整张红的图, 遮罩色给绿, 截窗口看: 平时左缘、下缘是绿, 羽化时露出底下的蓝; 按下即压暗 (层合成时的颜色滤镜)
- * 只压图, 擦掉的边照旧是蓝.
+ * 图层底下铺一整块蓝, 挂一张整张红的图, 遮罩色给绿, 截窗口看: 平时左缘、下缘是绿, 羽化时露出底下的蓝; 按下即压暗平时朝遮罩色压,
+ * 羽化时不压 (见 [TvNativeBackdropView.triggerPressDim]).
  */
 class TvNativeBackdropFeatherTest {
     private val host = TvNativeTestHost()
@@ -91,18 +92,31 @@ class TvNativeBackdropFeatherTest {
     }
 
     @Test
-    fun `the press dim darkens the feathered image but not its erased edges`() {
+    fun `the press dim darkens the image toward the mask color`() {
         host.onMain {
-            view.feather = true
             // 目标还没跟上: 压暗压到最深后停着不放
             view.dimming = true
             view.triggerPressDim()
         }
-        val shot = shotWhen("压暗压到最深") {
+        shotWhen("压暗压到最深") {
             val inside = it.getPixel(INSIDE_X, INSIDE_Y)
             Color.red(inside) < 150 && Color.green(inside) > 100
         }
-        assertTrue(isBlue(shot.getPixel(LEFT_X, MIDDLE_Y)), "擦掉的左缘照旧是底下的蓝, 不被压暗的绿盖上: ${hex(shot.getPixel(LEFT_X, MIDDLE_Y))}")
+        host.onMain { view.dimming = false }
+    }
+
+    @Test
+    fun `the press dim leaves a feathered image alone`() {
+        host.onMain { view.feather = true }
+        shotWhen("左缘露出底下的蓝") { isBlue(it.getPixel(LEFT_X, MIDDLE_Y)) }
+        host.onMain {
+            view.dimming = true
+            view.triggerPressDim()
+        }
+        // 压下去要 TV_BACKDROP_PRESS_DIM_IN_MILLIS: 等过了再看图还是原样
+        SystemClock.sleep(TV_BACKDROP_PRESS_DIM_IN_MILLIS + 300L)
+        val shot = host.windowShot()
+        assertTrue(isRed(shot.getPixel(INSIDE_X, INSIDE_Y)), "铺着模糊背景时换卡只交叉淡入, 不压暗: ${hex(shot.getPixel(INSIDE_X, INSIDE_Y))}")
         host.onMain { view.dimming = false }
     }
 
