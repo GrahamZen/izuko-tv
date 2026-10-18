@@ -29,7 +29,6 @@ import me.him188.ani.datasources.api.EpisodeType
 import me.him188.ani.datasources.api.PackedDate
 import me.him188.ani.datasources.api.UTC9
 import me.him188.ani.utils.serialization.BigNum
-import kotlin.math.abs
 import kotlin.time.Duration.Companion.days
 import kotlin.time.Instant
 
@@ -59,22 +58,26 @@ internal fun scheduleItemsOn(
     episodes: Map<Int, List<ScheduleEpisode>>,
     rules: Map<Int, BroadcastRule?>,
     timeZone: TimeZone,
-): List<EpisodeWithAiringTime> = candidates.flatMap { subject ->
-    val recurrence = rules[subject.id]?.toRecurrenceOrNull()
-    episodes[subject.id].orEmpty().mapNotNull { episode ->
-        val airDate = runCatching { LocalDate.parse(episode.airDate) }.getOrNull() ?: return@mapNotNull null
-        // 换到任何时区都跨不出前后一天; 远的集不必算
-        if (abs(airDate.toEpochDays() - date.toEpochDays()) > 2) return@mapNotNull null
-        val airTime = EpisodeCompletionContext.resolveEpisodeAirTime(PackedDate.parseFromDate(episode.airDate), recurrence)
-        if (airTime != null && airTime.exact) {
-            if (airTime.instant.toLocalDateTime(timeZone).date != date) return@mapNotNull null
-            scheduleItem(subject, episode, airTime.instant, timeKnown = true)
-        } else {
-            if (airDate != date) return@mapNotNull null
-            scheduleItem(subject, episode, date.atStartOfDayIn(timeZone), timeKnown = false)
+): List<EpisodeWithAiringTime> {
+    // 换到任何时区都跨不出前后两天: 先按日期字符串挑出这几天的集再解析. 一屏要算十几天、每天几十部、每部上百集,
+    // 逐集解析 (没定档的空串还要抛异常) 在弱电视上一屏就是零点几秒, 而时间表加载时取到一部就重算一屏
+    val nearby = (-2..2).mapTo(HashSet()) { date.plus(it, DateTimeUnit.DAY).toString() }
+    return candidates.flatMap { subject ->
+        val nearbyEpisodes = episodes[subject.id].orEmpty().filter { it.airDate in nearby }
+        if (nearbyEpisodes.isEmpty()) return@flatMap emptyList()
+        val recurrence = rules[subject.id]?.toRecurrenceOrNull()
+        nearbyEpisodes.mapNotNull { episode ->
+            val airTime = EpisodeCompletionContext.resolveEpisodeAirTime(PackedDate.parseFromDate(episode.airDate), recurrence)
+            if (airTime != null && airTime.exact) {
+                if (airTime.instant.toLocalDateTime(timeZone).date != date) return@mapNotNull null
+                scheduleItem(subject, episode, airTime.instant, timeKnown = true)
+            } else {
+                if (LocalDate.parse(episode.airDate) != date) return@mapNotNull null
+                scheduleItem(subject, episode, date.atStartOfDayIn(timeZone), timeKnown = false)
+            }
         }
-    }
-}.sortedBy { it.airingTime }
+    }.sortedBy { it.airingTime }
+}
 
 private fun BroadcastRule.toRecurrenceOrNull(): SubjectRecurrence? {
     val start = runCatching { Instant.parse(startTime) }.getOrNull() ?: return null
