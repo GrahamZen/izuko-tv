@@ -943,4 +943,37 @@
     <string name="remote_settings_peer_client_rules_description">电视上打开「过滤客户端类型」后生效。每行一条正则表达式，如 go.torrent 屏蔽百度网盘的离线下载客户端。</string>
     <!-- 电视设置「关于」里的反馈群 -->
     <string name="settings_about_qq_group">QQ 群</string>
+    <!-- 触屏设备的设置页: 电视版设置清单里说「按确定」「在电视上」的几句换成触屏的说法 -->
+    <string name="touch_settings_login_in_app">在应用内登录</string>
+    <string name="touch_settings_login_in_app_description">在应用内打开 Bangumi 的登录页，输入账号和密码登录。</string>
+    <string name="touch_settings_link_description">点一下在浏览器里打开。</string>
+    <string name="touch_settings_sorter_hint">点一下勾选或取消；长按一行后用箭头调整顺序，排在前面的优先。每部番剧在播放时的选择会覆盖这里的设置。</string>
+    <string name="touch_settings_source_hint">点一下启用或停用；长按一行后用箭头调整顺序。添加、编辑数据源点上面的「打开这一类的设置」。</string>
+    <string name="touch_settings_up_next_tip_description">快播完时自动展开选集条并选中下一集，点它立刻播、按返回关掉</string>
+    <string name="touch_settings_perf_diag_dialog_hint">点一下这一行出码，用手机扫码，打开网页的「设置 → 维护 → 性能诊断」。可以做设备体检，或者录制一段：录制时照常操作要测的界面，结束后在网页上看卡顿原因、下载报告。</string>
+    <string name="touch_settings_legacy_hint">这一类还没换成新的样式，点一下在原来的设置页里打开。</string>
+    <string name="touch_settings_danmaku_rules_add_description">规则要打字：用「打开这一类的设置」在原来的设置页里添加，或者在 Web 控制台的「设置」里添加。这里可以开关或删除已有的规则。</string>
+    <string name="touch_settings_danmaku_rule_hint">正则：%1$s\n\n点一下启用或停用这条规则。</string>
+    <string name="touch_settings_subscription_delete_hint">点一下删除这个订阅，它带来的数据源也一起删除。添加订阅用「打开这一类的设置」，或者在 Web 控制台里添加。</string>
+    <string name="touch_settings_drive_logout_hint">点一下退出这个账号。登录在 Web 控制台里（扫码或填 Cookie）。</string>
+    <string name="touch_settings_drive_login_hint">点一下这一行出码，用手机上的网盘 App 扫码登录。也可以在 Web 控制台里填 Cookie。</string>
+    <string name="touch_settings_drive_login_hint_shares">登录后，你网盘里的视频和别人分享的网盘资源都能播（分享的在播放时转存到你的网盘）。点一下这一行出码，用手机上的网盘 App 扫码登录，也可以在 Web 控制台里填 Cookie。</string>
+    <string name="touch_settings_drive_webdav_add_description">把局域网里的 NAS（或任何 WebDAV 服务）当数据源：在 NAS 的系统设置里打开 WebDAV，再点一下这一行出码，用手机扫码，在 Web 控制台里填地址和账号密码。播放的是原文件。</string>
+    <string name="touch_settings_drive_webdav_login_hint">点一下这一行出码，用手机扫码，在 Web 控制台里填账号密码。</string>
+    <string name="touch_settings_proxy_mode_description">代理地址、用户名和密码要打字：用「打开这一类的设置」在原来的设置页里填，或者在 Web 控制台的「设置 → 网络」里填，填过之后这里才有「自定义」。</string>
+    <string name="touch_settings_endpoint_custom_hint">自定义地址要打字：用「打开这一类的设置」在原来的设置页里填，或者在 Web 控制台的「设置 → 网络」里填。</string>
+    <string name="touch_settings_bangumi_custom_hint">自建镜像的地址要打字：用「打开这一类的设置」在原来的设置页里填，或者在 Web 控制台的「设置 → 网络」里填，填过之后这里才有「我自己的镜像」这条线路。</string>
+    <string name="touch_settings_peer_rules_hint">按 Web 控制台里填的规则过滤，用「打开这一类的设置」或者在 Web 控制台里改。</string>
+    <string name="touch_settings_pikpak_account_hint">用户名和密码要打字：用「打开这一类的设置」在原来的设置页里填，或者在 Web 控制台的「设置」里填。</string>
+    <string name="touch_settings_update_downloaded">已下载，点一下安装</string>
+    <string name="touch_settings_update_download_failed">下载失败，点一下重试</string>
+    <string name="touch_settings_update_new_hint">点一下下载并安装。\n\n%1$s</string>
+    <string name="touch_settings_log_send_description">手机连接与这台设备相同的 Wi-Fi，点一下这一行出码，扫码下载日志。选中别的行后链接失效。</string>
+    <string name="touch_settings_login_proxy_hint">这台设备上的代理连不上，登录和其他联网都会失败。打开或关掉提供代理的应用，或者在「代理」里把代理方式改成「禁用」，再点一下重试。</string>
+    <string name="touch_settings_sources_on_phone_description">添加、编辑数据源与订阅要打字：用「打开这一类的设置」在原来的设置页里做，或者在 Web 控制台的「数据源」页里做。</string>
+    <string name="touch_settings_drive_qr_expired">二维码过期了，点一下换一个</string>
+    <string name="touch_settings_drive_qr_failed">没拿到二维码：%1$s。点一下重试</string>
+    <string name="touch_settings_login_qr_description">点一下这一行出码，用手机扫码，在打开的 Bangumi 页面上登录并授权，这台设备就登录好了。手机要连同一个 Wi-Fi。二维码用不了时再点一下换一个。</string>
+    <string name="touch_settings_login_failed">没有登录成功，点一下换一个二维码重试</string>
+    <string name="touch_settings_login_relay_unsupported">这个版本不支持扫码登录，请用「在应用内登录」</string>
 </resources>

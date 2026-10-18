@@ -214,7 +214,7 @@ internal fun TvSettingsItemsBuilder.networkItems() {
             val hint = tvText(Lang.tv_settings_proxy_mode_description)
             if (url.isBlank()) hint else tvText(Lang.tv_settings_paragraphs, tvText(Lang.tv_settings_proxy_custom_address, url), hint)
         },
-        qr = { consoleQr(it, "#settings/network") },
+        qr = { consoleQr(it, "#settings/network", legacy = true) },
     )
     action(
         Lang.tv_settings_proxy_test, Lang.tv_settings_proxy_test_description, keys = listOf(keys.proxyTest),
@@ -271,7 +271,7 @@ internal fun TvSettingsItemsBuilder.networkItems() {
             }
             tvText(Lang.tv_settings_paragraphs, main, tvText(Lang.tv_settings_endpoint_custom_hint))
         },
-        qr = { consoleQr(it, "#settings/network") },
+        qr = { consoleQr(it, "#settings/network", legacy = true) },
     )
 
     header(Lang.settings_network_bangumi_endpoint)
@@ -345,7 +345,7 @@ private fun TvSettingsItemsBuilder.bangumiRouteToggle(
         listOf(keys.bangumi, keys.bangumiMirrors, keys.bangumiLoggedIn, keys.bangumiEchAvailable), title,
         description = description,
         visible = visible,
-        qr = { consoleQr(it, "#settings/network") },
+        qr = { consoleQr(it, "#settings/network", legacy = true) },
         read = { it[keys.bangumi]?.isEnabled(kind) == true },
         write = { on -> listOf(TvSettingsEdit.Run { env -> switchBangumiRoute(env, kind, on) }) },
     )
@@ -484,13 +484,13 @@ internal fun TvSettingsItemsBuilder.btItems() {
     val peer = keys.peer
     toggle(
         peer, Lang.tv_settings_peer_filter_ip, Lang.tv_settings_peer_rules_hint,
-        qr = { consoleQr(it, "#settings/resources") },
+        qr = { consoleQr(it, "#settings/resources", legacy = true) },
         read = { it.enableIpFilter },
         write = { copy(enableIpFilter = it) },
     )
     toggle(
         peer, Lang.tv_settings_peer_filter_id, Lang.tv_settings_peer_rules_hint,
-        qr = { consoleQr(it, "#settings/resources") },
+        qr = { consoleQr(it, "#settings/resources", legacy = true) },
         read = { it.enableIdFilter },
         write = { copy(enableIdFilter = it) },
     )
@@ -502,7 +502,7 @@ internal fun TvSettingsItemsBuilder.btItems() {
     )
     toggle(
         peer, Lang.tv_settings_peer_filter_client, Lang.tv_settings_peer_rules_hint,
-        qr = { consoleQr(it, "#settings/resources") },
+        qr = { consoleQr(it, "#settings/resources", legacy = true) },
         read = { it.enableClientFilter },
         write = { copy(enableClientFilter = it) },
     )
@@ -533,7 +533,7 @@ internal fun TvSettingsItemsBuilder.btItems() {
         Lang.tv_settings_pikpak_account, Lang.tv_settings_pikpak_account_hint, keys = listOf(pikpak),
         value = { v -> v[pikpak]?.username?.takeIf { it.isNotEmpty() }?.let { tvText(it) } ?: tvText(Lang.tv_settings_pikpak_not_signed_in) },
         visible = { it[pikpak]?.enabled == true },
-        qr = { consoleQr(it, "#settings/resources") },
+        qr = { consoleQr(it, "#settings/resources", legacy = true) },
     ) { emptyList() }
     val usage = keys.pikpakUsage
     action(

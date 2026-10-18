@@ -943,4 +943,37 @@
     <string name="remote_settings_peer_client_rules_description">Takes effect when client type filtering is on (switch on the TV). One regular expression per line, e.g. go.torrent blocks the Baidu Netdisk offline downloader.</string>
     <!-- 电视设置「关于」里的反馈群 -->
     <string name="settings_about_qq_group">QQ Group</string>
+    <!-- 触屏设备的设置页: 电视版设置清单里说「按确定」「在电视上」的几句换成触屏的说法 -->
+    <string name="touch_settings_login_in_app">Sign in within the app</string>
+    <string name="touch_settings_login_in_app_description">Opens the Bangumi sign-in page inside the app; enter your account and password.</string>
+    <string name="touch_settings_link_description">Tap to open it in the browser.</string>
+    <string name="touch_settings_sorter_hint">Tap to select or deselect. Long-press a row, then use the arrows to reorder; items higher up are preferred. Choices made while watching a show override these.</string>
+    <string name="touch_settings_source_hint">Tap to enable or disable. Long-press a row, then use the arrows to reorder. To add or edit sources, use “Open these settings” above.</string>
+    <string name="touch_settings_up_next_tip_description">Near the end, the episode strip opens with the next episode selected; tap it to play now, Back closes it</string>
+    <string name="touch_settings_perf_diag_dialog_hint">Tap this row to show a code, then scan it with your phone to open Settings → Maintenance → Performance diagnostics in the web console. Run a device check, or record a session: keep using the screen you want to test while it records, then read what caused the stutter and download the report on the web page.</string>
+    <string name="touch_settings_legacy_hint">These settings haven’t moved to the new layout yet. Tap to open them in the previous settings page.</string>
+    <string name="touch_settings_danmaku_rules_add_description">Rules need typing: add them with “Open these settings” in the previous settings page, or in the Web Console (Settings). Here you can turn existing rules on or off, or delete them.</string>
+    <string name="touch_settings_danmaku_rule_hint">Regex: %1$s\n\nTap to turn this rule on or off.</string>
+    <string name="touch_settings_subscription_delete_hint">Tap to delete this subscription together with its sources. Add subscriptions with “Open these settings” or in the Web Console.</string>
+    <string name="touch_settings_drive_logout_hint">Tap to sign out of this account. Sign in from the Web Console (QR code or cookie).</string>
+    <string name="touch_settings_drive_login_hint">Tap this row to show a code, then scan it with the drive’s app on your phone to sign in. You can also paste a cookie in the Web Console.</string>
+    <string name="touch_settings_drive_login_hint_shares">Once signed in, it plays what’s in your drive and what others share (shared files are saved to your drive when played). Tap this row to show a code and scan it with the drive’s app on your phone to sign in. You can also paste a cookie in the Web Console.</string>
+    <string name="touch_settings_drive_webdav_add_description">Use a NAS on your network, or any WebDAV service, as a source: turn on WebDAV in the NAS settings, then tap this row to show a code, scan it with your phone and enter the address, username and password in the Web Console. Videos play from the original files.</string>
+    <string name="touch_settings_drive_webdav_login_hint">Tap this row to show a code, scan it with your phone and enter the username and password in the Web Console.</string>
+    <string name="touch_settings_proxy_mode_description">The proxy address, username and password need typing: enter them with “Open these settings” in the previous settings page, or in the Web Console (Settings → Network). “Custom” appears here once an address is set.</string>
+    <string name="touch_settings_endpoint_custom_hint">A custom address needs typing: enter it with “Open these settings” in the previous settings page, or in the Web Console (Settings → Network).</string>
+    <string name="touch_settings_bangumi_custom_hint">Your own mirror’s address needs typing: enter it with “Open these settings” in the previous settings page, or in the Web Console (Settings → Network). “My own mirror” appears here once it is set.</string>
+    <string name="touch_settings_peer_rules_hint">Filters with the rules entered in the Web Console. Edit them with “Open these settings” or in the Web Console.</string>
+    <string name="touch_settings_pikpak_account_hint">The username and password need typing: enter them with “Open these settings” in the previous settings page, or in the Web Console (Settings).</string>
+    <string name="touch_settings_update_downloaded">Downloaded. Tap to install</string>
+    <string name="touch_settings_update_download_failed">Download failed. Tap to retry</string>
+    <string name="touch_settings_update_new_hint">Tap to download and install.\n\n%1$s</string>
+    <string name="touch_settings_log_send_description">With your phone on the same Wi-Fi as this device, tap this row to show a code and scan it to download the logs. The link stops working once you select another row.</string>
+    <string name="touch_settings_login_proxy_hint">The proxy on this device can’t be reached, so signing in and everything else online fails. Start or quit the app that provides the proxy, or set Proxy to Disabled under Proxy, then tap to try again.</string>
+    <string name="touch_settings_sources_on_phone_description">Adding and editing sources and subscriptions needs typing: use “Open these settings” for the previous settings page, or the Sources page of the Web Console.</string>
+    <string name="touch_settings_drive_qr_expired">The QR code expired. Tap for a new one</string>
+    <string name="touch_settings_drive_qr_failed">Couldn’t get a QR code: %1$s. Tap to retry</string>
+    <string name="touch_settings_login_qr_description">Tap this row to show a code, scan it with your phone, then sign in and authorize on the Bangumi page that opens, and this device signs in by itself. Your phone must be on the same Wi-Fi. If the code stops working, tap again for a new one.</string>
+    <string name="touch_settings_login_failed">Sign-in didn’t finish. Tap to retry with a new code</string>
+    <string name="touch_settings_login_relay_unsupported">This build can’t sign in by QR code. Use “Sign in within the app”</string>
 </resources>
