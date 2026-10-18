@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import me.him188.ani.app.domain.episode.EpisodeSession
+import me.him188.ani.app.domain.mediasource.clouddrive.isCloudDriveLoginRequired
 import me.him188.ani.app.domain.player.PlaybackFailureLog
 import me.him188.ani.app.domain.player.PlaybackFailureLog.Reason
 import me.him188.ani.app.domain.player.PlaybackFailureLog.Stage
@@ -109,8 +110,9 @@ class PlaybackFailureReportExtension(
             is VideoLoadingState.UnknownError -> errorReason(state.cause) ?: Reason.UNKNOWN
         }
 
-        /** 从异常认得出的原因: 连不上网, 或服务器回了 HTTP 错误; 都不是为 null. */
+        /** 从异常认得出的原因: 网盘没登录、连不上网, 或服务器回了 HTTP 错误; 都不是为 null. */
         private fun errorReason(error: Throwable): Reason? = when {
+            error.isCloudDriveLoginRequired() -> Reason.DRIVE_LOGIN
             error.isNetworkFailure() -> Reason.NETWORK
             error.httpErrorStatus() != null -> Reason.HTTP_ERROR
             else -> null

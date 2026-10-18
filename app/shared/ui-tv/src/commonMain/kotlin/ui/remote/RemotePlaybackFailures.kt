@@ -132,6 +132,7 @@ internal object RemotePlaybackFailures {
         Reason.PLAYER_ERROR -> tr("播放器出错")
         Reason.TOO_SHORT -> tr("视频只有 {0} 秒，不是正片（多半是站点的公告或广告）", ((entry.mediaDurationMillis ?: 0L) + 999) / 1000)
         Reason.UNKNOWN -> tr("未知错误")
+        Reason.DRIVE_LOGIN -> tr("网盘未登录")
     }
 
     private fun json(obj: JsonObject): LanHttpResponse =
