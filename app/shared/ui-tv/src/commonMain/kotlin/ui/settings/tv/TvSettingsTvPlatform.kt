@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import me.him188.ani.app.ui.diagnostics.TvPerfDiagnostics
+import me.him188.ani.app.ui.foundation.tv.TvInterfaceModeGate
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.tv_perf_diag_checking
 import me.him188.ani.app.ui.lang.tv_perf_diag_recording
@@ -64,6 +65,11 @@ internal object TvSettingsTvPlatform : TvSettingsPlatform {
 
     override val whatsNewPage: @Composable (dismiss: () -> Unit) -> Unit
         get() = { dismiss -> TvWhatsNewSettingsPage(onDismiss = dismiss) }
+
     override val showProfilePicker: () -> Unit get() = { TvUserProfilePicker.show() }
 
+    override val interfaceMode: TvInterfaceModeSwitch = object : TvInterfaceModeSwitch {
+        override fun isTvMode(context: Context): Boolean = TvInterfaceModeGate.isTvMode(context)
+        override fun setTvMode(context: Context, tvMode: Boolean) = TvInterfaceModeGate.setTvMode(context, tvMode)
+    }
 }
