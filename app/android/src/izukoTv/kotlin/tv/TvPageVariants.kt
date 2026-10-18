@@ -62,6 +62,7 @@ import me.him188.ani.app.ui.foundation.TvKeyLongPressHandler
 import me.him188.ani.app.ui.foundation.tv.LocalTvNavKeyTracker
 import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.ProvideTvScrollActivity
+import me.him188.ani.app.ui.foundation.tv.TvInterfaceModeGate
 import me.him188.ani.app.ui.foundation.tv.TvPosterWallTheme
 import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
 import me.him188.ani.app.ui.foundation.tv.rememberTvNavKeyTracker
@@ -196,10 +197,11 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
     val pageAdjust = remember { TvPageAdjustHost() }
     // 页面里的调整入口打开的编辑页 (盖在页面上的全屏窗口, 见 TvAdjustWindows)
     val adjustWindows = remember { TvAdjustWindows() }
-    // 触屏设备 (平板装了 TV 包) 才打开触摸适配; 电视上为 false, 相关 modifier 一个节点都不装 (见 TvTouchInput.kt)
+    // 触屏设备 (平板装了 TV 包) 才打开触摸适配; 电视上为 false, 相关 modifier 一个节点都不装 (见 TvTouchInput.kt).
+    // 有触摸屏时用户可在设置里换成电视模式 (见 TvInterfaceModeGate), 那样也为 false
     val appContext = LocalContext.current
     val touchInput = remember(appContext) {
-        appContext.packageManager.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN)
+        appContext.packageManager.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN) && !TvInterfaceModeGate.isTvMode(appContext)
     }
     // 引导还没做过就先进引导页 (网络检测 + 手机遥控 + 登录), 见 TvOnboardingGate
     val onboardingPending = remember(appContext) { TvOnboardingGate.isPending(appContext) }
@@ -318,8 +320,8 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         // 这个变体有两个方法 (页面 + 首屏占位), 不能用 SAM lambda 写法
         LocalSubjectDetailsPageVariant provides TvSubjectDetailsPageVariant,
         LocalTvOnboardingVariant provides onboarding,
-        // 登录页右侧的手机控制台码 (扫码在手机上登录)
-        LocalTvLoginSidePanel provides { TvRemoteLoginCard() },
+        // 登录页右侧的手机控制台码 (扫码在手机上登录); 平板模式不挂, 登录页自己给输入框 (见 BangumiDirectLoginForm)
+        LocalTvLoginSidePanel provides (if (touchInput) null else ({ TvRemoteLoginCard() })),
         // 人物 / 角色预览弹窗与整页里的横滑行用原生实现 (长按左右连发不卡)
         LocalPeoplePreviewRows provides TvPeoplePreviewRows,
         // 「查看全部」弹窗的人物 / 作品画廊同样用原生网格

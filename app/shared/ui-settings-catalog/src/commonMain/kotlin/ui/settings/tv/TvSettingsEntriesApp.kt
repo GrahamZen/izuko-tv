@@ -89,6 +89,8 @@ import me.him188.ani.app.ui.lang.settings_update_type
 import me.him188.ani.app.ui.lang.settings_update_type_stable_short
 import me.him188.ani.app.ui.lang.settings_update_up_to_date
 import me.him188.ani.app.ui.lang.settings_update_view_changelog
+import me.him188.ani.app.ui.lang.touch_settings_login
+import me.him188.ani.app.ui.lang.touch_settings_login_description
 import me.him188.ani.app.ui.lang.tv_perf_diag_dialog_hint
 import me.him188.ani.app.ui.lang.tv_perf_diag_latest
 import me.him188.ani.app.ui.lang.tv_perf_diag_none
@@ -221,11 +223,11 @@ internal fun TvSettingsItemsBuilder.accountItems() {
         Lang.settings_account_clear_records, Lang.settings_account_clear_records_description, keys = keys,
         visible = { it.isLocal() },
     ) { env -> env.show(TvSettingsOverlay.Dialog { dismiss -> TvClearRecordsDialog(env.deps.profile, dismiss) }) }
-    // 整台电视一份, 不跟着当前用户; 两个以上用户时才有
+    // 整台电视一份, 不跟着当前用户; 两个以上用户时才有. 触屏版不给多用户的设置
     toggleOf(
-        keys, Lang.settings_account_choose_profile_on_launch,
+        keys + TvSettingKeys.touchPage, Lang.settings_account_choose_profile_on_launch,
         description = { tvText(Lang.settings_account_choose_profile_on_launch_description) },
-        visible = { it[account]?.chooseProfileOnLaunch != null },
+        visible = { it[account]?.chooseProfileOnLaunch != null && it[TvSettingKeys.touchPage] != true },
         read = { it[account]?.chooseProfileOnLaunch == true },
         write = { on -> listOf(TvSettingsEdit.Run { env -> env.deps.profile.setChooseProfileOnLaunch(on) }) },
     )
@@ -275,8 +277,14 @@ private fun TvSettingsItemsBuilder.loginItems() {
     val oauth = TvAppSettingKeys.oauth
     val relay = TvAppSettingKeys.loginRelay
     val path = TvAppSettingKeys.loginPath
-    val keys = listOf(account, oauth, relay, path)
+    val touchPage = TvSettingKeys.touchPage
+    val keys = listOf(account, oauth, relay, path, touchPage)
     header(Lang.tv_settings_login_header, visible = { it.needsLogin() })
+    // 有整页的登录页时 (触屏) 只给这一行: 那一页按线路给授权、账号密码或个人令牌
+    run(
+        Lang.touch_settings_login, Lang.touch_settings_login_description, keys = keys, chevron = true,
+        visible = { it.needsLogin() && it[touchPage] == true },
+    ) { env -> env.deps.touch?.openBangumiLogin() }
     // 焦点停上去就发起一次经 Worker 中转的授权, 授权页地址画成二维码; 离开不取消 (手机上可能正授权到一半), 确定换一张
     action(
         Lang.tv_settings_login_qr, keys = keys + TvAppSettingKeys.proxy + TvSettingKeys.platform,
@@ -290,13 +298,16 @@ private fun TvSettingsItemsBuilder.loginItems() {
                 else -> tvText(Lang.tv_settings_login_qr_description)
             }
         },
-        visible = { it.needsLogin() && it[TvSettingKeys.platform]?.startRelayLogin != null },
+        visible = { it.needsLogin() && it[touchPage] != true && it[TvSettingKeys.platform]?.startRelayLogin != null },
         qr = { v -> loginQr(v) },
         whileFocused = { env -> ensureLoginRelay(env) },
     ) { listOf(TvSettingsEdit.Run { env -> startLoginRelay(env) }) }
     run(
         Lang.tv_settings_login_on_tv, Lang.tv_settings_login_on_tv_description, keys = keys,
-        visible = { v -> v.needsLogin() && v[path] == BangumiLoginPath.BROWSER && GlobalKoin.get<BangumiOAuthManager>().inAppBrowserSupported },
+        visible = { v ->
+            v.needsLogin() && v[touchPage] != true && v[path] == BangumiLoginPath.BROWSER &&
+                GlobalKoin.get<BangumiOAuthManager>().inAppBrowserSupported
+        },
     ) {
         val manager = GlobalKoin.get<BangumiOAuthManager>()
         manager.resetIfFinished()
@@ -382,7 +393,7 @@ internal fun TvSettingsItemsBuilder.danmakuRuleItems() {
     action(
         Lang.tv_settings_danmaku_rules_add, Lang.tv_settings_danmaku_rules_add_description,
         value = { tvText(Lang.tv_settings_on_phone) },
-        qr = { consoleQr(it, "#settings/resources") },
+        qr = { consoleQr(it, "#settings/resources", legacy = true) },
     ) { emptyList() }
     entries(
         listOf(rules),
