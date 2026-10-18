@@ -21,17 +21,15 @@ import kotlinx.serialization.json.contentOrNull
 import me.him188.ani.app.domain.mediasource.MediaListFilters
 import me.him188.ani.app.domain.mediasource.directapi.JsonNode
 import me.him188.ani.app.domain.mediasource.directapi.applyTransforms
+import me.him188.ani.app.domain.mediasource.directapi.decodeBase64Lenient
 import me.him188.ani.app.domain.mediasource.directapi.selectByPath
 import me.him188.ani.app.domain.mediasource.directapi.stringByPath
-import me.him188.ani.app.domain.mediasource.maccms.MacCmsEngine
 import me.him188.ani.app.domain.mediasource.toSimplifiedChinese
 import me.him188.ani.app.domain.mediasource.web.BlockedException
 import me.him188.ani.datasources.api.util.namedGroup
 import me.him188.ani.utils.xml.Element
 import me.him188.ani.utils.xml.Html
 import kotlin.coroutines.cancellation.CancellationException
-import kotlin.io.encoding.Base64
-import kotlin.io.encoding.ExperimentalEncodingApi
 
 /**
  * 规则源发请求的方式. 4xx / 5xx 也作为响应返回 (由引擎判为失败), 网络错误抛异常.
@@ -463,7 +461,6 @@ class RuleEngine(
         return ok(label, state.copy(value = value))
     }
 
-    @OptIn(ExperimentalEncodingApi::class)
     private fun macCmsPlayer(state: RuleState, label: String, step: RuleStep.MacCmsPlayer): RuleState? {
         val declaration = Regex("""\b${Regex.escape(step.variable)}\s*=""").find(state.value)
             ?: return fail(label, "页面里没有 ${step.variable}")
@@ -475,8 +472,7 @@ class RuleEngine(
         val value = when ((obj["encrypt"] as? JsonPrimitive)?.contentOrNull?.trim()) {
             "1" -> RuleText.jsUnescape(raw)
             "2" -> {
-                val padded = raw + "=".repeat((4 - raw.length % 4) % 4)
-                val decoded = runCatching { Base64.Default.decode(padded).decodeToString() }.getOrNull()
+                val decoded = decodeBase64Lenient(raw)?.decodeToString()
                     ?: return fail(label, "${step.key} 不是 base64")
                 RuleText.jsUnescape(decoded)
             }
@@ -650,16 +646,14 @@ class RuleEngine(
         val vod = jsonItems(state.value, step.listPath).firstOrNull()?.element as? JsonObject
             ?: return fail(label, "${step.listPath.ifEmpty { "当前值" }} 里没有片子")
         fun field(key: String) = (vod[key] as? JsonPrimitive)?.contentOrNull.orEmpty()
-        val channels = MacCmsEngine.parsePlayLines(field("vod_play_from"), field("vod_play_url")).map { (from, episodes) ->
-            val kept = if (step.directOnly) episodes.filter { MacCmsEngine.isMediaUrl(it.url) } else episodes
+        val channels = MacCmsPlayLines.parse(field("vod_play_from"), field("vod_play_url")).map { (from, episodes) ->
+            val kept = if (step.directOnly) episodes.filter { MacCmsPlayLines.isMediaUrl(it.url) } else episodes
             RuleChannel(from, kept.mapIndexed { index, episode -> RuleEpisode(episode.label.ifEmpty { "第${index + 1}集" }, episode.url) })
         }
         // sortedBy 是稳定的: 同类线路保持站点给的顺序
-        val ordered = if (step.preferHls) channels.sortedBy { channel -> channel.episodes.none { isHls(it.url) } } else channels
+        val ordered = if (step.preferHls) channels.sortedBy { channel -> channel.episodes.none { MacCmsPlayLines.isHls(it.url) } } else channels
         return finishChannels(state, label, ordered)
     }
-
-    private fun isHls(url: String): Boolean = url.substringBefore('?').substringBefore('#').endsWith(".m3u8", ignoreCase = true)
 
     private fun optionalGroup(match: MatchResult, regex: Regex, name: String): String? = try {
         match.namedGroup(regex, name)?.value

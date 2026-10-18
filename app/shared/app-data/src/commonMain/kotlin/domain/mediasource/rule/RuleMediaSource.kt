@@ -31,12 +31,13 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import me.him188.ani.app.data.repository.media.SelectorMediaSourceEpisodeCacheRepository
-import me.him188.ani.app.domain.media.fetch.seasonEpisodeSorts
+import me.him188.ani.app.domain.media.fetch.wholeSubjectEpisodeSortsOrNull
 import me.him188.ani.app.domain.mediasource.MediaListFilter
 import me.him188.ani.app.domain.mediasource.MediaListFilterContext
 import me.him188.ani.app.domain.mediasource.MediaListFilters
 import me.him188.ani.app.domain.mediasource.MediaSourceEngineHelpers
 import me.him188.ani.app.domain.mediasource.asCandidate
+import me.him188.ani.app.domain.mediasource.latestAiredEpisode
 import me.him188.ani.app.domain.mediasource.codec.DefaultMediaSourceCodec
 import me.him188.ani.app.domain.mediasource.codec.DontForgetToRegisterCodec
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceArguments
@@ -68,7 +69,6 @@ import me.him188.ani.app.domain.mediasource.web.toFilterContext
 import me.him188.ani.datasources.api.DefaultMedia
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.Media
-import me.him188.ani.datasources.api.PackedDate
 import me.him188.ani.datasources.api.matcher.WebVideo
 import me.him188.ani.datasources.api.matcher.WebVideoDirectResolver
 import me.him188.ani.datasources.api.matcher.WebVideoMatcher
@@ -487,19 +487,6 @@ class RuleMediaSource(
         partialUrl = url,
         origin = null,
     )
-
-    /** 本条目的全部集号 (拆分季的后一段加上整季序号); 剧集未知或集数太多时为 `null`, 那时只产出当前这一集 (与网页抓取数据源相同). */
-    private fun MediaFetchRequest.wholeSubjectEpisodeSortsOrNull(): Set<EpisodeSort>? {
-        if (episodes.isEmpty() || episodes.size > SelectorMediaSource.MAX_WHOLE_SUBJECT_EPISODES) return null
-        return episodes.flatMapTo(mutableSetOf()) { listOfNotNull(it.sort, it.ep) } + seasonEpisodeSorts()
-    }
-
-    private fun MediaFetchRequest.latestAiredEpisode(): MediaFetchRequest.Episode? {
-        val today = PackedDate.now()
-        return episodes.asSequence()
-            .filter { it.sort is EpisodeSort.Normal && it.airDate.isValid && it.airDate <= today }
-            .maxByOrNull { it.sort }
-    }
 
     // endregion
 

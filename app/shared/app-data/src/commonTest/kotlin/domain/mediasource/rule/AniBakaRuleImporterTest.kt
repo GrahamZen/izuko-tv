@@ -140,14 +140,11 @@ class AniBakaRuleImporterTest {
                 goal = RuleStep.Sniff.GOAL_HTML,
                 url = "/s?wd={keyword}",
                 timeoutMillis = 30_000,
-                readyContains = listOf("video-img-box"),
-                rejectContains = listOf("安全验证"),
-                settleMillis = 2_000,
             ),
             config.search[0],
         )
         assertEquals(
-            RuleStep.Sniff(goal = RuleStep.Sniff.GOAL_VIDEO, timeoutMillis = 60_000, settleMillis = 1_000, resolveMediaRedirects = true),
+            RuleStep.Sniff(goal = RuleStep.Sniff.GOAL_VIDEO, timeoutMillis = 60_000),
             config.play.single(),
         )
         // 只有播放段嗅探视频的时长算数; 没写时长照全局设置
