@@ -45,7 +45,7 @@ import androidx.compose.ui.platform.LocalInputModeManager
  *
  * ## 三个原语 (都是 @Composable 修饰符工厂, 便于读开关后**原样返回 this**)
  *
- * - [LocalTvTouchInputEnabled]: 设备有触摸屏才为 true (TV 入口按 FEATURE_TOUCHSCREEN 提供). **为 false 时本文件
+ * - [LocalTvTouchInputEnabled]: 设备有触摸屏、且没在设置里换成电视模式才为 true (TV 入口按 FEATURE_TOUCHSCREEN 与 TvInterfaceModeGate 提供). **为 false 时本文件
  *   所有 modifier 都原样返回, 电视上一个节点都不会多** —— 这是"对电视用户零影响"的硬保证.
  * - [tvTouchKeyboardMode]: 挂 TV 根部. 每次按下 (Initial pass, 祖先先收到) 都把输入模式请求回 Keyboard
  *   (Android 上 = `requestFocusFromTouch()`, 同步离开触摸模式; 焦点在嵌着的原生视图上时由它自己离开, 见
