@@ -86,7 +86,8 @@ import me.him188.ani.app.ui.foundation.widgets.ToastViewModel
 import me.him188.ani.app.ui.foundation.widgets.Toaster
 import me.him188.ani.app.ui.main.AniApp
 import me.him188.ani.app.ui.main.AniAppContent
-import me.him188.ani.app.ui.pad.InstallPadPageVariants
+import me.him188.ani.app.ui.main.InstallTvTouchPageVariants
+import me.him188.ani.app.ui.main.TvTouchAniUiBehavior
 import me.him188.ani.app.videoplayer.player.AniAVKitMediampPlayerFactory
 import me.him188.ani.utils.analytics.Analytics
 import me.him188.ani.utils.httpdownloader.HttpDownloader
@@ -258,7 +259,8 @@ fun MainViewController(app: AniIosApplication): UIViewController {
                 LocalOnBackPressedDispatcherOwner provides app.onBackPressedDispatcherOwner,
                 LocalContext provides app.context,
             ) {
-                AniApp {
+                // 电视界面 (同电视包装在平板上的样子, 见 InstallTvTouchPageVariants)
+                AniApp(uiBehavior = TvTouchAniUiBehavior) {
                     val platformWindow = rememberPlatformWindow()
                     CompositionLocalProvider(
                         LocalPlatformWindow provides platformWindow,
@@ -286,7 +288,7 @@ fun MainViewController(app: AniIosApplication): UIViewController {
                                     },
                                 ) {
                                     Box(Modifier.padding(all = paddingByWindowSize)) {
-                                        InstallPadPageVariants { AniAppContent(app.aniNavigator) }
+                                        InstallTvTouchPageVariants(app.aniNavigator) { AniAppContent(app.aniNavigator) }
                                         Toast({ showing }, { Text(content) })
                                     }
                                 }
@@ -302,8 +304,13 @@ fun MainViewController(app: AniIosApplication): UIViewController {
         addChildViewController(contentViewController)
         view.addSubview(contentViewController.view)
         fillMaxSize(this, contentViewController)
+        // 左边缘右滑 = 返回键
+        edgeBackGesture = IosEdgeBackGesture { app.onBackPressedDispatcherOwner.onBackPressedDispatcher.onBackPressed() }.also { it.install(view) }
     }
 }
+
+/** 左边缘右滑返回的手势目标 (手势识别器不持有它). */
+private var edgeBackGesture: IosEdgeBackGesture? = null
 
 private fun fillMaxSize(container: AniHostingUIViewController, contentViewController: UIViewController) {
     contentViewController.didMoveToParentViewController(container)

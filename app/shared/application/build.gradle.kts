@@ -40,7 +40,8 @@ kotlin {
     }
     sourceSets.iosMain.dependencies {
         implementation(libs.mediamp.ffmpeg)
-        implementation(projects.app.shared.uiPad)
+        // 电视界面 (见 InstallTvTouchPageVariants)
+        implementation(projects.app.shared.uiTv)
     }
 }
 
