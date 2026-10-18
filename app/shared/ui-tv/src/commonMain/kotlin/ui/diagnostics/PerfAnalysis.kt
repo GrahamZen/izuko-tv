@@ -121,6 +121,8 @@ internal class PerfRecording(
     val thermalStatus: Int,
     /** 窗口实际渲染尺寸, 如 "1920x1080". */
     val windowSize: String,
+    /** 各处报进来的事件与按秒的累计 (开播、数据源、选源器、视频出帧, 见 [PerfTimelineCollector]). */
+    val timeline: PerfTimelineData = PerfTimelineData.EMPTY,
 )
 
 /** 解析 `logcat -v monotonic` 里 ART 的 GC 日志. */
@@ -341,10 +343,16 @@ internal object PerfAnalysis {
         val processFaults = delta(first?.processMajflt, last?.processMajflt)
         val processCpuMs = rec.threadCpuMs.values.sum()
         val coresUsed = processCpuMs / (seconds * 1000.0)
+        val playback = PerfPlaybackAnalysis.analyze(rec)
 
         val findings = ArrayList<PerfFinding>()
+        // 自动报告: 触发原因排第一
+        playback.lead?.let { findings += it }
         val enoughFrames = frames.count >= MIN_FRAMES
-        if (!enoughFrames) {
+        if (!enoughFrames && playback.hasPlayback) {
+            // 视频画面直接交给系统合成, 不经过界面这一层: 看视频时界面几乎不重画是正常的
+            findings += PerfFinding(PerfFinding.Level.INFO, tr("界面几乎没有重画（{0} 帧），看视频时是正常的；视频画面看下面关于画面的几条。", frames.count))
+        } else if (!enoughFrames) {
             findings += PerfFinding(
                 PerfFinding.Level.WARN,
                 tr("录制期间几乎没有画面更新（{0} 帧），帧相关的结论不准。录制时要在电视上操作想测的界面。", frames.count),
@@ -486,6 +494,7 @@ internal object PerfAnalysis {
                 tr("JIT 编译用了 {0} 秒 CPU：应用还没编译成机器码（debug 包、刚安装或刚更新时是这样），这次的卡顿会比平时重。", fmt1(jitMs / 1000.0)),
             )
         }
+        findings += playback.findings
         if (rec.thermalStatus >= 2) {
             findings += PerfFinding(PerfFinding.Level.WARN, tr("电视正在因为发热降频（温控等级 {0}）。", rec.thermalStatus))
         }
@@ -585,6 +594,7 @@ internal object PerfAnalysis {
                     }
                 }
             }
+            playback.json?.let { put("playback", it) }
             putJsonObject("mainThread") {
                 put("stalls", rec.stallDurations.size)
                 put("longestMs", rec.stallDurations.maxOrNull() ?: 0)

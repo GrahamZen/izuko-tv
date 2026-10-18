@@ -13,6 +13,7 @@ import android.app.ActivityManager
 import android.content.ComponentCallbacks2
 import android.content.Context
 import android.content.res.Configuration
+import android.net.TrafficStats
 import android.os.Build
 import android.os.Debug
 import android.os.Handler
@@ -33,6 +34,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.concurrent.thread
+import kotlin.math.roundToLong
 
 /**
  * 一次「录制」的采集 (见 [TvPerfDiagnostics]). 只在录制期间工作, 结束后线程全部停掉, 平时零开销.
@@ -44,6 +46,9 @@ import kotlin.concurrent.thread
  * - GC 的确切时刻: 读本进程的 logcat (`-v monotonic`, 与 FrameMetrics 同一时钟), ART 对较长的 GC 与「线程等 GC」各打一行.
  * - 主线程看门狗: 每 [WATCHDOG_TICK_MS] 往主线程投一个空任务, 超过 [STALL_THRESHOLD_MS] 没执行就采样主线程堆栈.
  * - 系统的内存不足通知 (onTrimMemory).
+ * - 时间线 ([timeline], 常驻哨兵那一条, 见 [TvPlaybackSentinel]): 开播各步、数据源查询、选源器筛选、播放器出帧 / 丢帧等各处报进来的事;
+ *   每秒再往里记一次各线程组用的 CPU、本应用收到的字节与屏幕刷新率, 好和画面卡的那几秒对上. 报告取 [timelineFromNs] 起的一段
+ *   (自动报告从触发前一分钟起, 平时就是录制开始时).
  *
  * 所有采集都包在 try 里, 读不到的节点跳过, 诊断出错不影响应用.
  */
@@ -52,6 +57,8 @@ internal class TvPerfRecorder(
     private val window: Window,
     private val refreshHz: Float,
     private val windowSize: String,
+    private val timeline: PerfTimelineCollector,
+    private val timelineFromNs: Long? = null,
 ) {
     private val pid = Process.myPid()
     private val cores = Runtime.getRuntime().availableProcessors()
@@ -74,6 +81,9 @@ internal class TvPerfRecorder(
     private var running = false
     private var startNs = 0L
     private var cpuStart: Map<Int, Pair<String, Long>> = emptyMap()
+    private var cpuLastSecond: Map<Int, Pair<String, Long>> = emptyMap()
+    private var rxLastSecond = -1L
+    private var lastSecondNs = 0L
     private var logcat: JavaProcess? = null
     private var watchdog: Thread? = null
 
@@ -115,6 +125,10 @@ internal class TvPerfRecorder(
         handler = Handler(diagThread.looper)
         startNs = System.nanoTime()
         cpuStart = readThreadCpu()
+        cpuLastSecond = cpuStart
+        rxLastSecond = TrafficStats.getUidRxBytes(Process.myUid())
+        lastSecondNs = startNs
+        TvPlaybackSentinel.recorderStarted(timelineFromNs ?: startNs)
         safe("frames") { window.addOnFrameMetricsAvailableListener(frameListener, handler) }
         safe("trim") { context.registerComponentCallbacks(trimCallbacks) }
         handler.post(sampleTick)
@@ -169,7 +183,8 @@ internal class TvPerfRecorder(
             apiLevel = Build.VERSION.SDK_INT,
             thermalStatus = thermalStatus(),
             windowSize = windowSize,
-        )
+            timeline = timeline.snapshot(timelineFromNs ?: startNs, endNs),
+        ).also { TvPlaybackSentinel.recorderStopped() }
     }
 
     // ------------------------------------------------------------------ 帧
@@ -217,6 +232,22 @@ internal class TvPerfRecorder(
             nativeKb = Debug.getNativeHeapAllocatedSize() / 1024,
             memAvailKb = if (withMemAvail) memInfo()?.availMem?.div(1024) ?: -1 else -1,
         )
+        if (tick % 10 == 0) safe("second") { recordSecond() }
+    }
+
+    /** 每秒一次: 这一秒各线程组用的 CPU 与本应用收到的字节, 记进时间线. */
+    private fun recordSecond() {
+        val cpu = readThreadCpu()
+        val rx = TrafficStats.getUidRxBytes(Process.myUid())
+        val now = System.nanoTime()
+        timeline.recordInterval(lastSecondNs, now, cpuDelta(cpuLastSecond, cpu), if (rx >= 0 && rxLastSecond >= 0) rx - rxLastSecond else -1)
+        cpuLastSecond = cpu
+        rxLastSecond = rx
+        lastSecondNs = now
+        // 播放页可能切显示模式 (「播放时屏幕刷新率」), 录制开始时的刷新率不一定是播放时的
+        window.decorView.display?.let {
+            timeline.gauge(PerfPlaybackAnalysis.DISPLAY, PerfPlaybackAnalysis.DISPLAY_MILLIHZ, (it.refreshRate * 1000).roundToLong())
+        }
     }
 
     private fun memorySnapshot() {
