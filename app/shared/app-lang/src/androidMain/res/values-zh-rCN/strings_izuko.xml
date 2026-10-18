@@ -228,7 +228,7 @@
     <string name="settings_tv_use_original_title_description">番名、集名显示原名（通常是日文）。关闭时跟随界面语言：中文界面显示中文名，其他语言显示原名</string>
     <string name="subject_details_tv_title_logo_dialog_title">选择标题 logo</string>
     <string name="subject_details_tv_title_logo_dialog_description">选这部在%1$s下用哪张，选好立刻换上，同时报给维护者，审核通过后所有人换上。对的那张不在下面，就选最后一格「列表里没有」</string>
-    <string name="subject_details_tv_title_logo_qr_hint">扫码看 TMDB 上的全部 logo</string>
+    <string name="subject_details_tv_title_logo_hidden">另有 %1$d 张显示不了</string>
     <string name="subject_details_tv_title_logo_text_option">显示文字</string>
     <string name="subject_details_tv_title_logo_not_listed">列表里没有</string>
     <string name="subject_details_tv_title_logo_loading">正在读取 logo…</string>
