@@ -127,12 +127,13 @@ object TvHomeChannels {
     private val watchNextMutex = Mutex()
 
     /**
-     * 在 MainActivity 启动后调用, 非 TV 设备直接跳过. 「今日更新」频道开着时**不会返回** (随 activity 结束).
+     * 在 MainActivity 启动后调用, 非 TV 设备直接跳过.
      *
      * - 热门动画频道: 每进程对一次热门榜, 没变就不动 (内容一天也变不了几次, 见 [updateTrendingChannel]);
      * - 系统"继续观看"行: 只在进程启动时写一次的话, 用户在详情页把番标成"看过"之后, 主屏那一行
      *   还会挂着它直到下次冷启动. 它在应用退到后台时才写 (见 [collectWatchNext]), 所以跟着进程走, 不随 activity 结束:
-     *   按返回退出时 activity 先销毁, 进程稍后才转入后台.
+     *   按返回退出时 activity 先销毁, 进程稍后才转入后台;
+     * - 「今日更新」频道: 同样退到后台才取、才写, 一天一次 (见 [TvHomeTodayChannel]).
      */
     suspend fun keepUpdated(context: Context, koin: Koin) {
         if (!isTvDevice(context)) return
@@ -145,7 +146,7 @@ object TvHomeChannels {
                 .onFailure { logger.error(it) { "Failed to update trending channel" } }
         }
 
-        // 「今日更新」频道在这里建好 (第一次要弹添加频道确认框), 内容由它自己按天重写
+        // 「今日更新」频道在这里建好 (第一次要弹添加频道确认框), 内容由它自己在后台按天重写
         val todayChannelId = runCatching { TvHomeTodayChannel.ensureChannel(context) }
             .onFailure { logger.error(it) { "Failed to create today channel" } }
             .getOrNull()
@@ -162,7 +163,7 @@ object TvHomeChannels {
                 collectWatchNext(appContext, koin, tmdb, settingsRepository, playNext)
             }
         }
-        todayChannelId?.let { TvHomeTodayChannel.keepUpdated(appContext, koin, it) }
+        todayChannelId?.let { TvHomeTodayChannel.start(appContext, koin, it) }
     }
 
     /**
