@@ -13,6 +13,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -36,6 +38,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.ZeroCornerSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.AccountCircle
@@ -103,10 +106,17 @@ import org.jetbrains.compose.resources.stringResource
  * 窄屏一次一栏: 点分类进去, 返回回到分类列表. [openedAtCategory] = 从别处直接跳到某一类 (窄屏时直接进那一类).
  */
 @Composable
-internal fun TouchSettingsLayout(content: TvSettingsContent, state: TvSettingsState, openedAtCategory: Boolean) {
+internal fun TouchSettingsLayout(
+    content: TvSettingsContent,
+    state: TvSettingsState,
+    openedAtCategory: Boolean,
+    embedded: (categoryId: String) -> TouchSettingsEmbedded?,
+) {
     val navigator = LocalNavigator.current
     val nav by state.nav.collectAsState()
     val drilled = nav.drill.isNotEmpty()
+    // 嵌进来的内容只在这一类的第一屏 (没进下一层时)
+    val embeddedHere = content.railKey?.let(TvSettingsRowIds::parseCategory)?.takeIf { !drilled }?.let(embedded)
     LaunchedEffect(content.railKey) {
         content.railKey?.let(TvSettingsRowIds::parseCategory)?.let { TouchSettingsLastPosition.categoryId = it }
     }
@@ -123,14 +133,20 @@ internal fun TouchSettingsLayout(content: TvSettingsContent, state: TvSettingsSt
                     onSelect = state::onRailFocused,
                     modifier = Modifier.width(TOUCH_SETTINGS_RAIL_WIDTH).fillMaxHeight(),
                 )
+                // 同原来设置页的两栏: 左栏透出页面底色, 右栏是一张左边圆角的卡片
+                val paneColor = MaterialTheme.colorScheme.surfaceContainerLow
                 TouchSettingsDetail(
                     content, state, showBack = drilled, onBack = { state.backInRight() },
-                    modifier = Modifier.weight(1f).fillMaxHeight().background(MaterialTheme.colorScheme.surfaceContainerLow),
+                    embedded = embeddedHere, paneColor = paneColor,
+                    modifier = Modifier.weight(1f).fillMaxHeight()
+                        .clip(MaterialTheme.shapes.extraLarge.copy(topEnd = ZeroCornerSize, bottomEnd = ZeroCornerSize))
+                        .background(paneColor),
                 )
             }
 
             inCategory -> TouchSettingsDetail(
                 content, state, showBack = true, onBack = { if (!state.backInRight()) inCategory = false },
+                embedded = embeddedHere, paneColor = AniThemeDefaults.pageContentBackgroundColor,
                 modifier = Modifier.fillMaxSize(),
             )
 
@@ -192,7 +208,7 @@ private fun TouchSettingsRail(
 
 /**
  * 右栏: 这一屏的设置项. 点一行 = 电视上按确定 ([TvSettingsState.onRowClicked]), 同时选中它 —— 选中的行起它的焦点任务 (如网盘扫码登录要码)、
- * 画它的二维码与会话; 可挪顺序的行长按进入挪动, 用上下箭头挪.
+ * 画它的二维码与会话; 可挪顺序的行长按进入挪动, 用上下箭头挪. [embedded] 画在设置项上面, [paneColor] 是这一栏的底色.
  */
 @Composable
 private fun TouchSettingsDetail(
@@ -200,6 +216,8 @@ private fun TouchSettingsDetail(
     state: TvSettingsState,
     showBack: Boolean,
     onBack: () -> Unit,
+    embedded: TouchSettingsEmbedded?,
+    paneColor: Color,
     modifier: Modifier = Modifier,
 ) {
     val screen = content.right
@@ -223,65 +241,78 @@ private fun TouchSettingsDetail(
             content.info[row.id]?.takeIf { row.kind == TvSettingsRowKind.Option && it.title != row.title }?.body
         }?.takeIf { it.isNotEmpty() }
         key(screen.key) {
-            LazyColumn(
-                Modifier.fillMaxWidth().weight(1f),
-                contentPadding = PaddingValues(
-                    start = 8.dp, end = 8.dp,
-                    bottom = WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom).asPaddingValues().calculateBottomPadding() + 24.dp,
-                ),
-            ) {
-                screenDescription?.let { description ->
-                    item(key = "description") {
-                        Text(
-                            description,
-                            Modifier.padding(horizontal = 16.dp, vertical = 8.dp).widthIn(max = TOUCH_SETTINGS_CONTENT_MAX_WIDTH),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = ListItemDefaults.colors().supportingContentColor,
+            Box(Modifier.fillMaxWidth().weight(1f)) {
+                LazyColumn(
+                    Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        start = 8.dp, end = 8.dp,
+                        bottom = WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom).asPaddingValues().calculateBottomPadding() + 24.dp,
+                    ),
+                ) {
+                    screenDescription?.let { description ->
+                        item(key = "description") {
+                            Text(
+                                description,
+                                Modifier.padding(horizontal = 16.dp, vertical = 8.dp).widthIn(max = TOUCH_SETTINGS_CONTENT_MAX_WIDTH),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = ListItemDefaults.colors().supportingContentColor,
+                            )
+                        }
+                    }
+                    embedded?.let { item(key = "embedded") { it.content(paneColor) } }
+                    // 这一类在这台设备上一项都没有 (如没有日志功能的平台): 只给打开原来设置页的入口
+                    if (screen.rows.isEmpty() && embedded == null && openLegacy != null) {
+                        item(key = "legacy") {
+                            TextButton(onClick = openLegacy, Modifier.padding(horizontal = 8.dp)) {
+                                Text(stringResource(Lang.tv_settings_legacy_open))
+                            }
+                        }
+                    }
+                    items(screen.rows, key = { it.id }) { row ->
+                        val info = content.info[row.id]
+                        val group = row.moveGroup
+                        TouchSettingsRowView(
+                            row = row,
+                            info = info,
+                            selected = row.id == selectedRow,
+                            moving = row.id == movingRow,
+                            hideValue = info?.qr?.let { it.console != null && it.legacy } == true && row.value == onPhone,
+                            onClick = {
+                                movingRow = null
+                                selectedRow = row.id
+                                state.onRowClicked(row.id)
+                            },
+                            onLongClick = group?.let { { movingRow = row.id } },
+                            onOpenLegacy = openLegacy,
+                            onMove = group?.let { g ->
+                                { delta: Int ->
+                                    val order = screen.rows.filter { it.moveGroup == g }.map { it.id }.toMutableList()
+                                    val from = order.indexOf(row.id)
+                                    val to = from + delta
+                                    if (from >= 0 && to in order.indices) {
+                                        order.add(to, order.removeAt(from))
+                                        state.onRowsReordered(row.id, order)
+                                    }
+                                }
+                            },
+                            onMoveDone = { movingRow = null },
                         )
                     }
                 }
-                // 这一类在这台设备上一项都没有 (如没有日志功能的平台): 只给打开原来设置页的入口
-                if (screen.rows.isEmpty() && openLegacy != null) {
-                    item(key = "legacy") {
-                        TextButton(onClick = openLegacy, Modifier.padding(horizontal = 8.dp)) {
-                            Text(stringResource(Lang.tv_settings_legacy_open))
-                        }
-                    }
-                }
-                items(screen.rows, key = { it.id }) { row ->
-                    val info = content.info[row.id]
-                    val group = row.moveGroup
-                    TouchSettingsRowView(
-                        row = row,
-                        info = info,
-                        selected = row.id == selectedRow,
-                        moving = row.id == movingRow,
-                        hideValue = info?.qr?.let { it.console != null && it.legacy } == true && row.value == onPhone,
-                        onClick = {
-                            movingRow = null
-                            selectedRow = row.id
-                            state.onRowClicked(row.id)
-                        },
-                        onLongClick = group?.let { { movingRow = row.id } },
-                        onOpenLegacy = openLegacy,
-                        onMove = group?.let { g ->
-                            { delta: Int ->
-                                val order = screen.rows.filter { it.moveGroup == g }.map { it.id }.toMutableList()
-                                val from = order.indexOf(row.id)
-                                val to = from + delta
-                                if (from >= 0 && to in order.indices) {
-                                    order.add(to, order.removeAt(from))
-                                    state.onRowsReordered(row.id, order)
-                                }
-                            }
-                        },
-                        onMoveDone = { movingRow = null },
-                    )
-                }
+                embedded?.bottomBar?.invoke(this)
             }
         }
     }
 }
+
+/**
+ * 某一类的右栏嵌一整块别的设置页的内容 (画在这一类剩下的设置项上面, 只在这一类的第一屏), 见 [TouchSettingsPage].
+ * [content] 的参数是右栏底色; [bottomBar] 贴在右栏底部 (如多选时的操作条).
+ */
+internal class TouchSettingsEmbedded(
+    val content: @Composable (paneColor: Color) -> Unit,
+    val bottomBar: @Composable BoxScope.() -> Unit = {},
+)
 
 /** 一行: 标题、说明 (写在下面)、行尾的当前值 / 开关 / 勾, 选中时画二维码与会话气泡, 挪动时出上下箭头. */
 @Composable

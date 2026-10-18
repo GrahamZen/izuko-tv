@@ -312,8 +312,8 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         // 这个变体有两个方法 (页面 + 首屏占位), 不能用 SAM lambda 写法
         LocalSubjectDetailsPageVariant provides TvSubjectDetailsPageVariant,
         LocalTvOnboardingVariant provides onboarding,
-        // 登录页右侧的手机控制台码 (扫码在手机上登录)
-        LocalTvLoginSidePanel provides { TvRemoteLoginCard() },
+        // 登录页右侧的手机控制台码 (扫码在手机上登录); 平板模式不挂, 登录页自己给输入框 (见 BangumiDirectLoginForm)
+        LocalTvLoginSidePanel provides (if (touchInput) null else ({ TvRemoteLoginCard() })),
         // 人物 / 角色预览弹窗与整页里的横滑行用原生实现 (长按左右连发不卡)
         LocalPeoplePreviewRows provides TvPeoplePreviewRows,
         // 缓存页的选源: 与播放器同一块选源面板
