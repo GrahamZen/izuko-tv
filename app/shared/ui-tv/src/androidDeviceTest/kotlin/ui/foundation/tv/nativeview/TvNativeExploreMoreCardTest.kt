@@ -20,6 +20,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import androidx.compose.ui.geometry.Rect as ComposeRect
 
 /**
  * 探索页种子行行尾的「更多」卡 ([TvNativeCard.more]): 按确定只回调、不进 hero 态; 页面接上新卡 (同一行换内容) 之后行不挪、焦点留在原来的
@@ -44,7 +45,7 @@ class TvNativeExploreMoreCardTest {
             cardClicks += rowKey to index
         }
 
-        override fun onCardLongPress(rowKey: String, index: Int, anchor: Rect) = Unit
+        override fun onCardLongPress(rowKey: String, index: Int, anchor: ComposeRect) = Unit
         override fun onMoreClick(rowKey: String) {
             moreClicks += rowKey
         }

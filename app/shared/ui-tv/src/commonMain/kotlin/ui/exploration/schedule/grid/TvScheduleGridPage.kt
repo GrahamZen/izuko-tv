@@ -131,7 +131,7 @@ import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGridPageMetrics
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeWallBackdropSpec
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeWallBackdropTarget
 import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativeGridPageState
-import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativeIcon
+import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvIconImage
 import me.him188.ani.app.ui.foundation.tv.prefetchTvBackdrop
 import me.him188.ani.app.ui.foundation.tv.rememberTvHeroMediaPipeline
 import me.him188.ani.app.ui.foundation.tv.rememberTvRailWallSelection
@@ -523,7 +523,7 @@ fun TvScheduleGridPage(
     val backToDates by remember { derivedStateOf { inGrid && lastFocusedCard <= 0 } }
     BackHandler(enabled = !navLocked && backToFirstCard) {
         // 回首卡还在滚又按了返回 (多半是嫌慢): 当场落到首卡, 同途中按方向键
-        if (nativeState.view?.landFarJump() == true) return@BackHandler
+        if (nativeState.surface?.landFarJump() == true) return@BackHandler
         wallFarJump = true
         gridFocus.focusItem(0)
     }
@@ -581,7 +581,7 @@ fun TvScheduleGridPage(
     // 海报墙大小 (同探索 / 追番 / 搜索): 卡片 (封面、番名、间距、角标) 按它缩放, 日期行与两侧留白不变 (见 TvPosterWallScaled)
     val wallScale = LocalThemeSettings.current.effectivePosterWallScale
     val cardDensity = remember(density, wallScale) { Density(density.density * wallScale, density.fontScale) }
-    val badgeIcon = rememberTvNativeIcon(Icons.Rounded.Favorite, TV_SCHEDULE_BADGE_ICON_SIZE * wallScale, tvHeroContentColor())
+    val badgeIcon = rememberTvIconImage(Icons.Rounded.Favorite, TV_SCHEDULE_BADGE_ICON_SIZE * wallScale, tvHeroContentColor())
     val badgeBackground = MaterialTheme.colorScheme.surface.copy(alpha = TV_SCHEDULE_BADGE_BACKGROUND_ALPHA).toArgb()
     val badge = remember(badgeIcon, badgeBackground, cardDensity) {
         with(cardDensity) {
@@ -722,10 +722,10 @@ fun TvScheduleGridPage(
                         // 时间是一条线: 行末按右接下一行行首, 行首按左接上一行行末, 走到全天两端再跨天. 已是第一天 / 最后一天也吃掉这一下
                         val count = dayItems.size
                         if (direction > 0) {
-                            if (row < (count - 1) / columns) nativeState.view?.focusItem((row + 1) * columns)
+                            if (row < (count - 1) / columns) nativeState.surface?.focusItem((row + 1) * columns)
                             else switchDay(1, false)
                         } else {
-                            if (row > 0) nativeState.view?.focusItem(row * columns - 1)
+                            if (row > 0) nativeState.surface?.focusItem(row * columns - 1)
                             else switchDay(-1, true)
                         }
                         true
