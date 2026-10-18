@@ -263,12 +263,12 @@ data class TvConsoleUrl(val url: String?)
 
 /**
  * 说明栏里打开 Web 控制台的二维码, 带上 [fragment] 让网页直接停在相关的那一页 (如 `#settings/network`、`#sources`).
- * 控制台没在运行 (没连局域网) 时只写一句不可用.
+ * 控制台没在运行 (没连局域网) 时只写一句不可用. [legacy] 见 [TvQr.legacy].
  */
-internal fun consoleQr(values: TvSettingsValues, fragment: String): TvQr {
+internal fun consoleQr(values: TvSettingsValues, fragment: String, legacy: Boolean = false): TvQr {
     val url = values[TvSettingKeys.consoleUrl]?.url
-        ?: return TvQr(null, status = tvText(Lang.search_tv_remote_unavailable), console = fragment)
-    return TvQr("$url$fragment", caption = tvText(Lang.tv_settings_qr_console), console = fragment)
+        ?: return TvQr(null, status = tvText(Lang.search_tv_remote_unavailable), console = fragment, legacy = legacy)
+    return TvQr("$url$fragment", caption = tvText(Lang.tv_settings_qr_console), console = fragment, legacy = legacy)
 }
 
 /** 一个显示模式: [id] = 0 表示「自动」(不指定). */

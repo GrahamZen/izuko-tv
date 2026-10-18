@@ -895,4 +895,37 @@
     <string name="remote_settings_peer_client_rules_description">電視上打開「過濾客戶端類型」後生效。每行一條正則表達式，如 go.torrent 屏蔽百度網盤的離線下載客戶端。</string>
     <!-- 电视设置「关于」里的反馈群 -->
     <string name="settings_about_qq_group">QQ 群</string>
+    <!-- 触屏设备的设置页: 电视版设置清单里说「按确定」「在电视上」的几句换成触屏的说法 -->
+    <string name="touch_settings_login_in_app">在應用程式內登錄</string>
+    <string name="touch_settings_login_in_app_description">在應用程式內打開 Bangumi 的登錄頁，輸入帳號和密碼登錄。</string>
+    <string name="touch_settings_link_description">點一下在瀏覽器裏打開。</string>
+    <string name="touch_settings_sorter_hint">點一下勾選或取消；長按一行後用箭頭調整順序，排在前面的優先。每部番劇在播放時的選擇會覆蓋這裏的設置。</string>
+    <string name="touch_settings_source_hint">點一下啓用或停用；長按一行後用箭頭調整順序。添加、編輯數據源點上面的「打開這一類的設定」。</string>
+    <string name="touch_settings_up_next_tip_description">快播完時自動展開選集條並選中下一集，點它立刻播、按返回關掉</string>
+    <string name="touch_settings_perf_diag_dialog_hint">點一下這一行出碼，用手機掃碼，打開網頁的「設置 → 維護 → 性能診斷」。可以做設備體檢，或者錄製一段：錄製時照常操作要測的界面，結束後在網頁上看卡頓原因、下載報告。</string>
+    <string name="touch_settings_legacy_hint">這一類還沒換成新的樣式，點一下在原來的設定頁裡打開。</string>
+    <string name="touch_settings_danmaku_rules_add_description">規則要打字：用「打開這一類的設定」在原來的設定頁裏添加，或者在 Web 控制枱的「設置」裏添加。這裏可以開關或刪除已有的規則。</string>
+    <string name="touch_settings_danmaku_rule_hint">正則：%1$s\n\n點一下啓用或停用這條規則。</string>
+    <string name="touch_settings_subscription_delete_hint">點一下刪除這個訂閱，它帶來的數據源也一起刪除。添加訂閱用「打開這一類的設定」，或者在 Web 控制枱裏添加。</string>
+    <string name="touch_settings_drive_logout_hint">點一下退出這個帳號。登錄在 Web 控制枱裏（掃碼或填 Cookie）。</string>
+    <string name="touch_settings_drive_login_hint">點一下這一行出碼，用手機上的網盤 App 掃碼登錄。也可以在 Web 控制枱裏填 Cookie。</string>
+    <string name="touch_settings_drive_login_hint_shares">登錄後，你網盤裏的影片和別人分享的網盤資源都能播（分享的在播放時轉存到你的網盤）。點一下這一行出碼，用手機上的網盤 App 掃碼登錄，也可以在 Web 控制枱裏填 Cookie。</string>
+    <string name="touch_settings_drive_webdav_add_description">把局域網裏的 NAS（或任何 WebDAV 服務）當數據源：在 NAS 的系統設置裏打開 WebDAV，再點一下這一行出碼，用手機掃碼，在 Web 控制枱裏填地址和帳號密碼。播放的是原文件。</string>
+    <string name="touch_settings_drive_webdav_login_hint">點一下這一行出碼，用手機掃碼，在 Web 控制枱裏填帳號密碼。</string>
+    <string name="touch_settings_proxy_mode_description">代理地址、用戶名和密碼要打字：用「打開這一類的設定」在原來的設定頁裏填，或者在 Web 控制枱的「設置 → 網絡」裏填，填過之後這裏才有「自定義」。</string>
+    <string name="touch_settings_endpoint_custom_hint">自定義地址要打字：用「打開這一類的設定」在原來的設定頁裏填，或者在 Web 控制枱的「設置 → 網絡」裏填。</string>
+    <string name="touch_settings_bangumi_custom_hint">自建鏡像的地址要打字：用「打開這一類的設定」在原來的設定頁裏填，或者在 Web 控制枱的「設置 → 網絡」裏填，填過之後這裏才有「我自己的鏡像」這條線路。</string>
+    <string name="touch_settings_peer_rules_hint">按 Web 控制枱裏填的規則過濾，用「打開這一類的設定」或者在 Web 控制枱裏改。</string>
+    <string name="touch_settings_pikpak_account_hint">用戶名和密碼要打字：用「打開這一類的設定」在原來的設定頁裏填，或者在 Web 控制枱的「設置」裏填。</string>
+    <string name="touch_settings_update_downloaded">已下載，點一下安裝</string>
+    <string name="touch_settings_update_download_failed">下載失敗，點一下重試</string>
+    <string name="touch_settings_update_new_hint">點一下下載並安裝。\n\n%1$s</string>
+    <string name="touch_settings_log_send_description">手機連接與這部裝置相同的 Wi-Fi，點一下這一行出碼，掃碼下載日誌。選中別的行後鏈接失效。</string>
+    <string name="touch_settings_login_proxy_hint">這部裝置上的代理連不上，登入和其他聯網都會失敗。打開或關掉提供代理的應用，或者在「代理」裡把代理方式改成「禁用」，再點一下重試。</string>
+    <string name="touch_settings_sources_on_phone_description">添加、編輯數據源與訂閲要打字：用「打開這一類的設定」在原來的設定頁裏做，或者在 Web 控制枱的「數據源」頁裏做。</string>
+    <string name="touch_settings_drive_qr_expired">QR Code 過期了，點一下換一個</string>
+    <string name="touch_settings_drive_qr_failed">沒拿到 QR Code：%1$s。點一下重試</string>
+    <string name="touch_settings_login_qr_description">點一下這一行出碼，用手機掃碼，在打開的 Bangumi 頁面上登錄並授權，這部裝置就登錄好了。手機要連同一個 Wi-Fi。QR Code 用不了時再點一下換一個。</string>
+    <string name="touch_settings_login_failed">沒有登錄成功，點一下換一個 QR Code 重試</string>
+    <string name="touch_settings_login_relay_unsupported">這個版本不支持掃碼登錄，請用「在應用程式內登錄」</string>
 </resources>
