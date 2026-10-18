@@ -52,6 +52,8 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCoroutine
 
 /**
  * 「性能诊断」: 在 Web 控制台「设置 → 维护 → 性能诊断」里点, 电视上「设置 → 日志 → 性能诊断」是入口 (显示码与状态).
@@ -60,12 +62,21 @@ import java.util.concurrent.TimeUnit
  * - 录制 ([TvPerfRecorder] + [PerfAnalysis]): 用户在电视上照常操作 N 秒, 结束后把每个慢帧对到 GC / 主线程缺页 / 主线程卡住 /
  *   内存不足通知上, 再看主线程、RenderThread、GPU 各段耗时, 给出卡顿原因.
  *
- * 平时什么都不跑: 只有点了才采集, 结束就停. 报告存在 `files/perf-diagnostics/` (留最近 [MAX_REPORTS] 份), 应用重启后还能下载.
+ * - 自动报告: 常驻的播放哨兵 ([TvPlaybackSentinel]) 发现画面异常卡顿时 ([startAutoCapture]) 接着录 [AUTO_SECONDS] 秒,
+ *   报告从触发前 [AUTO_BEFORE_NS] 起 (哨兵一直留着最近一段). 每集最多一份, 两份之间至少隔 [AUTO_MIN_INTERVAL_MS].
+ *
+ * 平时只有哨兵在播放时轻量地记; 录制只有点了或触发了才采集, 结束就停. 报告存在 `files/perf-diagnostics/`
+ * (手动的留最近 [MAX_REPORTS] 份, 自动的留 [MAX_AUTO_REPORTS] 份), 应用重启后还能下载.
  * 窗口由 Web 控制台装到界面上时 ([attach]) 登记 (逐帧统计要挂在 Activity 的窗口上).
  */
 internal object TvPerfDiagnostics {
     private val logger = logger<TvPerfDiagnostics>()
     private const val MAX_REPORTS = 12
+    private const val MAX_AUTO_REPORTS = 5
+    private const val AUTO = "auto"
+    private const val AUTO_SECONDS = 20
+    private const val AUTO_BEFORE_NS = 60_000_000_000L
+    private const val AUTO_MIN_INTERVAL_MS = 10 * 60_000L
     private val mainHandler = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val prettyJson = Json { prettyPrint = true }
@@ -73,8 +84,8 @@ internal object TvPerfDiagnostics {
     sealed interface Status {
         data object Idle : Status
 
-        /** [endsAtMillis] = System.currentTimeMillis 时钟. */
-        data class Recording(val seconds: Int, val endsAtMillis: Long) : Status
+        /** [endsAtMillis] = System.currentTimeMillis 时钟; [auto] = 画面卡顿时自动开的. */
+        data class Recording(val seconds: Int, val endsAtMillis: Long, val auto: Boolean = false) : Status
 
         data object CheckingHealth : Status
     }
@@ -105,6 +116,7 @@ internal object TvPerfDiagnostics {
     fun attach(context: Context) {
         val activity = context.findActivity()
         appContext = context.applicationContext
+        TvPlaybackSentinel.install(context)
         onMain { activityRef = activity?.let { WeakReference(it) } }
         scope.launch { refreshLatestHeadline() }
     }
@@ -114,24 +126,8 @@ internal object TvPerfDiagnostics {
     /** 开始录制 [seconds] 秒; 返回 null = 已开始, 否则是不能开始的原因. */
     fun startRecording(seconds: Int): String? {
         val context = appContext ?: return tr("电视上的 Izuko 还没打开界面")
-        val error = onMain {
-            if (recorder != null) return@onMain tr("正在录制中")
-            val activity = activityRef?.get()
-                ?: return@onMain tr("电视上的 Izuko 还没打开界面")
-            val resumed = (activity as? LifecycleOwner)?.lifecycle?.currentState?.isAtLeast(Lifecycle.State.RESUMED) ?: true
-            if (!resumed) return@onMain tr("电视当前没有显示 Izuko，切回 Izuko 再录制")
-            val window = activity.window ?: return@onMain tr("电视上的 Izuko 还没打开界面")
-            val decor = window.decorView
-            val r = TvPerfRecorder(
-                context = context,
-                window = window,
-                refreshHz = currentDisplay(activity)?.refreshRate ?: 0f,
-                windowSize = "${decor.width}x${decor.height}",
-            )
-            r.start()
-            recorder = r
-            null
-        }
+        if (_status.value is Status.Recording) return tr("正在录制中")
+        val error = onMain { openRecorder(context, timelineFromNs = null) }
         if (error != null) return error
         val pageAtStart = currentRoute()
         _status.value = Status.Recording(seconds, System.currentTimeMillis() + seconds * 1000L)
@@ -142,12 +138,35 @@ internal object TvPerfDiagnostics {
         return null
     }
 
-    /** 提前结束 (录到的照样分析). */
+    /** 在主线程上调: 界面在前台就开一个录制器挂到窗口上 (记在 [recorder]), 否则返回不能录的原因. */
+    private fun openRecorder(context: Context, timelineFromNs: Long?): String? {
+        if (recorder != null) return tr("正在录制中")
+        val activity = activityRef?.get()
+            ?: return tr("电视上的 Izuko 还没打开界面")
+        val resumed = (activity as? LifecycleOwner)?.lifecycle?.currentState?.isAtLeast(Lifecycle.State.RESUMED) ?: true
+        if (!resumed) return tr("电视当前没有显示 Izuko，切回 Izuko 再录制")
+        val window = activity.window ?: return tr("电视上的 Izuko 还没打开界面")
+        val decor = window.decorView
+        val r = TvPerfRecorder(
+            context = context,
+            window = window,
+            refreshHz = currentDisplay(activity)?.refreshRate ?: 0f,
+            windowSize = "${decor.width}x${decor.height}",
+            timeline = TvPlaybackSentinel.timeline,
+            timelineFromNs = timelineFromNs,
+        )
+        r.start()
+        recorder = r
+        return null
+    }
+
+    /** 提前结束 (录到的照样分析; 自动的到时自己结束). */
     fun stopRecording() {
         val job = recordingJob ?: return
         if (!job.isActive) return
-        job.cancel()
         val status = _status.value as? Status.Recording ?: return
+        if (status.auto) return
+        job.cancel()
         val elapsed = status.seconds - ((status.endsAtMillis - System.currentTimeMillis()) / 1000).toInt()
         scope.launch { finishRecording(elapsed.coerceIn(1, status.seconds), currentRoute()) }
     }
@@ -163,6 +182,65 @@ internal object TvPerfDiagnostics {
         } catch (e: Throwable) {
             logger.warn(e) { "Failed to finish perf recording" }
         } finally {
+            TvPlaybackSentinel.recorderStopped()
+            _status.value = Status.Idle
+        }
+    }
+
+    // ------------------------------------------------------------------ 自动报告
+
+    @Volatile
+    private var lastAutoAtMillis = 0L
+    private val autoEpisodes = HashSet<String>()
+
+    /** 现在能不能自动录: 没有别的录制 / 体检在跑, 离上一份够久, 这一集 ([episode]) 还没录过. */
+    fun autoCaptureAllowed(episode: String?): Boolean {
+        if (appContext == null || _status.value != Status.Idle) return false
+        if (System.currentTimeMillis() - lastAutoAtMillis < AUTO_MIN_INTERVAL_MS) return false
+        return episode == null || synchronized(autoEpisodes) { episode !in autoEpisodes }
+    }
+
+    /**
+     * 哨兵发现画面异常卡顿 ([reason], 在 [triggerNs] 时): 接着录 [AUTO_SECONDS] 秒, 报告从触发前 [AUTO_BEFORE_NS] 起.
+     * 界面不在前台时不录. 主线程可能正卡着 (触发原因之一), 等它缓过来再挂录制器; 调用方 (哨兵线程) 不等.
+     */
+    fun startAutoCapture(reason: String, triggerNs: Long, episode: String?) {
+        val context = appContext ?: return
+        val status = Status.Recording(AUTO_SECONDS, System.currentTimeMillis() + AUTO_SECONDS * 1000L, auto = true)
+        if (!_status.compareAndSet(Status.Idle, status)) return
+        lastAutoAtMillis = System.currentTimeMillis()
+        episode?.let { synchronized(autoEpisodes) { autoEpisodes += it } }
+        recordingJob = scope.launch {
+            val error = suspendCoroutine { cont ->
+                mainHandler.post { cont.resume(runCatching { openRecorder(context, triggerNs - AUTO_BEFORE_NS) }.getOrElse { it.toString() }) }
+            }
+            if (error != null) {
+                logger.warn { "[PerfAuto] 没录成 ($error): $reason" }
+                _status.compareAndSet(status, Status.Idle)
+                return@launch
+            }
+            val pageAtStart = currentRoute()
+            delay(AUTO_SECONDS * 1000L)
+            finishAuto(pageAtStart)
+        }
+    }
+
+    private fun finishAuto(pageAtStart: String?) {
+        val r = onMain { recorder.also { recorder = null } } ?: return
+        try {
+            val recording = r.stop()
+            val result = PerfAnalysis.analyze(recording)
+            val seconds = ((recording.endNs - recording.timeline.startNs) / 1_000_000_000L).toInt()
+            val page = listOfNotNull(pageAtStart, currentRoute()).distinct().joinToString(" → ").ifEmpty { "?" }
+            val report = save(AUTO, seconds, page, result.json)
+            val top = runCatching {
+                report["findings"]?.jsonArray?.take(4)?.joinToString(" / ") { it.jsonObject["text"]?.jsonPrimitive?.content.orEmpty() }
+            }.getOrNull()
+            logger.warn { "[PerfAuto] 已生成报告 ${report["id"]?.jsonPrimitive?.content}: $top" }
+        } catch (e: Throwable) {
+            logger.warn(e) { "Failed to finish automatic perf report" }
+        } finally {
+            TvPlaybackSentinel.recorderStopped()
             _status.value = Status.Idle
         }
     }
@@ -208,7 +286,10 @@ internal object TvPerfDiagnostics {
         runCatching {
             val d = dir() ?: return@runCatching
             File(d, "$id.json").writeText(prettyJson.encodeToString(JsonObject.serializer(), report))
-            d.listFiles { f -> f.name.endsWith(".json") }?.sortedByDescending { it.name }?.drop(MAX_REPORTS)?.forEach { it.delete() }
+            // 自动的与手动的分开数, 自动的再多也挤不掉手动录的
+            val (auto, others) = d.listFiles { f -> f.name.endsWith(".json") }.orEmpty().sortedByDescending { it.name }
+                .partition { it.name.endsWith("-$AUTO.json") }
+            (auto.drop(MAX_AUTO_REPORTS) + others.drop(MAX_REPORTS)).forEach { it.delete() }
         }.onFailure { logger.warn(it) { "Failed to save perf report" } }
         cachedReports = null
         _latestHeadline.value = headlineOf(report)

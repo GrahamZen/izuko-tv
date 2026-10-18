@@ -62,6 +62,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonPrimitive
 import me.him188.ani.app.domain.mediasource.web.LoadedPage
 import me.him188.ani.app.platform.Context
+import me.him188.ani.app.platform.perf.PerfTimeline
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 import java.io.ByteArrayInputStream
@@ -569,7 +570,7 @@ class WebViewCaptchaBrowser private constructor(
         @SuppressLint("SetJavaScriptEnabled")
         internal suspend fun create(context: Context, userAgent: String?): WebViewCaptchaBrowser =
             withContext(Dispatchers.Main.immediate) {
-                val webView = WebView(context)
+                val webView = WebView(context).also { PerfTimeline.mark("后台任务", "建 WebView") }
                 CookieManager.getInstance().setAcceptCookie(true)
                 CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
                 webView.settings.apply {

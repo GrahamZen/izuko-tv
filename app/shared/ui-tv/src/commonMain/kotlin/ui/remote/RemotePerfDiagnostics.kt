@@ -56,6 +56,7 @@ internal object RemotePerfDiagnostics {
             when (val s = TvPerfDiagnostics.status.value) {
                 is TvPerfDiagnostics.Status.Recording -> {
                     put("state", "recording")
+                    put("auto", s.auto)
                     put("seconds", s.seconds)
                     put("remaining", ((s.endsAtMillis - System.currentTimeMillis() + 999) / 1000).coerceAtLeast(0))
                 }

@@ -66,6 +66,7 @@ internal val PERF_SCRIPT = """
   window.loadPerf = load;
   document.addEventListener('visibilitychange', function () { if (!document.hidden && data && data.status.state !== 'idle') load(); });
   function kindText(r) {
+    if (r.kind === 'auto') return T('自动 · 画面卡顿');
     return r.kind === 'health' ? T('设备体检') : T('录制 {0} 秒', r.seconds);
   }
   function findings(list) {
@@ -110,7 +111,27 @@ internal val PERF_SCRIPT = """
       rows.push([T('缺页'), T('主线程 {0} · 全进程 {1}', me.mainMajorFaults, me.processMajorFaults)]);
       rows.push([T('CPU'), T('{0} 核（共 {1} 核）', c.coresUsed, c.cores) + (c.threads ? ' · ' + c.threads.slice(0, 3).map(function (t) { return t.name + ' ' + t.ms + 'ms'; }).join(', ') : '')]);
       if (mt.stalls) rows.push([T('主线程卡住'), T('{0} 次 · 最长 {1} 毫秒', mt.stalls, mt.longestMs)]);
+      // 录制时在播视频: 开播各步、视频出帧、卡的那几秒 (见 PerfPlaybackAnalysis)
+      var pb = r.playback;
+      if (pb) {
+        if (pb.trigger) rows.push([T('触发'), pb.trigger.reason + ' · ' + T('第 {0} 秒', pb.trigger.atSec)]);
+        var start = (pb.start || []).filter(function (m) { return m.sinceStartSec != null; });
+        if (start.length) rows.push([T('开播'), start.map(function (m) { return T(m.what) + ' ' + T('{0} 秒', m.sinceStartSec); }).join(' · ')]);
+        if (pb.rendered) rows.push([T('视频画面'), T('出帧 {0} · 丢帧 {1} · 跳帧 {2} · 片源 {3} fps', pb.rendered, pb.dropped, pb.skipped, pb.fps || '?') +
+          (pb.displayHz ? ' · ' + T('屏幕 {0} Hz', pb.displayHz) : '')]);
+        if (pb.stutterSeconds && pb.stutterSeconds.length) rows.push([T('卡的秒'), pb.stutterSeconds.join('、')]);
+        rows.push([T('视频解码器'), pb.decoder]);
+        rows.push([T('片源格式'), pb.format]);
+      }
       h += kv(rows);
+      var bad = pb ? (pb.seconds || []).filter(function (s) { return s.stutter; }).slice(0, 8) : [];
+      if (bad.length) {
+        h += '<div class="set-title">' + T('卡的那几秒') + '</div>' + kv(bad.map(function (s) {
+          return [T('第 {0} 秒', s.sec), T('出帧 {0} · 丢 {1} · 跳 {2} · CPU {3} 核（{4}）· 选源器 {5} 毫秒 · 在查 {6} 个源 · GC {7} 次 · 缓冲余量 {8} 毫秒',
+            s.rendered, s.dropped, s.skipped, s.cores, s.top || '—', s.selectorMs, s.searching, s.gc, s.bufferedMs == null ? '—' : s.bufferedMs) +
+            (s.memAvailMb != null ? ' · ' + T('可用内存 {0} MB', s.memAvailMb) : '') + (s.mainStallMs ? ' · ' + T('主线程卡 {0} 毫秒', s.mainStallMs) : '')];
+        }));
+      }
     }
     return h + '<a class="ghost" href="api/diag/report/' + encodeURIComponent(r.id) + '" download="izuko-perf-' + esc(r.id) + '.json">' + T('下载报告') + '</a>';
   }
@@ -118,8 +139,12 @@ internal val PERF_SCRIPT = """
     if (!data) return;
     var s = data.status, idle = s.state === 'idle';
     var h = '<div class="card set-card"><div class="set-title">' + T('性能诊断') + '</div>' +
-      '<p class="hint">' + T('体检看设备、内存、存储和最近为什么被关掉；录制时在电视上照常操作要测的界面，结束后分析卡顿是 GC、内存不足、主线程还是 GPU 造成的。') + '</p>';
-    if (s.state === 'recording') {
+      '<p class="hint">' + T('体检看设备、内存、存储和最近为什么被关掉；录制时在电视上照常操作要测的界面，结束后分析卡顿是 GC、内存不足、主线程还是 GPU 造成的。') + '</p>' +
+      '<p class="hint">' + T('查播放卡顿：先点录制，再在电视上开播一集，报告里会列出开播各步用时、视频画面卡在哪几秒，以及那几秒是搜索、CPU、GC 还是网络在拖累。') + '</p>' +
+      '<p class="hint">' + T('播放时画面异常卡顿（掉帧、画面停住、主线程卡住）会自动录一份，连同卡之前一分钟的情况，在「录制」里标着「自动」。') + '</p>';
+    if (s.state === 'recording' && s.auto) {
+      h += '<p class="perf-status">' + T('播放画面卡顿了，正在自动录制，还剩 {0} 秒。', s.remaining) + '</p>';
+    } else if (s.state === 'recording') {
       h += '<p class="perf-status">' + T('正在录制，还剩 {0} 秒。请在电视上操作要测的界面。', s.remaining) + '</p>' +
         '<div class="row"><button type="button" class="ghost" data-perf="stop">' + T('提前结束') + '</button></div>';
     } else if (s.state === 'checking') {
