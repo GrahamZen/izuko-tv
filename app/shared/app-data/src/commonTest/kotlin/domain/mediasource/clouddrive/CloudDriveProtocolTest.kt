@@ -333,4 +333,32 @@ class CloudDriveProtocolTest {
     }
 
     // endregion
+
+    // region 手机上唤起 App
+
+    @Test
+    fun `android links put the encoded qr content into each template in order`() {
+        val open = DriveMobileOpen(
+            android = "testdrive://open?url={url}",
+            androidAlternatives = listOf("", "testdrive-pan://open?url={url}"),
+        )
+        val encoded = "https%3A%2F%2Flogin.drive.test%2Fqr%3Ft%3Da_b%26c%3D1"
+        assertEquals(
+            listOf("testdrive://open?url=$encoded", "testdrive-pan://open?url=$encoded"),
+            open.androidLinks("https://login.drive.test/qr?t=a_b&c=1"),
+        )
+    }
+
+    @Test
+    fun `android links are empty without android templates`() {
+        assertEquals(emptyList(), DriveMobileOpen(ios = "testdrive-ios://open?url={url}").androidLinks("https://login.drive.test/qr"))
+    }
+
+    @Test
+    fun `mobile open without alternatives still decodes`() {
+        val open = Json.decodeFromString(DriveMobileOpen.serializer(), """{"android":"testdrive://open?url={url}"}""")
+        assertEquals(emptyList(), open.androidAlternatives)
+    }
+
+    // endregion
 }
