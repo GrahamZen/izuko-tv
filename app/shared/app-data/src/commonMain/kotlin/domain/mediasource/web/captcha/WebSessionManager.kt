@@ -264,6 +264,7 @@ class WebSessionManager(
         url: String,
         expectation: PageExpectation<T>,
     ): PageVerdict<T>? {
+        if (!BackgroundBrowserGate.allowed()) return null
         val session = retainSession(host, expectation.userAgent) ?: return null
 
         try {
@@ -449,7 +450,7 @@ class WebSessionManager(
         if (!solverEnabled()) {
             return SolveOutcome.Failed(BlockReason.Captcha(request.kind))
         }
-        val applicable = solvers.filter { solver ->
+        val applicable = BackgroundBrowserGate.usable(solvers).filter { solver ->
             (request.kind.let { BlockReason.Captcha(it) }).let { solver.canAttempt(it, host) }
         }
         if (applicable.isEmpty()) {

@@ -23,6 +23,7 @@ import me.him188.ani.android.tv.RemoteKeepAliveService
 import me.him188.ani.android.tv.TvHomeChannels
 import me.him188.ani.android.tv.TvStartupLogoPaletteMirror
 import me.him188.ani.android.tv.deleteInstallerLeftovers
+import me.him188.ani.app.domain.mediasource.web.captcha.BackgroundBrowserGate
 import me.him188.ani.app.navigation.AniNavigator
 import me.him188.ani.app.ui.foundation.AniUiBehavior
 import me.him188.ani.app.ui.foundation.tv.TvPageBackgroundTheme
@@ -75,6 +76,8 @@ internal fun FormFactorStartupPlaceholder() {
 internal fun onFormFactorActivityCreated(activity: ComponentActivity) {
     // Web 控制台随 Activity 起, 不等界面组合 (息屏时被重启的进程要到亮屏才组合); 「退出 Ani 后保留」的常驻服务在本模块
     val app = activity.applicationContext
+    // 电视上自动解验证码不开 WebView: 主线程一卡几秒, 又几乎解不出来 (见 BackgroundBrowserGate)
+    BackgroundBrowserGate.autoSolveWithBrowser = false
     TvRemoteControl.keepAliveService = { on -> RemoteKeepAliveService.set(app, on) }
     TvRemoteControl.onActivityCreated(activity)
     activity.lifecycleScope.launch(Dispatchers.IO) { deleteInstallerLeftovers(app) }
