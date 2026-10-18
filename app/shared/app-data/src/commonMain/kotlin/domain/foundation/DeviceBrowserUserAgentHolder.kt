@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.domain.foundation
 
+import io.ktor.client.request.HttpRequestBuilder
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
@@ -51,4 +52,15 @@ object DeviceBrowserUserAgentHolder {
             cached.value
         }
     }
+}
+
+/**
+ * 打接口的数据源 (直链 API、网盘分享搜索) 发请求用的 UA: 配置里填了就用它, 没填用本机浏览器的 UA
+ * (client 自带的是写死的常量, 每台设备一样). 设成请求属性 [RequestUserAgentAttribute], 不直接写请求头 (client 的 UA 是追加上去的, 直接写会变成两个值).
+ */
+internal suspend fun sourceRequestUserAgent(configured: String): String? =
+    configured.takeIf { it.isNotBlank() } ?: DeviceBrowserUserAgentHolder.current()
+
+internal fun HttpRequestBuilder.overrideUserAgent(userAgent: String?) {
+    userAgent?.let { attributes.put(RequestUserAgentAttribute, it) }
 }
