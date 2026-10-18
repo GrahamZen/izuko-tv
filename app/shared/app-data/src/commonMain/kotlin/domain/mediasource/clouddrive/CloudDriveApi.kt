@@ -545,8 +545,13 @@ open class CloudDriveApiException(
 /** 网盘空间不够, 清空了转存文件夹也放不下 (空间被别的文件占着). */
 class CloudDriveCapacityException(message: String) : CloudDriveApiException(message, isCapacityLimit = true)
 
-/** 没登录或登录已失效. */
-class CloudDriveAuthException(message: String? = null) : CloudDriveApiException(message ?: "网盘未登录或登录已失效")
+/**
+ * 没登录或登录已失效.
+ *
+ * @property driveId 是哪个网盘 (见 [CloudDriveService.driveId]); 界面据此弹那个网盘的扫码登录, 不知道时为 null.
+ */
+class CloudDriveAuthException(message: String? = null, val driveId: String? = null) :
+    CloudDriveApiException(message ?: "网盘未登录或登录已失效")
 
 /** 分享打不开: 已取消、被封或要提取码. */
 class CloudDriveShareUnavailableException(override val code: String?, message: String) : CloudDriveApiException(message)

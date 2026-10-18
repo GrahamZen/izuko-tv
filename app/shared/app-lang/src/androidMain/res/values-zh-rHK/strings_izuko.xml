@@ -29,6 +29,7 @@
     <string name="subject_episode_video_loading_unsupported_video">這部電視放不了這個影片的畫面格式（%1$s），請更換數據源</string>
     <string name="subject_episode_video_loading_cause_http_rejected">伺服器拒絕了請求（HTTP %1$s）</string>
     <string name="subject_episode_video_loading_cause_http_error">伺服器出錯（HTTP %1$s）</string>
+    <string name="subject_episode_video_loading_cause_drive_login">網盤未登錄，登錄後才能播放網盤裏的資源</string>
     <string name="subject_episode_video_loading_bt_service_starting">正在啟動 BT 服務\n第一次要十幾秒</string>
     <string name="subject_episode_video_loading_torrent_metadata">正在獲取種子資訊</string>
     <string name="subject_episode_video_loading_torrent_peers">已連上 %1$d 個節點 · 已等 %2$d 秒</string>
@@ -460,6 +461,10 @@
     <string name="tv_source_failed_state">失敗</string>
     <string name="tv_source_retry">重試</string>
     <string name="tv_source_retry_hint">查詢失敗，按確定重試</string>
+    <string name="tv_source_drive_login_action">掃碼登錄網盤</string>
+    <string name="tv_source_drive_login_hint">這個數據源要登錄網盤後才能搜到資源，按確定掃碼登錄</string>
+    <string name="tv_source_drive_login_title">登錄%1$s</string>
+    <string name="tv_source_drive_login_password">這個網盤用帳號密碼登錄：用手機掃碼打開 Web 控制枱，在「數據源」裏填寫。</string>
     <string name="tv_source_disabled">已停用</string>
     <string name="tv_source_episode_filter">僅本集</string>
     <string name="tv_source_all_episodes">全部集數</string>

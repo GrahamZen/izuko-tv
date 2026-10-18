@@ -47,9 +47,9 @@ object PlaybackFailureLog {
 
     /**
      * 播放器上报的原因 (同播放页上的提示). [HTTP_ERROR] 是服务器回了 4xx / 5xx, 状态码见 [Entry.httpStatus];
-     * [TOO_SHORT] 是播完的视频短得不像正片 (公告、广告片), 时长见 [Entry.mediaDurationMillis].
+     * [TOO_SHORT] 是播完的视频短得不像正片 (公告、广告片), 时长见 [Entry.mediaDurationMillis]; [DRIVE_LOGIN] 是网盘没登录 (分享要转存).
      */
-    enum class Reason { RESOLUTION_TIMED_OUT, NETWORK, HTTP_ERROR, NO_MATCHING_FILE, UNSUPPORTED, PLAYER_ERROR, TOO_SHORT, UNKNOWN }
+    enum class Reason { RESOLUTION_TIMED_OUT, NETWORK, HTTP_ERROR, NO_MATCHING_FILE, UNSUPPORTED, PLAYER_ERROR, TOO_SHORT, UNKNOWN, DRIVE_LOGIN }
 
     class Entry(
         val timeMillis: Long,

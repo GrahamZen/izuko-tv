@@ -18,7 +18,9 @@ import me.him188.ani.app.domain.media.selector.MaybeExcludedMedia
 import me.him188.ani.app.domain.media.selector.MediaExclusionReason
 import me.him188.ani.app.domain.media.selector.UnsafeOriginalMediaAccess
 import me.him188.ani.app.domain.media.selector.isPerfectMatch
+import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveAuthException
 import me.him188.ani.app.domain.mediasource.clouddrive.DriveVideoBitrates
+import me.him188.ani.app.domain.mediasource.clouddrive.cloudDriveLoginRequired
 import me.him188.ani.app.ui.media.MediaDetailsRenderer
 import me.him188.ani.app.ui.media.MediaDetailsStrings
 import me.him188.ani.app.ui.media.renderSubtitleLanguage
@@ -206,6 +208,9 @@ sealed interface TvSourceAction {
 
     data class RestartSource(val instanceId: String) : TvSourceAction
     data class ResolveCaptcha(val instanceId: String) : TvSourceAction
+
+    /** 扫码登录网盘 [driveId] (没登录网盘的数据源, 见 cloudDriveLoginRequired). */
+    data class LoginDrive(val driveId: String) : TvSourceAction
     data object Refresh : TvSourceAction
     data class SetFullSearch(val enabled: Boolean) : TvSourceAction
     data object EditKeywords : TvSourceAction
@@ -422,6 +427,10 @@ data class TvSourceStrings(
     val episodesSeason: String,
     val episodesWholeSeason: String,
     val filter: String,
+    /** 没登录网盘的数据源胶囊右端. */
+    val driveNotLoggedIn: String,
+    val driveLoginAction: String,
+    val driveLoginHint: String,
     val details: MediaDetailsStrings,
     val timeZone: TimeZone,
 ) {
@@ -492,8 +501,11 @@ fun applyFrozenOrder(rows: List<TvSourceRow>, frozen: List<String>?): List<TvSou
 fun buildTvSourcePanel(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvSourceStrings): TvSourcePanelContent {
     val selected = input.selector.selected
     val webSources = input.selector.webSources
-    // 查询失败的在线源收进「查询失败」那一项, 不在列表里占位置; 结果全都对不上的源也留着 (见 allWebSources)
-    val liveWebSources = allWebSources(input, strings).filterNot { it.isError }
+    // 查询失败的在线源收进「查询失败」那一项, 不在列表里占位置; 结果全都对不上的源也留着 (见 allWebSources).
+    // 没登录网盘的照样列在后面, 胶囊上写「未登录」, 确定就扫码登录
+    val liveWebSources = allWebSources(input, strings)
+        .filterNot { it.isError && input.driveLoginOf(it.instanceId) == null }
+        .sortedBy { input.driveLoginOf(it.instanceId) != null }
     val failedSources = failedSourcesOf(input)
     val hasBt = input.sources.btSources.isNotEmpty() || input.bt.totalCount > 0
     val manual = input.manual?.takeIf { it.isPlaceholder || it.sources.isNotEmpty() }
@@ -611,7 +623,7 @@ fun buildTvSourcePanel(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvS
     val railKey =nav.railKey?.takeIf { key -> !isCommandKey(key) && rail.any { it.id == key } }
         ?: playingKey
         ?: TvSourceRailKeys.BT.takeIf { input.initialMode == MediaSelectorMode.BT && hasBt }
-        ?: liveWebSources.firstOrNull()?.let { TvSourceRailKeys.web(it.instanceId) }
+        ?: liveWebSources.firstOrNull { input.driveLoginOf(it.instanceId) == null }?.let { TvSourceRailKeys.web(it.instanceId) }
         ?: rail.firstOrNull { !isCommandKey(it.id) }?.id
 
     val right = when {
@@ -642,9 +654,13 @@ fun buildTvSourcePanel(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvS
     )
 }
 
-/** 查询失败的源 (本地缓存除外): 收进左栏「查询失败」那一项. */
+/** 查询失败的源 (本地缓存除外): 收进左栏「查询失败」那一项. 没登录网盘的不算 (胶囊照常列, 见 [driveLoginOf]). */
 private fun failedSourcesOf(input: TvSourcePanelInput): List<MediaSourceResultPresentation> =
-    input.sources.list.filter { it.isFailedOrAbandoned && it.kind != MediaSourceKind.LocalCache }
+    input.sources.list.filter { it.isFailedOrAbandoned && it.kind != MediaSourceKind.LocalCache && it.state.cloudDriveLoginRequired == null }
+
+/** [instanceId] 这个数据源因为没登录网盘查不了: 那个异常 (带着是哪个网盘); 不是为 null. */
+private fun TvSourcePanelInput.driveLoginOf(instanceId: String): CloudDriveAuthException? =
+    sources.list.firstOrNull { it.instanceId == instanceId }?.state?.cloudDriveLoginRequired
 
 /** 详情弹窗里左右键能走到的一条: [railKey] 同 [TvSourceAction.ShowDetails.railKey]. */
 @Immutable
@@ -697,7 +713,9 @@ fun buildTvSourceDetailsSequence(
 private fun webRailRow(source: WebSource, playing: Boolean, input: TvSourcePanelInput, strings: TvSourceStrings): TvSourceRow {
     val nowMillis = input.nowMillis
     val loadingEmpty = source.isLoading && source.channels.isEmpty()
+    val driveLogin = input.driveLoginOf(source.instanceId)
     val (trailing, accent) = when {
+        driveLogin != null -> strings.driveNotLoggedIn to TvSourceAccent.Attention
         source.isCaptchaRequired -> strings.captchaRequired to TvSourceAccent.Attention
         source.channels.isEmpty() && !source.isLoading && !source.isRateLimited ->
             webOthersOf(source, input, strings).size.takeIf { it > 0 }?.let { strings.railOthers.format(it) to TvSourceAccent.None }
@@ -718,13 +736,18 @@ private fun webRailRow(source: WebSource, playing: Boolean, input: TvSourcePanel
         trailing = trailing,
         accent = accent,
         loading = loadingEmpty || source.isResolvingCaptcha,
+        // 没登录网盘的胶囊: 确定直接弹扫码登录
+        action = driveLogin?.driveId?.let { TvSourceAction.LoginDrive(it) },
         details = webSourceDetails(source, input, strings),
     )
 }
 
 /** 在线源的详情: 状态、线路一一列出; 「选择」= 播排在最前的那条线路 (要验证时是「完成验证」), 「下载」= 下那条线路. */
 private fun webSourceDetails(source: WebSource, input: TvSourcePanelInput, strings: TvSourceStrings): TvSourceDetails {
+    val driveLogin = input.driveLoginOf(source.instanceId)
+    val loginDriveId = driveLogin?.driveId
     val status = when {
+        driveLogin != null -> strings.driveLoginHint
         source.isCaptchaRequired -> strings.captchaRequired
         source.isRateLimitExpired(input.nowMillis) -> strings.rateLimitedExpiredHint
         source.isRateLimited -> strings.rateLimitedHint.format(rateLimitSeconds(source.rateLimitedUntilMillis, input.nowMillis))
@@ -737,6 +760,8 @@ private fun webSourceDetails(source: WebSource, input: TvSourcePanelInput, strin
         if (meta.isEmpty()) name else "$name ($meta)"
     }
     val primary = when {
+        loginDriveId != null -> TvSourceButton(strings.driveLoginAction, TvSourceAction.LoginDrive(loginDriveId), TvSourceRowIcon.Info)
+
         source.isCaptchaRequired && source.isCaptchaSupported ->
             TvSourceButton(strings.captchaAction, TvSourceAction.ResolveCaptcha(source.instanceId), TvSourceRowIcon.Warning)
 
@@ -786,8 +811,24 @@ private fun webPane(
 ): TvSourceRight {
     val selected = input.selector.selected
     val nowMillis = input.nowMillis
+    val driveLogin = input.driveLoginOf(source.instanceId)
     val rows = buildList {
         when {
+            driveLogin != null -> {
+                // 没查, 也就没有「没有结果」可说: 只给登录这一行
+                add(
+                    TvSourceRow(
+                        id = "drive-login",
+                        style = TvSourceRowStyle.Line,
+                        title = strings.driveLoginAction,
+                        meta = strings.driveLoginHint,
+                        icon = TvSourceRowIcon.Info,
+                        action = driveLogin.driveId?.let { TvSourceAction.LoginDrive(it) },
+                    ),
+                )
+                return@buildList
+            }
+
             source.isCaptchaRequired && !source.isCaptchaSupported -> add(status("captcha", strings.captchaUnsupported))
             source.isResolvingCaptcha -> add(status("captcha", strings.resolvingCaptcha))
             source.isCaptchaRequired -> add(
