@@ -156,6 +156,20 @@ class TvNativeGridPageView(
     override fun onTouchEvent(event: MotionEvent): Boolean =
         touchSwipe?.onTouch(event) == true || super.onTouchEvent(event)
 
+    /** 触屏设备上 hero 态里点卡片之间的空白处退回卡片墙 (见 [TvNativeHeroBlankTap]); 宿主在触摸开关打开时给 true, 电视上不装. */
+    var exitHeroOnBlankTap: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            heroBlankTap = if (value) TvNativeHeroBlankTap(this, { timeline.active && !wallFocus.opening }) { setHeroActive(false) } else null
+        }
+    private var heroBlankTap: TvNativeHeroBlankTap? = null
+
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        heroBlankTap?.onTouch(ev)
+        return super.dispatchTouchEvent(ev)
+    }
+
     var transitions: Boolean = true
     var animatedScroll: Boolean = true
         set(value) {
