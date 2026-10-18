@@ -85,7 +85,7 @@ data class DirectApiConfig(
         /** 处理线路名的变换流水线, 例如去掉会变的优先级后缀. */
         val channelTransforms: List<Transform> = emptyList(),
         /**
-         * 线路名的显示名映射. 有的站点只给代号 (例如 "age"), 在这里翻成看得懂的站名.
+         * 线路名的显示名映射. 有的站点只给代号 (例如 "a1"), 在这里翻成看得懂的名字.
          * 没列出的代号原样显示.
          */
         val channelNames: Map<String, String> = emptyMap(),

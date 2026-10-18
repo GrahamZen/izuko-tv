@@ -23,7 +23,6 @@ import me.him188.ani.app.domain.mediasource.subscription.SubscriptionUpdateDataR
 import me.him188.ani.app.domain.mediasource.subscription.UnsupportedSubscriptionSchemaException
 import me.him188.ani.app.domain.mediasource.web.SelectorMediaSourceCodec
 import me.him188.ani.app.domain.mediasource.directapi.DirectApiMediaSourceCodec
-import me.him188.ani.app.domain.mediasource.maccms.MacCmsMediaSourceCodec
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveAddedShareMediaSourceCodec
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveMediaSourceCodec
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveShareSearchMediaSourceCodec
@@ -41,7 +40,6 @@ class MediaSourceCodecManager(
         SelectorMediaSourceCodec,
         JsonApiMediaSourceCodec,
         DirectApiMediaSourceCodec,
-        MacCmsMediaSourceCodec,
         CloudDriveMediaSourceCodec,
         CloudDriveAddedShareMediaSourceCodec,
         CloudDriveShareSearchMediaSourceCodec,

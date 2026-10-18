@@ -115,7 +115,7 @@ RSS 源配置的 `titleToLink`（`RssTitleToLink`）在解析出条目之后、�
   字符串变换（`transform`）、解密与摘要（`crypto`：AES-CBC 解密、MD5）、苹果 CMS 播放页（`maccmsPlayer`）、播放请求头（`mediaHeaders`）；
   `first` 依次尝试几个分支。
 - 搜索段以条目列表步骤结束（`subjects`、`jsonSubjects`），详情段以剧集列表步骤结束（`episodes`、`jsonEpisodes`、`regexEpisodes`，
-  以及苹果 CMS 视频接口的 `maccmsEpisodes`：按 `vod_play_from` / `vod_play_url` 拆线路与剧集，与苹果 CMS 数据源共用 `MacCmsEngine.parsePlayLines`）；
+  以及苹果 CMS 视频接口的 `maccmsEpisodes`：按 `vod_play_from` / `vod_play_url` 拆线路与剧集，见 `MacCmsPlayLines`）；
   播放段结束时的当前值就是视频地址，以 `sniff`（`goal = video`）结束表示交给 WebView 嗅探。
 
 站点上的东西取到之后，挑出当前这一集、搜索缓存、生成 `Media`、浏览协议都复用 `SelectorMediaSource` 的实现，

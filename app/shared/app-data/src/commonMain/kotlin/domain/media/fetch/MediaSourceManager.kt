@@ -37,7 +37,6 @@ import me.him188.ani.app.domain.media.selector.MediaSelectorSourceTiers
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceCodecManager
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceDecodeException
 import me.him188.ani.app.domain.mediasource.directapi.DirectApiMediaSource
-import me.him188.ani.app.domain.mediasource.maccms.MacCmsMediaSource
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveAddedShareMediaSource
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveMediaSource
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveRegistry
@@ -264,7 +263,6 @@ class MediaSourceManagerImpl(
         add(EmbyMediaSource.Factory())
         add(IkarosMediaSource.Factory())
         add(DirectApiMediaSource.Factory())
-        add(MacCmsMediaSource.Factory())
         add(CloudDriveMediaSource.Factory(cloudDriveRegistry))
         add(CloudDriveShareSearchMediaSource.Factory(cloudDriveRegistry))
         add(CloudDriveAddedShareMediaSource.Factory(cloudDriveRegistry))
