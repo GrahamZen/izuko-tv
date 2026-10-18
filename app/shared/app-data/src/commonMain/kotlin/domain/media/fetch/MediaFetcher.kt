@@ -53,6 +53,7 @@ import me.him188.ani.app.data.repository.RepositoryRequestError
 import me.him188.ani.app.data.repository.RepositoryServiceUnavailableException
 import me.him188.ani.app.data.repository.RepositorySubjectNotAccessibleException
 import me.him188.ani.app.data.repository.RepositoryUnknownException
+import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveAuthException
 import me.him188.ani.app.domain.mediasource.instance.MediaSourceInstance
 import me.him188.ani.app.domain.mediasource.web.BlockReason
 import me.him188.ani.app.domain.mediasource.web.BlockedException
@@ -368,6 +369,10 @@ class MediaSourceMediaFetcher(
 
                 is CancellationException -> {
                     logger.warn { "Failed to fetch media from ${sourceInfo.displayName} due to CancellationException" }
+                }
+
+                is CloudDriveAuthException -> {
+                    logger.info { "Skipped ${sourceInfo.displayName}: cloud drive ${exception.driveId} is not logged in" }
                 }
 
                 is RepositoryException -> {

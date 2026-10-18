@@ -17,6 +17,7 @@ import me.him188.ani.app.domain.media.selector.MatchMetadata
 import me.him188.ani.app.domain.media.selector.MaybeExcludedMedia
 import me.him188.ani.app.domain.media.selector.MediaExclusionReason
 import me.him188.ani.app.domain.media.selector.TestMatchMetadata
+import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveAuthException
 import me.him188.ani.app.ui.media.MediaDetailsStrings
 import me.him188.ani.app.ui.mediafetch.MediaPreferenceItemState
 import me.him188.ani.app.ui.mediafetch.MediaSelectorState
@@ -318,6 +319,29 @@ class TvSourcePanelModelTest {
 
         val matching = buildTvSourcePanel(withResolution("1080P"), TvSourceNav(railKey = TvSourceRailKeys.BT), strings).right.rows.single()
         assertEquals(TvSourceAccent.None, matching.metaAccent)
+    }
+
+    @Test
+    fun `drive sources that need a login stay in the rail and open the login`() {
+        val drive = sourceResult("drive", MediaSourceKind.WEB, MediaSourceFetchState.Failed(CloudDriveAuthException(driveId = "quark"), 1))
+        val input = input(
+            sources = MediaSourceResultListPresentation(sources.list + drive),
+            webSources = listOf(webSource("drive", emptyList(), isError = true)) + webSources,
+        )
+        val content = buildTvSourcePanel(input, TvSourceNav(), strings)
+        val webPills = content.rail.filter { it.id.startsWith(TvSourceRailKeys.WEB_PREFIX) }.map { it.id }
+        // 排在能查的在线源后面, 打开面板也不落在它上面
+        assertEquals(TvSourceRailKeys.web("drive"), webPills.last())
+        assertTrue(content.railKey != TvSourceRailKeys.web("drive"), content.railKey)
+        val pill = content.rail.single { it.id == TvSourceRailKeys.web("drive") }
+        assertEquals("driveNotLoggedIn", pill.trailing)
+        assertEquals(TvSourceAction.LoginDrive("quark"), pill.action)
+
+        // 不算「查询失败」; 右栏只有登录这一行
+        val failed = buildTvSourcePanel(input, TvSourceNav(railKey = TvSourceRailKeys.FAILED), strings).right.rows
+        assertEquals(listOf("failed:web-c"), failed.map { it.id })
+        val pane = buildTvSourcePanel(input, TvSourceNav(railKey = TvSourceRailKeys.web("drive")), strings).right.rows
+        assertEquals(TvSourceAction.LoginDrive("quark"), pane.single().action)
     }
 
     @Test
@@ -768,6 +792,9 @@ class TvSourcePanelModelTest {
         episodesSeason = "season %1\$d",
         episodesWholeSeason = "wholeSeason",
         filter = "filter",
+        driveNotLoggedIn = "driveNotLoggedIn",
+        driveLoginAction = "driveLoginAction",
+        driveLoginHint = "driveLoginHint",
         manualSource = "manualSource %1\$s",
         manualKeyword = "manualKeyword %1\$s",
         manualSearching = "manualSearching",

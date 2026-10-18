@@ -107,8 +107,8 @@ class CloudDriveMediaSource(
     }
 
     override suspend fun fetch(query: MediaFetchRequest): SizedSource<MediaMatch> {
-        // 订阅下发后每个用户都有这个源, 没登录的不算失败
-        if (!service.account.first().isLoggedIn) return SinglePagePagedSource { emptyList<MediaMatch>().asFlow() }
+        // 订阅下发后每个用户都有这个源: 没登录时报「未登录」, 选源面板据此给扫码登录 (见 CloudDriveLoginRequired)
+        if (!service.account.first().isLoggedIn) throw CloudDriveAuthException(driveId = service.driveId)
         val subjectName = subjectNameOf(query)
         val subjectId = query.subjectId.toIntOrNull()
         val picked = pickedMatches(query)
