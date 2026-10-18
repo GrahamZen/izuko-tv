@@ -199,7 +199,7 @@ internal fun TvSettingsItemsBuilder.mediaSourceItems() {
     action(
         Lang.tv_settings_sources_on_phone, Lang.tv_settings_sources_on_phone_description,
         value = { tvText(Lang.tv_settings_on_phone) },
-        qr = { consoleQr(it, "#sources") },
+        qr = { consoleQr(it, "#sources", legacy = true) },
     ) { emptyList() }
     action(
         Lang.tv_settings_sources_test_all, Lang.tv_settings_sources_test_all_description,
