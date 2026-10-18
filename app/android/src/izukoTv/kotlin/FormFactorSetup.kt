@@ -20,6 +20,7 @@ import kotlinx.coroutines.launch
 import me.him188.ani.android.tv.InstallTvPageVariants
 import me.him188.ani.android.tv.TvHomeChannels
 import me.him188.ani.android.tv.TvStartupLogoPaletteMirror
+import me.him188.ani.app.domain.mediasource.web.captcha.BackgroundBrowserGate
 import me.him188.ani.app.navigation.AniNavigator
 import me.him188.ani.app.ui.foundation.AniUiBehavior
 import me.him188.ani.app.ui.foundation.PreloadStringResourcesWhenIdle
@@ -71,6 +72,8 @@ internal fun FormFactorStartupPlaceholder() {
  * (只写一次的话, 用户把番标成"看过"后主屏还会挂着它; 应用退到后台时才写, 跟着进程走, 见 TvHomeChannels.keepUpdated).
  */
 internal fun onFormFactorActivityCreated(activity: ComponentActivity) {
+    // 电视上自动解验证码不开 WebView: 主线程一卡几秒, 又几乎解不出来 (见 BackgroundBrowserGate)
+    BackgroundBrowserGate.autoSolveWithBrowser = false
     activity.lifecycleScope.launch {
         delay(TV_HOME_CHANNELS_DELAY_MILLIS)
         // 需要 activity context 才能弹出添加频道的系统确认框
