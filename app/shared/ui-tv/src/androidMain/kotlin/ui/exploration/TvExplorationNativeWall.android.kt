@@ -60,6 +60,7 @@ import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
 import me.him188.ani.app.data.models.subject.preferredDisplayName
 import me.him188.ani.app.data.models.subject.subjectInfo
 import me.him188.ani.app.data.recommendation.RecommendationGroup
+import me.him188.ani.app.platform.DevSwitches
 import me.him188.ani.app.tools.WeekFormatter
 import me.him188.ani.app.ui.foundation.LocalSketch
 import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
@@ -161,6 +162,14 @@ internal actual fun TvExplorationNativeWall(
     menuFor: (subjectId: Int) -> @Composable (expanded: Boolean, onDismiss: () -> Unit) -> Unit,
     modifier: Modifier,
 ) {
+    // 调试开关: 换成 Compose 版 (iOS 上画的那一套) 对照
+    if (DevSwitches.tvComposeWalls.value) {
+        TvExplorationComposeWall(
+            state, metrics, cardWidth, items, carouselCount, carouselIndex, fadeColor, geometry, splitGate, listener,
+            cardFocusRequest, heroFocusRequest, farJumpRow, focusedRowKey, focusedCardIndex, menuFor, modifier,
+        )
+        return
+    }
     val sketch = LocalSketch.current
     val scope = rememberCoroutineScope()
     val composeRoot = LocalView.current

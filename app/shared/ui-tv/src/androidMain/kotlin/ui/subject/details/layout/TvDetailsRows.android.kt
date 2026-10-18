@@ -21,6 +21,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import me.him188.ani.app.platform.DevSwitches
 import me.him188.ani.app.ui.foundation.LocalImageCrossfade
 import me.him188.ani.app.ui.foundation.tv.TV_CARD_FOCUS_TRANSITION_MILLIS
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeEpisodeRow
@@ -30,6 +31,7 @@ import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeMonogramBadgeStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeMonogramStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativeIcon
 import me.him188.ani.app.ui.foundation.tv.nativeview.toTvNativeTextStyle
+import me.him188.ani.app.ui.foundation.tv.wall.TvWallPeopleStrip
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.subject_details_view_all
 import me.him188.ani.app.ui.subject.details.sections.FocusEpisodeRowSpec
@@ -118,7 +120,11 @@ internal fun rememberTvMonogramStyle(
     }
 }
 
-internal actual val tvEpisodeRowContent: (@Composable (FocusEpisodeRowSpec) -> Unit)? = { spec -> TvNativeEpisodeRow(spec) }
+internal actual val tvEpisodeRowContent: (@Composable (FocusEpisodeRowSpec) -> Unit)?
+    // 调试开关打开时用轮播自带的 Compose 行 (iOS 上那样) 对照
+    get() = if (DevSwitches.tvComposeWalls.value) null else nativeEpisodeRow
+
+private val nativeEpisodeRow: @Composable (FocusEpisodeRowSpec) -> Unit = { spec -> TvNativeEpisodeRow(spec) }
 
 @Composable
 internal actual fun TvDetailsPeopleStrip(
@@ -130,6 +136,11 @@ internal actual fun TvDetailsPeopleStrip(
     restoreFocus: Boolean,
     modifier: Modifier,
 ) {
+    // 调试开关: 换成 Compose 版 (iOS 上画的那一套) 对照
+    if (DevSwitches.tvComposeWalls.value) {
+        TvWallPeopleStrip(items, onClick, onLongPress, onBind, horizontalPadding, modifier)
+        return
+    }
     TvNativeMonogramStrip(
         items = items,
         style = rememberTvMonogramStyle(),

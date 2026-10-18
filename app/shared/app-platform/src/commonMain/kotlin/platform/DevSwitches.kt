@@ -159,4 +159,11 @@ object DevSwitches {
         listOf("正式", "本机 127.0.0.1:8787"),
         description = "本机: 电脑上在 tools/ticket-worker 跑 wrangler dev --env dev (假 GitHub), 再 adb reverse tcp:8787 tcp:8787",
     )
+
+    /** 海报墙 / 详情页横排换成 Compose 版 (iOS 上画的那一套, 见 ui-tv 的 foundation/tv/wall), 在安卓上对照用. */
+    val tvComposeWalls = toggle(
+        "tvComposeWalls",
+        "海报墙用 Compose 版 (iOS 那套)",
+        description = "探索 / 追番 / 搜索 / 新番时间表的海报墙, 详情页的关联作品与演职人员行; 切换后回到页面重进生效",
+    )
 }
