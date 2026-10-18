@@ -110,12 +110,6 @@ sealed interface RuleStep {
      *
      * @property timeoutMillis `goal = video` 时嗅探至少等多久 (毫秒): 比设置里的全局时长长时用它, 最多算 30 秒; 0 = 照全局设置.
      *   播放段里有几个嗅探步骤写了时长时取最长的.
-     *
-     * 以下几项从 AniBaka 规则导入时照录, 目前不起作用:
-     * @property readyContains `goal = html` 时页面出现其中任一段文字才算加载好 (内容由脚本渲染的页面)
-     * @property rejectContains 页面出现其中任一段文字就算被站点挡住
-     * @property settleMillis 加载好之后再等多久 (毫秒)
-     * @property resolveMediaRedirects 嗅探到的视频地址会跳转, 要跟到最终地址
      */
     @Serializable
     @SerialName("sniff")
@@ -123,10 +117,6 @@ sealed interface RuleStep {
         val goal: String = GOAL_VIDEO,
         val url: String = "",
         val timeoutMillis: Long = 0,
-        val readyContains: List<String> = emptyList(),
-        val rejectContains: List<String> = emptyList(),
-        val settleMillis: Long = 0,
-        val resolveMediaRedirects: Boolean = false,
     ) : RuleStep {
         companion object {
             const val GOAL_VIDEO = "video"
