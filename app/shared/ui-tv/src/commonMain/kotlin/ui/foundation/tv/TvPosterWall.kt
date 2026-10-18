@@ -259,7 +259,19 @@ fun tvPageBackgroundColorScheme(base: ColorScheme): ColorScheme =
 fun TvPageBackgroundTheme(content: @Composable () -> Unit) {
     val base = MaterialTheme.colorScheme
     val scheme = remember(base) { tvPageBackgroundColorScheme(base) }
-    MaterialTheme(colorScheme = scheme, content = content)
+    MaterialTheme(colorScheme = scheme) {
+        CompositionLocalProvider(LocalTvPageBaseColorScheme provides base, content = content)
+    }
+}
+
+/** [TvPageBackgroundTheme] 换页面底色之前的配色 (应用主题本身的配色); 不在它里面时为 null. */
+val LocalTvPageBaseColorScheme: ProvidableCompositionLocal<ColorScheme?> = staticCompositionLocalOf { null }
+
+/** 换回 [TvPageBackgroundTheme] 之前的配色: 平板模式的设置页照原来设置页的样子 (浅色下页面底近白, 不铺海报墙那档浅灰). */
+@Composable
+fun TvPageBaseColorsTheme(content: @Composable () -> Unit) {
+    val base = LocalTvPageBaseColorScheme.current
+    if (base == null) content() else MaterialTheme(colorScheme = base, content = content)
 }
 
 /** 海报到番名的间距. */
