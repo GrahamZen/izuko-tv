@@ -34,12 +34,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.usecase.GlobalKoin
+import me.him188.ani.app.navigation.LocalNavigator
 import me.him188.ani.app.navigation.SettingsTab
 import me.him188.ani.app.platform.LocalContext
 import me.him188.ani.app.platform.navigation.rememberAsyncBrowserNavigator
 import me.him188.ani.app.ui.foundation.LocalSketch
 import me.him188.ani.app.ui.foundation.effects.rememberNoticeSoundPlayer
 import me.him188.ani.app.ui.foundation.navigation.BackHandler
+import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
 import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
 import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
@@ -49,6 +51,10 @@ import me.him188.ani.app.ui.lang.settings_mediasource_cancel
 import me.him188.ani.app.ui.settings.SettingsViewModel
 import me.him188.ani.app.ui.settings.UiScaleSyncEffect
 import me.him188.ani.app.ui.settings.account.ProfileViewModel
+import me.him188.ani.app.ui.settings.tabs.media.Content
+import me.him188.ani.app.ui.settings.tabs.media.MediaSourceSubscriptionSettingsPage
+import me.him188.ani.app.ui.settings.tabs.media.SelectionBar
+import me.him188.ani.app.ui.settings.tabs.media.rememberMediaSourceSettingsSection
 import me.him188.ani.app.ui.update.AppUpdateViewModel
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
@@ -74,8 +80,12 @@ fun TouchSettingsPage(
     val appUpdate = viewModel { AppUpdateViewModel() }
     val profile = viewModel { ProfileViewModel() }
     val sketch = LocalSketch.current
+    val navigator = LocalNavigator.current
     val deps = remember {
-        TvSettingsDeps(context, vm, appUpdate, profile, sketch, loadOpenSourceLibrariesJsons, scope, platform)
+        TvSettingsDeps(
+            context, vm, appUpdate, profile, sketch, loadOpenSourceLibrariesJsons, scope, platform,
+            touch = TvSettingsTouch(openBangumiLogin = navigator::navigateBangumiAuthorize),
+        )
     }
     val state = remember {
         TvSettingsState(
@@ -97,10 +107,30 @@ fun TouchSettingsPage(
     // 界面缩放改了: 离开设置页时把窗口层 (弹窗 / 菜单) 一并对齐 (同原来的设置页)
     UiScaleSyncEffect()
 
+    // 「数据源管理」那一类的右栏嵌原来设置页的那一块 (网盘、订阅、数据源列表); 清单里只剩它没有的几项 (见 TvSettingKeys.touchPage)
+    val mediaSources = rememberMediaSourceSettingsSection(vm)
+    val mediaSourcesEmbedded = remember(mediaSources) {
+        TouchSettingsEmbedded(
+            content = { paneColor ->
+                mediaSources.Content(
+                    backgroundColor = paneColor,
+                    onOpenSubscription = { id ->
+                        state.overlay.value = TvSettingsOverlay.Dialog { dismiss -> MediaSourceSubscriptionSettingsPage(vm, id, onBack = dismiss) }
+                    },
+                )
+            },
+            bottomBar = {
+                mediaSources.SelectionBar(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom), Modifier.align(Alignment.BottomCenter))
+            },
+        )
+    }
+
     val content by state.content.collectAsStateWithLifecycle()
     val overlay by state.overlay.collectAsStateWithLifecycle()
-    Box(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        content?.let { TouchSettingsLayout(it, state, initialTab != null) }
+    Box(modifier.fillMaxSize().background(AniThemeDefaults.pageContentBackgroundColor)) {
+        content?.let {
+            TouchSettingsLayout(it, state, initialTab != null, embedded = { id -> mediaSourcesEmbedded.takeIf { id == SettingsTab.MEDIA_SOURCE.name } })
+        }
         when (val current = overlay) {
             is TvSettingsOverlay.Legacy -> TouchLegacySettingsCover(onClose = state::dismissOverlay) { legacy(current.tab) }
             is TvSettingsOverlay.Dialog -> current.content(state::dismissOverlay)
@@ -122,7 +152,7 @@ fun TouchSettingsPage(
 @Composable
 private fun TouchLegacySettingsCover(onClose: () -> Unit, content: @Composable () -> Unit) {
     BackHandler(onBack = onClose)
-    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    Box(Modifier.fillMaxSize().background(AniThemeDefaults.pageContentBackgroundColor)) {
         content()
         FilledTonalButton(
             onClick = onClose,
@@ -173,3 +203,12 @@ private fun rememberTvText(text: TvText): String = when (text) {
 internal object TouchSettingsLastPosition {
     var categoryId: String? = null
 }
+
+/**
+ * 触屏版设置页给清单的东西 ([TvSettingsDeps.touch]). 有它时 ([TvSettingKeys.touchPage]): 登录只给一行进整页的登录页 ([openBangumiLogin]),
+ * 「数据源管理」只列嵌进来的原来设置页那一块没有的项 (见 mediaSourceItems), 不给多用户的设置.
+ */
+class TvSettingsTouch(
+    /** 打开整页的登录页: 按线路给授权、账号密码或个人令牌. */
+    val openBangumiLogin: () -> Unit,
+)

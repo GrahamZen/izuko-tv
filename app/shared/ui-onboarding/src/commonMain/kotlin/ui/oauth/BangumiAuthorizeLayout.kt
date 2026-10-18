@@ -62,6 +62,7 @@ import me.him188.ani.app.ui.foundation.animation.AnimatedVisibilityMotionScheme
 import me.him188.ani.app.ui.foundation.animation.LocalAniMotionScheme
 import me.him188.ani.app.ui.foundation.icons.BangumiNext
 import me.him188.ani.app.ui.foundation.icons.BangumiNextIconColor
+import me.him188.ani.app.ui.foundation.tv.LocalTvLoginSidePanel
 import me.him188.ani.app.ui.lang.*
 import me.him188.ani.app.ui.foundation.widgets.HeroIcon
 import me.him188.ani.app.ui.search.renderLoadErrorMessage
@@ -124,7 +125,10 @@ fun BangumiAuthorizeLayout(
                         style = MaterialTheme.typography.titleMedium,
                     )
                 }
-                if (loginPath != BangumiLoginPath.BROWSER) {
+                if (loginPath != BangumiLoginPath.BROWSER && LocalTvLoginSidePanel.current == null) {
+                    // 右侧没有手机控制台的码 (平板模式等): 就在这页输入账号密码 / 个人令牌
+                    BangumiDirectLoginForm(loginPath, Modifier.padding(top = 24.dp).widthIn(max = 720.dp))
+                } else if (loginPath != BangumiLoginPath.BROWSER) {
                     Text(
                         stringResource(
                             if (loginPath == BangumiLoginPath.PERSONAL_TOKEN) Lang.oauth_bangumi_via_mirror else Lang.oauth_bangumi_via_ech,
