@@ -92,6 +92,7 @@ class TvSettingsEnv(
  * (多是地址本身, 扫不了时能手敲), [status] 写在码上面 (如已确认、已过期).
  * [console] 非空 = 这是打开 Web 控制台那一页 (值是地址里的 `#` 段) 的码: 要打字才能设的项在手机上设; 没有控制台的端换成自己的入口.
  * [link] = 码是这一行要打开的网页 (按确定就在本机浏览器打开; 触屏上直接点开, 不画码).
+ * [legacy] = 控制台那一页上的项原来的设置页里也有 (触屏上换成打开原来的设置页那一类; 没有的仍画控制台的码).
  */
 data class TvQr(
     val content: String?,
@@ -99,6 +100,7 @@ data class TvQr(
     val status: TvText? = null,
     val console: String? = null,
     val link: Boolean = false,
+    val legacy: Boolean = false,
 )
 
 /**
