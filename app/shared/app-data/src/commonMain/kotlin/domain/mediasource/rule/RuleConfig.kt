@@ -319,6 +319,8 @@ sealed interface RuleStep {
      * 线路与剧集列表 (详情段的最后一步). 把当前值当作 HTML, [lists] 里第一个能选出元素的选择器选出各线路的剧集容器,
      * 每个容器里用 [items] 选出剧集 (取文本当名字、`href` 当地址).
      * [tabs] 里第一个能选出元素的选择器选出线路名, 与容器按顺序对应; 不填或对不上时线路没有名字.
+     * [tabPattern] 非空时线路名取它的命名分组 `ch` (与网页抓取数据源的 `matchChannelName` 相同, 例如去掉标签里的集数角标 `简中12`
+     * → `简中`); 匹配不上时用整个文字. 线路优先级 ([RuleMediaSourceArguments.channelTiers]) 按处理后的线路名对.
      * [reverse] 为 `true` 时把每条线路的剧集倒过来 (站点按新到旧排列时).
      *
      * 剧集分页列出时, [nextPage] 选出「下一页」链接 (取 `href`), 依次打开后面的页, 各页同一位置的容器并成一条线路
@@ -329,6 +331,7 @@ sealed interface RuleStep {
     data class Episodes(
         val lists: List<String>,
         val tabs: List<String> = emptyList(),
+        val tabPattern: String = "",
         val items: String = "a",
         val reverse: Boolean = false,
         val nextPage: String = "",
