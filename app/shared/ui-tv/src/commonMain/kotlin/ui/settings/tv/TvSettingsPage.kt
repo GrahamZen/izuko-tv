@@ -50,6 +50,7 @@ import me.him188.ani.app.ui.foundation.effects.rememberNoticeSoundPlayer
 import me.him188.ani.app.ui.foundation.focus.tvWindowInitialFocus
 import me.him188.ani.app.ui.foundation.navigation.BackHandler
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
+import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.TV_REDUCED_MARQUEE_ITERATIONS
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeHost
 import me.him188.ani.app.ui.foundation.tv.nativeview.toTvNativeTextStyle
@@ -89,6 +90,10 @@ fun TvSettingsPage(
     loadOpenSourceLibrariesJsons: suspend () -> List<ByteArray>,
     modifier: Modifier = Modifier,
 ) {
+    // 触屏设备 (平板装了 TV 包): 同一份清单画成触屏的样子; 电视上没有触摸屏, 不走这里
+    if (LocalTvTouchInputEnabled.current) {
+        return TouchSettingsPage(vm, initialTab, legacy, loadOpenSourceLibrariesJsons, TvSettingsTvPlatform, modifier)
+    }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val appUpdate = viewModel { AppUpdateViewModel() }
