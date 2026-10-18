@@ -115,6 +115,8 @@ data class RuleMediaSourceArguments(
     val iconUrl: String = "",
     val rule: RuleConfig = RuleConfig(),
     override val tier: MediaSourceTier = MediaSourceTier.Fallback,
+    /** 线路级的优先级, key 是线路名 (与选集步骤得出的线路名一致), 与网页抓取数据源的同名配置相同. */
+    override val channelTiers: Map<String, MediaSourceTier> = emptyMap(),
 ) : MediaSourceArguments {
     companion object {
         val Default = RuleMediaSourceArguments(name = "规则源")
