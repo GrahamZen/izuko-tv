@@ -17,6 +17,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.atomicfu.locks.SynchronizedObject
+import kotlinx.atomicfu.locks.synchronized
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -133,7 +135,7 @@ internal class TvCollectionProgressState(
             .flatMap { it.entries }
             .filter { it.info.collectionType == UnifiedCollectionType.WISH && it.info.episodes.isEmpty() }
             .map { it.subjectId }
-            .filter { synchronized(wishEpisodesRequested) { wishEpisodesRequested.add(it) } }
+            .filter { synchronized(wishEpisodesLock) { wishEpisodesRequested.add(it) } }
             .toList()
         if (missing.isEmpty()) return
         logger.info { "TvCollectionProgress: 补想看条目的分集 $missing" }
@@ -153,8 +155,9 @@ internal class TvCollectionProgressState(
     private companion object {
         val logger = logger("TvCollectionProgress")
 
-        /** 本进程里取过分集的想看条目. */
+        /** 本进程里取过分集的想看条目, 读写都在 [wishEpisodesLock] 里. */
         val wishEpisodesRequested = HashSet<Int>()
+        val wishEpisodesLock = SynchronizedObject()
     }
 }
 

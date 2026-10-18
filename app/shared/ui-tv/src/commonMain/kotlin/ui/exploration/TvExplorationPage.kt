@@ -44,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -161,7 +162,6 @@ import me.him188.ani.app.ui.foundation.tv.focusScale
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_HEADER_GAP
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallEndMargin
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallLabelHeight
-import android.graphics.Rect as AndroidRect
 import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_ASPECT_RATIO
 import me.him188.ani.app.ui.foundation.tv.rememberTvScrollActivityReporter
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeExploreListener
@@ -830,7 +830,7 @@ private fun TvExplorationPageContent(
         // 上一下返回的远跳还在滚 (焦点没落位) 时又按了返回: 那一步先当场落地 (行一步挪到目标卡并照落地记下, 见
         // TvNativeExploreView.settleFarJump), 再按它的落点走下一层 —— 同一下里做完两步. 下一层按请求的目标算: 焦点此刻还停在
         // 出发的那张 / 停放在原生视图上, 按它算会再发一次同样的回首卡, 连按两下就回不到轮播. cardIndex -1 (行自己记的那张) 当作不在行首
-        nativeState.view?.settleFarJump()
+        nativeState.surface?.settleFarJump()
         val pending = cardFocusRequest
         val key = pending?.rowKey ?: focusedRowKey
         val cardIndex = if (pending != null) pending.cardIndex.let { if (it < 0) 1 else it } else focusedCardIndex
@@ -966,7 +966,7 @@ private fun TvExplorationPageContent(
             }
         }
 
-        override fun onCardLongPress(rowKey: String, index: Int, anchor: AndroidRect) {
+        override fun onCardLongPress(rowKey: String, index: Int, anchor: Rect) {
             val subjectId = if (rowKey == TV_FOLLOWED_ROW_KEY) {
                 followedItems.peekOrNull(index)?.subjectInfo?.subjectId
             } else {
@@ -1039,7 +1039,7 @@ private fun TvExplorationPageContent(
     var wallScaleReturnHero by remember { mutableStateOf(TvHeroFocusButton.PRIMARY) }
     TvWallScaleEntry(
         page = TvPosterWallPreviewPage.EXPLORATION,
-        wallHasFocus = { nativeState.view?.hasFocus() == true },
+        wallHasFocus = { nativeState.surface?.hasFocus() == true },
         beforeOpen = {
             wallScaleReturnRow = focusedRowKey
             wallScaleReturnHero = lastHeroButton
@@ -1097,7 +1097,7 @@ private fun TvExplorationPageContent(
                     // 改道会把它截走 (目标行可能还在等数据, 改道去"上次那一行"就失败), 焦点留在页面外的侧边栏上.
                     // 用户按方向键进来的照旧改道.
                     if (requestedFocusDirection == FocusDirection.Enter && restoringFocus) return@onEnter
-                    if (nativeState.view?.hasFocus() != true) {
+                    if (nativeState.surface?.hasFocus() != true) {
                         val ok = runCatching { nativeState.focusRequester.requestFocus(FocusDirection.Enter) }.getOrDefault(false)
                         if (!ok) heroFocusRequest = TvHeroFocusRequest(lastHeroButton)
                     }

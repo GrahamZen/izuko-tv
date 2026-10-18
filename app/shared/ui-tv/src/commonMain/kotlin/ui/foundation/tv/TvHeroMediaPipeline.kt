@@ -33,7 +33,6 @@ import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.data.models.preference.TvTitleLogoDisplay
 import me.him188.ani.app.data.network.TmdbImageService
 import me.him188.ani.app.ui.foundation.LocalSketch
-import me.him188.ani.app.ui.foundation.TvNativeImages
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 
 /**
@@ -370,7 +369,7 @@ fun rememberTvHeroMediaPipeline(
                             when {
                                 !likely || logoWarm == TitleLogoWarm.DiskOnly -> TvHeroImagePrefetch.prefetch(url, sketch, platformContext)
                                 logoWarm == TitleLogoWarm.OriginalWithGrid -> TvTitleLogoGrids.obtain(sketch, platformContext, logo, size)
-                                else -> TvNativeImages.preloadLogo(sketch, platformContext, url, size.widthPx, size.heightPx, transformation = null)
+                                else -> tvPreloadTitleLogo(sketch, platformContext, url, size.widthPx, size.heightPx)
                             }
                         }
                     }
