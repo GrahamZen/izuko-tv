@@ -34,6 +34,7 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import me.him188.ani.app.domain.media.selector.UnsafeOriginalMediaAccess
 import me.him188.ani.app.domain.media.selector.blocksSelection
+import me.him188.ani.app.domain.mediasource.clouddrive.cloudDriveLoginRequired
 import me.him188.ani.app.ui.foundation.SLIDER_VALUE_STEP
 import me.him188.ani.app.ui.foundation.quantizeSliderValue
 import me.him188.ani.app.ui.mediafetch.MediaSelectorState
@@ -496,6 +497,7 @@ internal class RemotePlayerHandle(
         isWorking -> "loading"
         isCaptchaRequired -> "captcha"
         isRateLimited -> "limited"
+        state.cloudDriveLoginRequired != null -> "login"
         isFailedOrAbandoned -> "failed"
         isPaused -> "paused"
         else -> "done"

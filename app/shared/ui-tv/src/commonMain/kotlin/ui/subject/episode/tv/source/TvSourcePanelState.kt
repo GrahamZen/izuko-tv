@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import me.him188.ani.app.domain.mediasource.clouddrive.cloudDriveLoginRequired
 import me.him188.ani.app.ui.mediafetch.MediaSelectorState
 import me.him188.ani.app.ui.mediafetch.MediaSourceResultListPresentation
 import me.him188.ani.app.ui.mediaselect.MediaSelectorMode
@@ -103,6 +104,9 @@ class TvSourcePanelState(
 
     /** 筛选弹窗开着 (表头的「筛选」, 见 TvSourceFilterDialog). */
     val filterOpen = MutableStateFlow(false)
+
+    /** 开着的扫码登录弹窗是哪个网盘的 (没登录网盘的胶囊, 见 TvDriveLoginDialog); null = 没开. */
+    val driveLogin = MutableStateFlow<String?>(null)
 
     private val inputs: Flow<TvSourcePanelInput> = run {
         val core = combine(
@@ -206,6 +210,7 @@ class TvSourcePanelState(
             is TvSourceAction.Play -> host.pick(action.media)
             is TvSourceAction.RestartSource -> host.restartSource(action.instanceId)
             is TvSourceAction.ResolveCaptcha -> scope.launch { selector.resolveCaptcha(action.instanceId) }
+            is TvSourceAction.LoginDrive -> driveLogin.value = action.driveId
             TvSourceAction.Refresh -> host.refresh()
             is TvSourceAction.SetFullSearch -> host.setFullSearch(action.enabled)
             TvSourceAction.EditKeywords -> host.editKeywords()
@@ -285,6 +290,13 @@ class TvSourcePanelState(
 
     init {
         scope.launch { sourceResults.collect { lastSources.value = it } }
+    }
+
+    /** 扫码登录成功: 因为没登录网盘没查的数据源重新查 (登录一个网盘, 它的网盘源与分享搜索源都能查了). */
+    fun onDriveLoggedIn(driveId: String) {
+        for (source in lastSources.value.list) {
+            if (source.state.cloudDriveLoginRequired?.driveId == driveId) host.restartSource(source.instanceId)
+        }
     }
 
     private fun restartIfIdle(mediaSourceId: String) {
