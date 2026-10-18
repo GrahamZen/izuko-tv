@@ -14,7 +14,6 @@ import io.ktor.client.request.get
 import io.ktor.client.statement.readRawBytes
 import io.ktor.http.ContentType
 import io.ktor.client.plugins.contentnegotiation.exclude
-import io.ktor.http.encodeURLParameter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -30,6 +29,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import me.him188.ani.app.data.models.preference.DriveRememberedShare
 import me.him188.ani.app.domain.media.fetch.SelfLimitedMediaSource
+import me.him188.ani.app.domain.mediasource.TextTemplate
 import me.him188.ani.app.domain.mediasource.codec.DefaultMediaSourceCodec
 import me.him188.ani.app.domain.mediasource.codec.DontForgetToRegisterCodec
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceArguments
@@ -37,8 +37,8 @@ import me.him188.ani.app.domain.mediasource.directapi.ResponseFormat
 import me.him188.ani.app.domain.mediasource.directapi.parseResponse
 import me.him188.ani.app.domain.mediasource.directapi.selectByPath
 import me.him188.ani.app.domain.mediasource.directapi.stringByPath
-import me.him188.ani.app.domain.foundation.DeviceBrowserUserAgentHolder
-import me.him188.ani.app.domain.foundation.RequestUserAgentAttribute
+import me.him188.ani.app.domain.foundation.overrideUserAgent
+import me.him188.ani.app.domain.foundation.sourceRequestUserAgent
 import me.him188.ani.datasources.api.paging.SinglePagePagedSource
 import me.him188.ani.datasources.api.paging.SizedSource
 import me.him188.ani.datasources.api.source.ConnectionStatus
@@ -326,7 +326,7 @@ internal class DriveShareSearchEngine(
 
     /** 搜一个关键词, 返回剧名对得上的结果里的全部分享链接. */
     internal suspend fun searchSite(keyword: String, otherWork: OtherWorkGuard? = null): List<FoundShare> {
-        val url = config.searchUrl.replace("{keyword}", keyword.encodeURLParameter())
+        val url = TextTemplate.expand(config.searchUrl, mapOf("keyword" to keyword)) { true }
         val bytes = fetch(url) ?: return emptyList()
         val normalizedKeyword = DriveNameParser.normalize(keyword)
         val rejected = mutableListOf<String>()
@@ -497,9 +497,6 @@ class CloudDriveShareSearchMediaSource(
         private val logger = logger<CloudDriveShareSearchMediaSource>()
     }
 
-    private suspend fun userAgent(): String? =
-        arguments.config.userAgent.takeIf { it.isNotBlank() } ?: DeviceBrowserUserAgentHolder.current()
-
     private val engineLock = Mutex()
     private var engine: Pair<CloudDriveService, DriveShareSearchEngine>? = null
 
@@ -533,7 +530,7 @@ class CloudDriveShareSearchMediaSource(
     override suspend fun checkConnection(): ConnectionStatus {
         val (drive, engine) = engine() ?: return ConnectionStatus.FAILED
         if (!drive.account.first().isLoggedIn || !engine.isConfigured) return ConnectionStatus.FAILED
-        val url = arguments.config.searchUrl.replace("{keyword}", "test")
+        val url = TextTemplate.expand(arguments.config.searchUrl, mapOf("keyword" to "test")) { true }
         if (url.isBlank()) return ConnectionStatus.SUCCESS
         return if (fetchBytes(url) != null) ConnectionStatus.SUCCESS else ConnectionStatus.FAILED
     }
@@ -580,10 +577,10 @@ class CloudDriveShareSearchMediaSource(
     }
 
     private suspend fun fetchBytes(url: String): ByteArray? = try {
-        val userAgent = userAgent()
+        val userAgent = sourceRequestUserAgent(arguments.config.userAgent)
         client.use {
             get(url) {
-                userAgent?.let { ua -> attributes.put(RequestUserAgentAttribute, ua) }
+                overrideUserAgent(userAgent)
                 // 请求头 Accept 里有 json 时苹果 CMS (ThinkPHP) 按 JSON 请求渲染网页, 搜索结果页是坏的
                 if (arguments.config.detailLinkSelector.isNotBlank()) exclude(ContentType.Application.Json)
             }.readRawBytes()
