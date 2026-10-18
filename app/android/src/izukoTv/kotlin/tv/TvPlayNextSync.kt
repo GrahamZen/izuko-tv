@@ -31,6 +31,7 @@ import me.him188.ani.utils.logging.error
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import org.koin.core.Koin
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -50,16 +51,34 @@ internal class TvPlayNextSync(context: Context, private val koin: Koin) {
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     /** 已经认过、改不了收藏的手动卡 (看过 / 抛弃的番), 本进程不再一遍遍查. */
-    private val settledWatchlistRows = HashSet<Long>()
+    private val settledWatchlistRows: MutableSet<Long> = ConcurrentHashMap.newKeySet()
 
-    /** 对照现有的行认出用户的操作, 并把认过的移除从记录里去掉 (只认一次). */
+    /**
+     * 正在改收藏的手动卡. 先写本地收藏, 在看列表一变就触发重写、重写前又对一遍, 那时这张卡还在、Bangumi 可能还没写完:
+     * 不跳过的话同一张卡会再认一遍, 赶在本地写之前就会向 Bangumi 重复写.
+     */
+    private val pendingWatchlistRows: MutableSet<Long> = ConcurrentHashMap.newKeySet()
+
+    /**
+     * 对照现有的行认出用户的操作, 并把认过的移除从记录里去掉 (只认一次).
+     *
+     * 记着的行 (两张以上) 一下子全没了不算用户移除: 主屏上只能一张张删, 进程在时每删一张就对一次; 整表清空是系统那边的事
+     * (比如清了 TvProvider 的数据), 不该把这些番全标成搁置. 进程不在时用户一张张删光的也因此认不出, 宁可漏标.
+     */
     fun detect(existing: List<WatchNextProgram>): Changes {
         val ids = existing.mapTo(HashSet()) { it.id }
         val written = written()
-        val removed = written.filterKeys { it !in ids }
+        var removed = written.filterKeys { it !in ids }
         if (removed.isNotEmpty()) record(written - removed.keys)
+        if (written.size >= 2 && removed.size == written.size) {
+            logger.info { "Play Next: all ${written.size} recorded rows are gone at once, treated as an external reset" }
+            removed = emptyMap()
+        }
         val added = existing
-            .filter { it.watchNextType == TvContractCompat.WatchNextPrograms.WATCH_NEXT_TYPE_WATCHLIST && it.id !in settledWatchlistRows }
+            .filter {
+                it.watchNextType == TvContractCompat.WatchNextPrograms.WATCH_NEXT_TYPE_WATCHLIST &&
+                    it.id !in settledWatchlistRows && it.id !in pendingWatchlistRows
+            }
             .mapNotNull { row -> subjectIdOf(row.intentUri, row.internalProviderId)?.let { row.id to it } }
             .toMap()
         return Changes(removed = removed.values.toSet(), added = added)
@@ -73,14 +92,20 @@ internal class TvPlayNextSync(context: Context, private val koin: Koin) {
     /** 把用户的操作写成收藏 (先写本地再发 Bangumi); 在本对象自己的作用域里跑, 重写被新数据打断也照样写完. */
     fun apply(changes: Changes) {
         if (changes.isEmpty) return
+        // 在调用方的锁里当场记下, 下一次 detect 就看得到
+        pendingWatchlistRows += changes.added.keys
         scope.launch {
-            for (subjectId in changes.removed) {
-                setCollectionType(subjectId, UnifiedCollectionType.ON_HOLD) { it == UnifiedCollectionType.DOING }
-            }
-            for ((rowId, subjectId) in changes.added) {
-                if (subjectId in changes.removed) continue
-                val changed = setCollectionType(subjectId, UnifiedCollectionType.DOING) { it in ADD_REPLACES }
-                if (changed == false) settledWatchlistRows += rowId
+            try {
+                for (subjectId in changes.removed) {
+                    setCollectionType(subjectId, UnifiedCollectionType.ON_HOLD) { it == UnifiedCollectionType.DOING }
+                }
+                for ((rowId, subjectId) in changes.added) {
+                    if (subjectId in changes.removed) continue
+                    val changed = setCollectionType(subjectId, UnifiedCollectionType.DOING) { it in ADD_REPLACES }
+                    if (changed == false) settledWatchlistRows += rowId
+                }
+            } finally {
+                pendingWatchlistRows -= changes.added.keys
             }
         }
     }
