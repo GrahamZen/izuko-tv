@@ -12,6 +12,7 @@ package me.him188.ani.app.ui.subject.details.layout
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -119,7 +120,7 @@ import me.him188.ani.app.ui.lang.subject_details_tv_title_logo_failed
 import me.him188.ani.app.ui.lang.subject_details_tv_title_logo_load_failed
 import me.him188.ani.app.ui.lang.subject_details_tv_title_logo_loading
 import me.him188.ani.app.ui.lang.subject_details_tv_title_logo_no_language
-import me.him188.ani.app.ui.lang.subject_details_tv_title_logo_qr_hint
+import me.him188.ani.app.ui.lang.subject_details_tv_title_logo_hidden
 import me.him188.ani.app.ui.lang.subject_details_tv_title_logo_not_listed
 import me.him188.ani.app.ui.lang.subject_details_tv_title_logo_not_listed_submitted
 import me.him188.ani.app.ui.lang.subject_details_tv_title_logo_rate_limited
@@ -186,42 +187,39 @@ internal fun TvSubjectFeedbackDialog(
         onDismissRequest = ::back,
         title = {
             val logoHeader = logoCandidates.takeIf { page == FeedbackPage.Logo && pending == null && submit == FeedbackSubmit.Idle }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    stringResource(
+                        when {
+                            pending != null && submit == FeedbackSubmit.Idle -> Lang.subject_details_tv_feedback_confirm_title
+                            page == FeedbackPage.Logo -> Lang.subject_details_tv_title_logo_dialog_title
+                            page == FeedbackPage.Entry -> Lang.subject_details_tv_entry_dialog_title
+                            else -> Lang.subject_details_tv_feedback_title
+                        },
+                    ),
+                )
+                Text(
+                    if (originalName.isNotBlank() && originalName != displayName) "$displayName · $originalName" else displayName,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                // logo 页的说明写在标题区, 下面整块留给网格
+                if (logoHeader != null) {
                     Text(
                         stringResource(
-                            when {
-                                pending != null && submit == FeedbackSubmit.Idle -> Lang.subject_details_tv_feedback_confirm_title
-                                page == FeedbackPage.Logo -> Lang.subject_details_tv_title_logo_dialog_title
-                                page == FeedbackPage.Entry -> Lang.subject_details_tv_entry_dialog_title
-                                else -> Lang.subject_details_tv_feedback_title
+                            if (logoHeader.logos.isEmpty() && logoHeader.hidden == 0) {
+                                Lang.subject_details_tv_title_logo_empty
+                            } else {
+                                Lang.subject_details_tv_title_logo_dialog_description
                             },
+                            languageName(logoHeader.language),
                         ),
-                    )
-                    Text(
-                        if (originalName.isNotBlank() && originalName != displayName) "$displayName · $originalName" else displayName,
-                        style = MaterialTheme.typography.bodyLarge,
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
                     )
-                    // logo 页的说明写在标题区 (右边是二维码, 这里本来就空着), 下面整块留给网格
-                    if (logoHeader != null) {
-                        Text(
-                            stringResource(
-                                if (logoHeader.logos.isEmpty()) {
-                                    Lang.subject_details_tv_title_logo_empty
-                                } else {
-                                    Lang.subject_details_tv_title_logo_dialog_description
-                                },
-                                languageName(logoHeader.language),
-                            ),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
                 }
-                if (logoHeader != null) LogoQrCode(tmdbLogosPageUrl(logoHeader))
             }
         },
     ) {
@@ -446,24 +444,10 @@ private fun LogoPicker(candidates: TmdbTitleLogoCandidates, onPick: (TmdbTitleLo
             }
             item {
                 OptionCard(selected = false, onClick = onNotListed, modifier = Modifier.height(cardHeight)) {
-                    LogoTextCard(stringResource(Lang.subject_details_tv_title_logo_not_listed))
+                    LogoNotListedCard(tmdbLogosPageUrl(candidates), candidates.hidden)
                 }
             }
         }
-    }
-}
-
-/** logo 页右上角: TMDB 网页上这部的 logo 页的二维码, 下面一句说明 (不占标题区的宽, 左边的说明能写两行). */
-@Composable
-private fun LogoQrCode(url: String) {
-    Column(Modifier.width(LOGO_QR_SIZE + LOGO_QR_QUIET_ZONE * 2), horizontalAlignment = Alignment.CenterHorizontally) {
-        QrCodeImage(url, Modifier.size(LOGO_QR_SIZE), quietZone = LOGO_QR_QUIET_ZONE)
-        Text(
-            stringResource(Lang.subject_details_tv_title_logo_qr_hint),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-        )
     }
 }
 
@@ -506,7 +490,7 @@ private class TopMarginBringIntoViewSpec(private val topMarginPx: Float) : Bring
 private fun tmdbLogosPageUrl(candidates: TmdbTitleLogoCandidates): String =
     "https://www.themoviedb.org/${candidates.ref}/images/logos?image_language=${candidates.language}"
 
-/** 深色底上的一行字, 占一格 logo 的位置 (如「列表里没有」). */
+/** 深色底上的一行字, 占一格 logo 的位置 (确认页上的「列表里没有」). */
 @Composable
 private fun LogoTextCard(text: String, modifier: Modifier = Modifier) {
     Box(
@@ -514,6 +498,37 @@ private fun LogoTextCard(text: String, modifier: Modifier = Modifier) {
         contentAlignment = Alignment.Center,
     ) {
         LogoCardText(text)
+    }
+}
+
+/**
+ * 最后一格「列表里没有」: 上面是 TMDB 网页上这部的 logo 页的二维码 (网页上列全部 logo, 这里画不了的 svg 等也在),
+ * 下面是这一格的名字; [hidden] > 0 时再说 TMDB 上另有几张这里显示不了 (见 TmdbTitleLogoCandidates.hidden).
+ */
+@Composable
+private fun LogoNotListedCard(url: String, hidden: Int, modifier: Modifier = Modifier) {
+    Column(
+        modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)).background(LOGO_BACKDROP).padding(12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+            QrCodeImage(url, Modifier.fillMaxHeight().aspectRatio(1f), quietZone = 0.dp)
+        }
+        Text(
+            stringResource(Lang.subject_details_tv_title_logo_not_listed),
+            color = Color.White,
+            style = MaterialTheme.typography.titleSmall,
+            maxLines = 1,
+        )
+        if (hidden > 0) {
+            Text(
+                stringResource(Lang.subject_details_tv_title_logo_hidden, hidden),
+                color = Color.White.copy(alpha = 0.7f),
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1,
+            )
+        }
     }
 }
 
@@ -728,8 +743,6 @@ private val CONFIRM_PREVIEW_WIDTH = 280.dp
 /** 网格顶边渐隐的那一截 (见 [fadeTopWhenScrolled]). */
 private val GRID_TOP_FADE = 24.dp
 
-private val LOGO_QR_SIZE = 96.dp
-private val LOGO_QR_QUIET_ZONE = 8.dp
 
 /** 卡里的图按这个宽取 (w500 档, 一格两三百像素宽够用). */
 private const val LOGO_IMAGE_WIDTH_PX = 500

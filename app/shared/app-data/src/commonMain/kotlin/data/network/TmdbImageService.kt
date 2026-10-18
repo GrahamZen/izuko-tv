@@ -1022,6 +1022,7 @@ class TmdbImageService(
                 language = slot,
                 logos = usable.map { TmdbTitleLogoOption(it.toTitleLogo(), languageOf(it)) },
                 current = getTitleLogo(subjectId, originalName, language, activeAsOfDate, hints),
+                hidden = logos.size - usable.size,
             )
         } catch (e: CancellationException) {
             throw e
@@ -3388,12 +3389,14 @@ data class TmdbTitleLogoChoice(val logo: TmdbTitleLogo? = null, val ref: String 
 /**
  * 报告标题 logo 时列出的候选 (见 TmdbImageService.getTitleLogoCandidates): [ref] 条目 (如 `tv/65844`), [language] 要选的是哪种语言下用的
  * logo, [logos] 各种语言的全部 logo (这种语言的在前), [current] 这种语言现在显示的那张 (null = 显示文字).
+ * [hidden] = TMDB 上这个条目另有几张 logo 当不了标题 logo、没列进 [logos] (svg 解不了, 或没有宽高比).
  */
 data class TmdbTitleLogoCandidates(
     val ref: String,
     val language: String,
     val logos: List<TmdbTitleLogoOption>,
     val current: TmdbTitleLogo?,
+    val hidden: Int = 0,
 )
 
 /** 一张候选 logo 与它在 TMDB 上标的语言 ([language] 为 null = 没标语言). */
