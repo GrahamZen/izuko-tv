@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import me.him188.ani.app.platform.DevSwitches
 import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
 import me.him188.ani.app.ui.foundation.LocalSketch
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
@@ -30,6 +31,7 @@ import me.him188.ani.app.ui.foundation.tv.TV_CARD_FADE_DISTANCE
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_COLUMN_SPACING
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallCardWidth
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallColumns
+import me.him188.ani.app.ui.foundation.tv.wall.TvWallPosterStrip
 
 /**
  * 海报墙的一条横滑行, 单独成行 (详情页关联条目、人物预览弹窗的作品): 一屏完整放得下几张按 tvPosterWallColumns 算,
@@ -56,6 +58,11 @@ actual fun TvNativePosterStrip(
     onBind: (index: Int) -> Unit,
     holdFocusLookOnClick: Boolean,
 ) {
+    // 调试开关: 换成 Compose 版 (iOS 上画的那一套) 对照
+    if (DevSwitches.tvComposeWalls.value) {
+        TvWallPosterStrip(cards, onClick, modifier, startPadding, endPadding, onFocused, cardWidth, onBind, holdFocusLookOnClick)
+        return
+    }
     val sketch = LocalSketch.current
     val animatedScroll = LocalThemeSettings.current.visualEffects.animatedScroll
     // NSFW 设为模糊时按卡片的条目 id 打码 (见 withNsfw): 调用方只管给卡片填 subjectId
