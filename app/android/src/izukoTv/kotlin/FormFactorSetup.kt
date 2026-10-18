@@ -70,7 +70,7 @@ internal fun FormFactorStartupPlaceholder() {
 
 /**
  * 主屏预览频道 (热门动画 / 继续观看): 延迟到启动高峰之后开始, 之后"继续观看"行一直跟着收藏库变化重写
- * (只写一次的话, 用户把番标成"看过"后主屏还会挂着它). 随 activity 销毁一起结束.
+ * (只写一次的话, 用户把番标成"看过"后主屏还会挂着它; 应用退到后台时才写, 跟着进程走, 见 TvHomeChannels.keepUpdated).
  */
 internal fun onFormFactorActivityCreated(activity: ComponentActivity) {
     // Web 控制台随 Activity 起, 不等界面组合 (息屏时被重启的进程要到亮屏才组合); 「退出 Ani 后保留」的常驻服务在本模块
