@@ -29,6 +29,7 @@ import me.him188.ani.app.domain.foundation.get
 import me.him188.ani.app.domain.media.fetch.MediaSourceFetchResult
 import me.him188.ani.app.domain.media.fetch.MediaSourceFetchState
 import me.him188.ani.app.domain.media.probe.MediaStreamProbe
+import me.him188.ani.app.domain.mediasource.clouddrive.isCloudDriveLoginRequired
 import me.him188.ani.app.domain.mediasource.profile.SearchObservation
 import me.him188.ani.app.domain.mediasource.profile.SourceObservation
 import me.him188.ani.app.domain.mediasource.profile.SourceProfiles
@@ -104,6 +105,8 @@ class SourceProfileExtension(
                             if (state is VideoLoadingState.Succeed) t.loaded = true
                             if (state is VideoLoadingState.Failed && state != VideoLoadingState.Cancelled && t.outcome == null) {
                                 t.outcome = false
+                                // 没登录网盘放不了不是这个源的毛病, 不记
+                                if (state is VideoLoadingState.UnknownError && state.cause.isCloudDriveLoginRequired()) return@collect
                                 val reason = PlaybackFailureReportExtension.reasonOf(state)
                                 launch { record(t, ok = false, reason = reason) }
                             }
@@ -141,7 +144,8 @@ class SourceProfileExtension(
                 }
 
                 is MediaSourceFetchState.Succeed -> SearchObservation.Outcome.OK
-                is MediaSourceFetchState.Failed -> SearchObservation.Outcome.FAILED
+                // 没登录网盘不是这个源的毛病, 不记
+                is MediaSourceFetchState.Failed -> if (state.cause.isCloudDriveLoginRequired()) return@collect else SearchObservation.Outcome.FAILED
                 is MediaSourceFetchState.CaptchaRequired -> SearchObservation.Outcome.CAPTCHA
                 is MediaSourceFetchState.RateLimited -> SearchObservation.Outcome.RATE_LIMITED
                 else -> return@collect
