@@ -263,6 +263,9 @@ object TvSettingKeys {
     /** 有触摸屏时用的是电视模式 (true) 还是平板模式 (false), 见 [TvSettingsPlatform.interfaceMode]; 那一端没有这个选择时不在. */
     val interfaceMode = TvSettingKey.Platform("interfaceMode") { deps -> deps.platform.interfaceMode?.isTvMode(deps.context) }
 
+    /** 画这一页的是触屏版设置页 (见 [TvSettingsTouch]): 电视与触屏入口不同的项据此选. */
+    val touchPage = TvSettingKey.Platform("touchPage") { deps -> deps.touch != null }
+
     /** 弹幕正则过滤规则 (逐条). */
     val danmakuRules = TvSettingKey.Live("danmakuRules") { GlobalKoin.get<DanmakuRegexFilterRepository>().flow }
 

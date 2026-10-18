@@ -52,6 +52,7 @@ import me.him188.ani.app.ui.foundation.navigation.BackHandler
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.TV_REDUCED_MARQUEE_ITERATIONS
+import me.him188.ani.app.ui.foundation.tv.TvPageBaseColorsTheme
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeHost
 import me.him188.ani.app.ui.foundation.tv.nativeview.toTvNativeTextStyle
 import me.him188.ani.app.ui.foundation.tv.tvGlassColors
@@ -92,7 +93,7 @@ fun TvSettingsPage(
 ) {
     // 触屏设备 (平板装了 TV 包): 同一份清单画成触屏的样子; 电视上没有触摸屏, 不走这里
     if (LocalTvTouchInputEnabled.current) {
-        return TouchSettingsPage(vm, initialTab, legacy, loadOpenSourceLibrariesJsons, TvSettingsTvPlatform, modifier)
+        return TvPageBaseColorsTheme { TouchSettingsPage(vm, initialTab, legacy, loadOpenSourceLibrariesJsons, TvSettingsTvPlatform, modifier) }
     }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current

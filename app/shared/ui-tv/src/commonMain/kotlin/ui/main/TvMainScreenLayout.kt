@@ -19,6 +19,7 @@ import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
 import me.him188.ani.app.ui.foundation.dialogs.DialogWindowDimAmount
 import me.him188.ani.app.ui.foundation.layout.LocalShellContentStartInset
 import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallTone
+import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.rememberTvPosterWallTone
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallHeroBackground
 import me.him188.ani.app.ui.foundation.tv.tvTmdbSubjectTitleFilled
@@ -349,8 +350,8 @@ fun TvMainScreenLayout(
                     ) { navigator.navigatePlaybackHistory() },
                 )
             }
-            // 多用户: 打开选人页 (只有一个用户时也在, 那里能添加用户)
-            if (canSwitchUser) {
+            // 多用户: 打开选人页 (只有一个用户时也在, 那里能添加用户); 平板模式不给
+            if (canSwitchUser && !LocalTvTouchInputEnabled.current) {
                 add(TvRailAvatarAction(Icons.Outlined.SwitchAccount, switchUserText) { TvUserProfilePicker.show() })
             }
         }
