@@ -12,7 +12,6 @@ package me.him188.ani.app.domain.mediasource.directapi
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.statement.readRawBytes
-import io.ktor.http.encodeURLParameter
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -21,8 +20,9 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.json.Json
-import me.him188.ani.app.domain.foundation.DeviceBrowserUserAgentHolder
-import me.him188.ani.app.domain.foundation.RequestUserAgentAttribute
+import me.him188.ani.app.domain.foundation.overrideUserAgent
+import me.him188.ani.app.domain.foundation.sourceRequestUserAgent
+import me.him188.ani.app.domain.mediasource.TextTemplate
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import me.him188.ani.datasources.api.source.direct.DirectLink
@@ -41,8 +41,6 @@ internal class DirectApiEngine(
     private val client: ScopedHttpClient,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
-
-    private suspend fun userAgent(): String? = config.userAgent.takeIf { it.isNotBlank() } ?: DeviceBrowserUserAgentHolder.current()
 
     /** bangumi 条目 id -> 站内条目 id. 站内搜索要好几次请求, 值得缓存, 包括"找不到"这个结果. */
     private val subjectIdCacheLock = Mutex()
@@ -242,13 +240,9 @@ internal class DirectApiEngine(
     }
 
     private suspend fun fetchBytes(url: String): ByteArray? = try {
-        val userAgent = userAgent()
+        val userAgent = sourceRequestUserAgent(config.userAgent)
         client.use {
-            get(url) {
-                // client 自带的 UA 是写死的常量, 每台设备一样; 有本机 UA 就用本机的.
-                // 走属性而不是直接写 header: client 的 UA 是 append 上去的, 直接写会变成两个值
-                userAgent?.let { ua -> attributes.put(RequestUserAgentAttribute, ua) }
-            }.readRawBytes()
+            get(url) { overrideUserAgent(userAgent) }.readRawBytes()
         }
     } catch (e: Exception) {
         logger.warn(e) { "Request failed: $url" }
@@ -266,16 +260,9 @@ internal class DirectApiEngine(
         }
     }
 
-    private fun buildUrl(template: String, variables: Map<String, String>): String {
-        var result = template
-        for ((name, value) in variables) {
-            if (!result.contains("{$name}")) continue
-            // baseUrl 本身带 "://" 和 "/", 不能编码
-            val encoded = if (name == "baseUrl") value else value.encodeURLParameter()
-            result = result.replace("{$name}", encoded)
-        }
-        return result
-    }
+    // baseUrl 本身带 "://" 和 "/", 不能编码; 其余变量默认 URL 编码
+    private fun buildUrl(template: String, variables: Map<String, String>): String =
+        TextTemplate.expand(template, variables) { it != "baseUrl" }
 
     private companion object {
         private const val SUBJECT_ID_CACHE_SIZE = 64

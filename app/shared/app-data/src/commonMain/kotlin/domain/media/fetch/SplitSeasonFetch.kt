@@ -10,6 +10,7 @@
 package me.him188.ani.app.domain.media.fetch
 
 import me.him188.ani.app.data.models.subject.SplitSeason
+import me.him188.ani.app.domain.mediasource.web.SelectorMediaSource
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 
@@ -26,3 +27,13 @@ internal fun SplitSeason?.seasonEpisodeCount(): Int {
  * 按集号裁剪产出的数据源除了本条目的集号还要留下的整季序号 1 到 [MediaFetchRequest.seasonEpisodeCount]. 不是拆分季的后一段时为空.
  */
 internal fun MediaFetchRequest.seasonEpisodeSorts(): List<EpisodeSort> = (1..seasonEpisodeCount).map { EpisodeSort(it) }
+
+/**
+ * 本条目的全部集号, 在线源 (网页抓取、规则源) 据此决定一次产出哪些集. 拆分季的后一段再加上整季序号 ([seasonEpisodeSorts]).
+ *
+ * 剧集列表未知, 或条目集数超过 [SelectorMediaSource.MAX_WHOLE_SUBJECT_EPISODES] 时为 `null` —— 那时退回"只产出当前这一集".
+ */
+internal fun MediaFetchRequest.wholeSubjectEpisodeSortsOrNull(): Set<EpisodeSort>? {
+    if (episodes.isEmpty() || episodes.size > SelectorMediaSource.MAX_WHOLE_SUBJECT_EPISODES) return null
+    return episodes.flatMapTo(mutableSetOf()) { listOfNotNull(it.sort, it.ep) } + seasonEpisodeSorts()
+}

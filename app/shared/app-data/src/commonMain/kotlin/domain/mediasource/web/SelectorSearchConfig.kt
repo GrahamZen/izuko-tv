@@ -173,14 +173,14 @@ data class SelectorSearchConfig(
      * 为什么要有这个: 现代站点 (Next.js / Astro 这类) 的播放页是客户端渲染的, 地址要跑完 JS 才拿得到,
      * 于是只能开 WebView. 但那些站点的 chunk 里有 `?.` / `??`, 要 Chrome 80+ —— 系统 WebView 低于 M74
      * 的电视上解析就是 SyntaxError, 页面根本起不来, 表现为「搜得到但一播就失败」(等满超时后
-     * `NO_MATCHING_RESOURCE`), 而同一个源在手机上正常. 见 memory `project-old-webview-source-fail`.
+     * `NO_MATCHING_RESOURCE`), 而同一个源在手机上正常.
      *
      * 很多这类站点的地址其实来自一个普通接口. 配上之后走 Ktor 直接要, 绕开 WebView, 老机器也能播.
      *
-     * 用法 (以稀饭动漫 Next 为例, 播放页 `https://next.xifanacg.com/anime/1360/play/21094?source=xfy2`):
+     * 用法 (例: 播放页 `https://anime.example.com/anime/1360/play/21094?source=a`):
      * ```
      * matchPageUrl      = /play/(?<episodeId>\d+)
-     * requestUrl        = https://xxx.supabase.co/functions/v1/issue-web-playback
+     * requestUrl        = https://api.example.com/functions/v1/issue-web-playback
      * method            = POST
      * requestHeaders    = Content-Type: application/json
      * requestBody       = {"action":"fallback","episode_id":{episodeId}}

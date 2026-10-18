@@ -10,10 +10,9 @@
 package me.him188.ani.app.domain.mediasource.rule
 
 import kotlinx.io.Buffer
+import me.him188.ani.app.domain.mediasource.directapi.decodeBase64Lenient
 import me.him188.ani.utils.io.DigestAlgorithm
 import me.him188.ani.utils.io.readAndDigest
-import kotlin.io.encoding.Base64
-import kotlin.io.encoding.ExperimentalEncodingApi
 
 /**
  * 规则源 [RuleStep.Crypto] 的解密与摘要. 站点常把视频地址用固定密钥 AES 加密后放进页面或接口, 密钥与 IV 写在规则里.
@@ -42,16 +41,13 @@ internal object RuleCrypto {
      * 密文的字节: 全是十六进制字符且长度是 32 的倍数 (AES 一块 16 字节) 时按十六进制, 否则按 base64
      * (也认 URL 安全的 `-` `_`、缺填充). 都不是时为 `null`.
      */
-    @OptIn(ExperimentalEncodingApi::class)
     fun decodeCipherText(text: String): ByteArray? {
         val compact = text.filterNot { it.isWhitespace() }
         if (compact.isEmpty()) return null
         if (compact.length % 32 == 0 && compact.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }) {
             return ByteArray(compact.length / 2) { compact.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
         }
-        val standard = compact.replace('-', '+').replace('_', '/').trimEnd('=')
-        val padded = standard + "=".repeat((4 - standard.length % 4) % 4)
-        return runCatching { Base64.Default.decode(padded) }.getOrNull()
+        return decodeBase64Lenient(compact)
     }
 }
 

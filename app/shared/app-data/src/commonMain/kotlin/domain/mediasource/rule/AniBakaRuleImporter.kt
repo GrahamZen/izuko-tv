@@ -260,13 +260,8 @@ object AniBakaRuleImporter {
                 // follow 打开当前值这个地址 (一段开头时就是这一段的输入地址)
                 "follow" -> listOf(RuleStep.Fetch(url = "{${RuleEngine.VAR_VALUE}}", headers = requestHeaders(obj["headers"])))
                 "sniff" -> {
-                    val sniff = RuleStep.Sniff(
-                        timeoutMillis = obj.long("timeoutMs") ?: 0,
-                        readyContains = stringList(obj["readyContains"]),
-                        rejectContains = stringList(obj["rejectContains"]),
-                        settleMillis = obj.long("settleMs") ?: 0,
-                        resolveMediaRedirects = obj.boolean("resolveMediaRedirects") == true,
-                    )
+                    // readyContains / rejectContains / settleMs / resolveMediaRedirects 引擎用不上, 认得这几个键 (见 KNOWN_KEYS) 但不录
+                    val sniff = RuleStep.Sniff(timeoutMillis = obj.long("timeoutMs") ?: 0)
                     when (obj.string("goal")) {
                         "html" -> listOf(sniff.copy(goal = RuleStep.Sniff.GOAL_HTML, url = template(obj.string("url").orEmpty())))
                         "video", null -> listOf(sniff.copy(goal = RuleStep.Sniff.GOAL_VIDEO))

@@ -9,8 +9,7 @@
 
 package me.him188.ani.app.domain.mediasource.rule
 
-import io.ktor.http.encodeURLParameter
-import kotlinx.serialization.json.JsonPrimitive
+import me.him188.ani.app.domain.mediasource.TextTemplate
 import me.him188.ani.utils.ktor.UrlHelpers
 import me.him188.ani.utils.xml.Element
 
@@ -18,28 +17,12 @@ import me.him188.ani.utils.xml.Element
  * 规则里的文本处理: 模板展开、地址补全与规整、HTML 片段.
  */
 internal object RuleText {
-    // 安卓的正则 (ICU) 不认没转义的 `}`, 花括号一律转义
-    private val VARIABLE = Regex("""\{([A-Za-z_][A-Za-z0-9_]*)(?::(raw|url|json))?\}""")
-
     /** 默认做 URL 编码的变量. */
     private const val KEYWORD = "keyword"
 
-    /**
-     * 展开模板里的 `{名字}` / `{名字:raw}` / `{名字:url}` / `{名字:json}` (按 JSON 字符串转义, 不带引号). 没有这个变量的原样保留.
-     */
-    fun substitute(template: String, variables: Map<String, String>): String {
-        if (template.isEmpty() || '{' !in template) return template
-        return VARIABLE.replace(template) { match ->
-            val name = match.groupValues[1]
-            val value = variables[name] ?: return@replace match.value
-            val mode = match.groupValues[2].ifEmpty { if (name == KEYWORD) "url" else "raw" }
-            when (mode) {
-                "url" -> value.encodeURLParameter()
-                "json" -> JsonPrimitive(value).toString().removeSurrounding("\"")
-                else -> value
-            }
-        }
-    }
+    /** 展开模板 (见 [TextTemplate]); 只写 `{名字}` 时只有 `keyword` 做 URL 编码. */
+    fun substitute(template: String, variables: Map<String, String>): String =
+        TextTemplate.expand(template, variables) { it == KEYWORD }
 
     /**
      * 以 [base] 为基准把 [ref] 补全成绝对地址. [ref] 本身是绝对地址时原样返回; 补全不了返回 `null`.

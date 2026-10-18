@@ -37,8 +37,6 @@ import me.him188.ani.app.domain.mediasource.codec.MediaSourceCodecManager
 import me.him188.ani.app.domain.mediasource.directapi.DirectApiMediaSource
 import me.him188.ani.app.domain.mediasource.directapi.DirectApiMediaSourceArguments
 import me.him188.ani.app.domain.mediasource.instance.MediaSourceInstance
-import me.him188.ani.app.domain.mediasource.maccms.MacCmsMediaSource
-import me.him188.ani.app.domain.mediasource.maccms.MacCmsMediaSourceArguments
 import me.him188.ani.app.domain.mediasource.rule.RuleMediaSource
 import me.him188.ani.app.domain.mediasource.rule.RuleMediaSourceArguments
 import me.him188.ani.app.domain.mediasource.rss.RssMediaSourceArguments
@@ -91,12 +89,11 @@ internal object RemoteSources {
     private val SELECTOR = FactoryId("web-selector")
     private val DIRECT_API = DirectApiMediaSource.FactoryId
     private val DRIVE_SHARE_SEARCH = CloudDriveShareSearchMediaSource.FactoryId
-    private val MAC_CMS = MacCmsMediaSource.FactoryId
     private val RULE = RuleMediaSource.FactoryId
 
     /** 「网盘」: 参数是整份网盘协议, 没有模板, 只能导入或随订阅来. */
     private val CLOUD_DRIVE = CloudDriveMediaSource.FactoryId
-    private val JSON_FACTORIES = setOf(RSS, SELECTOR, DIRECT_API, DRIVE_SHARE_SEARCH, MAC_CMS, CLOUD_DRIVE, RULE)
+    private val JSON_FACTORIES = setOf(RSS, SELECTOR, DIRECT_API, DRIVE_SHARE_SEARCH, CLOUD_DRIVE, RULE)
 
     /**
      * 不在「新增数据源」里列出的类型: 「网盘」没有模板 (导入 JSON 即可), 「我添加的分享」在播放器页添加分享时按网盘自动建.
@@ -306,7 +303,6 @@ internal object RemoteSources {
             // 给一份结构完整的示例, 比空模板好改
             DIRECT_API -> codec.encode(DirectApiMediaSourceArguments.Example)
             DRIVE_SHARE_SEARCH -> codec.encode(CloudDriveShareSearchArguments.Example)
-            MAC_CMS -> codec.encode(MacCmsMediaSourceArguments.Example)
             RULE -> codec.encode(RuleMediaSourceArguments.Example)
             else -> return result(false, tr("这个类型没有 JSON 模板"))
         }

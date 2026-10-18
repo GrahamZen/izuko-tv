@@ -175,6 +175,8 @@ class DriveNameParserTest {
         assertEquals(3, DriveNameParser.parseSubjectSeason("Re:ゼロから始める異世界生活 3rd season"))
         assertNull(DriveNameParser.parseSubjectSeason("86 -エイティシックス-"))
         assertNull(DriveNameParser.parseSubjectSeason("在超市后门吸烟的二人"))
+        // 第 2 部分不是第 2 季
+        assertNull(DriveNameParser.parseSubjectSeason("间谍过家家 第2部分"))
     }
 
     @Test
