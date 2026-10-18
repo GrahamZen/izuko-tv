@@ -9,11 +9,13 @@
 
 package me.him188.ani.app.ui.settings.tabs.media
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -24,7 +26,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.intl.Locale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -44,9 +48,12 @@ import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveAuthException
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveProtocol
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveQrLoginState
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveService
+import me.him188.ani.app.domain.mediasource.clouddrive.DriveMobileOpen
 import me.him188.ani.app.ui.foundation.lan.QrCodeImage
+import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
 import me.him188.ani.app.ui.foundation.widgets.AniTextButton
+import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_media_cloud_drive_account
 import me.him188.ani.app.ui.lang.settings_media_cloud_drive_app_fallback
@@ -65,6 +72,8 @@ import me.him188.ani.app.ui.lang.settings_media_cloud_drive_qr_expired
 import me.him188.ani.app.ui.lang.settings_media_cloud_drive_qr_expires_in
 import me.him188.ani.app.ui.lang.settings_media_cloud_drive_qr_failed
 import me.him188.ani.app.ui.lang.settings_media_cloud_drive_qr_loading
+import me.him188.ani.app.ui.lang.settings_media_cloud_drive_qr_open_app
+import me.him188.ani.app.ui.lang.settings_media_cloud_drive_qr_open_app_failed
 import me.him188.ani.app.ui.lang.settings_media_cloud_drive_qr_refresh
 import me.him188.ani.app.ui.lang.settings_media_cloud_drive_qr_success
 import me.him188.ani.app.ui.lang.settings_media_cloud_drive_qr_title
@@ -254,6 +263,7 @@ internal fun SettingsScope.CloudDriveGroup(state: CloudDriveGroupState) {
             state = login,
             driveName = name,
             appName = appName,
+            mobileOpen = protocol.login.qr?.mobileOpen,
             onRefresh = { state.startQrLogin() },
             onDismiss = { state.dismissQrLogin() },
         )
@@ -265,10 +275,16 @@ private fun CloudDriveQrLoginDialog(
     state: CloudDriveQrLoginState,
     driveName: String,
     appName: String,
+    mobileOpen: DriveMobileOpen?,
     onRefresh: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val canRefresh = state is CloudDriveQrLoginState.Expired || state is CloudDriveQrLoginState.Failed
+    // 平板模式下点码唤起这台设备上的网盘 App 确认 (协议给了唤起链接时); 遥控器上码不可点, 一切照旧
+    val appLinks = (state as? CloudDriveQrLoginState.WaitingForScan)?.qrContent
+        ?.takeIf { LocalTvTouchInputEnabled.current }
+        ?.let { mobileOpen?.androidLinks(it) }
+        .orEmpty()
     AniAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(Lang.settings_media_cloud_drive_qr_title, driveName)) },
@@ -280,14 +296,7 @@ private fun CloudDriveQrLoginDialog(
             ) {
                 Box(Modifier.size(QR_SIZE), contentAlignment = Alignment.Center) {
                     when (state) {
-                        is CloudDriveQrLoginState.WaitingForScan -> QrCodeImage(
-                            state.qrContent,
-                            Modifier.size(QR_SIZE),
-                            quietZone = 12.dp,
-                            // 深色码浅色底, 各种扫码器都认
-                            foreground = Color.Black,
-                            background = Color.White,
-                        )
+                        is CloudDriveQrLoginState.WaitingForScan -> CloudDriveQrCode(state.qrContent, appLinks, appName)
 
                         CloudDriveQrLoginState.Loading, CloudDriveQrLoginState.Confirmed -> CircularProgressIndicator()
                         else -> {}
@@ -307,6 +316,14 @@ private fun CloudDriveQrLoginDialog(
                 )
                 if (state is CloudDriveQrLoginState.WaitingForScan) {
                     QrExpiryCountdown(state.expiresAtMillis)
+                    if (appLinks.isNotEmpty()) {
+                        Text(
+                            stringResource(Lang.settings_media_cloud_drive_qr_open_app, appName),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
                 }
             }
         },
@@ -318,6 +335,34 @@ private fun CloudDriveQrLoginDialog(
         dismissButton = {
             AniTextButton(onClick = onDismiss) { Text(stringResource(Lang.settings_media_cloud_drive_close)) }
         },
+    )
+}
+
+/**
+ * 登录二维码. 有 [appLinks] (平板模式且协议给了唤起链接, 见 [DriveMobileOpen.androidLinks]) 时点码依次试着唤起这台设备上的网盘 App,
+ * 在 App 里确认登录; 二维码内容本身是普通网页地址, 直接打开会被浏览器接走. 一个都唤不起 (没装) 时提示用手机扫.
+ */
+@Composable
+private fun CloudDriveQrCode(content: String, appLinks: List<String>, appName: String) {
+    val uriHandler = LocalUriHandler.current
+    val toaster = LocalToaster.current
+    val openFailed = stringResource(Lang.settings_media_cloud_drive_qr_open_app_failed, appName)
+    QrCodeImage(
+        content,
+        Modifier.size(QR_SIZE).then(
+            if (appLinks.isEmpty()) {
+                Modifier
+            } else {
+                Modifier.clip(RoundedCornerShape(12.dp)).clickable {
+                    val opened = appLinks.any { link -> runCatching { uriHandler.openUri(link) }.isSuccess }
+                    if (!opened) toaster.toast(openFailed)
+                }
+            },
+        ),
+        quietZone = 12.dp,
+        // 深色码浅色底, 各种扫码器都认
+        foreground = Color.Black,
+        background = Color.White,
     )
 }
 
