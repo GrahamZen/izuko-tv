@@ -11,6 +11,9 @@ package me.him188.ani.android.tv
 
 import android.content.Context
 import android.net.Uri
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ProcessLifecycleOwner
+import androidx.lifecycle.lifecycleScope
 import androidx.tvprovider.media.tv.PreviewProgram
 import androidx.tvprovider.media.tv.TvContractCompat
 import kotlinx.coroutines.CancellationException
@@ -19,6 +22,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.datetime.DateTimeUnit
@@ -43,37 +47,42 @@ import org.koin.core.Koin
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.minutes
-import kotlin.time.Duration.Companion.seconds
 
 /**
  * 系统主屏自建的「今日更新」预览频道: 新番时间表今天那一格, 按播出时刻排, 卡片写「20:00 更新 · 第 8 集 · 分集名」, 点了进条目详情页.
  *
  * 数据与 app 内的时间表同源 ([GetAnimeScheduleFlowUseCase], 先出磁盘缓存再逐部补分集): 等今天那一格补完再写;
- * 超时还没补完就先写已有的, 过 [RETRY_INTERVAL] 再来. 进程起来后写一次, app 一直开着的话每过零点重写. 内容没变不动 TvProvider.
+ * 超时还没补完就先写已有的, 过 [RETRY_INTERVAL] 再来. 内容没变不动 TvProvider.
+ *
+ * 只在应用退到后台时取、写 (同「继续观看」, 见 TvHomeChannels.collectWatchNext): 这个频道只在主屏露出来时看得到, 而冷缓存时
+ * 补今天那一格要取几十部的分集与 bangumi-data, 在前台就跟开播抢网络与内存. 一天写一次, 过了零点等下次在后台再写.
  */
 internal object TvHomeTodayChannel {
     private val logger = logger<TvHomeTodayChannel>()
 
     private const val CHANNEL_INTERNAL_ID = "animeko_today"
 
-    /** 启动后先让开: 冷启动时各页自己的请求更要紧. */
-    private val START_DELAY = 15.seconds
     private val SCHEDULE_TIMEOUT = 2.minutes
     private val RETRY_INTERVAL = 30.minutes
 
-    /** 两个 activity 交替时只跑一份. */
+    /** 每进程只起一份. */
     private val running = AtomicBoolean(false)
 
     /** 查找或创建频道; 第一次创建时请求 launcher 显示它, 要 activity 的 context. */
     fun ensureChannel(context: Context): Long =
         TvHomeChannels.ensureChannel(context, CHANNEL_INTERNAL_ID, context.getString(R.string.home_channel_today_name))
 
-    /** 不会返回 (同一进程已经有一份在跑时直接返回). */
-    suspend fun keepUpdated(context: Context, koin: Koin, channelId: Long) {
+    /** 起这个频道的更新 (每进程一份, 跟着进程走: 按返回退出时 activity 先销毁, 进程稍后才转入后台). */
+    fun start(context: Context, koin: Koin, channelId: Long) {
         if (!running.compareAndSet(false, true)) return
+        ProcessLifecycleOwner.get().lifecycleScope.launch { keepUpdated(context, koin, channelId) }
+    }
+
+    private suspend fun keepUpdated(context: Context, koin: Koin, channelId: Long) {
+        val lifecycle = ProcessLifecycleOwner.get().lifecycle
         try {
-            delay(START_DELAY)
             while (true) {
+                lifecycle.currentStateFlow.first { !it.isAtLeast(Lifecycle.State.STARTED) }
                 val timeZone = TimeZone.currentSystemDefault()
                 val today = Clock.System.now().toLocalDateTime(timeZone).date
                 val complete = try {
