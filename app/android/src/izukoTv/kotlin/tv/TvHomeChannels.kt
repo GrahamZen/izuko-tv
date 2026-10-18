@@ -15,6 +15,9 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import androidx.core.graphics.drawable.toBitmap
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ProcessLifecycleOwner
+import androidx.lifecycle.lifecycleScope
 import androidx.tvprovider.media.tv.Channel
 import androidx.tvprovider.media.tv.ChannelLogoUtils
 import androidx.tvprovider.media.tv.PreviewProgram
@@ -23,6 +26,7 @@ import androidx.tvprovider.media.tv.WatchNextProgram
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.awaitClose
@@ -32,8 +36,12 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -112,16 +120,19 @@ object TvHomeChannels {
 
     private val trendingUpdatedThisProcess = AtomicBoolean(false)
 
-    /** 两个 activity 交替时可能有两个收集协程重叠, 别让它们同时改同一批行. */
+    /** 「继续观看」行与「接下来播放」的收集每进程只起一份, 见 [keepUpdated]. */
+    private val watchNextStartedThisProcess = AtomicBoolean(false)
+
+    /** 「接下来播放」的对账与「继续观看」行的重写都改这张表, 别让它们同时改同一批行. */
     private val watchNextMutex = Mutex()
 
     /**
-     * 在 MainActivity 启动后调用, 非 TV 设备直接跳过. **不会返回**: 系统"继续观看"行要一直跟着
-     * 本地收藏库重写.
+     * 在 MainActivity 启动后调用, 非 TV 设备直接跳过. 「今日更新」频道开着时**不会返回** (随 activity 结束).
      *
      * - 热门动画频道: 每进程对一次热门榜, 没变就不动 (内容一天也变不了几次, 见 [updateTrendingChannel]);
      * - 系统"继续观看"行: 只在进程启动时写一次的话, 用户在详情页把番标成"看过"之后, 主屏那一行
-     *   还会挂着它直到下次冷启动.
+     *   还会挂着它直到下次冷启动. 它在应用退到后台时才写 (见 [collectWatchNext]), 所以跟着进程走, 不随 activity 结束:
+     *   按返回退出时 activity 先销毁, 进程稍后才转入后台.
      */
     suspend fun keepUpdated(context: Context, koin: Koin) {
         if (!isTvDevice(context)) return
@@ -143,12 +154,15 @@ object TvHomeChannels {
         val appContext = context.applicationContext
         val tmdb = koin.get<TmdbImageService>()
         val settingsRepository = koin.get<SettingsRepository>()
-        val playNext = TvPlayNextSync(appContext, koin)
-        coroutineScope {
-            todayChannelId?.let { launch { TvHomeTodayChannel.keepUpdated(appContext, koin, it) } }
-            launch { watchPlayNext(appContext, playNext) }
-            collectWatchNext(appContext, koin, tmdb, settingsRepository, playNext)
+        if (watchNextStartedThisProcess.compareAndSet(false, true)) {
+            // 两者共用一份 TvPlayNextSync: 它靠 beginRewrite / endRewrite 认出我们自己重写带来的变化
+            val playNext = TvPlayNextSync(appContext, koin)
+            ProcessLifecycleOwner.get().lifecycleScope.launch {
+                launch { watchPlayNext(appContext, playNext) }
+                collectWatchNext(appContext, koin, tmdb, settingsRepository, playNext)
+            }
         }
+        todayChannelId?.let { TvHomeTodayChannel.keepUpdated(appContext, koin, it) }
     }
 
     /**
@@ -172,6 +186,7 @@ object TvHomeChannels {
         }
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     private suspend fun collectWatchNext(
         appContext: Context,
         koin: Koin,
@@ -179,12 +194,12 @@ object TvHomeChannels {
         settingsRepository: SettingsRepository,
         playNext: TvPlayNextSync,
     ) {
-        combine(
+        val entries = combine(
             koin.get<SubjectCollectionRepository>()
                 .mostRecentlyUpdatedSubjectCollectionsFlow(WATCH_NEXT_LIMIT, listOf(UnifiedCollectionType.DOING)),
             // NSFW 设置一变也重算 (见 toWatchNextEntry)
             SubjectNsfw.mode,
-            // 含看完一集留下的墓碑 (见 tvContinueEpisode); 播放中每分钟记一次进度, 卡片上的进度条跟着走
+            // 含看完一集留下的墓碑 (见 tvContinueEpisode); 卡片上的进度条取最后记下的进度
             koin.get<EpisodePlayHistoryRepository>().allHistoriesFlow,
             // 下一集播出、「新集」过期都只随时间变, 数据不动也要定时重算
             flow {
@@ -210,7 +225,15 @@ object TvHomeChannels {
                 info.toWatchNextEntry(historyByEpisode, now, useOriginalTitle, tmdbTitles[info.subjectId])?.let { it to info }
             }
         }
-            // 只比卡片真正用到的字段: 看一集、刷新一次都会让上游重新发射, 而那些变化与这一行无关
+        // 这一行只在主屏露出来 (应用退到后台) 时看得到: 应用在前台时不算也不写, 退到后台按最新数据写一次.
+        // 在前台照写的话, 播放中每分钟记一次进度就整行删了重插: 系统要拉起被杀掉的频道进程、主屏跟着重载这一行,
+        // 内存紧的电视上正压在开播最忙的那十几秒.
+        ProcessLifecycleOwner.get().lifecycle.currentStateFlow
+            .map { it.isAtLeast(Lifecycle.State.STARTED) }
+            .distinctUntilChanged()
+            .flatMapLatest { foreground -> if (foreground) emptyFlow() else entries }
+            // 只比卡片真正用到的字段: 看一集、刷新一次都会让上游重新发射, 而那些变化与这一行无关;
+            // 前后两次退到后台之间没变也不重写
             .distinctUntilChangedBy { pairs -> pairs.map { it.first } }
             .collectLatest { pairs ->
                 runCatching {
