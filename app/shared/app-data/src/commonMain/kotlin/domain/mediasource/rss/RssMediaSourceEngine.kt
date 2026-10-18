@@ -95,7 +95,7 @@ abstract class RssMediaSourceEngine {
 
     /**
      * 模板里的 `{keyword}` 被双引号直接包着时, 它落在一段 JSON 字符串里
-     * (如 animes.garden 的 `feed.xml?filter=[{"type":"动画","search":["{keyword}"]}]`),
+     * (如 `https://rss.example.com/feed.xml?filter=[{"type":"动画","search":["{keyword}"]}]`),
      * 这时先按 JSON 字符串转义再交给 URL 编码。
      *
      * 光做 URL 编码不够: 服务端 URL 解码之后拿到的是裸引号, 会把外层 JSON 打断并直接回 400 ——
@@ -300,9 +300,9 @@ class DefaultRssMediaSourceEngine(
 
 /**
  * 从发布组格式的标题里猜番名, 例如
- * `[ANi] 無職轉生～到了異世界就拿出真本事～第三季 - 12 [1080P][Baha][CHT].mp4` 猜出 `無職轉生～到了異世界就拿出真本事～第三季`.
+ * `[某字幕组] 無職轉生～到了異世界就拿出真本事～第三季 - 12 [1080P][WEB-DL][CHT].mp4` 猜出 `無職轉生～到了異世界就拿出真本事～第三季`.
  *
- * 做法: 去掉开头的字幕组括号, 再截到集数 (" - ") 或标签 ("[") 之前. 猜不出来时返回 `null`, 行为与以前一致.
+ * 做法: 去掉开头的字幕组括号, 再截到集数 (" - ") 或标签 ("[") 之前. 猜不出来时返回 `null`.
  */
 internal fun guessSubjectNameFromTitle(title: String): String? {
     var rest = title.trim()

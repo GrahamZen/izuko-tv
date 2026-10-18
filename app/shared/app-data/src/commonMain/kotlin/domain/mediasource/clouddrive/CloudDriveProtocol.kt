@@ -87,7 +87,6 @@ data class CloudDriveProtocol(
     /** 网盘根目录的文件夹 id: WebDAV 是服务器地址的路径, 其余是 [rootFolderId]. */
     val rootId: String get() = if (isWebDav) WebDav.rootIdOf(this) else rootFolderId
     val supportsShares: Boolean get() = api.shareToken != null && api.listShare != null && share.linkPattern.isNotBlank()
-    val supportsSaving: Boolean get() = api.saveFromShare != null && api.task != null && api.createFolder != null
 
     /** 自己网盘那个数据源的 id. */
     val driveMediaSourceId: String get() = "$id-drive"

@@ -4590,7 +4590,7 @@ private val SOURCES_SCRIPT = """
   var FALLBACK_TIER = 2;
   var TYPE_LABELS = {
     'web-selector': T('网页抓取'), rss: 'RSS', rule: T('规则源'), 'direct-api': T('直链 API'),
-    maccms: T('苹果 CMS'), drive: T('网盘'), bt: 'BT'
+    drive: T('网盘'), bt: 'BT'
   };
   var viewBox = document.createElement('div');
   viewBox.className = 'src-view';
