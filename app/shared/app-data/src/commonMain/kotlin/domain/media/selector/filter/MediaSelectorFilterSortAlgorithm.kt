@@ -14,6 +14,7 @@ import me.him188.ani.app.data.models.preference.MediaPreference.Companion.ANY_FI
 import me.him188.ani.app.data.models.preference.MediaSelectorSettings
 import me.him188.ani.app.data.models.subject.SubjectInfo
 import me.him188.ani.app.domain.media.selector.MatchMetadata
+import me.him188.ani.app.platform.perf.PerfTimeline
 import me.him188.ani.app.domain.media.selector.MaybeExcludedMedia
 import me.him188.ani.app.domain.media.selector.MediaExclusionReason
 import me.him188.ani.app.domain.media.selector.MediaSelectorContext
@@ -69,7 +70,7 @@ class MediaSelectorFilterSortAlgorithm {
         context: MediaSelectorContext,
         memo: FilterResultMemo? = null,
     ): List<MaybeExcludedMedia> =
-        filterMediaList(list, preference, settings, context, matchEpisode = true, memo = memo)
+        PerfTimeline.measure("选源器", "按集筛选") { filterMediaList(list, preference, settings, context, matchEpisode = true, memo = memo) }
 
     /**
      * 与 [filterMediaList] 相同, 但不应用第 0 条规则 [MediaExclusionReason.EpisodeMismatch],
@@ -81,7 +82,8 @@ class MediaSelectorFilterSortAlgorithm {
         settings: MediaSelectorSettings,
         context: MediaSelectorContext,
         memo: FilterResultMemo? = null,
-    ): List<MaybeExcludedMedia> = filterMediaList(list, preference, settings, context, matchEpisode = false, memo = memo)
+    ): List<MaybeExcludedMedia> =
+        PerfTimeline.measure("选源器", "条目筛选") { filterMediaList(list, preference, settings, context, matchEpisode = false, memo = memo) }
 
     private fun filterMediaList(
         list: List<Media>,
@@ -490,8 +492,8 @@ class MediaSelectorFilterSortAlgorithm {
         list: List<MaybeExcludedMedia>,
         settings: MediaSelectorSettings,
         context: MediaSelectorContext,
-    ): List<MaybeExcludedMedia> {
-        return list.sortedWith(
+    ): List<MaybeExcludedMedia> = PerfTimeline.measure("选源器", "排序") {
+        list.sortedWith(
             // stable sort, 保证相同的元素顺序不变
             compareBy<MaybeExcludedMedia> { 0 } // dummy, to use .then* syntax.
                 // 排除的总是在最后
