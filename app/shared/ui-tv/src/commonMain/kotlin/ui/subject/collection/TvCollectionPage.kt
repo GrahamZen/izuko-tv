@@ -255,6 +255,7 @@ private fun TvCollectionPageContent(
     val items = remember(state.selectedTypeIndex) {
         state.getCollectionLazyPagingItems(state.selectedTypeIndex)
     }
+    TvCollectionAutoRefresh(COLLECTION_TABS_SORTED[state.selectedTypeIndex], items)
 
     // 标签行上选中的分类与网格显示的分类 (state.selectedTypeIndex) 分开走: 标签上左右移, 网格等方向键松开才换 (见 TvRailWallSelection).
     // 本页 tab 显示顺序与 state 的存储顺序不同 (见 TV_COLLECTION_TABS), 界面一律用类型换算下标. 各分类的网格各记各的位置, 换过去不复位
