@@ -21,6 +21,7 @@ import me.him188.ani.app.domain.media.selector.isPerfectMatch
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveAuthException
 import me.him188.ani.app.domain.mediasource.clouddrive.DriveVideoBitrates
 import me.him188.ani.app.domain.mediasource.clouddrive.cloudDriveLoginRequired
+import me.him188.ani.app.domain.mediasource.rule.SiteIpBlockedException
 import me.him188.ani.app.ui.media.MediaDetailsRenderer
 import me.him188.ani.app.ui.media.MediaDetailsStrings
 import me.him188.ani.app.ui.media.renderSubtitleLanguage
@@ -431,6 +432,8 @@ data class TvSourceStrings(
     val driveNotLoggedIn: String,
     val driveLoginAction: String,
     val driveLoginHint: String,
+    /** 站点拉黑了这个网络 (查询失败那一组), 参数是解封前不再查的时刻. */
+    val siteIpBlocked: String,
     val details: MediaDetailsStrings,
     val timeZone: TimeZone,
 ) {
@@ -1412,11 +1415,14 @@ private fun sourceStatus(source: MediaSourceResultPresentation, count: Int, stri
 private fun failedPane(failed: List<MediaSourceResultPresentation>, strings: TvSourceStrings): TvSourceRight = TvSourceRight(
     key = TvSourceRailKeys.FAILED,
     rows = failed.map { source ->
+        // 站点拉黑了这个网络: 写明几点前不再查 (重试也只是直接失败), 不写「按确定重试」
+        val ipBlocked = ((source.state as? MediaSourceFetchState.Failed)?.cause as? SiteIpBlockedException)
+            ?.let { strings.siteIpBlocked.format(formatClock(it.untilMillis, strings.timeZone)) }
         TvSourceRow(
             id = "failed:" + source.instanceId,
             style = TvSourceRowStyle.Line,
             title = source.info.displayName,
-            meta = strings.retryHint,
+            meta = ipBlocked ?: strings.retryHint,
             icon = TvSourceRowIcon.Source,
             iconUrl = source.info.iconUrl,
             loading = source.isWorking,
@@ -1427,7 +1433,7 @@ private fun failedPane(failed: List<MediaSourceResultPresentation>, strings: TvS
                 fields = buildList {
                     add(TvSourceDetailField(strings.labelStatus, strings.failedState, short = true))
                     (source.state as? MediaSourceFetchState.Failed)?.cause?.let { cause ->
-                        add(TvSourceDetailField(strings.labelError, cause.message?.takeIf { it.isNotBlank() } ?: cause::class.simpleName.orEmpty()))
+                        add(TvSourceDetailField(strings.labelError, ipBlocked ?: cause.message?.takeIf { it.isNotBlank() } ?: cause::class.simpleName.orEmpty()))
                     }
                     source.info.websiteUrl?.takeIf { it.isNotBlank() }?.let { add(TvSourceDetailField(strings.labelLink, it, maxLines = 1)) }
                 },
@@ -1621,6 +1627,12 @@ internal const val TV_SOURCE_EPISODE_COLUMNS = 4
 
 private fun formatSize(size: FileSize): String =
     if (size == FileSize.Zero || size == FileSize.Unspecified) "" else size.toString()
+
+/** 时刻 `HH:mm`. */
+private fun formatClock(millis: Long, timeZone: TimeZone): String {
+    val time = Instant.fromEpochMilliseconds(millis).toLocalDateTime(timeZone)
+    return "%02d:%02d".format(time.hour, time.minute)
+}
 
 private fun formatDate(millis: Long, timeZone: TimeZone): String {
     if (millis == 0L) return ""
