@@ -61,7 +61,10 @@
     <string name="settings_player_seek_preview_display_window">小画面</string>
     <string name="settings_player_seek_preview_display_full_screen">全屏</string>
     <string name="settings_player_disk_cache">边下边播</string>
-    <string name="settings_player_disk_cache_description">在线播放时把下载过的部分存在本机：往回拖、重看直接读本机，拖动预览时下载过的位置马上出画面（没下载的位置停一下就去下）。关闭时拖动预览每个位置都要先下载。最多占剩余空间的四分之一，满了先删最久没看的</string>
+    <string name="settings_player_disk_cache_description">在线播放时把下载过的部分存在本机：往回拖、重看直接读本机，拖动预览时下载过的位置马上出画面（没下载的位置停一下就去下）。关闭时拖动预览每个位置都要先下载。最多占剩余空间的四分之一，满了先删最久没看的；关掉时删除已存的</string>
+    <string name="settings_storage_playback_cache">清理边下边播缓存</string>
+    <string name="settings_storage_playback_cache_usage">「边下边播」存在本机的视频，往回拖、重看时从这里读。当前占用 %1$s，上限 %2$s（剩余空间与已存部分合计的四分之一，最多 4 GB），满了先删最久没看的；关掉「边下边播」会全部删除</string>
+    <string name="settings_storage_playback_cache_cleared">已清理边下边播缓存</string>
     <string name="settings_player_audio_passthrough">音频直通</string>
     <string name="settings_player_audio_passthrough_description">把杜比、DTS 这类音轨原样交给功放或回音壁解码，保留多声道和全景声。「自动」：立体声音轨一律在这里解码（直通它们没有好处）；多声道音轨只在声音经 HDMI、ARC 或光纤送到外接设备时直通，用电视自带喇叭或蓝牙时在这里解码，因为有些电视直通后没有声音。</string>
     <string name="settings_player_audio_passthrough_auto">自动</string>

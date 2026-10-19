@@ -49,6 +49,7 @@ fun getCommonAndroidModules(coroutineScope: CoroutineScope) = module {
     }
     single<HlsPlaybackPreparer> { PlatformHlsPlaybackPreparer(get()) }
     single<BangumiEchTransport> { ConscryptEchTransport(get(), lazy { get() }) } // bangumi 加密直连
+    playbackDiskCacheStorage(coroutineScope)
 
     single<MediampPlayerFactory<*>> {
         val videoScaffoldConfig = get<SettingsRepository>().videoScaffoldConfig
