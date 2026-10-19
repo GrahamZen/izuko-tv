@@ -173,7 +173,14 @@ class LibassExoPlayerMediampPlayer private constructor(
         exoPlayer.addAnalyticsListener(AudioOutputDiagnostics(context.applicationContext, backgroundScope))
         exoPlayer.addAnalyticsListener(PlaybackPerfProbe(exoPlayer, backgroundScope))
         exoPlayer.addAnalyticsListener(PlaybackActivityReporter())
+        decoderParking.start(context)
     }
+
+    private val decoderParking = VideoDecoderParking(
+        exoPlayer,
+        hasVisibleOutput = { findAndroidVideoSurface()?.holder?.surface?.isValid == true },
+        restartFromKeyframe = { seekTo(exoPlayer.currentPosition) },
+    )
 
     internal val assHandler: AssHandler get() = pipeline.assHandler
 
@@ -576,7 +583,14 @@ class LibassExoPlayerMediampPlayer private constructor(
         // 先注册、旧 view 的 surfaceDestroyed 后到, 不加这个判断会把新一代刚出的帧标记抹掉
         if (findAndroidVideoSurface() === surfaceView) {
             _hasFrameOnCurrentSurface.value = false
+            decoderParking.onOutputGone()
         }
+    }
+
+    /** [registerAndroidVideoSurface] 侧的 surfaceCreated 回调. */
+    internal fun onVideoSurfaceCreated(surfaceView: SurfaceView) {
+        applyVideoDataSpace()
+        if (findAndroidVideoSurface() === surfaceView) decoderParking.onOutputAvailable()
     }
 
     private fun releaseDataSpaceOwnership() {
@@ -661,6 +675,7 @@ class LibassExoPlayerMediampPlayer private constructor(
         clearVideoDataSpaceIfOwned() // Surface 归 UI 所有, 可能比播放器活得久, 交还再走
         scheduleDataSpaceClearRetry(attemptsLeft = 3)
         backgroundScope.cancel()
+        decoderParking.stop()
         exoPlayer.removeAnalyticsListener(videoOutputTimeoutListener)
         pipeline.close() // 在 assHandler.release 之前: 后台补的字体不再往里加
         exoPlayer.removeListener(assHandler)
