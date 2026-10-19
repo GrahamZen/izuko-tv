@@ -205,6 +205,7 @@ class DefaultHttpClientProvider(
                     handler.applyToClient(this, value)
                 }
             }
+            installDebugNetworkHooks()
         }
     }
 
