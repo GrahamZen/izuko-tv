@@ -738,6 +738,7 @@
     <string name="mediafetch_request_editor_restore_names">恢复 Bangumi 名称</string>
     <string name="episode_danmaku">弹幕</string>
     <string name="episode_send_danmaku_failed">弹幕发送失败, 稍后再试</string>
+    <string name="episode_send_danmaku_quota_exceeded">弹弹play 发弹幕的额度暂时用完了，过一阵再试</string>
     <string name="subject_episode_related_recommendations_empty">Bangumi 上还没有相关推荐</string>
     <string name="player_frame_preview_failed">预览加载失败</string>
     <string name="player_frame_preview_not_downloaded">这里还没下载</string>

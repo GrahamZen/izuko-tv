@@ -22,6 +22,8 @@ import io.ktor.http.headersOf
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import me.him188.ani.danmaku.api.DanmakuContent
+import me.him188.ani.danmaku.api.DanmakuLocation
 import me.him188.ani.danmaku.api.provider.DanmakuFetchRequest
 import me.him188.ani.danmaku.api.provider.DanmakuMatchMethod
 import me.him188.ani.danmaku.api.provider.DanmakuSplitSeasonMatcher
@@ -32,6 +34,7 @@ import me.him188.ani.datasources.api.PackedDate
 import me.him188.ani.utils.ktor.asScopedHttpClient
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
@@ -750,6 +753,37 @@ class DandanplayDanmakuProviderTest {
         )
         assertEquals("straightbet", normalizeEpisodeTitle("第14话 STRAIGHT BET"))
     }
+
+    @Test
+    fun `postDanmaku throws quota exceeded when the app quota is used up`() = runTest {
+        val provider = createProvider { path ->
+            assertEquals("/api/v2/comment/174310002/app", path)
+            respondJson("""{"cid":0,"errorCode":429,"success":false,"errorMessage":"已达到接口调用配额上限"}""")
+        }
+
+        assertFailsWith<DandanplayQuotaExceededException> {
+            provider.postDanmaku(174310002, danmakuContent(), userName = "user")
+        }
+    }
+
+    @Test
+    fun `postDanmaku throws a generic failure for other error codes`() = runTest {
+        val provider = createProvider {
+            respondJson("""{"cid":0,"errorCode":7,"success":false,"errorMessage":"资源不存在"}""")
+        }
+
+        val error = assertFailsWith<IllegalStateException> {
+            provider.postDanmaku(174310002, danmakuContent(), userName = "user")
+        }
+        assertFalse(error is DandanplayQuotaExceededException)
+    }
+
+    private fun danmakuContent() = DanmakuContent(
+        playTimeMillis = 12_000,
+        color = 0xFFFFFF,
+        text = "test",
+        location = DanmakuLocation.NORMAL,
+    )
 
     private fun createProvider(handler: MockRequestHandleScope.(path: String) -> HttpResponseData): DandanplayDanmakuProvider {
         val engine = MockEngine { request ->
