@@ -13,6 +13,7 @@ import android.content.Context
 import android.media.MediaCodecList
 import android.os.Build
 import android.os.Handler
+import android.view.Surface
 import androidx.annotation.OptIn
 import androidx.media3.common.Format
 import androidx.media3.common.MimeTypes
@@ -58,6 +59,8 @@ internal object UndecodableVideoProfiles {
  * 系统解码器的视频渲染器, 但 [UndecodableVideoProfiles] 里的规格在没有解码器声明支持时不开解码器: 候选解码器清空,
  * 解码器初始化报错, 错误里带着 `format_supported=NO_EXCEEDS_CAPABILITIES`, 之后与其他设备放不了的格式一样提示并自动换源.
  * 声明了支持的解码器 (少数芯片能解 10-bit H.264) 照常用. 判断能不能选这条轨 (supportsFormat) 不经过这里, 选轨不变.
+ *
+ * 另外按 [VideoDecoderParking.MSG_PARK] 停用解码器: 画面不在眼前、内存紧时释放, 画面回来再建.
  */
 @OptIn(UnstableApi::class)
 internal class UndecodableProfileGuardingVideoRenderer(
@@ -82,6 +85,29 @@ internal class UndecodableProfileGuardingVideoRenderer(
         logger.warn { "No decoder declares support for ${format.codecs}, not decoding it" }
         return emptyList()
     }
+
+    // 画面不在眼前、内存紧时释放解码器 (见 VideoDecoderParking). 两个字段只在播放线程上读写
+    private var decoderParked = false
+    private var hasDisplaySurface = false
+
+    override fun handleMessage(messageType: Int, message: Any?) {
+        when (messageType) {
+            MSG_SET_VIDEO_OUTPUT -> hasDisplaySurface = message is Surface && message.isValid
+            VideoDecoderParking.MSG_PARK -> {
+                decoderParked = message == true
+                // 已经没有真的输出面 (解码器挂在占位输出面上) 就现在释放; 停用期间没有真的输出面不再建解码器
+                if (decoderParked && !hasDisplaySurface && codec != null) releaseCodec()
+                return
+            }
+        }
+        super.handleMessage(messageType, message)
+    }
+
+    override fun shouldUsePlaceholderSurface(codecInfo: MediaCodecInfo): Boolean =
+        !decoderParked && super.shouldUsePlaceholderSurface(codecInfo)
+
+    override fun shouldUseDetachedSurface(codecInfo: MediaCodecInfo): Boolean =
+        !decoderParked && super.shouldUseDetachedSurface(codecInfo)
 
     companion object {
         private val logger = logger<UndecodableProfileGuardingVideoRenderer>()
