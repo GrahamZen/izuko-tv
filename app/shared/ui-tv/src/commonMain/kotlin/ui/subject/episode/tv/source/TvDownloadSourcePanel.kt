@@ -34,6 +34,8 @@ import kotlinx.coroutines.launch
 import me.him188.ani.app.domain.media.fetch.restart
 import me.him188.ani.app.ui.download.subject.TvDownloadMediaPickerArgs
 import me.him188.ani.app.ui.foundation.dialogs.DialogWindowDimAmount
+import me.him188.ani.app.navigation.LocalNavigator
+import me.him188.ani.app.navigation.SettingsTab
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.tv_source_excluded_toast
@@ -53,6 +55,7 @@ fun TvDownloadSourcePanel(args: TvDownloadMediaPickerArgs) {
     val controller = remember { TvSourcePanelController() }
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
+    val navigator = LocalNavigator.current
     val currentArgs by rememberUpdatedState(args)
     var editingKeywords by remember { mutableStateOf<MediaFetchRequest?>(null) }
     var editingManualKeyword by remember { mutableStateOf<String?>(null) }
@@ -85,6 +88,11 @@ fun TvDownloadSourcePanel(args: TvDownloadMediaPickerArgs) {
 
             override fun onManualPicked() = Unit
 
+            override fun openSettings() {
+                currentArgs.onDismiss()
+                navigator.navigateSettings(SettingsTab.MEDIA_SOURCE)
+            }
+
             override fun onManualPickFailed() {
                 toaster.toast(manualPickFailed)
             }
@@ -99,6 +107,8 @@ fun TvDownloadSourcePanel(args: TvDownloadMediaPickerArgs) {
             canCache = false,
             host = host,
             scope = scope,
+            canOpenSettings = true,
+            sourceTypes = tvSourceTypesFlow(),
         )
     }
 

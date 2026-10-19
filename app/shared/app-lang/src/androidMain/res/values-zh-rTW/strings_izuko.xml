@@ -469,6 +469,14 @@
     <string name="tv_source_drive_login_title">登入%1$s</string>
     <string name="tv_source_drive_login_password">這個網盤用帳號密碼登入：用手機掃碼開啟 Web 控制台，在「資料來源」裡填寫。</string>
     <string name="tv_source_site_ip_blocked">網站封鎖了這個網路的 IP，%1$s 後再試</string>
+    <string name="tv_source_group_drive">網盤</string>
+    <string name="tv_source_group_online">線上</string>
+    <string name="tv_source_group_direct">直鏈</string>
+    <string name="tv_source_empty_sources">沒有結果的 %1$d 個</string>
+    <string name="tv_source_hide_empty_sources">收起沒有結果的 %1$d 個</string>
+    <string name="tv_source_playback_failed">載入失敗</string>
+    <string name="tv_source_playback_buffering">緩衝中</string>
+    <string name="tv_source_settings">資料來源設定</string>
     <string name="tv_source_disabled">已停用</string>
     <string name="tv_source_episode_filter">僅本集</string>
     <string name="tv_source_all_episodes">全部集數</string>

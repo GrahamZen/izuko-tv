@@ -69,11 +69,11 @@ internal fun TvSourceDetailsHost(
     val settle = remember { TvNavigationSettle(TV_NAV_SETTLE_MILLIS) }
     LaunchedEffect(target) {
         settle.awaitTurn()
-        controller.focusRow(target.railKey, target.rowId, target.inRail)
+        if (target.followFocus) controller.focusRow(target.railKey, target.rowId, target.inRail)
     }
     fun close() {
         state.detailsTarget.value = null
-        controller.focusRow(target.railKey, target.rowId, target.inRail)
+        if (target.followFocus) controller.focusRow(target.railKey, target.rowId, target.inRail)
     }
     TvSourceDetailsDialog(
         details = entry.details,
