@@ -1745,6 +1745,10 @@ fun TvEpisodeScreenContent(
                     snapshotFlow { overlay.layer }.first { it == TvPlayerLayer.CONTROLS }
                     controlsRetained.value = true
                 }
+                PrewarmTvPlayerControls(
+                    canPrewarmNow = { overlay.layer == TvPlayerLayer.HIDDEN && vm.player.state.value.isPlaying },
+                    prewarm = { controlsRetained.value = true },
+                )
                 AniAnimatedVisibility(
                     visible = overlay.layer == TvPlayerLayer.CONTROLS || skipTipVisible || controlsRetained.value,
                     modifier = Modifier.matchParentSize(),
