@@ -85,7 +85,6 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.layout.ContentScale
@@ -137,6 +136,7 @@ import me.him188.ani.datasources.api.PackedDate
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 import org.jetbrains.compose.resources.stringResource
 import me.him188.ani.app.ui.foundation.focus.TvNoBringIntoViewSpec
+import me.him188.ani.app.ui.foundation.tv.TvModulateAlphaCompositing
 import androidx.compose.foundation.clickable
 
 /**
@@ -767,7 +767,7 @@ fun FocusEpisodeCarousel(
                                 // 逐绘制指令调制 alpha, 不进离屏缓冲: 默认 Auto 档遇 alpha < 1 会把
                                 // 整张卡先画进离屏缓冲再合成 (saveLayerAlpha), 而卡内容 (剧照 + 贴底
                                 // 的字/进度条) 不重叠, 调制的结果与合成一致
-                                compositingStrategy = CompositingStrategy.ModulateAlpha
+                                compositingStrategy = TvModulateAlphaCompositing
                                 alpha = dimAlpha.value
                             },
                         ) {

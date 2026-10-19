@@ -209,13 +209,6 @@ object DevSwitches {
         description = "探索 / 追番 / 搜索 / 新番时间表的海报墙, 详情页的关联作品与演职人员行; 切换后回到页面重进生效",
     )
 
-    /** Compose 版海报墙的热门轮播与 hero 态换成平板版探索页 (ui-pad) 轮播的画法, 对比用 (见 TvPadHeroLayer). */
-    val padCarousel = toggle(
-        "padCarousel",
-        "轮播与 hero 用平板版的样子",
-        description = "要先打开「海报墙用 Compose 版」; 模糊底铺满、横版图羽化、文字在左下, 竖版标题 logo 放大; 触屏上轮播只留新番时间表按钮, 点画面进详情页",
-    )
-
     /** 电视包的播放页换成上游的共享版 (iOS 上用的那一版, 见 InstallTvTouchPageVariants), 在安卓平板上对照用. */
     val upstreamPlayer = toggle(
         "upstreamPlayer",

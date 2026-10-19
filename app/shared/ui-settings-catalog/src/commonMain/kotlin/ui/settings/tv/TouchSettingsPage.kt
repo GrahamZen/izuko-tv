@@ -94,7 +94,8 @@ fun TouchSettingsPage(
             deps = deps,
             initialCategory = initialTab?.name ?: TouchSettingsLastPosition.categoryId,
             scope = scope,
-            extraKeys = listOf(TvSettingKeys.debug),
+            // 平台与控制台地址: 控制台的二维码与只能在控制台做的项按它们画 (见 consoleQr)
+            extraKeys = listOf(TvSettingKeys.debug, TvSettingKeys.platform, TvSettingKeys.consoleUrl),
             loadTemplate = { getStringOffMain(TouchSettingsTextOverrides[it] ?: it) },
         )
     }
