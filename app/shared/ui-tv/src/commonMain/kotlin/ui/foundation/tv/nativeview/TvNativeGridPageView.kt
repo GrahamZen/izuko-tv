@@ -387,11 +387,25 @@ class TvNativeGridPageView(
         grid.translationX = 0f
     }
 
-    /** 给 [key] 那份网格换数据 (分页快照; null 是还没到的占位). 不是此刻显示的那份就只记下, 显示时再给. */
+    /**
+     * 给 [key] 那份网格换数据 (分页快照; null 是还没到的占位). 不是此刻显示的那份就只记下, 显示时再给.
+     *
+     * 持焦那一格换成了别的作品 (列表刷新拿掉了聚焦的那部, 后面的往前挪一格): 卡按下标绑定, 持焦的卡原地重绑、焦点没动,
+     * 系统不会再报一次聚焦, 页面的 hero 还指着已经没了的那部 ⇒ 这里补报. 末尾那张走了不用管: 卡被摘掉时 RecyclerView
+     * 把焦点交给前一张, 照常回调聚焦 (同 TvNativeExploreView 的 followFocusAfterItemsChanged).
+     */
     fun setCards(key: Any, cards: List<TvNativeCard?>) {
         val grid = grids.firstOrNull { gridKeys[it] == key } ?: return
+        val focused = grid.focusedCardIndex()
+        val before = focused?.let { grid.cards.subjectIdAt(it) }
         grid.cards.submit(cards) { it.toLong() }
+        val after = focused?.let { grid.cards.subjectIdAt(it) } ?: return
+        if (after == before) return
+        post { if (grid === current && grid.focusedCardIndex() == focused) grid.listener?.onFocused(focused) }
     }
+
+    private fun TvNativeGridView.focusedCardIndex(): Int? =
+        focusedChild?.let { getChildAdapterPosition(it) }?.takeIf { it >= 0 }
 
     private fun newGrid(): TvNativeGridView {
         val grid = TvNativeGridView(context, style, sketch, gridMetrics())
