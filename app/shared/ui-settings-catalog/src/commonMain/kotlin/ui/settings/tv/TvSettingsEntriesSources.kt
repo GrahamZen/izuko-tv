@@ -99,6 +99,8 @@ import me.him188.ani.app.ui.lang.settings_media_wait_time_none
 import me.him188.ani.app.ui.lang.settings_media_web_search_cache_ttl
 import me.him188.ani.app.ui.lang.settings_media_web_search_cache_ttl_description
 import me.him188.ani.app.ui.lang.settings_tab_media_source
+import me.him188.ani.app.ui.lang.touch_settings_sources_import
+import me.him188.ani.app.ui.lang.touch_settings_sources_import_description
 import me.him188.ani.app.ui.lang.tv_settings_delete
 import me.him188.ani.app.ui.lang.tv_settings_drive_login_hint
 import me.him188.ani.app.ui.lang.tv_settings_drive_login_hint_shares
@@ -138,6 +140,9 @@ import me.him188.ani.app.ui.lang.tv_settings_subscription_status_failed
 import me.him188.ani.app.ui.lang.tv_settings_subscription_status_never
 import me.him188.ani.app.ui.lang.tv_settings_subscription_updated_at
 import me.him188.ani.app.ui.lang.tv_settings_value_pair
+import me.him188.ani.app.ui.settings.tabs.media.CloudDrivePasswordLoginDialog
+import me.him188.ani.app.ui.settings.tabs.media.MediaSourceImportDialog
+import me.him188.ani.app.ui.settings.tabs.media.WebDavServerAddDialog
 import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.datasources.api.topic.Resolution
 import me.him188.ani.datasources.api.topic.SubtitleLanguage
@@ -199,7 +204,7 @@ internal data class TvDrive(val service: CloudDriveService, val account: CloudDr
  * 数据源: 订阅 (全部刷新、逐个删除)、网盘 (退出登录)、数据源 (逐个启用 / 停用, 长按挪顺序, 一键测试). 新增与编辑要打字, 在手机控制台里.
  *
  * 触屏版 ([TvSettingKeys.touchPage]): 网盘、订阅与数据源列表是嵌进来的原来设置页那一块 (见 TouchSettingsPage), 这里只给它没有的:
- * 订阅更新时恢复顺序、WebDAV (添加与登录).
+ * 导入规则、订阅更新时恢复顺序、WebDAV (添加与登录); 要打字的这几项点一下在本机填表.
  */
 internal fun TvSettingsItemsBuilder.mediaSourceItems() {
     val keys = TvSourceSettingKeys
@@ -242,6 +247,13 @@ internal fun TvSettingsItemsBuilder.mediaSourceItems() {
     ) { source ->
         listOf(TvSettingsEdit.Run { GlobalKoin.get<MediaSourceManager>().setEnabled(source.instanceId, !source.isEnabled) })
     }
+    // 触屏版: 贴规则或数据源 JSON 导入, 接在嵌进来的数据源列表下面 (电视上在手机控制台的「导入」里贴)
+    action(
+        Lang.touch_settings_sources_import, Lang.touch_settings_sources_import_description,
+        keys = listOf(touchPage),
+        chevron = true,
+        visible = { it[touchPage] == true },
+    ) { listOf(TvSettingsEdit.Run { env -> env.show(TvSettingsOverlay.Dialog { dismiss -> MediaSourceImportDialog(onDismissRequest = dismiss) }) }) }
 
     // 订阅
     header(Lang.settings_media_source_subscription)
@@ -284,15 +296,22 @@ internal fun TvSettingsItemsBuilder.mediaSourceItems() {
     ) { sub -> listOf(TvSettingsEdit.Run { env -> env.deps.settings.mediaSourceSubscriptionGroupState.delete(sub) }) }
 
     // 网盘: 没登录的那一行, 焦点停上去就要一张登录二维码画在说明栏 (手机上的网盘 App 扫), 离开就作废; 过期了按确定换一张.
-    // WebDAV 服务器 (NAS) 要填地址与账号密码: 添加与没登录时的二维码都打开手机控制台的数据源页
+    // WebDAV 服务器 (NAS) 要填地址与账号密码: 电视上添加与没登录时的二维码都打开手机控制台的数据源页, 触屏版点一下在本机填表
     header(Lang.tv_settings_drives)
     action(
         Lang.tv_settings_drive_webdav_add, Lang.tv_settings_drive_webdav_add_description,
-        value = { tvText(Lang.tv_settings_on_phone) },
-        // 只能在手机控制台里填: 没有控制台的端不列
-        visible = ::hasConsole,
-        qr = { consoleQr(it, "#sources/webdav") },
-    ) { emptyList() }
+        keys = listOf(touchPage),
+        value = { v -> if (v[touchPage] == true) null else tvText(Lang.tv_settings_on_phone) },
+        // 电视上只能在手机控制台里填: 没有控制台的电视端不列
+        visible = { v -> v[touchPage] == true || hasConsole(v) },
+        qr = { v -> if (v[touchPage] == true) null else consoleQr(v, "#sources/webdav") },
+    ) { v ->
+        if (v[touchPage] != true) {
+            emptyList()
+        } else {
+            listOf(TvSettingsEdit.Run { env -> env.show(TvSettingsOverlay.Dialog { dismiss -> WebDavServerAddDialog(onDismissRequest = dismiss) }) })
+        }
+    }
     // 触屏版只列 WebDAV 服务器 (账号密码登录); 其余网盘在嵌进来的那一块里
     entries(
         listOf(keys.drives, keys.driveQr, touchPage),
@@ -322,7 +341,7 @@ internal fun TvSettingsItemsBuilder.mediaSourceItems() {
         qr = { v, drive ->
             when {
                 drive.account.isLoggedIn -> null
-                drive.service.protocol.supportsPasswordLogin -> consoleQr(v, "#sources")
+                drive.service.protocol.supportsPasswordLogin -> if (v[touchPage] == true) null else consoleQr(v, "#sources")
                 else -> driveLoginQr(drive, v[keys.driveQr]?.get(drive.service.driveId))
             }
         },
@@ -348,7 +367,14 @@ internal fun TvSettingsItemsBuilder.mediaSourceItems() {
     ) { drive ->
         when {
             drive.account.isLoggedIn -> listOf(TvSettingsEdit.Run { drive.service.logout() })
-            drive.service.protocol.supportsPasswordLogin -> emptyList()
+            // 账号密码: 电视上在手机控制台里填 (这一行只画码), 触屏版点一下在本机填表
+            drive.service.protocol.supportsPasswordLogin -> listOf(
+                TvSettingsEdit.Run { env ->
+                    if (env.deps.touch != null) {
+                        env.show(TvSettingsOverlay.Dialog { dismiss -> CloudDrivePasswordLoginDialog(drive.service, onDismissRequest = dismiss) })
+                    }
+                },
+            )
             else -> listOf(TvSettingsEdit.Run { env -> env.restartFocusTask() })
         }
     }

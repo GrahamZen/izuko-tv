@@ -208,7 +208,7 @@ private fun TouchSettingsRail(
 
 /**
  * 右栏: 这一屏的设置项. 点一行 = 电视上按确定 ([TvSettingsState.onRowClicked]), 同时选中它 —— 选中的行起它的焦点任务 (如网盘扫码登录要码)、
- * 画它的二维码与会话; 可挪顺序的行长按进入挪动, 用上下箭头挪. [embedded] 画在设置项上面, [paneColor] 是这一栏的底色.
+ * 画它的二维码与会话; 可挪顺序的行长按进入挪动, 用上下箭头挪. [embedded] 嵌在设置项上面或下面 (见 [TouchSettingsEmbedded]), [paneColor] 是这一栏的底色.
  */
 @Composable
 private fun TouchSettingsDetail(
@@ -259,7 +259,7 @@ private fun TouchSettingsDetail(
                             )
                         }
                     }
-                    embedded?.let { item(key = "embedded") { it.content(paneColor) } }
+                    embedded?.takeIf { !it.belowRows }?.let { item(key = "embedded") { it.content(paneColor) } }
                     // 这一类在这台设备上一项都没有 (如没有日志功能的平台): 只给打开原来设置页的入口
                     if (screen.rows.isEmpty() && embedded == null && openLegacy != null) {
                         item(key = "legacy") {
@@ -268,7 +268,7 @@ private fun TouchSettingsDetail(
                             }
                         }
                     }
-                    items(screen.rows, key = { it.id }) { row ->
+                    items(if (embedded?.replacesRows == true) emptyList() else screen.rows, key = { it.id }) { row ->
                         val info = content.info[row.id]
                         val group = row.moveGroup
                         TouchSettingsRowView(
@@ -298,6 +298,7 @@ private fun TouchSettingsDetail(
                             onMoveDone = { movingRow = null },
                         )
                     }
+                    embedded?.takeIf { it.belowRows }?.let { item(key = "embedded") { it.content(paneColor) } }
                 }
                 embedded?.bottomBar?.invoke(this)
             }
@@ -306,12 +307,15 @@ private fun TouchSettingsDetail(
 }
 
 /**
- * 某一类的右栏嵌一整块别的设置页的内容 (画在这一类剩下的设置项上面, 只在这一类的第一屏), 见 [TouchSettingsPage].
+ * 某一类的右栏嵌一整块别的设置页的内容 (只在这一类的第一屏), 见 [TouchSettingsPage].
  * [content] 的参数是右栏底色; [bottomBar] 贴在右栏底部 (如多选时的操作条).
+ * 默认画在这一类剩下的设置项上面; [belowRows] 时画在下面; [replacesRows] 时这一类在清单里的设置项不画 (这一块已经全有).
  */
 internal class TouchSettingsEmbedded(
     val content: @Composable (paneColor: Color) -> Unit,
     val bottomBar: @Composable BoxScope.() -> Unit = {},
+    val belowRows: Boolean = false,
+    val replacesRows: Boolean = false,
 )
 
 /** 一行: 标题、说明 (写在下面)、行尾的当前值 / 开关 / 勾, 选中时画二维码与会话气泡, 挪动时出上下箭头. */
