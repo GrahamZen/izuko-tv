@@ -339,6 +339,16 @@ interface SubjectCollectionDao {
     suspend fun delete(subjectId: Int)
 
     /**
+     * 移出收藏 (在别处改了类别或取消了收藏, 服务端的这一类里已经没有它): 行留着 —— 分集、弹幕缓存、偏好的数据源与角色都挂在它上面,
+     * 删行会级联删掉; 取数时间置 0, 下次用到时重取它现在的收藏状态.
+     */
+    @Query("""UPDATE subject_collection SET collectionType = :notCollected, lastFetched = 0 WHERE subjectId IN (:subjectIds)""")
+    suspend fun markLeftCollection(
+        subjectIds: List<Int>,
+        notCollected: UnifiedCollectionType = UnifiedCollectionType.NOT_COLLECTED,
+    )
+
+    /**
      * 删除多个条目的本地缓存. 剧集缓存 ([EpisodeCollectionEntity]) 会级联删除.
      */
     @Query("""DELETE FROM subject_collection WHERE subjectId IN (:subjectIds)""")
