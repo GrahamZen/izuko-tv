@@ -46,10 +46,13 @@ class DanmakuEditorState(
     private val sendDanmakuTasker = MonoTasker(uiScope)
     val isSending: StateFlow<Boolean> get() = sendDanmakuTasker.isRunning
 
+    /**
+     * @return 发送失败的原因, 成功为 null
+     */
     @UiThread
     suspend fun post(
         info: me.him188.ani.danmaku.api.DanmakuContent,
-    ) {
+    ): Throwable? {
         val deferred = sendDanmakuTasker.async {
             onPost(info)
         }
@@ -60,11 +63,10 @@ class DanmakuEditorState(
             }
         } catch (e: Throwable) {
             text = info.text
-            null
+            return e
         }
 
-        danmaku?.let {
-            onPostSuccess(danmaku)
-        }
+        onPostSuccess(danmaku)
+        return null
     }
 }

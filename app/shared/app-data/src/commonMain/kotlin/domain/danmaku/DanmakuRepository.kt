@@ -24,6 +24,7 @@ import me.him188.ani.app.data.persistent.database.dao.DanmakuDao
 import me.him188.ani.app.data.persistent.database.dao.DanmakuEntity
 import me.him188.ani.app.data.persistent.database.dao.LocalDanmakuProvider
 import me.him188.ani.app.data.repository.RepositoryException
+import me.him188.ani.app.data.repository.RepositoryRateLimitedException
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.episode.GetSubjectEpisodeInfoBundleFlowUseCase
 import me.him188.ani.app.domain.foundation.HttpClientProvider
@@ -44,6 +45,7 @@ import me.him188.ani.danmaku.api.provider.DanmakuProviderId
 import me.him188.ani.danmaku.api.provider.MatchingDanmakuProvider
 import me.him188.ani.danmaku.api.provider.SimpleDanmakuProvider
 import me.him188.ani.danmaku.dandanplay.DandanplayDanmakuProvider
+import me.him188.ani.danmaku.dandanplay.DandanplayQuotaExceededException
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 import me.him188.ani.utils.ktor.ApiInvoker
 import me.him188.ani.utils.logging.debug
@@ -217,6 +219,8 @@ class DanmakuRepository(
      * 只用应用自己的 AppId/AppSecret, 不需要用户再去登录 dandanplay, 昵称由调用方给
      * (用 bangumi 的昵称).
      *
+     * 弹弹play 给本应用的发弹幕额度用完时抛 [RepositoryRateLimitedException].
+     *
      * @param episodeId bangumi 的分集 id (不是弹幕库 id, 见 [dandanplayEpisodeIds])
      */
     suspend fun post(
@@ -234,6 +238,8 @@ class DanmakuRepository(
             }
         } catch (e: Throwable) {
             logger.warn(e) { "Failed to post danmaku to dandanplay library $sourceEpisodeId" }
+            // 应用的发弹幕额度用完 (所有用户共用): 界面据此说明要等额度重置, 而不是笼统的发送失败
+            if (e is DandanplayQuotaExceededException) throw RepositoryRateLimitedException(e.message, e)
             throw RepositoryException.wrapOrThrowCancellation(e)
         }
     }

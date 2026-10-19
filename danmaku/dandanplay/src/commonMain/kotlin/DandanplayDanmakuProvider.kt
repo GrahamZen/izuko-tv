@@ -495,9 +495,9 @@ class DandanplayDanmakuProvider(
             ),
         )
         if (!response.success) {
-            throw IllegalStateException(
-                "Failed to send danmaku: code=${response.errorCode}, message=${response.errorMessage}",
-            )
+            val message = "Failed to send danmaku: code=${response.errorCode}, message=${response.errorMessage}"
+            if (response.errorCode == DandanplayBangumiCalls.QUOTA_EXCEEDED) throw DandanplayQuotaExceededException(message)
+            throw IllegalStateException(message)
         }
         DanmakuInfo(
             id = response.cid.toString(),

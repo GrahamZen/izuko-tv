@@ -770,6 +770,7 @@
     <string name="mediafetch_request_editor_restore_names">Restore Bangumi names</string>
     <string name="episode_danmaku">Danmaku</string>
     <string name="episode_send_danmaku_failed">Failed to send danmaku</string>
+    <string name="episode_send_danmaku_quota_exceeded">The danmaku quota from dandanplay is used up for now. Try again later.</string>
     <string name="subject_episode_related_recommendations_empty">No related recommendations on Bangumi yet</string>
     <string name="player_frame_preview_failed">Preview failed</string>
     <string name="player_frame_preview_not_downloaded">Not downloaded yet</string>

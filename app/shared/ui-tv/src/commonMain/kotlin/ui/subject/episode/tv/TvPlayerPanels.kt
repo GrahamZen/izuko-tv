@@ -108,6 +108,7 @@ import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import me.him188.ani.app.data.models.subject.nameCn
+import me.him188.ani.app.data.repository.RepositoryRateLimitedException
 import me.him188.ani.app.domain.danmaku.DanmakuLoadingState
 import me.him188.ani.app.domain.episode.preferredDisplayName
 import me.him188.ani.app.navigation.LocalNavigator
@@ -143,6 +144,7 @@ import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.comment_reply_to
 import me.him188.ani.app.ui.lang.episode_danmaku
 import me.him188.ani.app.ui.lang.episode_send_danmaku_failed
+import me.him188.ani.app.ui.lang.episode_send_danmaku_quota_exceeded
 import me.him188.ani.app.ui.lang.subject_episode_danmaku_list_empty
 import me.him188.ani.app.ui.lang.subject_episode_related_recommendations_empty
 import me.him188.ani.app.ui.richtext.UIRichElement
@@ -1543,6 +1545,7 @@ internal fun TvDanmakuSendEntry(
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
     val sendFailedText = stringResource(Lang.episode_send_danmaku_failed)
+    val quotaExceededText = stringResource(Lang.episode_send_danmaku_quota_exceeded)
     val expanded = overlay.danmakuInputExpanded
     val focus = rememberTvFocusScope()
     val keyboard = LocalSoftwareKeyboardController.current
@@ -1599,7 +1602,7 @@ internal fun TvDanmakuSendEntry(
         val text = danmakuEditorState.text.trim()
         if (text.isEmpty() || isSending) return@send
         scope.launch {
-            danmakuEditorState.post(
+            val failure = danmakuEditorState.post(
                 DanmakuContent(
                     vm.player.currentPositionMillis.value,
                     text = text,
@@ -1607,12 +1610,13 @@ internal fun TvDanmakuSendEntry(
                     location = DanmakuLocation.NORMAL,
                 ),
             )
-            // 失败时 post 会把原文放回 text (见 DanmakuEditorState.post), 据此判断成败:
+            // 失败时 post 会把原文放回 text (见 DanmakuEditorState.post), 输入框留着:
             // 失败还把输入框收掉的话, 用户既看不到失败也不知道文字还在
-            if (danmakuEditorState.text.isEmpty()) {
-                overlay.danmakuInputExpanded = false
-            } else {
-                toaster.toast(sendFailedText)
+            when (failure) {
+                null -> overlay.danmakuInputExpanded = false
+                // 应用的发弹幕额度 (所有用户共用) 用完了, 要等弹弹play 重置
+                is RepositoryRateLimitedException -> toaster.toast(quotaExceededText)
+                else -> toaster.toast(sendFailedText)
             }
         }
     }

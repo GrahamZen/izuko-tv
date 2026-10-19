@@ -215,6 +215,8 @@ internal object RemotePlayerExtras {
                     when (it) {
                         is DanmakuNotMatchedException -> tr("这一集还没匹配到弹幕库，等电视上的弹幕加载出来再发")
                         is RepositoryAuthorizationException -> tr("弹弹play 拒绝了这次发送，稍后再试")
+                        // 应用的发弹幕额度 (所有用户共用) 用完了, 要等弹弹play 重置
+                        is RepositoryRateLimitedException -> tr("弹弹play 发弹幕的额度暂时用完了，过一阵再试")
                         else -> errorText(it, tr("发送失败"))
                     },
                 )
