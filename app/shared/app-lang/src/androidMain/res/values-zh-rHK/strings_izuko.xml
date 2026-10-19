@@ -582,6 +582,7 @@
     <string name="settings_media_cloud_drive_app_fallback">%1$s App</string>
     <string name="mediafetch_request_editor_restore_names">恢復 Bangumi 名稱</string>
     <string name="episode_danmaku">彈幕</string>
+    <string name="episode_send_danmaku_quota_exceeded">彈彈play 發彈幕的額度暫時用完了，過一陣再試</string>
     <string name="subject_episode_related_recommendations_empty">Bangumi 上還沒有相關推薦</string>
     <string name="player_frame_preview_failed">預覽載入失敗</string>
     <string name="player_frame_preview_not_downloaded">這裡還沒下載</string>
