@@ -146,6 +146,7 @@ import me.him188.ani.app.ui.lang.settings_tab_media_selector
 import me.him188.ani.app.ui.lang.settings_tab_media_source
 import me.him188.ani.app.ui.lang.settings_tab_player
 import me.him188.ani.app.ui.lang.settings_tab_proxy
+import me.him188.ani.app.ui.lang.settings_tab_settings_backup
 import me.him188.ani.app.ui.lang.settings_tab_storage
 import me.him188.ani.app.ui.lang.settings_tab_theme
 import me.him188.ani.app.ui.lang.settings_tab_update
@@ -300,7 +301,7 @@ private val FOLLOW_CONTENT_MODE = TvDisplayMode(DISPLAY_MODE_FOLLOW_CONTENT, 0)
 
 /**
  * 电视设置页的全部设置. 加一项就在对应分类里加一行. 分类与先后同原来的设置页 (左栏分组一样); 要打字才能设的 (地址、账号密码、规则文本)
- * 不放这里, 在手机 Web 控制台里改. 设置备份 (剪贴板复制 / 导入) 在电视上用不了, 不列 (控制台里能导出导入文件).
+ * 不放这里, 在手机 Web 控制台里改. 设置备份 (剪贴板复制 / 导入) 在电视上用不了, 只在触屏版列 (电视在控制台里导出导入文件).
  */
 val TvSettingsCatalogEntries: List<TvSettingsCategory> = tvSettingsCatalog {
     category(SettingsTab.PROFILE, Lang.settings_tab_account) { accountItems() }
@@ -324,6 +325,8 @@ val TvSettingsCatalogEntries: List<TvSettingsCategory> = tvSettingsCatalog {
     category(SettingsTab.LOG, Lang.settings_tab_log) { logItems() }
     category(SettingsTab.ABOUT, Lang.settings_tab_about) { aboutItems() }
     category(SettingsTab.DEBUG, Lang.settings_tab_debug, visible = { it[TvSettingKeys.debug]?.enabled == true }) { debugItems() }
+    // 设置备份走剪贴板, 电视上用不了 (控制台里导出导入文件); 触屏版的右栏是原来设置页的那一块 (见 TouchSettingsPage)
+    category(SettingsTab.SETTINGS_BACKUP, Lang.settings_tab_settings_backup, visible = { it[TvSettingKeys.touchPage] == true }) {}
 }
 
 private fun TvSettingsItemsBuilder.appearanceItems() {

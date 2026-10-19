@@ -389,19 +389,25 @@ private fun startLoginRelay(env: TvSettingsEnv) {
 /** 规则逐条开关、删除; 新规则要打字, 在手机控制台里加. */
 internal fun TvSettingsItemsBuilder.danmakuRuleItems() {
     val rules = TvSettingKeys.danmakuRules
-    header(Lang.settings_danmaku_regex_filter_group)
+    // 触屏版在「播放器」底下接原来设置页的弹幕屏蔽词那一块 (能增删改), 这几行不画
+    val touchPage = TvSettingKeys.touchPage
+    val onTv: (TvSettingsValues) -> Boolean = { it[touchPage] != true }
+    header(Lang.settings_danmaku_regex_filter_group, visible = onTv)
     action(
         Lang.tv_settings_danmaku_rules_add, Lang.tv_settings_danmaku_rules_add_description,
+        keys = listOf(touchPage),
         value = { tvText(Lang.tv_settings_on_phone) },
+        visible = onTv,
         qr = { consoleQr(it, "#settings/play", legacy = true) },
     ) { emptyList() }
     entries(
-        listOf(rules),
+        listOf(rules, touchPage),
         entries = { it[rules].orEmpty() },
         key = { it.id },
         title = { tvText(it.name.ifBlank { it.regex }) },
         value = { _, rule -> tvOnOff(rule.enabled) },
         description = { _, rule -> tvText(Lang.tv_settings_danmaku_rule_hint, rule.regex) },
+        visible = onTv,
     ) { rule ->
         listOf(
             TvSettingsEdit.Run {
