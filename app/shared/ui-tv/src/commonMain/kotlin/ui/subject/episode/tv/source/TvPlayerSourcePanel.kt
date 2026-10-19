@@ -11,6 +11,7 @@ package me.him188.ani.app.ui.subject.episode.tv.source
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -28,6 +29,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.navigation.LocalNavigator
+import me.him188.ani.app.navigation.SettingsTab
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.tv_source_excluded_toast
@@ -48,6 +50,11 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.transformLatest
+import me.him188.ani.app.domain.player.VideoLoadingState
+import org.openani.mediamp.MediaStatus
+import kotlin.time.Duration.Companion.seconds
 import me.him188.ani.app.domain.media.download.MediaDownloadManager
 import me.him188.ani.app.tools.getOrZero
 import org.koin.mp.KoinPlatform
@@ -83,8 +90,14 @@ internal fun TvPlayerSourcePanel(
     val manualPickFailed = stringResource(Lang.tv_source_manual_pick_failed)
 
     val selector = page.mediaSelectorState
-    // 上次按返回隐藏的: 落回当时停的那一项 / 那一行 (同一集才算)
+    // 上次按返回隐藏的: 回到当时停的那一颗, 内容换成那一组那个源 (同一集才算)
     val resume = remember(controller) { controller.takeResume(vm.episodeSelectorState.current?.episodeId) }
+    // 淡出途中又打开: 面板没重建, 照新打开那样落焦点 (见 TvSourcePanelController.reopen)
+    var wasLeaving by remember { mutableStateOf(false) }
+    LaunchedEffect(leaving) {
+        if (wasLeaving && !leaving) controller.reopen(controller.takeResume(vm.episodeSelectorState.current?.episodeId)?.point)
+        wasLeaving = leaving
+    }
     val state = remember(vm, selector) {
         val host = object : TvSourcePanelHost {
             override fun pick(media: Media) {
@@ -107,6 +120,11 @@ internal fun TvPlayerSourcePanel(
             override fun openDownloads() {
                 currentOnClose()
                 navigator.navigateSubjectCaches(vm.subjectId)
+            }
+
+            override fun openSettings() {
+                currentOnClose()
+                navigator.navigateSettings(SettingsTab.MEDIA_SOURCE)
             }
 
             override fun cache(media: Media) {
@@ -144,8 +162,12 @@ internal fun TvPlayerSourcePanel(
             host = host,
             scope = scope,
             canOpenDownloads = true,
+            canOpenSettings = true,
             downloads = episodeDownloads(vm),
-            initialRailKey = resume?.railKey,
+            initialRailKey = resume?.point?.railKey,
+            initialSourceKey = resume?.point?.content?.takeIf { it.railKey == resume.point.railKey }?.sourceKey,
+            sourceTypes = tvSourceTypesFlow(),
+            playback = tvSourcePlaybackFlow(vm),
             playbackDiskCache = vm.videoScaffoldConfig.enablePlaybackDiskCache,
         )
     }
@@ -156,7 +178,7 @@ internal fun TvPlayerSourcePanel(
         leaving = leaving,
         onClose = onClose,
         modifier = modifier,
-        resumeRow = resume?.let { it.railKey to it.rowId },
+        resume = resume?.point,
     )
 
     if (editingKeywords) {
@@ -238,6 +260,27 @@ internal fun alliancePattern(alliance: String): String = buildString {
         append(c)
     }
 }
+
+/**
+ * 在播的那一条眼下怎么样 (表头「正在播放」的右端, 见 [TvSourcePlayback]): 播放器报错 / 加载失败 = 播不了了; 缓冲挂了 [PLAYBACK_BUFFERING_DELAY]
+ * 还没好 = 缓冲中 (一闪而过的缓冲不写, 免得那一格跟着跳).
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+private fun tvSourcePlaybackFlow(vm: EpisodeViewModel): Flow<TvSourcePlayback> =
+    combine(vm.videoStatisticsFlow.map { it.videoLoadingState }, vm.player.state) { loading, state ->
+        when {
+            state.mediaStatus is MediaStatus.Error || loading is VideoLoadingState.Failed -> TvSourcePlayback.Failed
+            state.isBuffering -> TvSourcePlayback.Buffering
+            else -> TvSourcePlayback.Normal
+        }
+    }
+        .distinctUntilChanged()
+        .transformLatest { status ->
+            if (status == TvSourcePlayback.Buffering) delay(PLAYBACK_BUFFERING_DELAY)
+            emit(status)
+        }
+
+private val PLAYBACK_BUFFERING_DELAY = 3.seconds
 
 /**
  * 正在播的这一集的缓存 (已下完的和正在下的), 给「下载」的分支. 进度取整到百分之一再去重: 下载中每秒报好几次进度, 不取整的话面板每次都重拼.
