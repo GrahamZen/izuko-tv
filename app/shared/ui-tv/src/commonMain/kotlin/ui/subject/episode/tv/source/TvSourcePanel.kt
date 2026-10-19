@@ -20,13 +20,16 @@ import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -121,12 +124,17 @@ import me.him188.ani.app.ui.lang.tv_source_download_caching
 import me.him188.ani.app.ui.lang.tv_source_downloads_empty
 import me.him188.ani.app.ui.lang.tv_source_downloads_empty_disk_cache
 import me.him188.ani.app.ui.lang.tv_source_downloads_open
+import me.him188.ani.app.ui.lang.tv_source_empty_sources
 import me.him188.ani.app.ui.lang.tv_source_episode_filter
 import me.him188.ani.app.ui.lang.tv_source_episodes_season
 import me.him188.ani.app.ui.lang.tv_source_episodes_whole_season
 import me.him188.ani.app.ui.lang.tv_source_excluded_toast
 import me.him188.ani.app.ui.lang.tv_source_failed
 import me.him188.ani.app.ui.lang.tv_source_failed_state
+import me.him188.ani.app.ui.lang.tv_source_group_direct
+import me.him188.ani.app.ui.lang.tv_source_group_drive
+import me.him188.ani.app.ui.lang.tv_source_group_online
+import me.him188.ani.app.ui.lang.tv_source_hide_empty_sources
 import me.him188.ani.app.ui.lang.tv_source_hide_excluded
 import me.him188.ani.app.ui.lang.tv_source_hidden_by_filter
 import me.him188.ani.app.ui.lang.tv_source_hide_others
@@ -155,6 +163,8 @@ import me.him188.ani.app.ui.lang.tv_source_no_result
 import me.him188.ani.app.ui.lang.tv_source_off
 import me.him188.ani.app.ui.lang.tv_source_on
 import me.him188.ani.app.ui.lang.tv_source_pack
+import me.him188.ani.app.ui.lang.tv_source_playback_buffering
+import me.him188.ani.app.ui.lang.tv_source_playback_failed
 import me.him188.ani.app.ui.lang.tv_source_playing
 import me.him188.ani.app.ui.lang.tv_source_rail_others
 import me.him188.ani.app.ui.lang.tv_source_rate_limited
@@ -169,6 +179,7 @@ import me.him188.ani.app.ui.lang.tv_source_retry
 import me.him188.ani.app.ui.lang.tv_source_retry_hint
 import me.him188.ani.app.ui.lang.tv_source_searched
 import me.him188.ani.app.ui.lang.tv_source_searching
+import me.him188.ani.app.ui.lang.tv_source_settings
 import me.him188.ani.app.ui.lang.tv_source_show_excluded
 import me.him188.ani.app.ui.lang.tv_source_show_others
 import me.him188.ani.app.ui.lang.tv_source_site_ip_blocked
@@ -194,18 +205,18 @@ class TvSourcePanelController {
 
     val hasFocus: Boolean get() = view?.hasPanelFocus() == true
 
-    /** 返回键. true = 面板自己处理了 (退出进去的那一层); false = 该关面板了 (见 [TvSourcePanelView.handleBack]). */
+    /** 返回键. true = 面板自己处理了 (退了一层); false = 已经退到头了, 该关面板了 (见 [TvSourcePanelView.handleBack]). */
     fun back(): Boolean = view?.handleBack() == true
 
     /**
-     * 上次按返回隐藏时焦点停的位置 (见 [rememberPosition]): 下次打开落回那里. 用一次就清 ([takeResume]);
-     * 别的方式关的 (触屏点画面、选完自动关) 不记, 下次照常落在正在播放的源上.
+     * 上次按返回隐藏时停的地方 (见 [rememberPosition]): 下次打开原样回去. 用一次就清 ([takeResume]);
+     * 别的方式关的 (触屏点画面、选完自动关、长按返回) 不记, 下次照常先停在「正在播放」.
      */
     private var resume: TvSourceResume? = null
 
-    /** 关面板前记下焦点停在哪 (胶囊行那个源, 或列表那一行). [episodeId] = 此刻播的那一集, 换了集就不落回去. */
+    /** 按返回关面板前记下停的地方 (见 [TvSourcePanelView.resumePoint]). [episodeId] = 此刻播的那一集, 换了集就不落回去. */
     fun rememberPosition(episodeId: Int?) {
-        resume = view?.focusPosition()?.let { (railKey, rowId) -> TvSourceResume(railKey, rowId, episodeId) }
+        resume = view?.resumePoint()?.let { TvSourceResume(it, episodeId) }
     }
 
     fun forgetPosition() {
@@ -219,14 +230,24 @@ class TvSourcePanelController {
         view?.requestEntryFocus()
     }
 
+    /**
+     * 退场途中又打开 (按返回关上马上又按上键): 还是正在淡出的那个视图, 不重建, 建视图时那一下落焦点也就没有 —— 照新打开那样再落一次,
+     * 落回 [resume] (null = 照常落).
+     */
+    fun reopen(resume: TvSourceResumePoint?) {
+        val view = view ?: return
+        view.resumeAt(resume)
+        view.requestEntryFocus()
+    }
+
     /** 焦点送到一行 (详情弹窗换条 / 关掉时), 见 [TvSourcePanelView.focusRow]. */
     fun focusRow(railKey: String?, id: String, inRail: Boolean) {
         view?.focusRow(railKey, id, inRail)
     }
 }
 
-/** 面板隐藏时焦点停的位置: 胶囊行 [railKey] 那个源 ([rowId] 为 null), 或它列表里的 [rowId] 那一行; 当时播的是 [episodeId]. */
-data class TvSourceResume(val railKey: String, val rowId: String?, val episodeId: Int?)
+/** 面板隐藏时停的地方 ([point]); 当时播的是 [episodeId]. */
+data class TvSourceResume(val point: TvSourceResumePoint, val episodeId: Int?)
 
 /**
  * 选源面板 (原生视图, 见 [TvSourcePanelView]): 把 [state] 拼好的内容交给视图, 视图的事件交回 [state]. 内容的变化不经过重组 ——
@@ -234,7 +255,7 @@ data class TvSourceResume(val railKey: String, val rowId: String?, val episodeId
  *
  * @param leaving 面板正在退场 (见 [TvSourcePanelView.leaving]).
  * @param onClose 要关面板: 触屏点了面板下面的画面.
- * @param resumeRow 打开时落回的位置 (源, 行 id; 行 id 为 null = 那个源的胶囊), 见 [TvSourcePanelView.resumeRow].
+ * @param resume 打开时回到上次按返回关时停的地方, 见 [TvSourcePanelView.resumeAt].
  */
 @Composable
 fun TvSourcePanel(
@@ -243,7 +264,7 @@ fun TvSourcePanel(
     leaving: Boolean,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
-    resumeRow: Pair<String, String?>? = null,
+    resume: TvSourceResumePoint? = null,
 ) {
     val sketch = LocalSketch.current
     val currentOnClose by rememberUpdatedState(onClose)
@@ -258,12 +279,13 @@ fun TvSourcePanel(
                 controller.view = view
                 view.listener = object : TvSourcePanelListener {
                     override fun onRailFocused(key: String) = currentState.onRailFocused(key)
+                    override fun onSourceFocused(groupKey: String, sourceKey: String) = currentState.onSourceFocused(groupKey, sourceKey)
                     override fun onRightFocusChanged(inRight: Boolean) = currentState.onRightFocusChanged(inRight)
                     override fun onAction(action: TvSourceAction) = currentState.perform(action)
                     override fun onBackInRight(): Boolean = currentState.backInRight()
                     override fun onCloseRequested() = currentOnClose()
                 }
-                view.resumeRow = resumeRow
+                view.resumeAt(resume)
                 view.requestEntryFocus()
             }
         },
@@ -359,6 +381,9 @@ fun rememberTvSourcePanelStyle(): TvSourcePanelStyle {
                 TvSourceRowIcon.Torrent -> Icons.Rounded.CloudDownload
                 TvSourceRowIcon.Downloads -> Icons.Rounded.Download
                 TvSourceRowIcon.Filter -> Icons.Rounded.FilterList
+                TvSourceRowIcon.Drive -> Icons.Rounded.FolderOpen
+                TvSourceRowIcon.Link -> Icons.Rounded.Link
+                TvSourceRowIcon.Settings -> Icons.Rounded.Settings
             },
             TV_SOURCE_ICON_SIZE,
         )
@@ -372,8 +397,7 @@ fun rememberTvSourcePanelStyle(): TvSourcePanelStyle {
                 paddingStartPx = 48.dp.roundToPx(),
                 paddingEndPx = 48.dp.roundToPx(),
                 paddingTopPx = 24.dp.roundToPx(),
-                // 下面两成多留给画面与底部字幕
-                maxBottomFraction = 0.78f,
+                paddingBottomPx = 24.dp.roundToPx(),
                 headerGapPx = 10.dp.roundToPx(),
                 railGapPx = 12.dp.roundToPx(),
                 // 同新番时间表的日期胶囊
@@ -395,6 +419,10 @@ fun rememberTvSourcePanelStyle(): TvSourcePanelStyle {
                 metaGapPx = 16.dp.roundToPx(),
                 metaSplitWidthPx = 150.dp.roundToPx(),
                 branchMinWidthPx = 120.dp.roundToPx(),
+                // 同旧竖版的左栏
+                columnWidthPx = 184.dp.roundToPx(),
+                columnRowHeightPx = 38.dp.roundToPx(),
+                columnGapPx = 12.dp.roundToPx(),
                 optionRowHeightPx = 38.dp.roundToPx(),
                 cellHeightPx = 38.dp.roundToPx(),
                 statusPaddingVPx = 8.dp.roundToPx(),
@@ -546,6 +574,14 @@ private val TV_SOURCE_STRING_RESOURCES: List<StringResource> = listOf(
     Lang.tv_source_drive_login_action,
     Lang.tv_source_drive_login_hint,
     Lang.tv_source_site_ip_blocked,
+    Lang.tv_source_group_drive,
+    Lang.tv_source_group_online,
+    Lang.tv_source_group_direct,
+    Lang.tv_source_empty_sources,
+    Lang.tv_source_hide_empty_sources,
+    Lang.tv_source_playback_failed,
+    Lang.tv_source_playback_buffering,
+    Lang.tv_source_settings,
 )
 
 /** 面板的全部文案 (见 [TvSourceStrings]). */
@@ -662,6 +698,14 @@ fun rememberTvSourceStrings(): TvSourceStrings {
             driveLoginAction = next(),
             driveLoginHint = next(),
             siteIpBlocked = next(),
+            groupDrive = next(),
+            groupOnline = next(),
+            groupDirect = next(),
+            emptySources = next(),
+            hideEmptySources = next(),
+            playbackFailed = next(),
+            playbackBuffering = next(),
+            settings = next(),
             details = details,
             timeZone = TimeZone.currentSystemDefault(),
         )

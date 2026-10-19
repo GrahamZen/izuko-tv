@@ -15,7 +15,8 @@ import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.topic.Resolution
 
 /*
- * 选源面板表头的「筛选」: 分辨率 / 字幕两项, 对 BT 与缓存、一个文件一行的在线源 (网盘类, 见 webFilesOf) 一起生效.
+ * 选源面板表头的「筛选」(唯一的筛选入口): 分辨率 / 字幕两项对 BT 与缓存、一个文件一行的在线源 (网盘类, 见 webFilesOf) 一起生效;
+ * 字幕组 / 来源只管 BT 与缓存, 有 BT 时才列.
  *
  * 取值就是这部番的偏好 (选择器的 resolution / subtitleLanguageId, 自动选源也按它), 选中一个资源时选择器会把它的分辨率 / 字幕记成偏好.
  * 所以每个源只认自己结果里有的取值: 播了一个 4K 的网盘文件, 没有 4K 的源照常列, 不会整页变成「低于偏好」(BT 那边同理, 见 projectBtList).
@@ -34,6 +35,8 @@ internal fun filterRailRow(input: TvSourcePanelInput, strings: TvSourceStrings):
     val values = listOfNotNull(
         input.resolutionFilter?.let(::resolutionLabel),
         input.subtitleFilter?.let { renderSubtitleLanguage(it, strings.details) },
+        input.bt.alliance,
+        input.bt.sourceFilter?.let { id -> input.sources.btSources.firstOrNull { it.mediaSourceId == id }?.info?.displayName ?: id },
     )
     return TvSourceRow(
         id = TvSourceRailKeys.FILTER,
@@ -47,8 +50,9 @@ internal fun filterRailRow(input: TvSourcePanelInput, strings: TvSourceStrings):
 }
 
 /**
- * 筛选弹窗的内容: 分辨率、字幕两组, 每组一行小标题 ([TvSourceRowStyle.Status]) 跟着它的取值, 确定就选 ([TvSourceAction.PickFilter]).
- * 取值来自 BT 的结果与一个文件一行的在线源对得上的文件 ([files]), 再加上当前选的 (万一眼下的结果里没有).
+ * 筛选弹窗的内容: 分辨率、字幕、字幕组、来源几组, 每组一行小标题 ([TvSourceRowStyle.Status]) 跟着它的取值, 确定就选 ([TvSourceAction.PickFilter]).
+ * 分辨率 / 字幕的取值来自 BT 的结果与一个文件一行的在线源对得上的文件 ([files]), 再加上当前选的 (万一眼下的结果里没有);
+ * 字幕组 / 来源来自 BT (有 BT 源时才列).
  */
 internal fun filterOptions(input: TvSourcePanelInput, files: List<Media>, strings: TvSourceStrings): List<TvSourceRow> {
     val resolution = input.resolutionFilter
@@ -64,6 +68,14 @@ internal fun filterOptions(input: TvSourcePanelInput, files: List<Media>, string
         addFilterOptions(TvSourceFilter.Resolution, resolution, resolutions.map { it to resolutionLabel(it) }, strings)
         add(filterHeader(TvSourceFilter.Subtitle, strings.subtitle, dividerAbove = true))
         addFilterOptions(TvSourceFilter.Subtitle, subtitle, subtitles.map { it to renderSubtitleLanguage(it, strings.details) }, strings)
+        val bt = input.bt
+        if (input.sources.btSources.isNotEmpty() || bt.totalCount > 0) {
+            val alliances = (bt.availableAlliances + listOfNotNull(bt.alliance)).distinct()
+            add(filterHeader(TvSourceFilter.Alliance, strings.alliance, dividerAbove = true))
+            addFilterOptions(TvSourceFilter.Alliance, bt.alliance, alliances.map { it to it }, strings)
+            add(filterHeader(TvSourceFilter.Source, strings.source, dividerAbove = true))
+            addFilterOptions(TvSourceFilter.Source, bt.sourceFilter, input.sources.btSources.map { it.mediaSourceId to it.info.displayName }, strings)
+        }
     }
 }
 
@@ -97,11 +109,15 @@ private val TvSourcePanelInput.resolutionFilter: String?
 private val TvSourcePanelInput.subtitleFilter: String?
     get() = selector.subtitleLanguageId.finalSelected?.takeIf { it != MediaPreference.ANY_FILTER }
 
+/** [media] 里最高的分辨率给人看的名字 (如 4K); 都认不出为 null. */
+internal fun bestResolutionLabel(media: List<Media>): String? =
+    media.mapNotNull { resolutionOf(it.properties.resolution) }.maxOrNull()?.displayName
+
 /** 分辨率给人看的名字 (2160P 写 4K). */
 private fun resolutionLabel(value: String): String = resolutionOf(value)?.displayName ?: value
 
 /** 资源里存的分辨率多半是显示名 (Resolution.toString(), 如 4K), tryParse 只认 2160P 这类写法. */
-private fun resolutionOf(value: String): Resolution? =
+internal fun resolutionOf(value: String): Resolution? =
     Resolution.tryParse(value) ?: Resolution.entries.firstOrNull { it.displayName.equals(value, ignoreCase = true) }
 
 private fun filterHeader(filter: TvSourceFilter, title: String, dividerAbove: Boolean) = TvSourceRow(

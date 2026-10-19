@@ -30,7 +30,7 @@ import me.him188.ani.app.ui.lang.media_selector_bt_filter
 import org.jetbrains.compose.resources.stringResource
 
 /**
- * 筛选弹窗 (表头的「筛选」打开, 见 [TvSourceAction.OpenFilter]): 分辨率、字幕两组胶囊 (同搜索页的筛选弹窗), 按确定当场改这部番的偏好,
+ * 筛选弹窗 (表头的「筛选」打开, 见 [TvSourceAction.OpenFilter]): 分辨率、字幕、字幕组、来源几组胶囊 (同搜索页的筛选弹窗), 按确定当场改,
  * 选中的那颗打勾; 弹窗开着, 两组都改完按返回关. 内容跟着面板走 (查询途中取值陆续多出来), 打开时焦点在第一组当前选的那颗上.
  */
 @Composable

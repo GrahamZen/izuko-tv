@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import me.him188.ani.app.domain.media.fetch.MediaSourceManager
 import me.him188.ani.app.domain.mediasource.clouddrive.cloudDriveLoginRequired
 import me.him188.ani.app.ui.mediafetch.MediaSelectorState
 import me.him188.ani.app.ui.mediafetch.MediaSourceResultListPresentation
@@ -36,6 +37,7 @@ import me.him188.ani.app.ui.mediaselect.manual.ManualBrowseState
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.utils.coroutines.throttleLatest
 import me.him188.ani.utils.platform.currentTimeMillis
+import org.koin.mp.KoinPlatform
 
 /**
  * 选源面板的宿主 (播放页 / 缓存页): 面板只管导航与上游选源状态, 真正「选了之后怎么办」与要开窗口的事交给宿主.
@@ -56,6 +58,9 @@ interface TvSourcePanelHost {
 
     /** 去这部番的缓存页 (「下载」分支的第一行, 只在 canOpenDownloads 时有). */
     fun openDownloads() {}
+
+    /** 去设置里的数据源那一页 (表头最右边的齿轮, 只在 canOpenSettings 时有). */
+    fun openSettings() {}
 
     /** 改手动查找的关键词 (宿主开输入框, 填好后调 [TvSourcePanelState.submitManualKeyword]). */
     fun editManualKeyword(current: String)
@@ -89,14 +94,21 @@ class TvSourcePanelState(
     private val host: TvSourcePanelHost,
     private val scope: CoroutineScope,
     private val canOpenDownloads: Boolean = false,
+    /** 见 [TvSourcePanelInput.canOpenSettings]. */
+    private val canOpenSettings: Boolean = false,
     /** 这一集的缓存, 见 [TvSourcePanelInput.downloads]. */
     downloads: Flow<List<TvSourceCacheItem>> = flowOf(emptyList()),
-    /** 打开时胶囊行落在哪个源 (落回上次隐藏时的位置, 见 TvSourceResume); null = 按正在播放的资源落. */
+    /** 打开时胶囊行落在哪一项、源那一栏落在哪个源 (落回上次隐藏时的位置, 见 TvSourceResume); null = 按正在播放的资源落. */
     initialRailKey: String? = null,
+    initialSourceKey: String? = null,
     /** 见 [TvSourcePanelInput.playbackDiskCache]. */
     private val playbackDiskCache: Boolean = false,
+    /** 各数据源的类型与顺序, 见 [TvSourcePanelInput.sourceTypes] 与 [tvSourceTypesFlow]. */
+    sourceTypes: Flow<Map<String, TvSourceType>> = flowOf(emptyMap()),
+    /** 在播的那一条眼下的状态, 见 [TvSourcePanelInput.playback]. */
+    playback: Flow<TvSourcePlayback> = flowOf(TvSourcePlayback.Normal),
 ) {
-    private val nav = MutableStateFlow(TvSourceNav(railKey = initialRailKey))
+    private val nav = MutableStateFlow(TvSourceNav(railKey = initialRailKey, sourceKey = initialSourceKey))
     private val strings = MutableStateFlow<TvSourceStrings?>(null)
 
     /** 开着的详情弹窗是哪一行的 (见 TvSourceDetailsDialog); null = 没开. 弹窗里左右键换行就是改它. */
@@ -127,10 +139,13 @@ class TvSourcePanelState(
                 initialMode = initialMode,
                 nowMillis = currentTimeMillis(),
                 canOpenDownloads = canOpenDownloads,
+                canOpenSettings = canOpenSettings,
                 playbackDiskCache = playbackDiskCache,
             )
         }
             .combine(downloads.distinctUntilChanged()) { input, items -> input.copy(downloads = items) }
+            .combine(sourceTypes.distinctUntilChanged()) { input, types -> input.copy(sourceTypes = types) }
+            .combine(playback.distinctUntilChanged()) { input, status -> input.copy(playback = status) }
         // 有限流中的源时每秒重拼一次 (倒计时), 没有就不跑
         core.map { input -> input.selector.webSources.any { it.isRateLimited } }
             .distinctUntilChanged()
@@ -169,18 +184,47 @@ class TvSourcePanelState(
         strings.value = value
     }
 
+    /** 胶囊行换到 [key]: 换了组时源那一栏按落点规则重新落 (正在播的 → 这一组上次停的 → 第一个有结果的). */
     fun onRailFocused(key: String) {
-        nav.update { if (it.railKey == key) it else it.copy(railKey = key, drill = null, frozenOrder = null, showExcluded = false) }
+        nav.update {
+            if (it.railKey == key) it else it.copy(railKey = key, sourceKey = null, drill = null, frozenOrder = null, showExcluded = false)
+        }
         if (key == TvSourceRailKeys.MANUAL) manual?.searchIfNeeded()
     }
 
-    /** 焦点进内容 (列表与它顶上的小胶囊): 钉住此刻的行序 (见 [applyFrozenOrder]); 出来: 放开. */
+    /** 源那一栏换到 [groupKey] 这一组的 [sourceKey], 并记成这一组上次停的源. */
+    fun onSourceFocused(groupKey: String, sourceKey: String) {
+        nav.update {
+            if (it.railKey == groupKey && it.sourceKey == sourceKey) {
+                it
+            } else {
+                it.copy(
+                    railKey = groupKey,
+                    sourceKey = sourceKey,
+                    groupSources = it.groupSources + (groupKey to sourceKey),
+                    drill = null,
+                    frozenOrder = null,
+                    showExcluded = false,
+                )
+            }
+        }
+    }
+
+    /**
+     * 焦点进内容 (列表与它顶上的小胶囊): 钉住此刻的行序 (见 [applyFrozenOrder]), 还没定的胶囊 / 源也钉在眼前这个 (打开时直接落进列表,
+     * 没经过胶囊行: 不钉的话搜索途中落点规则换了答案, 内容会在用户手底下换成另一组); 出来: 放开行序.
+     */
     fun onRightFocusChanged(inRight: Boolean) {
         nav.update { current ->
             if (!inRight) {
                 current.copy(frozenOrder = null)
             } else {
-                current.copy(frozenOrder = content.value?.right?.rows?.map { it.id })
+                val shown = content.value
+                current.copy(
+                    railKey = current.railKey ?: shown?.railKey,
+                    sourceKey = current.sourceKey ?: shown?.sourceKey,
+                    frozenOrder = shown?.right?.rows?.map { it.id },
+                )
             }
         }
     }
@@ -215,8 +259,10 @@ class TvSourcePanelState(
             is TvSourceAction.SetFullSearch -> host.setFullSearch(action.enabled)
             TvSourceAction.EditKeywords -> host.editKeywords()
             TvSourceAction.OpenDownloads -> host.openDownloads()
+            TvSourceAction.OpenSettings -> host.openSettings()
             TvSourceAction.ToggleEpisodeFilter -> selector.btFilterState.episodeFilterEnabled.update { !it }
             TvSourceAction.ToggleExcluded -> nav.update { it.copy(showExcluded = !it.showExcluded, frozenOrder = null) }
+            TvSourceAction.ToggleEmptySources -> nav.update { it.copy(showEmptySources = !it.showEmptySources) }
             is TvSourceAction.Open -> nav.update { it.copy(drill = action.drill, frozenOrder = null) }
             TvSourceAction.OpenFilter -> filterOpen.value = true
             is TvSourceAction.ShowDetails -> detailsTarget.value = action
@@ -309,6 +355,19 @@ class TvSourcePanelState(
         const val THROTTLE_MILLIS = 200L
     }
 }
+
+/** 数据源设置里各实例的类型与顺序 (见 [TvSourceType]): 选源面板按它把在线源分组、排序. */
+fun tvSourceTypesFlow(manager: MediaSourceManager = KoinPlatform.getKoin().get()): Flow<Map<String, TvSourceType>> =
+    manager.allInstances.map { instances ->
+        instances.withIndex().associate { (index, instance) ->
+            val factory = manager.allFactories.firstOrNull { it.factoryId == instance.factoryId }
+            instance.instanceId to TvSourceType(
+                factoryId = instance.factoryId.value,
+                factoryName = factory?.info?.displayName ?: instance.factoryId.value,
+                order = index,
+            )
+        }
+    }.distinctUntilChanged()
 
 private fun tickerFlow(periodMillis: Long): Flow<Long> = flow {
     while (true) {
