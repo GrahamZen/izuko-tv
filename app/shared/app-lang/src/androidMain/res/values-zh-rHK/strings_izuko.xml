@@ -468,6 +468,7 @@
     <string name="tv_source_drive_login_hint">這個數據源要登錄網盤後才能搜到資源，按確定掃碼登錄</string>
     <string name="tv_source_drive_login_title">登錄%1$s</string>
     <string name="tv_source_drive_login_password">這個網盤用帳號密碼登錄：用手機掃碼打開 Web 控制枱，在「數據源」裏填寫。</string>
+    <string name="tv_source_site_ip_blocked">網站封了這個網絡的 IP，%1$s 後再試</string>
     <string name="tv_source_disabled">已停用</string>
     <string name="tv_source_episode_filter">僅本集</string>
     <string name="tv_source_all_episodes">全部集數</string>

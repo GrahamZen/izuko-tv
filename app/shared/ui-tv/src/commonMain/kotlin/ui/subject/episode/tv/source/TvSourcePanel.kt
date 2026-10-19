@@ -171,6 +171,7 @@ import me.him188.ani.app.ui.lang.tv_source_searched
 import me.him188.ani.app.ui.lang.tv_source_searching
 import me.him188.ani.app.ui.lang.tv_source_show_excluded
 import me.him188.ani.app.ui.lang.tv_source_show_others
+import me.him188.ani.app.ui.lang.tv_source_site_ip_blocked
 import me.him188.ani.app.ui.lang.tv_source_source
 import me.him188.ani.app.ui.lang.tv_source_sources_count
 import me.him188.ani.app.ui.lang.tv_source_status_done
@@ -544,6 +545,7 @@ private val TV_SOURCE_STRING_RESOURCES: List<StringResource> = listOf(
     Lang.tv_settings_drive_not_logged_in,
     Lang.tv_source_drive_login_action,
     Lang.tv_source_drive_login_hint,
+    Lang.tv_source_site_ip_blocked,
 )
 
 /** 面板的全部文案 (见 [TvSourceStrings]). */
@@ -659,6 +661,7 @@ fun rememberTvSourceStrings(): TvSourceStrings {
             driveNotLoggedIn = next(),
             driveLoginAction = next(),
             driveLoginHint = next(),
+            siteIpBlocked = next(),
             details = details,
             timeZone = TimeZone.currentSystemDefault(),
         )

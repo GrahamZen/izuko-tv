@@ -656,6 +656,7 @@
     <string name="tv_source_drive_login_hint">This source can only search after you sign in to the cloud drive. Press OK to scan the code.</string>
     <string name="tv_source_drive_login_title">Sign in to %1$s</string>
     <string name="tv_source_drive_login_password">This drive signs in with a username and password: scan to open the Web Console and fill them in under Sources.</string>
+    <string name="tv_source_site_ip_blocked">The site blocked this network’s IP. Try again after %1$s</string>
     <string name="tv_source_disabled">Disabled</string>
     <string name="tv_source_episode_filter">This episode</string>
     <string name="tv_source_all_episodes">All episodes</string>
