@@ -25,6 +25,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -41,6 +42,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.retry
 import kotlinx.coroutines.flow.transform
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
@@ -73,7 +75,6 @@ import me.him188.ani.app.data.persistent.database.dao.SubjectCollectionDao
 import me.him188.ani.app.data.persistent.database.dao.SubjectCollectionEntity
 import me.him188.ani.app.data.persistent.database.dao.SubjectRelations
 import me.him188.ani.app.data.persistent.database.dao.SubjectRelationsDao
-import me.him188.ani.app.data.persistent.database.dao.deleteAll
 import me.him188.ani.app.data.persistent.database.dao.filterMostRecentUpdatedWithEpisodes
 import me.him188.ani.app.data.repository.Repository
 import me.him188.ani.app.data.repository.RepositoryException
@@ -91,7 +92,6 @@ import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.EpisodeType
 import me.him188.ani.datasources.api.PackedDate
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
-import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubject
 import me.him188.ani.datasources.bangumi.processing.toSubjectCollectionType
 import me.him188.ani.utils.coroutines.combine
 import me.him188.ani.utils.logging.debug
@@ -140,6 +140,19 @@ abstract class SubjectCollectionRepository(
      * 「刷新本页」上 (见 `SubjectDetailsTvPage`).
      */
     abstract suspend fun refreshSubjectCollection(subjectId: Int)
+
+    /**
+     * 收藏页刷新这一类收藏 ([type] 为 `null` 时是全部收藏) 的那一步, 收藏页下拉刷新走的就是它; 另给调试接口直接调.
+     *
+     * @return 本地这一类是否已与服务端一致
+     */
+    open suspend fun refreshCollectionList(type: UnifiedCollectionType?): Boolean = true
+
+    /**
+     * 这一类收藏的列表该不该从服务端刷新了 (这次运行里还没刷过, 或离上次已经过了几分钟); 该刷就当场记成「刷新了」并返回 `true`,
+     * 让收藏页进页时的自动刷新与分页器自己的首次刷新只有一个真去刷. 收藏页进页、切到这一类时调.
+     */
+    open fun claimCollectionListRefresh(type: UnifiedCollectionType?): Boolean = false
 
     /** 这个条目的分集在本进程里取过没有, 见 [EpisodesFetchState]. fake 默认按「取完了, 没有分集」. */
     open fun episodesFetchStateFlow(subjectId: Int): Flow<EpisodesFetchState> = flowOf(EpisodesFetchState.Fetched(0))
@@ -350,8 +363,13 @@ class SubjectCollectionRepositoryImpl(
                 fresh
             },
         ) {
-            fetchAndSaveSubjectCollection(subjectId)
-            episodesFetchAttemptedLock.withLock { episodesFetchAttempted.add(subjectId) }
+            // 条目行还新鲜 (走到这里只能是缺分集): 只取分集, 不为它再取一遍条目
+            val row = subjectCollectionDao.findById(subjectId).first()
+            if (row != null && !row.isExpired()) fetchAndSaveEpisodesOnly(row) else fetchAndSaveSubjectCollection(subjectId)
+            // 只记取过了还是没有分集的: 取到过分集、之后库里又没了的 (比如条目行被删时级联删掉) 照常补取
+            if (episodeCollectionDao.listIdBySubjectId(subjectId).first().isEmpty()) {
+                episodesFetchAttemptedLock.withLock { episodesFetchAttempted.add(subjectId) }
+            }
             // TODO: 2025/5/24 handle subject not found
         }
     }
@@ -363,7 +381,8 @@ class SubjectCollectionRepositoryImpl(
      * 的条目进详情页时, 只看 [SubjectCollectionEntity.isExpired] 会判成新鲜、直接跳过取数,
      * 选集条就是空的 —— 死神千年血战篇就是这么空的 (库里 0 条分集).
      *
-     * 本进程内每个条目最多因此多取一次: 真的没有分集 (未播出/未定档) 的条目不会陷入反复重取.
+     * 取回来还是没有分集 (未播出/未定档, 或分集接口失败) 的条目记下, 本进程内不再因此重取, 不会陷入反复重取;
+     * 取到过分集的不记.
      */
     private val episodesFetchAttempted = mutableSetOf<Int>()
     private val episodesFetchAttemptedLock = Mutex()
@@ -449,7 +468,8 @@ class SubjectCollectionRepositoryImpl(
             )
             logger.info { "bgm-direct: fetched subject $subjectId with ${episodeEntities.size} episodes" }
         } else {
-            subjectCollectionDao.upsert(savedSubject)
+            // 走带盖章保留的那条: 裸 upsert 会把角色 / 制作人员的取数时间抹成 0, 进详情页又重取一遍
+            subjectCollectionDao.upsertSubjectsWithEpisodes(listOf(savedSubject), episodes = emptyList())
             logger.info { "bgm-direct: fetched subject $subjectId (分集还新鲜, 没重取)" }
         }
         if (episodesDeferred != null) episodesFetchTracker.recordFetched(subjectId, episodeEntities, getEpisodeTypeFiltersUseCase().first())
@@ -461,6 +481,34 @@ class SubjectCollectionRepositoryImpl(
             )
         }
         true
+    }
+
+    /**
+     * 条目行还新鲜、只缺分集 (收藏列表只给条目不给分集) 时只取分集, 条目行原样写回, 落库同 [fetchAndSaveSubjectCollection].
+     * 分集取失败时不写库, 结论交给 [episodesFetchTracker].
+     */
+    private suspend fun fetchAndSaveEpisodesOnly(subject: SubjectCollectionEntity) {
+        val subjectId = subject.subjectId
+        val generation = loginGeneration.value
+        val episodes = try {
+            episodeService.getEpisodeCollectionEntities(subjectId, lastFetched = currentTimeMillis())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to fetch episodes of subject $subjectId" }
+            null
+        }
+        if (episodes != null) {
+            // 取数期间有新登录: 结果照写, 取数时刻记 0, 见 [loginGeneration]
+            val saved = if (loginGeneration.value != generation) episodes.map { it.copy(lastFetched = 0) } else episodes
+            if (localProfile) {
+                subjectCollectionDao.upsertSubjectKeepingSelfState(subject, saved)
+            } else {
+                subjectCollectionDao.upsertSubjectWithEpisodes(subject, saved)
+            }
+            logger.info { "bgm-direct: fetched ${episodes.size} episodes of subject $subjectId (条目还新鲜, 只取分集)" }
+        }
+        episodesFetchTracker.recordFetched(subjectId, episodes, getEpisodeTypeFiltersUseCase().first())
     }
 
     override suspend fun subjectCollectionOffline(subjectId: Int): SubjectCollectionInfo? = withContext(defaultDispatcher) {
@@ -592,7 +640,7 @@ class SubjectCollectionRepositoryImpl(
                 // 只允许同时一个请求. 防止多个请求浪费带宽.
                 // 一般来说不会有多个请求. 最常见的并行请求可能是用户刚刚打开 APP 进入探索页自动刷新"继续观看"栏目, 在刷新还在进行时切换到收藏页触发自动刷新.
                 updateRecentlyUpdatedSubjectCollectionsMutex.withLock {
-                    val fetched = fetchAndSaveSubjectCollectionsWithEpisodes(type, limit, offset)
+                    val fetched = fetchAndSaveSubjectCollectionsWithEpisodes(type, limit, offset).subjects
                     // 只有"某个类型最近更新的前 limit 条"这种请求能反推出哪些本地行已经不该是这个类型了,
                     // offset != 0 时窗口不完整, 反推不成立
                     if (type != null && offset == 0) {
@@ -607,28 +655,25 @@ class SubjectCollectionRepositoryImpl(
 
     // transparent exception
     /**
-     * 执行网络查询条目收藏及其剧集列表, 在所有网络请求都成功后调用 [onFetched], 然后保存查询结果到数据库.
+     * 执行网络查询条目收藏及其剧集列表, 保存查询结果到数据库.
      *
-     * @param onFetched 当所有网络请求都成功后调用
-     * @return 本次从服务端拿到并写入数据库的条目
+     * @return 本次从服务端拿到并写入数据库的条目, 与服务端报的这一类总条数
      */
-    private suspend inline fun fetchAndSaveSubjectCollectionsWithEpisodes(
+    private suspend fun fetchAndSaveSubjectCollectionsWithEpisodes(
         type: UnifiedCollectionType?,
         limit: Int,
         offset: Int,
-        onFetched: (items: List<BangumiNextSubject>) -> Unit = {},
-    ): List<SubjectCollectionEntity> {
+    ): CollectionListPage {
         require(type != UnifiedCollectionType.NOT_COLLECTED) { "type must not be NOT_COLLECTED" }
         require(limit > 0) { "limit must be positive" }
 
         // 执行网络请求查询好需要的 subject 和 episodes
-        val items = subjectService.getSubjectCollections(
+        val page = subjectService.getSubjectCollectionsPage(
             type = type?.toSubjectCollectionType(),
             offset = offset,
             limit = limit,
         )
-
-        onFetched(items)
+        val items = page.items
 
         // 批量插入条目信息与分集, 单个事务 (含保留 relations 盖章, 否则这里每写一批就会把
         // 详情页刚取好的角色/制作人员时间戳抹回 0, 触发一轮强制重取); 条目在前, 分集有外键依赖
@@ -645,7 +690,11 @@ class SubjectCollectionRepositoryImpl(
         }
         subjectCollectionDao.upsertSubjectsWithEpisodes(subjects = subjects, episodes = emptyList())
         fetchEpisodesForInProgressSubjects(subjects, lastFetched, existing, items.associate { it.id to it.interest?.epStatus })
-        return subjects
+        val changed = subjects.any { new ->
+            val old = existing[new.subjectId]
+            old == null || old.collectionType != new.collectionType || old.lastUpdated != new.lastUpdated
+        }
+        return CollectionListPage(subjects, page.total, changed)
     }
 
     /**
@@ -701,7 +750,7 @@ class SubjectCollectionRepositoryImpl(
      * "继续观看"和系统主屏预览频道一直挂着已经看完的番, 进一次详情页 (走单条 fetch) 才好.
      *
      * 服务端按收藏更新时间降序返回, 所以"本地标着 [type]、更新时间落在本次返回的窗口内、却没被返回"
-     * 就说明它的收藏状态在别处变过了. 逐个重取纠正; 服务端已无这条收藏记录 = 在别处取消了收藏, 删本地行.
+     * 就说明它的收藏状态在别处变过了. 逐个重取纠正; 服务端已无这条收藏记录 = 在别处取消了收藏, 移出收藏.
      */
     private suspend fun reconcileCollectionsLeftType(
         type: UnifiedCollectionType,
@@ -719,14 +768,22 @@ class SubjectCollectionRepositoryImpl(
         logger.info { "Local collections still marked $type but missing from server: ${stale.map { it.subjectId }}" }
         // 正常情况只有零星几条. 封顶是防"服务端排序与上述假设不符"时每小时都刷一整屏单条请求,
         // 没纠正完的下一轮继续
-        for (entity in stale.take(RECONCILE_LEFT_TYPE_LIMIT)) {
+        correctLeftType(listOf(type), stale.map { it.subjectId })
+    }
+
+    /**
+     * 逐个单条重取 [subjectIds] 的前 [RECONCILE_LEFT_TYPE_LIMIT] 个, 改成服务端现在的收藏状态; 服务端已无这条收藏记录
+     * (在别处取消了收藏) 就移出收藏 (见 [SubjectCollectionDao.markLeftCollection]). 本地已经不是 [types] 里的类型 (被别处纠正过) 的不再取.
+     */
+    private suspend fun correctLeftType(types: Collection<UnifiedCollectionType>, subjectIds: List<Int>) {
+        for (subjectId in subjectIds.take(RECONCILE_LEFT_TYPE_LIMIT)) {
             subjectFetcher.fetchIfStale(
-                key = entity.subjectId,
+                key = subjectId,
                 // 与详情页那条单条 fetch 去重: 已经被它纠正过就不必再取
-                isFresh = { subjectCollectionDao.findById(entity.subjectId).first()?.collectionType != type },
+                isFresh = { subjectCollectionDao.findById(subjectId).first()?.collectionType !in types },
             ) {
-                if (!fetchAndSaveSubjectCollection(entity.subjectId)) {
-                    subjectCollectionDao.delete(entity.subjectId)
+                if (!fetchAndSaveSubjectCollection(subjectId)) {
+                    subjectCollectionDao.markLeftCollection(listOf(subjectId))
                 }
             }
         }
@@ -769,14 +826,10 @@ class SubjectCollectionRepositoryImpl(
     private inner class SubjectCollectionRemoteMediator<T : Any>(
         private val query: CollectionsFilterQuery,
     ) : RemoteMediator<Int, T>() {
-        override suspend fun initialize(): InitializeAction = withContext(defaultDispatcher) {
-            val lastUpdated = subjectCollectionDao.lastFetched(query.type)
-            if ((currentTimeMillis() - lastUpdated).milliseconds > cacheExpiry) {
-                InitializeAction.LAUNCH_INITIAL_REFRESH
-            } else {
-                InitializeAction.SKIP_INITIAL_REFRESH
-            }
-        }
+        // 看这一类上次从服务端刷新列表是多久以前, 不看库里某一行的取数时间: 任何一部刚被单独取过 (详情页、首页预取),
+        // 整类就会被当成新鲜, 在别处改的收藏迟迟不同步
+        override suspend fun initialize(): InitializeAction =
+            if (claimCollectionListRefresh(query.type)) InitializeAction.LAUNCH_INITIAL_REFRESH else InitializeAction.SKIP_INITIAL_REFRESH
 
         override suspend fun load(
             loadType: LoadType,
@@ -787,30 +840,76 @@ class SubjectCollectionRepositoryImpl(
                     ?: return@withContext MediatorResult.Success(endOfPaginationReached = true)
                 logger.debug { "${loadType}, Loading $offset, limit=$limit" }
 
-                var endOfPaginationReached = false
-                fetchAndSaveSubjectCollectionsWithEpisodes(
-                    type = query.type,
-                    limit = limit,
-                    offset = offset,
-                    onFetched = { items ->
-                        if (loadType == LoadType.REFRESH) {
-                            // 仅在网络请求成功后才删除缓存, 否则会导致无网络时清空缓存
-                            // 必须清除缓存, 让顺序与服务器同步, 否则会死循环刷新
-                            subjectCollectionDao.deleteAll(query.type)
-                            // 数字与卡片一起对齐: 计数是另一组请求, 不跟着列表走
-                            subjectService.invalidateCollectionCounts()
-                        }
+                if (loadType == LoadType.REFRESH) {
+                    // 与服务端一致时库里就是整个列表, 往下翻不必再请求
+                    return@withContext MediatorResult.Success(endOfPaginationReached = refreshCollections(query.type, limit).inSync)
+                }
 
-                        // 拿到的数量小于请求的 limit 就代表这是最后一页, 否则总数不是 limit 整数倍时
-                        // 会永远在同一个 offset 重复请求, 造成无限刷新循环 (列表反复重排/跳动)
-                        endOfPaginationReached = items.size < limit
-                    },
-                )
-
-                MediatorResult.Success(endOfPaginationReached = endOfPaginationReached)
+                val page = fetchAndSaveSubjectCollectionsWithEpisodes(type = query.type, limit = limit, offset = offset)
+                // 拿到的数量小于请求的 limit 就代表这是最后一页, 否则总数不是 limit 整数倍时
+                // 会永远在同一个 offset 重复请求, 造成无限刷新循环 (列表反复重排/跳动)
+                MediatorResult.Success(endOfPaginationReached = page.subjects.size < limit)
             }
         } catch (e: Exception) {
             MediatorResult.Error(RepositoryException.wrapOrThrowCancellation(e))
+        }
+    }
+
+    override suspend fun refreshCollectionList(type: UnifiedCollectionType?): Boolean =
+        localProfile || withContext(defaultDispatcher) { refreshCollections(type, COLLECTION_PAGE_SIZE).inSync }
+
+    /**
+     * 每一类收藏 (`null` = 全部) 上次从服务端刷新列表的时刻, 连同当时的登录代次 (换了登录就作废), 见 [claimCollectionListRefresh].
+     * 只在内存里: 每次启动后第一次进这一类都会刷新一次.
+     */
+    private val collectionListRefreshedAt = MutableStateFlow<Map<UnifiedCollectionType?, Pair<Int, Long>>>(emptyMap())
+
+    override fun claimCollectionListRefresh(type: UnifiedCollectionType?): Boolean {
+        if (localProfile) return false
+        val now = currentTimeMillis()
+        val generation = loginGeneration.value
+        var claimed = false
+        collectionListRefreshedAt.update { map ->
+            val last = map[type]
+            claimed = last == null || last.first != generation ||
+                    now - last.second >= COLLECTION_LIST_REFRESH_INTERVAL.inWholeMilliseconds
+            if (claimed) map + (type to (generation to now)) else map
+        }
+        return claimed
+    }
+
+    /** 见 [syncCollectionList]; 与「继续观看」的批量刷新互斥, 两边写的是同一批行. 成功后记下刷新时刻, 失败时清掉 (下次进页再试). */
+    private suspend fun refreshCollections(type: UnifiedCollectionType?, firstPageSize: Int): CollectionListSync {
+        val generation = loginGeneration.value
+        val sync = try {
+            refreshCollectionsLocked(type, firstPageSize)
+        } catch (e: Exception) {
+            collectionListRefreshedAt.update { it - type }
+            throw e
+        }
+        collectionListRefreshedAt.update { it + (type to (generation to currentTimeMillis())) }
+        // 数字与卡片一起对齐: 计数是另一组请求, 不跟着列表走; 列表没变计数也不会变, 省掉那一组
+        if (sync.changed) subjectService.invalidateCollectionCounts()
+        return sync
+    }
+
+    private suspend fun refreshCollectionsLocked(type: UnifiedCollectionType?, firstPageSize: Int): CollectionListSync {
+        val types = type?.let(::listOf) ?: UnifiedCollectionType.entries.filter { it != UnifiedCollectionType.NOT_COLLECTED }
+        return updateRecentlyUpdatedSubjectCollectionsMutex.withLock {
+            syncCollectionList(
+                firstPageSize = firstPageSize,
+                fullSyncPageSize = FULL_SYNC_PAGE_SIZE,
+                fetchAndSave = { offset, pageSize -> fetchAndSaveSubjectCollectionsWithEpisodes(type, pageSize, offset) },
+                reconcileFirstPage = { page -> if (type != null) reconcileCollectionsLeftType(type, firstPageSize, page.subjects) },
+                localIds = { subjectCollectionDao.subjectIdsByCollectionType(types).first() },
+                removeLeftType = { subjectIds ->
+                    logger.info { "Local collections marked $types but missing from server after full sync: $subjectIds" }
+                    correctLeftType(types, subjectIds)
+                    // 其余先移出收藏, 到它现在所属的那一类刷新或进它的详情页时改成正确的
+                    subjectIds.drop(RECONCILE_LEFT_TYPE_LIMIT).takeIf { it.isNotEmpty() }
+                        ?.let { subjectCollectionDao.markLeftCollection(it) }
+                },
+            )
         }
     }
 
@@ -892,6 +991,15 @@ class SubjectCollectionRepositoryImpl(
 
         /** 一轮刷新里最多纠正几条"本地类型已过期"的记录, 见 [reconcileCollectionsLeftType]. */
         private const val RECONCILE_LEFT_TYPE_LIMIT = 8
+
+        /** 收藏页刷新时本地与服务端对不上、要整类翻一遍补齐时的每页条数 (p1 收藏接口的上限). */
+        private const val FULL_SYNC_PAGE_SIZE = 100
+
+        /** 不经收藏页 ([refreshCollectionList]) 刷新时第一页的条数, 同收藏页 pager 的 pageSize. */
+        private const val COLLECTION_PAGE_SIZE = 30
+
+        /** 收藏页某一类离上次刷新列表多久之后, 进页 / 切到这一类时再刷新一次, 见 [claimCollectionListRefresh]. */
+        private val COLLECTION_LIST_REFRESH_INTERVAL = 5.minutes
     }
 }
 
