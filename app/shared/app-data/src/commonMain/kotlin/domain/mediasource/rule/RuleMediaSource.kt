@@ -19,7 +19,6 @@ import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.client.statement.request
 import io.ktor.http.ContentType
-import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.content.TextContent
 import kotlinx.atomicfu.locks.SynchronizedObject
@@ -33,6 +32,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import me.him188.ani.app.data.repository.media.SelectorMediaSourceEpisodeCacheRepository
+import me.him188.ani.app.data.network.setCookieHeaders
 import me.him188.ani.app.domain.media.fetch.wholeSubjectEpisodeSortsOrNull
 import me.him188.ani.app.domain.mediasource.MediaListFilter
 import me.him188.ani.app.domain.mediasource.MediaListFilterContext
@@ -629,7 +629,7 @@ private suspend fun HttpResponse.toRuleResponse() = RuleHttpResponse(
     finalUrl = request.url.toString(),
     status = status.value,
     text = runCatching { bodyAsText() }.getOrDefault(""),
-    cookies = headers.getAll(HttpHeaders.SetCookie).orEmpty()
+    cookies = setCookieHeaders()
         .map { it.substringBefore(';').trim() }
         .filter { it.substringBefore('=', "").isNotBlank() },
 )
