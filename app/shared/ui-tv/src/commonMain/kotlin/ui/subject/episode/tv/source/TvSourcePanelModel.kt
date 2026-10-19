@@ -18,10 +18,18 @@ import me.him188.ani.app.domain.media.selector.MaybeExcludedMedia
 import me.him188.ani.app.domain.media.selector.MediaExclusionReason
 import me.him188.ani.app.domain.media.selector.UnsafeOriginalMediaAccess
 import me.him188.ani.app.domain.media.selector.isPerfectMatch
+import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveAddedShareMediaSource
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveAuthException
+import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveMediaSource
+import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveShareSearchMediaSource
 import me.him188.ani.app.domain.mediasource.clouddrive.DriveVideoBitrates
 import me.him188.ani.app.domain.mediasource.clouddrive.cloudDriveLoginRequired
+import me.him188.ani.app.domain.mediasource.directapi.DirectApiMediaSource
+import me.him188.ani.app.domain.mediasource.jsonapi.JsonApiMediaSource
+import me.him188.ani.app.domain.mediasource.rss.RssMediaSource
+import me.him188.ani.app.domain.mediasource.rule.RuleMediaSource
 import me.him188.ani.app.domain.mediasource.rule.SiteIpBlockedException
+import me.him188.ani.app.domain.mediasource.web.SelectorMediaSource
 import me.him188.ani.app.ui.media.MediaDetailsRenderer
 import me.him188.ani.app.ui.media.MediaDetailsStrings
 import me.him188.ani.app.ui.media.renderSubtitleLanguage
@@ -38,6 +46,7 @@ import me.him188.ani.app.ui.mediaselect.selector.WebSource
 import me.him188.ani.datasources.api.CachedMedia
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.source.BrowseSubject
+import me.him188.ani.datasources.api.source.FactoryId
 import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.datasources.api.topic.EpisodeRange
 import me.him188.ani.datasources.api.topic.FileSize
@@ -48,24 +57,41 @@ import kotlin.time.Instant
  * TV 选源面板 (TvSourcePanelView) 的数据模型: 上游选源状态 (MediaSelectorState / BT 列表投影 / 数据源状态 / 手动查找) 加上面板自己的
  * 导航状态 ([TvSourceNav]), 由 [buildTvSourcePanel] 拼成面板要画的行. 纯函数, 不碰 Compose 与视图.
  *
- * 分工: [TvSourcePanelContent.rail] = 去哪里找 (BT 与缓存、下载、各个在线源、查询失败的源、手动查找, 视图排成胶囊行) 加上表头的命令
- * (「筛选」与几个操作, 见 isCommandKey), [TvSourcePanelContent.right] = 选中的那一项里有什么 (视图排在胶囊行下面).
- * 「筛选」(分辨率 / 字幕, 对各个源一起生效, 见 TvSourcePanelFilters) 排最前, 其后是 BT: 不用的人一按就过去了, 用的人不用在一长串在线源后面找.
+ * 分工: [TvSourcePanelContent.rail] = 去哪里找 (下载、BT 与缓存、在线源按类型分的组、查询失败的源、手动查找, 视图排成胶囊行) 加上表头的命令
+ * (「筛选」与几个操作, 见 isCommandKey); 选中的是一组在线源时 [TvSourcePanelContent.sources] 是组里的各个源 (视图竖排成源那一栏);
+ * [TvSourcePanelContent.right] = 选中的那一项 / 那个源里有什么 (视图排在胶囊行下面, 或源那一栏右边).
+ * 在线源按类型分组 (见 [tvSourceGroupKey]), 组里按数据源设置里的顺序排, 不随结果变; 只有一个源的组没有源那一栏.
  * 内容还能「进去一层」(筛选的取值、资源的长按菜单、资源详情、手动查找的数据源与线路), 见 [TvSourceDrill]; 整块面板最多三层.
  */
 
-/** rail 各项的键. 在线源是 `web:` + 数据源实例 id; 操作都以 [ACTION_PREFIX] 开头. */
+/**
+ * rail 各项的键. 在线源是 `web:` + 数据源实例 id (源那一栏的行与右边那一屏的 key), 在线源的组是 `group:` + 类型;
+ * 操作都以 [ACTION_PREFIX] 开头.
+ */
 internal object TvSourceRailKeys {
     const val WEB_PREFIX = "web:"
+    const val GROUP_PREFIX = "group:"
+
+    /** 「网盘」「在线」「直链」三组, 各组收哪些类型见 [TV_SOURCE_GROUPS]. */
+    const val GROUP_DRIVE = GROUP_PREFIX + "drive"
+    const val GROUP_ONLINE = GROUP_PREFIX + "online"
+    const val GROUP_DIRECT = GROUP_PREFIX + "direct"
     const val BT = "bt"
     const val MANUAL = "manual"
     const val FAILED = "failed"
     const val DOWNLOADS = "downloads"
     const val FILTER = "filter"
+
+    /** 表头上的「正在播放」(见 [TvSourceNowPlaying]). */
+    const val NOW_PLAYING = "now-playing"
+
+    /** 源那一栏最后那一行「没有结果的 N 个」(确定展开 / 收起, 不是一个源). */
+    const val EMPTY_SOURCES = "empty-sources"
     const val ACTION_PREFIX = "action:"
     const val ACTION_REFRESH = ACTION_PREFIX + "refresh"
     const val ACTION_FULL_SEARCH = ACTION_PREFIX + "full-search"
     const val ACTION_KEYWORDS = ACTION_PREFIX + "keywords"
+    const val ACTION_SETTINGS = ACTION_PREFIX + "settings"
 
     fun web(instanceId: String) = WEB_PREFIX + instanceId
 }
@@ -120,6 +146,15 @@ enum class TvSourceRowIcon {
 
     /** 左栏的「筛选」. */
     Filter,
+
+    /** 表头最右边的「数据源设置」. */
+    Settings,
+
+    /** 「网盘」那一组. */
+    Drive,
+
+    /** 「直链」那一组. */
+    Link,
 }
 
 /** 右端字的强调: [Error] 红 (失败 / 排除原因), [Attention] 主要文字色 (要验证 / 正在播放), 其余次要色. */
@@ -128,7 +163,9 @@ enum class TvSourceAccent { None, Attention, Error }
 /**
  * 面板里的一行 (两栏、筛选胶囊、剧集方块都是它). [id] 在所在列表里唯一且稳定 —— 列表按它做差异更新、记焦点.
  *
- * @property selected 当前生效的那一项 (正在播放的资源 / 筛选的当前值): 行首画 [icon], 未聚焦时底色稍亮.
+ * @property selected 当前生效的那一项 (正在播放的资源 / 筛选的当前值): 进列表时的落点; 不是 [playing] 的未聚焦时底色深一档、描细白边.
+ * @property playing 正在播放的 (资源、它所在的源与组): 资源那一行行首画正在播放的图标、右端写「正在播放」; 它所在的源与组只标这个,
+ *   不换图标 (在播的是哪一条看表头的「正在播放」). 都不描边 —— 描边留给「下面 / 右边显示的是它」(胶囊行与源那一栏选中的那一项).
  * @property dimmed 被排除的资源、查询失败的源: 未聚焦时文字压暗.
  * @property loading 右端画转圈 (数据源还在查).
  * @property action 确定键做什么; null = 只能看.
@@ -145,6 +182,7 @@ data class TvSourceRow(
     val icon: TvSourceRowIcon = TvSourceRowIcon.None,
     val iconUrl: String? = null,
     val selected: Boolean = false,
+    val playing: Boolean = false,
     val dimmed: Boolean = false,
     val loading: Boolean = false,
     val accent: TvSourceAccent = TvSourceAccent.None,
@@ -188,13 +226,11 @@ data class TvSourceDetailField(
 @Immutable
 data class TvSourceButton(val label: String, val action: TvSourceAction, val icon: TvSourceRowIcon = TvSourceRowIcon.None)
 
-/** 筛选维度: 分辨率 / 字幕在左栏的「筛选」里 (见 TvSourcePanelFilters), 字幕组 / 来源是 BT 与缓存那一栏顶上的胶囊. 集号是开关, 不在这里. */
+/** 筛选维度: 都在表头「筛选」的弹窗里 (见 TvSourcePanelFilters); 字幕组 / 来源只管 BT 与缓存. 集号是 BT 那一栏顶上的开关, 不在这里. */
 enum class TvSourceFilter { Resolution, Subtitle, Alliance, Source }
 
 /** 右栏「进去的那一层」. */
 sealed interface TvSourceDrill {
-    data class Filter(val filter: TvSourceFilter) : TvSourceDrill
-
     /** 手动查找: 换数据源. */
     data object ManualSources : TvSourceDrill
 
@@ -219,8 +255,14 @@ sealed interface TvSourceAction {
     /** 去这部番的缓存页 (原来播放器图标行上的「下载」). */
     data object OpenDownloads : TvSourceAction
 
+    /** 去设置里的数据源那一页 (更新订阅、启停数据源). */
+    data object OpenSettings : TvSourceAction
+
     data object ToggleEpisodeFilter : TvSourceAction
     data object ToggleExcluded : TvSourceAction
+
+    /** 源那一栏: 展开 / 收起查完没结果的源 (见 [TvSourceNav.showEmptySources]). */
+    data object ToggleEmptySources : TvSourceAction
 
     /** 进入一层 (筛选取值 / 手动查找的数据源与线路). */
     data class Open(val drill: TvSourceDrill) : TvSourceAction
@@ -230,9 +272,15 @@ sealed interface TvSourceAction {
 
     /**
      * 打开 [rowId] 那一行的详情弹窗; [inRail] = 那一行在左栏. [railKey] = 右栏的行属于左栏哪一项 (不同在线源的线路 id 会重),
-     * 左栏的行为 null. 弹窗里左右键换行就是换成序列里的另一条 (见 [buildTvSourceDetailsSequence]).
+     * 左栏的行为 null. 弹窗里左右键换行就是换成序列里的另一条 (见 [buildTvSourceDetailsSequence]). [followFocus] = 背后面板的焦点跟着弹窗里
+     * 看的那一条走 (关掉后落在最后看的那一条); 从表头「正在播放」长按开的不跟, 焦点留在「正在播放」上.
      */
-    data class ShowDetails(val rowId: String, val inRail: Boolean, val railKey: String? = null) : TvSourceAction
+    data class ShowDetails(
+        val rowId: String,
+        val inRail: Boolean,
+        val railKey: String? = null,
+        val followFocus: Boolean = true,
+    ) : TvSourceAction
 
     /** 选一个筛选取值; [value] = null 是「全部」. */
     data class PickFilter(val filter: TvSourceFilter, val value: String?) : TvSourceAction
@@ -253,15 +301,21 @@ sealed interface TvSourceAction {
 /**
  * 面板自己的导航状态.
  *
- * @property railKey 左栏聚焦的那一项 (右栏跟着它); null = 还没定, 按正在播放的资源落.
+ * @property railKey 胶囊行选中的那一项 (内容跟着它); null = 还没定, 按正在播放的资源落. 也可以是一个在线源 (`web:`), 落到它所在的组与它.
+ * @property sourceKey 源那一栏选中的源 (`web:` + 实例 id); null = 按落点规则 (这一组上次停的 → 正在播的 → 第一个有结果的).
+ * @property groupSources 各组上次停的源 (组 → 源).
  * @property drill 右栏进去的那一层; null = 右栏本身.
  * @property frozenOrder 用户正在右栏里按键时钉住的行序 (见 [applyFrozenOrder]); null = 不钉.
  */
 @Immutable
 data class TvSourceNav(
     val railKey: String? = null,
+    val sourceKey: String? = null,
+    val groupSources: Map<String, String> = emptyMap(),
     val drill: TvSourceDrill? = null,
     val showExcluded: Boolean = false,
+    /** 源那一栏里查完没结果的源展开着 (默认折成最后一行「没有结果的 N 个」). */
+    val showEmptySources: Boolean = false,
     val frozenOrder: List<String>? = null,
 )
 
@@ -273,8 +327,11 @@ data class TvSourceNav(
  * @property canEditKeywords 宿主能改搜索词.
  * @property canCache 资源菜单里给不给「缓存这一条」.
  * @property canOpenDownloads 左栏给不给「下载」(这一集的缓存 + 去缓存页); 缓存页自己开的面板不给.
+ * @property canOpenSettings 表头最右边给不给「数据源设置」(齿轮, 去设置里的数据源那一页).
  * @property downloads 这一集的缓存 (已下完的和正在下的), 「下载」那一项的分支列的就是它们.
  * @property playbackDiskCache 设置里「边下边播」开着 (在线播放时看过的部分存在本机, 不是下载).
+ * @property sourceTypes 各数据源实例 (按实例 id) 的类型与在数据源设置里的顺序; 没有的归「在线」、排在最后.
+ * @property playback 在播的那一条眼下的状态, 见 [TvSourcePlayback].
  */
 @Immutable
 data class TvSourcePanelInput(
@@ -288,9 +345,58 @@ data class TvSourcePanelInput(
     val initialMode: MediaSelectorMode,
     val nowMillis: Long,
     val canOpenDownloads: Boolean = false,
+    val canOpenSettings: Boolean = false,
     val downloads: List<TvSourceCacheItem> = emptyList(),
     val playbackDiskCache: Boolean = false,
+    val sourceTypes: Map<String, TvSourceType> = emptyMap(),
+    val playback: TvSourcePlayback = TvSourcePlayback.Normal,
 )
+
+/** 在播的那一条眼下怎么样 (表头「正在播放」的右端): 出错了 / 卡着缓冲 (挂了一阵) 时写出来, 让人知道为什么要换. */
+enum class TvSourcePlayback { Normal, Buffering, Failed }
+
+/** 一个数据源实例的类型 ([factoryId], 类型名 [factoryName]) 与它在数据源设置里排第几 ([order]). */
+@Immutable
+data class TvSourceType(val factoryId: String, val factoryName: String, val order: Int)
+
+/**
+ * 在线源的一组 (胶囊行的一颗): [factoryIds] 是归进这一组的数据源类型, [title] 取组名.
+ */
+internal class TvSourceGroupSpec(
+    val key: String,
+    val factoryIds: Set<FactoryId>,
+    val icon: TvSourceRowIcon,
+    val title: (TvSourceStrings) -> String,
+)
+
+/**
+ * 在线源按类型怎么分组, 按表里的顺序排在胶囊行上. 新的数据源类型要归进已有的组就把它加进那一组的 [TvSourceGroupSpec.factoryIds];
+ * 表里没有的类型各成一组 (名字用类型名, 排在表里这几组后面).
+ */
+internal val TV_SOURCE_GROUPS: List<TvSourceGroupSpec> = listOf(
+    TvSourceGroupSpec(
+        TvSourceRailKeys.GROUP_DRIVE,
+        setOf(CloudDriveMediaSource.FactoryId, CloudDriveShareSearchMediaSource.FactoryId, CloudDriveAddedShareMediaSource.FactoryId),
+        TvSourceRowIcon.Drive,
+    ) { it.groupDrive },
+    TvSourceGroupSpec(
+        TvSourceRailKeys.GROUP_ONLINE,
+        setOf(RuleMediaSource.FactoryId, SelectorMediaSource.FactoryId, JsonApiMediaSource.FactoryId),
+        TvSourceRowIcon.Source,
+    ) { it.groupOnline },
+    TvSourceGroupSpec(
+        TvSourceRailKeys.GROUP_DIRECT,
+        setOf(RssMediaSource.FactoryId, DirectApiMediaSource.FactoryId),
+        TvSourceRowIcon.Link,
+    ) { it.groupDirect },
+)
+
+/** 在线源归哪一组 (见 [TV_SOURCE_GROUPS]); 不知道类型的归「在线」. */
+internal fun tvSourceGroupKey(type: TvSourceType?): String {
+    val factoryId = type?.factoryId ?: return TvSourceRailKeys.GROUP_ONLINE
+    return TV_SOURCE_GROUPS.firstOrNull { spec -> spec.factoryIds.any { it.value == factoryId } }?.key
+        ?: (TvSourceRailKeys.GROUP_PREFIX + factoryId)
+}
 
 /**
  * 这一集的一条缓存 (见 [TvSourcePanelInput.downloads]): [origin] 是缓存的来源资源, [percent] 下了多少 (0..100), [finished] 下完了没有.
@@ -298,6 +404,24 @@ data class TvSourcePanelInput(
  */
 @Immutable
 data class TvSourceCacheItem(val cacheId: String, val origin: Media, val percent: Int, val finished: Boolean)
+
+/** 面板里的一个位置: 胶囊 [railKey]; 源那一栏的 [sourceKey] (焦点在胶囊上时为 null); 列表里的 [rowId] (不在列表里时为 null). */
+@Immutable
+data class TvSourceFocusPosition(val railKey: String, val sourceKey: String?, val rowId: String?)
+
+/**
+ * 按返回关面板时停的地方, 再打开时原样回去: 胶囊行选中 [railKey] 那一项, 焦点在它的胶囊上 ([headerId] 非 null 时在表头那一颗上), 下面收着;
+ * [content] 是那一项内容里最后停的, 从胶囊进去时落回那里 (没进过为 null).
+ */
+@Immutable
+data class TvSourceResumePoint(val railKey: String?, val headerId: String?, val content: TvSourceFocusPosition?)
+
+/**
+ * 表头上的「正在播放」: [row] 写着在播的是哪个源的哪一条 (行首是正在播放的图标, 右端是分辨率), 确定跳到 [target] —— 那一组、那个源、那一行.
+ * 在播的那条在面板里找不到 (手动查找播的…) 时 [target] 为 null. [failed] = 播不了了 (右端红字写着), 打开面板直接落在胶囊行上 —— 反正要换.
+ */
+@Immutable
+data class TvSourceNowPlaying(val row: TvSourceRow, val target: TvSourceFocusPosition?, val failed: Boolean = false)
 
 /** 右栏: [key] 变了就是换了一屏内容 (视图据此复位滚动与焦点), 同一屏里只是行变了. */
 @Immutable
@@ -309,7 +433,7 @@ data class TvSourceRight(
     val columns: Int = 1,
     /** 进列表时的落点 (正在播放的那一条 / 当前值); null = 第一条可聚焦的. */
     val focusId: String? = null,
-    /** 标题普遍很长 (BT 资源、下载、一个文件一行的在线源): 列表占满宽度; 其余按内容定宽, 对齐到它的胶囊下面. */
+    /** 标题普遍很长 (BT 资源、下载、一个文件一行的在线源): 列表占满宽度 (有源那一栏时占满它右边); 其余按内容定宽. */
     val wide: Boolean = false,
 )
 
@@ -317,11 +441,23 @@ data class TvSourceRight(
 data class TvSourcePanelContent(
     val status: String,
     val rail: List<TvSourceRow>,
-    /** 选中的源 ([TvSourceNav.railKey] 生效后的值). */
+    /** 胶囊行选中的那一项 ([TvSourceNav.railKey] 生效后的值; 选的是一个在线源时是它所在的组). */
     val railKey: String?,
+    /** 选中的组里的各个源 (源那一栏); 空 = 没有这一栏 (BT、下载、只有一个源的组…), 内容直接在胶囊行下面. */
+    val sources: List<TvSourceRow> = emptyList(),
+    /** [right] 是哪个在线源的 (源那一栏选中的, 或只有一个源的组里的那个); 选的不是在线源的组为 null. */
+    val sourceKey: String? = null,
+    /** 各在线源 (`web:` + 实例 id) 在哪一组 (详情弹窗换到别的源时, 视图据此连胶囊行一起换). */
+    val sourceGroups: Map<String, String> = emptyMap(),
+    /**
+     * [sources] 里进得去的源 (条目里有能选的行): 条目里上下走到头跨到相邻的源时跳过别的, 源那一栏按右进不去就到右边的胶囊.
+     */
+    val enterableSources: Set<String> = emptySet(),
     val right: TvSourceRight,
     /** 筛选弹窗的内容 (分组小标题 + 取值, 见 [filterOptions]); 空 = 没东西可筛 (表头没有「筛选」). */
     val filter: List<TvSourceRow> = emptyList(),
+    /** 表头上的「正在播放」; null = 还没有在播的. */
+    val nowPlaying: TvSourceNowPlaying? = null,
 )
 
 /**
@@ -434,6 +570,18 @@ data class TvSourceStrings(
     val driveLoginHint: String,
     /** 站点拉黑了这个网络 (查询失败那一组), 参数是解封前不再查的时刻. */
     val siteIpBlocked: String,
+    /** 在线源各组的名字 (见 [tvSourceGroupKey]; 其余类型用类型名). */
+    val groupDrive: String,
+    val groupOnline: String,
+    val groupDirect: String,
+    /** 源那一栏最后一行: 「没有结果的 %1$d 个」/ 展开后「收起没有结果的 %1$d 个」. */
+    val emptySources: String,
+    val hideEmptySources: String,
+    /** 「正在播放」右端: 播不了了 / 卡着缓冲. */
+    val playbackFailed: String,
+    val playbackBuffering: String,
+    /** 表头最右边齿轮的名字 (只画图标, 名字给无障碍与详情用). */
+    val settings: String,
     val details: MediaDetailsStrings,
     val timeZone: TimeZone,
 ) {
@@ -504,11 +652,8 @@ fun applyFrozenOrder(rows: List<TvSourceRow>, frozen: List<String>?): List<TvSou
 fun buildTvSourcePanel(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvSourceStrings): TvSourcePanelContent {
     val selected = input.selector.selected
     val webSources = input.selector.webSources
-    // 查询失败的在线源收进「查询失败」那一项, 不在列表里占位置; 结果全都对不上的源也留着 (见 allWebSources).
-    // 没登录网盘的照样列在后面, 胶囊上写「未登录」, 确定就扫码登录
-    val liveWebSources = allWebSources(input, strings)
-        .filterNot { it.isError && input.driveLoginOf(it.instanceId) == null }
-        .sortedBy { input.driveLoginOf(it.instanceId) != null }
+    val groups = webGroupsOf(input, strings)
+    val liveWebSources = groups.flatMap { it.sources }
     val failedSources = failedSourcesOf(input)
     val hasBt = input.sources.btSources.isNotEmpty() || input.bt.totalCount > 0
     val manual = input.manual?.takeIf { it.isPlaceholder || it.sources.isNotEmpty() }
@@ -524,21 +669,7 @@ fun buildTvSourcePanel(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvS
     val filterable = hasBt || fileSources.isNotEmpty()
 
     val rail = buildList {
-        if (hasBt) {
-            val btWorking = input.sources.btSources.any { it.isWorking }
-            add(
-                TvSourceRow(
-                    id = TvSourceRailKeys.BT,
-                    style = TvSourceRowStyle.Rail,
-                    title = strings.bt,
-                    icon = if (playingInBt) TvSourceRowIcon.Playing else TvSourceRowIcon.Torrent,
-                    selected = playingInBt,
-                    trailing = if (btWorking && input.bt.included.isEmpty()) "" else input.bt.included.size.toString(),
-                    loading = btWorking && input.bt.included.isEmpty(),
-                ),
-            )
-        }
-        // 挨着「BT 与缓存」: 这一集的缓存在它的分支里一眼看全 (不用逐个数据源翻), 去缓存页下别的集也从这儿走
+        // 「下载」排第一个, 挨着「BT 与缓存」: 这一集的缓存在它下面一眼看全 (不用逐个数据源翻), 去缓存页下别的集也从这儿走
         if (input.canOpenDownloads) {
             add(
                 TvSourceRow(
@@ -550,9 +681,24 @@ fun buildTvSourcePanel(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvS
                 ),
             )
         }
+        if (hasBt) {
+            val btWorking = input.sources.btSources.any { it.isWorking }
+            add(
+                TvSourceRow(
+                    id = TvSourceRailKeys.BT,
+                    style = TvSourceRowStyle.Rail,
+                    title = strings.bt,
+                    icon = TvSourceRowIcon.Torrent,
+                    selected = playingInBt,
+                    playing = playingInBt,
+                    trailing = if (btWorking && input.bt.included.isEmpty()) "" else countWithBest(input.bt.included.size, input.bt.included.map { it.media }),
+                    loading = btWorking && input.bt.included.isEmpty(),
+                ),
+            )
+        }
         val topGroup = hasBt || input.canOpenDownloads
-        liveWebSources.forEachIndexed { index, source ->
-            val row = webRailRow(source, playing = source == playingWebSource, input, strings)
+        groups.forEachIndexed { index, group ->
+            val row = groupRailRow(group, playing = playingWebSource != null && group.contains(playingWebSource), input, strings)
             add(if (index == 0 && topGroup) row.copy(dividerAbove = true) else row)
         }
         if (failedSources.isNotEmpty()) {
@@ -576,7 +722,7 @@ fun buildTvSourcePanel(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvS
                     style = TvSourceRowStyle.Rail,
                     title = strings.manual,
                     icon = TvSourceRowIcon.Search,
-                    dividerAbove = failedSources.isEmpty() && (topGroup || liveWebSources.isNotEmpty()),
+                    dividerAbove = failedSources.isEmpty() && (topGroup || groups.isNotEmpty()),
                 ),
             )
         }
@@ -614,33 +760,128 @@ fun buildTvSourcePanel(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvS
                 ),
             )
         }
+        // 表头最右边: 去设置里的数据源那一页 (更新订阅之类)
+        if (input.canOpenSettings) {
+            add(
+                TvSourceRow(
+                    id = TvSourceRailKeys.ACTION_SETTINGS,
+                    style = TvSourceRowStyle.Rail,
+                    title = strings.settings,
+                    icon = TvSourceRowIcon.Settings,
+                    action = TvSourceAction.OpenSettings,
+                ),
+            )
+        }
     }.let { if (filterable) it.withFilterRow(filterRailRow(input, strings)) else it }
 
-    // 落点: 用户选过的 (还在) → 正在播放的资源所在的源 → 初始模式是 BT 时 BT → 第一个在线源 (BT 虽在最前面, 不用它的人不该一打开就落在它上面) → 第一个源.
-    // 表头的命令 (「筛选」与几个操作) 不当落点
+    // 落点: 用户选过的 (还在) → 正在播放的资源所在的组 → 初始模式是 BT 时 BT → 第一个有结果的组 (BT 虽在最前面, 不用它的人不该一打开就落在它上面)
+    // → 第一个有能查的源的组 → 第一项. 表头的命令 (「筛选」与几个操作) 不当落点
+    val playingGroup = playingWebSource?.takeIf { !it.isError }?.let { playing -> groups.firstOrNull { it.contains(playing) } }
     val playingKey = when {
-        playingWebSource != null && !playingWebSource.isError -> TvSourceRailKeys.web(playingWebSource.instanceId)
+        playingGroup != null -> playingGroup.key
         playingInBt && hasBt -> TvSourceRailKeys.BT
         else -> null
     }
-    val railKey =nav.railKey?.takeIf { key -> !isCommandKey(key) && rail.any { it.id == key } }
+    // 要落到某个在线源 (落回上次停的源、详情弹窗换到别的源): 落它所在的组与它
+    val navSource = nav.railKey?.takeIf { it.startsWith(TvSourceRailKeys.WEB_PREFIX) }
+        ?.let { key -> liveWebSources.firstOrNull { TvSourceRailKeys.web(it.instanceId) == key } }
+    val navRailKey = navSource?.let { source -> groups.first { it.contains(source) }.key } ?: nav.railKey
+    val railKey = navRailKey?.takeIf { key -> !isCommandKey(key) && rail.any { it.id == key } }
         ?: playingKey
         ?: TvSourceRailKeys.BT.takeIf { input.initialMode == MediaSelectorMode.BT && hasBt }
-        ?: liveWebSources.firstOrNull { input.driveLoginOf(it.instanceId) == null }?.let { TvSourceRailKeys.web(it.instanceId) }
+        ?: groups.firstOrNull { group -> group.sources.any { it.channels.isNotEmpty() } }?.key
+        ?: groups.firstOrNull { group -> group.sources.any { input.driveLoginOf(it.instanceId) == null } }?.key
         ?: rail.firstOrNull { !isCommandKey(it.id) }?.id
+
+    // 组里的源: 指定的 → 这一组上次停的 (回到上次到过的地方) → 正在播的 → 第一个有结果的 → 第一个
+    val group = groups.firstOrNull { it.key == railKey }
+    val source = group?.let { g ->
+        g.find(navSource?.let { TvSourceRailKeys.web(it.instanceId) } ?: nav.sourceKey)
+            ?: g.find(nav.groupSources[g.key])
+            ?: playingWebSource?.let { playing -> g.sources.firstOrNull { it.instanceId == playing.instanceId } }
+            ?: g.sources.firstOrNull { it.channels.isNotEmpty() }
+            ?: g.sources.first()
+    }
+    val sourceKey = source?.let { TvSourceRailKeys.web(it.instanceId) }
+    // 源那一栏: 有结果的 (与还在查、要处理的) 按设置里的顺序在前, 查完没结果的折成最后一行, 展开了跟在它后面
+    val sources = if (group != null && group.sources.size > 1) {
+        val (empty, rest) = group.sources.partition { input.isEmptySource(it, strings) }
+        fun row(source: WebSource) = webRailRow(source, playing = playingWebSource?.instanceId == source.instanceId, input, strings)
+        buildList {
+            rest.forEach { add(row(it)) }
+            if (empty.isNotEmpty()) {
+                add(
+                    TvSourceRow(
+                        id = TvSourceRailKeys.EMPTY_SOURCES,
+                        style = TvSourceRowStyle.Rail,
+                        title = (if (nav.showEmptySources) strings.hideEmptySources else strings.emptySources).format(empty.size),
+                        dimmed = true,
+                        action = TvSourceAction.ToggleEmptySources,
+                    ),
+                )
+                if (nav.showEmptySources) empty.forEach { add(row(it)) }
+            }
+        }
+    } else {
+        emptyList()
+    }
 
     val right = when {
         railKey == null -> TvSourceRight(key = "empty")
-        railKey.startsWith(TvSourceRailKeys.WEB_PREFIX) -> {
-            val source = liveWebSources.firstOrNull { TvSourceRailKeys.web(it.instanceId) == railKey }
-            if (source == null) TvSourceRight(key = railKey) else webPane(railKey, source, input, strings, nav)
-        }
-
+        source != null && sourceKey != null -> webPane(sourceKey, source, input, strings, nav)
+        group != null -> TvSourceRight(key = railKey)
         railKey == TvSourceRailKeys.BT -> btPane(input, nav, strings)
         railKey == TvSourceRailKeys.DOWNLOADS -> downloadsPane(input, strings)
         railKey == TvSourceRailKeys.MANUAL -> manualPane(manual ?: ManualBrowsePresentation.Empty, nav, strings)
         railKey == TvSourceRailKeys.FAILED -> failedPane(failedSources, strings)
         else -> TvSourceRight(key = railKey)
+    }
+
+    val nowPlaying = selected?.let { media ->
+        // 在播的那一条在哪一屏、哪一行: 眼前就是那一屏时直接取它的行, 否则按刚切过去时的样子拼
+        val (target, sourceLabel, playingRow) = when {
+            playingGroup != null && playingWebSource != null -> {
+                val key = TvSourceRailKeys.web(playingWebSource.instanceId)
+                val rows = if (key == sourceKey) right.rows else playingGroup.find(key)?.let { webPane(key, it, input, strings).rows }.orEmpty()
+                val row = rows.firstOrNull { it.playing }
+                Triple(TvSourceFocusPosition(playingGroup.key, key, row?.id), playingWebSource.name, row)
+            }
+
+            playingInBt && hasBt -> {
+                val rows = if (right.key == TvSourceRailKeys.BT) right.rows else btPane(input, TvSourceNav(railKey = TvSourceRailKeys.BT), strings).rows
+                val row = rows.firstOrNull { it.playing }
+                val label = if (media.kind == MediaSourceKind.LocalCache) strings.kindCache else sourceName(media.mediaSourceId, input.sources)
+                Triple(TvSourceFocusPosition(TvSourceRailKeys.BT, null, row?.id), label, row)
+            }
+
+            else -> Triple(null, sourceName(media.mediaSourceId, input.sources), null)
+        }
+        TvSourceNowPlaying(
+            row = TvSourceRow(
+                id = TvSourceRailKeys.NOW_PLAYING,
+                style = TvSourceRowStyle.Rail,
+                title = listOf(sourceLabel, playingRow?.title ?: media.originalTitle).filter { it.isNotBlank() }.joinToString(" · "),
+                trailing = when (input.playback) {
+                    TvSourcePlayback.Failed -> strings.playbackFailed
+                    TvSourcePlayback.Buffering -> strings.playbackBuffering
+                    TvSourcePlayback.Normal -> media.properties.resolution.let { resolutionOf(it)?.displayName ?: it }
+                },
+                accent = when (input.playback) {
+                    TvSourcePlayback.Failed -> TvSourceAccent.Error
+                    TvSourcePlayback.Buffering -> TvSourceAccent.Attention
+                    TvSourcePlayback.Normal -> TvSourceAccent.None
+                },
+                icon = TvSourceRowIcon.Playing,
+                // 长按: 那一条的详情 (同在它那一屏里长按), 只开弹窗, 焦点不跳过去
+                longAction = if (playingRow?.details != null && target != null) {
+                    TvSourceAction.ShowDetails(playingRow.id, inRail = false, railKey = target.sourceKey ?: target.railKey, followFocus = false)
+                } else {
+                    null
+                },
+            ),
+            target = target,
+            failed = input.playback == TvSourcePlayback.Failed,
+        )
     }
 
     val status = if (input.sources.anyLoading) {
@@ -652,8 +893,21 @@ fun buildTvSourcePanel(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvS
         status = status,
         rail = rail,
         railKey = railKey,
+        sources = sources,
+        sourceKey = sourceKey,
+        sourceGroups = groups.flatMap { g -> g.sources.map { TvSourceRailKeys.web(it.instanceId) to g.key } }.toMap(),
+        enterableSources = if (sources.isEmpty() || group == null) {
+            emptySet()
+        } else {
+            group.sources.mapNotNullTo(HashSet()) { s ->
+                val key = TvSourceRailKeys.web(s.instanceId)
+                val rows = if (key == sourceKey) right.rows else webPane(key, s, input, strings).rows
+                key.takeIf { rows.any { it.focusable } }
+            }
+        },
         right = right.copy(rows = applyFrozenOrder(right.rows, nav.frozenOrder)),
         filter = if (filterable) filterOptions(input, fileSources.flatMap { it.matched }, strings) else emptyList(),
+        nowPlaying = nowPlaying,
     )
 }
 
@@ -664,6 +918,62 @@ private fun failedSourcesOf(input: TvSourcePanelInput): List<MediaSourceResultPr
 /** [instanceId] 这个数据源因为没登录网盘查不了: 那个异常 (带着是哪个网盘); 不是为 null. */
 private fun TvSourcePanelInput.driveLoginOf(instanceId: String): CloudDriveAuthException? =
     sources.list.firstOrNull { it.instanceId == instanceId }?.state?.cloudDriveLoginRequired
+
+/** [source] 查完没有结果 (对不上的结果也没有; 还在查、要验证、限流、没登录网盘的不算): 源那一栏把它折到最后. */
+private fun TvSourcePanelInput.isEmptySource(source: WebSource, strings: TvSourceStrings): Boolean =
+    source.channels.isEmpty() && !source.isLoading && !source.isRateLimited && !source.isCaptchaRequired && !source.isResolvingCaptcha &&
+        driveLoginOf(source.instanceId) == null && webOthersOf(source, this, strings).isEmpty()
+
+/** 胶囊行上的一组在线源 (见 [tvSourceGroupKey]): [sources] 按数据源设置里的顺序. */
+private class TvWebGroup(val key: String, val title: String, val icon: TvSourceRowIcon, val sources: List<WebSource>) {
+    fun contains(source: WebSource): Boolean = sources.any { it.instanceId == source.instanceId }
+    fun find(key: String?): WebSource? = key?.let { k -> sources.firstOrNull { TvSourceRailKeys.web(it.instanceId) == k } }
+}
+
+/**
+ * 在线源分组: [TV_SOURCE_GROUPS] 里的组按表的顺序, 其后是表里没有的类型 (按设置里第一个源的先后). 查询失败的不在组里 (在「查询失败」那一项),
+ * 没登录网盘的照常列, 写「未登录」, 确定就扫码登录. 没有源的组不出.
+ */
+private fun webGroupsOf(input: TvSourcePanelInput, strings: TvSourceStrings): List<TvWebGroup> {
+    val byKey = LinkedHashMap<String, MutableList<WebSource>>()
+    allWebSources(input, strings)
+        .filterNot { it.isError && input.driveLoginOf(it.instanceId) == null }
+        .sortedBy { input.sourceTypes[it.instanceId]?.order ?: Int.MAX_VALUE }
+        .forEach { source -> byKey.getOrPut(tvSourceGroupKey(input.sourceTypes[source.instanceId])) { ArrayList() }.add(source) }
+    val listed = TV_SOURCE_GROUPS.mapNotNull { spec -> byKey[spec.key]?.let { TvWebGroup(spec.key, spec.title(strings), spec.icon, it) } }
+    val others = byKey.filterKeys { key -> TV_SOURCE_GROUPS.none { it.key == key } }.map { (key, sources) ->
+        val title = input.sourceTypes[sources.first().instanceId]?.factoryName ?: key.removePrefix(TvSourceRailKeys.GROUP_PREFIX)
+        TvWebGroup(key, title, TvSourceRowIcon.Source, sources)
+    }
+    return listed + others
+}
+
+/**
+ * 一组的胶囊: 右端是组里有结果的源有几个, 后面跟着一个文件一行的源 (网盘类) 里最高的分辨率 (见 [countWithBest]); 一个都还没有、还有源在查时转圈.
+ * 正在播的资源在这一组里时标 [TvSourceRow.playing] (不换图标).
+ */
+private fun groupRailRow(group: TvWebGroup, playing: Boolean, input: TvSourcePanelInput, strings: TvSourceStrings): TvSourceRow {
+    val withResults = group.sources.count { it.channels.isNotEmpty() }
+    val loading = withResults == 0 && group.sources.any { it.isLoading }
+    val files = group.sources.flatMap { webFilesOf(it, input, strings)?.matched.orEmpty() }
+    return TvSourceRow(
+        id = group.key,
+        style = TvSourceRowStyle.Rail,
+        title = group.title,
+        icon = group.icon,
+        selected = playing,
+        playing = playing,
+        trailing = if (loading) "" else countWithBest(withResults, files),
+        loading = loading,
+    )
+}
+
+/**
+ * 胶囊 / 源那一栏右端: 数目, 后面跟着 [media] 里最高的分辨率 (「3 · 4K」), 让人不进去也看得出值不值得换过去. 只看每个文件自己的分辨率
+ * (BT、一个文件一行的源); 线路式的在线源的分辨率是数据源配置里写死的默认值, 不算.
+ */
+private fun countWithBest(count: Int, media: List<Media>): String =
+    listOfNotNull(count.toString(), bestResolutionLabel(media)).joinToString(" · ")
 
 /** 详情弹窗里左右键能走到的一条: [railKey] 同 [TvSourceAction.ShowDetails.railKey]. */
 @Immutable
@@ -678,9 +988,9 @@ data class TvSourceDetailsSequence(val inRail: Boolean, val entries: List<TvSour
 }
 
 /**
- * 详情弹窗左右键走的那一串. 左栏开的 ([inRail]): 左栏里有详情的行 (各在线源). 右栏开的: **跨数据源连成一串**, 按左栏顺序 ——
- * BT 与缓存 → 这一集的缓存 → 各在线源的线路 → 查询失败的源, 每一项里的顺序与右栏显示的一致 (眼前这一项直接取 [content] 的行,
- * 钉住的行序也算; 别的项按刚切过去时的样子拼). 手动查找是另一条路 (查的是别的源的条目), 只在它自己那一屏里走.
+ * 详情弹窗左右键走的那一串. 源那一栏开的 ([inRail]): 这一组的各个源. 右边开的: **跨数据源连成一串**, 按胶囊行的顺序、组里按源的顺序 ——
+ * 这一集的缓存 → BT 与缓存 → 各组各个在线源的条目 → 查询失败的源, 每一屏里的顺序与显示的一致 (眼前这一屏直接取 [content] 的行,
+ * 钉住的行序也算; 别的按刚切过去时的样子拼). 手动查找是另一条路 (查的是别的源的条目), 只在它自己那一屏里走.
  */
 fun buildTvSourceDetailsSequence(
     input: TvSourcePanelInput,
@@ -690,25 +1000,26 @@ fun buildTvSourceDetailsSequence(
 ): TvSourceDetailsSequence {
     fun entries(railKey: String?, rows: List<TvSourceRow>) =
         rows.mapNotNull { row -> row.details?.let { TvSourceDetailsEntry(railKey, row.id, it) } }
-    if (inRail) return TvSourceDetailsSequence(true, entries(null, content.rail))
+    if (inRail) return TvSourceDetailsSequence(true, entries(null, content.sources))
     if (content.railKey == TvSourceRailKeys.MANUAL) {
         return TvSourceDetailsSequence(false, entries(TvSourceRailKeys.MANUAL, content.right.rows))
     }
-    val list = content.rail.flatMap { railRow ->
-        val key = railRow.id
-        val rows = when {
-            key == content.railKey && content.right.key == key -> content.right.rows
-            key.startsWith(TvSourceRailKeys.WEB_PREFIX) -> allWebSources(input, strings)
-                .firstOrNull { TvSourceRailKeys.web(it.instanceId) == key }
-                ?.let { webPane(key, it, input, strings).rows }
-                .orEmpty()
-
-            key == TvSourceRailKeys.BT -> btPane(input, TvSourceNav(railKey = key), strings).rows
-            key == TvSourceRailKeys.DOWNLOADS -> downloadsPane(input, strings).rows
-            key == TvSourceRailKeys.FAILED -> failedPane(failedSourcesOf(input), strings).rows
-            else -> emptyList()
+    val paneKey = content.sourceKey ?: content.railKey
+    val groups = webGroupsOf(input, strings)
+    val list = content.rail.filterNot { isCommandKey(it.id) }.flatMap { railRow ->
+        val group = groups.firstOrNull { it.key == railRow.id }
+        val keys = group?.sources?.map { TvSourceRailKeys.web(it.instanceId) } ?: listOf(railRow.id)
+        keys.flatMap { key ->
+            val rows = when {
+                key == paneKey && content.right.key == key -> content.right.rows
+                group != null -> group.find(key)?.let { webPane(key, it, input, strings).rows }.orEmpty()
+                key == TvSourceRailKeys.BT -> btPane(input, TvSourceNav(railKey = key), strings).rows
+                key == TvSourceRailKeys.DOWNLOADS -> downloadsPane(input, strings).rows
+                key == TvSourceRailKeys.FAILED -> failedPane(failedSourcesOf(input), strings).rows
+                else -> emptyList()
+            }
+            entries(key, rows)
         }
-        entries(key, rows)
     }
     return TvSourceDetailsSequence(false, list)
 }
@@ -722,22 +1033,26 @@ private fun webRailRow(source: WebSource, playing: Boolean, input: TvSourcePanel
         source.isCaptchaRequired -> strings.captchaRequired to TvSourceAccent.Attention
         source.channels.isEmpty() && !source.isLoading && !source.isRateLimited ->
             webOthersOf(source, input, strings).size.takeIf { it > 0 }?.let { strings.railOthers.format(it) to TvSourceAccent.None }
-                ?: ("0" to TvSourceAccent.None)
+                ?: (MISSING_VALUE to TvSourceAccent.None)
         source.isRateLimitExpired(nowMillis) -> strings.rateLimitedExpired to TvSourceAccent.None
         source.isRateLimited -> strings.rateLimited.format(rateLimitSeconds(source.rateLimitedUntilMillis, nowMillis)) to TvSourceAccent.None
         loadingEmpty -> "" to TvSourceAccent.None
-        else -> (webFilesOf(source, input, strings)?.let { partitionByFilters(it.matched, input).first.size } ?: source.channels.size)
-            .toString() to TvSourceAccent.None
+        else -> webFilesOf(source, input, strings)
+            ?.let { countWithBest(partitionByFilters(it.matched, input).first.size, it.matched) to TvSourceAccent.None }
+            ?: (source.channels.size.toString() to TvSourceAccent.None)
     }
     return TvSourceRow(
         id = TvSourceRailKeys.web(source.instanceId),
         style = TvSourceRowStyle.Rail,
         title = source.name,
-        icon = if (playing) TvSourceRowIcon.Playing else TvSourceRowIcon.Source,
+        icon = TvSourceRowIcon.Source,
         iconUrl = source.iconUrl.takeIf { it.isNotBlank() },
         selected = playing,
+        playing = playing,
         trailing = trailing,
         accent = accent,
+        // 查完没有对得上的结果: 调暗 (要验证、限流、没登录的还等着用户处理, 不算)
+        dimmed = source.channels.isEmpty() && !source.isLoading && !source.isRateLimited && !source.isCaptchaRequired && driveLogin == null,
         loading = loadingEmpty || source.isResolvingCaptcha,
         // 没登录网盘的胶囊: 确定直接弹扫码登录
         action = driveLogin?.driveId?.let { TvSourceAction.LoginDrive(it) },
@@ -885,6 +1200,7 @@ private fun webPane(
                     accent = if (playing) TvSourceAccent.Attention else TvSourceAccent.None,
                     icon = if (playing) TvSourceRowIcon.Playing else TvSourceRowIcon.None,
                     selected = playing,
+                    playing = playing,
                     action = media?.let { TvSourceAction.Play(it) },
                     details = media?.let { lineDetails(source, channel.name.ifBlank { strings.line.format(index + 1) }, it, input, strings) },
                 ),
@@ -978,6 +1294,7 @@ private fun webFileRow(source: WebSource, media: Media, other: TvWebOther?, inpu
         metaAccent = if (other?.excluded == true) TvSourceAccent.Error else TvSourceAccent.None,
         icon = if (playing) TvSourceRowIcon.Playing else TvSourceRowIcon.None,
         selected = playing,
+        playing = playing,
         dimmed = other != null && !playing,
         trailing = if (playing) strings.playing else "",
         accent = if (playing) TvSourceAccent.Attention else TvSourceAccent.None,
@@ -1025,14 +1342,15 @@ internal fun webOthersOf(source: WebSource, input: TvSourcePanelInput, strings: 
     }
 
 /**
- * 左栏要列的在线源: 选择器给的 (至少有一条对得上的线路, 或还在查 / 要验证 / 限流) + 结果全都对不上、选择器藏起来的那些
- * (查询完成但线路是空的; 以「其余 N」列在后面, 右栏直接列出那些结果).
+ * 要列的在线源: 选择器给的 (至少有一条对得上的线路, 或还在查 / 要验证 / 限流) + 选择器藏起来的查完了的 (0 条, 或结果全都对不上 ——
+ * 以「其余 N」列出, 右边直接列那些结果; 源那一栏按设置里的顺序把查过的源都列上). 开播后暂停时还没结果的只在有对不上的结果时列.
  */
 private fun allWebSources(input: TvSourcePanelInput, strings: TvSourceStrings): List<WebSource> {
     val shown = input.selector.webSources
     val hidden = input.sources.list.asSequence()
-        .filter { it.kind == MediaSourceKind.WEB && !it.isFailedOrAbandoned && shown.none { web -> web.instanceId == it.instanceId } }
-        .map { result ->
+        .filter { it.kind == MediaSourceKind.WEB && (it.state is MediaSourceFetchState.Succeed || it.isPaused) }
+        .filter { result -> shown.none { web -> web.instanceId == result.instanceId } }
+        .mapNotNull { result ->
             WebSource(
                 instanceId = result.instanceId,
                 mediaSourceId = result.mediaSourceId,
@@ -1042,9 +1360,8 @@ private fun allWebSources(input: TvSourcePanelInput, strings: TvSourceStrings): 
                 isLoading = false,
                 isError = false,
                 isPreferred = false,
-            )
+            ).takeIf { !result.isPaused || webOthersOf(it, input, strings).isNotEmpty() }
         }
-        .filter { webOthersOf(it, input, strings).isNotEmpty() }
         .toList()
     return shown + hidden
 }
@@ -1066,6 +1383,7 @@ private fun webOtherRow(source: WebSource, other: TvWebOther, input: TvSourcePan
         metaAccent = if (other.excluded) TvSourceAccent.Error else TvSourceAccent.None,
         icon = if (playing) TvSourceRowIcon.Playing else TvSourceRowIcon.None,
         selected = playing,
+        playing = playing,
         dimmed = !playing,
         trailing = if (playing) strings.playing else "",
         accent = if (playing) TvSourceAccent.Attention else TvSourceAccent.None,
@@ -1148,8 +1466,7 @@ private fun status(id: String, text: String) =
 
 private fun btPane(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvSourceStrings): TvSourceRight {
     val bt = input.bt
-    val drill = nav.drill
-    if (drill is TvSourceDrill.Filter) return filterOptionsPane(drill.filter, input, strings)
+    // 只剩「仅本集」开关: 分辨率 / 字幕 / 字幕组 / 来源都在表头的「筛选」里 (见 TvSourcePanelFilters)
     val pills = listOf(
         TvSourceRow(
             id = "pill:episode",
@@ -1157,14 +1474,6 @@ private fun btPane(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvSourc
             title = if (bt.episodeFilterEnabled) strings.episodeFilter else strings.allEpisodes,
             selected = bt.episodeFilterEnabled,
             action = TvSourceAction.ToggleEpisodeFilter,
-        ),
-        // 分辨率 / 字幕在左栏的「筛选」里, 对网盘类的在线源也生效 (见 TvSourcePanelFilters)
-        filterPill(TvSourceFilter.Alliance, strings.alliance, bt.alliance, strings),
-        filterPill(
-            TvSourceFilter.Source,
-            strings.source,
-            bt.sourceFilter?.let { id -> input.sources.list.firstOrNull { it.mediaSourceId == id }?.info?.displayName ?: id },
-            strings,
         ),
     )
     val included = groupBtRows(bt.included)
@@ -1181,12 +1490,7 @@ private fun btPane(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvSourc
                     style = TvSourceRowStyle.Option,
                     title = strings.hiddenByFilter.format(hidden.size),
                     dividerAbove = included.isNotEmpty(),
-                    // 只有字幕组在筛: 它的胶囊在本页表头; 分辨率 / 字幕在筛选弹窗里
-                    action = if (bt.resolution == null && bt.subtitleLanguageId == null && bt.alliance != null) {
-                        TvSourceAction.Open(TvSourceDrill.Filter(TvSourceFilter.Alliance))
-                    } else {
-                        TvSourceAction.OpenFilter
-                    },
+                    action = TvSourceAction.OpenFilter,
                 ),
             )
         }
@@ -1267,6 +1571,7 @@ private fun downloadRow(item: TvSourceCacheItem, input: TvSourcePanelInput, stri
         meta = meta,
         icon = if (selected) TvSourceRowIcon.Playing else TvSourceRowIcon.Download,
         selected = selected,
+        playing = selected,
         dimmed = !item.finished,
         trailing = if (selected) strings.playing else "",
         accent = if (selected) TvSourceAccent.Attention else TvSourceAccent.None,
@@ -1279,14 +1584,6 @@ private fun downloadRow(item: TvSourceCacheItem, input: TvSourcePanelInput, stri
         ),
     )
 }
-
-private fun filterPill(filter: TvSourceFilter, label: String, value: String?, strings: TvSourceStrings) = TvSourceRow(
-    id = "pill:" + filter.name,
-    style = TvSourceRowStyle.Pill,
-    title = if (value == null) label else "$label · $value",
-    selected = value != null,
-    action = TvSourceAction.Open(TvSourceDrill.Filter(filter)),
-)
 
 private fun btRow(group: TvBtGroup, input: TvSourcePanelInput, strings: TvSourceStrings): TvSourceRow {
     val row = group.first
@@ -1327,6 +1624,7 @@ private fun btRow(group: TvBtGroup, input: TvSourcePanelInput, strings: TvSource
             else -> TvSourceRowIcon.None
         },
         selected = selected,
+        playing = selected,
         dimmed = exclusion != null,
         trailing = if (selected) strings.playing else "",
         accent = if (selected) TvSourceAccent.Attention else TvSourceAccent.None,
@@ -1350,67 +1648,6 @@ private fun btRow(group: TvBtGroup, input: TvSourcePanelInput, strings: TvSource
 
 private fun sourceName(mediaSourceId: String, sources: MediaSourceResultListPresentation): String =
     sources.list.firstOrNull { it.mediaSourceId == mediaSourceId }?.info?.displayName ?: mediaSourceId
-
-private fun filterOptionsPane(filter: TvSourceFilter, input: TvSourcePanelInput, strings: TvSourceStrings): TvSourceRight {
-    val bt = input.bt
-    val (title, current, values) = when (filter) {
-        TvSourceFilter.Resolution -> Triple(strings.resolution, bt.resolution, bt.availableResolutions.map { it to it })
-        TvSourceFilter.Subtitle -> Triple(
-            strings.subtitle,
-            bt.subtitleLanguageId,
-            bt.availableSubtitleLanguageIds.map { it to renderSubtitleLanguage(it, strings.details) },
-        )
-
-        TvSourceFilter.Alliance -> Triple(strings.alliance, bt.alliance, bt.availableAlliances.map { it to it })
-        TvSourceFilter.Source -> Triple(
-            strings.source,
-            bt.sourceFilter,
-            input.sources.btSources.map { it.mediaSourceId to it.info.displayName },
-        )
-    }
-    val rows = buildList {
-        add(
-            TvSourceRow(
-                id = "opt:all",
-                style = TvSourceRowStyle.Option,
-                title = strings.all,
-                trailing = if (filter == TvSourceFilter.Source) bt.totalCount.toString() else "",
-                icon = if (current == null) TvSourceRowIcon.Check else TvSourceRowIcon.None,
-                selected = current == null,
-                action = TvSourceAction.PickFilter(filter, null),
-            ),
-        )
-        for ((value, label) in values) {
-            val source = if (filter == TvSourceFilter.Source) input.sources.btSources.firstOrNull { it.mediaSourceId == value } else null
-            add(
-                TvSourceRow(
-                    id = "opt:$value",
-                    style = TvSourceRowStyle.Option,
-                    title = label,
-                    trailing = source?.let { sourceStatus(it, bt.sourceCounts[value] ?: 0, strings) }.orEmpty(),
-                    loading = source?.isWorking == true,
-                    dimmed = source != null && (source.isDisabled || source.isFailedOrAbandoned),
-                    icon = if (value == current) TvSourceRowIcon.Check else TvSourceRowIcon.None,
-                    selected = value == current,
-                    action = TvSourceAction.PickFilter(filter, value),
-                ),
-            )
-        }
-    }
-    return TvSourceRight(
-        key = TvSourceRailKeys.BT + "/filter/" + filter.name,
-        title = title,
-        rows = rows,
-        focusId = rows.firstOrNull { it.selected }?.id,
-    )
-}
-
-private fun sourceStatus(source: MediaSourceResultPresentation, count: Int, strings: TvSourceStrings): String = when {
-    source.isDisabled -> strings.disabled
-    source.isFailedOrAbandoned -> strings.failedState
-    source.isWorking -> ""
-    else -> count.toString()
-}
 
 private fun failedPane(failed: List<MediaSourceResultPresentation>, strings: TvSourceStrings): TvSourceRight = TvSourceRight(
     key = TvSourceRailKeys.FAILED,
