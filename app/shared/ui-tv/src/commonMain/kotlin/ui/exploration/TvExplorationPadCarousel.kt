@@ -40,7 +40,7 @@ import me.him188.ani.app.ui.lang.exploration_tv_watch_now
 import org.jetbrains.compose.resources.stringResource
 
 /*
- * 探索页热门轮播的平板版画法 (调试开关 DevSwitches.padCarousel, 画法见 TvPadHeroLayer): 文字、按钮 (横排)、圆点贴在轮播区左下.
+ * 探索页热门轮播的平板版画法 (触屏上用, 画法见 TvPadHeroLayer): 文字、按钮 (横排)、圆点贴在轮播区左下.
  * 触屏上只有「新番时间表」一颗按钮 (点轮播画面就是进这一部的详情页, 见 TvExplorationComposeWall); 平板接着键盘 / 遥控器按键时两颗都在,
  * 焦点照电视版轮播走.
  */

@@ -61,7 +61,7 @@ import me.him188.ani.app.ui.foundation.tv.rememberTvTitleLogoBox
 import kotlin.math.roundToInt
 
 /*
- * 平板版的 hero 画法, 照平板版探索页 (ui-pad 的 PadExplorationPage) 的轮播 (调试开关 DevSwitches.padCarousel): 探索页的热门轮播与各海报墙的
+ * 平板版的 hero 画法, 照平板版探索页 (ui-pad 的 PadExplorationPage) 的轮播, 触屏上 (平板 / iPad) 用: 探索页的热门轮播与各海报墙的
  * hero 态共用. 整块铺这一部的模糊图, 越往下越接近卡片墙的底色; 右上角清晰的横版图, 左缘与下缘羽化进模糊底; 文字贴在左下、往上长.
  * 换一部的过渡固定一种: 新图在旧图上淡入, 旧字淡出、新字从右边滑一小段淡入.
  */

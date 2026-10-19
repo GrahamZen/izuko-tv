@@ -72,7 +72,6 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import me.him188.ani.app.data.models.preference.TvBackdropBlurLevel
 import me.him188.ani.app.data.models.preference.TvPosterConfirmAction
-import me.him188.ani.app.platform.DevSwitches
 import me.him188.ani.app.ui.foundation.focus.TvGridFocusState
 import me.him188.ani.app.ui.foundation.focus.TvNoBringIntoViewSpec
 import me.him188.ani.app.ui.foundation.focus.TvScrollAnimator
@@ -185,8 +184,8 @@ internal fun <T : Any> TvWallGridPage(
     LaunchedEffect(heroEnabled) {
         if (!heroEnabled) surface.setHeroActive(false, animated = false)
     }
-    // 调试开关: hero 态换成平板版的画法 (同探索页的轮播, 见 TvPadHeroLayer)
-    val padHero = DevSwitches.padCarousel.value
+    // 触屏上 (平板 / iPad) hero 态用平板版画法 (同探索页的轮播, 见 TvPadHeroLayer)
+    val padHero = touchInput
     // 整屏底色 (主壳画): hero 态的进度; 平板版画法的 hero 区自己铺满, 不压暗
     LaunchedEffect(timeline, heroBlur, padHero) {
         snapshotFlow { if (heroBlur || padHero) 0f else timeline.tone }.collect { state.tone = it }

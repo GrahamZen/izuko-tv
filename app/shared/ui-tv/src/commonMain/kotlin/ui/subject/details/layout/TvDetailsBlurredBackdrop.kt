@@ -23,7 +23,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -43,6 +42,7 @@ import me.him188.ani.app.ui.foundation.tv.nativeview.tvBackdropBlurSpec
 import me.him188.ani.app.ui.foundation.tv.nativeview.tvBackdropMaskAlpha
 import me.him188.ani.app.ui.foundation.tv.nativeview.tvFetchBlurredBackdrop
 import me.him188.ani.app.ui.foundation.tv.nativeview.tvRelativeLuminance
+import me.him188.ani.app.ui.foundation.tv.TvModulateAlphaCompositing
 
 /**
  * 详情页翻离首屏后的整屏底: 这部背景图的模糊版 (同海报墙 hero 态底下铺的那张, 解法与参数相同就是同一个内存缓存键, 海报墙上铺过的直接命中).
@@ -121,7 +121,7 @@ internal fun TvBlurredBackdropImage(
             .graphicsLayer {
                 this.alpha = if (image == null) 0f else alpha()
                 // 只有一张图, 透明度逐笔乘就够, 不开离屏层
-                compositingStrategy = CompositingStrategy.ModulateAlpha
+                compositingStrategy = TvModulateAlphaCompositing
             },
         contentScale = ContentScale.Crop,
         // 压暗画在同一次绘制里 (只盖有图处), 不另开一层

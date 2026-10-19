@@ -289,6 +289,7 @@ import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.ProvideScrollFadeFocusMargin
 import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFade
 import me.him188.ani.app.ui.foundation.widgets.showLoadError
+import me.him188.ani.app.ui.foundation.tv.TvModulateAlphaCompositing
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.subject_details_air_date_format
 import me.him188.ani.app.ui.lang.subject_details_aliases
@@ -2262,7 +2263,7 @@ private fun TvHeroTransitionTitle(
             text,
             Modifier.graphicsLayer {
                 alpha = 1f - detailsLook()
-                compositingStrategy = CompositingStrategy.ModulateAlpha
+                compositingStrategy = TvModulateAlphaCompositing
             },
             style = style,
             color = listColor,
@@ -2273,7 +2274,7 @@ private fun TvHeroTransitionTitle(
             text,
             Modifier.graphicsLayer {
                 alpha = detailsLook()
-                compositingStrategy = CompositingStrategy.ModulateAlpha
+                compositingStrategy = TvModulateAlphaCompositing
             },
             style = style.copy(shadow = shadow),
             color = color,
@@ -4289,7 +4290,7 @@ private fun Modifier.tvDetailsPrewarm(active: () -> Boolean, topInRoot: MutableF
             if (active() && !top.isNaN()) {
                 translationY = -top
                 alpha = 0.01f
-                compositingStrategy = CompositingStrategy.ModulateAlpha
+                compositingStrategy = TvModulateAlphaCompositing
             }
         }
 
@@ -4662,7 +4663,7 @@ private class TvDetailsPager(
         val shown = if (TvPolishFlags.pagerSkipOffscreen) shownFraction(index, outgoing, slide, rise, size.height) else 1f
         if (shown <= 0f) return@with
         // 只露出一截的页 (目标页底下露着标题的下一页): 逐条绘制乘透明度, 不为这一截建整页的离屏层
-        if (shown < TV_HERO_SWAP_LAYER_MIN_SHOWN) compositingStrategy = CompositingStrategy.ModulateAlpha
+        if (shown < TV_HERO_SWAP_LAYER_MIN_SHOWN) compositingStrategy = TvModulateAlphaCompositing
         // 本轮曲线给出的透明度 (离开方早早淡出 / 进入方稍晚淡入); 有续接值时按单调方向取,
         // 离开方只准更淡、进入方只准更浓, 连按时不会闪回 (见 alphaFrom)
         //
