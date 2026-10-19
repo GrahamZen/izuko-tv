@@ -35,9 +35,11 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -62,6 +64,7 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import me.him188.ani.app.data.models.preference.TvPosterConfirmAction
 import me.him188.ani.app.data.models.preference.resolveSavedOrder
 import me.him188.ani.app.data.models.subject.ContinueWatchingStatus
 import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
@@ -154,6 +157,7 @@ import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.rememberTvBesideAnchorPositionProvider
 import me.him188.ani.app.ui.foundation.widgets.showLoadError
 import me.him188.ani.app.ui.lang.Lang
+import me.him188.ani.app.ui.lang.collection_tv_progress_tab
 import me.him188.ani.app.ui.lang.collection_tv_tab_order_title
 import me.him188.ani.app.ui.lang.subject_collection_doing
 import me.him188.ani.app.ui.lang.subject_collection_done
@@ -229,10 +233,16 @@ private fun TvCollectionPageContent(
     // (见下方 restoreCardIndex), 不能复位.
     var enteredBefore by rememberSaveable { mutableStateOf(false) }
     val freshEntry = remember { !enteredBefore }
+    // 「追更」页 (见 TvCollectionProgressPane): 标签行最前面那一格, 不是收藏分类, 胶囊行上用 null 表示. 选中它时网格让出位置, 新进本页落在它上面
+    val progress = rememberTvCollectionProgress()
+    val progressPane = rememberTvCollectionProgressPaneState()
+    var progressSelected by rememberSaveable { mutableStateOf(false) }
     // 分类标签的显示顺序 —— 用户可以自己排 (长按标签 / 动作面板「自定义标签顺序」).
     // 选中项仍按类型存取 (state 内部是 COLLECTION_TABS_SORTED 的下标), 所以重排只换展示与左右
     // 导航次序, 不会把内容切走
     val tabOrder = rememberTvCollectionTabOrder()
+    // 标签行上的全部标签: 「追更」(null) 固定在最前, 后面是用户排的分类
+    val railTabs: List<UnifiedCollectionType?> = remember(tabOrder) { listOf(null) + tabOrder }
     // 收藏计数是异步来的, 冷启动进页时往往还是 null: 全按 0 算 -> 落到第一个标签, 计数到达后
     // 由下方效应再定一次
     val firstNonEmptyTabIndex: () -> Int = {
@@ -247,6 +257,7 @@ private fun TvCollectionPageContent(
         // (标签指示条与网格内容闪一下再跳走)
         val target = firstNonEmptyTabIndex()
         if (state.selectedTypeIndex != target) state.selectTypeIndex(target)
+        progressSelected = true
     }
 
     // 页面这里只取实例、不收集: 原生网格的接线 (TvCollectionNativeGrid) 已对同一缓存实例
@@ -259,9 +270,21 @@ private fun TvCollectionPageContent(
 
     // 标签行上选中的分类与网格显示的分类 (state.selectedTypeIndex) 分开走: 标签上左右移, 网格等方向键松开才换 (见 TvRailWallSelection).
     // 本页 tab 显示顺序与 state 的存储顺序不同 (见 TV_COLLECTION_TABS), 界面一律用类型换算下标. 各分类的网格各记各的位置, 换过去不复位
-    val tabs = rememberTvRailWallSelection(
-        wall = { COLLECTION_TABS_SORTED[state.selectedTypeIndex] },
-        showOnWall = { type, _ -> state.selectTypeIndex(COLLECTION_TABS_SORTED.indexOf(type)) },
+    // 原生海报墙在页面这一侧的状态 (见下方 heroDisplay 处); 声明在胶囊行之前: 换到「追更」时要先记下网格的位置
+    val nativeState = rememberTvNativeGridPageState()
+    val tabs = rememberTvRailWallSelection<UnifiedCollectionType?>(
+        wall = { if (progressSelected) null else COLLECTION_TABS_SORTED[state.selectedTypeIndex] },
+        showOnWall = { type, _ ->
+            if (type == null) {
+                // 网格随之撤出组合: 先记下各分类的位置、退出 hero 态, 换回来照样恢复
+                nativeState.capture()
+                if (nativeState.heroActive) nativeState.exitHero()
+                progressSelected = true
+            } else {
+                progressSelected = false
+                state.selectTypeIndex(COLLECTION_TABS_SORTED.indexOf(type))
+            }
+        },
     )
     // 统一网格落点协调器 (进页恢复焦点 / 标签行下键 / 跨 tab 行对齐 / 返回回首卡 / 改收藏后的落点共用,
     // 机制见 [TvGridFocusState]; 原生网格经 NativeSendFocusEffect 接请求); 声明在 hero 默认值效应之前, 后者要在解析期间让路
@@ -278,7 +301,8 @@ private fun TvCollectionPageContent(
     // 一样随重新进入丢掉, 网格从顶部排起 —— 与 hero 默认展示的列表第一项对得上.
     // 声明在这里而不是 freshEntry 那段旁边: 要用下方才声明的 gridFocus 判断用户是否已接手.
     LaunchedEffect(Unit) {
-        if (!freshEntry) return@LaunchedEffect
+        // 新进本页落在「追更」上, 不必等计数定分类
+        if (!freshEntry || progressSelected) return@LaunchedEffect
         if (state.collectionCounts == null) {
             val keysAtStart = focus.userNavGeneration
             withTimeoutOrNull(TV_COLLECTION_COUNTS_WAIT_MILLIS) {
@@ -346,8 +370,7 @@ private fun TvCollectionPageContent(
     // 收 provider: 在 body 里读 heroInfo 会把那次读记到本页上, 每换一格整页重组, 正是
     // hero 内容收 lambda 交给原生接线 (只让那一小块随换卡重组) 想避免的事. 机理与实测数据见 [rememberTvSettledHeroProvider]
     // 原生海报墙在页面这一侧的状态 (hero 态、整屏黑度、各标签网格的位置, 见 TvNativeGridPageState). 背景图与 hero 文字只在
-    // hero 态画; hero 流水线在卡片墙上照样跑 —— 它同时是详情页的预取
-    val nativeState = rememberTvNativeGridPageState()
+    // hero 态画; hero 流水线在卡片墙上照样跑 —— 它同时是详情页的预取 (nativeState 声明在胶囊行之前)
     // 进出 hero 态那一刻背景图与文字当场换到聚焦的那张 (返回键远跳落地后排队的确认, 焦点刚到就进 hero 态)
     val heroDisplay = rememberTvSettledHeroProvider(flushOn = { nativeState.heroActive }) { heroInfo }
     // hero **文字**的展示目标, 与背景图分开: 低特效档下网格滚动 (换行) 期间为 null, 停稳后才是
@@ -478,9 +501,9 @@ private fun TvCollectionPageContent(
     // 该 tab 后面的焦点节点就会被重建; 焦点恰好在这个 tab 上时会被丢掉, 焦点系统随即把默认
     // 焦点发回第一个可聚焦元素 (第一个 tab). 而"聚焦即选中"意味着每次焦点落到新 tab 都会触发
     // 一次选中态变化, 于是按住方向键快速移动时偶发被拉回最左标签.
-    val tabFocusKeys = remember { List(tabOrder.size) { CollectionTabFocusKey(it) } }
-    // 标签行上选中的标签在本页显示顺序里的下标. 用函数而非捕获值: 效应/按键回调里调用时要读到最新选中项
-    val selectedTabTvIndex: () -> Int = { tabOrder.indexOf(tabs.selected) }
+    val tabFocusKeys = remember { List(railTabs.size) { CollectionTabFocusKey(it) } }
+    // 标签行上选中的标签在本页显示顺序里的下标 (「追更」是 0). 用函数而非捕获值: 效应/按键回调里调用时要读到最新选中项
+    val selectedTabTvIndex: () -> Int = { railTabs.indexOf(tabs.selected) }
     // 当前持有焦点的标签下标 (按本页显示顺序); -1 = 焦点不在标签行上
     var focusedTabTvIndex by remember { mutableIntStateOf(-1) }
     // 空 tab 的网格落点放弃后, 必须等“选中的标签真实获焦”才能重新开放标签行导航. 真机上
@@ -515,6 +538,34 @@ private fun TvCollectionPageContent(
         // 用户自己切了 tab: 旧 tab 的卡去哪已无关紧要, 别让等待效应在新 tab 里安排落点
         awaitingRemovalSubjectId = null
     }
+    // 「追更」上没有网格: 网格的落点簿记作废, 返回本页 / 回到前台时不去网格里找卡
+    if (progressSelected && lastFocusedCard != -1) lastFocusedCard = -1
+    // 把焦点送进「追更」页: 有卡回上次那张, 空页时进出错卡片. 页面刚换过去 (还没组合出来) 或数据还没从库里读出来时先挂着, 到了再送
+    // (见下方效应); 挂着期间焦点先躲到隐形锚点上 —— 网格随之撤出组合, 持焦的卡被拆掉时焦点不至于被系统塞给第一个标签
+    var progressFocusPending by remember { mutableStateOf(false) }
+    fun focusProgressNow(): Boolean {
+        if (progressPane.view == null) return false
+        val sections = progress.sections ?: return false
+        return if (sections.isNotEmpty()) progressPane.focusCards() else progress.error != null && progressPane.focusError()
+    }
+    val focusProgress: () -> Unit = {
+        if (!focusProgressNow()) {
+            progressFocusPending = true
+            runCatching { transitAnchor.requestFocus() }
+        }
+    }
+    LaunchedEffect(progressFocusPending) {
+        if (!progressFocusPending) return@LaunchedEffect
+        val landed = withTimeoutOrNull(TV_COLLECTION_PROGRESS_FOCUS_WAIT_MILLIS) {
+            snapshotFlow { progressSelected && progressPane.view != null && progress.sections != null }.first { it }
+            // 视图建出来的这一帧还没挂上窗口: 等一帧再送
+            withFrameNanos {}
+            focusProgressNow()
+        }
+        progressFocusPending = false
+        // 没送进去 (没有在播的番、等超时): 回到选中的标签
+        if (landed != true && progressSelected) focusSelectedTab()
+    }
     // 进入本页要恢复的目标卡片下标 (进页那一刻的快照; -1 = 聚焦选中 tab)
     val restoreCardIndex = remember { lastFocusedCard }
     // 恢复期间抑制标签的"聚焦即选中": 返回本页瞬间系统会把默认焦点塞给第一个可聚焦元素
@@ -531,6 +582,10 @@ private fun TvCollectionPageContent(
             restorePending = false
             // 落点有结果 (送达 / 用户接手 / 判空取消) 才放开默认 hero: 送达时 hero 已由
             // onCardFocused 设成正确那张, 这里放开只是为了兜住"恢复失败"的情形
+            heroDefaultBlockedByRestore = false
+        } else if (progressSelected && progressPane.returnToCards) {
+            // 从「追更」的卡上进的播放器 / 别的页: 回到那张卡
+            focusProgress()
             heroDefaultBlockedByRestore = false
         } else {
             focusSelectedTab()
@@ -549,7 +604,11 @@ private fun TvCollectionPageContent(
     // 事件都不发了 (2026-08-22 改), 见 LocalPageIsForeground 的文档.
     OnReturnToForeground("collection") {
         val card = lastFocusedCard
-        if (card >= 0) gridFocus.focusItem(card) else focusSelectedTab()
+        when {
+            progressSelected -> if (progressPane.returnToCards) focusProgress() else focusSelectedTab()
+            card >= 0 -> gridFocus.focusItem(card)
+            else -> focusSelectedTab()
+        }
     }
 
     // 焦点卡因收藏状态改变离开本 tab: 等它真的从列表里消失, 再安排落点.
@@ -652,13 +711,14 @@ private fun TvCollectionPageContent(
     // 播放键: 短按播聚焦条目的下一集, 长按强制重拉当前 tab 的收藏列表 (默认只在进页/一小时
     // 定时同步时刷新). 挂在页面根上而不是网格上: 焦点在 tab 行时也能刷
     // 动作面板「刷新本页」= 强制重拉当前分类 (播放键长按已改为全局的「打开动作面板」)
-    TvPageRefreshHandler { state.refreshSelectedPage() }
+    // 「追更」上 = 同步在看与想看两类
+    TvPageRefreshHandler { if (progressSelected) progress.syncInBackground(force = true) else state.refreshSelectedPage() }
     // 动作面板里的「海报墙大小」: 盖在本页上开编辑窗口. 值变了原生网格按新尺寸重建 (TvNativeHost 的 rebuildKey), 打开前焦点在网格上的话回到那张卡
     val wallRefocusPending = TvWallScaleEntry(
         page = TvPosterWallPreviewPage.COLLECTION,
-        wallHasFocus = { nativeState.view?.hasFocus() == true },
-        beforeOpen = { nativeState.capture() },
-        refocus = { gridFocus.focusItem(lastFocusedCard.coerceAtLeast(0)) },
+        wallHasFocus = { if (progressSelected) progressPane.cardsFocused else nativeState.view?.hasFocus() == true },
+        beforeOpen = { if (progressSelected) progressPane.capture() else nativeState.capture() },
+        refocus = { if (progressSelected) focusProgress() else gridFocus.focusItem(lastFocusedCard.coerceAtLeast(0)) },
     )
     // 标签顺序: 长按一个标签 (焦点落在那个标签上进去) 或动作面板里的「自定义标签顺序」, 都开盖在本页上的排序窗口.
     // 排完焦点跟着分类走: 标签是按位置排的节点, 新顺序落到这排标签上之后, 持焦的那个节点上已经是别的分类 ——
@@ -688,9 +748,46 @@ private fun TvCollectionPageContent(
     BackHandler(enabled = nativeState.heroActive) {
         nativeState.exitHero()
     }
+    // 「追更」里长按一张卡: 换到它所在的分类 (在看 / 想看) 落在它的卡上, 「海报上按确定」是先看简介时再进 hero 态.
+    // 等那一类的列表里出现这一部 (分页从头排, 在播的番改得勤, 一般在头几页); 等不到就进详情页
+    val heroOnConfirm = LocalThemeSettings.current.tvPosterConfirm == TvPosterConfirmAction.Hero
+    val currentItems by rememberUpdatedState(items)
+    var cardJump by remember { mutableStateOf<SubjectCollectionInfo?>(null) }
+    val jumpToCard: (SubjectCollectionInfo) -> Unit = { info ->
+        if (info.collectionType in COLLECTION_TABS_SORTED) {
+            cardJump = info
+            // 换走「追更」时持焦的卡随之被拆: 焦点先躲到隐形锚点上, 网格里的卡拿到焦点再离开
+            runCatching { transitAnchor.requestFocus() }
+            tabs.select(info.collectionType, fromRail = false)
+        } else {
+            navigateToSubject(info)
+        }
+    }
+    LaunchedEffect(cardJump) {
+        val info = cardJump ?: return@LaunchedEffect
+        val index = withTimeoutOrNull(TV_COLLECTION_CARD_JUMP_WAIT_MILLIS) {
+            snapshotFlow {
+                if (progressSelected || COLLECTION_TABS_SORTED[state.selectedTypeIndex] != info.collectionType) {
+                    -1
+                } else {
+                    currentItems.itemSnapshotList.indexOfFirst { it?.subjectId == info.subjectId }
+                }
+            }.first { it >= 0 }
+        }
+        cardJump = null
+        if (index == null) {
+            focusSelectedTab()
+            navigateToSubject(info)
+            return@LaunchedEffect
+        }
+        gridFocus.focusItem(index)
+        snapshotFlow { gridFocus.switching }.first { !it }
+        if (heroOnConfirm && lastFocusedCard == index) nativeState.view?.setHeroActive(true)
+    }
     val playKeyModifier = tvPlayKeyShortPress(
         onPlay = {
-            val info = lastFocusedCard.takeIf { it >= 0 }
+            // 「追更」上的播放键由那一页自己接 (见 TvCollectionProgressPane)
+            val info = lastFocusedCard.takeIf { it >= 0 && !progressSelected }
                 ?.let { runCatching { items.peek(it) }.getOrNull() }
             if (info != null) {
                 navigateToPlay(info)
@@ -714,91 +811,116 @@ private fun TvCollectionPageContent(
         // 海报墙本体 (见 TvCollectionNativeGrid.kt): 背景图 / hero 文字 / 网格都在原生视图里, 画在标签行底下.
         // 背景图恒用"卡片态"渐变, 观看途中优先下一集剧照, 缺失回退整部官方主图; 三级回落 + 封面兜底/垫底 (四页同构),
         // 语义见 TvHeroMediaPipelineState
-        // 标签行下面错误横幅 (有的话) 的高度, 网格顶线往下让开它
-        val wallLayout = tvCollectionWallLayout(errorTopPx = if (items.loadState.hasError) nativeErrorCardHeightPx else 0)
-        TvCollectionNativeGrid(
-            state = nativeState,
-            metrics = wallLayout.metrics,
-            cardWidth = wallLayout.cardWidth,
-            selectedTab = state.selectedTypeIndex,
-            tabOrderIndex = { tab -> tabOrder.indexOf(COLLECTION_TABS_SORTED[tab]) },
-            items = items,
-            countSaysEmpty = state.collectionCounts?.getCount(COLLECTION_TABS_SORTED[state.selectedTypeIndex]) == 0,
-            playHistories = { playHistories },
-            heroRaw = { heroInfo },
-            heroDisplay = heroDisplay,
-            heroText = heroTextDisplay,
-            heroPipeline = heroPipeline,
-            episodeStillCache = episodeStillCache,
-            summaryFallbackCache = summaryFallbackCache,
-            fadeColor = wallTone?.heroColor ?: AniThemeDefaults.shellBackgroundColor,
-            gridFocus = gridFocus,
-            farJump = { wallFarJump },
-            onFarJumpConsumed = { wallFarJump = false },
-            callbacks = TvNativeGridPageCallbacks(
-                onCardFocused = { index, info ->
-                    info?.let {
-                        heroItem = it
-                        // 邻居按网格几何算 (见 tvGridNeighborsOf): 卡片墙上不画背景图, hero 流水线也要拿它们给详情页预取.
-                        // 剧照偏好按每个邻居自己的观看状态定 (网格里"在看"与其余条目是混着的, 见 TvHeroNeighbor)
-                        heroNeighbors = it.subjectId to tvGridNeighborsOf(index, wallLayout.columns) { i ->
-                            if (i in 0 until items.itemCount) {
-                                items.peek(i)?.let { n -> TvHeroNeighbor(n.subjectId, n.stillEpisodeIdOrNull() != null) }
-                            } else {
-                                null
-                            }
-                        }
-                    }
-                    lastFocusedCard = index
-                    gridRegionFocused = true
-                },
-                onCardClick = { _, info -> navigateToSubject(info) },
-                onCardPlay = { _, info -> navigateToPlay(info) },
+        if (progressSelected) {
+            // 「追更」页 (见 TvCollectionProgressPane.kt): 一组一行的海报墙, 确定 = 播下一集, 长按 = 跳到它所在分类的那张卡
+            TvCollectionProgressPane(
+                progress = progress,
+                state = progressPane,
+                playHistories = { playHistories },
+                onPlay = navigateToPlay,
+                onLongPress = jumpToCard,
                 onTopRowUp = { focusSelectedTab() },
-                onRowEdge = { direction, row ->
-                    // 行缘换标签 (当场换): 行末按右 → 右边标签同一行行首, 行首按左对称; 首个标签行首按左进侧边栏
-                    val tvIndex = tabOrder.indexOf(COLLECTION_TABS_SORTED[state.selectedTypeIndex])
-                    when {
-                        direction > 0 -> {
-                            if (tvIndex in 0..<tabOrder.size - 1) {
-                                gridFocus.focusRowEdge(row, direction = 1)
-                                tabs.select(tabOrder[tvIndex + 1], fromRail = false)
+                onCardAreaFocusChanged = { has -> if (has) gridRegionFocused = false },
+            )
+        } else {
+            // 标签行下面错误横幅 (有的话) 的高度, 网格顶线往下让开它
+            val wallLayout = tvCollectionWallLayout(errorTopPx = if (items.loadState.hasError) nativeErrorCardHeightPx else 0)
+            TvCollectionNativeGrid(
+                state = nativeState,
+                metrics = wallLayout.metrics,
+                cardWidth = wallLayout.cardWidth,
+                selectedTab = state.selectedTypeIndex,
+                tabOrderIndex = { tab -> tabOrder.indexOf(COLLECTION_TABS_SORTED[tab]) },
+                items = items,
+                countSaysEmpty = state.collectionCounts?.getCount(COLLECTION_TABS_SORTED[state.selectedTypeIndex]) == 0,
+                playHistories = { playHistories },
+                heroRaw = { heroInfo },
+                heroDisplay = heroDisplay,
+                heroText = heroTextDisplay,
+                heroPipeline = heroPipeline,
+                episodeStillCache = episodeStillCache,
+                summaryFallbackCache = summaryFallbackCache,
+                fadeColor = wallTone?.heroColor ?: AniThemeDefaults.shellBackgroundColor,
+                gridFocus = gridFocus,
+                farJump = { wallFarJump },
+                onFarJumpConsumed = { wallFarJump = false },
+                callbacks = TvNativeGridPageCallbacks(
+                    onCardFocused = { index, info ->
+                        info?.let {
+                            heroItem = it
+                            // 邻居按网格几何算 (见 tvGridNeighborsOf): 卡片墙上不画背景图, hero 流水线也要拿它们给详情页预取.
+                            // 剧照偏好按每个邻居自己的观看状态定 (网格里"在看"与其余条目是混着的, 见 TvHeroNeighbor)
+                            heroNeighbors = it.subjectId to tvGridNeighborsOf(index, wallLayout.columns) { i ->
+                                if (i in 0 until items.itemCount) {
+                                    items.peek(i)?.let { n -> TvHeroNeighbor(n.subjectId, n.stillEpisodeIdOrNull() != null) }
+                                } else {
+                                    null
+                                }
                             }
-                            true
                         }
+                        lastFocusedCard = index
+                        gridRegionFocused = true
+                    },
+                    onCardClick = { _, info -> navigateToSubject(info) },
+                    onCardPlay = { _, info -> navigateToPlay(info) },
+                    onTopRowUp = { focusSelectedTab() },
+                    onRowEdge = { direction, row ->
+                        // 行缘换标签 (当场换): 行末按右 → 右边标签同一行行首, 行首按左对称; 左边是「追更」时进它上次那张卡
+                        val tvIndex = railTabs.indexOf(COLLECTION_TABS_SORTED[state.selectedTypeIndex])
+                        when {
+                            direction > 0 -> {
+                                if (tvIndex in 0..<railTabs.size - 1) {
+                                    gridFocus.focusRowEdge(row, direction = 1)
+                                    tabs.select(railTabs[tvIndex + 1], fromRail = false)
+                                }
+                                true
+                            }
 
-                        tvIndex > 0 -> {
-                            gridFocus.focusRowEdge(row, direction = -1)
-                            tabs.select(tabOrder[tvIndex - 1], fromRail = false)
-                            true
-                        }
+                            tvIndex > 0 -> {
+                                val target = railTabs[tvIndex - 1]
+                                if (target == null) {
+                                    tabs.select(null, fromRail = false)
+                                    focusProgress()
+                                } else {
+                                    gridFocus.focusRowEdge(row, direction = -1)
+                                    tabs.select(target, fromRail = false)
+                                }
+                                true
+                            }
 
-                        else -> {
-                            railEnter?.requestFocus()
-                            true
+                            else -> {
+                                railEnter?.requestFocus()
+                                true
+                            }
                         }
-                    }
-                },
-                // 触屏左右滑换标签: 落点同行缘按左右 (新标签同一行的行缘), 只是两头不往外走 (第一个标签往右滑不进侧边栏)
-                onSwipe = { delta ->
-                    val tvIndex = tabOrder.indexOf(COLLECTION_TABS_SORTED[state.selectedTypeIndex])
-                    val target = tvIndex + delta
-                    if (tvIndex >= 0 && target in tabOrder.indices) {
-                        val row = if (gridRegionFocused && lastFocusedCard >= 0) lastFocusedCard / wallLayout.columns else 0
-                        gridFocus.focusRowEdge(row, direction = delta)
-                        tabs.select(tabOrder[target], fromRail = false)
-                    }
-                },
-                onGridFocusChanged = { has ->
-                    gridHasFocus = has
-                    if (!has) gridRegionFocused = false
-                },
-                onScrollingChanged = { nativeScrollReporter?.setScrolling(it) },
-            ),
-            menuFor = collectionMenuFor,
-            // 返回本页恢复的那张 (见上方进页恢复) / 海报墙大小改完按新尺寸重建时焦点要回的那张: 建网格时就按住聚焦态
-            landingIndex = if (wallRefocusPending) lastFocusedCard else restoreCardIndex,
-        )
+                    },
+                    // 触屏左右滑换标签: 落点同行缘按左右 (新标签同一行的行缘), 只是两头不往外走 (第一个标签往右滑不进侧边栏)
+                    onSwipe = { delta ->
+                        val tvIndex = railTabs.indexOf(COLLECTION_TABS_SORTED[state.selectedTypeIndex])
+                        val target = tvIndex + delta
+                        if (tvIndex >= 0 && target in railTabs.indices) {
+                            val targetTab = railTabs[target]
+                            if (targetTab == null) {
+                                tabs.select(null, fromRail = false)
+                                focusProgress()
+                            } else {
+                                val row = if (gridRegionFocused && lastFocusedCard >= 0) lastFocusedCard / wallLayout.columns else 0
+                                gridFocus.focusRowEdge(row, direction = delta)
+                                tabs.select(targetTab, fromRail = false)
+                            }
+                        }
+                    },
+                    onGridFocusChanged = { has ->
+                        gridHasFocus = has
+                        if (!has) gridRegionFocused = false
+                    },
+                    onScrollingChanged = { nativeScrollReporter?.setScrolling(it) },
+                ),
+                menuFor = collectionMenuFor,
+                // 返回本页恢复的那张 (见上方进页恢复) / 海报墙大小改完按新尺寸重建时焦点要回的那张: 建网格时就按住聚焦态
+                landingIndex = if (wallRefocusPending) lastFocusedCard else restoreCardIndex,
+            )
+        }
 
         // 页面从屏幕左缘铺起 (侧边栏盖在上面, 见 TvMainScreenLayout), 左边让开侧边栏
         Column(
@@ -809,9 +931,9 @@ private fun TvCollectionPageContent(
             TvCollectionTabRow(
                 // hero 态的模糊背景点开时标签行跟着卡片淡没 (见 TvNativeGridPageState.wallFade), 在绘制里读
                 modifier = Modifier.height(TV_COLLECTION_TAB_ROW_HEIGHT).graphicsLayer { alpha = 1f - nativeState.wallFade },
-                tabs = tabOrder,
+                tabs = railTabs,
                 selection = tabs,
-                counts = { type -> state.collectionCounts?.getCount(type) },
+                counts = { type -> if (type == null) progress.count else state.collectionCounts?.getCount(type) },
                 // 跨 tab 落点解析期间与进页恢复焦点期间抑制 tab 的选中 (兜底: 万一
                 // 瞬时焦点飘到某个标签上, 不能让它改写目标 tab 的选择)
                 onSelectByFocus = { type -> if (!gridFocus.switching && !restorePending) tabs.moveTo(type) },
@@ -854,22 +976,29 @@ private fun TvCollectionPageContent(
                     selectedTabFocusPending = false
                 },
                 onNavigateDown = {
-                    // 进网格 (见 enterWall): 标签上还在等方向键松开的选择当场换上; 上到标签行再下来回到刚才看的那一行, 换过 tab
-                    // (切 tab 时 lastFocusedCard 重置成 -1) 从第一行进; 没有卡时退到错误横幅 (登录/重试按钮)
-                    tabs.enterWall(
-                        gridFocus = gridFocus,
-                        wall = nativeState,
-                        visitedWall = { lastFocusedCard >= 0 },
-                        hasCards = { switched ->
-                            if (switched) {
-                                // 刚换上的那份下一帧才排出来: 按收藏计数判断, 计数没到当有 (送焦等数据, 空了由网格接线取消)
-                                state.collectionCounts?.getCount(tabs.selected) != 0
-                            } else {
-                                nativeState.view?.firstIndexBelowTopLine() != null
-                            }
-                        },
-                        onNoCards = { runCatching { errorCardFocusRequester.requestFocus() } },
-                    )
+                    if (tabs.selected == null) {
+                        // 进「追更」: 标签上还在等方向键松开的选择当场换上, 回上次那张卡 (没进过就是第一行); 刚换过去的这一帧还没组合出来, 由送焦效应接着送
+                        tabs.commit()
+                        focusProgress()
+                        true
+                    } else {
+                        // 进网格 (见 enterWall): 标签上还在等方向键松开的选择当场换上; 上到标签行再下来回到刚才看的那一行, 换过 tab
+                        // (切 tab 时 lastFocusedCard 重置成 -1) 从第一行进; 没有卡时退到错误横幅 (登录/重试按钮)
+                        tabs.enterWall(
+                            gridFocus = gridFocus,
+                            wall = nativeState,
+                            visitedWall = { lastFocusedCard >= 0 },
+                            hasCards = { switched ->
+                                if (switched) {
+                                    // 刚换上的那份下一帧才排出来: 按收藏计数判断, 计数没到当有 (送焦等数据, 空了由网格接线取消)
+                                    tabs.selected?.let { state.collectionCounts?.getCount(it) } != 0
+                                } else {
+                                    nativeState.view?.firstIndexBelowTopLine() != null
+                                }
+                            },
+                            onNoCards = { runCatching { errorCardFocusRequester.requestFocus() } },
+                        )
+                    }
                 },
                 onExitLeft = { railEnter?.requestFocus() },
             )
@@ -883,13 +1012,14 @@ private fun TvCollectionPageContent(
                 switching = { gridFocus.switching },
                 // 驻留期间的按键被锚点吞掉, 不算用户接管 (否则在途送焦被取消, 焦点落回标签行)
                 scope = focus,
-                extraCanFocus = { awaitingRemovalSubjectId != null },
+                // 「追更」那几条路 (送焦进追更页、长按跳到网格的卡) 也先躲在这里
+                extraCanFocus = { awaitingRemovalSubjectId != null || progressFocusPending || cardJump != null },
                 // 在途请求被取消 / 等条目消失结束: 焦点还在锚点上而锚点即将不可聚焦, 补落点到选中标签
                 onStranded = { focusSelectedTab() },
             )
 
             // 列表加载出错时的错误横幅, 在标签行下面
-            if (items.loadState.hasError) {
+            if (!progressSelected && items.loadState.hasError) {
                 LoadErrorCard(
                     LoadError.fromCombinedLoadStates(items.loadState),
                     onRetry = { items.refresh() },
@@ -937,15 +1067,15 @@ internal fun SubjectCollectionInfo.toHeroMediaSpec(neighbors: TvHeroNeighbors = 
  */
 @Composable
 private fun TvCollectionTabRow(
-    /** 本行要摆的分类, 按显示顺序 (见 [rememberTvCollectionTabOrder]). */
-    tabs: List<UnifiedCollectionType>,
-    selection: TvRailWallSelection<UnifiedCollectionType>,
-    counts: (UnifiedCollectionType) -> Int?,
-    /** 左右键移到了这个分类 (网格等方向键松开才换). */
-    onSelectByFocus: (UnifiedCollectionType) -> Unit,
+    /** 本行要摆的标签, 按显示顺序: null = 「追更」, 其余是分类 (见 [rememberTvCollectionTabOrder]). */
+    tabs: List<UnifiedCollectionType?>,
+    selection: TvRailWallSelection<UnifiedCollectionType?>,
+    counts: (UnifiedCollectionType?) -> Int?,
+    /** 左右键移到了这个标签 (网格等方向键松开才换). */
+    onSelectByFocus: (UnifiedCollectionType?) -> Unit,
     /** 点按选中 (当场换). */
-    onSelect: (UnifiedCollectionType) -> Unit,
-    onLongPress: (UnifiedCollectionType) -> Unit,
+    onSelect: (UnifiedCollectionType?) -> Unit,
+    onLongPress: (UnifiedCollectionType?) -> Unit,
     focusScope: TvFocusScope,
     tabFocusKeys: List<TvFocusKey>,
     navigationLocked: () -> Boolean,
@@ -987,7 +1117,7 @@ private fun TvCollectionTabRow(
                 index = index,
                 item = type,
                 selection = selection,
-                label = type.displayTextTv(),
+                label = type?.displayTextTv() ?: stringResource(Lang.collection_tv_progress_tab),
                 detail = counts(type)?.toString(),
                 onSelectByFocus = { onSelectByFocus(type) },
                 onClick = { onSelect(type) },
@@ -1175,6 +1305,12 @@ private data class CollectionTabFocusKey(val index: Int) : TvFocusKey
  * 不让"等计数"把进页焦点拖在半空.
  */
 private const val TV_COLLECTION_COUNTS_WAIT_MILLIS = 3000L
+
+/** 把焦点送进「追更」页时等它组合出来、数据从库里读出来的上限 (毫秒); 超时回到选中的标签. */
+private const val TV_COLLECTION_PROGRESS_FOCUS_WAIT_MILLIS = 3000L
+
+/** 「追更」里长按跳到网格时等那一类的列表里出现这一部的上限 (毫秒); 超时进详情页. */
+private const val TV_COLLECTION_CARD_JUMP_WAIT_MILLIS = 5000L
 
 /**
  * 等"改了收藏状态的条目"从当前 tab 列表消失的上限 (毫秒). 需覆盖一次网络往返 + 分页刷新;
