@@ -656,6 +656,7 @@
     <string name="tv_source_drive_login_hint">这个数据源要登录网盘后才能搜到资源，按确定扫码登录</string>
     <string name="tv_source_drive_login_title">登录%1$s</string>
     <string name="tv_source_drive_login_password">这个网盘用账号密码登录：用手机扫码打开 Web 控制台，在「数据源」里填写。</string>
+    <string name="tv_source_site_ip_blocked">网站封了这个网络的 IP，%1$s 后再试</string>
     <string name="tv_source_disabled">已停用</string>
     <string name="tv_source_episode_filter">仅本集</string>
     <string name="tv_source_all_episodes">全部集数</string>

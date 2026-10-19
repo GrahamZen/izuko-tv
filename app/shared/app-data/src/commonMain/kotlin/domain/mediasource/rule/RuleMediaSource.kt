@@ -22,6 +22,8 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.content.TextContent
+import kotlinx.atomicfu.locks.SynchronizedObject
+import kotlinx.atomicfu.locks.synchronized
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -258,7 +260,10 @@ class RuleMediaSource(
      * 直连请求; GET 被站点验证 (Cloudflare 等) 挡住时先试自动过验证, 再用验证码会话加载.
      */
     private suspend fun request(request: RuleHttpRequest): RuleHttpResponse {
+        // 站点拉黑了这个网络: 冷却期内不再请求, 收到封禁页也不再接着试 (见 RuleSiteBlocks)
+        RuleSiteBlocks.throwIfBlocked(request.url)
         val response = sendHttp(request)
+        RuleSiteBlocks.checkResponse(request.url, response.status, response.text)
         if (request.method != "GET" || response.text.length > MAX_BLOCK_CHECK_LENGTH) return response
         val verdict = evaluator.evaluate(
             LoadedPage(finalUrl = response.finalUrl, html = response.text, status = response.status),
@@ -379,7 +384,7 @@ class RuleMediaSource(
                 for (name in primary + fallback) {
                     if (matched && name !in primarySet) break
                     val searchQuery = query(name)
-                    val media = searchFromCacheOrNull(searchQuery, subjectId) ?: searchOnline(searchQuery, subjectId)
+                    val media = searchFromCacheOrNull(searchQuery, subjectId) ?: searchOnlineUnlessRecentlyEmpty(searchQuery, subjectId)
                     if (!matched && matches(media)) matched = true
                     total += media.size
                     emitAll(media.asFlow())
@@ -411,6 +416,23 @@ class RuleMediaSource(
         }.takeIf { it.isNotEmpty() }
     }
 
+    /**
+     * 最近搜过、什么都没搜到的名字 → 搜的时刻. 搜索缓存只存搜到了条目的; 不记这个的话, 站点上没有这部番时每换一集都把所有名字重搜一遍,
+     * 请求多了会被站点当成采集拉黑 (见 RuleSiteBlocks). 与搜到时的缓存留一样久 ([RuleConfig.searchCacheTtlMillis]).
+     */
+    private val recentlyEmpty = HashMap<String, Long>()
+    private val recentlyEmptyLock = SynchronizedObject()
+
+    private suspend fun searchOnlineUnlessRecentlyEmpty(query: SelectorSearchQuery, subjectId: Int?): List<DefaultMedia> {
+        val name = query.subjectName
+        val now = currentTimeMillis()
+        val searchedAt = synchronized(recentlyEmptyLock) { recentlyEmpty[name] }
+        if (searchedAt != null && now - searchedAt < rule.searchCacheTtlMillis) return emptyList()
+        return searchOnline(query, subjectId).also { media ->
+            if (media.isEmpty()) synchronized(recentlyEmptyLock) { recentlyEmpty[name] = now }
+        }
+    }
+
     private suspend fun searchOnline(query: SelectorSearchQuery, subjectId: Int?): List<DefaultMedia> {
         delayUntilNextAllowedSearch()
         val keyword = MediaSourceEngineHelpers.getSearchKeyword(
@@ -428,6 +450,8 @@ class RuleMediaSource(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: BlockedException) {
+                    throw e
+                } catch (e: SiteIpBlockedException) {
                     throw e
                 } catch (e: Exception) {
                     // 单个条目页出错不终止整个搜索
