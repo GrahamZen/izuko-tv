@@ -99,28 +99,40 @@ class EpisodeCollectionRepository(
      * 获取指定条目的指定剧集信息, 如果没有则从网络获取并缓存
      */
     fun episodeCollectionInfoFlow(subjectId: Int, episodeId: Int): Flow<EpisodeCollectionInfo> {
-        return episodeCollectionDao.findByEpisodeId(episodeId).map { entity ->
+        // Room 按表失效, 分集表里任何一行变了这条查询都会重发. 只在这一集的行变了时往下走:
+        // 否则联网失败 (不写库) 之后, 别的条目每写一次分集, 这里就再联网一次
+        return episodeCollectionDao.findByEpisodeId(episodeId).distinctUntilChanged().map { entity ->
             entity?.takeIf { !it.isExpired() }
                 ?.toEpisodeCollectionInfo()
                 ?: kotlin.run {
-                    val remote = try {
-                        episodeService.getEpisodeCollectionById(subjectId, episodeId)
+                    val saved = try {
+                        refreshEpisodesOf(subjectId)
                     } catch (e: Exception) {
                         // 刷新失败时照给过期的本地那份: 集号与标题几乎不变, 选源和缓存不必陪着 bangumi 一起失败
                         if (entity == null) throw e
                         val wrapped = RepositoryException.wrapOrThrowCancellation(e)
                         logger.warn { "Failed to refresh episode $episodeId of subject $subjectId, using the expired local copy: $wrapped" }
                         return@map entity.toEpisodeCollectionInfo()
-                    } ?: throw NoSuchElementException("Episode $episodeId not found")
-                    if (localProfile) {
-                        // 本地档取到的是匿名结果: 看过状态以库里的为准
-                        episodeCollectionDao.upsertKeepingSelfState(remote.toEntity(subjectId)).toEpisodeCollectionInfo()
-                    } else {
-                        episodeCollectionDao.upsert(remote.toEntity(subjectId))
-                        remote
                     }
+                    saved.firstOrNull { it.episodeId == episodeId }?.toEpisodeCollectionInfo()
+                        ?: throw NoSuchElementException("Episode $episodeId not found")
                 }
         }.flowOn(defaultDispatcher)
+    }
+
+    /**
+     * 取这个条目的全部分集并全部写库: bangumi 没有取单集的接口, 只能整部取, 取回来的都留着,
+     * 别的集过期时就不必再整部取一遍.
+     */
+    private suspend fun refreshEpisodesOf(subjectId: Int): List<EpisodeCollectionEntity> {
+        val fetched = episodeService.getEpisodeCollectionEntities(subjectId, lastFetched = currentTimeMillis())
+        return if (localProfile) {
+            // 本地档取到的是匿名结果: 看过状态以库里的为准
+            fetched.map { episodeCollectionDao.upsertKeepingSelfState(it) }
+        } else {
+            episodeCollectionDao.upsert(fetched)
+            fetched
+        }
     }
 
     /**
@@ -291,6 +303,8 @@ class EpisodeCollectionRepository(
             val local = episodeCollectionDao.findByEpisodeId(episodeId).first()
             // 本地档的看过状态只在本地库里, 服务端那份是匿名的
             if (localProfile) return@withContext local?.selfCollectionType
+            // 不许联网时本地没有就是不知道
+            if (local == null && !allowNetwork) return@withContext null
 
             if (local != null && (!local.isExpired() || !allowNetwork)) {
                 return@withContext local.selfCollectionType
