@@ -80,8 +80,17 @@ suspend fun MediampPlayer.captureAndroidVideoFrame(): AndroidPlayerFrame? = with
         suspendCoroutine { continuation ->
             PixelCopy.request(surfaceView, bitmap, { continuation.resume(it) }, Handler(Looper.getMainLooper()))
         }
-    }.getOrElse { PixelCopy.ERROR_UNKNOWN }
-    if (result == PixelCopy.SUCCESS) {
+    }.getOrElse { error ->
+        logAndroidVideoFrameCopyException(error)
+        PixelCopy.ERROR_UNKNOWN
+    }
+    val valid = try {
+        withContext(Dispatchers.Default) { validateAndroidVideoFrame(bitmap, result) }
+    } catch (error: Throwable) {
+        bitmap.recycle()
+        throw error
+    }
+    if (valid) {
         AndroidPlayerFrame(bitmap, rect)
     } else {
         bitmap.recycle()

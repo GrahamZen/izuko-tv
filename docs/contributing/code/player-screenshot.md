@@ -58,3 +58,36 @@
 
 分享按钮的位置由 `PlayerScreenshotOverlay` 在点击时读取 (`boundsInWindow`), 经 `PlayerScreenshotSharer.share(screenshot, anchor)` 传给平台实现;
 Android 与 Windows 的面板由系统定位, 忽略它.
+
+
+## Android TV Web 控制台采集诊断
+
+Web 控制台经 `TvPlayerScreenshots.capture` 调用 `captureAndroidVideoFrame`。
+视频、字幕、弹幕分别编码成 PNG；`RemoteScreenshotPage` 必须成功加载 `layers.frame` 才开始合成。
+视频图片加载失败会显示错误，而不会自动合成只有弹幕的图片。
+
+`AndroidVideoFrameValidation` 检查 PixelCopy 状态和位图 alpha，完全透明的视频位图返回采集失败，
+不会发送给前端。正常黑场保持有效；黑色不证明硬件视频层缺失。像素检查在 Default dispatcher 上执行，
+逐行读取，只分配一行像素。失败位图由采集函数释放，字幕和弹幕继续使用各自的透明度规则。
+日志记录 PixelCopy 状态码、位图尺寸、是否全透明以及 API / 厂商 / 型号 / hardware，不记录视频像素。
+
+针对工单 GrahamZen/izuko-tickets#19 的诊断边界：
+
+- 已核对工单和当前源码；附件元数据可读，但此次环境下载日志返回 HTTP 404/503，照片下载未成功，未读取附件内容。
+- 完全透明的 SUCCESS 被接受是源码可确认的校验缺口；该工单是否命中此路径尚未确认。
+- Android 9 / Amlogic 的硬解或独立显示层问题属于待验证假设。非透明的错误画面、纯黑的硬件层读回无法靠 alpha 检查识别。
+- 不自动启动第二路解码器，也不切换播放 Surface，以免影响只支持单路硬解的设备及现有字幕/弹幕。
+
+回归用例 `AndroidVideoFrameValidationTest` 覆盖透明 SUCCESS、正常不透明黑场、末尾像素有内容和各 PixelCopy 错误码。
+这些用例验证位图判定，不模拟厂商解码器。
+
+| 环境 | 必须验证 | 本次状态 |
+|------|----------|----------|
+| Android 9 API 28，Fengmi / Amlogic | 播放已知非黑场时采集，关联 PixelCopy 日志与直接打开的 frame.png；检查硬解名称和 Surface 生命周期 | 无实机，未验证 |
+| Android 11 Shield / Android 12 Sony | 同样的帧采集及 SRT / ASS、弹幕、水印叠加 | 无实机，未验证 |
+| 其他 Android TV / 模拟器 | 正常画面、黑场、暂停、切后台、连续截图 | 未验证；模拟器通过也不能证明硬件兼容 |
+
+排查时在浏览器 Network 中检查 POST 返回的 `layers.frame` URL、GET 状态、PNG 尺寸及独立打开后的像素。
+若独立 PNG 已异常，定位设备采集/编码；若独立 PNG 正常但合成异常，继续查 canvas 与浏览器。
+记录请求时间以关联设备 `Video screenshot` 和 `Remote screenshot` 日志。前端加载失败、透明采集失败、
+正常黑场以及非透明错误画面需分别验证，不能把所有情况归为同一个硬解问题。
