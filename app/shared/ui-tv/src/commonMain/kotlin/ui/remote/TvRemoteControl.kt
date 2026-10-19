@@ -1003,6 +1003,9 @@ object TvRemoteControl {
             // 网页里出的事在电视日志里本来没有任何痕迹, 这条是唯一的通路.
             path == "api/client-log" ->
                 RemoteClientLog.handle(request)?.let(::json) ?: LanHttpResponse.status(405, "Method Not Allowed")
+            // 测试用的调试操作 (查改库、刷新收藏、切主页面), 有调试区的包才收, 见 RemoteDebugActions
+            path.startsWith("api/debug/") ->
+                RemoteDebugActions.handle(request, navigator, scope)?.let(::json) ?: LanHttpResponse.status(405, "Method Not Allowed")
             path.isEmpty() || path.startsWith("api/") -> LanHttpResponse.status(405, "Method Not Allowed")
             else -> LanHttpResponse.status(404, "Not Found")
         }
