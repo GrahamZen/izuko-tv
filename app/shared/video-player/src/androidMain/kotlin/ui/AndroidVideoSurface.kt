@@ -45,7 +45,7 @@ internal fun registerAndroidVideoSurface(player: MediampPlayer, surfaceView: Sur
                 }
 
                 override fun surfaceCreated(holder: SurfaceHolder) {
-                    alivePlayer(holder)?.applyVideoDataSpace()
+                    alivePlayer(holder)?.onVideoSurfaceCreated(surfaceView)
                 }
 
                 override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
