@@ -52,10 +52,11 @@ actual fun DanmakuLayer(
     modifier: Modifier,
     alpha: () -> Float,
     snapshots: DanmakuLayerSnapshots?,
+    playing: (() -> Boolean)?,
 ) {
     var useGl by remember { mutableStateOf(!glLayerUnavailable) }
     if (useGl) {
-        GlDanmakuLayer(state, modifier, alpha, snapshots, onUnavailable = { glLayerUnavailable = true; useGl = false })
+        GlDanmakuLayer(state, modifier, alpha, snapshots, playing, onUnavailable = { glLayerUnavailable = true; useGl = false })
     } else {
         // 退回在界面里画; 不登记截图
         DanmakuHost(state, modifier.graphicsLayer { this.alpha = alpha() })
@@ -68,6 +69,7 @@ private fun GlDanmakuLayer(
     modifier: Modifier,
     alpha: () -> Float,
     snapshots: DanmakuLayerSnapshots?,
+    playing: (() -> Boolean)?,
     onUnavailable: () -> Unit,
 ) {
     val density = LocalDensity.current
@@ -106,6 +108,7 @@ private fun GlDanmakuLayer(
             onRelease = { it.release() },
         )
         val layerView = view ?: return@BoxWithConstraints
+        SideEffect { layerView.playing = playing }
         val scope = rememberCoroutineScope()
         val publisher = remember(state, scope) { DanmakuLayerPublisher(state, scope) }
         val currentAlpha by rememberUpdatedState(alpha)
