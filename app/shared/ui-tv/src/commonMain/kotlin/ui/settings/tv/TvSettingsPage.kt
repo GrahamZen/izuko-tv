@@ -19,6 +19,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -66,6 +67,7 @@ import me.him188.ani.app.ui.lang.settings
 import me.him188.ani.app.ui.lang.settings_mediasource_cancel
 import me.him188.ani.app.ui.settings.SettingsViewModel
 import me.him188.ani.app.ui.settings.UiScaleSyncEffect
+import me.him188.ani.app.ui.remote.RemoteDebugSettingsPage
 import me.him188.ani.app.ui.remote.TvRemoteControl
 import me.him188.ani.app.ui.settings.account.ProfileViewModel
 import me.him188.ani.app.ui.update.AppUpdateViewModel
@@ -118,9 +120,14 @@ fun TvSettingsPage(
     val toaster = LocalToaster.current
     val browser = rememberAsyncBrowserNavigator()
     LaunchedEffect(state) {
-        state.attach(TvSettingsHost(playNoticeSound, toast = { toaster.toast(it) }, browser))
+        state.attach(TvSettingsHost(playNoticeSound, toast = { RemoteDebugSettingsPage.onToast(it); toaster.toast(it) }, browser))
         // 说明栏里的控制台二维码用最新的地址 (换过网络、地址变了)
         TvRemoteControl.refreshAddress()
+    }
+    // 控制台调试操作 (api/debug/settings/...) 读、按的就是这一页
+    DisposableEffect(state) {
+        RemoteDebugSettingsPage.attach(state)
+        onDispose { RemoteDebugSettingsPage.detach(state) }
     }
     // 界面缩放改了: 离开设置页时把窗口层 (弹窗 / 菜单) 一并对齐 (同原来的设置页)
     UiScaleSyncEffect()
