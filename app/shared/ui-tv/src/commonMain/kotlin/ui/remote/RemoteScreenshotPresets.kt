@@ -124,7 +124,8 @@ internal object RemoteScreenshotPresets {
         put("presets", buildJsonArray { list.forEach { add(it) } })
     }
 
-    private const val PREFS_NAME = "tv_remote_screenshot"
+    /** 截图相关的都存在这个文件里 (水印预设, 还有 [RemoteScreenshot] 记的「这台设备截到过画面」). */
+    internal const val PREFS_NAME = "tv_remote_screenshot"
     private const val KEY = "presets"
     private const val MAX_PRESETS = 50
     private const val MAX_NAME = 40
