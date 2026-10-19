@@ -292,8 +292,8 @@ internal fun TvExplorationComposeWall(
             }
         }
     }
-    // 调试开关: 热门轮播换成平板版探索页的画法 (见 TvExplorationPadCarousel.kt), 对比用
-    val padCarousel = DevSwitches.padCarousel.value
+    // 触屏上 (平板 / iPad) 热门轮播与 hero 态用平板版画法 (见 TvExplorationPadCarousel.kt / TvPadHeroLayer); 调试开关 tvHeroOnTouch 改回电视的对照
+    val padCarousel = touchInput && !DevSwitches.tvHeroOnTouch.value
     // 平板版画法的轮播区: 卡片区顶线到首组标题 (列表停在顶上时 hero 占位垫着的那一段)
     val padCarouselHeightPx = metrics.listTopPx + metrics.spacerPx
     val carouselGone by remember(surface) { derivedStateOf { surface.carouselShift() >= metrics.carouselBottomPx } }
@@ -302,9 +302,9 @@ internal fun TvExplorationComposeWall(
     val backdropTarget = if (padCarousel || (!showsCard && carouselGone)) null else source?.backdrop
 
     // 整屏底色 (主壳画): hero 态的黑度与轮播分界线 (跟着轮播背景图的下缘走)
-    LaunchedEffect(surface, darkens) {
+    LaunchedEffect(surface, darkens, padCarousel) {
         snapshotFlow {
-            val pad = DevSwitches.padCarousel.value
+            val pad = padCarousel
             // 平板版画法的轮播区 / hero 区自己铺满, 下缘渐变到卡片墙底色: 整屏底色不压暗、不分界
             val tone = if (darkens && !pad) timeline.tone else 0f
             val y = if (pad) {

@@ -52,7 +52,6 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Outline
@@ -109,6 +108,7 @@ import me.him188.ani.app.ui.foundation.tv.tvPosterWallSubtitleStyle
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallTitleStyle
 import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
 import me.him188.ani.app.ui.foundation.tvLongPressKey
+import me.him188.ani.app.ui.foundation.tv.TvModulateAlphaCompositing
 
 /*
  * Compose 版海报墙 (安卓电视上是原生视图, 见 nativeview 包; 别的端画这一套) 的卡片: 竖版海报 + 下方定高两行番名, 外观与原生卡片
@@ -270,7 +270,7 @@ internal fun TvWallCard(
                     val s = 1f + (style.focusScale - 1f) * w
                     scaleX = s
                     scaleY = s
-                    compositingStrategy = CompositingStrategy.ModulateAlpha
+                    compositingStrategy = TvModulateAlphaCompositing
                     val d = dimAlpha()
                     alpha = d
                     // 系统阴影按封面那一块投 (卡片四周留着聚焦框空隙)
@@ -319,7 +319,7 @@ internal fun TvWallCard(
                         val w = focusWeight
                         // 放大后海报下缘多伸出 (倍数 − 1) × 卡高 / 2: 番名往下让开, 只挪绘制, 行高不变
                         translationY = (style.focusScale - 1f) * w * style.cardHeightPx / 2f
-                        compositingStrategy = CompositingStrategy.ModulateAlpha
+                        compositingStrategy = TvModulateAlphaCompositing
                         alpha = (style.labelIdleAlpha + (1f - style.labelIdleAlpha) * w) * labelAlpha() * dimAlpha()
                     },
             )

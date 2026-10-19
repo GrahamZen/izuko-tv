@@ -340,7 +340,7 @@ private fun loginStatus(state: BangumiOAuthManager.State?): TvText? = when (stat
     else -> null
 }
 
-private fun loginQr(v: TvSettingsValues): TvQr {
+private fun loginQr(v: TvSettingsValues): TvQr? {
     // 不走官方 / 自建时授权走不通: 码换成控制台的账号页 (加密直连填账号密码, 镜像用个人令牌)
     if (v[TvAppSettingKeys.loginPath] != BangumiLoginPath.BROWSER) return consoleQr(v, "#settings/account")
     val relay = v[TvAppSettingKeys.loginRelay] ?: TvLoginRelay()

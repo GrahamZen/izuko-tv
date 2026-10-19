@@ -289,6 +289,8 @@ internal fun TvSettingsItemsBuilder.mediaSourceItems() {
     action(
         Lang.tv_settings_drive_webdav_add, Lang.tv_settings_drive_webdav_add_description,
         value = { tvText(Lang.tv_settings_on_phone) },
+        // 只能在手机控制台里填: 没有控制台的端不列
+        visible = ::hasConsole,
         qr = { consoleQr(it, "#sources/webdav") },
     ) { emptyList() }
     // 触屏版只列 WebDAV 服务器 (账号密码登录); 其余网盘在嵌进来的那一块里

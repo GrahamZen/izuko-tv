@@ -22,6 +22,9 @@ interface TvSettingsPlatform {
     /** Web 控制台的地址; 没有控制台或没连局域网时为 null. */
     val consoleUrl: Flow<String?> get() = flowOf(null)
 
+    /** 这一端有 Web 控制台 (电视版). 没有的端 (iOS) 不列只能在控制台里做的项, 也不画控制台的二维码 (见 consoleQr). */
+    val hasConsole: Boolean get() = false
+
     /** 清掉「做过首次引导」的标记 (重启后重走引导); null = 没有首次引导. */
     val resetOnboarding: ((Context) -> Unit)? get() = null
 

@@ -67,7 +67,6 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
@@ -171,6 +170,7 @@ import me.him188.ani.app.ui.foundation.tv.tvUseOriginalTitle
 import me.him188.ani.app.ui.foundation.tvLongPressKey
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.showLoadError
+import me.him188.ani.app.ui.foundation.tv.TvModulateAlphaCompositing
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.exploration_schedule_episode
 import me.him188.ani.app.ui.lang.exploration_schedule_episode_ep_and_sort
@@ -796,7 +796,7 @@ private fun Modifier.tvScheduleBleedToScreenEdges(): Modifier = layout { measura
  * 整行先画进离屏缓冲.
  */
 private fun Modifier.tvScheduleTopFade(state: LazyGridState, index: Int): Modifier = graphicsLayer {
-    compositingStrategy = CompositingStrategy.ModulateAlpha
+    compositingStrategy = TvModulateAlphaCompositing
     val top = state.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }?.offset?.y ?: return@graphicsLayer
     val over = -TV_SCHEDULE_FOCUS_ANCHOR.toPx() - top
     if (over > 0f) alpha = (1f - over / (size.height / 2f + TV_SCHEDULE_ROW_SPACING.toPx())).coerceIn(0f, 1f)

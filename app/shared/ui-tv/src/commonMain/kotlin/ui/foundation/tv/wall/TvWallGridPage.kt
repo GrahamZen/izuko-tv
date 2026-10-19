@@ -185,8 +185,8 @@ internal fun <T : Any> TvWallGridPage(
     LaunchedEffect(heroEnabled) {
         if (!heroEnabled) surface.setHeroActive(false, animated = false)
     }
-    // 调试开关: hero 态换成平板版的画法 (同探索页的轮播, 见 TvPadHeroLayer)
-    val padHero = DevSwitches.padCarousel.value
+    // 触屏上 (平板 / iPad) hero 态用平板版画法 (同探索页的轮播, 见 TvPadHeroLayer); 调试开关 tvHeroOnTouch 改回电视的对照
+    val padHero = touchInput && !DevSwitches.tvHeroOnTouch.value
     // 整屏底色 (主壳画): hero 态的进度; 平板版画法的 hero 区自己铺满, 不压暗
     LaunchedEffect(timeline, heroBlur, padHero) {
         snapshotFlow { if (heroBlur || padHero) 0f else timeline.tone }.collect { state.tone = it }

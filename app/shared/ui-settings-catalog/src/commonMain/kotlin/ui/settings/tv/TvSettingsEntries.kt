@@ -282,11 +282,16 @@ data class TvConsoleUrl(val url: String?)
  * 说明栏里打开 Web 控制台的二维码, 带上 [fragment] 让网页直接停在相关的那一页 (如 `#settings/network`、`#sources`).
  * 控制台没在运行 (没连局域网) 时只写一句不可用. [legacy] 见 [TvQr.legacy].
  */
-internal fun consoleQr(values: TvSettingsValues, fragment: String, legacy: Boolean = false): TvQr {
+internal fun consoleQr(values: TvSettingsValues, fragment: String, legacy: Boolean = false): TvQr? {
+    // 没有 Web 控制台的端 (iOS): 换成别的入口的 ([legacy], 触屏版是「打开这一类的设置」) 照建, 别的不画
+    if (!legacy && !hasConsole(values)) return null
     val url = values[TvSettingKeys.consoleUrl]?.url
         ?: return TvQr(null, status = tvText(Lang.search_tv_remote_unavailable), console = fragment, legacy = legacy)
     return TvQr("$url$fragment", caption = tvText(Lang.tv_settings_qr_console), console = fragment, legacy = legacy)
 }
+
+/** 这一端有没有 Web 控制台 (见 [TvSettingsPlatform.hasConsole]); 没读平台的页面 (电视版设置页) 当有. */
+internal fun hasConsole(values: TvSettingsValues): Boolean = values[TvSettingKeys.platform]?.hasConsole != false
 
 /** 一个显示模式: [id] = 0 表示「自动」(不指定). */
 data class TvDisplayMode(val id: Int, val refreshRate: Int)
@@ -400,10 +405,13 @@ private fun TvSettingsItemsBuilder.appearanceItems() {
         read = { it.tvPlayLongPress },
         write = { copy(tvPlayLongPress = it) },
     )
-    toggle(
-        theme, Lang.settings_theme_tv_remote_show_on_launch, Lang.settings_theme_tv_remote_show_on_launch_description,
-        read = { it.tvRemoteShowOnLaunch },
-        write = { copy(tvRemoteShowOnLaunch = it) },
+    toggleOf(
+        listOf(theme), Lang.settings_theme_tv_remote_show_on_launch,
+        description = { tvText(Lang.settings_theme_tv_remote_show_on_launch_description) },
+        // 没有 Web 控制台的端不列
+        visible = ::hasConsole,
+        read = { it[theme]?.tvRemoteShowOnLaunch ?: false },
+        write = { on -> listOf(TvSettingsEdit.Update(theme) { it.copy(tvRemoteShowOnLaunch = on) }) },
     )
     run(
         Lang.settings_theme_tv_remote_reset, Lang.settings_theme_tv_remote_reset_description,
