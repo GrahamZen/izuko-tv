@@ -648,4 +648,14 @@ class CloudDriveServiceTest {
             CloudDriveApi.parseSetCookieHeaders(listOf("sid=x=y; Path=/", "b=; Max-Age=0", "=bad")),
         )
     }
+
+    @Test
+    fun `set-cookie headers joined into one line are split back`() {
+        assertEquals(
+            mapOf("a" to "1", "b" to "2", "c" to "x=y"),
+            CloudDriveApi.parseSetCookieHeaders(
+                listOf("a=1; Expires=Wed, 21 Oct 2026 07:28:00 GMT; Path=/, b=2; HttpOnly,c=x=y; Domain=example.com"),
+            ),
+        )
+    }
 }
