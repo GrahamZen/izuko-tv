@@ -65,5 +65,7 @@ internal fun TvPlayerDanmaku(
         modifier.then(rememberTvScreenshotDanmakuLayer(snapshots)),
         alpha = remember(visibility) { { if (currentHidden()) 0f else visibility.value } },
         snapshots = snapshots,
+        // 与上面 PlayerDanmakuHost 转告的暂停同一判据; 播放器状态的值在哪个线程都能读
+        playing = remember(player) { { player.state.value.isPlaying } },
     )
 }

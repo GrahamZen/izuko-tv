@@ -73,6 +73,15 @@ internal class GlDanmakuLayerView(
     /** 最近发布的一份, 截图时用. */
     val latestFrame: DanmakuLayerFrame? get() = renderer.frame
 
+    /**
+     * 视频此刻在不在播, 渲染线程每帧读 (见 [DanmakuLayer] 的同名参数); null = 只看界面线程发来的暂停状态.
+     */
+    var playing: (() -> Boolean)?
+        get() = renderer.playing
+        set(value) {
+            renderer.playing = value
+        }
+
     init {
         setEGLContextClientVersion(2)
         setEGLConfigChooser(8, 8, 8, 8, 0, 0)
@@ -124,6 +133,9 @@ internal class GlDanmakuLayerView(
     ) : GLSurfaceView.Renderer {
         @Volatile
         var frame: DanmakuLayerFrame? = null
+
+        @Volatile
+        var playing: (() -> Boolean)? = null
 
         private val logger = logger<GlDanmakuLayerView>()
 
@@ -258,8 +270,11 @@ internal class GlDanmakuLayerView(
             if (program == 0 || texture == 0) return
             val f = frame ?: return
             if (f.alpha <= 0f || f.hostWidth <= 0 || f.hostHeight <= 0) return
-            val elapsed = clock.elapsedAt(f.elapsedAt(start), f.paused, start)
+            // 视频已经停了而界面线程还没转告 (按暂停时它常要忙一阵): 当帧停住, 不再往前推
+            val videoStopped = !f.paused && playing?.invoke() == false
+            val elapsed = clock.elapsedAt(f.elapsedAt(start), f.paused, start, videoStopped)
             stats.onFrame(start, f.moving, clock.lastErrorNanos)
+            stats.onStopLead(clock.drainMaxStopLeadNanos())
             frameIndex++
             val quads = buildFrame(f, elapsed, start)
             // 只算自己的活 (拼顶点、传图): 之后的绘制调用会等系统给缓冲区, 那段算在 vsync 里
@@ -504,9 +519,15 @@ private class RenderStats(private val pacingStats: PacingStats, private val pace
     private var maxGapNanos = 0L
     private var snaps = 0
     private var maxLagNanos = 0L
+    private var maxStopLeadNanos = 0L
     private var lastFrameNanos = 0L
     private var lastMoving = false
     private var windowStart = 0L
+
+    /** 视频停了之后多久界面才说暂停 (这段时间里弹幕按视频停住, 见 [DanmakuRenderClock]); 记这段时间里最长的. */
+    fun onStopLead(nanos: Long) {
+        maxStopLeadNanos = maxOf(maxStopLeadNanos, nanos)
+    }
 
     fun onFrame(nowNanos: Long, moving: Boolean, clockErrorNanos: Long) {
         if (windowStart == 0L) windowStart = nowNanos
@@ -537,16 +558,20 @@ private class RenderStats(private val pacingStats: PacingStats, private val pace
         val newSnaps = totalSnaps - snaps
         val pacing = pacingStats.drain()
         val timing = pacerTiming.drain()
-        if (slowDraws > 0 || gaps > 0 || clears > 0 || separate > 0 || newSnaps > 0 || maxLagNanos > LAG_REPORT_NANOS || pacing != null) {
+        if (slowDraws > 0 || gaps > 0 || clears > 0 || separate > 0 || newSnaps > 0 || maxLagNanos > LAG_REPORT_NANOS || pacing != null ||
+            maxStopLeadNanos > 0
+        ) {
             logger.info {
                 "GL danmaku ${(now - windowStart) / 1_000_000}ms: frames=$frames, missedVsync=$gaps (max gap ${maxGapNanos / 1_000_000}ms), " +
                     "slowDraws=$slowDraws (max ${maxDrawNanos / 1_000_000}ms), uploads=$uploads, atlas=${atlasWidth}x$atlasHeight, " +
                     "atlasClears=$clears, separate=$separate${if (overflowVisible > 0) " (atlas full: max visible $overflowVisible, ${overflowArea / 1000}k px, keys $overflowKeys)" else ""}, " +
-                    "clockSnaps=$newSnaps, uiClockMaxLag=${maxLagNanos / 1_000_000}ms, pacingStops=${pacing ?: "none"}, $timing"
+                    "clockSnaps=$newSnaps, uiClockMaxLag=${maxLagNanos / 1_000_000}ms, uiPauseLag=${maxStopLeadNanos / 1_000_000}ms, " +
+                    "pacingStops=${pacing ?: "none"}, $timing"
             }
         }
         snaps = totalSnaps
         frames = 0; slowDraws = 0; maxDrawNanos = 0; gaps = 0; maxGapNanos = 0; uploads = 0; clears = 0; separate = 0; maxLagNanos = 0
+        maxStopLeadNanos = 0
         overflowVisible = 0; overflowArea = 0; overflowKeys = 0
         windowStart = now
     }

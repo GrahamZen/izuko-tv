@@ -19,6 +19,7 @@ actual fun DanmakuLayer(
     modifier: Modifier,
     alpha: () -> Float,
     snapshots: DanmakuLayerSnapshots?,
+    playing: (() -> Boolean)?,
 ) {
     DanmakuHost(state, modifier.graphicsLayer { this.alpha = alpha() })
 }

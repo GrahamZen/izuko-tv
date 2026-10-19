@@ -24,6 +24,9 @@ import androidx.compose.ui.graphics.ImageBitmap
  *
  * @param alpha 整层的不透明度, 在弹幕的不透明度设置之上再乘, 供显隐动画用; 为 0 时不画. 在画的时候读, 变化不引起重组.
  * @param snapshots 截图用, 见 [DanmakuLayerSnapshots]. 不支持的平台不登记.
+ * @param playing 视频此刻在不在播. 给了它, 画弹幕的线程每帧自己读, 视频一停弹幕当帧停住, 不用等界面线程转告
+ * (按暂停时界面线程常要忙一阵, 等它转告时弹幕已经多走了一段, 再退回去); 会在别的线程上读, 要线程安全 (如播放器状态 StateFlow 的值).
+ * 只在单独画的那一层上起作用.
  */
 @Composable
 expect fun DanmakuLayer(
@@ -31,6 +34,7 @@ expect fun DanmakuLayer(
     modifier: Modifier = Modifier,
     alpha: () -> Float = { 1f },
     snapshots: DanmakuLayerSnapshots? = null,
+    playing: (() -> Boolean)? = null,
 )
 
 /** 截此刻弹幕层上画着的内容: 透明底, 与层同尺寸. */

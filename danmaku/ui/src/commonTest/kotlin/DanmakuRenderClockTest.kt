@@ -61,11 +61,85 @@ class DanmakuRenderClockTest {
     }
 
     @Test
-    fun `paused is the ui clock and resumes from it`() {
+    fun `starts from the ui clock`() {
+        val clock = DanmakuRenderClock()
+        assertEquals(42L, clock.elapsedAt(42L, paused = true, nowNanos = 1_000_000_000L))
+    }
+
+    @Test
+    fun `stops when the video stops before the ui says paused and does not jump back`() {
+        val clock = DanmakuRenderClock()
+        var now = 0L
+        var reference = 0L
+        repeat(10) {
+            clock.elapsedAt(reference, paused = false, nowNanos = now)
+            now += frame
+            reference += frame
+        }
+        val atStop = clock.elapsedAt(reference, paused = false, nowNanos = now)
+        // 视频停了, 界面线程卡了 300ms 才转告: 这期间界面时钟不走, 渲染线程不该往前推
+        repeat(18) {
+            now += frame
+            assertEquals(atStop, clock.elapsedAt(reference, paused = false, nowNanos = now, videoStopped = true))
+        }
+        now += frame
+        assertEquals(atStop, clock.elapsedAt(reference, paused = true, nowNanos = now), "界面说暂停了: 停在原处, 不跳")
+        assertTrue(clock.drainMaxStopLeadNanos() >= 18 * frame)
+    }
+
+    @Test
+    fun `resumes from where it stopped and drifts toward the ui clock`() {
+        val clock = DanmakuRenderClock()
+        var now = 0L
+        var lastRunning = clock.elapsedAt(0, paused = false, nowNanos = now)
+        // 界面卡住 200ms (界面时钟没走), 渲染线程照常往前
+        repeat(12) {
+            now += frame
+            lastRunning = clock.elapsedAt(0, paused = false, nowNanos = now)
+        }
+        now += frame
+        val held = clock.elapsedAt(0, paused = true, nowNanos = now)
+        assertEquals(lastRunning, held, "暂停时停在画着的位置, 不跳回落后的界面时钟")
+        now += 5_000_000_000L
+        assertEquals(held, clock.elapsedAt(0, paused = true, nowNanos = now))
+
+        var rendered = held
+        var reference = 0L
+        repeat(60) {
+            now += frame
+            reference += frame
+            val out = clock.elapsedAt(reference, paused = false, nowNanos = now)
+            assertTrue(out > rendered, "继续播放后只往前")
+            assertTrue(out - rendered <= frame, "比界面时钟走得慢一点去等它, 不会往回跳")
+            rendered = out
+        }
+    }
+
+    @Test
+    fun `a short pause does not push the danmaku ahead after resuming`() {
+        val clock = DanmakuRenderClock()
+        var now = 0L
+        var reference = 0L
+        repeat(30) {
+            now += frame
+            reference += frame
+            clock.elapsedAt(reference, paused = false, nowNanos = now)
+        }
+        // 按暂停: 渲染线程只补画这一帧, 之后停着不出帧
+        now += frame
+        val held = clock.elapsedAt(reference, paused = true, nowNanos = now)
+        // 1 秒后继续 (不到直接对齐的阈值), 界面时钟从停住的位置接着走
+        now += 1_000_000_000L
+        reference += frame
+        val resumed = clock.elapsedAt(reference, paused = false, nowNanos = now)
+        assertTrue(resumed - held <= frame, "继续后的第一帧最多走一帧, 不把暂停的那一秒算进去: ${resumed - held}")
+    }
+
+    @Test
+    fun `follows a far jump of the ui clock while paused`() {
         val clock = DanmakuRenderClock()
         clock.elapsedAt(0, paused = false, nowNanos = 0)
-        assertEquals(42L, clock.elapsedAt(42L, paused = true, nowNanos = 1_000_000_000L))
-        assertEquals(50L, clock.elapsedAt(50L, paused = false, nowNanos = 2_000_000_000L), "恢复播放那一帧从界面时钟起步")
-        assertEquals(50L + frame, clock.elapsedAt(50L + frame, paused = false, nowNanos = 2_000_000_000L + frame))
+        clock.elapsedAt(0, paused = true, nowNanos = frame)
+        assertEquals(10_000_000_000L, clock.elapsedAt(10_000_000_000L, paused = true, nowNanos = 2 * frame))
     }
 }
