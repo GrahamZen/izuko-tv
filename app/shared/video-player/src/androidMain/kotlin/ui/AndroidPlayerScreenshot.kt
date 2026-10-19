@@ -132,6 +132,25 @@ fun MediampPlayer.captureAndroidSubtitles(rectInWindow: Rect, width: Int, height
 
 private fun View.locationInWindow(): IntArray = IntArray(2).also(::getLocationInWindow)
 
+/**
+ * 看起来是一整块黑: 均匀取 [BLACK_SAMPLES]×[BLACK_SAMPLES] 个点, 亮度都不到 [BLACK_LUMA].
+ *
+ * 有的设备 (如晶晨芯片的电视、投影) 硬解的视频由芯片自己的视频通道直接上屏, 不经过系统合成, [captureAndroidVideoFrame] 读回的是全黑.
+ */
+fun Bitmap.looksBlack(): Boolean {
+    for (i in 0 until BLACK_SAMPLES) {
+        for (j in 0 until BLACK_SAMPLES) {
+            val pixel = getPixel((width - 1) * (2 * i + 1) / (2 * BLACK_SAMPLES), (height - 1) * (2 * j + 1) / (2 * BLACK_SAMPLES))
+            val luma = 0.299f * ((pixel shr 16) and 0xff) + 0.587f * ((pixel shr 8) and 0xff) + 0.114f * (pixel and 0xff)
+            if (luma > BLACK_LUMA * 255) return false
+        }
+    }
+    return true
+}
+
+private const val BLACK_SAMPLES = 8
+private const val BLACK_LUMA = 0.04f
+
 /** 一个像素都没画 (全透明). */
 fun Bitmap.isTransparent(): Boolean {
     val row = IntArray(width)
