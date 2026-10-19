@@ -21,9 +21,12 @@ import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.CacheEvictor
 import androidx.media3.datasource.cache.CacheSpan
 import androidx.media3.datasource.cache.ContentMetadata
-import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import me.him188.ani.app.platform.PlaybackRequestHints
+import me.him188.ani.app.videoplayer.cache.PlaybackDiskCacheStorage
+import me.him188.ani.app.videoplayer.cache.PlaybackDiskCacheUsage
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
@@ -33,14 +36,14 @@ import java.io.IOException
 import java.io.RandomAccessFile
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-import kotlin.concurrent.thread
+import kotlin.math.abs
 
 /**
  * 在线播放时下过的数据存在本机磁盘上 (设置里的「边下边播」): 往回拖、拖动预览、再看同一个文件时直接从盘上读, 不再走网络.
  * 网盘直链按解析器给的内容标识 ([PlaybackRequestHints.CACHE_KEY_HEADER]) 存取 (直链本身每次都不一样), 其余在线源按地址.
  *
- * 目录在应用的缓存目录下 (存储紧张时系统先清这里). 容量是这次启动第一次用到时剩余空间的四分之一, 最多 [MAX_BYTES], 满了先删最久没读过的;
- * 算出来不到 [MIN_BYTES] (剩余空间不够) 时不存, 以前存的也删掉.
+ * 目录在应用的缓存目录下 (存储紧张时系统先清这里). 上限见 [budgetFor], 每打开一个视频按那一刻的空间重算, 满了 (或上限变小了) 先删最久没读过的;
+ * 空间不够时上限为 0: 不存, 以前存的也删掉. 设置页「存储」显示占用、能清除 ([AndroidPlaybackDiskCacheStorage]); 关掉「边下边播」时也清除.
  *
  * 每存满一段 ([FRAGMENT_BYTES]) 在后台线程把它 fsync 掉: /data 是 ext4 data=ordered, 脏页积多了别的进程的 fsync 要排队等它们落盘,
  * 蓝牙遥控器的按键会因此卡住好几秒 (缓存下载时出过).
@@ -49,24 +52,82 @@ import kotlin.concurrent.thread
 object PlaybackDiskCache {
     private var initialized = false
     private var cache: Cache? = null
+    private var evictor: AdjustableLruCacheEvictor? = null
 
-    /** 这个进程里唯一的实例 (同一个目录只能开一个); 剩余空间不够时为 null. */
+    /**
+     * 这个进程里唯一的实例 (同一个目录只能开一个); 打不开或剩余空间不够 (上限为 0) 时为 null.
+     * 每次调用 (每打开一个视频) 在后台按此刻的空间重算上限, 变小了当场删到新上限以下.
+     */
     @Synchronized
     fun get(context: Context): Cache? {
+        val appContext = context.applicationContext
         if (!initialized) {
             initialized = true
-            cache = open(context.applicationContext)
+            cache = open(appContext)
         }
-        return cache
+        val cache = cache ?: return null
+        val evictor = evictor ?: return cache
+        // 要等缓存初始化完 (cacheSpace), 删文件也慢, 不在调用方线程上做; 这一次用上一次算的上限
+        adjustExecutor.execute { adjustLimit(appContext, cache, evictor) }
+        return cache.takeIf { evictor.maxBytes > 0 }
     }
+
+    private fun adjustLimit(context: Context, cache: Cache, evictor: AdjustableLruCacheEvictor) {
+        val stored = cache.cacheSpace
+        val budget = budgetFor(context.cacheDir.usableSpace, stored)
+        // 剩余空间每次都差几个字节, 差不到 1 MiB 不算变
+        if (abs(budget - evictor.maxBytes) < MIB) return
+        logger.info { "Playback disk cache limit ${evictor.maxBytes / MIB} -> ${budget / MIB} MiB (${stored / MIB} MiB stored)" }
+        evictor.maxBytes = budget
+        evictor.trim(cache)
+    }
+
+    /** 已占用与此刻的上限. 会等缓存初始化完、没打开时要数目录, 别在主线程上调. */
+    fun usage(context: Context): PlaybackDiskCacheUsage {
+        val cache = synchronized(this) { cache }
+        val stored = cache?.cacheSpace ?: directorySize(File(context.cacheDir, DIRECTORY))
+        return PlaybackDiskCacheUsage(stored, budgetFor(context.cacheDir.usableSpace, stored))
+    }
+
+    /**
+     * 删掉存下的全部数据. 开着的实例逐个删资源 (正在读写的部分由缓存自己守着, 播放照常); 没开时整个目录连同索引删掉.
+     * 慢, 别在主线程上调.
+     */
+    fun clear(context: Context) {
+        val opened = synchronized(this) { cache }
+        if (opened != null) {
+            for (key in opened.keys) opened.removeResource(key)
+            logger.info { "Playback disk cache cleared" }
+            return
+        }
+        synchronized(this) {
+            // 等锁期间被打开了: 下面那个删目录的办法不能用
+            if (cache != null) return clear(context)
+            val directory = File(context.cacheDir, DIRECTORY)
+            if (!directory.exists()) return
+            runCatching { SimpleCache.delete(directory, StandaloneDatabaseProvider(context.applicationContext)) }
+                .onSuccess { logger.info { "Playback disk cache deleted" } }
+                .onFailure { logger.warn { "Failed to delete the playback disk cache: $it" } }
+        }
+    }
+
+    private fun directorySize(directory: File): Long =
+        directory.walkTopDown().filter { it.isFile }.sumOf { it.length() }
 
     /** [data] 的内容标识, 解析器没给时为 null. */
     fun keyOf(data: UriMediaData): String? = data.headers[PlaybackRequestHints.CACHE_KEY_HEADER]?.takeIf { it.isNotBlank() }
 
-    /** 此刻的剩余空间够不够存 (判据同 [get] 第一次打开时), 不打开缓存. */
-    fun hasRoom(context: Context): Boolean = maxBytesFor(context.cacheDir.usableSpace) >= MIN_BYTES
+    /** 此刻的剩余空间够不够存 (判据同 [budgetFor], 不算已存的), 不打开缓存. */
+    fun hasRoom(context: Context): Boolean = budgetFor(context.cacheDir.usableSpace, 0) > 0
 
-    private fun maxBytesFor(freeBytes: Long): Long = (freeBytes / 4).coerceAtMost(MAX_BYTES)
+    /**
+     * 上限: (剩余空间 + 已存的) 的四分之一, 最多 [MAX_BYTES]; 不到 [MIN_BYTES] 时为 0 (不存). 已存的算进去: 只按剩余空间算的话,
+     * 存得越多剩余越少, 上限会跟着自己缩.
+     */
+    internal fun budgetFor(freeBytes: Long, storedBytes: Long): Long {
+        val budget = ((freeBytes + storedBytes) / 4).coerceAtMost(MAX_BYTES)
+        return if (budget < MIN_BYTES) 0 else budget
+    }
 
     /** [cache] 里记着的 [key] 的文件总长 (播放器第一次读到时记下), 没记时为 -1. 会等缓存初始化完, 别在主线程上调. */
     internal fun contentLength(cache: Cache, key: String): Long = ContentMetadata.getContentLength(cache.getContentMetadata(key))
@@ -85,25 +146,20 @@ object PlaybackDiskCache {
 
     /** 在 [directory] 开一个最多 [maxBytes] 的缓存, 存满一段就在后台 fsync. */
     internal fun create(directory: File, maxBytes: Long, databaseProvider: DatabaseProvider): SimpleCache =
-        SimpleCache(directory, SyncingEvictor(LeastRecentlyUsedCacheEvictor(maxBytes)), databaseProvider)
+        create(directory, AdjustableLruCacheEvictor(maxBytes), databaseProvider)
 
+    private fun create(directory: File, evictor: AdjustableLruCacheEvictor, databaseProvider: DatabaseProvider): SimpleCache =
+        SimpleCache(directory, SyncingEvictor(evictor), databaseProvider)
+
+    /** 打开时先按不算已存的那一份定上限 (已存多少要等初始化完才知道), 随后 [get] 在后台按实际占用重算. */
     private fun open(context: Context): Cache? {
         val directory = File(context.cacheDir, DIRECTORY)
         val freeBytes = context.cacheDir.usableSpace
-        val maxBytes = maxBytesFor(freeBytes)
-        val databaseProvider = StandaloneDatabaseProvider(context)
-        if (maxBytes < MIN_BYTES) {
-            logger.warn { "Only ${freeBytes / MIB} MiB free, playback disk cache disabled" }
-            // 没开实例才能删; 慢, 不在调用方线程上做
-            thread(name = "PlaybackDiskCache-delete", isDaemon = true) {
-                runCatching { SimpleCache.delete(directory, databaseProvider) }
-                    .onFailure { logger.warn { "Failed to delete the playback disk cache: $it" } }
-            }
-            return null
-        }
+        val evictor = AdjustableLruCacheEvictor(budgetFor(freeBytes, 0).takeIf { it > 0 } ?: MIN_BYTES)
         return try {
-            create(directory, maxBytes, databaseProvider).also {
-                logger.info { "Playback disk cache at $directory, up to ${maxBytes / MIB} MiB (${freeBytes / MIB} MiB free)" }
+            create(directory, evictor, StandaloneDatabaseProvider(context)).also {
+                this.evictor = evictor
+                logger.info { "Playback disk cache at $directory (${freeBytes / MIB} MiB free)" }
             }
         } catch (e: Exception) {
             logger.warn(e) { "Failed to open the playback disk cache" }
@@ -135,6 +191,10 @@ object PlaybackDiskCache {
         Thread(runnable, "PlaybackDiskCache-sync").apply { isDaemon = true }
     }
 
+    private val adjustExecutor: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "PlaybackDiskCache-limit").apply { isDaemon = true }
+    }
+
     private val cacheEventLogger = object : CacheDataSource.EventListener {
         override fun onCachedBytesRead(cacheSizeBytes: Long, cachedBytesRead: Long) {
             logger.info { "Read ${cachedBytesRead / 1024} KiB from the playback disk cache (${cacheSizeBytes / MIB} MiB stored)" }
@@ -155,4 +215,11 @@ object PlaybackDiskCache {
     private const val MAX_BYTES = 4096 * MIB
 
     private val logger = logger<PlaybackDiskCache>()
+}
+
+/** 安卓的 [PlaybackDiskCacheStorage]: 设置页「存储」用, 见 [PlaybackDiskCache.usage] 与 [PlaybackDiskCache.clear]. */
+class AndroidPlaybackDiskCacheStorage(private val context: Context) : PlaybackDiskCacheStorage {
+    override suspend fun usage(): PlaybackDiskCacheUsage = withContext(Dispatchers.IO) { PlaybackDiskCache.usage(context) }
+
+    override suspend fun clear() = withContext(Dispatchers.IO) { PlaybackDiskCache.clear(context) }
 }
