@@ -10,6 +10,7 @@
 package me.him188.ani.app.ui.remote
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import androidx.compose.ui.text.intl.Locale
@@ -39,6 +40,7 @@ import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.ui.foundation.lan.LanHttpRequest
 import me.him188.ani.app.ui.foundation.lan.LanHttpResponse
 import me.him188.ani.app.ui.subject.episode.tv.TvPlayerScreenshots
+import me.him188.ani.app.videoplayer.ui.looksBlack
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
@@ -91,6 +93,21 @@ internal object RemoteScreenshot {
         if (player.background) return result(false, tr("电视上没有打开播放器，截不了图"))
         val shot = runBlocking { withTimeoutOrNull(CAPTURE_TIMEOUT) { TvPlayerScreenshots.capture() } }
             ?: return result(false, tr("电视上现在没有显示播放画面（可能休眠了，或者切到了别的应用），截不了图"))
+        // 视频层读回全黑: 有的设备 (如晶晨) 硬解的视频由芯片自己的通道直接上屏, 应用读不到; 网页上弹窗说明, 不出一张黑图.
+        // 这台截到过正常画面的话, 全黑就是那一刻画面本来是黑的 (转场), 照常给
+        val black = shot.frame.looksBlack()
+        if (black && !frameReadable) {
+            shot.frame.recycle()
+            shot.subtitles?.recycle()
+            shot.danmaku?.recycle()
+            logger.info { "Remote screenshot: the video layer reads back all black, video frames are not readable on this device" }
+            return buildJsonObject {
+                put("ok", false)
+                put("unreadable", true)
+                put("message", tr("这台设备截不到视频画面"))
+            }
+        }
+        if (!black && !frameReadable) frameReadable = true
         val width = shot.frame.width
         val height = shot.frame.height
         val layers = buildMap {
@@ -236,12 +253,21 @@ internal object RemoteScreenshot {
     private fun json(obj: JsonObject): LanHttpResponse =
         LanHttpResponse.bytes(obj.toString().toByteArray(), "application/json; charset=utf-8")
 
+    /** 这台设备截到过不是全黑的画面 (存着, 重启也记得): 之后再截到全黑, 当作那一刻画面本来就是黑的. */
+    private var frameReadable: Boolean
+        get() = prefs.getBoolean(KEY_FRAME_READABLE, false)
+        set(value) = prefs.edit().putBoolean(KEY_FRAME_READABLE, value).apply()
+
+    private val prefs: SharedPreferences
+        get() = KoinPlatform.getKoin().get<Context>().getSharedPreferences(RemoteScreenshotPresets.PREFS_NAME, Context.MODE_PRIVATE)
+
     private fun result(ok: Boolean, message: String): JsonObject = buildJsonObject {
         put("ok", ok)
         put("message", message)
     }
 
     const val PATH = "api/player/screenshot"
+    private const val KEY_FRAME_READABLE = "frameReadable"
     private const val LAYER_FRAME = "frame"
     private const val LAYER_SUBTITLES = "subtitles"
     private const val LAYER_DANMAKU = "danmaku"

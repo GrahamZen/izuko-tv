@@ -80,8 +80,8 @@ internal val SHOT_STYLE = """
 .shot-pm-row .shot-x { width: 30px; height: 30px; background: none; color: var(--mute); }
 .shot-pm-empty { padding: 8px 12px; font-size: 14px; color: var(--mute); }
 .shot-pm-save { color: var(--p); font-weight: 600; border-top: 1px solid var(--line); border-radius: 0 0 10px 10px; margin-top: 4px; }
-/* 起名字的小窗 (样式同 .link-dlg-box 那一族) */
-#shot-pdlg { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(0,0,0,.45); }
+/* 起名字的小窗、「截不到画面」的说明 (样式同 .link-dlg-box 那一族) */
+#shot-pdlg, #shot-dlg { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(0,0,0,.45); }
 #shot-pdlg input { margin-top: 12px; }
 .shot-add-btns [hidden] { display: none; }
 """
@@ -816,6 +816,7 @@ internal val SHOT_SCRIPT = """
     renderMarks();
     post('api/player/screenshot', {}).then(function (r) {
       if (my !== seq) return;
+      if (!r.ok && r.unreadable) { close(); unreadable(); return; }
       if (!r.ok) { msg(r.message || T('截图失败')); return; }
       shot = r;
       sync();
@@ -971,6 +972,19 @@ internal val SHOT_SCRIPT = """
     };
     if (blob && blobVer === ver) go(blob);
     else compose(go);
+  }
+  // 视频层读回全黑 (见 RemoteScreenshot): 这台设备截不到画面, 说明原因, 不出一张黑图
+  function unreadable() {
+    var d = document.createElement('div');
+    d.id = 'shot-dlg';
+    d.innerHTML = '<div class="link-dlg-box"><div class="link-dlg-t">' + T('这台设备截不到视频画面') + '</div>' +
+      '<p class="dlg-p">' + T('这台设备播放时，视频画面由芯片直接送到屏幕上的专用通道显示，不经过系统的图形合成，应用读不到这一层，截出来只会是一块黑（晶晨芯片的电视、盒子、投影常见这种情况）。这是设备的限制，换番、换片源都一样。') + '</p>' +
+      '<p class="dlg-p">' + T('如果电视上这一刻画面本来就是黑的，换个画面再截一次。') + '</p>' +
+      '<div class="dlg-acts"><button type="button" class="primary" data-shot-dlg>' + T('知道了') + '</button></div></div>';
+    d.addEventListener('click', function (e) {
+      if (e.target === d || e.target.closest('[data-shot-dlg]')) d.remove();
+    });
+    document.body.appendChild(d);
   }
   function open() {
     if (!sheet) build();
