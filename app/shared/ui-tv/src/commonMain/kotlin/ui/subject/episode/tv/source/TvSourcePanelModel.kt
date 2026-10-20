@@ -230,11 +230,17 @@ data class TvSourceDetailField(
 @Immutable
 data class TvSourceButton(val label: String, val action: TvSourceAction, val icon: TvSourceRowIcon = TvSourceRowIcon.None)
 
-/** 筛选维度: 都在表头「筛选」的弹窗里 (见 TvSourcePanelFilters); 字幕组 / 来源只管 BT 与缓存. 集号是 BT 那一栏顶上的开关, 不在这里. */
+/**
+ * 筛选维度: 分辨率 / 字幕在表头「筛选」的弹窗里 (见 TvSourcePanelFilters), 对网盘类的在线源也生效; 字幕组 / 来源只管 BT 与缓存,
+ * 是那一栏顶上的胶囊 (见 [TvSourceDrill.Filter]). 集号是同一排的开关, 不在这里.
+ */
 enum class TvSourceFilter { Resolution, Subtitle, Alliance, Source }
 
 /** 右栏「进去的那一层」. */
 sealed interface TvSourceDrill {
+    /** BT 与缓存那一栏顶上的字幕组 / 来源胶囊: 它的取值, 确定就选、退回 BT 列表. */
+    data class Filter(val filter: TvSourceFilter) : TvSourceDrill
+
     /** 手动查找: 换数据源. */
     data object ManualSources : TvSourceDrill
 
@@ -1473,7 +1479,8 @@ private fun status(id: String, text: String) =
 
 private fun btPane(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvSourceStrings): TvSourceRight {
     val bt = input.bt
-    // 只剩「仅本集」开关: 分辨率 / 字幕 / 字幕组 / 来源都在表头的「筛选」里 (见 TvSourcePanelFilters)
+    val drill = nav.drill
+    if (drill is TvSourceDrill.Filter) return filterOptionsPane(drill.filter, input, strings)
     val pills = listOf(
         TvSourceRow(
             id = "pill:episode",
@@ -1482,6 +1489,9 @@ private fun btPane(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvSourc
             selected = bt.episodeFilterEnabled,
             action = TvSourceAction.ToggleEpisodeFilter,
         ),
+        // 分辨率 / 字幕在表头的「筛选」里, 对网盘类的在线源也生效 (见 TvSourcePanelFilters); 字幕组 / 来源只有 BT 用得上
+        filterPill(TvSourceFilter.Alliance, strings.alliance, bt.alliance),
+        filterPill(TvSourceFilter.Source, strings.source, bt.sourceFilter?.let { sourceName(it, input.sources) }),
     )
     val included = groupBtRows(bt.included)
     // 只是不合筛选 (分辨率 / 字幕 / 字幕组) 的单写一行条数, 确定去改筛选; 真被排除的 (季度不符、没字幕…) 收在下面的开关里
@@ -1497,7 +1507,12 @@ private fun btPane(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvSourc
                     style = TvSourceRowStyle.Option,
                     title = strings.hiddenByFilter.format(hidden.size),
                     dividerAbove = included.isNotEmpty(),
-                    action = TvSourceAction.OpenFilter,
+                    // 只有字幕组在筛: 它的胶囊在本页顶上; 分辨率 / 字幕在筛选弹窗里
+                    action = if (bt.resolution == null && bt.subtitleLanguageId == null && bt.alliance != null) {
+                        TvSourceAction.Open(TvSourceDrill.Filter(TvSourceFilter.Alliance))
+                    } else {
+                        TvSourceAction.OpenFilter
+                    },
                 ),
             )
         }
@@ -1662,6 +1677,77 @@ private fun sourceName(mediaSourceId: String, sources: MediaSourceResultListPres
     sources.list.firstOrNull { it.mediaSourceId == mediaSourceId }?.info?.displayName ?: mediaSourceId
 
 private fun failedPane(failed: List<MediaSourceResultPresentation>, strings: TvSourceStrings): TvSourceRight = TvSourceRight(
+/** BT 那一栏顶上的字幕组 / 来源胶囊: 选了的写在后面, 确定进去选 ([filterOptionsPane]). */
+private fun filterPill(filter: TvSourceFilter, label: String, value: String?) = TvSourceRow(
+    id = "pill:" + filter.name,
+    style = TvSourceRowStyle.Pill,
+    title = if (value == null) label else "$label · $value",
+    selected = value != null,
+    action = TvSourceAction.Open(TvSourceDrill.Filter(filter)),
+)
+
+/** 字幕组 / 来源胶囊进去的那一层: 「全部」+ 各个取值, 选中的打勾; 来源行后面写条数 / 状态. */
+private fun filterOptionsPane(filter: TvSourceFilter, input: TvSourcePanelInput, strings: TvSourceStrings): TvSourceRight {
+    val bt = input.bt
+    val (title, current, values) = when (filter) {
+        TvSourceFilter.Resolution -> Triple(strings.resolution, bt.resolution, bt.availableResolutions.map { it to it })
+        TvSourceFilter.Subtitle -> Triple(
+            strings.subtitle,
+            bt.subtitleLanguageId,
+            bt.availableSubtitleLanguageIds.map { it to renderSubtitleLanguage(it, strings.details) },
+        )
+
+        TvSourceFilter.Alliance -> Triple(strings.alliance, bt.alliance, bt.availableAlliances.map { it to it })
+        TvSourceFilter.Source -> Triple(
+            strings.source,
+            bt.sourceFilter,
+            input.sources.btSources.map { it.mediaSourceId to it.info.displayName },
+        )
+    }
+    val rows = buildList {
+        add(
+            TvSourceRow(
+                id = "opt:all",
+                style = TvSourceRowStyle.Option,
+                title = strings.all,
+                trailing = if (filter == TvSourceFilter.Source) bt.totalCount.toString() else "",
+                icon = if (current == null) TvSourceRowIcon.Check else TvSourceRowIcon.None,
+                selected = current == null,
+                action = TvSourceAction.PickFilter(filter, null),
+            ),
+        )
+        for ((value, label) in values) {
+            val source = if (filter == TvSourceFilter.Source) input.sources.btSources.firstOrNull { it.mediaSourceId == value } else null
+            add(
+                TvSourceRow(
+                    id = "opt:$value",
+                    style = TvSourceRowStyle.Option,
+                    title = label,
+                    trailing = source?.let { sourceStatus(it, bt.sourceCounts[value] ?: 0, strings) }.orEmpty(),
+                    loading = source?.isWorking == true,
+                    dimmed = source != null && (source.isDisabled || source.isFailedOrAbandoned),
+                    icon = if (value == current) TvSourceRowIcon.Check else TvSourceRowIcon.None,
+                    selected = value == current,
+                    action = TvSourceAction.PickFilter(filter, value),
+                ),
+            )
+        }
+    }
+    return TvSourceRight(
+        key = TvSourceRailKeys.BT + "/filter/" + filter.name,
+        title = title,
+        rows = rows,
+        focusId = rows.firstOrNull { it.selected }?.id,
+    )
+}
+
+private fun sourceStatus(source: MediaSourceResultPresentation, count: Int, strings: TvSourceStrings): String = when {
+    source.isDisabled -> strings.disabled
+    source.isFailedOrAbandoned -> strings.failedState
+    source.isWorking -> ""
+    else -> count.toString()
+}
+
     key = TvSourceRailKeys.FAILED,
     rows = failed.map { source ->
         // 站点拉黑了这个网络: 写明几点前不再查 (重试也只是直接失败), 不写「按确定重试」
