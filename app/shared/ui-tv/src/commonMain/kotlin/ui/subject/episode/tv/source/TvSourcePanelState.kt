@@ -314,6 +314,12 @@ class TvSourcePanelState(
         nav.update { it.copy(drill = null, frozenOrder = null) }
     }
 
+    /** 筛选弹窗关掉时: 弹窗里改过的几项一起生效 (见 TvSourceFilterDialog). */
+    fun applyFilters(changes: Map<TvSourceFilter, String?>) {
+        for ((filter, value) in changes) pickFilter(filter, value)
+        closeDrill()
+    }
+
     private fun pickFilter(filter: TvSourceFilter, value: String?) {
         if (filter == TvSourceFilter.Source) {
             selector.btFilterState.sourceFilter.value = value
