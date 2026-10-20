@@ -169,7 +169,7 @@ class AndroidWebMediaResolver(
                     media.download.uri,
                     config,
                     resourceMatcher,
-                )
+                ) ?: throw MediaResolutionException(ResolutionFailures.FETCH_TIMEOUT) // 等满也没嗅到视频: 报超时 (加载提示刚倒数完), 不是没找到文件
             }
             )?.let { resource ->
             allMatchers.firstNotNullOfOrNull { matcher ->
