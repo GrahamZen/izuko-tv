@@ -31,6 +31,9 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import me.him188.ani.app.domain.media.MediaAvFeatures
+import me.him188.ani.app.domain.media.MediaDynamicRange
+import me.him188.ani.app.domain.media.probe.MediaStreamProbe
 import me.him188.ani.app.domain.mediasource.directapi.DataNode
 import me.him188.ani.app.domain.mediasource.directapi.JsonNode
 import me.him188.ani.app.domain.mediasource.directapi.selectByPath
@@ -134,6 +137,32 @@ internal class CloudDriveApi(
                 accessible = op.accessible.isBlank() || item.stringByPath(op.accessible) in op.accessibleValues,
             )
         }
+    }
+
+    /**
+     * 原文件的视频信息 (播放接口的响应里的, 见 [DriveVideoMetaFields]); 协议没给这些字段为 null. 文件刚传上去、网盘还在处理时接口报错, 抛出 (下次再读).
+     */
+    suspend fun videoMeta(fileId: String): MediaStreamProbe.Result? {
+        val op = protocol().api.transcoded ?: return null
+        val meta = op.meta ?: return null
+        val root = send("transcoded", op.request, mapOf("fileId" to fileId.json))
+        fun value(path: String): String? = path.ifBlank { null }?.let { root.stringByPath(it) }?.takeIf { it.isNotBlank() }
+        fun number(path: String): Int? = value(path)?.toDoubleOrNull()?.toInt()
+        val profile = number(meta.dolbyVisionProfile)
+        val hdr = value(meta.hdr)?.let { it in meta.hdrValues } == true
+        return MediaStreamProbe.Result(
+            container = "drive",
+            width = number(meta.width),
+            height = number(meta.height),
+            codec = value(meta.codec),
+            durationSeconds = number(meta.duration),
+            dynamicRange = when {
+                profile != null -> MediaDynamicRange.DolbyVision
+                hdr -> MediaDynamicRange.Hdr
+                else -> null
+            },
+            dolbyVisionProfile = profile,
+        )
     }
 
     /** 在 [parentId] 下新建文件夹, 返回新文件夹的 id. */
@@ -471,6 +500,11 @@ internal class CloudDriveApi(
                 isVideo = isVideo,
                 shareToken = value(fields.shareToken).orEmpty(),
                 durationSeconds = value(fields.duration)?.toDoubleOrNull()?.toInt() ?: 0,
+                avFeatures = if (value(fields.dolbyVision)?.let { it in fields.dolbyVisionValues } == true) {
+                    MediaAvFeatures(dynamicRange = MediaDynamicRange.DolbyVision)
+                } else {
+                    MediaAvFeatures.NONE
+                },
             )
         }
 
@@ -580,6 +614,7 @@ class DriveFileList(val files: List<DriveFile>, val total: Int?)
  * @property updatedAt 修改时间, 毫秒时间戳
  * @property shareToken 分享里的文件转存时要带的凭证; 自己网盘的文件为空
  * @property durationSeconds 视频时长 (秒), 网盘没给时为 0
+ * @property avFeatures 读文件头认出的 HDR 与音轨格式 (见 [DriveVideoInfoProbe]), 没读过为空
  */
 class DriveFile(
     val fid: String,
@@ -592,10 +627,11 @@ class DriveFile(
     val isVideo: Boolean = false,
     val shareToken: String = "",
     val durationSeconds: Int = 0,
+    val avFeatures: MediaAvFeatures = MediaAvFeatures.NONE,
 ) {
     /** 放在文件夹 [folderId] 里的同一个文件. */
     fun inFolder(folderId: String): DriveFile =
-        DriveFile(fid, fileName, folderId, dir, size, updatedAt, videoHeight, isVideo, shareToken, durationSeconds)
+        DriveFile(fid, fileName, folderId, dir, size, updatedAt, videoHeight, isVideo, shareToken, durationSeconds, avFeatures)
 }
 
 class DriveShareToken(val token: String, val title: String)

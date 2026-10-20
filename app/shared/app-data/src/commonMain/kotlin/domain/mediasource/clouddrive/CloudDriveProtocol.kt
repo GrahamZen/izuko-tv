@@ -150,6 +150,7 @@ data class DriveEnvelope(
  * @property duration 视频时长 (秒); 与文件大小一起算出平均码率, 显示在选源列表里
  * @property category 文件类别; 在 [videoCategories] 里的算视频. 没有类别字段时按扩展名认视频
  * @property shareToken 分享里的文件转存时要带的凭证
+ * @property dolbyVision 是不是杜比视界; 值在 [dolbyVisionValues] 里算是 (选源列表里标出来)
  */
 @Serializable
 data class DriveFileFields(
@@ -166,6 +167,8 @@ data class DriveFileFields(
     val category: String = "",
     val videoCategories: List<String> = emptyList(),
     val shareToken: String = "",
+    val dolbyVision: String = "",
+    val dolbyVisionValues: List<String> = listOf("true", "1"),
 )
 
 /**
@@ -276,6 +279,25 @@ data class DriveTranscodedOp(
     val height: String = "",
     val accessible: String = "",
     val accessibleValues: List<String> = listOf("true"),
+    val meta: DriveVideoMetaFields? = null,
+)
+
+/**
+ * 播放接口的响应里原文件的视频信息 (路径从响应的根算起, 见 CloudDriveApi.videoMeta): 给了就在选源时对当前这一集的文件调一次播放接口,
+ * 认出 HDR 与杜比视界 (列目录不给的). 空表示没有这个字段.
+ *
+ * @property hdr 是不是 HDR (值在 [hdrValues] 里算是); 分不出 HDR10 与 HLG
+ * @property dolbyVisionProfile 杜比视界的 profile; 有值就是杜比视界
+ */
+@Serializable
+data class DriveVideoMetaFields(
+    val width: String = "",
+    val height: String = "",
+    val duration: String = "",
+    val codec: String = "",
+    val hdr: String = "",
+    val hdrValues: List<String> = listOf("1", "true"),
+    val dolbyVisionProfile: String = "",
 )
 
 /**

@@ -690,6 +690,8 @@
     <string name="tv_source_playback_failed">Failed to load</string>
     <string name="tv_source_playback_buffering">Buffering</string>
     <string name="tv_source_settings">Source settings</string>
+    <string name="tv_source_badge_dolby_vision">Dolby Vision</string>
+    <string name="tv_source_badge_dolby_atmos">Dolby Atmos</string>
     <string name="tv_source_disabled">Disabled</string>
     <string name="tv_source_episode_filter">This episode</string>
     <string name="tv_source_all_episodes">All episodes</string>
@@ -698,6 +700,7 @@
     <string name="tv_source_show_excluded">Show %1$d excluded</string>
     <string name="tv_source_hide_excluded">Hide %1$d excluded</string>
     <string name="tv_source_hidden_by_filter">%1$d hidden by filters</string>
+    <string name="tv_source_badge_dolby_vision_unsupported">This device can’t decode Dolby Vision. This source is Dolby Vision profile 5, so its colors may look wrong (purple or green)</string>
     <string name="tv_source_sources_count">%1$d sources</string>
     <string name="tv_source_pack">Batch</string>
     <string name="tv_source_bt_loading">Searching BT sources…</string>
