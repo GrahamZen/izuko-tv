@@ -14,8 +14,12 @@ import androidx.compose.runtime.Stable
 import me.him188.ani.app.data.models.subject.SubjectInfo
 import me.him188.ani.app.data.models.subject.nameOrNameCn
 
+/**
+ * 播放页显示的条目信息. 是 data class: 页面状态每次重新组合都会 [toPresentation] 出新的一份, 按内容比较才能让内容没变的页面状态被去重 ——
+ * 按身份比较的话页面状态每次都算「变了」, 搜索时播放页一秒重组好几次.
+ */
 @Immutable
-class SubjectPresentation(
+data class SubjectPresentation(
     val title: String,
     val isPlaceholder: Boolean = false,
     val info: SubjectInfo,
