@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import me.him188.ani.app.domain.media.ProbedMediaAvFeatures
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
 import me.him188.ani.app.domain.mediasource.clouddrive.cloudDriveLoginRequired
 import me.him188.ani.app.ui.mediafetch.MediaSelectorState
@@ -166,7 +167,9 @@ class TvSourcePanelState(
         nav,
         strings.filterNotNull(),
         detailsColumn,
-    ) { input, nav, strings, column ->
+        // 网盘晚到的 HDR / 杜比视界信息: 资源不变, 标签要重拼
+        ProbedMediaAvFeatures.changes,
+    ) { input, nav, strings, column, _ ->
         val content = buildTvSourcePanel(input, nav, strings)
         content to column?.let { buildTvSourceDetailsSequence(input, strings, content, inRail = it) }
     }

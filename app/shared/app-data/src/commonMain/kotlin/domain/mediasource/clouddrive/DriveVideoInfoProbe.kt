@@ -23,21 +23,26 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.data.models.preference.DriveVideoInfo
+import me.him188.ani.app.domain.media.MediaAvFeatures
 import me.him188.ani.app.domain.media.probe.MediaStreamProbe
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource
 
 /**
  * 列目录不给视频信息的网盘 (WebDAV) 上, 读视频文件头 ([MediaStreamProbe], 几十 KB) 补上画面高度与时长,
  * 资源才标得对分辨率、显示得出码率 (见 [CloudDriveMediaSource.mediaFor]); 不然文件名里没写分辨率的一律标成 1080P.
+ * 顺带记下认出的 HDR 与音轨格式 ([DriveFile.avFeatures]), 选源时标出来.
  *
  * 当前这一集的文件马上读, 调用方等它最多 [WAIT]; 其余各集的在后台排队读, 同时最多 [PARALLEL] 个 (经 AList 这类转发的,
  * 每读一个它就要去网盘要一次下载地址), 不让调用方等. 读得慢的先按没有信息给出, 读完记下并通知 [onLateInfo]
  * (条目级查询切集不再查, 要靠它让数据源重查, 见 [DriveVideoInfoRefresh]); 读不出来 (网络错、不认识的格式) 也当没有.
  * 每个文件只读一次: 结果按文件记下 ([save], 存在账号里, 键见 [keyOf]), 文件换了 (大小变了) 才重读.
+ * 记下的信息是旧的读法读的 ([DriveVideoInfo.version] 小于 [PROBE_VERSION]) 时照样马上给出, 同时在后台排队重读一次,
+ * 读出的与记下的不同才通知 [onLateInfo].
  *
  * @param stored 记下的信息 ([keyOf] → 信息)
  * @param probe 读一个文件的头; 读不到时为 null
@@ -48,6 +53,12 @@ internal class DriveVideoInfoProbe(
     private val save: suspend (key: String, info: DriveVideoInfo) -> Unit,
     private val probe: suspend (DriveFile) -> MediaStreamProbe.Result?,
     private val onLateInfo: () -> Unit = {},
+    /** 哪些文件要读; 默认是列目录不给画面高度与时长、又是读得了头的格式的. */
+    private val wanted: (DriveFile) -> Boolean = { it.headerProbeWanted() },
+    /** 当前这一集没读过的最多等多久 (0 = 不等, 读到了经 [onProbed] 交出去). */
+    private val wait: Duration = WAIT,
+    /** 每读完一个 (记下之后) 调一次. */
+    private val onProbed: (DriveFile, DriveVideoInfo) -> Unit = { _, _ -> },
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val lock = SynchronizedObject()
@@ -59,23 +70,36 @@ internal class DriveVideoInfoProbe(
      * 已经有这两项的、不是能读头的格式的不读. 只等 [current] 里没读过的, 最多 [WAIT]; 那时已经读完的 [others] 也一并给出.
      */
     suspend fun fill(current: List<DriveFile>, others: List<DriveFile> = emptyList()): Map<String, DriveFile> {
-        val urgent = current.filter { it.needsProbe() }.distinctBy { it.fid }
+        val urgent = current.filter(wanted).distinctBy { it.fid }
         val urgentIds = urgent.mapTo(HashSet()) { it.fid }
-        val rest = others.filter { it.needsProbe() && it.fid !in urgentIds }.distinctBy { it.fid }.take(MAX_FILES)
+        val rest = others.filter { wanted(it) && it.fid !in urgentIds }.distinctBy { it.fid }.take(MAX_FILES)
         if (urgent.isEmpty() && rest.isEmpty()) return emptyMap()
         val known = stored()
         val filled = HashMap<String, DriveFile>()
         val waited = ArrayList<Pair<DriveFile, Deferred<DriveVideoInfo?>>>()
         val queued = ArrayList<Pair<DriveFile, Deferred<DriveVideoInfo?>>>()
+        val outdated = ArrayList<Pair<DriveFile, DriveVideoInfo>>()
         for (file in urgent + rest) {
             val info = known[keyOf(file.fid)]?.takeIf { it.size == file.size }
             when {
-                info != null -> filled[file.fid] = file.with(info)
-                file.fid in urgentIds -> waited += file to start(file, queue = false)
+                info != null -> {
+                    filled[file.fid] = file.with(info)
+                    if (info.version < PROBE_VERSION) outdated += file to info
+                }
+
+                file.fid in urgentIds -> waited += file to start(file, queue = wait <= Duration.ZERO)
                 else -> queued += file to start(file, queue = true)
             }
         }
-        if (waited.isNotEmpty()) withTimeoutOrNull(WAIT) { waited.forEach { it.second.await() } }
+        // 旧的读法读的: 已经照用了, 在后台排队重读
+        for ((file, old) in outdated) {
+            val job = start(file, queue = true)
+            scope.launch {
+                val info = job.await() ?: return@launch
+                if (info.copy(version = old.version) != old) onLateInfo()
+            }
+        }
+        if (waited.isNotEmpty() && wait > Duration.ZERO) withTimeoutOrNull(wait) { waited.forEach { it.second.await() } }
         for ((file, job) in waited + queued) {
             if (job.isCompleted) {
                 job.await()?.let { filled[file.fid] = file.with(it) }
@@ -96,8 +120,20 @@ internal class DriveVideoInfoProbe(
         val job = scope.async(start = CoroutineStart.LAZY) {
             try {
                 val result = if (queue) permits.withPermit { read(file) } else read(file)
-                result?.let { DriveVideoInfo(file.size, heightOf(it.width, it.height), it.durationSeconds ?: 0) }
-                    ?.also { save(keyOf(file.fid), it) }
+                result?.let {
+                    DriveVideoInfo(
+                        size = file.size,
+                        height = heightOf(it.width, it.height),
+                        durationSeconds = it.durationSeconds ?: 0,
+                        dynamicRange = it.dynamicRange,
+                        audio = it.audio,
+                        version = PROBE_VERSION,
+                        dolbyVisionProfile = it.dolbyVisionProfile,
+                    )
+                }?.also {
+                    save(keyOf(file.fid), it)
+                    onProbed(file, it)
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
@@ -117,13 +153,13 @@ internal class DriveVideoInfoProbe(
         return withTimeoutOrNull(PROBE_TIMEOUT) { probe(file) }.also { result ->
             logger.info {
                 "Probed ${file.fileName} in ${mark.elapsedNow().inWholeMilliseconds} ms: " +
-                        (result?.let { "${it.container} ${it.width}x${it.height} ${it.codec} ${it.durationSeconds} s" } ?: "nothing")
+                        (result?.let {
+                            "${it.container} ${it.width}x${it.height} ${it.codec} ${it.durationSeconds} s" +
+                                    listOfNotNull(it.dynamicRange, it.audio).joinToString("") { feature -> " $feature" }
+                        } ?: "nothing")
             }
         }
     }
-
-    private fun DriveFile.needsProbe(): Boolean =
-        isVideo && !dir && videoHeight <= 0 && durationSeconds <= 0 && fileName.substringAfterLast('.', "").lowercase() in PROBED_EXTENSIONS
 
     private fun DriveFile.with(info: DriveVideoInfo): DriveFile = DriveFile(
         fid = fid,
@@ -132,13 +168,25 @@ internal class DriveVideoInfoProbe(
         dir = dir,
         size = size,
         updatedAt = updatedAt,
-        videoHeight = info.height,
+        videoHeight = info.height.takeIf { it > 0 } ?: videoHeight,
         isVideo = isVideo,
         shareToken = shareToken,
-        durationSeconds = info.durationSeconds,
+        durationSeconds = info.durationSeconds.takeIf { it > 0 } ?: durationSeconds,
+        // 列目录给的 (杜比视界标记) 与读到的合起来
+        avFeatures = avFeatures + info.avFeatures,
     )
 
     companion object {
+        /** 列目录不给画面高度与时长、又是 [MediaStreamProbe] 认得的容器: 要读文件头. */
+        fun DriveFile.headerProbeWanted(): Boolean =
+            isVideo && !dir && videoHeight <= 0 && durationSeconds <= 0 && fileName.substringAfterLast('.', "").lowercase() in PROBED_EXTENSIONS
+
+        /**
+         * 读法的版本, 记在 [DriveVideoInfo.version]: 读文件头多认出东西时加一, 记下的旧版本的信息照用并在后台重读.
+         * 1: 认出 HDR 与音轨格式.
+         */
+        const val PROBE_VERSION = 1
+
         /** 等当前这一集的结果最多这么久, 再长就先按没有信息给出候选 (开播要等这些候选). */
         val WAIT = 1.seconds
 
@@ -166,3 +214,6 @@ internal class DriveVideoInfoProbe(
         fun heightOf(width: Int?, height: Int?): Int = maxOf(height ?: 0, (width ?: 0) * 9 / 16)
     }
 }
+
+/** 记下的信息里的特性. */
+private val DriveVideoInfo.avFeatures: MediaAvFeatures get() = MediaAvFeatures(dynamicRange, audio, dolbyVisionProfile)

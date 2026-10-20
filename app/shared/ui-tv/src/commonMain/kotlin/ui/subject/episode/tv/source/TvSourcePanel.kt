@@ -388,7 +388,8 @@ fun rememberTvSourcePanelStyle(): TvSourcePanelStyle {
             TV_SOURCE_ICON_SIZE,
         )
     }
-    return remember(density, typography, transitions, marqueeRepeat, icons) {
+    val badge = rememberTvSourceBadgeStyle()
+    return remember(density, typography, transitions, marqueeRepeat, icons, badge) {
         with(density) {
             val white = Color.White
             val ink = Color(0xFF111111)
@@ -462,6 +463,7 @@ fun rememberTvSourcePanelStyle(): TvSourcePanelStyle {
                 focusOutMillis = 90,
                 animated = transitions,
                 icons = icons,
+                badge = badge,
             )
         }
     }

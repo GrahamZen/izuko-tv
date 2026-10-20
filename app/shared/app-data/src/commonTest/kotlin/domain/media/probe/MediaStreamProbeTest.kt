@@ -18,6 +18,8 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
+import me.him188.ani.app.domain.media.MediaDynamicRange
+import me.him188.ani.app.domain.media.MediaSurroundAudio
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.test.Test
@@ -110,6 +112,124 @@ class MediaStreamProbeTest {
     }
 
     @Test
+    fun `mkv with pq transfer is hdr10`() = runTest {
+        val result = probe("a.mkv", MkvSamples.video(3840, 2160, durationSeconds = 1440, transfer = 16))
+        assertEquals(
+            MediaStreamProbe.Result("mkv", 3840, 2160, "HEVC", durationSeconds = 1440, dynamicRange = MediaDynamicRange.Hdr10),
+            result?.copy(kbps = null),
+        )
+    }
+
+    @Test
+    fun `mkv with hlg transfer behind large attachments`() = runTest {
+        // Tracks 只能按 SeekHead 的位置取
+        val result = probe("b.mkv", MkvSamples.video(3840, 1608, durationSeconds = 1440, padding = 100_000, transfer = 18))
+        assertEquals(
+            MediaStreamProbe.Result("mkv", 3840, 1608, "HEVC", kbps = 1, durationSeconds = 1440, dynamicRange = MediaDynamicRange.Hlg),
+            result,
+        )
+    }
+
+    @Test
+    fun `mkv with dolby vision block addition mapping`() = runTest {
+        // dvcC 盖过 PQ
+        val file = MkvSamples.video(3840, 2160, durationSeconds = 1440, transfer = 16, blockAddIdType = 0x64766343)
+        assertEquals(MediaDynamicRange.DolbyVision, probe("c.mkv", file)?.dynamicRange)
+        // 不是杜比视界的 BlockAddIDType 不算
+        val other = MkvSamples.video(3840, 2160, durationSeconds = 1440, blockAddIdType = 4)
+        assertNull(probe("d.mkv", other)?.dynamicRange)
+    }
+
+    @Test
+    fun `mkv audio tracks after the video track give the best format`() = runTest {
+        val file = MkvSamples.video(1920, 1080, durationSeconds = 1440, audioCodecIds = listOf("A_AAC", "A_DTS/LOSSLESS", "A_TRUEHD"))
+        assertEquals(
+            MediaStreamProbe.Result("mkv", 1920, 1080, "HEVC", durationSeconds = 1440, audio = MediaSurroundAudio.TrueHd),
+            probe("e.mkv", file)?.copy(kbps = null),
+        )
+        val dts = MkvSamples.video(1920, 1080, durationSeconds = 1440, audioCodecIds = listOf("A_DTS/LOSSLESS"))
+        assertEquals(MediaSurroundAudio.DtsHd, probe("f.mkv", dts)?.audio)
+        val aac = MkvSamples.video(1920, 1080, durationSeconds = 1440, audioCodecIds = listOf("A_AAC"))
+        assertNull(probe("g.mkv", aac)?.audio)
+    }
+
+    @Test
+    fun `mp4 with a dolby vision sample entry`() = runTest {
+        val result = probe("a.mp4", Mp4Samples.file(Mp4Samples.visualEntry("dvh1", Mp4Samples.box("hvcC", ByteArray(23)), Mp4Samples.box("dvcC", ByteArray(24)))))
+        assertEquals(
+            MediaStreamProbe.Result("mp4", 3840, 2160, "HEVC", durationSeconds = 1440, dynamicRange = MediaDynamicRange.DolbyVision),
+            result?.copy(kbps = null),
+        )
+        // hvc1 里带 dvvC (可兼容 HDR10 的杜比视界): 杜比视界盖过 PQ
+        val compatible = Mp4Samples.visualEntry("hvc1", Mp4Samples.box("hvcC", ByteArray(23)), Mp4Samples.colr(16), Mp4Samples.box("dvvC", ByteArray(24)))
+        assertEquals(MediaDynamicRange.DolbyVision, probe("b.mp4", Mp4Samples.file(compatible))?.dynamicRange)
+    }
+
+    @Test
+    fun `mp4 with pq colr and a truehd track`() = runTest {
+        val video = Mp4Samples.visualEntry("hvc1", Mp4Samples.box("hvcC", ByteArray(23)), Mp4Samples.colr(16))
+        val result = probe("c.mp4", Mp4Samples.file(video, Mp4Samples.audioEntry("mp4a"), Mp4Samples.audioEntry("mlpa")))
+        assertEquals(
+            MediaStreamProbe.Result("mp4", 3840, 2160, "HEVC", durationSeconds = 1440, dynamicRange = MediaDynamicRange.Hdr10, audio = MediaSurroundAudio.TrueHd),
+            result?.copy(kbps = null),
+        )
+        val hlg = Mp4Samples.visualEntry("avc1", Mp4Samples.box("avcC", ByteArray(16)), Mp4Samples.colr(18))
+        assertEquals(MediaDynamicRange.Hlg, probe("d.mp4", Mp4Samples.file(hlg, Mp4Samples.audioEntry("dtsx")))?.dynamicRange)
+        assertEquals(MediaSurroundAudio.DtsX, probe("d.mp4", Mp4Samples.file(hlg, Mp4Samples.audioEntry("dtsx")))?.audio)
+        // SDR (BT.709) 不标
+        val sdr = Mp4Samples.visualEntry("hvc1", Mp4Samples.box("hvcC", ByteArray(23)), Mp4Samples.colr(1))
+        assertEquals(MediaStreamProbe.Result("mp4", 3840, 2160, "HEVC", durationSeconds = 1440), probe("e.mp4", Mp4Samples.file(sdr))?.copy(kbps = null))
+    }
+
+    @Test
+    fun `hls master playlist declares the video range`() = runTest {
+        val master = """
+            #EXTM3U
+            #EXT-X-STREAM-INF:BANDWIDTH=4000000,RESOLUTION=1920x1080,CODECS="hvc1.2.4.L120.90,mp4a.40.2"
+            sdr.m3u8
+            #EXT-X-STREAM-INF:BANDWIDTH=20000000,RESOLUTION=3840x2160,CODECS="dvh1.05.06,ec-3",VIDEO-RANGE=PQ
+            dv.m3u8
+        """.trimIndent()
+        val result = MediaStreamProbe.probe(serve(mapOf("https://v.example.com/dv.m3u8" to master.encodeToByteArray())), "https://v.example.com/dv.m3u8")
+        assertEquals(MediaStreamProbe.Result("hls", 3840, 2160, "HEVC", kbps = 20000, dynamicRange = MediaDynamicRange.DolbyVision), result)
+    }
+
+    @Test
+    fun `hls video range attribute`() {
+        assertEquals(MediaDynamicRange.Hdr10, Hls.dynamicRangeOf(mapOf("VIDEO-RANGE" to "PQ", "CODECS" to "hvc1.2.4.L150.B0")))
+        assertEquals(
+            MediaDynamicRange.DolbyVision,
+            Hls.dynamicRangeOf(mapOf("VIDEO-RANGE" to "PQ", "CODECS" to "hvc1.2.4.L150.B0", "SUPPLEMENTAL-CODECS" to "dvh1.08.07/db1p")),
+        )
+        assertEquals(MediaDynamicRange.Hlg, Hls.dynamicRangeOf(mapOf("VIDEO-RANGE" to "HLG", "CODECS" to "hvc1.2.4.L150.B0")))
+        assertNull(Hls.dynamicRangeOf(mapOf("VIDEO-RANGE" to "SDR", "CODECS" to "avc1.640028")))
+        assertNull(Hls.dynamicRangeOf(mapOf("CODECS" to "avc1.640028")))
+    }
+
+    @Test
+    fun `corrupted headers do not throw`() {
+        // 每个字节换成几种容易出事的值 (长度未知、8 字节长度、0), 以及从每个位置截断
+        val mkv = MkvSamples.video(3840, 2160, durationSeconds = 1440, transfer = 16, blockAddIdType = 0x64767643, audioCodecIds = listOf("A_TRUEHD"))
+        val mp4 = Mp4Samples.file(
+            Mp4Samples.visualEntry("hvc1", Mp4Samples.box("hvcC", ByteArray(23)), Mp4Samples.colr(16), Mp4Samples.box("dvvC", ByteArray(24))),
+            Mp4Samples.audioEntry("mlpa"),
+        )
+        val (moovStart, moovEnd) = Mp4.findMoov(mp4)!!
+        for (i in mkv.indices) {
+            for (value in CORRUPT_VALUES) Mkv.parseHead(mkv.copyOf().also { it[i] = value })
+            Mkv.parseHead(mkv.copyOf(i))
+        }
+        for (i in mp4.indices) {
+            for (value in CORRUPT_VALUES) {
+                val bytes = mp4.copyOf().also { it[i] = value }
+                Mp4.parseMoov(bytes, moovStart, moovEnd)
+                Mp4.findMoov(bytes)?.let { Mp4.parseMoov(bytes, it.first, it.second) }
+            }
+            Mp4.findMoov(mp4.copyOf(i))?.let { Mp4.parseMoov(mp4, it.first, it.second) }
+        }
+    }
+
+    @Test
     fun `not a video`() = runTest {
         assertNull(MediaStreamProbe.probe(serve(mapOf("https://v.example.com/x" to "<html></html>".encodeToByteArray())), "https://v.example.com/x"))
     }
@@ -128,6 +248,9 @@ class MediaStreamProbeTest {
         val result = MediaStreamProbe.probe(client, "https://v.example.com/p.m3u8", mapOf(HttpHeaders.Referrer to "https://site.example.com/"))
         assertEquals(MediaStreamProbe.Result("hls", 1280, 720, "H.264", kbps = 100, durationSeconds = 40), result)
     }
+
+    private suspend fun probe(name: String, file: ByteArray): MediaStreamProbe.Result? =
+        MediaStreamProbe.probe(serve(mapOf("https://v.example.com/$name" to file)), "https://v.example.com/$name")
 
     private fun serve(files: Map<String, ByteArray>, refuse: (HttpRequestData) -> Boolean = { false }) = HttpClient(
         MockEngine { request ->
@@ -148,6 +271,8 @@ class MediaStreamProbeTest {
     )
 
     private companion object {
+        val CORRUPT_VALUES = byteArrayOf(0xFF.toByte(), 0x01, 0x00, 0x7F)
+
         /** `ffmpeg -f lavfi -i testsrc=size=640x272:rate=2:duration=2 -c:v libx265 a.mkv` 的开头, 到第一个 Cluster 的头为止. */
         const val FFMPEG_MKV_HEAD =
             "GkXfo6NChoEBQveBAULygQRC84EIQoKIbWF0cm9za2FCh4EEQoWBAhhTgGcBAAAAAAAoHhFNm3TAv4RMybAlTbuLU6uEFUmpZlOsgaFNu4tTq4QWVK5rU6yB" +

@@ -9,8 +9,16 @@
 
 package me.him188.ani.app.data.models.preference
 
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.nullable
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
+import me.him188.ani.app.domain.media.MediaDynamicRange
+import me.him188.ani.app.domain.media.MediaSurroundAudio
 
 /**
  * 各网盘 (按网盘 id, 见 `CloudDriveProtocol.id`) 的账号. 存在整机设置里, 设置备份不包含.
@@ -126,9 +134,37 @@ data class DriveRememberedFolder(val fid: String, val path: List<String>)
  * @property size 读的时候文件的大小; 文件换了 (大小变了) 就重读
  * @property height 按 16:9 折算的画面高度 (宽银幕的片子按宽度折算, 3840×1608 记作 2160), 读不出为 0
  * @property durationSeconds 时长, 读不出为 0
+ * @property dynamicRange 画面的动态范围 (HDR 一类), SDR 或读不出为 null
+ * @property audio 值得标出来的音轨格式 (无损多声道), 没有为 null
+ * @property dolbyVisionProfile 杜比视界的 profile, 不是杜比视界或读不出为 null
+ * @property version 读出这份信息的读法版本 (见 `DriveVideoInfoProbe.PROBE_VERSION`); 比当前的旧就在后台重读
  */
 @Serializable
-data class DriveVideoInfo(val size: Long, val height: Int = 0, val durationSeconds: Int = 0)
+data class DriveVideoInfo(
+    val size: Long,
+    val height: Int = 0,
+    val durationSeconds: Int = 0,
+    @Serializable(with = LenientDynamicRangeSerializer::class)
+    val dynamicRange: MediaDynamicRange? = null,
+    @Serializable(with = LenientSurroundAudioSerializer::class)
+    val audio: MediaSurroundAudio? = null,
+    val version: Int = 0,
+    val dolbyVisionProfile: Int? = null,
+)
+
+/**
+ * 枚举按名字存, 认不出的名字读成 null. 以后的版本给枚举加了取值时, 装回这一版照样读得出整份网盘账号设置 (读不出就退回默认, 账号全没了).
+ */
+internal abstract class LenientEnumSerializer<E : Enum<E>>(private val entries: List<E>) : KSerializer<E?> {
+    private val names = String.serializer().nullable
+    override val descriptor: SerialDescriptor get() = names.descriptor
+    override fun serialize(encoder: Encoder, value: E?) = names.serialize(encoder, value?.name)
+    override fun deserialize(decoder: Decoder): E? = names.deserialize(decoder)?.let { name -> entries.firstOrNull { it.name == name } }
+}
+
+internal object LenientDynamicRangeSerializer : LenientEnumSerializer<MediaDynamicRange>(MediaDynamicRange.entries)
+
+internal object LenientSurroundAudioSerializer : LenientEnumSerializer<MediaSurroundAudio>(MediaSurroundAudio.entries)
 
 /**
  * 「分享搜索」自动记下的分享文件夹, 见 [CloudDriveAccount.rememberedShares].

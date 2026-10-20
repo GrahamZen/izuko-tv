@@ -22,23 +22,45 @@ internal object MkvSamples {
     /**
      * 一个 mkv 的开头: [width]×[height] 的 HEVC 视频轨, 时长 [durationSeconds] 秒, 后面跟着第一个 Cluster.
      * [padding] 大于 0 时在 Info / Tracks 前面放这么大的 Void (像前面塞了大附件), 它们就只能按 SeekHead 记的位置找到.
+     *
+     * @param transfer 视频轨 Colour 里的 TransferCharacteristics, null 为不写 Colour
+     * @param blockAddIdType 视频轨 BlockAdditionMapping 里的 BlockAddIDType, null 为不写
+     * @param audioCodecIds 视频轨之后的各条音轨的 CodecID
      */
-    fun video(width: Int, height: Int, durationSeconds: Int, padding: Int = 0): ByteArray {
+    fun video(
+        width: Int,
+        height: Int,
+        durationSeconds: Int,
+        padding: Int = 0,
+        transfer: Long? = null,
+        blockAddIdType: Long? = null,
+        audioCodecIds: List<String> = emptyList(),
+    ): ByteArray {
         val ebml = master(Mkv.EBML, leaf(DOC_TYPE, "matroska".encodeToByteArray()))
         val info = master(
             Mkv.INFO,
             leaf(Mkv.TIMESTAMP_SCALE, uint(1_000_000)),
             leaf(Mkv.DURATION, uint((durationSeconds * 1000.0).toRawBits())),
         )
-        val tracks = master(
-            Mkv.TRACKS,
-            master(
-                Mkv.TRACK_ENTRY,
+        val videoElement = master(
+            Mkv.VIDEO,
+            *listOfNotNull(
+                leaf(Mkv.PIXEL_WIDTH, uint(width.toLong())),
+                leaf(Mkv.PIXEL_HEIGHT, uint(height.toLong())),
+                transfer?.let { master(Mkv.COLOUR, leaf(Mkv.TRANSFER_CHARACTERISTICS, uint(it))) },
+            ).toTypedArray(),
+        )
+        val videoEntry = master(
+            Mkv.TRACK_ENTRY,
+            *listOfNotNull(
                 leaf(Mkv.TRACK_TYPE, uint(1)),
                 leaf(Mkv.CODEC_ID, "V_MPEGH/ISO/HEVC".encodeToByteArray()),
-                master(Mkv.VIDEO, leaf(Mkv.PIXEL_WIDTH, uint(width.toLong())), leaf(Mkv.PIXEL_HEIGHT, uint(height.toLong()))),
-            ),
+                videoElement,
+                blockAddIdType?.let { master(Mkv.BLOCK_ADDITION_MAPPING, leaf(Mkv.BLOCK_ADD_ID_TYPE, uint(it))) },
+            ).toTypedArray(),
         )
+        val audioEntries = audioCodecIds.map { master(Mkv.TRACK_ENTRY, leaf(Mkv.TRACK_TYPE, uint(2)), leaf(Mkv.CODEC_ID, it.encodeToByteArray())) }
+        val tracks = master(Mkv.TRACKS, videoEntry, *audioEntries.toTypedArray())
 
         fun seekHead(infoAt: Long, tracksAt: Long) = master(
             Mkv.SEEK_HEAD,
