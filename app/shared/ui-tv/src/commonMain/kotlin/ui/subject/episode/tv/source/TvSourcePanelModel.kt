@@ -191,6 +191,8 @@ data class TvSourceRow(
     val action: TvSourceAction? = null,
     val longAction: TvSourceAction? = null,
     val details: TvSourceDetails? = null,
+    /** 资源的特性标签 (HDR、杜比视界、全景声…, 见 [tvSourceBadgesOf]); 画在靠右的信息前面. */
+    val badges: List<TvSourceBadge> = emptyList(),
 ) {
     val focusable: Boolean get() = style != TvSourceRowStyle.Status
 }
@@ -209,6 +211,8 @@ data class TvSourceDetails(
     val note: String = "",
     val primary: TvSourceButton? = null,
     val secondary: List<TvSourceButton> = emptyList(),
+    /** 同条目上的特性标签, 排在副标题上面. */
+    val badges: List<TvSourceBadge> = emptyList(),
 )
 
 /**
@@ -1292,6 +1296,7 @@ private fun webFileRow(source: WebSource, media: Media, other: TvWebOther?, inpu
         title = media.originalTitle,
         meta = meta,
         metaAccent = if (other?.excluded == true) TvSourceAccent.Error else TvSourceAccent.None,
+    val badges = tvSourceBadgesOf(media)
         icon = if (playing) TvSourceRowIcon.Playing else TvSourceRowIcon.None,
         selected = playing,
         playing = playing,
@@ -1305,6 +1310,7 @@ private fun webFileRow(source: WebSource, media: Media, other: TvWebOther?, inpu
             fields = mediaFields(media, strings, sourceNames = listOf(source.name)),
             note = reason.orEmpty(),
             primary = TvSourceButton(strings.pick, TvSourceAction.Play(media), TvSourceRowIcon.Playing),
+        badges = badges,
             secondary = listOfNotNull(downloadButton(media, input, strings)),
         ),
     )
@@ -1312,6 +1318,7 @@ private fun webFileRow(source: WebSource, media: Media, other: TvWebOther?, inpu
 
 /**
  * 在线源里没列成线路的一条结果 (同旧版选源「详细模式」能看到的): 条目名不完全一致的、被排除的 (属于别的集的不算).
+            badges = badges,
  * [reason] 是给人看的原因, [excluded] = 选择器排除了它 (不只是名字对不上).
  */
 @Immutable
@@ -1579,6 +1586,7 @@ private fun downloadRow(item: TvSourceCacheItem, input: TvSourcePanelInput, stri
         details = TvSourceDetails(
             title = origin.originalTitle,
             subtitle = status,
+    val badges = tvSourceBadgesOf(origin)
             fields = mediaFields(origin, strings, sourceNames = listOf(source)),
             primary = playable?.let { TvSourceButton(strings.pick, TvSourceAction.Play(it), TvSourceRowIcon.Playing) },
         ),
@@ -1591,11 +1599,13 @@ private fun btRow(group: TvBtGroup, input: TvSourcePanelInput, strings: TvSource
     val exclusion = group.rows.firstOrNull { it.exclusion != null }?.exclusion?.takeIf { group.rows.all { r -> r.isExcluded } }
     // 一行放不下时尾巴被省略: 短而有用的 (分辨率、大小、合集、来源) 排前面, 字幕语言名字长 (英文界面尤其), 放后面
     val meta = buildList {
+        badges = badges,
         if (row.isCached) add(strings.cached)
         media.properties.resolution.takeIf { it.isNotBlank() }?.let { add(it) }
         formatSize(media.properties.size).takeIf { it.isNotEmpty() }?.let { add(it) }
         if (media.episodeRange?.isSingleEpisode() == false) add(strings.pack)
         val sources = group.sourceIds
+            badges = badges,
         if (sources.size > 1) {
             add(strings.sourcesCount.format(sources.size))
         } else if (media.kind != MediaSourceKind.LocalCache) {
@@ -1627,6 +1637,7 @@ private fun btRow(group: TvBtGroup, input: TvSourcePanelInput, strings: TvSource
         playing = selected,
         dimmed = exclusion != null,
         trailing = if (selected) strings.playing else "",
+    val badges = tvSourceBadgesOf(media)
         accent = if (selected) TvSourceAccent.Attention else TvSourceAccent.None,
         // 「缓存未完成」的资源选不了 (播放器拿不到完整文件), 确定也是开详情
         action = if (cacheNotReady) TvSourceAction.ShowDetails(id, inRail = false, railKey = TvSourceRailKeys.BT) else TvSourceAction.Play(media),
@@ -1645,6 +1656,7 @@ private fun btRow(group: TvBtGroup, input: TvSourcePanelInput, strings: TvSource
         ),
     )
 }
+        badges = badges,
 
 private fun sourceName(mediaSourceId: String, sources: MediaSourceResultListPresentation): String =
     sources.list.firstOrNull { it.mediaSourceId == mediaSourceId }?.info?.displayName ?: mediaSourceId
@@ -1657,6 +1669,7 @@ private fun failedPane(failed: List<MediaSourceResultPresentation>, strings: TvS
             ?.let { strings.siteIpBlocked.format(formatClock(it.untilMillis, strings.timeZone)) }
         TvSourceRow(
             id = "failed:" + source.instanceId,
+            badges = badges,
             style = TvSourceRowStyle.Line,
             title = source.info.displayName,
             meta = ipBlocked ?: strings.retryHint,

@@ -153,6 +153,8 @@ data class TvSourcePanelStyle(
     val focusOutMillis: Long,
     val animated: Boolean,
     val icons: Map<TvSourceRowIcon, Bitmap>,
+    /** 资源条目上的特性标签 (见 [TvSourceBadge]). */
+    val badge: TvSourceBadgeStyle,
 )
 
 /** 面板报给宿主的事件. 都在主线程. */
@@ -2150,6 +2152,7 @@ internal class TvSourceRowView(context: Context, private val sketch: Sketch, var
     private val icon = ImageView(context)
     private val title = TvNativeTextView(context)
     private val meta = TvNativeTextView(context)
+    private val badges = TvSourceBadgeView(context)
     private val trailing = TvNativeTextView(context)
     private val spinner = ProgressBar(context, null, android.R.attr.progressBarStyleSmall)
     private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -2176,6 +2179,7 @@ internal class TvSourceRowView(context: Context, private val sketch: Sketch, var
         addView(icon)
         addView(title)
         addView(meta)
+        addView(badges)
         addView(trailing)
         addView(spinner)
     }
@@ -2213,6 +2217,8 @@ internal class TvSourceRowView(context: Context, private val sketch: Sketch, var
         val metaText = if (marqueeCapable(row.style)) row.meta else splitMeta(row.meta)
         meta.maxLines = if ('\n' in metaText) 2 else 1
         meta.text = metaText
+        badges.bind(if (showsBadges(row)) row.badges else emptyList(), style.badge)
+        badges.visibility = if (badges.isEmpty) GONE else VISIBLE
         meta.visibility = if (showsMeta(row)) VISIBLE else GONE
         trailing.text = row.trailing
         trailing.visibility = if (row.trailing.isEmpty() || row.loading) GONE else VISIBLE
@@ -2323,6 +2329,8 @@ internal class TvSourceRowView(context: Context, private val sketch: Sketch, var
             },
         )
         if (loadedIconUrl == null) icon.colorFilter = PorterDuffColorFilter(primary, PorterDuff.Mode.SRC_IN)
+        badges.outlineColor = tvNativeLerpColor(s.textSecondary, s.focusedTextSecondary, p)
+        badges.alpha = dim
         spinner.indeterminateTintList = ColorStateList.valueOf(secondary)
         // 描边只标「下面 / 右边显示的是它」与筛选的当前值; 正在播放的靠图标与右端的字 (见 TvSourceRow.playing)
         val chosen = (row.selected && !row.playing) || active
@@ -2379,6 +2387,11 @@ internal class TvSourceRowView(context: Context, private val sketch: Sketch, var
             trailingWidth = s.spinnerSizePx + s.trailingGapPx
         }
         var textWidth = (width - s.rowPaddingHPx * 2 - iconSlot - trailingWidth).coerceAtLeast(0)
+        if (badges.visibility != GONE) {
+            // 标签紧挨着靠右的信息 (没有信息时离标题同信息那么远)
+            badges.measure(unspecified, unspecified)
+            textWidth = (textWidth - badges.measuredWidth - if (meta.visibility != GONE) s.badge.metaGapPx else s.metaGapPx).coerceAtLeast(0)
+        }
         if (meta.visibility != GONE) {
             // 信息靠右: 标题用不完的都可以给它, 标题长时至少也有字区的一小半; 标题用剩下的
             title.measure(unspecified, unspecified)
@@ -2434,6 +2447,11 @@ internal class TvSourceRowView(context: Context, private val sketch: Sketch, var
         if (meta.visibility != GONE) {
             val my = (h - meta.measuredHeight) / 2
             meta.layout(right - meta.measuredWidth, my, right, my + meta.measuredHeight)
+            right -= meta.measuredWidth + s.badge.metaGapPx
+        }
+        if (badges.visibility != GONE) {
+            val by = (h - badges.measuredHeight) / 2
+            badges.layout(right - badges.measuredWidth, by, right, by + badges.measuredHeight)
         }
         val ty = (h - title.measuredHeight) / 2
         val titleLeft = if (row?.style == TvSourceRowStyle.Cell) (w - title.measuredWidth) / 2 else x
@@ -2696,6 +2714,7 @@ private fun measureBranchContentWidth(right: TvSourceRight, style: TvSourcePanel
 
     var result = 0
     val reserveIcon = right.rows.any { showsIcon(it) }
+    val badgePaint = tvSourceBadgePaint(style.badge)
     for (row in right.rows) {
         if (row.style == TvSourceRowStyle.Status) continue
         val titleStyle = when (row.style) {
@@ -2714,7 +2733,12 @@ private fun measureBranchContentWidth(right: TvSourceRight, style: TvSourcePanel
         } else {
             0
         }
-        result = max(result, style.rowPaddingHPx * 2 + iconSlot + width(titleStyle, row.title) + meta + trailing)
+        val badges = if (showsBadges(row)) {
+            tvSourceBadgeStripWidth(row.badges, style.badge, badgePaint) + if (showsMeta(row)) style.badge.metaGapPx else style.metaGapPx
+        } else {
+            0
+        }
+        result = max(result, style.rowPaddingHPx * 2 + iconSlot + width(titleStyle, row.title) + badges + meta + trailing)
     }
     if (right.pills.isNotEmpty()) {
         val pills = right.pills.sumOf { width(style.pill, it.title) + style.pillPaddingHPx * 2 } + style.pillGapPx * (right.pills.size - 1)
@@ -2740,6 +2764,10 @@ private fun showsIcon(row: TvSourceRow) = row.icon != TvSourceRowIcon.None && ro
 private fun reservesIconSlot(row: TvSourceRow) =
     row.style == TvSourceRowStyle.Rail || row.style == TvSourceRowStyle.Option || row.style == TvSourceRowStyle.Line ||
             row.style == TvSourceRowStyle.Resource || row.style == TvSourceRowStyle.File
+
+/** 特性标签只画在资源 / 文件 / 线路行上. */
+private fun showsBadges(row: TvSourceRow) = row.badges.isNotEmpty() &&
+        (row.style == TvSourceRowStyle.Resource || row.style == TvSourceRowStyle.File || row.style == TvSourceRowStyle.Line)
 
 private fun showsMeta(row: TvSourceRow) = row.meta.isNotEmpty() && row.style != TvSourceRowStyle.Rail &&
         row.style != TvSourceRowStyle.Option && row.style != TvSourceRowStyle.Pill && row.style != TvSourceRowStyle.Cell
