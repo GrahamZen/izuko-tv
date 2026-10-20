@@ -82,9 +82,13 @@ import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
 import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
+import me.him188.ani.app.ui.foundation.tv.TV_CARD_FADE_DISTANCE
 import me.him188.ani.app.ui.foundation.tv.TV_FULLSCREEN_BACKDROP_DIM_ALPHA
 import me.him188.ani.app.ui.foundation.tv.TV_TAB_CONTENT_SLIDE_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TvBackdropTreatment
+import me.him188.ani.app.ui.foundation.tv.TvWallConfirm
+import me.him188.ani.app.ui.foundation.tv.TvWallDirection
+import me.him188.ani.app.ui.foundation.tv.TvWallGridKey
 import me.him188.ani.app.ui.foundation.tv.nativeview.TV_HERO_BLUR_DIM_ALPHA
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvGridPageSurface
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeCard
@@ -97,9 +101,11 @@ import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeWallBackdropSpec
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeWallOpenEffects
 import me.him188.ani.app.ui.foundation.tv.nativeview.tvBackdropBlurSpec
 import me.him188.ani.app.ui.foundation.tv.nativeview.withNsfw
-import me.him188.ani.app.ui.foundation.tv.TV_CARD_FADE_DISTANCE
 import me.him188.ani.app.ui.foundation.tv.tvHeroContentColor
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallBackground
+import me.him188.ani.app.ui.foundation.tv.tvWallConfirm
+import me.him188.ani.app.ui.foundation.tv.tvWallGridKey
+import me.him188.ani.app.ui.foundation.tv.tvWallTapConfirmsWhileFocusing
 
 /*
  * 网格页 (追番 / 搜索 / 新番时间表) 海报墙的 Compose 版 (安卓电视上是原生的 TvNativeGridPageView, 参数与行为见 TvNativeGridPageHost):
@@ -338,21 +344,21 @@ internal fun <T : Any> TvWallGridPage(
                     val index = surface.focusedIndex
                     val count = currentItemCount()
                     if (index < 0 || count <= 0 || !surface.gridHasFocus) return@onPreviewKeyEvent false
-                    val row = index / columns
-                    val column = index % columns
-                    when (event.key) {
-                        Key.DirectionUp -> row == 0 && currentCallbacks.onTopRowUp()
-                        Key.DirectionLeft -> column == 0 && currentCallbacks.onRowEdge(-1, row)
-                        // 行尾按右: 交给页面 (追番页换标签), 不交就吞掉 (不往下一行跑)
-                        Key.DirectionRight -> if (column == columns - 1 || index == count - 1) {
-                            currentCallbacks.onRowEdge(1, row)
-                            true
-                        } else {
-                            false
-                        }
+                    val direction = when (event.key) {
+                        Key.DirectionUp -> TvWallDirection.Up
+                        Key.DirectionDown -> TvWallDirection.Down
+                        Key.DirectionLeft -> TvWallDirection.Left
+                        Key.DirectionRight -> TvWallDirection.Right
+                        else -> return@onPreviewKeyEvent false
+                    }
+                    when (val key = tvWallGridKey(direction, index, count, columns)) {
+                        // 墙内挪一格: 交给 Compose 的焦点搜索
+                        is TvWallGridKey.MoveTo -> false
+                        TvWallGridKey.TopRowUp -> currentCallbacks.onTopRowUp()
+                        // 行缘: 交给页面 (追番页换标签); 页面不接时按右吞掉 (不往下一行跑)、按左放出去
+                        is TvWallGridKey.RowEdge -> currentCallbacks.onRowEdge(key.direction, key.row) || key.swallowWhenUnhandled
                         // 末行按下吞掉
-                        Key.DirectionDown -> row == (count - 1) / columns
-                        else -> false
+                        TvWallGridKey.Swallow -> true
                     }
                 }
                 // 触屏: 左右滑一下换一份网格 (追番页换标签); 横向先过就整个手势归它, 网格不跟着上下滚
@@ -424,7 +430,7 @@ internal fun <T : Any> TvWallGridPage(
                             labelAlpha = { 1f - timeline.above },
                             holdFocusLook = isCurrent && index == landingHeld,
                             // 卡片墙上点一下 = 聚焦并进 hero 态; hero 态里 / 没有 hero 态 (确认就进详情页或播放) 第一下只换焦点
-                            touchTwoStep = !(heroEnabled && !timeline.active),
+                            touchTwoStep = !tvWallTapConfirmsWhileFocusing(isMore = false, heroEnabled, timeline.active),
                             // 按触屏的规矩走时卡片墙不画聚焦放大 (hero 态里聚焦那张照画), 按下也不动焦点 (点一下怎么走见 onCardClick)
                             showFocusLook = !surface.touchMode || timeline.active,
                             touchFocusOnPress = !surface.touchMode,
@@ -674,7 +680,7 @@ internal class TvWallGridSurface(
             focusAt(index)
             if (timeline.active) return
         }
-        if (heroEnabled && !timeline.active) {
+        if (tvWallConfirm(isMore = false, heroEnabled, timeline.active) == TvWallConfirm.EnterHero) {
             setHeroActive(true)
             return
         }
