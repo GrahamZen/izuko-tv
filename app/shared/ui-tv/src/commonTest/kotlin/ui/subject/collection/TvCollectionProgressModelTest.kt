@@ -13,6 +13,7 @@ import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import me.him188.ani.app.data.models.episode.EpisodeCollectionInfo
 import me.him188.ani.app.data.models.episode.EpisodeInfo
+import me.him188.ani.app.data.models.preference.NsfwMode
 import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
 import me.him188.ani.app.data.models.subject.SubjectRecurrence
 import me.him188.ani.app.data.models.subject.createTestSubjectCollection
@@ -198,31 +199,63 @@ class TvCollectionProgressModelTest {
     }
 
     @Test
+    fun `grid order matches the collection page paging`() {
+        fun info(id: Int, lastUpdated: Long, nsfw: Boolean = false, mode: NsfwMode = NsfwMode.DISPLAY): SubjectCollectionInfo {
+            val base = createTestSubjectCollection(id, emptyList(), UnifiedCollectionType.DOING, nsfwMode = mode)
+            return base.copy(subjectInfo = base.subjectInfo.copy(nsfw = nsfw), lastUpdated = lastUpdated)
+        }
+        // 最后改动时间倒序, 同时间按条目号倒序
+        val list = listOf(info(1, 100), info(2, 300), info(3, 200), info(4, 300))
+        assertEquals(listOf(4, 2, 3, 1), tvGridOrder(list).map { it.subjectId })
+        // NSFW 设为隐藏时网格里没有这类条目, 后面的往前挪
+        val hidden = listOf(info(1, 300), info(2, 200, nsfw = true, mode = NsfwMode.HIDE), info(3, 100, mode = NsfwMode.HIDE))
+        assertEquals(listOf(1, 3), tvGridOrder(hidden).map { it.subjectId })
+        val blurred = listOf(info(1, 300), info(2, 200, nsfw = true, mode = NsfwMode.BLUR))
+        assertEquals(listOf(1, 2), tvGridOrder(blurred).map { it.subjectId })
+    }
+
+    @Test
     fun `card subtitles`() {
         val strings = TvProgressStrings(
             header = "%1\$s · %2\$d 部",
             groupNew = "有新集", groupWish = "想看的番开播了", groupToday = "今天更新", groupWeek = "本周更新",
             groupCaughtUp = "已追平", groupUpcoming = "即将开播",
-            unwatchedToday = "未看 %1\$d · 今天更新",
-            unwatched = "未看 %1\$d / 已更新 %2\$s",
-            wishAired = "已播 %1\$d 集",
-            wishAiredNext = "已播 %1\$d 集 · %2\$s更新",
+            updatesDay = "%1\$s更新",
+            updatesAt = "%1\$s %2\$s 更新",
+            finaleDay = "%1\$s完结",
+            finaleAt = "%1\$s %2\$s 完结",
+            completed = "全 %1\$s 话已完结",
             wishStarted = "已开播",
             next = "%1\$s · 第 %2\$s 话",
             nextUnknown = "下一集日期未定",
             premiere = "%1\$s 开播",
         )
         val dayLabel: (LocalDate) -> String = { "${it.month.ordinal + 1}-${it.day}" }
-        fun subtitle(info: SubjectCollectionInfo, wish: Boolean = false): String {
+        fun entry(info: SubjectCollectionInfo, wish: Boolean = false): TvProgressEntry {
             val s = if (wish) sections(wish = listOf(info)) else sections(doing = listOf(info))
-            return s.entry(info.subjectId).cardSubtitle(strings, now, timeZone, dayLabel)
+            return s.entry(info.subjectId)
         }
+        fun subtitle(info: SubjectCollectionInfo, wish: Boolean = false) = entry(info, wish).cardSubtitle(strings, now, timeZone, dayLabel)
 
-        assertEquals("未看 3 / 已更新 8", subtitle(weekly(20, UnifiedCollectionType.DOING, LocalDate(2026, 8, 25), 12, watched = 5)))
-        assertEquals("22:00 · 第 7 话", subtitle(weekly(21, UnifiedCollectionType.DOING, LocalDate(2026, 9, 7), 12, watched = 6, recurrence = mondayNight)))
+        // 有新集: 角标是没看几集, 小字是下一集什么时候
+        val behind = weekly(20, UnifiedCollectionType.DOING, LocalDate(2026, 8, 25), 12, watched = 5)
+        assertEquals(3, entry(behind).badgeCount)
+        assertEquals("10-20更新", subtitle(behind))
+        assertEquals("10-19 22:00 更新", subtitle(weekly(26, UnifiedCollectionType.DOING, LocalDate(2026, 9, 7), 12, watched = 5, recurrence = mondayNight)))
+        // 下一集是最后一集 / 已经播完
+        assertEquals("10-20完结", subtitle(weekly(27, UnifiedCollectionType.DOING, LocalDate(2026, 8, 4), 12, watched = 10)))
+        assertEquals("10-19 22:00 完结", subtitle(weekly(28, UnifiedCollectionType.DOING, LocalDate(2026, 9, 7), 7, watched = 5, recurrence = mondayNight)))
+        assertEquals("全 12 话已完结", subtitle(weekly(29, UnifiedCollectionType.DOING, LocalDate(2026, 7, 29), 12, watched = 10)))
+        // 想看的开播了: 角标同样是没看几集
+        val wished = weekly(23, UnifiedCollectionType.WISH, LocalDate(2026, 10, 1), 12, watched = 0)
+        assertEquals(3, entry(wished, wish = true).badgeCount)
+        assertEquals("10-22更新", subtitle(wished, wish = true))
+        // 追平了: 不画角标, 小字照旧
+        val tonight = weekly(21, UnifiedCollectionType.DOING, LocalDate(2026, 9, 7), 12, watched = 6, recurrence = mondayNight)
+        assertNull(entry(tonight).badgeCount)
+        assertEquals("22:00 · 第 7 话", subtitle(tonight))
         assertEquals("10-22 · 第 6 话", subtitle(weekly(22, UnifiedCollectionType.DOING, LocalDate(2026, 9, 17), 12, watched = 5)))
-        assertEquals("已播 3 集 · 10-22更新", subtitle(weekly(23, UnifiedCollectionType.WISH, LocalDate(2026, 10, 1), 12, watched = 0), wish = true))
         assertEquals("10-29 开播", subtitle(weekly(24, UnifiedCollectionType.WISH, LocalDate(2026, 10, 29), 12, watched = 0), wish = true))
-        assertEquals("有新集 · 1 部", strings.headerOf(sections(doing = listOf(weekly(25, UnifiedCollectionType.DOING, LocalDate(2026, 8, 24), 12, watched = 5))).first()))
+        assertEquals("有新集 · 1 部", strings.headerOf(sections(doing = listOf(behind)).first()))
     }
 }

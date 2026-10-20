@@ -61,6 +61,7 @@ import me.him188.ani.app.ui.foundation.tv.tvGlassColors
 import me.him188.ani.app.ui.foundation.tv.tvGlassFocusLift
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallBackground
 import me.him188.ani.app.ui.lang.Lang
+import me.him188.ani.app.ui.lang.collection_tv_progress_tab
 import me.him188.ani.app.ui.lang.collection_tv_tab_order_hint
 import me.him188.ani.app.ui.lang.collection_tv_tab_order_hint_grabbed
 import me.him188.ani.app.ui.lang.collection_tv_tab_order_reset
@@ -73,7 +74,8 @@ import org.jetbrains.compose.resources.stringResource
  * 「自定义追番页标签顺序」页: 把追番页顶部那排分类标签原样摆出来, 在上面直接排先后.
  *
  * 标签行用的是与 `TvCollectionTabRow` 同一个玻璃标签栏 ([TvCollectionGlassTabBar] / [TvCollectionGlassTab]), 位置也取同一组
- * 页面留白 —— 这里排成什么样, 进追番页就是什么样. 区别只在按键语义:
+ * 页面留白 —— 这里排成什么样, 进追番页就是什么样. 「追更」与各分类一起排 (它不是收藏分类, 位置单独存, 见
+ * [ThemeSettings.tvCollectionProgressTabIndex]). 区别只在按键语义:
  *
  * - **确认键 = 拿起 / 放下**; 拿起之后左右键把它挪到想要的位置, 再按确认放下, 按返回撤销这一次移动.
  * - 返回键 (手上没拿东西时) = 离开本页.
@@ -81,37 +83,42 @@ import org.jetbrains.compose.resources.stringResource
  * 只排顺序, 不做隐藏: 五个分类都是收藏状态的一种, 藏掉任何一个都会带出"藏掉的正好是当前选中项"
  * 与"全藏光了进页落哪"这两种边界, 而收益只是少一个标签.
  *
- * 顺序存在 [ThemeSettings.tvCollectionTabOrder], 读取与补位与追番页共用
- * [rememberTvCollectionTabOrder] / [resolveSavedOrder], 两边才不会排出两个样子.
+ * 顺序存在 [ThemeSettings.tvCollectionTabOrder] 与 [ThemeSettings.tvCollectionProgressTabIndex], 读取与补位与追番页共用
+ * [rememberTvCollectionRailTabs] / [tvCollectionRailTabs] / [resolveSavedOrder], 两边才不会排出两个样子.
  *
  * 入口在追番页里: 长按标签, 或动作面板「自定义标签顺序」; 本页作为窗口盖在追番页上 (见 TvAdjustWindows).
  * 调的时候只改草稿, **离开本页那一刻才写一次** ([onCommit] 在写之前报出要写的顺序): 底下那排标签不必跟着每一次放下重排.
  *
- * [initialFocus]: 在追番页上长按那个标签进来的 —— 进页焦点落在它上面 (不拿起), 按确认再拿起来挪; 按下键就到「恢复默认顺序」.
+ * [initialFocus] / [initialFocusProgress]: 在追番页上长按那个分类 / 「追更」进来的 —— 进页焦点落在它上面 (不拿起), 按确认再拿起来挪;
+ * 按下键就到「恢复默认顺序」.
  */
 @Composable
 fun TvCollectionTabOrderPage(
     onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier,
     initialFocus: UnifiedCollectionType? = null,
+    initialFocusProgress: Boolean = false,
     onCommit: (List<UnifiedCollectionType>) -> Unit = {},
 ) {
     val settings = remember { GlobalKoin.get<SettingsRepository>() }
     val scope = rememberCoroutineScope()
 
     // 正拿着的那个; grabOrigin = 拿起那一刻的顺序, 返回键据此撤销
-    var grabbed by remember { mutableStateOf<UnifiedCollectionType?>(null) }
-    var grabOrigin by remember { mutableStateOf<List<UnifiedCollectionType>?>(null) }
+    var grabbed by remember { mutableStateOf<TabSlot?>(null) }
+    var grabOrigin by remember { mutableStateOf<List<TabSlot>?>(null) }
 
     // 进页读一次, 在组合里同步读 (第一帧就有标签行, 进页焦点当场落得下): 本页是这份设置的唯一写入方, 再订阅回来只会跟自己的编辑打架
-    val initialOrder = resolveSavedOrder(LocalThemeSettings.current.tvCollectionTabOrder, TV_COLLECTION_TABS)
+    val theme = LocalThemeSettings.current
+    val initialOrder = remember {
+        tvCollectionRailTabs(resolveSavedOrder(theme.tvCollectionTabOrder, TV_COLLECTION_TABS), theme.tvCollectionProgressTabIndex).map(::TabSlot)
+    }
     var draft by remember { mutableStateOf(initialOrder) }
     // 设置里此刻存着的顺序: 离开时与它不同才写
     var saved by remember { mutableStateOf(initialOrder) }
     // 焦点落在哪个标签上 —— 编辑页里"聚焦即选中", 与追番页一致, 指示条跟着它走
-    var focusedType by remember { mutableStateOf<UnifiedCollectionType?>(null) }
-    // 每个分类一个请求器: 挪完位置把焦点追回到拿着的那个 (它换了位置, 光靠节点复用不保险)
-    val requesters = remember { TV_COLLECTION_TABS.associateWith { FocusRequester() } }
+    var focusedType by remember { mutableStateOf<TabSlot?>(null) }
+    // 每一格一个请求器: 挪完位置把焦点追回到拿着的那个 (它换了位置, 光靠节点复用不保险)
+    val requesters = remember { TV_COLLECTION_RAIL_SLOTS.associateWith { FocusRequester() } }
     // 标签行按下键落这里: 右边几个标签正下方没有东西, 交给几何搜索不一定找得到它
     val resetFocus = remember { FocusRequester() }
 
@@ -119,9 +126,14 @@ fun TvCollectionTabOrderPage(
         val order = draft
         if (order == saved) return
         saved = order
-        onCommit(order)
+        // 分类的先后与「追更」的位置分两份存
+        val categories = order.mapNotNull { it.type }
+        val progressIndex = order.indexOfFirst { it.type == null }.coerceAtLeast(0)
+        onCommit(categories)
         // 不随本页的组合一起取消: 写入正发生在离开的那一刻
-        scope.launch(NonCancellable) { settings.themeSettings.update { copy(tvCollectionTabOrder = order) } }
+        scope.launch(NonCancellable) {
+            settings.themeSettings.update { copy(tvCollectionTabOrder = categories, tvCollectionProgressTabIndex = progressIndex) }
+        }
     }
 
     fun leave() {
@@ -233,8 +245,8 @@ fun TvCollectionTabOrderPage(
                 )
                 Spacer(Modifier.height(28.dp))
                 TvCollectionTabOrderResetButton(
-                    enabled = order != TV_COLLECTION_TABS,
-                    onClick = { draft = TV_COLLECTION_TABS },
+                    enabled = order != TV_COLLECTION_RAIL_SLOTS,
+                    onClick = { draft = TV_COLLECTION_RAIL_SLOTS },
                     // 上键回刚才停的那个标签 (几何搜索会挑离按钮最近的那个)
                     modifier = Modifier
                         .focusRequester(resetFocus)
@@ -244,7 +256,8 @@ fun TvCollectionTabOrderPage(
 
             // 进页把焦点送到长按的那个或第一个标签: 没有落点的页面会被全局兜底按几何乱挑一个
             LaunchedEffect(Unit) {
-                runCatching { requesters.getValue(initialFocus?.takeIf { it in order } ?: order.first()).requestFocus() }
+                val target = if (initialFocusProgress) TabSlot(null) else initialFocus?.let(::TabSlot)
+                runCatching { requesters.getValue(target?.takeIf { it in order } ?: order.first()).requestFocus() }
             }
         }
     }
@@ -253,6 +266,12 @@ fun TvCollectionTabOrderPage(
     // **不能写成 `enabled = grabbed == null`** —— 那样拿着东西时这一下会漏给系统, 当场退出页面
     BackHandler { if (grabbed != null) drop(keep = false) else leave() }
 }
+
+/** 标签行上的一格: 一个收藏分类, 或「追更」([type] = null). 包一层是为了让 null 只表示「没拿 / 没聚焦」. */
+private data class TabSlot(val type: UnifiedCollectionType?)
+
+/** 默认的整排 (「恢复默认顺序」与比对用). */
+private val TV_COLLECTION_RAIL_SLOTS = TV_COLLECTION_RAIL_TABS.map(::TabSlot)
 
 /** 拿起态下归本页处理的方向键 (上下也要吞, 见调用处). */
 private val TV_TAB_ORDER_MOVE_KEYS = setOf(
@@ -265,12 +284,12 @@ private val TV_TAB_ORDER_MOVE_KEYS = setOf(
  */
 @Composable
 private fun TvCollectionTabOrderRow(
-    tabs: List<UnifiedCollectionType>,
-    grabbed: UnifiedCollectionType?,
-    focusedType: UnifiedCollectionType?,
-    requesters: Map<UnifiedCollectionType, FocusRequester>,
-    onFocused: (UnifiedCollectionType) -> Unit,
-    onToggleGrab: (UnifiedCollectionType) -> Unit,
+    tabs: List<TabSlot>,
+    grabbed: TabSlot?,
+    focusedType: TabSlot?,
+    requesters: Map<TabSlot, FocusRequester>,
+    onFocused: (TabSlot) -> Unit,
+    onToggleGrab: (TabSlot) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     TvCollectionGlassTabBar(modifier.height(TV_COLLECTION_TAB_ROW_HEIGHT)) {
@@ -282,7 +301,7 @@ private fun TvCollectionTabOrderRow(
                 var focused by remember { mutableStateOf(false) }
                 val lift by animateFloatAsState(if (grabbed == type) 1f else 0f, label = "tabLift")
                 TvCollectionGlassTab(
-                    label = type.displayTextTv(),
+                    label = type.type?.displayTextTv() ?: stringResource(Lang.collection_tv_progress_tab),
                     selected = focusedType == type,
                     focused = focused,
                     modifier = Modifier

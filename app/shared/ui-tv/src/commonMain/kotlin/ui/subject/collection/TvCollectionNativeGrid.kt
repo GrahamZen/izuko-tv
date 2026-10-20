@@ -48,6 +48,7 @@ import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeCard
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGridPageCallbacks
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGridPageHost
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGridPageMetrics
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGridPageRows
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGridPageState
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeHeroSource
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeHeroStatus
@@ -117,9 +118,12 @@ internal fun TvCollectionNativeGrid(
     menuFor: (SubjectCollectionInfo) -> @Composable (expanded: Boolean, onDismiss: () -> Unit) -> Unit,
     modifier: Modifier = Modifier,
     landingIndex: Int = -1,
+    rows: TvNativeGridPageRows? = null,
 ) {
     val density = LocalDensity.current
     val tabItems = items.collectWithLifecycle()
+    // 「追更」(一组一行的内容) 显示着: 网格这一类的空提示与送焦取消都不管
+    val gridShown = rows == null || selectedTab != rows.key
     val histories = playHistories()
     val useOriginalTitle = tvUseOriginalTitle()
     // 非中文界面: 查到过 TMDB 标题的番用它 (见 SubjectInfo.tvTitle); 看过的番从持久缓存补
@@ -154,9 +158,10 @@ internal fun TvCollectionNativeGrid(
         menuFor = menuFor,
         modifier = modifier,
         landingIndex = landingIndex,
+        rows = rows,
     ) {
         // 空分类提示: 在网格可见的那一段里居中
-        if (tabItems.itemCount == 0 && !tabItems.isLoadingFirstPageOrRefreshing && !tabItems.loadState.hasError) {
+        if (gridShown && tabItems.itemCount == 0 && !tabItems.isLoadingFirstPageOrRefreshing && !tabItems.loadState.hasError) {
             Box(
                 Modifier.fillMaxSize().padding(
                     top = with(density) { metrics.gridTopPx.toDp() },
@@ -173,8 +178,8 @@ internal fun TvCollectionNativeGrid(
         }
     }
     // 数据到了但这个标签是空的, 目标卡永远不会出现: 取消在途的送焦请求
-    LaunchedEffect(tabItems.itemCount, tabItems.isLoadingFirstPageOrRefreshing, countSaysEmpty, gridFocus.switching) {
-        if (tabItems.itemCount == 0 && (countSaysEmpty || !tabItems.isLoadingFirstPageOrRefreshing) && gridFocus.switching) {
+    LaunchedEffect(tabItems.itemCount, tabItems.isLoadingFirstPageOrRefreshing, countSaysEmpty, gridFocus.switching, gridShown) {
+        if (gridShown && tabItems.itemCount == 0 && (countSaysEmpty || !tabItems.isLoadingFirstPageOrRefreshing) && gridFocus.switching) {
             gridFocus.cancel()
         }
     }

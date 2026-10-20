@@ -63,6 +63,7 @@ import kotlin.math.min
  * @param subjectId 这张卡是哪个条目: 网格页进 hero 态时拿它核对页面给的 hero 内容是不是这一张的 (见 TvNativeGridPageView); null = 不核对.
  * @param subtitleColor [subtitle] 的颜色 (ARGB); null = 样式里的 ([TvNativeWallStyle.subtitle], 与番名同色).
  * @param badge 封面右上角画角标 (样式给了 [TvNativeWallStyle.badge] 才画; 新番时间表的「在追」).
+ * @param count 封面右上角的数字角标 (样式给了 [TvNativeWallStyle.countBadge] 才画; 追番页「追更」的没看几集), 超过 99 写「99+」; null = 不画.
  */
 @Immutable
 data class TvNativeCard(
@@ -74,6 +75,7 @@ data class TvNativeCard(
     val subjectId: Int? = null,
     val subtitleColor: Int? = null,
     val badge: Boolean = false,
+    val count: Int? = null,
     /**
      * 行尾的「更多」卡 (不是条目): 封面位置是一块玻璃 (见 [TvNativeMoreGlassStyle]), 底下铺 [imageUrl] (一张竖版封面, 由页面挑) 的模糊小图,
      * 中间一枚圆钮托着加号, 加载中换成转着的圆弧; null = 普通海报.
@@ -366,6 +368,7 @@ class TvNativeCardView(context: Context, private val style: TvNativeWallStyle) :
         applyText(card)
         cover.progress = card.progress
         cover.badge = card.badge
+        cover.count = card.count
         cover.more = card.more
     }
 
@@ -580,6 +583,14 @@ private class TvNativeCoverView(context: Context, private val style: TvNativeWal
             invalidate()
         }
 
+    /** 右上角的数字角标 ([TvNativeWallStyle.countBadge]); null = 不画. */
+    var count: Int? = null
+        set(value) {
+            if (field == value) return
+            field = value
+            invalidate()
+        }
+
     /**
      * 画成「更多」卡 ([TvNativeCard.more]): 图 (模糊小图, 见 [TvNativeCardView.bind]) 上盖一块玻璃, 中间一枚圆钮托着加号; 加载中换成转着的圆弧.
      * 外观见 [TvNativeMoreGlassStyle].
@@ -613,6 +624,8 @@ private class TvNativeCoverView(context: Context, private val style: TvNativeWal
         fillPaint.colorFilter = filter
         badgePaint.colorFilter = filter
         badgeIconPaint.colorFilter = filter
+        countPaint.colorFilter = filter
+        countTextPaint.colorFilter = filter
     }
 
     /** 卡片的聚焦程度 (0..1, 见 [TvNativeCardView.focusProgress]): 「更多」卡的圆钮随它换成实底. */
@@ -629,6 +642,16 @@ private class TvNativeCoverView(context: Context, private val style: TvNativeWal
     private val barRect = RectF()
     private val badgePaint = Paint(Paint.ANTI_ALIAS_FLAG).also { it.color = style.badge?.backgroundColor ?: 0 }
     private val badgeIconPaint = Paint(Paint.FILTER_BITMAP_FLAG)
+    private val countPaint = Paint(Paint.ANTI_ALIAS_FLAG).also { it.color = style.countBadge?.backgroundColor ?: 0 }
+    private val countTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).also { p ->
+        style.countBadge?.let {
+            p.color = it.textColor
+            p.textSize = it.textSizePx
+        }
+        p.typeface = tvNativeTypeface(700)
+        p.textAlign = Paint.Align.CENTER
+    }
+    private val countRect = RectF()
     private val glass = style.moreGlass
     private val glassTintPaint = Paint().also { it.color = glass.tint }
     private val glassSheenPaint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -733,6 +756,9 @@ private class TvNativeCoverView(context: Context, private val style: TvNativeWal
             canvas.drawCircle(cx, cy, r, badgePaint)
             canvas.drawBitmap(b.icon, cx - b.icon.width / 2f, cy - b.icon.height / 2f, badgeIconPaint)
         }
+        val c = style.countBadge
+        val n = count
+        if (c != null && n != null) drawCountBadge(canvas, c, n)
         val p = progress ?: return
         if (p <= 0f) return
         val h = style.progressBarHeightPx
@@ -742,6 +768,18 @@ private class TvNativeCoverView(context: Context, private val style: TvNativeWal
         canvas.drawRoundRect(barRect, h / 2f, h / 2f, trackPaint)
         barRect.right = left + style.progressBarLengthPx * p.coerceIn(0f, 1f)
         canvas.drawRoundRect(barRect, h / 2f, h / 2f, fillPaint)
+    }
+
+    /** 右上角的数字角标: 一位数是圆, 字宽了就左右各留 [TvNativeCardCountBadgeStyle.paddingPx] 变成胶囊, 字在块里上下居中. */
+    private fun drawCountBadge(canvas: Canvas, c: TvNativeCardCountBadgeStyle, n: Int) {
+        val text = if (n > 99) "99+" else n.toString()
+        val h = c.heightPx
+        val w = maxOf(h, countTextPaint.measureText(text) + c.paddingPx * 2)
+        val right = width - c.insetPx
+        countRect.set(right - w, c.insetPx, right, c.insetPx + h)
+        canvas.drawRoundRect(countRect, h / 2f, h / 2f, countPaint)
+        val fm = countTextPaint.fontMetrics
+        canvas.drawText(text, countRect.centerX(), countRect.centerY() - (fm.ascent + fm.descent) / 2f, countTextPaint)
     }
 
     /** 「更多」卡的玻璃 (见 [TvNativeMoreGlassStyle]): 盖色、高光、细亮边, 中间圆钮托着加号 / 转着的圆弧. */

@@ -159,6 +159,26 @@ class TvNativeGridPageNavigationTest {
     }
 
     @Test
+    fun `the row nearest a height on screen is found among the laid out cards`() {
+        // 追番页从「追更」(一组一行) 换过来时按屏上的高度就近接住: 量此刻两行卡的中线
+        fun centerOf(index: Int): Int = host.onMain {
+            val card = page.grid!!.findViewHolderForAdapterPosition(index)!!.itemView
+            val xy = IntArray(2)
+            card.getLocationInWindow(xy)
+            xy[1] + card.height / 2
+        }
+        val y0 = centerOf(5)
+        val y1 = centerOf(6)
+        assertTrue(y1 > y0)
+        assertEquals(y0, host.onMain { page.focusedCardCenterYInWindow() })
+        assertEquals(0, host.onMain { page.rowNearestWindowY(y0) })
+        assertEquals(1, host.onMain { page.rowNearestWindowY(y1) })
+        assertEquals(0, host.onMain { page.rowNearestWindowY(y0 + (y1 - y0) / 2 - 10) })
+        assertEquals(1, host.onMain { page.rowNearestWindowY(y1 + 2000) })
+        assertEquals(0, host.onMain { page.rowNearestWindowY(-2000) })
+    }
+
+    @Test
     fun `crossing a tab parks the focus instead of losing it and held repeats do not cross again`() {
         host.keyDown(KeyEvent.KEYCODE_DPAD_RIGHT)
         assertEquals(listOf(1 to 0), listener.rowEdges)
