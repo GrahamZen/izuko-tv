@@ -133,6 +133,7 @@ internal fun TvSourceDetailsDialog(
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (details.badges.isNotEmpty()) TvSourceBadgeChips(details.badges)
                     if (details.subtitle.isNotEmpty()) {
                         Text(details.subtitle, style = MaterialTheme.typography.bodyLarge, color = secondary)
                     }

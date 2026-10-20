@@ -23,6 +23,8 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import me.him188.ani.app.domain.media.MediaDynamicRange
+import me.him188.ani.app.domain.media.MediaSurroundAudio
 import me.him188.ani.app.domain.media.hls.TsPacketReader
 import me.him188.ani.utils.ktor.UrlHelpers
 import kotlin.coroutines.cancellation.CancellationException
@@ -40,6 +42,9 @@ import kotlin.math.roundToInt
  *   由 `Content-Range` 得分片大小. 分片之间码率起伏很大, 估出来只够分档.
  *   宽高与编码: fMP4 读 `EXT-X-MAP` 的 moov; TS 从中间一个分片的开头解视频的 SPS (分片前常拼着伪装用的图片头, 按包间距找同步字节).
  *
+ * 顺带认出 HDR / 杜比视界 ([Result.dynamicRange]) 与无损多声道音轨 ([Result.audio]): mp4 看样本描述与其中的 `colr` / `dvcC`,
+ * mkv 看各轨的 Colour 与 BlockAdditionMapping、音轨的 CodecID, HLS 看主列表的 `VIDEO-RANGE` 与 `CODECS` (音轨不读).
+ *
  * 源站不支持 Range 时只读开头若干字节就断开, 不会把整个视频下完.
  */
 object MediaStreamProbe {
@@ -53,6 +58,12 @@ object MediaStreamProbe {
         /** 平均码率 (视频 + 音频). */
         val kbps: Int? = null,
         val durationSeconds: Int? = null,
+        /** 视频轨的动态范围; SDR 或读不出为 null. */
+        val dynamicRange: MediaDynamicRange? = null,
+        /** 各音轨里最好的那种值得标出来的格式 (TrueHD、DTS-HD MA 等); 没有或读不出为 null. */
+        val audio: MediaSurroundAudio? = null,
+        /** 杜比视界的 profile; 不是杜比视界或读不出为 null. */
+        val dolbyVisionProfile: Int? = null,
     )
 
     private const val HEAD_BYTES = 64 * 1024
@@ -107,6 +118,8 @@ object MediaStreamProbe {
             codec = info?.codec,
             kbps = if (total != null && duration != null && duration > 0) (total * 8 / duration / 1000).roundToInt() else null,
             durationSeconds = duration?.roundToInt(),
+            dynamicRange = info?.dynamicRange,
+            audio = info?.audio,
         )
     }
 
@@ -131,7 +144,8 @@ object MediaStreamProbe {
             return bytes to element
         }
 
-        val video = parsed.video ?: fetchElement(Mkv.TRACKS)?.let { (bytes, element) -> Mkv.parseTracks(bytes, element.dataStart, element.endIn(bytes)) }
+        val tracks = parsed.tracks ?: fetchElement(Mkv.TRACKS)?.let { (bytes, element) -> Mkv.parseTracks(bytes, element.dataStart, element.endIn(bytes)) }
+        val video = tracks?.video
         val duration = parsed.durationSeconds ?: fetchElement(Mkv.INFO)?.let { (bytes, element) -> Mkv.parseInfo(bytes, element.dataStart, element.endIn(bytes)) }
         val total = head.totalLength
         return Result(
@@ -141,6 +155,8 @@ object MediaStreamProbe {
             codec = video?.codec,
             kbps = if (total != null && duration != null && duration > 0) (total * 8 / duration / 1000).roundToInt() else null,
             durationSeconds = duration?.roundToInt(),
+            dynamicRange = tracks?.dynamicRange,
+            audio = tracks?.audio,
         )
     }
 
@@ -164,6 +180,7 @@ object MediaStreamProbe {
                 height = h,
                 codec = attrs["CODECS"]?.let(Hls::codecOf),
                 kbps = (attrs["AVERAGE-BANDWIDTH"] ?: attrs["BANDWIDTH"])?.toLongOrNull()?.let { (it / 1000).toInt() },
+                dynamicRange = Hls.dynamicRangeOf(attrs),
             )
             if (declared.height != null && declared.codec != null && declared.kbps != null || depth > 0) return declared
             val variantUrl = UrlHelpers.computeAbsoluteUrlOrNull(baseUrl, uri) ?: return declared
@@ -175,6 +192,7 @@ object MediaStreamProbe {
                 codec = declared.codec ?: inner.codec,
                 kbps = declared.kbps ?: inner.kbps,
                 durationSeconds = inner.durationSeconds,
+                dynamicRange = declared.dynamicRange ?: inner.dynamicRange,
             )
         }
 
@@ -201,10 +219,13 @@ object MediaStreamProbe {
         var width: Int? = null
         var height: Int? = null
         var codec: String? = null
+        var dynamicRange: MediaDynamicRange? = null
         val map = media.mapUri
         if (map != null) {
             client.fetch(map, segmentHeaders, null, 1024 * 1024)?.bytes?.let { init ->
-                Mp4.findMoov(init)?.let { Mp4.parseMoov(init, it.first, it.second) }?.let { width = it.width; height = it.height; codec = it.codec }
+                Mp4.findMoov(init)?.let { Mp4.parseMoov(init, it.first, it.second) }?.let {
+                    width = it.width; height = it.height; codec = it.codec; dynamicRange = it.dynamicRange
+                }
             }
         } else if (!media.encrypted) {
             client.fetch(middle.uri, segmentHeaders, 0L until SEGMENT_HEAD_BYTES, SEGMENT_HEAD_BYTES)?.bytes?.let { bytes ->
@@ -218,6 +239,7 @@ object MediaStreamProbe {
             codec = codec,
             kbps = kbps?.roundToInt(),
             durationSeconds = totalSeconds.roundToInt(),
+            dynamicRange = dynamicRange,
         )
     }
 
@@ -285,13 +307,31 @@ internal object Hls {
 
     fun codecOf(codecs: String): String? = codecs.split(',').map { it.trim().lowercase() }.firstNotNullOfOrNull {
         when {
-            it.startsWith("avc1") || it.startsWith("avc3") -> "H.264"
-            it.startsWith("hvc1") || it.startsWith("hev1") -> "HEVC"
-            it.startsWith("av01") -> "AV1"
+            it.startsWith("avc1") || it.startsWith("avc3") || it.startsWith("dvav") || it.startsWith("dva1") -> "H.264"
+            it.startsWith("hvc1") || it.startsWith("hev1") || it.startsWith("dvh1") || it.startsWith("dvhe") -> "HEVC"
+            it.startsWith("av01") || it.startsWith("dav1") -> "AV1"
             it.startsWith("vp09") -> "VP9"
             else -> null
         }
     }
+
+    /**
+     * 一档的动态范围: `VIDEO-RANGE=PQ` 为 HDR10, `HLG` 为 HLG; `CODECS` / `SUPPLEMENTAL-CODECS` 里有杜比视界的编码时为杜比视界.
+     * SDR 或没写为 null.
+     */
+    fun dynamicRangeOf(attributes: Map<String, String>): MediaDynamicRange? {
+        val range = attributes["VIDEO-RANGE"]?.trim()?.uppercase()
+        if (range != "PQ" && range != "HLG") return null
+        val codecs = listOfNotNull(attributes["CODECS"], attributes["SUPPLEMENTAL-CODECS"]).flatMap { it.split(',') }
+        return when {
+            codecs.any { it.trim().lowercase().take(4) in DOLBY_VISION_CODECS } -> MediaDynamicRange.DolbyVision
+            range == "PQ" -> MediaDynamicRange.Hdr10
+            else -> MediaDynamicRange.Hlg
+        }
+    }
+
+    /** 杜比视界的编码标识 (HEVC / H.264 / AV1 上的). */
+    private val DOLBY_VISION_CODECS = setOf("dvh1", "dvhe", "dvav", "dva1", "dav1")
 
     fun parseMediaPlaylist(lines: List<String>, baseUrl: String): MediaPlaylist {
         val segments = mutableListOf<Segment>()
@@ -321,7 +361,14 @@ internal object Hls {
 /** ISO BMFF (mp4) 的盒子. */
 internal object Mp4 {
     class Box(val type: String, val start: Long, val headerSize: Int, val size: Long)
-    class Info(val durationSeconds: Double?, val width: Int?, val height: Int?, val codec: String?)
+    class Info(
+        val durationSeconds: Double?,
+        val width: Int?,
+        val height: Int?,
+        val codec: String?,
+        val dynamicRange: MediaDynamicRange? = null,
+        val audio: MediaSurroundAudio? = null,
+    )
 
     fun looksLikeMp4(b: ByteArray): Boolean = b.size >= 8 && b.decodeToString(4, 8) in setOf("ftyp", "moov", "styp", "free", "mdat")
 
@@ -367,28 +414,39 @@ internal object Mp4 {
         var width: Int? = null
         var height: Int? = null
         var codec: String? = null
+        var dynamicRange: MediaDynamicRange? = null
+        var audio: MediaSurroundAudio? = null
         children(b, start, end) { box, s, e ->
             when (box.type) {
-                "mvhd" -> duration = mvhdDuration(b, s)
+                "mvhd" -> if (s < e) duration = mvhdDuration(b, s)
                 "trak" -> {
                     val track = parseTrak(b, s, e)
                     if (track.handler == "vide" && width == null) {
-                        width = track.width; height = track.height; codec = track.codec
+                        width = track.width; height = track.height; codec = track.codec; dynamicRange = track.dynamicRange
                     }
+                    // 音轨格式只出现在音轨的样本描述里, 各轨取最好的
+                    audio = listOfNotNull(audio, track.audio).minOrNull()
                 }
             }
         }
-        return Info(duration, width, height, codec)
+        return Info(duration, width, height, codec, dynamicRange, audio)
     }
 
-    private class Track(var handler: String? = null, var width: Int? = null, var height: Int? = null, var codec: String? = null)
+    private class Track(
+        var handler: String? = null,
+        var width: Int? = null,
+        var height: Int? = null,
+        var codec: String? = null,
+        var dynamicRange: MediaDynamicRange? = null,
+        var audio: MediaSurroundAudio? = null,
+    )
 
     private fun parseTrak(b: ByteArray, start: Int, end: Int): Track {
         val track = Track()
         fun walk(s: Int, e: Int) {
             children(b, s, e) { box, cs, ce ->
                 when (box.type) {
-                    "tkhd" -> {
+                    "tkhd" -> if (cs < ce) {
                         val off = cs + if (b[cs].toInt() == 1) 88 else 76
                         if (off + 8 <= ce) {
                             track.width = (u32(b, off) shr 16).toInt()
@@ -397,12 +455,16 @@ internal object Mp4 {
                     }
 
                     "hdlr" -> if (cs + 12 <= ce) track.handler = b.decodeToString(cs + 8, cs + 12)
-                    "stsd" -> if (cs + 16 <= ce) track.codec = when (b.decodeToString(cs + 12, cs + 16)) {
-                        "avc1", "avc3" -> "H.264"
-                        "hvc1", "hev1" -> "HEVC"
-                        "av01" -> "AV1"
-                        "vp09" -> "VP9"
-                        else -> null
+                    "stsd" -> {
+                        if (cs + 16 <= ce) track.codec = when (b.decodeToString(cs + 12, cs + 16)) {
+                            "avc1", "avc3", "dvav", "dva1" -> "H.264"
+                            "hvc1", "hev1", "dvh1", "dvhe" -> "HEVC"
+                            "av01", "dav1" -> "AV1"
+                            "vp09" -> "VP9"
+                            else -> null
+                        }
+                        // FullBox 头与 entry_count 共 8 字节, 之后是各个样本描述 (盒子)
+                        children(b, cs + 8, ce) { entry, es, ee -> sampleEntryFeatures(b, entry.type, es, ee, track) }
                     }
 
                     "mdia", "minf", "stbl" -> walk(cs, ce)
@@ -412,6 +474,44 @@ internal object Mp4 {
         walk(start, end)
         return track
     }
+
+    /**
+     * 一个样本描述 (类型 [type], 内容在 [start] 到 [end]) 认出的动态范围与音轨格式, 记到 [track].
+     * 杜比视界的样本描述类型本身就说明了; HEVC / H.264 / AV1 的看里面的 `dvcC` 一类 (杜比视界) 与 `colr` 的传输特性 (PQ / HLG).
+     */
+    private fun sampleEntryFeatures(b: ByteArray, type: String, start: Int, end: Int, track: Track) {
+        when (type) {
+            in DOLBY_VISION_ENTRIES -> track.dynamicRange = MediaDynamicRange.DolbyVision
+            in VISUAL_ENTRIES -> {
+                var dolbyVision = false
+                var transfer: Int? = null
+                // VisualSampleEntry 的定长字段共 78 字节, 之后是子盒子
+                children(b, start + VISUAL_SAMPLE_ENTRY_FIELDS, end) { child, cs, ce ->
+                    when (child.type) {
+                        "dvcC", "dvvC", "dvwC" -> dolbyVision = true
+                        "colr" -> if (cs + 8 <= ce && b.decodeToString(cs, cs + 4) == "nclx") transfer = u16(b, cs + 6)
+                    }
+                }
+                val range = when {
+                    dolbyVision -> MediaDynamicRange.DolbyVision
+                    transfer == TRANSFER_PQ -> MediaDynamicRange.Hdr10
+                    transfer == TRANSFER_HLG -> MediaDynamicRange.Hlg
+                    else -> null
+                }
+                if (range != null) track.dynamicRange = listOfNotNull(track.dynamicRange, range).min()
+            }
+
+            "mlpa" -> track.audio = listOfNotNull(track.audio, MediaSurroundAudio.TrueHd).min()
+            "dtsl", "dtsh" -> track.audio = listOfNotNull(track.audio, MediaSurroundAudio.DtsHd).min()
+            "dtsx" -> track.audio = listOfNotNull(track.audio, MediaSurroundAudio.DtsX).min()
+        }
+    }
+
+    private const val VISUAL_SAMPLE_ENTRY_FIELDS = 78
+    private const val TRANSFER_PQ = 16
+    private const val TRANSFER_HLG = 18
+    private val DOLBY_VISION_ENTRIES = setOf("dvh1", "dvhe", "dvav", "dva1", "dav1")
+    private val VISUAL_ENTRIES = setOf("hvc1", "hev1", "avc1", "avc3", "av01")
 
     private fun mvhdDuration(b: ByteArray, s: Int): Double? {
         val version = b[s].toInt()
@@ -427,13 +527,19 @@ internal object Mp4 {
 
     private inline fun children(b: ByteArray, start: Int, end: Int, block: (Box, Int, Int) -> Unit) {
         var at = start
-        while (at + 8 <= minOf(end, b.size)) {
+        val limit = minOf(end, b.size)
+        while (at >= 0 && at + 8 <= limit) {
             val box = boxAt(b, at) ?: return
-            val boxEnd = minOf(box.start + box.size, minOf(end, b.size).toLong()).toInt()
+            val boxEnd = minOf(box.start + box.size, limit.toLong()).toInt()
+            // 盒子头本身就超出范围: 数据坏了
+            if (at + box.headerSize > boxEnd) return
             block(box, at + box.headerSize, boxEnd)
+            if (box.start + box.size >= limit) return
             at = (box.start + box.size).toInt()
         }
     }
+
+    private fun u16(b: ByteArray, at: Int): Int = ((b[at].toInt() and 0xFF) shl 8) or (b[at + 1].toInt() and 0xFF)
 
     fun u32(b: ByteArray, at: Int): Long =
         ((b[at].toLong() and 0xFF) shl 24) or ((b[at + 1].toLong() and 0xFF) shl 16) or ((b[at + 2].toLong() and 0xFF) shl 8) or (b[at + 3].toLong() and 0xFF)
@@ -459,10 +565,22 @@ internal object Mkv {
     const val VIDEO = 0xE0L
     const val PIXEL_WIDTH = 0xB0L
     const val PIXEL_HEIGHT = 0xBAL
+    const val COLOUR = 0x55B0L
+    const val TRANSFER_CHARACTERISTICS = 0x55BAL
+    const val BLOCK_ADDITION_MAPPING = 0x41E4L
+    const val BLOCK_ADD_ID_TYPE = 0x41E7L
     const val CLUSTER = 0x1F43B675L
 
     private const val TRACK_TYPE_VIDEO = 1L
+    private const val TRACK_TYPE_AUDIO = 2L
     private const val DEFAULT_TIMESTAMP_SCALE = 1_000_000L
+
+    /** TransferCharacteristics 的取值 (同 ISO/IEC 23091-4): PQ (HDR10 与多数杜比视界) 与 HLG. */
+    private const val TRANSFER_PQ = 16L
+    private const val TRANSFER_HLG = 18L
+
+    /** 杜比视界配置的 BlockAddIDType: `dvcC` / `dvvC` / `dvwC`. */
+    private val DOLBY_VISION_BLOCK_ADD_ID_TYPES = setOf(0x64766343L, 0x64767643L, 0x64767743L)
 
     /** 内容从 [dataStart] 起, 长 [size] 字节; 长度未知 (边写边录的写法) 时 [size] 为 null. */
     class Element(val id: Long, val dataStart: Int, val size: Long?) {
@@ -473,9 +591,14 @@ internal object Mkv {
     class Video(val width: Int?, val height: Int?, val codec: String?)
 
     /**
-     * 开头这段里读到的: Segment 内容的起点 (SeekHead 的位置都相对它), 时长, 视频轨, SeekHead 记的各元素位置.
+     * Tracks 里读到的: 第一条视频轨 ([video], 没有为 null) 与它的动态范围, 各音轨里最好的那种值得标出来的格式.
      */
-    class Head(val segmentStart: Long, val durationSeconds: Double?, val video: Video?, val seeks: Map<Long, Long>)
+    class Tracks(val video: Video?, val dynamicRange: MediaDynamicRange?, val audio: MediaSurroundAudio?)
+
+    /**
+     * 开头这段里读到的: Segment 内容的起点 (SeekHead 的位置都相对它), 时长, 各轨 (Tracks 不在开头这段时为 null), SeekHead 记的各元素位置.
+     */
+    class Head(val segmentStart: Long, val durationSeconds: Double?, val tracks: Tracks?, val seeks: Map<Long, Long>)
 
     fun looksLikeMkv(b: ByteArray): Boolean = elementAt(b, 0)?.id == EBML
 
@@ -504,7 +627,7 @@ internal object Mkv {
         if (segmentAt >= b.size) return null
         val segment = elementAt(b, segmentAt.toInt())?.takeIf { it.id == SEGMENT } ?: return null
         var duration: Double? = null
-        var video: Video? = null
+        var tracks: Tracks? = null
         val seeks = HashMap<Long, Long>()
         var at = segment.dataStart
         while (true) {
@@ -515,11 +638,11 @@ internal object Mkv {
             when (element.id) {
                 SEEK_HEAD -> seeks += parseSeekHead(b, element.dataStart, end.toInt())
                 INFO -> duration = parseInfo(b, element.dataStart, end.toInt())
-                TRACKS -> video = parseTracks(b, element.dataStart, end.toInt())
+                TRACKS -> tracks = parseTracks(b, element.dataStart, end.toInt())
             }
             at = end.toInt()
         }
-        return Head(segment.dataStart.toLong(), duration, video, seeks)
+        return Head(segment.dataStart.toLong(), duration, tracks, seeks)
     }
 
     /** 元素 id → 相对 Segment 内容起点的位置. */
@@ -555,30 +678,57 @@ internal object Mkv {
         return duration?.let { it * scale / 1_000_000_000 }?.takeIf { it > 0 }
     }
 
-    /** Tracks 里第一条视频轨. */
-    fun parseTracks(b: ByteArray, start: Int, end: Int): Video? {
+    /**
+     * Tracks 里的各轨: 第一条视频轨的宽高、编码与动态范围, 各音轨里最好的那种格式.
+     *
+     * 动态范围: BlockAdditionMapping 里有杜比视界的配置 (`dvcC` 一类) 为杜比视界, 否则看 Colour 的 TransferCharacteristics (PQ / HLG).
+     */
+    fun parseTracks(b: ByteArray, start: Int, end: Int): Tracks {
         var video: Video? = null
+        var dynamicRange: MediaDynamicRange? = null
+        var audio: MediaSurroundAudio? = null
         children(b, start, end) { entry, s, e ->
-            if (entry.id != TRACK_ENTRY || video != null) return@children
+            if (entry.id != TRACK_ENTRY) return@children
             var type: Long? = null
-            var codec: String? = null
+            var codecId = ""
             var width: Int? = null
             var height: Int? = null
+            var transfer: Long? = null
+            var dolbyVision = false
             children(b, s, e) { child, cs, ce ->
                 when (child.id) {
                     TRACK_TYPE -> type = uint(b, cs, ce)
-                    CODEC_ID -> codec = codecOf(b.decodeToString(cs, ce).trimEnd('\u0000'))
+                    CODEC_ID -> codecId = b.decodeToString(cs, ce).trimEnd('\u0000')
                     VIDEO -> children(b, cs, ce) { v, vs, ve ->
                         when (v.id) {
                             PIXEL_WIDTH -> width = uint(b, vs, ve).toInt()
                             PIXEL_HEIGHT -> height = uint(b, vs, ve).toInt()
+                            COLOUR -> children(b, vs, ve) { colour, ts, te ->
+                                if (colour.id == TRANSFER_CHARACTERISTICS) transfer = uint(b, ts, te)
+                            }
                         }
+                    }
+
+                    BLOCK_ADDITION_MAPPING -> children(b, cs, ce) { mapping, ms, me ->
+                        if (mapping.id == BLOCK_ADD_ID_TYPE && uint(b, ms, me) in DOLBY_VISION_BLOCK_ADD_ID_TYPES) dolbyVision = true
                     }
                 }
             }
-            if (type == TRACK_TYPE_VIDEO) video = Video(width, height, codec)
+            when (type) {
+                TRACK_TYPE_VIDEO -> if (video == null) {
+                    video = Video(width, height, codecOf(codecId))
+                    dynamicRange = when {
+                        dolbyVision -> MediaDynamicRange.DolbyVision
+                        transfer == TRANSFER_PQ -> MediaDynamicRange.Hdr10
+                        transfer == TRANSFER_HLG -> MediaDynamicRange.Hlg
+                        else -> null
+                    }
+                }
+
+                TRACK_TYPE_AUDIO -> audio = listOfNotNull(audio, audioOf(codecId)).minOrNull()
+            }
         }
-        return video
+        return Tracks(video, dynamicRange, audio)
     }
 
     private fun codecOf(codecId: String): String? = when {
@@ -589,11 +739,20 @@ internal object Mkv {
         else -> null
     }
 
+    /** 音轨的 CodecID 认出的值得标出来的格式: TrueHD (含 Atmos 的也是它), DTS-HD MA. */
+    private fun audioOf(codecId: String): MediaSurroundAudio? = when (codecId) {
+        "A_TRUEHD" -> MediaSurroundAudio.TrueHd
+        "A_DTS/LOSSLESS" -> MediaSurroundAudio.DtsHd
+        else -> null
+    }
+
     private inline fun children(b: ByteArray, start: Int, end: Int, block: (Element, Int, Int) -> Unit) {
         var at = start
         val limit = minOf(end, b.size)
         while (at < limit) {
             val element = elementAt(b, at) ?: return
+            // 元素头本身就超出范围: 数据坏了
+            if (element.dataStart > limit) return
             val childEnd = element.size?.let { minOf(element.dataStart + it, limit.toLong()).toInt() } ?: limit
             block(element, element.dataStart, childEnd)
             if (element.size == null) return
