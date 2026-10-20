@@ -53,8 +53,9 @@ class TvSourceBadgesTest {
             tvSourceBadgesOf(MediaAvFeatures(MediaDynamicRange.DolbyVision, dolbyVisionProfile = profile), decodesDolbyVision = decodes).single()
         assertEquals(TvSourceBadge.DolbyVisionUnsupported, badge(5, decodes = false))
         assertEquals(TvSourceBadge.DolbyVision, badge(5, decodes = true))
-        // profile 8 有 HDR10 底层, 不支持杜比视界的设备照样能放
+        // profile 7、8 有 HDR10 底层, 不支持杜比视界的设备照样能放
         assertEquals(TvSourceBadge.DolbyVision, badge(8, decodes = false))
+        assertEquals(TvSourceBadge.DolbyVision, badge(7, decodes = false))
         // 标题里看不出 profile
         assertEquals(TvSourceBadge.DolbyVision, badge(null, decodes = false))
     }
