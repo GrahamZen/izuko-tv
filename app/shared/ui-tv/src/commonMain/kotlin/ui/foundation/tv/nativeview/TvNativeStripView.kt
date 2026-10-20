@@ -19,6 +19,7 @@ import androidx.leanback.widget.BaseGridView
 import androidx.leanback.widget.GridLayoutManager
 import androidx.leanback.widget.HorizontalGridView
 import androidx.recyclerview.widget.RecyclerView
+import me.him188.ani.app.ui.foundation.tv.TvKeyRepeatGate
 import kotlin.math.abs
 
 /**
@@ -58,7 +59,7 @@ abstract class TvNativeStripView(
     private val aheadLayoutPx: Int = 0,
 ) : HorizontalGridView(context) {
     private val scroll = TvNativeSpringScroll()
-    private var lastRepeatMove = 0L
+    private val repeatGate = TvKeyRepeatGate(TV_NATIVE_HORIZONTAL_REPEAT_MILLIS)
     private var aheadLaidOut = aheadLayoutPx <= 0
     private val layoutAheadWhileFocused = Runnable { if (hasFocus()) layoutAhead() }
 
@@ -70,7 +71,11 @@ abstract class TvNativeStripView(
         }
 
     /** 长按方向键时横向最快多久挪一次 (ms). */
-    var repeatMillis: Long = TV_NATIVE_HORIZONTAL_REPEAT_MILLIS
+    var repeatMillis: Long
+        get() = repeatGate.intervalMillis
+        set(value) {
+            repeatGate.intervalMillis = value
+        }
 
     /** 行首按左 (新按下的那一下) 放出去由外面接; false = 吞掉 (行首左边没有目标). */
     var startLeftExits: Boolean = true
@@ -355,11 +360,7 @@ abstract class TvNativeStripView(
         val index = getChildAdapterPosition(focused)
         // 焦点所在的卡正被换掉 (数据刷新途中): 这一下吞掉, 不交给系统找焦点
         if (index == NO_POSITION) return true
-        if (event.repeatCount > 0) {
-            val now = SystemClock.uptimeMillis()
-            if (now - lastRepeatMove < repeatMillis) return true
-            lastRepeatMove = now
-        }
+        if (!repeatGate.pass(event.repeatCount, SystemClock.uptimeMillis())) return true
         val target = index + if (code == KeyEvent.KEYCODE_DPAD_LEFT) -1 else 1
         // 行首按左: 新按下的那一下放出去 (按住的连发不出行), 行尾按右吞掉
         if (target < 0) return !startLeftExits || event.repeatCount > 0

@@ -21,6 +21,10 @@ import androidx.leanback.widget.VerticalGridView
 import androidx.recyclerview.widget.RecyclerView
 import com.github.panpf.sketch.Sketch
 import me.him188.ani.app.ui.foundation.focus.TvScrollSpring
+import me.him188.ani.app.ui.foundation.tv.TvKeyRepeatGate
+import me.him188.ani.app.ui.foundation.tv.TvWallDirection
+import me.him188.ani.app.ui.foundation.tv.TvWallGridKey
+import me.him188.ani.app.ui.foundation.tv.tvWallGridKey
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -131,8 +135,8 @@ class TvNativeGridView(
             scroll.animated = value
         }
 
-    private var lastVerticalRepeat = 0L
-    private var lastHorizontalRepeat = 0L
+    private val verticalRepeat = TvKeyRepeatGate(TV_NATIVE_VERTICAL_REPEAT_MILLIS)
+    private val horizontalRepeat = TvKeyRepeatGate(TV_NATIVE_HORIZONTAL_REPEAT_MILLIS)
     private var pendingFocus = -1
     private var farJumpTarget = -1
 
@@ -570,45 +574,30 @@ class TvNativeGridView(
     }
 
     /**
-     * 方向键网格自己走, 不交给系统找焦点 (焦点搜索落到 Compose 那边时按整个宿主里的几何挑目标, 不可预测): 上下同一列, 左右同一行;
-     * 下面没有同列的卡时落到最后一张, 末行按下吞掉 (同 Compose 版 tvGridKeyNavigation); 首行按上交给 [TvNativeGridListener.onTopRowUp],
-     * 行缘按左 / 右交给 [TvNativeGridListener.onRowEdge] (不处理时按右吞掉、按左放出去). 返回是否吞掉这一下.
+     * 方向键网格自己走, 不交给系统找焦点 (焦点搜索落到 Compose 那边时按整个宿主里的几何挑目标, 不可预测); 往哪走见 [tvWallGridKey]:
+     * 首行按上交给 [TvNativeGridListener.onTopRowUp], 行缘按左 / 右交给 [TvNativeGridListener.onRowEdge]. 返回是否吞掉这一下.
      */
     private fun navigate(code: Int, index: Int, repeatCount: Int): Boolean {
         // 焦点所在的卡正被换掉 (分页刷新途中): 这一下吞掉
         if (index == NO_POSITION) return true
-        val vertical = code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN
-        if (repeatCount > 0) {
-            val now = SystemClock.uptimeMillis()
-            if (vertical) {
-                if (now - lastVerticalRepeat < TV_NATIVE_VERTICAL_REPEAT_MILLIS) return true
-                lastVerticalRepeat = now
-            } else {
-                if (now - lastHorizontalRepeat < TV_NATIVE_HORIZONTAL_REPEAT_MILLIS) return true
-                lastHorizontalRepeat = now
-            }
+        val direction = when (code) {
+            KeyEvent.KEYCODE_DPAD_UP -> TvWallDirection.Up
+            KeyEvent.KEYCODE_DPAD_DOWN -> TvWallDirection.Down
+            KeyEvent.KEYCODE_DPAD_LEFT -> TvWallDirection.Left
+            else -> TvWallDirection.Right
         }
-        val cols = metrics.columns.coerceAtLeast(1)
-        val count = cards.itemCount
-        when (code) {
-            KeyEvent.KEYCODE_DPAD_UP -> {
-                if (index < cols) return listener?.onTopRowUp() ?: false
-                moveFocusTo(index - cols)
+        val vertical = direction == TvWallDirection.Up || direction == TvWallDirection.Down
+        if (!(if (vertical) verticalRepeat else horizontalRepeat).pass(repeatCount, SystemClock.uptimeMillis())) return true
+        return when (val key = tvWallGridKey(direction, index, cards.itemCount, metrics.columns)) {
+            is TvWallGridKey.MoveTo -> {
+                moveFocusTo(key.index)
+                true
             }
 
-            KeyEvent.KEYCODE_DPAD_DOWN -> when {
-                index + cols < count -> moveFocusTo(index + cols)
-                index / cols < (count - 1) / cols -> moveFocusTo(count - 1)
-            }
-
-            else -> {
-                val left = code == KeyEvent.KEYCODE_DPAD_LEFT
-                val atEdge = if (left) index % cols == 0 else index % cols == cols - 1 || index == count - 1
-                if (atEdge) return listener?.onRowEdge(if (left) -1 else 1, index / cols) == true || !left
-                moveFocusTo(if (left) index - 1 else index + 1)
-            }
+            TvWallGridKey.TopRowUp -> listener?.onTopRowUp() ?: false
+            is TvWallGridKey.RowEdge -> listener?.onRowEdge(key.direction, key.row) == true || key.swallowWhenUnhandled
+            TvWallGridKey.Swallow -> true
         }
-        return true
     }
 
     /** 用户导航的落点: 排出来了当场给 (leanback 按窗口对齐滚过去), 没排出来 (连按超前) 平滑滚过去, 到位时 leanback 把焦点给它. */
