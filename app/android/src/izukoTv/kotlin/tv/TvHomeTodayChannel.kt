@@ -18,7 +18,6 @@ import androidx.tvprovider.media.tv.PreviewProgram
 import androidx.tvprovider.media.tv.TvContractCompat
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.onEach
@@ -38,6 +37,7 @@ import me.him188.ani.app.data.repository.subject.SubjectNsfw
 import me.him188.ani.app.domain.episode.AiringScheduleForDate
 import me.him188.ani.app.domain.episode.EpisodeWithAiringTime
 import me.him188.ani.app.domain.episode.GetAnimeScheduleFlowUseCase
+import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.logging.error
@@ -80,13 +80,15 @@ internal object TvHomeTodayChannel {
 
     private suspend fun keepUpdated(context: Context, koin: Koin, channelId: Long) {
         val lifecycle = ProcessLifecycleOwner.get().lifecycle
+        val endpoints = koin.get<BangumiEndpointProvider>()
         try {
             while (true) {
                 lifecycle.currentStateFlow.first { !it.isAtLeast(Lifecycle.State.STARTED) }
                 val timeZone = TimeZone.currentSystemDefault()
                 val today = Clock.System.now().toLocalDateTime(timeZone).date
+                val imageRoot = endpoints.webMirrorRoot.value
                 val complete = try {
-                    update(context, koin, channelId, today, timeZone)
+                    update(context, koin, endpoints, channelId, today, timeZone)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -94,7 +96,10 @@ internal object TvHomeTodayChannel {
                     false
                 }
                 val untilTomorrow = today.plus(1, DateTimeUnit.DAY).atStartOfDayIn(timeZone) - Clock.System.now() + 1.minutes
-                delay(if (complete) untilTomorrow else minOf(RETRY_INTERVAL, untilTomorrow))
+                // 线路换了封面跟着换站 (见 TvHomeChannels 类注释), 不等到明天
+                withTimeoutOrNull(if (complete) untilTomorrow else minOf(RETRY_INTERVAL, untilTomorrow)) {
+                    endpoints.webMirrorRoot.first { it != imageRoot }
+                }
             }
         } finally {
             running.set(false)
@@ -102,7 +107,14 @@ internal object TvHomeTodayChannel {
     }
 
     /** 写今天那一格; 返回它是不是补全了. */
-    private suspend fun update(context: Context, koin: Koin, channelId: Long, today: LocalDate, timeZone: TimeZone): Boolean {
+    private suspend fun update(
+        context: Context,
+        koin: Koin,
+        endpoints: BangumiEndpointProvider,
+        channelId: Long,
+        today: LocalDate,
+        timeZone: TimeZone,
+    ): Boolean {
         var latest: AiringScheduleForDate? = null
         withTimeoutOrNull(SCHEDULE_TIMEOUT) {
             koin.get<GetAnimeScheduleFlowUseCase>()(today, timeZone)
@@ -114,7 +126,7 @@ internal object TvHomeTodayChannel {
         // 没有海报的不放 (卡片会是一块空白); NSFW 作品在设置不是「显示」时不放 (主屏打不了码, 见 SubjectNsfw)
         val programs = day.list
             .filter { it.subject.imageLarge.isNotBlank() && SubjectNsfw.modeOf(it.subject.subjectId) == NsfwMode.DISPLAY }
-            .map { it.toTodayProgram(context, timeZone) }
+            .map { it.toTodayProgram(context, timeZone, endpoints) }
         withContext(Dispatchers.IO_) { write(context, channelId, programs) }
         return !day.pending
     }
@@ -130,7 +142,11 @@ internal object TvHomeTodayChannel {
         val posterUri: String,
     )
 
-    private fun EpisodeWithAiringTime.toTodayProgram(context: Context, timeZone: TimeZone): TodayProgram {
+    private fun EpisodeWithAiringTime.toTodayProgram(
+        context: Context,
+        timeZone: TimeZone,
+        endpoints: BangumiEndpointProvider,
+    ): TodayProgram {
         val airs = if (timeKnown) {
             val time = airingTime.toLocalDateTime(timeZone)
             context.getString(R.string.home_channel_today_airs_at, "%02d:%02d".format(time.hour, time.minute))
@@ -151,7 +167,7 @@ internal object TvHomeTodayChannel {
                 number?.let { context.getString(R.string.home_channel_episode, it.plainNumber()) },
                 episodeName.takeIf { it.isNotBlank() },
             ).joinToString(" · "),
-            posterUri = subject.imageLarge,
+            posterUri = endpoints.webLink(subject.imageLarge),
         )
     }
 
@@ -192,6 +208,8 @@ internal object TvHomeTodayChannel {
             program.episodeNumber?.let { builder.setEpisodeNumber(it.plainNumber(), it.number.toInt()) }
             resolver.insert(TvContractCompat.PreviewPrograms.CONTENT_URI, builder.build().toContentValues())
         }
-        logger.info { "Today channel updated: ${programs.size} programs" }
+        logger.info {
+            "Today channel updated: ${programs.size} programs (images on ${TvHomeChannels.imageHosts(programs.map { it.posterUri })})"
+        }
     }
 }

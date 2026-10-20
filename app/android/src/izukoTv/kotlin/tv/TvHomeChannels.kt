@@ -67,6 +67,7 @@ import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.episode.EpisodeCompletionContext.isKnownOnAir
 import me.him188.ani.app.domain.episode.EpisodeCompletionContext.mapAirDate
+import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
 import me.him188.ani.app.platform.perf.PerfTimeline
 import me.him188.ani.app.ui.foundation.tv.getTvEpisodeMedia
 import me.him188.ani.app.ui.main.TvContinueEpisode
@@ -100,6 +101,10 @@ import androidx.compose.ui.text.intl.Locale as ComposeLocale
  * 数据由系统 TvProvider 数据库保存并由 launcher 展示, 不需要 app 常驻.
  *
  * 卡片多宽由 launcher 按 `poster_art_aspect_ratio` 定: 卡高一样, 竖海报 2:3 是窄卡, 横图 16:9 是宽卡.
+ *
+ * 封面图由 launcher 自己下载, 走不了应用连 Bangumi 的线路: 应用经加密直连时 (大陆连不上官方) 官方图床 launcher 也连不上.
+ * 所以 Bangumi 的封面按交给浏览器的规则换站 ([BangumiEndpointProvider.webLink], 加密直连时换到社区镜像), 线路一换
+ * ([BangumiEndpointProvider.webMirrorRoot]) 各频道跟着重写. 只开着加密直连、没有别的可用线路时仍是官方地址.
  */
 object TvHomeChannels {
     private val logger = logger<TvHomeChannels>()
@@ -142,9 +147,21 @@ object TvHomeChannels {
         // 更低版本上 TvProvider 没有这些 URI, 直接跳过而不是让下面的 runCatching 吞一堆异常.
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
 
+        // 长期收集期间不拿着 activity: 只有弹添加频道确认框那一步需要它
+        val appContext = context.applicationContext
         if (trendingUpdatedThisProcess.compareAndSet(false, true)) {
             runCatching { updateTrendingChannel(context, koin) }
                 .onFailure { logger.error(it) { "Failed to update trending channel" } }
+            // 线路换了封面跟着换站 (见类注释); 地址没变时 updateTrendingChannel 自己跳过, 所以收到当前值那一次也无妨
+            ProcessLifecycleOwner.get().lifecycleScope.launch(Dispatchers.IO_) {
+                koin.get<BangumiEndpointProvider>().webMirrorRoot.collect {
+                    runCatching { updateTrendingChannel(appContext, koin) }
+                        .onFailure {
+                            if (it is CancellationException) throw it
+                            logger.error(it) { "Failed to update trending channel" }
+                        }
+                }
+            }
         }
 
         // 「今日更新」频道在这里建好 (第一次要弹添加频道确认框), 内容由它自己在后台按天重写
@@ -152,8 +169,6 @@ object TvHomeChannels {
             .onFailure { logger.error(it) { "Failed to create today channel" } }
             .getOrNull()
 
-        // 长期收集期间不拿着 activity: 只有上面弹添加频道确认框那一步需要它
-        val appContext = context.applicationContext
         val tmdb = koin.get<TmdbImageService>()
         val settingsRepository = koin.get<SettingsRepository>()
         if (watchNextStartedThisProcess.compareAndSet(false, true)) {
@@ -227,13 +242,18 @@ object TvHomeChannels {
                 info.toWatchNextEntry(historyByEpisode, now, useOriginalTitle, tmdbTitles[info.subjectId])?.let { it to info }
             }
         }
+        // 封面按线路换站 (见类注释), 线路一换这一行跟着重写
+        val endpoints = koin.get<BangumiEndpointProvider>()
+        val routedEntries = combine(entries, endpoints.webMirrorRoot) { pairs, _ ->
+            pairs.map { (entry, info) -> entry.copy(posterUri = endpoints.webLink(entry.posterUri)) to info }
+        }
         // 这一行只在主屏露出来 (应用退到后台) 时看得到: 应用在前台时不算也不写, 退到后台按最新数据写一次.
         // 在前台照写的话, 播放中每分钟记一次进度就整行删了重插: 系统要拉起被杀掉的频道进程、主屏跟着重载这一行,
         // 内存紧的电视上正压在开播最忙的那十几秒.
         ProcessLifecycleOwner.get().lifecycle.currentStateFlow
             .map { it.isAtLeast(Lifecycle.State.STARTED) }
             .distinctUntilChanged()
-            .flatMapLatest { foreground -> if (foreground) emptyFlow() else entries }
+            .flatMapLatest { foreground -> if (foreground) emptyFlow() else routedEntries }
             // 只比卡片真正用到的字段: 看一集、刷新一次都会让上游重新发射, 而那些变化与这一行无关;
             // 前后两次退到后台之间没变也不重写
             .distinctUntilChangedBy { pairs -> pairs.map { it.first } }
@@ -454,7 +474,8 @@ object TvHomeChannels {
         }
         playNext.endRewrite(written)
         logger.info {
-            "Watch-next row updated (${toWrite.size}): " + toWrite.joinToString { (entry, landscapeImageUri) ->
+            val images = imageHosts(toWrite.map { (entry, landscapeImageUri) -> landscapeImageUri ?: entry.posterUri })
+            "Watch-next row updated (${toWrite.size}, images on $images): " + toWrite.joinToString { (entry, landscapeImageUri) ->
                 val isNew = entry.episode?.watchNextType == TvContractCompat.WatchNextPrograms.WATCH_NEXT_TYPE_NEW
                 "${entry.subjectId} ${if (landscapeImageUri != null) "16:9" else "2:3"}${if (isNew) " new" else ""} ${entry.episode?.link ?: "details"}"
             }
@@ -495,7 +516,10 @@ object TvHomeChannels {
         val channelId = ensureChannel(context, CHANNEL_INTERNAL_ID, CHANNEL_DISPLAY_NAME)
         val existing = trendingPrograms(context, channelId)
         val descriptions = existing.associate { it.subjectId to it.description }
-        val wanted = trending.map { TrendingProgram(it.bangumiId, it.nameCn, it.imageLarge, descriptions[it.bangumiId].orEmpty()) }
+        val endpoints = koin.get<BangumiEndpointProvider>()
+        val wanted = trending.map {
+            TrendingProgram(it.bangumiId, it.nameCn, endpoints.webLink(it.imageLarge), descriptions[it.bangumiId].orEmpty())
+        }
         if (wanted.map { it.withoutDescription() } == existing.map { it.withoutDescription() }) {
             logger.info { "Trending channel unchanged (${wanted.size} programs), skipped" }
             return
@@ -539,7 +563,10 @@ object TvHomeChannels {
             resolver.insert(TvContractCompat.PreviewPrograms.CONTENT_URI, program.toContentValues())
             inserted++
         }
-        logger.info { "Trending channel updated: $inserted programs (fetched ${missing.size} summaries)" }
+        logger.info {
+            "Trending channel updated: $inserted programs (fetched ${missing.size} summaries, " +
+                    "images on ${imageHosts(wanted.map { it.posterUri })})"
+        }
     }
 
     /** "热门动画"频道里的一个节目; [description] 已按 [formatDescription] 截好, 没有为空. */
@@ -610,6 +637,9 @@ object TvHomeChannels {
     }
 
     internal fun subjectDeepLink(subjectId: Int): Uri = Uri.parse("ani://subjects/$subjectId")
+
+    /** 日志用: 卡片的图在哪些域名上 (launcher 下不下得到, 见类注释). */
+    internal fun imageHosts(uris: List<String>): String = uris.mapNotNull { Uri.parse(it).host }.distinct().joinToString()
 
     internal fun formatDescription(summary: String): String {
         return summary.replace('\n', ' ').trim().take(DESCRIPTION_MAX_LENGTH)
