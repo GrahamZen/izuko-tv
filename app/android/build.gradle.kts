@@ -96,6 +96,10 @@ android {
 
         }
     }
+    // Compose 资源的文案 (.cvr) 不压缩: 每条文案第一次读都要重新打开整个文件再跳到它的位置, 压缩的话要从头解压到那里
+    androidResources {
+        noCompress += "cvr"
+    }
     buildTypes {
         release {
             isMinifyEnabled = true
