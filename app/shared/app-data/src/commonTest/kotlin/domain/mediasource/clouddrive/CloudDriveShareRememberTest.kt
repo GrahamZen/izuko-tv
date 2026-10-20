@@ -21,6 +21,7 @@ import me.him188.ani.datasources.api.source.MediaFetchRequest
 import me.him188.ani.utils.ktor.asScopedHttpClient
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 
 /**
@@ -141,7 +142,7 @@ class CloudDriveShareRememberTest {
     }
 
     @Test
-    fun `gives nothing without login or when the drive is not configured`() = runTest {
+    fun `asks to log in without login and gives nothing when the drive is not configured`() = runTest {
         val test = testRegistry(client = { client })
         fun source(drive: String) = CloudDriveShareSearchMediaSource(
             "share-site",
@@ -153,7 +154,8 @@ class CloudDriveShareRememberTest {
             client.asScopedHttpClient(),
             test.registry,
         )
-        assertEquals(emptyList(), source(TestDrive.ID).fetch(request(1)).results.toList())
+        val notLoggedIn = assertFailsWith<CloudDriveAuthException> { source(TestDrive.ID).fetch(request(1)).results.toList() }
+        assertEquals(TestDrive.ID, notLoggedIn.driveId)
         assertEquals(emptyList(), source("otherdrive").fetch(request(1)).results.toList())
         assertEquals(0, siteSearches)
     }
