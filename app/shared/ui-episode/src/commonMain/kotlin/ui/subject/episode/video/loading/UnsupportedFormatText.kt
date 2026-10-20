@@ -25,6 +25,17 @@ internal fun unsupportedFormatOf(status: MediaStatus): UnsupportedFormat? {
     return remember(error) { UnsupportedFormat.of(error) }
 }
 
+/**
+ * 播放器报错时认得出的原因 (连不上网、服务器回了 HTTP 错误、地址回的不是视频…, 见 [knownCauseOf]), 提示里代替笼统的「请更换数据源」;
+ * 没报错或认不出为 null. 播到一半链接过期 (403)、断网都在这里说清.
+ */
+@Composable
+internal fun playerErrorCauseOf(status: MediaStatus): String? {
+    val error = (status as? MediaStatus.Error)?.error ?: return null
+    val labels = videoLoadingCauseLabels()
+    return remember(error, labels) { knownCauseOf(error, labels) }
+}
+
 /** 播放器报错时代替「播放失败」: 这台电视放不了这个视频的音频 / 画面格式. */
 @Composable
 internal fun unsupportedFormatError(format: UnsupportedFormat): String =

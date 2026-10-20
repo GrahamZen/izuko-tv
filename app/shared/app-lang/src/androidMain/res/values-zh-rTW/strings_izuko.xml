@@ -30,6 +30,11 @@
     <string name="subject_episode_video_loading_cause_http_rejected">伺服器拒絕了請求（HTTP %1$s）</string>
     <string name="subject_episode_video_loading_cause_http_error">伺服器出錯（HTTP %1$s）</string>
     <string name="subject_episode_video_loading_cause_drive_login">網盤未登入，登入後才能播放網盤裡的資源</string>
+    <string name="subject_episode_video_loading_cause_drive_full">網盤空間不夠，放不下這個檔案（%1$s），在網盤裡刪掉一些檔案再試</string>
+    <string name="subject_episode_video_loading_cause_drive_share_unavailable">網盤分享已失效（已取消、被封或要提取碼）</string>
+    <string name="subject_episode_video_loading_cause_drive_error">網盤出錯：%1$s</string>
+    <string name="subject_episode_video_loading_cause_not_video">影片網址回傳的不是影片（連結可能已失效）</string>
+    <string name="subject_episode_video_loading_player_error_cause">播放失敗：%1$s</string>
     <string name="subject_episode_video_loading_bt_service_starting">正在啟動 BT 服務\n第一次要十幾秒</string>
     <string name="subject_episode_video_loading_torrent_metadata">正在取得種子資訊</string>
     <string name="subject_episode_video_loading_torrent_peers">已連上 %1$d 個節點 · 已等 %2$d 秒</string>
