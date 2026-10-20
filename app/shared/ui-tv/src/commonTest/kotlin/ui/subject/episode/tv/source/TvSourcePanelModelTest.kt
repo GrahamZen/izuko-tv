@@ -425,8 +425,8 @@ class TvSourcePanelModelTest {
         assertEquals(2, rows.size)
         assertTrue(rows[0].meta.contains("sourcesCount:2"), rows[0].meta)
         assertEquals(btOther.originalTitle, rows[1].title)
-        // 字幕组 / 来源都挪进了表头的「筛选」, 这里只剩「仅本集」
-        assertEquals(listOf("pill:episode"), content.right.pills.map { it.id })
+        // 顶上: 仅本集、字幕组、来源 (分辨率 / 字幕在表头的「筛选」里)
+        assertEquals(listOf("pill:episode", "pill:Alliance", "pill:Source"), content.right.pills.map { it.id })
     }
 
     @Test
@@ -530,13 +530,16 @@ class TvSourcePanelModelTest {
     }
 
     @Test
-    fun `rows hidden by the alliance filter open the filter dialog`() {
+    fun `rows hidden only by the alliance filter open the alliance pill and others open the filter dialog`() {
         val belowFilter = BtRow(btMikan, BtRowExclusion.BelowPreference, false)
-        val input = input(bt = bt(listOf(BtRow(btDmhy, null, false)), listOf(belowFilter)).copy(alliance = "ANi"))
-        val rows = buildTvSourcePanel(input, TvSourceNav(railKey = TvSourceRailKeys.BT), strings).right.rows
+        val bt = bt(listOf(BtRow(btDmhy, null, false)), listOf(belowFilter)).copy(alliance = "ANi")
+        val rows = buildTvSourcePanel(input(bt = bt), TvSourceNav(railKey = TvSourceRailKeys.BT), strings).right.rows
         val hiddenRow = rows.single { it.id == "bt:hidden-by-filter" }
         assertTrue(hiddenRow.dividerAbove)
-        assertEquals(TvSourceAction.OpenFilter, hiddenRow.action)
+        assertEquals(TvSourceAction.Open(TvSourceDrill.Filter(TvSourceFilter.Alliance)), hiddenRow.action)
+        // 分辨率也在筛: 去筛选弹窗
+        val withResolution = buildTvSourcePanel(input(bt = bt.copy(resolution = "1080P")), TvSourceNav(railKey = TvSourceRailKeys.BT), strings)
+        assertEquals(TvSourceAction.OpenFilter, withResolution.right.rows.single { it.id == "bt:hidden-by-filter" }.action)
     }
 
     @Test
@@ -708,10 +711,14 @@ class TvSourcePanelModelTest {
                 "filter:Resolution:", "filter:Resolution:4K", "filter:Resolution:1080P", "filter:Resolution:720P",
                 "filter:Subtitle:", "filter:Subtitle:CHS",
             ),
-            options.filter { it.focusable && !it.id.startsWith("filter:Alliance") && !it.id.startsWith("filter:Source") }.map { it.id },
+            options.filter { it.focusable }.map { it.id },
         )
         assertEquals("filter:Resolution:1080P", options.single { it.selected && it.id.startsWith("filter:Resolution:") }.id)
         assertEquals(TvSourceAction.PickFilter(TvSourceFilter.Resolution, "4K"), options.single { it.id == "filter:Resolution:4K" }.action)
+        // 弹窗里换勾不当场生效; 关弹窗时只生效与当前选中不同的几项 (换过又换回来的不算, 换成「全部」算)
+        assertEquals(mapOf(TvSourceFilter.Resolution to "4K"), changedFilters(options, mapOf(TvSourceFilter.Resolution to "4K")))
+        assertEquals(emptyMap(), changedFilters(options, mapOf(TvSourceFilter.Resolution to "1080P")))
+        assertEquals(mapOf(TvSourceFilter.Resolution to null), changedFilters(options, mapOf(TvSourceFilter.Resolution to null)))
 
         // 只有线路式的在线源: 没东西可筛, 不列「筛选」, 也没有弹窗内容
         val linesOnly = input(bt = BtListPresentation.Placeholder, sources = MediaSourceResultListPresentation(sources.list.filter { it.kind == MediaSourceKind.WEB }))
@@ -805,18 +812,22 @@ class TvSourcePanelModelTest {
     }
 
     @Test
-    fun `the filter dialog also holds the alliance and source of BT`() {
+    fun `alliance and source are pills on top of BT and the filter dialog holds only resolution and subtitle`() {
         val bt = bt(listOf(BtRow(btDmhy, null, false))).copy(availableAlliances = listOf("喵萌奶茶屋", "桜都字幕组"), alliance = "喵萌奶茶屋")
         val content = buildTvSourcePanel(input(bt = bt), TvSourceNav(railKey = TvSourceRailKeys.BT), strings)
-        val ids = content.filter.map { it.id }
-        assertTrue(ids.containsAll(listOf("filter-header:Alliance", "filter:Alliance:喵萌奶茶屋", "filter-header:Source", "filter:Source:dmhy", "filter:Source:mikan")), ids.toString())
-        assertTrue(content.filter.single { it.id == "filter:Alliance:喵萌奶茶屋" }.selected)
-        assertEquals(TvSourceAction.PickFilter(TvSourceFilter.Source, "mikan"), content.filter.single { it.id == "filter:Source:mikan" }.action)
-        // 表头的「筛选」右端写上字幕组
-        assertTrue(content.rail.first { it.id == TvSourceRailKeys.FILTER }.trailing.contains("喵萌奶茶屋"))
-        // 没有 BT 源时不列这两组
-        val webOnly = input(bt = BtListPresentation.Placeholder, sources = MediaSourceResultListPresentation(sources.list.filter { it.kind == MediaSourceKind.WEB }))
-        assertTrue(buildTvSourcePanel(webOnly, TvSourceNav(), strings).filter.none { it.id.startsWith("filter-header:Alliance") })
+        // BT 那一栏顶上: 仅本集、字幕组 (选了的写在后面)、来源; 确定进去选
+        val alliance = content.right.pills.single { it.id == "pill:Alliance" }
+        assertEquals("${strings.alliance} · 喵萌奶茶屋", alliance.title)
+        assertTrue(alliance.selected)
+        assertEquals(TvSourceAction.Open(TvSourceDrill.Filter(TvSourceFilter.Alliance)), alliance.action)
+        assertEquals(listOf("pill:episode", "pill:Alliance", "pill:Source"), content.right.pills.map { it.id })
+        // 进去那一层: 全部 + 各个取值, 选中的打勾, 确定就选
+        val drilled = buildTvSourcePanel(input(bt = bt), TvSourceNav(railKey = TvSourceRailKeys.BT, drill = TvSourceDrill.Filter(TvSourceFilter.Source)), strings)
+        assertEquals(listOf("opt:all", "opt:dmhy", "opt:mikan"), drilled.right.rows.filter { it.id.startsWith("opt:") }.map { it.id })
+        assertEquals(TvSourceAction.PickFilter(TvSourceFilter.Source, "mikan"), drilled.right.rows.single { it.id == "opt:mikan" }.action)
+        // 筛选弹窗与表头「筛选」的右端只有分辨率 / 字幕
+        assertTrue(content.filter.none { it.id.contains("Alliance") || it.id.contains("Source") }, content.filter.map { it.id }.toString())
+        assertFalse(content.rail.first { it.id == TvSourceRailKeys.FILTER }.trailing.contains("喵萌奶茶屋"))
     }
 
     @Test
