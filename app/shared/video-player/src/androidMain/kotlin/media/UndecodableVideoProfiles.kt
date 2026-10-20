@@ -29,6 +29,7 @@ import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.concurrent.thread
 import android.media.MediaCodecInfo as PlatformCodecInfo
 
 /**
@@ -157,7 +158,8 @@ internal class UndecodableProfileGuardingVideoRenderer(
             eventListener: VideoRendererEventListener,
             allowedVideoJoiningTimeMs: Long,
         ) {
-            logDeviceDecodersOnce()
+            // 列一遍设备解码器 (MediaCodecList) 要几十毫秒, 而建播放器在主线程上
+            thread(name = "ani-decoder-log", isDaemon = true) { logDeviceDecodersOnce() }
             val index = out.indexOfFirst { it.javaClass == MediaCodecVideoRenderer::class.java }
             if (index < 0) return
             out[index] = UndecodableProfileGuardingVideoRenderer(
