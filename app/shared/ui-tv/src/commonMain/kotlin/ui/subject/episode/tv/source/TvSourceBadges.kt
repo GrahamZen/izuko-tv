@@ -75,7 +75,7 @@ internal fun tvSourceBadgesOf(media: Media): List<TvSourceBadge> = tvSourceBadge
 
 /**
  * @param decodesDolbyVision 这台设备有没有杜比视界解码器. 没有时 profile 5 (没有 HDR10 底层) 标成 [TvSourceBadge.DolbyVisionUnsupported];
- * profile 8 能当 HDR10 放, 不标. 标题里看不出 profile, 照常标.
+ * profile 7、8 能当 HDR10 放 (7 见播放器的 DolbyVisionBaseLayer), 不标. 标题里看不出 profile, 照常标.
  */
 internal fun tvSourceBadgesOf(
     features: MediaAvFeatures,
