@@ -36,6 +36,9 @@ import kotlin.math.min
  *   ASS 的文件头 (CodecPrivate, 样式里有字体名) 一起转.
  *
  * 外挂字幕文件不经过提取器, 由 [CharsetFixingSubtitleParserFactory] 转编码.
+ *
+ * 另外把视频轨的 DefaultDuration (每帧时长) 换算成帧率写进 Format: media3 只拿它算时间戳, Format 里没有帧率,
+ * 播放页「跟随片源」切刷新率 (ContentFrameRateEffect)、统计层、media3 的无缝刷新率提示都靠它.
  */
 @AndroidxOptIn(UnstableApi::class)
 internal open class SubtitleFixingMkvExtractor(
@@ -79,8 +82,19 @@ internal open class SubtitleFixingMkvExtractor(
         if (id == ID_TRACK_ENTRY) {
             entry?.takeIf { it.zlib || it.text != null }?.let { fixes[it.number] = it }
             entry = null
+            // 读完 TrackEntry 时 media3 建好 Format, 交给输出要等整个 Tracks 读完, 中间补上帧率
+            val track = getCurrentTrack(id)
+            super.endMasterElement(id)
+            fillFrameRate(track)
+            return
         }
         super.endMasterElement(id)
+    }
+
+    private fun fillFrameRate(track: Track) {
+        val format = track.format ?: return
+        if (track.type != C.TRACK_TYPE_VIDEO || format.frameRate > 0f || track.defaultSampleDurationNs <= 0) return
+        track.format = format.buildUpon().setFrameRate(1_000_000_000f / track.defaultSampleDurationNs).build()
     }
 
     override fun binaryElement(id: Int, contentSize: Int, input: ExtractorInput) {
