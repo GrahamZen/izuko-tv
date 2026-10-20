@@ -159,7 +159,7 @@ class BangumiEndpointProvider(
 
     /**
      * 交给浏览器之前把地址换到当前线路上 (见 [webMirrorRoot]): 存下来的线路地址先换回原站, 再按现在的设置换站.
-     * 不是 Bangumi 的地址原样返回.
+     * 不是 Bangumi 的地址原样返回. 交给系统主屏的封面图也用它 (主屏自己下载图, 同样做不了加密直连).
      */
     fun webLink(url: String): String {
         val canonical = canonicalUrl(url)
