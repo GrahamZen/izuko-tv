@@ -26,6 +26,7 @@ import me.him188.ani.android.tv.deleteInstallerLeftovers
 import me.him188.ani.app.domain.mediasource.web.captcha.BackgroundBrowserGate
 import me.him188.ani.app.navigation.AniNavigator
 import me.him188.ani.app.ui.foundation.AniUiBehavior
+import me.him188.ani.app.ui.foundation.PreloadStringResourcesWhenIdle
 import me.him188.ani.app.ui.foundation.tv.TvPageBackgroundTheme
 import me.him188.ani.app.ui.main.TvStartupLogo
 import me.him188.ani.app.ui.main.TvStartupLogoHost
@@ -54,6 +55,7 @@ internal fun InstallFormFactorUi(aniNavigator: AniNavigator, content: @Composabl
         val context = LocalContext.current
         val logoColors = tvStartupLogoColors()
         LaunchedEffect(logoColors) { TvStartupLogoPaletteMirror.write(context, logoColors) }
+        PreloadStringResourcesWhenIdle()
         InstallTvPageVariants(aniNavigator, content)
     }
 
