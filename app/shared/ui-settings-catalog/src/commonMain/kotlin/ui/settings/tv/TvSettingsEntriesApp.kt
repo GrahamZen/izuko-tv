@@ -10,8 +10,8 @@
 package me.him188.ani.app.ui.settings.tv
 
 import androidx.compose.ui.platform.UriHandler
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import me.him188.ani.app.data.models.preference.ProxyConfig
 import me.him188.ani.app.data.network.protocol.ReleaseClass
@@ -44,16 +44,21 @@ import me.him188.ani.app.ui.lang.oauth_bangumi_help_wrong_captcha_content
 import me.him188.ani.app.ui.lang.oauth_bangumi_stage_exchanging
 import me.him188.ani.app.ui.lang.oauth_bangumi_via_ech
 import me.him188.ani.app.ui.lang.oauth_bangumi_via_mirror
+import me.him188.ani.app.ui.lang.profile_pending_hint
 import me.him188.ani.app.ui.lang.search_tv_remote_unavailable
 import me.him188.ani.app.ui.lang.settings_account_choose_profile_on_launch
 import me.him188.ani.app.ui.lang.settings_account_choose_profile_on_launch_description
 import me.him188.ani.app.ui.lang.settings_account_clear_records
 import me.him188.ani.app.ui.lang.settings_account_clear_records_description
+import me.him188.ani.app.ui.lang.settings_account_convert_bangumi
+import me.him188.ani.app.ui.lang.settings_account_convert_bangumi_description
 import me.him188.ani.app.ui.lang.settings_account_convert_local
 import me.him188.ani.app.ui.lang.settings_account_convert_local_description
 import me.him188.ani.app.ui.lang.settings_account_local_description
 import me.him188.ani.app.ui.lang.settings_account_local_title
 import me.him188.ani.app.ui.lang.settings_account_logout
+import me.him188.ani.app.ui.lang.settings_account_pending_local
+import me.him188.ani.app.ui.lang.settings_account_pending_local_value
 import me.him188.ani.app.ui.lang.settings_account_profile_nickname
 import me.him188.ani.app.ui.lang.settings_account_profile_not_set
 import me.him188.ani.app.ui.lang.settings_account_profile_user_id
@@ -90,7 +95,9 @@ import me.him188.ani.app.ui.lang.tv_perf_diag_dialog_hint
 import me.him188.ani.app.ui.lang.tv_perf_diag_latest
 import me.him188.ani.app.ui.lang.tv_perf_diag_none
 import me.him188.ani.app.ui.lang.tv_perf_diag_title
+import me.him188.ani.app.ui.lang.tv_profile_switch
 import me.him188.ani.app.ui.lang.tv_settings_account_bangumi
+import me.him188.ani.app.ui.lang.tv_settings_bangumi_account_header
 import me.him188.ani.app.ui.lang.tv_settings_danmaku_rule_delete_confirm
 import me.him188.ani.app.ui.lang.tv_settings_danmaku_rule_hint
 import me.him188.ani.app.ui.lang.tv_settings_danmaku_rules_add
@@ -117,7 +124,9 @@ import me.him188.ani.app.ui.lang.tv_settings_login_relay_unsupported
 import me.him188.ani.app.ui.lang.tv_settings_login_success
 import me.him188.ani.app.ui.lang.tv_settings_on_phone
 import me.him188.ani.app.ui.lang.tv_settings_paragraphs
+import me.him188.ani.app.ui.lang.tv_settings_profile_header
 import me.him188.ani.app.ui.lang.tv_settings_qr_preparing
+import me.him188.ani.app.ui.lang.tv_settings_switch_profile_description
 import me.him188.ani.app.ui.lang.tv_settings_update_download_failed
 import me.him188.ani.app.ui.lang.tv_settings_update_downloaded
 import me.him188.ani.app.ui.lang.tv_settings_update_downloading
@@ -171,26 +180,65 @@ internal data class TvLogShare(val state: LogLanShareState?)
 // ---- 账号 ----
 
 /**
- * 账号: 「我的反馈」(主页点头像就到这一页, 见 feedbackItems)、你是谁、退出登录; 本地用户可以清除收藏记录. 多用户的增删改在手机控制台里.
- * 没登录 (或登录失效) 时这里就是登录页: 扫码登录 (手机扫码授权, 经 Worker 跳回电视)、在电视上登录、注册与登录的常见问题.
+ * 账号, 从上到下: 用户 (切换用户、改成本地 / Bangumi 用户这些, 放最前面免得被下面的长列表挤到看不到) →
+ * Bangumi 登录 (没登录或登录失效时是登录入口: 扫码登录、在电视上登录; 登录着是你是谁、退出登录) → 我的反馈 (主页点头像就到这一页,
+ * 见 feedbackItems) → 注册与登录的常见问题 (没登录时, 在最下面). 多用户的增删改在选人页与手机控制台里.
  */
 internal fun TvSettingsItemsBuilder.accountItems() {
     val account = TvAppSettingKeys.account
     val keys = listOf(account)
     fun TvSettingsValues.isLocal() = this[account]?.selfInfo?.isLocalProfile == true
-    loginItems()
-    feedbackItems(showHeader = { it.needsLogin() })
-    action(
-        Lang.settings_account_profile_nickname, keys = keys,
-        visible = { !it.needsLogin() },
-        value = { v ->
-            v[account]?.selfInfo?.selfInfo?.nickname?.takeIf { it.isNotBlank() }?.let { tvText(it) }
-                ?: tvText(Lang.settings_account_profile_not_set)
-        },
-    ) { emptyList() }
+    fun TvSettingsValues.nickname() = this[account]?.selfInfo?.selfInfo?.nickname?.takeIf { it.isNotBlank() }?.let { tvText(it) }
+        ?: tvText(Lang.settings_account_profile_not_set)
+
+    // ---- 用户 ----
+    header(Lang.tv_settings_profile_header, visible = { it[account]?.canSwitchProfile == true })
+    // 打开选人页 (同主页头像浮出的「切换用户」); 平板模式不给
+    run(
+        Lang.tv_profile_switch, Lang.tv_settings_switch_profile_description, keys = keys + TvSettingKeys.platform + TvSettingKeys.touchPage,
+        visible = { it[account]?.canSwitchProfile == true && it[TvSettingKeys.platform]?.showProfilePicker != null && it[TvSettingKeys.touchPage] != true },
+    ) { env -> env.deps.platform.showProfilePicker?.invoke() }
+    // 本地用户的名字 (个人资料用名字当昵称)
+    action(Lang.settings_account_profile_nickname, keys = keys, visible = { it.isLocal() }, value = { it.nickname() }) { emptyList() }
     action(
         Lang.settings_account_local_title, Lang.settings_account_local_description, keys = keys,
         visible = { it.isLocal() },
+    ) { emptyList() }
+    run(
+        Lang.settings_account_convert_bangumi, Lang.settings_account_convert_bangumi_description, keys = keys,
+        visible = { it.isLocal() && it[account]?.canConvertToBangumi == true },
+    ) { env -> env.show(TvSettingsOverlay.Dialog { dismiss -> TvConvertToBangumiDialog(env.deps.profile, dismiss) }) }
+    run(
+        Lang.settings_account_convert_local, Lang.settings_account_convert_local_description, keys = keys,
+        visible = { !it.isLocal() && it[account]?.canConvertToLocal == true },
+    ) { env -> env.show(TvSettingsOverlay.Dialog { dismiss -> TvConvertToLocalDialog(env.deps.profile, dismiss) }) }
+    // 本地用户改成 Bangumi 用户后还没登录: 之前的本地收藏还在, 登录后再选合并还是删除
+    action(
+        Lang.settings_account_pending_local, keys = keys,
+        value = { v -> tvText(Lang.settings_account_pending_local_value, v[account]?.pendingLocalCollections ?: 0) },
+        details = { v -> tvText(Lang.profile_pending_hint, v[account]?.pendingLocalCollections ?: 0) },
+        visible = { (it[account]?.pendingLocalCollections ?: 0) > 0 },
+    ) { emptyList() }
+    run(
+        Lang.settings_account_clear_records, Lang.settings_account_clear_records_description, keys = keys,
+        visible = { it.isLocal() },
+    ) { env -> env.show(TvSettingsOverlay.Dialog { dismiss -> TvClearRecordsDialog(env.deps.profile, dismiss) }) }
+    // 整台电视一份, 不跟着当前用户; 两个以上用户时才有. 触屏版不给多用户的设置
+    toggleOf(
+        keys + TvSettingKeys.touchPage, Lang.settings_account_choose_profile_on_launch,
+        description = { tvText(Lang.settings_account_choose_profile_on_launch_description) },
+        visible = { it[account]?.chooseProfileOnLaunch != null && it[TvSettingKeys.touchPage] != true },
+        read = { it[account]?.chooseProfileOnLaunch == true },
+        write = { on -> listOf(TvSettingsEdit.Run { env -> env.deps.profile.setChooseProfileOnLaunch(on) }) },
+    )
+
+    // ---- Bangumi 登录 ----
+    loginItems()
+    header(Lang.tv_settings_bangumi_account_header, visible = { !it.isLocal() && !it.needsLogin() })
+    action(
+        Lang.settings_account_profile_nickname, keys = keys,
+        visible = { !it.isLocal() && !it.needsLogin() },
+        value = { it.nickname() },
     ) { emptyList() }
     action(
         Lang.tv_settings_account_bangumi, keys = keys,
@@ -208,22 +256,10 @@ internal fun TvSettingsItemsBuilder.accountItems() {
         Lang.settings_account_logout, keys = keys,
         visible = { !it.isLocal() && it[account]?.selfInfo?.isSessionValid == true },
     ) { env -> env.show(TvSettingsOverlay.Dialog { dismiss -> TvLogoutDialog(env.deps.profile, dismiss) }) }
-    run(
-        Lang.settings_account_convert_local, Lang.settings_account_convert_local_description, keys = keys,
-        visible = { !it.isLocal() && it[account]?.canConvertToLocal == true },
-    ) { env -> env.show(TvSettingsOverlay.Dialog { dismiss -> TvConvertToLocalDialog(env.deps.profile, dismiss) }) }
-    run(
-        Lang.settings_account_clear_records, Lang.settings_account_clear_records_description, keys = keys,
-        visible = { it.isLocal() },
-    ) { env -> env.show(TvSettingsOverlay.Dialog { dismiss -> TvClearRecordsDialog(env.deps.profile, dismiss) }) }
-    // 整台电视一份, 不跟着当前用户; 两个以上用户时才有. 触屏版不给多用户的设置
-    toggleOf(
-        keys + TvSettingKeys.touchPage, Lang.settings_account_choose_profile_on_launch,
-        description = { tvText(Lang.settings_account_choose_profile_on_launch_description) },
-        visible = { it[account]?.chooseProfileOnLaunch != null && it[TvSettingKeys.touchPage] != true },
-        read = { it[account]?.chooseProfileOnLaunch == true },
-        write = { on -> listOf(TvSettingsEdit.Run { env -> env.deps.profile.setChooseProfileOnLaunch(on) }) },
-    )
+
+    // ---- 反馈, 登录的常见问题 (最下面) ----
+    feedbackItems(showHeader = { true })
+    loginHelpItems()
 }
 
 /** 是 Bangumi 用户 (不是本地用户) 而且没登录 / 登录失效了. */
@@ -235,7 +271,7 @@ private fun TvSettingsValues.needsLogin(): Boolean {
 /** [config] 为 null = 没用代理. */
 internal data class TvEffectiveProxy(val config: ProxyConfig?)
 
-/** 登录 Bangumi (没登录时出现在账号那一类的最前面). */
+/** 登录 Bangumi (没登录时, 在账号那一类「用户」那几行下面). */
 private fun TvSettingsItemsBuilder.loginItems() {
     val account = TvAppSettingKeys.account
     val oauth = TvAppSettingKeys.oauth
@@ -277,6 +313,11 @@ private fun TvSettingsItemsBuilder.loginItems() {
         manager.resetIfFinished()
         manager.startInAppBrowser()
     }
+}
+
+/** 注册与登录的常见问题 (没登录时, 在账号页最下面). */
+private fun TvSettingsItemsBuilder.loginHelpItems() {
+    val keys = listOf(TvAppSettingKeys.account)
     header(Lang.oauth_bangumi_help_title, visible = { it.needsLogin() })
     for ((question, answer) in LOGIN_HELP) {
         action(question, answer, keys = keys, visible = { it.needsLogin() }) { emptyList() }

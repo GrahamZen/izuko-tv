@@ -23,6 +23,7 @@ import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.tv_perf_diag_checking
 import me.him188.ani.app.ui.lang.tv_perf_diag_recording
 import me.him188.ani.app.ui.onboarding.TvOnboardingGate
+import me.him188.ani.app.ui.profile.TvUserProfilePicker
 import me.him188.ani.app.ui.remote.TvBangumiRelayLogin
 import me.him188.ani.app.ui.remote.TvRemoteControl
 import me.him188.ani.app.ui.whatsnew.TvWhatsNewSettingsPage
@@ -64,6 +65,8 @@ internal object TvSettingsTvPlatform : TvSettingsPlatform {
 
     override val whatsNewPage: @Composable (dismiss: () -> Unit) -> Unit
         get() = { dismiss -> TvWhatsNewSettingsPage(onDismiss = dismiss) }
+
+    override val showProfilePicker: () -> Unit get() = { TvUserProfilePicker.show() }
 
     override val interfaceMode: TvInterfaceModeSwitch = object : TvInterfaceModeSwitch {
         override fun isTvMode(context: Context): Boolean = TvInterfaceModeGate.isTvMode(context)

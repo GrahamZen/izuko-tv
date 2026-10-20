@@ -106,7 +106,11 @@ class LocalProfileImporter(
 
     suspend fun preview(source: UserProfile): Preview {
         require(source.isLocal) { "Only local profiles can be imported, got ${source.id}" }
-        val entries = readEntries(source)
+        return preview(source, readEntries(source))
+    }
+
+    /** 按给定的收藏预览 (本地用户改成 Bangumi 用户时留下的那些, 见 [BangumiProfileConversion]); [source] 是这些收藏原来的主人. */
+    suspend fun preview(source: UserProfile, entries: List<Entry>): Preview {
         val collected = fetchBangumiCollectedIds()
         val (already, toAdd) = entries.partition { it.subjectId in collected }
         logger.info { "Import preview of user profile ${source.id}: ${toAdd.size} to add, ${already.size} already collected" }

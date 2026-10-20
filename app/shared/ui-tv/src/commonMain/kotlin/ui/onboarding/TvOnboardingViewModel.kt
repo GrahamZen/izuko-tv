@@ -319,7 +319,7 @@ class TvOnboardingLoginViewModel(assumeViaMirror: Boolean) : AbstractViewModel()
         backgroundScope.launch { settingsRepository.themeSettings.update(transform) }
     }
 
-    /** 能选「不登录，收藏存在这台电视上」: 1 号还是 Bangumi 用户, 这台设备能重启应用 (见 [LocalProfileConversion]). */
+    /** 能选「不登录，收藏存在这台电视上」: 当前还是 Bangumi 用户, 这台设备能重启应用 (见 [LocalProfileConversion]). */
     val localOffered: Boolean get() = localProfileConversion.isOffered
 
     /** 之前登录留下的收藏记录 (从老版本升级上来、登录过又退出的有). */

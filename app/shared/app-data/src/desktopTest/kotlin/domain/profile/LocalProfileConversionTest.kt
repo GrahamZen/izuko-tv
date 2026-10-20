@@ -23,6 +23,10 @@ import me.him188.ani.datasources.api.topic.UnifiedCollectionType.DOING
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType.DONE
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType.NOT_COLLECTED
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType.WISH
+import me.him188.ani.utils.io.inSystem
+import me.him188.ani.utils.io.toKtPath
+import java.io.File
+import kotlin.io.path.createTempDirectory
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -33,7 +37,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * 没登录的 1 号改成本地用户 (LocalProfileConversion) 与自己的收藏记录 (SelfCollectionRecords):
+ * Bangumi 用户改成本地用户 (LocalProfileConversion) 与自己的收藏记录 (SelfCollectionRecords):
  * 之前登录留下的记录由人决定留不留, 播放进度都留着; 登录着的、已经是本地的、不是 1 号的不改.
  */
 class LocalProfileConversionTest {
@@ -51,23 +55,39 @@ class LocalProfileConversionTest {
     private val restarter = CountingRestarter()
     private val manager = UserProfileManager(registry, restarter, deleteFiles = {})
     private val records = SelfCollectionRecords(database)
+    private val dir = createTempDirectory("local-conversion").toFile()
+    private val pending = PendingLocalCollections(File(dir, PendingLocalCollections.FILE_NAME).toKtPath().inSystem)
 
     private var current = { registry.find(UserProfile.PRIMARY_ID)!! }
-    private var loggedIn = false
     private var sessionCleared = 0
+    private var loggedIn = false
+
+    /** 取账号里的收藏: 依次记下发生了什么 (取收藏 / 退出登录), 看先后. */
+    private val events = mutableListOf<String>()
+    private var downloadFails = false
 
     private val conversion
         get() = LocalProfileConversion(
             manager,
             records,
+            pending,
             currentProfile = current,
             isLoggedIn = { loggedIn },
-            clearSession = { sessionCleared++ },
+            downloadAccountCollections = { onProgress ->
+                events += "download"
+                if (downloadFails) error("network")
+                onProgress(AccountCollectionsDownload.Progress(1, 1))
+            },
+            clearSession = {
+                events += "logout"
+                sessionCleared++
+            },
         )
 
     @AfterTest
     fun cleanup() {
         database.close()
+        dir.deleteRecursively()
     }
 
     private fun episode(subjectId: Int, episodeId: Int, type: UnifiedCollectionType) = EpisodeCollectionEntity(
@@ -141,34 +161,62 @@ class LocalProfileConversionTest {
     }
 
     @Test
-    fun `登录着的不改`() = realTimeTest {
-        leaveRecords()
-        loggedIn = true
-
+    fun `别的 Bangumi 用户也能改 已经是本地用户的不能`() = realTimeTest {
+        // 改的是进程的当前用户 (UserProfileManager 按 UserProfiles.currentId), 测试里只能是 1 号; 这里只看给不给
+        current = { UserProfile(id = 2, name = "Bob") }
         assertTrue(conversion.isOffered)
-        assertFailsWith<IllegalStateException> { conversion.convert(clearRecords = true, defaultName = "用户 1") }
 
-        assertFalse(registry.find(UserProfile.PRIMARY_ID)!!.isLocal)
-        assertEquals(SelfCollectionRecords.Counts(2, 2), records.counts())
-        assertEquals(0, sessionCleared)
+        current = { UserProfile(UserProfile.PRIMARY_ID, kind = UserProfileKind.LOCAL) }
+        assertFalse(conversion.isOffered)
+        assertFailsWith<IllegalStateException> { conversion.convert(clearRecords = false, defaultName = "用户 1") }
         assertEquals(0, restarter.restarts)
     }
 
     @Test
-    fun `只给还是 Bangumi 用户的 1 号`() = realTimeTest {
-        current = { UserProfile(id = 2) }
-        assertFalse(conversion.isOffered)
+    fun `登录着留下记录 先取账号里的收藏再退出登录`() = realTimeTest {
+        leaveRecords()
+        loggedIn = true
+        val progress = mutableListOf<AccountCollectionsDownload.Progress>()
+
+        conversion.convert(clearRecords = false, defaultName = "用户 1") { progress += it }
+
+        assertEquals(listOf("download", "logout"), events)
+        assertEquals(listOf(AccountCollectionsDownload.Progress(1, 1)), progress)
+        assertTrue(registry.find(UserProfile.PRIMARY_ID)!!.isLocal)
+        assertEquals(1, restarter.restarts)
+    }
+
+    @Test
+    fun `账号里的收藏没取全 什么都不改 也不退出登录`() = realTimeTest {
+        leaveRecords()
+        loggedIn = true
+        downloadFails = true
+
         assertFailsWith<IllegalStateException> { conversion.convert(clearRecords = false, defaultName = "用户 1") }
 
-        current = { UserProfile(UserProfile.PRIMARY_ID, kind = UserProfileKind.LOCAL) }
-        assertFalse(conversion.isOffered)
+        assertEquals(listOf("download"), events)
+        assertFalse(registry.find(UserProfile.PRIMARY_ID)!!.isLocal)
+        assertEquals(SelfCollectionRecords.Counts(2, 2), records.counts())
         assertEquals(0, restarter.restarts)
+    }
+
+    @Test
+    fun `选了清除或者没登录 不取账号里的收藏`() = realTimeTest {
+        loggedIn = true
+        conversion.convert(clearRecords = true, defaultName = "用户 1")
+        assertEquals(listOf("logout"), events)
+
+        events.clear()
+        registry.update(UserProfile.PRIMARY_ID) { it.copy(kind = UserProfileKind.BANGUMI) }
+        loggedIn = false
+        conversion.convert(clearRecords = false, defaultName = "用户 1")
+        assertEquals(listOf("logout"), events)
     }
 
     @Test
     fun `不能重启应用的平台上不给`() {
         val unsupported = UserProfileManager(registry, CountingRestarter(isSupported = false), deleteFiles = {})
-        assertFalse(LocalProfileConversion(unsupported, records, current, isLoggedIn = { false }, clearSession = {}).isOffered)
+        assertFalse(LocalProfileConversion(unsupported, records, pending, current, clearSession = {}).isOffered)
     }
 
     private companion object {
