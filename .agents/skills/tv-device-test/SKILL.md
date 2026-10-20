@@ -103,9 +103,30 @@ SERIAL=10.0.0.250:5555 $D/hid.sh keys "D:600 HOLD_D:1200 OK:800 BACK:800"
   debug switch.
 - `screenrecord` produces no frames while the screen is still and starts about 1 s after a log marker; use `ffprobe -show_entries frame=pts_time`.
 
+### Perfetto and the app's own sections
+
+- `scripts/perfetto.sh <out> [seconds]` captures scheduling, thread states, atrace and the app's `android.os.Trace` sections
+  (config `perfetto_app.txt`, passed on stdin). Start it in the background, act (console play, keys), then `wait`.
+- The app marks its expensive pieces as `Izuko:` sections, also in release builds (Compose's own composition tracing is stripped there):
+  `Izuko:EpisodePage`, `Izuko:Player/*` (danmaku, video, loading layer, controls, details, source panel), `Izuko:Controls/*` (each row),
+  `Izuko:CreatePlayer`. A section appears on every recomposition of its caller, so counting them shows how often a part recomposes.
+- Analyse with trace_processor (`uv run --with perfetto python -I <script> <trace>`): `pf_entry.py` (main-thread states in a window:
+  running / runnable / sleeping, who holds the CPU while the main thread waits, longest slices, `Izuko:` sections and the time each
+  spent sleeping), `pf_frames.py` (slice tree of long frames), `pf_render.py` (what RenderThread did while the main thread slept in
+  `draw`: `shader_compile` = first draw of a UI after install / update, texture uploads, buffer waits).
+- Check `select * from stats where name = 'ftrace_cpu_overrun_delta'` before trusting a trace. Keep traces short: the buffer is a ring,
+  a long capture overwrites its start (a key sequence then loses its first keys). Very large per-CPU buffers can fail on the Sony and
+  lose most events.
+- For "which code is the main thread stuck in", the console's 「性能诊断 → 方法采样」 records an ART sampling trace in release builds.
+  It is heavy: under load it stretches durations (a class initializer or a few lines can show as a second), so take durations from
+  Perfetto and only call stacks from the sampling trace.
+
 ## 6. Device pitfalls
 
 Sony
+- The screensaver is a photo app (`com.snapwood.gfolio`) whose activity takes the foreground; scripts that only use the console never
+  count as user activity. It is set to 1 hour (`settings put system screen_off_timeout 3600000`, `secure sleep_timeout 4500000`);
+  still check `mResumedActivity` before measuring.
 - After a force-stop the TV center (`com.mediatek.tv.oneworld.tvcenter`) takes the foreground once, about 30 s later; force-stopping
   the app while it is in front makes the TV switch to its HDMI page. Use `tv_cold_start`.
 - `uiautomator dump` can fail silently and leave the previous XML on /sdcard: delete it first; no `dumped to` means it failed.
