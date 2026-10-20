@@ -703,6 +703,7 @@ fun buildTvSourcePanel(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvS
                     playing = playingInBt,
                     trailing = if (btWorking && input.bt.included.isEmpty()) "" else countWithBest(input.bt.included.size, input.bt.included.map { it.media }),
                     loading = btWorking && input.bt.included.isEmpty(),
+                    badges = tvSourceBestPictureBadges(input.bt.included.map { it.media }),
                 ),
             )
         }
@@ -975,6 +976,7 @@ private fun groupRailRow(group: TvWebGroup, playing: Boolean, input: TvSourcePan
         playing = playing,
         trailing = if (loading) "" else countWithBest(withResults, files),
         loading = loading,
+        badges = tvSourceBestPictureBadges(files),
     )
 }
 
@@ -1038,6 +1040,7 @@ private fun webRailRow(source: WebSource, playing: Boolean, input: TvSourcePanel
     val nowMillis = input.nowMillis
     val loadingEmpty = source.isLoading && source.channels.isEmpty()
     val driveLogin = input.driveLoginOf(source.instanceId)
+    var badges = emptyList<TvSourceBadge>()
     val (trailing, accent) = when {
         driveLogin != null -> strings.driveNotLoggedIn to TvSourceAccent.Attention
         source.isCaptchaRequired -> strings.captchaRequired to TvSourceAccent.Attention
@@ -1048,7 +1051,10 @@ private fun webRailRow(source: WebSource, playing: Boolean, input: TvSourcePanel
         source.isRateLimited -> strings.rateLimited.format(rateLimitSeconds(source.rateLimitedUntilMillis, nowMillis)) to TvSourceAccent.None
         loadingEmpty -> "" to TvSourceAccent.None
         else -> webFilesOf(source, input, strings)
-            ?.let { countWithBest(partitionByFilters(it.matched, input).first.size, it.matched) to TvSourceAccent.None }
+            ?.let {
+                badges = tvSourceBestPictureBadges(it.matched)
+                countWithBest(partitionByFilters(it.matched, input).first.size, it.matched) to TvSourceAccent.None
+            }
             ?: (source.channels.size.toString() to TvSourceAccent.None)
     }
     return TvSourceRow(
@@ -1067,6 +1073,7 @@ private fun webRailRow(source: WebSource, playing: Boolean, input: TvSourcePanel
         // 没登录网盘的胶囊: 确定直接弹扫码登录
         action = driveLogin?.driveId?.let { TvSourceAction.LoginDrive(it) },
         details = webSourceDetails(source, input, strings),
+        badges = badges,
     )
 }
 
@@ -1296,13 +1303,13 @@ private fun webFileRow(source: WebSource, media: Media, other: TvWebOther?, inpu
         val subtitles = media.properties.subtitleLanguageIds.map { renderSubtitleLanguage(it, strings.details) }
         if (subtitles.isNotEmpty()) add(subtitles.joinToString("/"))
     }.joinToString(" · ")
+    val badges = tvSourceBadgesOf(media)
     return TvSourceRow(
         id = "file:" + media.mediaId,
         style = TvSourceRowStyle.File,
         title = media.originalTitle,
         meta = meta,
         metaAccent = if (other?.excluded == true) TvSourceAccent.Error else TvSourceAccent.None,
-    val badges = tvSourceBadgesOf(media)
         icon = if (playing) TvSourceRowIcon.Playing else TvSourceRowIcon.None,
         selected = playing,
         playing = playing,
@@ -1310,21 +1317,21 @@ private fun webFileRow(source: WebSource, media: Media, other: TvWebOther?, inpu
         trailing = if (playing) strings.playing else "",
         accent = if (playing) TvSourceAccent.Attention else TvSourceAccent.None,
         action = TvSourceAction.Play(media),
+        badges = badges,
         details = TvSourceDetails(
             title = media.originalTitle,
             subtitle = listOfNotNull(source.name, line).joinToString(" · "),
             fields = mediaFields(media, strings, sourceNames = listOf(source.name)),
             note = reason.orEmpty(),
             primary = TvSourceButton(strings.pick, TvSourceAction.Play(media), TvSourceRowIcon.Playing),
-        badges = badges,
             secondary = listOfNotNull(downloadButton(media, input, strings)),
+            badges = badges,
         ),
     )
 }
 
 /**
  * 在线源里没列成线路的一条结果 (同旧版选源「详细模式」能看到的): 条目名不完全一致的、被排除的 (属于别的集的不算).
-            badges = badges,
  * [reason] 是给人看的原因, [excluded] = 选择器排除了它 (不只是名字对不上).
  */
 @Immutable
@@ -1586,6 +1593,7 @@ private fun downloadRow(item: TvSourceCacheItem, input: TvSourcePanelInput, stri
         add(source)
     }.joinToString(" · ")
     val id = "dl:" + item.cacheId
+    val badges = tvSourceBadgesOf(origin)
     return TvSourceRow(
         id = id,
         style = TvSourceRowStyle.Resource,
@@ -1598,12 +1606,13 @@ private fun downloadRow(item: TvSourceCacheItem, input: TvSourcePanelInput, stri
         trailing = if (selected) strings.playing else "",
         accent = if (selected) TvSourceAccent.Attention else TvSourceAccent.None,
         action = playable?.let { TvSourceAction.Play(it) } ?: TvSourceAction.ShowDetails(id, inRail = false, railKey = TvSourceRailKeys.DOWNLOADS),
+        badges = badges,
         details = TvSourceDetails(
             title = origin.originalTitle,
             subtitle = status,
-    val badges = tvSourceBadgesOf(origin)
             fields = mediaFields(origin, strings, sourceNames = listOf(source)),
             primary = playable?.let { TvSourceButton(strings.pick, TvSourceAction.Play(it), TvSourceRowIcon.Playing) },
+            badges = badges,
         ),
     )
 }
@@ -1614,13 +1623,11 @@ private fun btRow(group: TvBtGroup, input: TvSourcePanelInput, strings: TvSource
     val exclusion = group.rows.firstOrNull { it.exclusion != null }?.exclusion?.takeIf { group.rows.all { r -> r.isExcluded } }
     // 一行放不下时尾巴被省略: 短而有用的 (分辨率、大小、合集、来源) 排前面, 字幕语言名字长 (英文界面尤其), 放后面
     val meta = buildList {
-        badges = badges,
         if (row.isCached) add(strings.cached)
         media.properties.resolution.takeIf { it.isNotBlank() }?.let { add(it) }
         formatSize(media.properties.size).takeIf { it.isNotEmpty() }?.let { add(it) }
         if (media.episodeRange?.isSingleEpisode() == false) add(strings.pack)
         val sources = group.sourceIds
-            badges = badges,
         if (sources.size > 1) {
             add(strings.sourcesCount.format(sources.size))
         } else if (media.kind != MediaSourceKind.LocalCache) {
@@ -1637,6 +1644,7 @@ private fun btRow(group: TvBtGroup, input: TvSourcePanelInput, strings: TvSource
     // 筛选的取值这一集能放的里没有 (筛 4K、BT 只有 1080P) 时不筛, 照样列在主列表, 不合的仍标「低于偏好」(见 TvSourcePanelFilters)
     val reason = exclusion?.let { strings.exclusion(it) }
         ?: strings.reasonBelowPreference.takeUnless { row.isCached || input.matchesFilters(media) }
+    val badges = tvSourceBadgesOf(media)
     return TvSourceRow(
         id = id,
         style = TvSourceRowStyle.Resource,
@@ -1652,10 +1660,10 @@ private fun btRow(group: TvBtGroup, input: TvSourcePanelInput, strings: TvSource
         playing = selected,
         dimmed = exclusion != null,
         trailing = if (selected) strings.playing else "",
-    val badges = tvSourceBadgesOf(media)
         accent = if (selected) TvSourceAccent.Attention else TvSourceAccent.None,
         // 「缓存未完成」的资源选不了 (播放器拿不到完整文件), 确定也是开详情
         action = if (cacheNotReady) TvSourceAction.ShowDetails(id, inRail = false, railKey = TvSourceRailKeys.BT) else TvSourceAction.Play(media),
+        badges = badges,
         details = TvSourceDetails(
             title = media.originalTitle,
             subtitle = if (row.isCached) strings.cached else "",
@@ -1668,15 +1676,14 @@ private fun btRow(group: TvBtGroup, input: TvSourcePanelInput, strings: TvSource
                     add(TvSourceButton(strings.menuExclude.format(alliance), TvSourceAction.ExcludeAlliance(alliance), TvSourceRowIcon.Block))
                 }
             },
+            badges = badges,
         ),
     )
 }
-        badges = badges,
 
 private fun sourceName(mediaSourceId: String, sources: MediaSourceResultListPresentation): String =
     sources.list.firstOrNull { it.mediaSourceId == mediaSourceId }?.info?.displayName ?: mediaSourceId
 
-private fun failedPane(failed: List<MediaSourceResultPresentation>, strings: TvSourceStrings): TvSourceRight = TvSourceRight(
 /** BT 那一栏顶上的字幕组 / 来源胶囊: 选了的写在后面, 确定进去选 ([filterOptionsPane]). */
 private fun filterPill(filter: TvSourceFilter, label: String, value: String?) = TvSourceRow(
     id = "pill:" + filter.name,
@@ -1748,6 +1755,7 @@ private fun sourceStatus(source: MediaSourceResultPresentation, count: Int, stri
     else -> count.toString()
 }
 
+private fun failedPane(failed: List<MediaSourceResultPresentation>, strings: TvSourceStrings): TvSourceRight = TvSourceRight(
     key = TvSourceRailKeys.FAILED,
     rows = failed.map { source ->
         // 站点拉黑了这个网络: 写明几点前不再查 (重试也只是直接失败), 不写「按确定重试」
@@ -1755,7 +1763,6 @@ private fun sourceStatus(source: MediaSourceResultPresentation, count: Int, stri
             ?.let { strings.siteIpBlocked.format(formatClock(it.untilMillis, strings.timeZone)) }
         TvSourceRow(
             id = "failed:" + source.instanceId,
-            badges = badges,
             style = TvSourceRowStyle.Line,
             title = source.info.displayName,
             meta = ipBlocked ?: strings.retryHint,
