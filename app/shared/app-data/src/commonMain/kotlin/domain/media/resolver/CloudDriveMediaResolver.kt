@@ -57,8 +57,9 @@ class CloudDriveMediaResolver(
             logger.warn { "Cloud drive ${drive.driveId} login is required to play ${media.mediaId}: ${e.message}" }
             throw MediaResolutionException(ResolutionFailures.ENGINE_ERROR, e)
         } catch (e: CloudDriveShareUnavailableException) {
+            // 带着原因交出去: 界面上写「分享已失效」/ 网盘的说法 (见 cloudDriveFailure), 不是笼统的「没找到文件」
             logger.warn { "Share of ${media.mediaId} is unavailable: ${e.message}" }
-            throw MediaResolutionException(ResolutionFailures.NO_MATCHING_RESOURCE, e)
+            throw MediaResolutionException(ResolutionFailures.ENGINE_ERROR, e)
         } catch (e: IOException) {
             logger.warn { "Failed to resolve ${drive.driveId} file $target: $e" }
             throw MediaResolutionException(ResolutionFailures.NETWORK_ERROR, e)
