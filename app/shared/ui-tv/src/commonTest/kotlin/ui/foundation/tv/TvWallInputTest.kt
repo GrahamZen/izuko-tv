@@ -70,6 +70,32 @@ class TvWallInputTest {
     }
 
     @Test
+    fun `a touch tap on the wall enters hero and the more card or a page without hero confirms at once`() {
+        assertEquals(TvWallTouchTap.FocusAndConfirm, tap(isFocused = false))
+        assertEquals(TvWallTouchTap.FocusAndConfirm, tap(isFocused = true))
+        assertEquals(TvWallTouchTap.Confirm, tap(isMore = true))
+        assertEquals(TvWallTouchTap.Confirm, tap(heroEnabled = false))
+        // 卡片墙上不看行: 没有聚焦行
+        assertEquals(TvWallTouchTap.FocusAndConfirm, tap(aboveFocusedRow = true))
+    }
+
+    @Test
+    fun `a touch tap in hero switches focus first and rows above the focused one open it`() {
+        assertEquals(TvWallTouchTap.FocusOnly, tap(heroActive = true, isFocused = false))
+        assertEquals(TvWallTouchTap.FocusOnly, tap(heroActive = true, isMore = true))
+        assertEquals(TvWallTouchTap.Confirm, tap(heroActive = true, isFocused = true))
+        assertEquals(TvWallTouchTap.OpenFocused, tap(heroActive = true, aboveFocusedRow = true))
+    }
+
+    private fun tap(
+        isMore: Boolean = false,
+        heroEnabled: Boolean = true,
+        heroActive: Boolean = false,
+        isFocused: Boolean = false,
+        aboveFocusedRow: Boolean = false,
+    ) = tvWallTouchTap(isMore, heroEnabled, heroActive, isFocused, aboveFocusedRow)
+
+    @Test
     fun `swipe is claimed only when horizontal movement passes the slop first`() {
         assertEquals(TvWallSwipeClaim.Undecided, tvWallSwipeClaim(dx = 5f, dy = 2f, slop = 8f))
         assertEquals(TvWallSwipeClaim.Claim, tvWallSwipeClaim(dx = -12f, dy = 4f, slop = 8f))

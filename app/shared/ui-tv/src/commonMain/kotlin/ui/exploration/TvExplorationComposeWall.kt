@@ -102,6 +102,7 @@ import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_HERO_SPLIT_BAND
 import me.him188.ani.app.ui.foundation.tv.TvHeroButton
 import me.him188.ani.app.ui.foundation.tv.TvPageBackdropGeometry
 import me.him188.ani.app.ui.foundation.tv.TvWallConfirm
+import me.him188.ani.app.ui.foundation.tv.TvWallTouchTap
 import me.him188.ani.app.ui.foundation.tv.nativeview.TV_HERO_BLUR_DIM_ALPHA
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvExploreSurface
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeExploreItem
@@ -118,6 +119,7 @@ import me.him188.ani.app.ui.foundation.tv.tvPosterWallSecondaryLabelAlpha
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallToneGate
 import me.him188.ani.app.ui.foundation.tv.tvWallConfirm
 import me.him188.ani.app.ui.foundation.tv.tvWallTapConfirmsWhileFocusing
+import me.him188.ani.app.ui.foundation.tv.tvWallTouchTap
 import me.him188.ani.app.ui.foundation.tv.wall.MenuHolder
 import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_HERO_TEXT_BOTTOM
 import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_HERO_WALL_SUMMARY_LINES
@@ -1120,18 +1122,24 @@ private class TvExploreComposeSurface(
     fun onCardClick(rowKey: String, index: Int, more: Boolean) {
         val key = rowKey to index
         if (touchMode) {
-            // hero 态里点到聚焦行上面那几行 (淡没在 hero 区里, 看不见): 算点 hero 区
-            if (timeline.active && isAboveFocusedRow(rowKey)) {
-                openFocusedCard()
-                return
-            }
-            if (timeline.active && focusedRowKey to focusedCardIndex != key) {
-                requesters[key]?.let { runCatching { it.requestFocus() } }
-                return
-            }
-            if (tvWallTapConfirmsWhileFocusing(more, heroEnabled, timeline.active)) {
-                requesters[key]?.let { runCatching { it.requestFocus() } }
-                takeCardFocus(rowKey, index)
+            val focused = focusedRowKey to focusedCardIndex == key
+            when (tvWallTouchTap(more, heroEnabled, timeline.active, focused, isAboveFocusedRow(rowKey))) {
+                TvWallTouchTap.OpenFocused -> {
+                    openFocusedCard()
+                    return
+                }
+
+                TvWallTouchTap.FocusOnly -> {
+                    requesters[key]?.let { runCatching { it.requestFocus() } }
+                    return
+                }
+
+                TvWallTouchTap.FocusAndConfirm -> {
+                    requesters[key]?.let { runCatching { it.requestFocus() } }
+                    takeCardFocus(rowKey, index)
+                }
+
+                TvWallTouchTap.Confirm -> {}
             }
         }
         // 卡片墙上先切到 hero 态, hero 态里才进详情页 (这时有 hero 背景图, 走放大转场); 没有 hero 态时直接交给页面
