@@ -74,6 +74,25 @@ class BangumiWebLinkTest {
     }
 
     @Test
+    fun `cover image moves to the mirror once requests settle on ECH with origin enabled`() = runTest {
+        // 默认的官方 → 加密直连 → 镜像: 交给系统主屏的封面 (主屏自己下载图) 在落到加密直连后换到镜像图床
+        val provider = BangumiEndpointProvider(
+            settings = flowOf(BangumiEndpointSettings(mode = BangumiEndpointMode.AUTO)),
+            mirrors = flowOf(listOf("bangumi.vip")),
+            scope = backgroundScope,
+            echAvailable = true,
+        ).also { runCurrent() }
+        assertEquals("https://lain.bgm.tv/pic/cover/l/a.jpg", provider.webLink("https://lain.bgm.tv/pic/cover/l/a.jpg"))
+        provider.reportSettled(provider.currentRouting!!, BangumiRoute.Ech)
+        runCurrent()
+        assertEquals("bangumi.vip", provider.webMirrorRoot.value)
+        assertEquals("https://lain.bangumi.vip/pic/cover/l/a.jpg", provider.webLink("https://lain.bgm.tv/pic/cover/l/a.jpg"))
+        provider.reportSettled(provider.currentRouting!!, BangumiRoute.Origin)
+        runCurrent()
+        assertEquals("https://lain.bgm.tv/pic/cover/l/a.jpg", provider.webLink("https://lain.bangumi.vip/pic/cover/l/a.jpg"))
+    }
+
+    @Test
     fun `切换连接方式后立刻按新的来`() = runTest {
         val settings = MutableStateFlow(BangumiEndpointSettings(mode = BangumiEndpointMode.MIRROR))
         val provider = provider(settings)
