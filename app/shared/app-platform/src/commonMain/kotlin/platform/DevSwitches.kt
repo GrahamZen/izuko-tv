@@ -15,8 +15,10 @@ import androidx.compose.runtime.mutableStateOf
  * 开发时临时调试用的开关与数值: 在 [DevSwitches] 里声明, 只在 debug 包 Web 控制台的「设置 → 调试」里列出来,
  * 网页上改了立即生效, 不用去电视设置页一层层找.
  *
- * 用的地方读 [value]. 它是 Compose 的 State: Composable 里读会跟着重组, 别处读拿到当前值. 值只在内存里, 应用重启回到默认;
- * 正式包的网页没有调试区、接口也不收, 读到的永远是默认值 (性能对比包用 `-Pani.devConsole=true` 编, 也有调试区). 用完就删; 要长期留的做成正式设置.
+ * 用的地方读 [value]. 它是 Compose 的 State: Composable 里读会跟着重组, 别处读拿到当前值. 值默认只在内存里, 应用重启回到默认;
+ * 声明成 [persistent] 的存在设备上 (见 [DevSwitchStore]), 重启后还在 —— 进程启动时就要生效的 (冷启动、进页对比) 用它.
+ * 正式包的网页没有调试区、接口也不收, 也不读存下的值, 读到的永远是默认值 (性能对比包用 `-Pani.devConsole=true` 编, 也有调试区).
+ * 用完就删; 要长期留的做成正式设置.
  */
 sealed class DevSwitch<T>(
     /** 网页与接口里的名字, [DevSwitches] 里唯一. */
@@ -24,6 +26,8 @@ sealed class DevSwitch<T>(
     val title: String,
     val default: T,
     val description: String?,
+    /** 改了存到设备上, 重启后还在 (见 [DevSwitches.attachStore]). */
+    val persistent: Boolean,
 ) {
     private val state = mutableStateOf(default)
 
@@ -32,11 +36,23 @@ sealed class DevSwitch<T>(
     /** 网页提交的原文转成值, 不合法返回 null. */
     protected abstract fun parse(raw: String): T?
 
-    /** 按网页提交的原文改值; 不合法时不改, 返回 false. */
+    /** 按网页提交的原文改值; 不合法时不改, 返回 false. [persistent] 的同时存下. */
     fun set(raw: String): Boolean {
         state.value = parse(raw) ?: return false
+        if (persistent) DevSwitches.store?.save(key, raw)
         return true
     }
+
+    /** 读回存下的原文, 不再存一遍. */
+    internal fun restore(raw: String) {
+        parse(raw)?.let { state.value = it }
+    }
+}
+
+/** [DevSwitch.persistent] 开关存在哪 (Android 上是一份 SharedPreferences). 只有带调试区的包才接上. */
+interface DevSwitchStore {
+    fun load(key: String): String?
+    fun save(key: String, raw: String)
 }
 
 /** 开关. 网页提交 "1" / "true" 为开, 其余为关. */
@@ -45,7 +61,8 @@ class ToggleSwitch(
     title: String,
     default: Boolean = false,
     description: String? = null,
-) : DevSwitch<Boolean>(key, title, default, description) {
+    persistent: Boolean = false,
+) : DevSwitch<Boolean>(key, title, default, description, persistent) {
     override fun parse(raw: String): Boolean = raw == "1" || raw.equals("true", ignoreCase = true)
 }
 
@@ -57,7 +74,8 @@ class NumberSwitch(
     val min: Float,
     val max: Float,
     description: String? = null,
-) : DevSwitch<Float>(key, title, default, description) {
+    persistent: Boolean = false,
+) : DevSwitch<Float>(key, title, default, description, persistent) {
     override fun parse(raw: String): Float? = raw.trim().toFloatOrNull()?.takeIf { it in min..max }
 }
 
@@ -68,7 +86,8 @@ class ChoiceSwitch(
     val choices: List<String>,
     default: String = choices.first(),
     description: String? = null,
-) : DevSwitch<String>(key, title, default, description) {
+    persistent: Boolean = false,
+) : DevSwitch<String>(key, title, default, description, persistent) {
     override fun parse(raw: String): String? = raw.takeIf { it in choices }
 }
 
@@ -87,8 +106,25 @@ object DevSwitches {
     /** 声明过的全部开关, 按声明顺序. */
     val all: List<DevSwitch<*>> get() = list
 
-    fun toggle(key: String, title: String, default: Boolean = false, description: String? = null): ToggleSwitch =
-        add(ToggleSwitch(key, title, default, description))
+    /** 持久开关存在哪; 没接上 (正式包) 时持久开关也只在内存里. */
+    var store: DevSwitchStore? = null
+        private set
+
+    /** 接上设备存储, 读回各持久开关存下的值. 进程启动时调一次, 要赶在读开关的代码之前. */
+    fun attachStore(store: DevSwitchStore) {
+        this.store = store
+        for (switch in list) {
+            if (switch.persistent) store.load(switch.key)?.let(switch::restore)
+        }
+    }
+
+    fun toggle(
+        key: String,
+        title: String,
+        default: Boolean = false,
+        description: String? = null,
+        persistent: Boolean = false,
+    ): ToggleSwitch = add(ToggleSwitch(key, title, default, description, persistent))
 
     fun number(
         key: String,
@@ -96,7 +132,8 @@ object DevSwitches {
         default: Float,
         range: ClosedFloatingPointRange<Float>,
         description: String? = null,
-    ): NumberSwitch = add(NumberSwitch(key, title, default, range.start, range.endInclusive, description))
+        persistent: Boolean = false,
+    ): NumberSwitch = add(NumberSwitch(key, title, default, range.start, range.endInclusive, description, persistent))
 
     fun choice(
         key: String,
@@ -104,7 +141,8 @@ object DevSwitches {
         choices: List<String>,
         default: String = choices.first(),
         description: String? = null,
-    ): ChoiceSwitch = add(ChoiceSwitch(key, title, choices, default, description))
+        persistent: Boolean = false,
+    ): ChoiceSwitch = add(ChoiceSwitch(key, title, choices, default, description, persistent))
 
     private fun <S : DevSwitch<*>> add(switch: S): S {
         require(list.none { it.key == switch.key }) { "DevSwitch key 重复: ${switch.key}" }
