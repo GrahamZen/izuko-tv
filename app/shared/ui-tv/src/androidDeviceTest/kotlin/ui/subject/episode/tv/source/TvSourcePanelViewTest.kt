@@ -16,6 +16,7 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.TextView
 import androidx.leanback.widget.HorizontalGridView
 import androidx.recyclerview.widget.RecyclerView
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeTestHost
@@ -1093,6 +1094,27 @@ class TvSourcePanelViewTest {
     }
 
     @Test
+    fun `a resource row draws its badges right before the info`() {
+        val content = btContent(focusId = "bt:0").let { c ->
+            c.copy(right = c.right.copy(rows = c.right.rows.mapIndexed { i, row -> if (i == 1) row.copy(badges = listOf(TvSourceBadge.DolbyVision, TvSourceBadge.DolbyAtmos)) else row }))
+        }
+        showAt(content, "bt:0")
+        fun badgesOf(id: String): TvSourceBadgeView? = (rowView(id) as ViewGroup?)?.let { row ->
+            (0 until row.childCount).map { row.getChildAt(it) }.filterIsInstance<TvSourceBadgeView>().firstOrNull()
+        }
+        host.waitUntil("bt:1 画出两个标签") { (badgesOf("bt:1")?.width ?: 0) > 0 }
+        host.onMain {
+            val badges = badgesOf("bt:1")!!
+            val row = rowView("bt:1") as ViewGroup
+            // 信息是最右边那个字 (没有右端字): 标签紧挨在它左边
+            val meta = (0 until row.childCount).map { row.getChildAt(it) }
+                .filterIsInstance<TextView>().filter { it.visibility == View.VISIBLE }.maxBy { it.right }
+            assertEquals(meta.left - 16, badges.right, "标签在信息左边, 隔 metaGapPx")
+            assertEquals(View.GONE, badgesOf("bt:0")!!.visibility, "没有特性的行不画标签")
+        }
+    }
+
+    @Test
     fun `reopening at a remembered row lands on it`() {
         host.onMain { view.resumeRow = TvSourceFocusPosition(GROUP_A, "web:a2", "line:0") }
         show(groupContent(sourceKey = "web:a2"))
@@ -1442,6 +1464,20 @@ class TvSourcePanelViewTest {
                 focusOutMillis = 0,
                 animated = false,
                 icons = TvSourceRowIcon.entries.associateWith { icon },
+                badge = TvSourceBadgeStyle(
+                    heightPx = 32,
+                    paddingHPx = 10,
+                    gapPx = 8,
+                    metaGapPx = 16,
+                    cornerPx = 6f,
+                    strokePx = 2f,
+                    textSizePx = 20f,
+                    letterSpacingEm = 0f,
+                    pictureTop = Color.YELLOW,
+                    pictureBottom = Color.YELLOW,
+                    pictureText = Color.BLACK,
+                    labels = TvSourceBadge.entries.associateWith { it.name },
+                ),
             )
         }
     }

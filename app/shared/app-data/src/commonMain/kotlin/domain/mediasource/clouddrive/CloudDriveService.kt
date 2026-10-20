@@ -529,7 +529,10 @@ class CloudDriveService internal constructor(
             files.map { file ->
                 val listed = listedShareFiles[shareKey(shareId, file.fid)]?.takeIf { it.shareToken == shareToken }
                 if (listed == null || listed.fileToken == file.shareToken) file
-                else DriveFile(file.fid, file.fileName, file.parentFid, file.dir, file.size, file.updatedAt, file.videoHeight, file.isVideo, listed.fileToken, file.durationSeconds)
+                else DriveFile(
+                    file.fid, file.fileName, file.parentFid, file.dir, file.size, file.updatedAt, file.videoHeight, file.isVideo, listed.fileToken,
+                    file.durationSeconds, file.avFeatures,
+                )
             }
         }
 

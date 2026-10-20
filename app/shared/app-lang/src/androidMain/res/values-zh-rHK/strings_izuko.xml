@@ -501,6 +501,8 @@
     <string name="tv_source_playback_failed">載入失敗</string>
     <string name="tv_source_playback_buffering">緩衝中</string>
     <string name="tv_source_settings">數據源設定</string>
+    <string name="tv_source_badge_dolby_vision">杜比視界</string>
+    <string name="tv_source_badge_dolby_atmos">杜比全景聲</string>
     <string name="tv_source_disabled">已停用</string>
     <string name="tv_source_episode_filter">僅本集</string>
     <string name="tv_source_all_episodes">全部集數</string>
