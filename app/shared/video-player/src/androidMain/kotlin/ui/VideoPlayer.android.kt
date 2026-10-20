@@ -32,7 +32,7 @@ import androidx.media3.common.text.Cue
 import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.CaptionStyleCompat
-import androidx.media3.ui.PlayerView.ControllerVisibilityListener
+import androidx.media3.ui.PlayerView
 import androidx.media3.ui.SubtitleView
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -40,7 +40,6 @@ import kotlinx.coroutines.launch
 import me.him188.ani.app.videoplayer.media.LibassExoPlayerMediampPlayer
 import org.openani.mediamp.MediampPlayer
 import org.openani.mediamp.exoplayer.ExoPlayerMediampPlayer
-import org.openani.mediamp.exoplayer.compose.ExoPlayerMediampPlayerSurface
 
 @OptIn(UnstableApi::class)
 @Composable
@@ -65,11 +64,8 @@ actual fun VideoPlayer(
             var assSubtitles by remember { mutableStateOf<AssSubtitleLayer?>(null) }
             SubtitleObstructionEffect(exoPlayer.impl, subtitles, assSubtitles, libassPlayer?.seekPreviewOrigin)
             SeekPreviewSubtitleHiding(subtitles, libassPlayer?.seekPreviewOnFullScreen)
-            ExoPlayerMediampPlayerSurface(exoPlayer, modifier) {
+            val configure: PlayerView.() -> Unit = {
                 (videoSurfaceView as? SurfaceView)?.let { registerAndroidVideoSurface(player, it) }
-                controllerAutoShow = false
-                useController = false
-                controllerHideOnTouch = false
                 subtitleView?.apply {
                     subtitles = this
                     libassPlayer?.let { assSubtitles = AssSubtitleLayer(this, exoPlayer.impl, it.assHandler) }
@@ -85,14 +81,9 @@ actual fun VideoPlayer(
                         ),
                     )
                 }
-                setControllerVisibilityListener(
-                    ControllerVisibilityListener { visibility ->
-                        if (visibility == View.VISIBLE) {
-                            hideController()
-                        }
-                    },
-                )
             }
+            // PlayerView 用精简布局: 不建用不上的控制栏与缓冲圈 (见 SlimExoPlayerSurface)
+            SlimExoPlayerSurface(exoPlayer, modifier, configure)
         }
     }
 }
