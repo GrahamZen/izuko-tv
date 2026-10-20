@@ -214,15 +214,118 @@ open class TvNativeRowWallView private constructor(
             } else {
                 null
             }
+            list.freeTouchScroll = value
             applyTouchLook()
             onTouchInputChanged(value)
         }
 
     /**
      * 此刻按触屏的规矩走 (同 iPad 的 Compose 海报墙): 触屏设备上最近一次输入是手指 (系统的触摸模式, 按方向键就退出). 手指点卡片按
-     * tvWallTouchTap 判 (按下不动焦点), 卡片墙上不画聚焦效果 (hero 态里照画).
+     * tvWallTouchTap 判 (按下不动焦点), 卡片墙上不画聚焦效果 (hero 态里照画); 列表由手指自由滚, 焦点不带着滚动 —— 卡片墙上焦点停在本视图
+     * 自己身上 (见 [touchPark]), 只有进 hero 态、hero 态里换卡才滚到停位; 退出 hero 态停在原地.
      */
     protected val touchMode: Boolean get() = touchInput && isInTouchMode
+
+    /** 按触屏的规矩把焦点停在了本视图自己身上 (见 [touchPark]). */
+    private var touchParked = false
+
+    /** 焦点此刻按触屏的规矩停放在本视图上 (见 [touchPark]). */
+    protected val touchParkedNow: Boolean get() = touchParked && isFocused
+
+    /** 停放时还在 hero 态: 等 hero 淡完再报给页面 (见 [touchPark]). */
+    private var touchParkReportPending = false
+
+    /**
+     * 按触屏的规矩走时焦点不留在卡上: 停在本视图自己身上 (看不见、不画聚焦; 持焦的卡随手指滚出屏被回收也不丢焦点、不被系统塞给别的卡).
+     * 还在 hero 态就原地退回卡片墙 (hero 背景与文字淡出, 列表不滚回卡片墙的停位); 焦点离开卡片区等 hero 淡完才报给页面 ([onTouchParked]),
+     * 这之前聚焦行留着 (hero 还画着那张卡). 之后按方向键落到屏上离视口中线最近的那一行 (见 [landFromTouchPark]).
+     * 同 iPad 的 Compose 海报墙 (TvExploreComposeSurface.parkFocus).
+     */
+    protected fun touchPark() {
+        if (touchParkedNow && !timeline.active) return
+        cancelPending()
+        list.heldFocus = null
+        touchParked = true
+        if (!isFocused) {
+            descendantFocusability = FOCUS_BEFORE_DESCENDANTS
+            isFocusableInTouchMode = true
+            if (!requestFocus()) unparkFocus()
+        }
+        if (timeline.active) {
+            touchParkReportPending = true
+            exitHeroInPlace()
+        } else {
+            reportTouchParked()
+        }
+    }
+
+    /**
+     * 按触屏的规矩走时从页面外进来、落在卡片墙上 (不在 hero 态): 同 [touchPark], 焦点停在本视图自己身上. 返回 true 时调用方的
+     * onRequestFocusInDescendants 随即返回 false, 由 ViewGroup 接着把焦点给本视图.
+     */
+    protected fun touchParkOnEntry(): Boolean {
+        if (!touchMode || timeline.active) return false
+        cancelPending()
+        list.heldFocus = null
+        touchParked = true
+        descendantFocusability = FOCUS_BEFORE_DESCENDANTS
+        isFocusableInTouchMode = true
+        reportTouchParked()
+        return true
+    }
+
+    private fun reportTouchParked() {
+        touchParkReportPending = false
+        setCardAreaFocus(false)
+        onTouchParked()
+    }
+
+    /** 按触屏的规矩停放了焦点 (见 [touchPark]): 子类 (探索页) 据此回到轮播态. */
+    protected open fun onTouchParked() {}
+
+    /** hero 淡完了: 补报挂着的停放 (见 [touchPark]). */
+    private fun flushTouchParkReport() {
+        if (touchParkReportPending && !timeline.visible) reportTouchParked()
+    }
+
+    /**
+     * 原地退回卡片墙 (按触屏的规矩走时): hero 背景与文字照常淡出, 列表不滚回卡片墙的停位, 只把 hero 态开头几行的整片下推撤掉.
+     * 宾客模式下交给宿主 (宿主同样停在原地).
+     */
+    private fun exitHeroInPlace() {
+        if (!timeline.active) return
+        guest?.let {
+            it.requestHeroActive(false)
+            return
+        }
+        timeline.setActive(false, animated = true)
+        applyTouchLook()
+        TvNativeFocusCues.setSpotlight(this, false, animated = true)
+        rowListener?.onHeroActiveChanged(false)
+        shiftToStop(-1, TvScrollSpring.Far)
+    }
+
+    /**
+     * 按触屏的规矩停放后按了方向键 (回到电视的规矩): 落到屏上离视口中线最近的那一行、上次那一列 (手指横着拖过的行按此刻的行首算);
+     * 离顶部区域更近时交给 [settleTouchAtTop], 一行都没排出来时交给 [focusEntry].
+     */
+    private fun landFromTouchPark() {
+        touchParked = false
+        getLocationInWindow(windowXY)
+        val rowKey = rowNearest(windowXY[1] + metrics.listTopPx + metrics.viewportPx / 2)
+        val items = list.items
+        val first = items.indexOfFirst { it is TvNativeExploreItem.Row }
+        val nearTop = rowKey == null || first >= 0 && list.scrolledPx() < metrics.centeredScroll(items, first) / 2
+        unparkFocus()
+        if (settleTouchAtTop(nearTop)) return
+        if (rowKey == null) {
+            focusEntry()
+            return
+        }
+        list.rowAt(list.indexOfKey(rowKey))?.let { list.rowLeftIndex[rowKey] = it.leftIndex() }
+        holdCardAtColumn(rowKey, focusedColumn)
+        resolvePending(scrollIfMissing = true)
+    }
 
     private val touchModeWatcher = ViewTreeObserver.OnTouchModeChangeListener { applyTouchLook() }
 
@@ -409,6 +512,7 @@ open class TvNativeRowWallView private constructor(
 
         override fun onHeroFrame() {
             applyTouchLook()
+            flushTouchParkReport()
             applyFrame()
             reportTone()
         }
@@ -445,10 +549,15 @@ open class TvNativeRowWallView private constructor(
         list.cardListener = { rowKey -> RowListener(rowKey) }
         list.onBindCard = { rowKey, index -> rowListener?.onBindCard(rowKey, pageIndex(rowKey, index)) }
         list.onItemsMoved = { onListMoved() }
+        list.onRowDragStart = { if (touchMode) touchPark() }
         list.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
                 scrollTracker.onStateChanged(this@TvNativeRowWallView, newState)
-                if (newState == RecyclerView.SCROLL_STATE_DRAGGING) touchDragged = true
+                if (newState == RecyclerView.SCROLL_STATE_DRAGGING) {
+                    touchDragged = true
+                    // 按触屏的规矩走: 手指一拖, 焦点停放 (hero 态里原地退回卡片墙), 列表跟着手指走
+                    if (touchMode) touchPark()
+                }
                 if (newState == RecyclerView.SCROLL_STATE_IDLE) {
                     finishFarJump()
                     if (touchDragged) settleAfterTouch()
@@ -774,6 +883,11 @@ open class TvNativeRowWallView private constructor(
      */
     override fun focusCard(rowKey: String, index: Int, far: Boolean): Boolean {
         onFocusCardRequested()
+        // 按触屏的规矩走时卡片墙上不送焦 (焦点不带着滚动): 停放
+        if (touchMode && !timeline.active) {
+            touchPark()
+            return true
+        }
         // 新的落点请求: 远跳途中排队的确认作废
         farJumpConfirmQueued = false
         clickOnLandingRow = null
@@ -1069,6 +1183,11 @@ open class TvNativeRowWallView private constructor(
      */
     fun setHeroActive(active: Boolean) {
         if (timeline.active == active || active && !heroEnabled) return
+        // 按触屏的规矩走时退出 (页面按返回、点空白处): 停在原地, 焦点停放
+        if (!active && touchMode) {
+            touchPark()
+            return
+        }
         guest?.let {
             it.requestHeroActive(active)
             return
@@ -1093,7 +1212,8 @@ open class TvNativeRowWallView private constructor(
     internal fun onHostHeroChanged(animated: Boolean) {
         applyTouchLook()
         if (animated) {
-            updateStop(heroToggled = true)
+            // 按触屏的规矩走时退出 hero 态停在原地 (见 exitHeroInPlace)
+            if (touchMode && !timeline.active) shiftToStop(-1, TvScrollSpring.Far) else updateStop(heroToggled = true)
         } else {
             val item = focusedRowKey?.let { list.indexOfKey(it) } ?: -1
             if (item >= 0) {
@@ -1107,6 +1227,7 @@ open class TvNativeRowWallView private constructor(
     /** 宾客模式: 宿主的 hero 时间线 / 点开的淡化走了一帧. */
     internal fun onHostHeroFrame() {
         applyTouchLook()
+        flushTouchParkReport()
         applyFrame()
     }
 
@@ -1142,6 +1263,8 @@ open class TvNativeRowWallView private constructor(
      */
     private fun settleAfterTouch() {
         touchDragged = false
+        // 按触屏的规矩走时停在哪是哪 (见 touchMode)
+        if (touchInput) return
         val goal = list.scrolledPx() + tvNativeFlingDistance(context, list.takeTouchFlingVelocity())
         val items = list.items
         val hero = timeline.active
@@ -1192,6 +1315,10 @@ open class TvNativeRowWallView private constructor(
         if (!vertical && !horizontal) return false
         if (farJumpRow != null) {
             landFarJumpNow()
+            return true
+        }
+        if (touchParkedNow) {
+            landFromTouchPark()
             return true
         }
         if (isFocused && descendantFocusability == FOCUS_BEFORE_DESCENDANTS) {
@@ -1321,6 +1448,7 @@ open class TvNativeRowWallView private constructor(
     override fun focusableViewAvailable(v: View?) = Unit
 
     override fun onRequestFocusInDescendants(direction: Int, previouslyFocusedRect: Rect?): Boolean {
+        if (touchParkOnEntry()) return false
         // 有挂着的落点 (换数据时聚焦那一行没了, 持焦的卡随之被拆, 系统从窗口根上重新送焦走到这里): 照原定的落点送, 不改成上次那张
         val pending = pendingRow
         if (pending != null && farJumpRow == null && list.indexOfKey(pending) >= 0) {
@@ -1497,7 +1625,8 @@ open class TvNativeRowWallView private constructor(
         if (fixedAnchor && heroEnabled && !timeline.active && guest == null) {
             // 钉死锚点: 焦点落到卡上就进 hero 态 (按 hero 线滚过去, 见 setHeroActive)
             setHeroActive(true)
-        } else {
+        } else if (!touchMode || timeline.active) {
+            // 按触屏的规矩走时卡片墙上焦点不带着滚动 (见 touchMode)
             updateStop(heroToggled = false)
         }
         applyFrame()
@@ -1571,7 +1700,9 @@ open class TvNativeRowWallView private constructor(
 
     override fun requestChildFocus(child: View?, focused: View?) {
         super.requestChildFocus(child, focused)
-        // 远跳停放的焦点落地了 (目标卡 / 顶部区域拿到焦点)
+        touchParked = false
+        touchParkReportPending = false
+        // 远跳 / 触屏停放的焦点落地了 (目标卡 / 顶部区域拿到焦点)
         if (isFocusable) {
             descendantFocusability = FOCUS_AFTER_DESCENDANTS
             isFocusable = false
@@ -1590,7 +1721,10 @@ open class TvNativeRowWallView private constructor(
      * 远跳停放时焦点在本视图自己身上, 仍算在卡片区.
      */
     private val focusWatcher = ViewTreeObserver.OnGlobalFocusChangeListener { _, newFocus ->
-        if (!tvNativeIsInside(newFocus, this)) setCardAreaFocus(false)
+        if (!tvNativeIsInside(newFocus, this)) {
+            touchParked = false
+            setCardAreaFocus(false)
+        }
     }
 
     override fun onAttachedToWindow() {
