@@ -32,6 +32,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.conflate
@@ -146,6 +147,10 @@ object TvHomeChannels {
         // 系统主屏频道 (PreviewPrograms / WatchNextPrograms) 是 Android TV Oreo (API 26) 才有的,
         // 更低版本上 TvProvider 没有这些 URI, 直接跳过而不是让下面的 runCatching 吞一堆异常.
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        if (!withContext(Dispatchers.IO_) { hasTvProvider(context) }) {
+            logger.info { "No TvProvider on this device, home channels skipped" }
+            return
+        }
 
         // 长期收集期间不拿着 activity: 只有弹添加频道确认框那一步需要它
         val appContext = context.applicationContext
@@ -190,6 +195,9 @@ object TvHomeChannels {
         callbackFlow {
             val unregister = playNext.watch(appContext) { trySend(Unit) }
             awaitClose { unregister() }
+        }.catch {
+            // 系统不让监听时不当场对账, 每次重写前照样对一遍; 这里抛出去会带崩整个应用
+            logger.error(it) { "Failed to watch Play Next" }
         }.conflate().collect {
             delay(PLAY_NEXT_SETTLE)
             runCatching {
@@ -278,6 +286,16 @@ object TvHomeChannels {
 
     private fun isTvDevice(context: Context): Boolean {
         return context.packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
+    }
+
+    /**
+     * 系统里有没有主屏频道与「接下来播放」用的 TvProvider. 有的电视 (如海信 VIDAA) 声明是 TV 却没有它:
+     * 写频道报 `Unknown URL`, 监听「接下来播放」直接抛 SecurityException.
+     */
+    private fun hasTvProvider(context: Context): Boolean {
+        val client = context.contentResolver.acquireContentProviderClient(TvContractCompat.AUTHORITY) ?: return false
+        client.close()
+        return true
     }
 
     /** 一张"继续观看"卡片除横图外的全部内容: 用它判断要不要重写这一行, 见 [keepUpdated]. */
