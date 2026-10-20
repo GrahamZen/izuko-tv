@@ -12,6 +12,7 @@ package me.him188.ani.app.ui.subject.episode
 import me.him188.ani.app.data.models.subject.SubjectInfo
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 
 class SubjectPresentationTest {
     @Test
@@ -28,5 +29,20 @@ class SubjectPresentationTest {
         val presentation = info.toPresentation()
         assertEquals("孤独摇滚！", presentation.title)
         assertEquals("孤独摇滚！", presentation.originalTitle)
+    }
+
+    @Test
+    fun `presentations of the same subject are equal`() {
+        val info = SubjectInfo.Empty.copy(subjectId = 328609, name = "ぼっち・ざ・ろっく！", nameCn = "孤独摇滚！")
+        // 页面状态每次重新组合都会新做一份: 内容相同就得相等, 页面状态才去得了重
+        assertEquals(info.toPresentation(), info.toPresentation())
+        assertEquals(info.toPresentation().hashCode(), info.toPresentation().hashCode())
+    }
+
+    @Test
+    fun `presentations of different subjects are not equal`() {
+        val a = SubjectInfo.Empty.copy(subjectId = 1, name = "a")
+        val b = SubjectInfo.Empty.copy(subjectId = 2, name = "a")
+        assertNotEquals(a.toPresentation(), b.toPresentation())
     }
 }
