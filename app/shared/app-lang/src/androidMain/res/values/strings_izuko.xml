@@ -689,6 +689,8 @@
     <string name="tv_source_playback_failed">Failed to load</string>
     <string name="tv_source_playback_buffering">Buffering</string>
     <string name="tv_source_settings">Source settings</string>
+    <string name="tv_source_badge_dolby_vision">Dolby Vision</string>
+    <string name="tv_source_badge_dolby_atmos">Dolby Atmos</string>
     <string name="tv_source_disabled">Disabled</string>
     <string name="tv_source_episode_filter">This episode</string>
     <string name="tv_source_all_episodes">All episodes</string>

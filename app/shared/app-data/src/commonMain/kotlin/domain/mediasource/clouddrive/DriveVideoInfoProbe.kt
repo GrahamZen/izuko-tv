@@ -23,6 +23,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.data.models.preference.DriveVideoInfo
+import me.him188.ani.app.domain.media.MediaAvFeatures
 import me.him188.ani.app.domain.media.probe.MediaStreamProbe
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
@@ -33,11 +34,14 @@ import kotlin.time.TimeSource
 /**
  * 列目录不给视频信息的网盘 (WebDAV) 上, 读视频文件头 ([MediaStreamProbe], 几十 KB) 补上画面高度与时长,
  * 资源才标得对分辨率、显示得出码率 (见 [CloudDriveMediaSource.mediaFor]); 不然文件名里没写分辨率的一律标成 1080P.
+ * 顺带记下认出的 HDR 与音轨格式 ([DriveFile.avFeatures]), 选源时标出来.
  *
  * 当前这一集的文件马上读, 调用方等它最多 [WAIT]; 其余各集的在后台排队读, 同时最多 [PARALLEL] 个 (经 AList 这类转发的,
  * 每读一个它就要去网盘要一次下载地址), 不让调用方等. 读得慢的先按没有信息给出, 读完记下并通知 [onLateInfo]
  * (条目级查询切集不再查, 要靠它让数据源重查, 见 [DriveVideoInfoRefresh]); 读不出来 (网络错、不认识的格式) 也当没有.
  * 每个文件只读一次: 结果按文件记下 ([save], 存在账号里, 键见 [keyOf]), 文件换了 (大小变了) 才重读.
+ * 记下的信息是旧的读法读的 ([DriveVideoInfo.version] 小于 [PROBE_VERSION]) 时照样马上给出, 同时在后台排队重读一次,
+ * 读出的与记下的不同才通知 [onLateInfo].
  *
  * @param stored 记下的信息 ([keyOf] → 信息)
  * @param probe 读一个文件的头; 读不到时为 null
@@ -67,12 +71,25 @@ internal class DriveVideoInfoProbe(
         val filled = HashMap<String, DriveFile>()
         val waited = ArrayList<Pair<DriveFile, Deferred<DriveVideoInfo?>>>()
         val queued = ArrayList<Pair<DriveFile, Deferred<DriveVideoInfo?>>>()
+        val outdated = ArrayList<Pair<DriveFile, DriveVideoInfo>>()
         for (file in urgent + rest) {
             val info = known[keyOf(file.fid)]?.takeIf { it.size == file.size }
             when {
-                info != null -> filled[file.fid] = file.with(info)
+                info != null -> {
+                    filled[file.fid] = file.with(info)
+                    if (info.version < PROBE_VERSION) outdated += file to info
+                }
+
                 file.fid in urgentIds -> waited += file to start(file, queue = false)
                 else -> queued += file to start(file, queue = true)
+            }
+        }
+        // 旧的读法读的: 已经照用了, 在后台排队重读
+        for ((file, old) in outdated) {
+            val job = start(file, queue = true)
+            scope.launch {
+                val info = job.await() ?: return@launch
+                if (info.copy(version = old.version) != old) onLateInfo()
             }
         }
         if (waited.isNotEmpty()) withTimeoutOrNull(WAIT) { waited.forEach { it.second.await() } }
@@ -96,8 +113,16 @@ internal class DriveVideoInfoProbe(
         val job = scope.async(start = CoroutineStart.LAZY) {
             try {
                 val result = if (queue) permits.withPermit { read(file) } else read(file)
-                result?.let { DriveVideoInfo(file.size, heightOf(it.width, it.height), it.durationSeconds ?: 0) }
-                    ?.also { save(keyOf(file.fid), it) }
+                result?.let {
+                    DriveVideoInfo(
+                        size = file.size,
+                        height = heightOf(it.width, it.height),
+                        durationSeconds = it.durationSeconds ?: 0,
+                        dynamicRange = it.dynamicRange,
+                        audio = it.audio,
+                        version = PROBE_VERSION,
+                    )
+                }?.also { save(keyOf(file.fid), it) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
@@ -117,7 +142,10 @@ internal class DriveVideoInfoProbe(
         return withTimeoutOrNull(PROBE_TIMEOUT) { probe(file) }.also { result ->
             logger.info {
                 "Probed ${file.fileName} in ${mark.elapsedNow().inWholeMilliseconds} ms: " +
-                        (result?.let { "${it.container} ${it.width}x${it.height} ${it.codec} ${it.durationSeconds} s" } ?: "nothing")
+                        (result?.let {
+                            "${it.container} ${it.width}x${it.height} ${it.codec} ${it.durationSeconds} s" +
+                                    listOfNotNull(it.dynamicRange, it.audio).joinToString("") { feature -> " $feature" }
+                        } ?: "nothing")
             }
         }
     }
@@ -136,9 +164,16 @@ internal class DriveVideoInfoProbe(
         isVideo = isVideo,
         shareToken = shareToken,
         durationSeconds = info.durationSeconds,
+        avFeatures = MediaAvFeatures(info.dynamicRange, info.audio),
     )
 
     companion object {
+        /**
+         * 读法的版本, 记在 [DriveVideoInfo.version]: 读文件头多认出东西时加一, 记下的旧版本的信息照用并在后台重读.
+         * 1: 认出 HDR 与音轨格式.
+         */
+        const val PROBE_VERSION = 1
+
         /** 等当前这一集的结果最多这么久, 再长就先按没有信息给出候选 (开播要等这些候选). */
         val WAIT = 1.seconds
 
