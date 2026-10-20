@@ -29,6 +29,7 @@ import me.him188.ani.app.domain.foundation.get
 import me.him188.ani.app.domain.media.fetch.MediaSourceFetchResult
 import me.him188.ani.app.domain.media.fetch.MediaSourceFetchState
 import me.him188.ani.app.domain.media.probe.MediaStreamProbe
+import me.him188.ani.app.domain.mediasource.clouddrive.isCloudDriveAccountProblem
 import me.him188.ani.app.domain.mediasource.clouddrive.isCloudDriveLoginRequired
 import me.him188.ani.app.domain.mediasource.profile.SearchObservation
 import me.him188.ani.app.domain.mediasource.profile.SourceObservation
@@ -96,10 +97,10 @@ class SourceProfileExtension(
                         is Event.Loading -> {
                             val t = tracking ?: return@collect
                             val state = event.state
-                                // 没登录网盘放不了不是这个源的毛病, 不记
-                                if (state is VideoLoadingState.UnknownError && state.cause.isCloudDriveLoginRequired()) return@collect
                             if (state is VideoLoadingState.Succeed) t.onLoaded()
                             if (state is VideoLoadingState.Failed && state != VideoLoadingState.Cancelled && t.onLoadFailed()) {
+                                // 自己网盘的事 (没登录、空间不够) 放不了不是这个源的毛病, 不记
+                                if (state is VideoLoadingState.UnknownError && state.cause.isCloudDriveAccountProblem()) return@collect
                                 val reason = PlaybackFailureReportExtension.reasonOf(state)
                                 launch { record(t, ok = false, reason = reason) }
                             }

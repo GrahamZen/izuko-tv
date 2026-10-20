@@ -515,6 +515,8 @@ private fun part3() = listOf(
     RemoteText("未登录", "Not signed in", "未登錄", "未登入"),
     RemoteText("网盘未登录：在电视上选中这个数据源按确定扫码登录，或在「数据源」里登录", "Not signed in to the cloud drive: select this source on the TV and press OK to scan the sign-in code, or sign in under Sources.", "網盤未登錄：在電視上選中這個數據源按確定掃碼登錄，或在「數據源」裏登錄", "網盤未登入：在電視上選中這個資料源按確定掃碼登入，或在「資料源」裡登入"),
     RemoteText("网盘未登录", "Not signed in to the cloud drive", "網盤未登錄", "網盤未登入"),
+    RemoteText("网盘空间不够", "Not enough cloud drive space", "網盤空間不夠", "網盤空間不夠"),
+    RemoteText("返回的不是视频", "Not a video", "返回的不是影片", "回傳的不是影片"),
     RemoteText("，可以勾选「显示被排除的资源」看看", "; try ticking “Show excluded resources”", "，可以勾選「顯示被排除的資源」看看", "，可以勾選「顯示被排除的資源」看看"),
     RemoteText("{0} 个源 · {1} 条", "{0} sources · {1} results", "{0} 個源 · {1} 條", "{0} 個源 · {1} 條"),
     RemoteText("· 正在播放的在这里", "· now playing is in here", "· 正在播放的在這裡", "· 正在播放的在這裡"),
