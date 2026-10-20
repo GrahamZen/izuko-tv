@@ -152,6 +152,7 @@ import me.him188.ani.app.domain.mediasource.web.captcha.MacCmsImageCaptchaSolver
 import me.him188.ani.app.domain.mediasource.web.captcha.WebSessionManager
 import me.him188.ani.app.domain.mediasource.web.captcha.WebSourceCookieJar
 import me.him188.ani.app.domain.mediasource.web.captcha.WebSourceIdentityRegistry
+import me.him188.ani.app.domain.profile.AccountCollectionsDownload
 import me.him188.ani.app.domain.profile.LocalProfileConversion
 import me.him188.ani.app.domain.profile.LocalProfileImporter
 import me.him188.ani.app.domain.profile.ProfileArchiver
@@ -164,8 +165,8 @@ import me.him188.ani.app.domain.profile.UserProfiles
 import me.him188.ani.app.domain.profile.fetchAllCollectedSubjectIds
 import me.him188.ani.app.domain.session.BangumiSessionRefresher
 import me.him188.ani.app.domain.session.SessionManager
-import me.him188.ani.app.domain.session.SessionState
 import me.him188.ani.app.domain.session.SessionStateProvider
+import me.him188.ani.app.domain.session.canAccessBangumiApiNow
 import me.him188.ani.app.domain.session.auth.BangumiOAuthClient
 import me.him188.ani.app.domain.session.auth.BangumiOAuthManager
 import me.him188.ani.app.domain.session.auth.BangumiOAuthRelayClient
@@ -610,20 +611,21 @@ private fun KoinApplication.otherModules(
             loadEpisodes = { subjectId -> get<SubjectCollectionRepository>().refreshSubjectCollection(subjectId) },
         )
     }
-    // 当前用户自己的收藏记录 (计数 / 清除); 没登录的 1 号改成本地用户, 见 LocalProfileConversion
+    // 当前用户自己的收藏记录 (计数 / 清除); Bangumi 用户改成本地用户, 见 LocalProfileConversion
     single<SelfCollectionRecords> { SelfCollectionRecords(database) }
     single<LocalProfileConversion> {
         LocalProfileConversion(
             manager = get(),
             records = get(),
-            // 刚启动时登录状态要等刷新令牌才有; 等不到按登录着算 (不改)
-            isLoggedIn = {
-                withTimeoutOrNull(5.seconds) { get<SessionStateProvider>().stateFlow.first() is SessionState.Valid } ?: true
-            },
+            pending = get(),
+            // 刚启动时登录状态要等刷新令牌才有; 等不到按登录着算 (先去取账号里的收藏, 取不到就不改)
+            isLoggedIn = { withTimeoutOrNull(5.seconds) { get<SessionStateProvider>().canAccessBangumiApiNow() } ?: true },
+            downloadAccountCollections = { onProgress -> get<AccountCollectionsDownload>().download(onProgress) },
             clearSession = { get<UserRepository>().clearSelfInfo() },
         )
     }
     deviceMigration(getContext) { fileName -> buildAniDatabase(getContext(), fileName) }
+    bangumiProfileConversion(getContext)
     // 换人之前给对方垫上首页轮播那几部 (热度榜手上那份; 没有就算了, 不为这个等网络)
     single<UserProfileSeeder> {
         UserProfileSeeder(
@@ -923,6 +925,7 @@ fun KoinApplication.startCommonKoinModule(
             .collect { profiles.updateAvatar(it) }
     }
 
+    coroutineScope.launchPendingLocalCollectionsRestore(koin)
     koin.get<SessionManager>().startBackgroundJob()
     return this
 }
@@ -943,7 +946,7 @@ private fun buildAniDatabase(context: Context, fileName: String): AniDatabase =
         .setQueryCoroutineContext(Dispatchers.IO_)
         .build()
 
-/** 删用户: 他的库 (连同 SQLite 旁边的几个文件与 Room 的文件锁)、按人的配置、推荐快照. */
+/** 删用户: 他的库 (连同 SQLite 旁边的几个文件与 Room 的文件锁)、按人的配置、推荐快照、改成 Bangumi 用户时留下的本地收藏. */
 private suspend fun deleteUserProfileFiles(context: Context, profile: UserProfile) = withContext(Dispatchers.IO_) {
     for (suffix in listOf("", "-wal", "-shm", "-journal", ".lck")) {
         context.databaseFile(profile.databaseFileName + suffix).delete()
@@ -952,6 +955,7 @@ private suspend fun deleteUserProfileFiles(context: Context, profile: UserProfil
         context.dataStores.resolveDataStoreFile(profile.scopedFileName(name)).delete()
     }
     context.files.cacheDir.resolve(profile.scopedFileName(UserProfile.RECOMMENDATION_COLLECTIONS_FILE_NAME)).delete()
+    pendingLocalCollectionsFile(context, profile).delete()
 }
 
 /**

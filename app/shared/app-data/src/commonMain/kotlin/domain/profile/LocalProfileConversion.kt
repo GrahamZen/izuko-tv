@@ -53,41 +53,61 @@ class SelfCollectionRecords(private val database: AniDatabase) {
 }
 
 /**
- * 把还没登录的 1 号用户改成本地用户 (见 [UserProfileKind.LOCAL]).
+ * 把当前的 Bangumi 用户改成本地用户 (见 [UserProfileKind.LOCAL]), 登录着的先退出登录. 任何 Bangumi 用户都可以改;
+ * 以后想用 Bangumi, 再改回 Bangumi 用户 (见 [BangumiProfileConversion]).
  *
- * 给一个人用、又登录不了 Bangumi 的电视: 不用另建一个本地用户 —— 那样就有两个用户, 每次打开都要先选人, 而 1 号删不掉.
- * 只给 1 号: 别的用户没登录的, 删掉再建一个本地用户就行. 改完这个用户不能再登录 Bangumi (同所有本地用户);
- * 以后想用 Bangumi, 新建一个 Bangumi 用户, 再用 [LocalProfileImporter] 把收藏导过去.
+ * 给一个人用、又登录不了 Bangumi 的电视, 1 号直接改成本地用户就行, 不用另建一个 —— 那样就有两个用户, 每次打开都要先选人, 而 1 号删不掉.
  *
- * 库里可能还留着之前登录时的收藏记录 (退出登录不清本地缓存), 由用户决定留下当作本地收藏还是清掉 ([SelfCollectionRecords]).
+ * 库里可能还留着登录时的收藏记录 (退出登录不清本地缓存), 由用户决定留下当作本地收藏还是清掉 ([SelfCollectionRecords]).
+ * 库里只缓存用到过的收藏, 所以登录着、选了留下时先把账号里的收藏整个取下来 ([AccountCollectionsDownload]), 取不全就不改;
+ * 没登录时拿不到账号里的, 只能留下库里有的.
+ * 本地用户改成 Bangumi 用户后没登录就改回来的, 留下的本地收藏还在文件里 ([PendingLocalCollections]), 一并算在里面:
+ * 留下 = 下次启动放回库里 (见 [BangumiProfileConversion.restoreIntoLocal]), 清除 = 文件一起删.
  * 改完重启应用: 各仓库的本地模式在进程启动时按当前用户定下.
  */
 class LocalProfileConversion(
     private val manager: UserProfileManager,
     private val records: SelfCollectionRecords,
+    private val pending: PendingLocalCollections,
     private val currentProfile: () -> UserProfile = { UserProfiles.current },
-    /** 当前用户现在登录着 Bangumi. */
-    private val isLoggedIn: suspend () -> Boolean,
-    /** 清掉当前用户残留的登录信息 (过期的令牌、个人资料). */
+    /** 当前用户现在登录着 Bangumi (能取账号里的收藏). */
+    private val isLoggedIn: suspend () -> Boolean = { false },
+    /** 把账号里的收藏整个取下来写进库, 见 [AccountCollectionsDownload.download]; 没取全时抛出. */
+    private val downloadAccountCollections: suspend (onProgress: (AccountCollectionsDownload.Progress) -> Unit) -> Unit = {},
+    /** 退出当前用户的 Bangumi 登录 (令牌、个人资料; 没登录时清掉残留的). */
     private val clearSession: suspend () -> Unit,
 ) {
-    /** 当前用户可以改成本地用户 (登录着的要先退出, 另看 [isLoggedIn]): 这台设备能重启应用, 是 1 号, 还是 Bangumi 用户. */
+    /** 当前用户可以改成本地用户: 这台设备能重启应用, 当前是 Bangumi 用户 (登录着也行, 改的时候先退出). */
     val isOffered: Boolean
-        get() = manager.isSupported && currentProfile().let { it.isPrimary && !it.isLocal }
+        get() = manager.isSupported && !currentProfile().isLocal
 
-    /** 之前登录留下的记录, 改之前给人看. */
-    suspend fun leftoverRecords(): SelfCollectionRecords.Counts = records.counts()
+    /** 登录时留下的记录 (连同文件里等着处理的本地收藏), 改之前给人看. */
+    suspend fun leftoverRecords(): SelfCollectionRecords.Counts {
+        val inDatabase = records.counts()
+        val inFile = pending.load()
+        return SelfCollectionRecords.Counts(
+            collections = inDatabase.collections + inFile.size,
+            watchedEpisodes = inDatabase.watchedEpisodes + inFile.sumOf { it.watchedEpisodes.size },
+        )
+    }
 
     /**
-     * 改成本地用户, 然后重启应用.
-     * @param clearRecords 先清掉库里之前登录留下的收藏记录; `false` = 留下当作本地收藏
+     * 退出登录, 改成本地用户, 然后重启应用. 登录着、留下记录时先取账号里的收藏 ([onProgress] 报进度), 取不全时抛出, 什么都不改.
+     * @param clearRecords 先清掉登录时留下的收藏记录 (连同文件里等着处理的本地收藏); `false` = 留下当作本地收藏
      * @param defaultName 没起过名字时存下的默认名, 见 [UserProfileManager.convertCurrentToLocal]
      */
-    suspend fun convert(clearRecords: Boolean, defaultName: String) {
+    suspend fun convert(
+        clearRecords: Boolean,
+        defaultName: String,
+        onProgress: (AccountCollectionsDownload.Progress) -> Unit = {},
+    ) {
         check(isOffered) { "User profile ${currentProfile().id} cannot be converted to local" }
-        check(!isLoggedIn()) { "Log out of Bangumi before converting to a local profile" }
+        if (!clearRecords && isLoggedIn()) downloadAccountCollections(onProgress)
         clearSession()
-        if (clearRecords) records.clear()
+        if (clearRecords) {
+            records.clear()
+            pending.discard()
+        }
         logger.info { "Converting user profile ${currentProfile().id} to local (clearRecords=$clearRecords)" }
         manager.convertCurrentToLocal(defaultName)
     }

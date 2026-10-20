@@ -148,6 +148,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import me.him188.ani.app.domain.profile.UserProfileManager
 import me.him188.ani.app.domain.profile.UserProfiles
+import me.him188.ani.app.ui.profile.TvPendingCollectionsHost
 import me.him188.ani.app.ui.profile.TvProfileSwitchLandingHost
 import me.him188.ani.app.ui.profile.TvUserProfilePicker
 import me.him188.ani.app.ui.profile.TvUserProfilePickerHost
@@ -440,6 +441,10 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         TvWhatsNewHost()
         // 官方连不上、要自动改用镜像而用户登录着: 先问他 (见 BangumiMirrorConsent)
         TvMirrorConsentHost()
+        // 本地用户改成 Bangumi 用户后登录了: 问留下的本地收藏合并到账号还是删掉 (只在首页上弹, 见 TvPendingCollectionsHost)
+        TvPendingCollectionsHost(onMainPage = {
+            startupLogo?.visible != true && runCatching { aniNavigator.backStack.lastOrNull() }.getOrNull() is NavRoutes.Main
+        })
         // 「标记看过后删除缓存」删了缓存时弹提示 (标记可能在任何一页或 Web 控制台发生)
         TvMarkedDoneCacheDeletionToasts()
         // 更新后第一次打开的「本版新功能」页能不能盖上: 在首页, 而且这次不是新用户先登录 (留到下次). 见 TvWhatsNew
