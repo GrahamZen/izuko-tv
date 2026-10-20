@@ -35,8 +35,6 @@ internal fun filterRailRow(input: TvSourcePanelInput, strings: TvSourceStrings):
     val values = listOfNotNull(
         input.resolutionFilter?.let(::resolutionLabel),
         input.subtitleFilter?.let { renderSubtitleLanguage(it, strings.details) },
-        input.bt.alliance,
-        input.bt.sourceFilter?.let { id -> input.sources.btSources.firstOrNull { it.mediaSourceId == id }?.info?.displayName ?: id },
     )
     return TvSourceRow(
         id = TvSourceRailKeys.FILTER,
@@ -50,9 +48,9 @@ internal fun filterRailRow(input: TvSourcePanelInput, strings: TvSourceStrings):
 }
 
 /**
- * 筛选弹窗的内容: 分辨率、字幕、字幕组、来源几组, 每组一行小标题 ([TvSourceRowStyle.Status]) 跟着它的取值, 确定就选 ([TvSourceAction.PickFilter]).
- * 分辨率 / 字幕的取值来自 BT 的结果与一个文件一行的在线源对得上的文件 ([files]), 再加上当前选的 (万一眼下的结果里没有);
- * 字幕组 / 来源来自 BT (有 BT 源时才列).
+ * 筛选弹窗的内容: 分辨率、字幕两组, 每组一行小标题 ([TvSourceRowStyle.Status]) 跟着它的取值 ([TvSourceAction.PickFilter]).
+ * 取值来自 BT 的结果与一个文件一行的在线源对得上的文件 ([files]), 再加上当前选的 (万一眼下的结果里没有). 字幕组 / 来源只有 BT 用得上,
+ * 是 BT 那一栏顶上的胶囊 (见 [TvSourceDrill.Filter]).
  */
 internal fun filterOptions(input: TvSourcePanelInput, files: List<Media>, strings: TvSourceStrings): List<TvSourceRow> {
     val resolution = input.resolutionFilter
@@ -68,16 +66,17 @@ internal fun filterOptions(input: TvSourcePanelInput, files: List<Media>, string
         addFilterOptions(TvSourceFilter.Resolution, resolution, resolutions.map { it to resolutionLabel(it) }, strings)
         add(filterHeader(TvSourceFilter.Subtitle, strings.subtitle, dividerAbove = true))
         addFilterOptions(TvSourceFilter.Subtitle, subtitle, subtitles.map { it to renderSubtitleLanguage(it, strings.details) }, strings)
-        val bt = input.bt
-        if (input.sources.btSources.isNotEmpty() || bt.totalCount > 0) {
-            val alliances = (bt.availableAlliances + listOfNotNull(bt.alliance)).distinct()
-            add(filterHeader(TvSourceFilter.Alliance, strings.alliance, dividerAbove = true))
-            addFilterOptions(TvSourceFilter.Alliance, bt.alliance, alliances.map { it to it }, strings)
-            add(filterHeader(TvSourceFilter.Source, strings.source, dividerAbove = true))
-            addFilterOptions(TvSourceFilter.Source, bt.sourceFilter, input.sources.btSources.map { it.mediaSourceId to it.info.displayName }, strings)
-        }
     }
 }
+
+/**
+ * 筛选弹窗里换过的勾 [picked] (每项选了哪个值, null = 全部) 中与 [rows] ([filterOptions]) 当前选中的不同的那几项: 关弹窗时只生效这些,
+ * 换过又换回来的不算.
+ */
+internal fun changedFilters(rows: List<TvSourceRow>, picked: Map<TvSourceFilter, String?>): Map<TvSourceFilter, String?> =
+    picked.filter { (filter, value) ->
+        rows.none { row -> row.selected && (row.action as? TvSourceAction.PickFilter)?.let { it.filter == filter && it.value == value } == true }
+    }
 
 /**
  * 按筛选把一个文件一行的源对得上的文件分成 (符合的, 低于偏好的). 两项各自只在这批文件里有这个取值时才筛 (见文件头).
