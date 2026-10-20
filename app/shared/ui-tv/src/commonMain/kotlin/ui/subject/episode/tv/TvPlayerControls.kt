@@ -12,6 +12,7 @@ package me.him188.ani.app.ui.subject.episode.tv
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import me.him188.ani.app.ui.diagnostics.TraceSection
 import me.him188.ani.app.ui.foundation.tv.tvUseOriginalTitle
 import me.him188.ani.app.ui.lang.playback_history_episode_label
 import me.him188.ani.app.ui.lang.subject_episode_details
@@ -401,17 +402,19 @@ internal fun TvPlayerControlsOverlay(
 
         // 顶部信息: 左上标题 + 右上时钟
         val tmdbEpisodeName = rememberTvPlayerTmdbEpisodeName(vm, page.episodePresentation.episodeId)
-        TvPlayerTopInfo(
-            page,
-            tmdbEpisodeName,
-            chrome
-                .align(Alignment.TopStart)
-                .fillMaxWidth()
-                .padding(horizontal = TV_PLAYER_HORIZONTAL_PAD, vertical = 28.dp)
-                // 放在 padding 之后: 量的是标题块本体的上沿 (可见元素边界), 不含留白
-                .onGloballyPositioned { topInfoTopPx.floatValue = it.boundsInWindow().top },
-            titleHidden = { overlay.activePanel != null },
-        )
+        TraceSection("Izuko:Controls/TopInfo") {
+            TvPlayerTopInfo(
+                page,
+                tmdbEpisodeName,
+                chrome
+                    .align(Alignment.TopStart)
+                    .fillMaxWidth()
+                    .padding(horizontal = TV_PLAYER_HORIZONTAL_PAD, vertical = 28.dp)
+                    // 放在 padding 之后: 量的是标题块本体的上沿 (可见元素边界), 不含留白
+                    .onGloballyPositioned { topInfoTopPx.floatValue = it.boundsInWindow().top },
+                titleHidden = { overlay.activePanel != null },
+            )
+        }
 
         // 底部区域: 控制行 (胶囊/进度条/图标行) 与选集条二选一, 在 Box 里底对齐重叠
         // 淡切 —— 不能上下堆叠在 Column 里: 切换瞬间选集条先占位会把控制行整体上顶,
@@ -572,17 +575,19 @@ internal fun TvPlayerControlsOverlay(
                             }
                         },
                     ) {
-                        TvPlayerPanelHost(
-                            // 卡片底色/图片/阴影相叠, 走整层合成 (见 chrome 处的分档)
-                            modifier = chromeLayered,
-                            overlay = overlay,
-                            vm = vm,
-                            page = page,
-                            pillFocusRequesters = pillFocusRequesters,
-                            pillOrder = pillOrder,
-                            // NaN (尚未测得) 由面板侧兜底成固定高度
-                            availableHeightPx = { pillsRowTopPx.floatValue - topInfoTopPx.floatValue },
-                        )
+                        TraceSection("Izuko:Controls/PanelHost") {
+                            TvPlayerPanelHost(
+                                // 卡片底色/图片/阴影相叠, 走整层合成 (见 chrome 处的分档)
+                                modifier = chromeLayered,
+                                overlay = overlay,
+                                vm = vm,
+                                page = page,
+                                pillFocusRequesters = pillFocusRequesters,
+                                pillOrder = pillOrder,
+                                // NaN (尚未测得) 由面板侧兜底成固定高度
+                                availableHeightPx = { pillsRowTopPx.floatValue - topInfoTopPx.floatValue },
+                            )
+                        }
                         // 弹窗要在 PeoplePreviewHost **之内**: 点卡片走的是 rememberPeopleClickHandler,
                         // 拿不到 host 时它会退化成"导航去人物详情页" —— 那是直接离开播放器
                         peopleViewAll?.let { panel ->
@@ -615,51 +620,55 @@ internal fun TvPlayerControlsOverlay(
                     // 两层叠着看不清. 只按 alpha 不移出组合 —— 节点还在, 上键的落点请求器
                     // 保持附着, 而按上键会让焦点离开进度条, 预览随即提交, 这一行同帧就回来了.
                     // 状态读在 graphicsLayer 的 lambda 里, 圆点每走一步只失效图层不重组整层
-                    TvPlayerPillsRow(
-                        overlay = overlay,
-                        danmakuEditorState = danmakuEditorState,
-                        vm = vm,
-                        episodeId = page.episodePresentation.episodeId,
-                        danmakuLoading = page.danmakuStatistics.isLoading(),
-                        danmakuLoadFailed = page.danmakuStatistics.isLoadFailed(),
-                        // 只剩 OP/ED 提示按钮托着本层时整层是透明的, 胶囊看不见, 不呼吸
-                        loadingPulseEnabled = chromeVisible,
-                        items = pillItems,
-                        chromeItemModifier = chromeItemModifier,
-                        commentSortMenu = commentSortMenu,
-                        onEditChromeItem = onEditChromeItem,
-                        pillFocusRequesters = pillFocusRequesters,
-                        onViewAllPeople = { peopleViewAll = it },
-                        // 「查看全部」这条路占着焦点的整段: 弹窗开着, 以及从它点开的人物预览还开着.
-                        // 中途还一次焦点会与正要打开的预览抢
-                        viewAllPeopleActive = peopleViewAll ?: peoplePreviewFrom,
-                        trailing = pillsRowTrailing,
-                        // 胶囊本体跟着控制层淡出, 末尾那颗提示按钮不跟 (它有自己的显示时长)
-                        pillsModifier = chrome,
-                        modifier = Modifier
-                            .padding(bottom = TV_PLAYER_PROGRESS_ROW_GAP)
-                            // 放在 padding 之后: 量的是胶囊本体的上缘 (可见元素边界), 不含那段间距.
-                            // 这是面板的下锚点 (面板在同一 Column 里紧贴本行之上)
-                            .onGloballyPositioned { pillsRowTopPx.floatValue = it.boundsInWindow().top }
-                            .graphicsLayer { alpha = if (progressSliderState.isPreviewing) 0f else 1f },
-                    )
+                    TraceSection("Izuko:Controls/PillsRow") {
+                        TvPlayerPillsRow(
+                            overlay = overlay,
+                            danmakuEditorState = danmakuEditorState,
+                            vm = vm,
+                            episodeId = page.episodePresentation.episodeId,
+                            danmakuLoading = page.danmakuStatistics.isLoading(),
+                            danmakuLoadFailed = page.danmakuStatistics.isLoadFailed(),
+                            // 只剩 OP/ED 提示按钮托着本层时整层是透明的, 胶囊看不见, 不呼吸
+                            loadingPulseEnabled = chromeVisible,
+                            items = pillItems,
+                            chromeItemModifier = chromeItemModifier,
+                            commentSortMenu = commentSortMenu,
+                            onEditChromeItem = onEditChromeItem,
+                            pillFocusRequesters = pillFocusRequesters,
+                            onViewAllPeople = { peopleViewAll = it },
+                            // 「查看全部」这条路占着焦点的整段: 弹窗开着, 以及从它点开的人物预览还开着.
+                            // 中途还一次焦点会与正要打开的预览抢
+                            viewAllPeopleActive = peopleViewAll ?: peoplePreviewFrom,
+                            trailing = pillsRowTrailing,
+                            // 胶囊本体跟着控制层淡出, 末尾那颗提示按钮不跟 (它有自己的显示时长)
+                            pillsModifier = chrome,
+                            modifier = Modifier
+                                .padding(bottom = TV_PLAYER_PROGRESS_ROW_GAP)
+                                // 放在 padding 之后: 量的是胶囊本体的上缘 (可见元素边界), 不含那段间距.
+                                // 这是面板的下锚点 (面板在同一 Column 里紧贴本行之上)
+                                .onGloballyPositioned { pillsRowTopPx.floatValue = it.boundsInWindow().top }
+                                .graphicsLayer { alpha = if (progressSliderState.isPreviewing) 0f else 1f },
+                        )
+                    }
 
                     // 进度条行.
                     // 控制层不可见时**不能从组合里摘掉**, 只淡到透明: 它撑着胶囊行到屏幕底缘的距离,
                     // 摘掉的话那颗提示按钮会当场往下掉一截 (下面的图标行同理)
-                    TvPlayerProgressRow(
-                        live = chromeVisible,
-                        focusable = { !dormantState.value },
-                        vm = vm,
-                        progressSliderState = progressSliderState,
-                        framePreview = framePreview,
-                        overlay = overlay,
-                        // 图标行暂隐期间不能指向它 (节点已移出组合, 未附着的请求器会抛)
-                        downFocus = bottomRowFirstFocus.takeIf { showBelowProgress },
-                        // 胶囊被用户整行藏掉时没有落点: 传 null (指向未附着的请求器会抛)
-                        upFocus = pillOrder.firstOrNull()?.let { pillFocusRequesters.getValue(it) },
-                        modifier = chrome.tvFocusAnchor(playerFocus, TvPlayerFocusTarget.PROGRESS),
-                    )
+                    TraceSection("Izuko:Controls/ProgressRow") {
+                        TvPlayerProgressRow(
+                            live = chromeVisible,
+                            focusable = { !dormantState.value },
+                            vm = vm,
+                            progressSliderState = progressSliderState,
+                            framePreview = framePreview,
+                            overlay = overlay,
+                            // 图标行暂隐期间不能指向它 (节点已移出组合, 未附着的请求器会抛)
+                            downFocus = bottomRowFirstFocus.takeIf { showBelowProgress },
+                            // 胶囊被用户整行藏掉时没有落点: 传 null (指向未附着的请求器会抛)
+                            upFocus = pillOrder.firstOrNull()?.let { pillFocusRequesters.getValue(it) },
+                            modifier = chrome.tvFocusAnchor(playerFocus, TvPlayerFocusTarget.PROGRESS),
+                        )
+                    }
 
                     // 图标行 (原顶栏按钮并入; 再往下 = 选集条, 由根路由处理).
                     // 拖拽预览中同样按成隐形 (同上: 那会儿唯一该看的是圆点和缩略图)
@@ -670,39 +679,43 @@ internal fun TvPlayerControlsOverlay(
                             },
                         ) {
                             Spacer(Modifier.height(TV_PLAYER_PROGRESS_ROW_GAP))
-                            TvPlayerBottomRow(
-                                overlay = overlay,
-                                vm = vm,
-                                page = page,
-                                sheetsController = sheetsController,
-                                items = bottomRowItems,
-                                chromeItemModifier = chromeItemModifier,
-                                firstButtonFocus = bottomRowFirstFocus,
-                                upFocus = playerFocus.requesterOf(TvPlayerFocusTarget.PROGRESS),
-                                modifier = Modifier.tvFocusAnchor(
-                                    playerFocus,
-                                    TvPlayerFocusTarget.BOTTOM_ROW,
-                                ),
-                            )
+                            TraceSection("Izuko:Controls/BottomRow") {
+                                TvPlayerBottomRow(
+                                    overlay = overlay,
+                                    vm = vm,
+                                    page = page,
+                                    sheetsController = sheetsController,
+                                    items = bottomRowItems,
+                                    chromeItemModifier = chromeItemModifier,
+                                    firstButtonFocus = bottomRowFirstFocus,
+                                    upFocus = playerFocus.requesterOf(TvPlayerFocusTarget.PROGRESS),
+                                    modifier = Modifier.tvFocusAnchor(
+                                        playerFocus,
+                                        TvPlayerFocusTarget.BOTTOM_ROW,
+                                    ),
+                                )
+                            }
                         }
                     }
                 }
             }
 
             // 选集条: 仅展开态渲染 (无 peek), 图标行按下键唤出, 与控制行同位淡切
-            TvPlayerEpisodeStrip(
-                vm = vm,
-                overlay = overlay,
-                upNext = upNext,
-                rowFocusModifier = Modifier.tvFocusAnchor(
-                    playerFocus,
-                    TvPlayerFocusTarget.EPISODE_STRIP,
-                ),
-                // 同 TvPlayerPanelHost: 卡片行要整层合成
-                modifier = chromeLayered.align(Alignment.BottomStart).fillMaxWidth()
-                    // 展开时底部字幕挪到它上面
-                    .onGloballyPositioned { overlay.episodeStripTopPx.floatValue = it.boundsInWindow().top },
-            )
+            TraceSection("Izuko:Controls/EpisodeStrip") {
+                TvPlayerEpisodeStrip(
+                    vm = vm,
+                    overlay = overlay,
+                    upNext = upNext,
+                    rowFocusModifier = Modifier.tvFocusAnchor(
+                        playerFocus,
+                        TvPlayerFocusTarget.EPISODE_STRIP,
+                    ),
+                    // 同 TvPlayerPanelHost: 卡片行要整层合成
+                    modifier = chromeLayered.align(Alignment.BottomStart).fillMaxWidth()
+                        // 展开时底部字幕挪到它上面
+                        .onGloballyPositioned { overlay.episodeStripTopPx.floatValue = it.boundsInWindow().top },
+                )
+            }
             TvEpisodeStripLoadingHint(
                 overlay,
                 chrome.align(Alignment.BottomStart)
