@@ -28,6 +28,9 @@ import kotlinx.coroutines.CoroutineScope
 import me.him188.ani.app.ui.foundation.focus.TV_TRANSIT_PARK_KEY_GRACE_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TV_TAB_CONTENT_SLIDE_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TvBackdropTreatment
+import me.him188.ani.app.ui.foundation.tv.TvWallConfirm
+import me.him188.ani.app.ui.foundation.tv.tvWallConfirm
+import me.him188.ani.app.ui.foundation.tv.tvWallTapConfirmsWhileFocusing
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -552,13 +555,14 @@ class TvNativeGridPageView(
         override fun onClick(index: Int) {
             if (grid !== current) return
             // 卡片墙上先切到 hero 态, hero 态里才进详情页 (这时有 hero 背景图, 走放大转场)
-            if (heroEnabled && !timeline.active) {
-                setHeroActive(true)
-            } else {
-                // 进详情页: 焦点交出去之后这张卡仍画成聚焦态, 返回后焦点交还前也不缩 (见 TvNativeGridView.focusItem)
-                grid.cards.setFocusLookHeld(grid, index)
-                // 有整屏背景 (新番时间表 / hero 态的模糊背景): 先对焦 (背景变清晰、卡片淡没) 再进, 见 TvNativeWallFocus
-                if (!confirmFocusesWall || !wallFocus.open(index, wallMatches(grid, index))) listener?.onClick(index)
+            when (tvWallConfirm(isMore = false, heroEnabled, timeline.active)) {
+                TvWallConfirm.EnterHero -> setHeroActive(true)
+                TvWallConfirm.More, TvWallConfirm.Open -> {
+                    // 进详情页: 焦点交出去之后这张卡仍画成聚焦态, 返回后焦点交还前也不缩 (见 TvNativeGridView.focusItem)
+                    grid.cards.setFocusLookHeld(grid, index)
+                    // 有整屏背景 (新番时间表 / hero 态的模糊背景): 先对焦 (背景变清晰、卡片淡没) 再进, 见 TvNativeWallFocus
+                    if (!confirmFocusesWall || !wallFocus.open(index, wallMatches(grid, index))) listener?.onClick(index)
+                }
             }
         }
 
@@ -569,8 +573,9 @@ class TvNativeGridPageView(
             listener?.onLongPress(index, anchor)
         }
 
-        // 卡片墙上点一下 = 聚焦并进 hero 态; hero 态里 / 没有 hero 态 (确认就进详情页或播放) 只换焦点
-        override fun tapConfirmsWhileFocusing(index: Int): Boolean = grid === current && heroEnabled && !timeline.active
+        // hero 态里 / 没有 hero 态 (确认就进详情页或播放) 点一下只换焦点
+        override fun tapConfirmsWhileFocusing(index: Int): Boolean =
+            grid === current && tvWallTapConfirmsWhileFocusing(isMore = false, heroEnabled, timeline.active)
 
         override fun onTopRowUp(): Boolean = listener?.onTopRowUp() ?: false
 
