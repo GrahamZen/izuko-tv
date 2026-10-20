@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  media3 默认的 exo_player_view 去掉不用的部分: 控制栏占位 (exo_controller_placeholder, 有它 PlayerView 就会建整套 PlayerControlView)、
+  缓冲圈、封面图、错误提示、广告层. PlayerView 对这些都判空. 视频面照旧插在 exo_content_frame 的第一个位置.
+-->
+<merge xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <androidx.media3.ui.AspectRatioFrameLayout
+        android:id="@id/exo_content_frame"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_gravity="center">
+
+        <View
+            android:id="@id/exo_shutter"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@android:color/black" />
+
+        <androidx.media3.ui.SubtitleView
+            android:id="@id/exo_subtitles"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+    </androidx.media3.ui.AspectRatioFrameLayout>
+
+    <FrameLayout
+        android:id="@id/exo_overlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+</merge>
