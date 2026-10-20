@@ -11,6 +11,9 @@ package me.him188.ani.app.domain.media
 
 import kotlinx.atomicfu.locks.SynchronizedObject
 import kotlinx.atomicfu.locks.synchronized
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import me.him188.ani.datasources.api.Media
 
 /** 画面的动态范围 (HDR 一类). 排在前面的更好: 同时写着几种时取最前面的. */
@@ -33,18 +36,22 @@ enum class MediaSurroundAudio {
 }
 
 /**
- * 一条资源画面与声音上值得标出来的特性 (选源时给人看的标签). 两项都可能不知道 (null).
+ * 一条资源画面与声音上值得标出来的特性 (选源时给人看的标签). 各项都可能不知道 (null).
+ *
+ * @property dolbyVisionProfile 杜比视界的 profile (5、8…), 只在网盘读到时有 (标题里看不出); 不支持杜比视界的设备放 profile 5 颜色会错
  */
 data class MediaAvFeatures(
     val dynamicRange: MediaDynamicRange? = null,
     val audio: MediaSurroundAudio? = null,
+    val dolbyVisionProfile: Int? = null,
 ) {
-    val isEmpty: Boolean get() = dynamicRange == null && audio == null
+    val isEmpty: Boolean get() = dynamicRange == null && audio == null && dolbyVisionProfile == null
 
-    /** 两份信息合起来: 每项取更好的那个. */
+    /** 两份信息合起来: 每项取更好的那个, profile 取知道的那个. */
     operator fun plus(other: MediaAvFeatures): MediaAvFeatures = MediaAvFeatures(
         dynamicRange = listOfNotNull(dynamicRange, other.dynamicRange).minOrNull(),
         audio = listOfNotNull(audio, other.audio).minOrNull(),
+        dolbyVisionProfile = dolbyVisionProfile ?: other.dolbyVisionProfile,
     )
 
     companion object {
@@ -85,20 +92,27 @@ data class MediaAvFeatures(
 }
 
 /**
- * 读文件头读到的特性 (网盘读视频头时一并认出的, 见 DriveVideoInfoProbe), 按资源 id 记下, 给选源界面拿. 同 DriveVideoBitrates.
+ * 网盘读到的特性 (列目录给的、播放接口给的、读文件头读到的, 见 DriveVideoInfoProbe), 按资源 id 记下, 给选源界面拿. 同 DriveVideoBitrates.
+ * 资源已经给出之后才读到的也记在这里, [changes] 变了界面就重拼一次 (不用为了它重查数据源).
  */
 object ProbedMediaAvFeatures {
     private val lock = SynchronizedObject()
     private val features = LinkedHashMap<String, MediaAvFeatures>()
+    private val version = MutableStateFlow(0L)
+
+    /** 记下的内容变了就加一. */
+    val changes: StateFlow<Long> = version.asStateFlow()
 
     /** 记下资源 [mediaId] 读到的 [value] (空的不记). */
     fun record(mediaId: String, value: MediaAvFeatures) {
         if (value.isEmpty) return
-        synchronized(lock) {
-            features.remove(mediaId)
+        val changed = synchronized(lock) {
+            val old = features.remove(mediaId)
             features[mediaId] = value
             while (features.size > MAX_ENTRIES) features.remove(features.keys.first())
+            old != value
         }
+        if (changed) version.value += 1
     }
 
     fun of(mediaId: String): MediaAvFeatures? = synchronized(lock) { features[mediaId] }

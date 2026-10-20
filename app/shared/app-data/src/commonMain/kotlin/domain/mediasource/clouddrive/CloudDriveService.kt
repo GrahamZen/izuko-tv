@@ -31,7 +31,10 @@ import me.him188.ani.app.data.models.preference.DrivePickedSubtitle
 import me.him188.ani.app.data.models.preference.DriveRememberedFolder
 import me.him188.ani.app.data.models.preference.DriveRememberedShare
 import me.him188.ani.app.data.models.preference.DriveSubjectPicks
+import me.him188.ani.app.data.models.preference.DriveVideoInfo
 import me.him188.ani.app.data.repository.user.Settings
+import me.him188.ani.app.domain.media.MediaAvFeatures
+import me.him188.ani.app.domain.media.ProbedMediaAvFeatures
 import me.him188.ani.app.domain.media.probe.MediaStreamProbe
 import me.him188.ani.app.platform.PlaybackRequestHints
 import me.him188.ani.datasources.api.EpisodeSort
@@ -43,6 +46,7 @@ import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 import me.him188.ani.utils.platform.currentTimeMillis
 import kotlin.concurrent.Volatile
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeMark
@@ -343,28 +347,52 @@ class CloudDriveService internal constructor(
 
     // region 列目录不给视频信息的网盘 (WebDAV) 读文件头补上 (见 DriveVideoInfoProbe)
 
+    private suspend fun saveVideoInfo(key: String, info: DriveVideoInfo) {
+        updateAccount { current ->
+            current.copy(
+                videoInfo = (current.videoInfo - key + (key to info)).entries
+                    .toList().takeLast(MAX_VIDEO_INFO).associate { it.key to it.value },
+            )
+        }
+    }
+
     private val videoInfoProbe = DriveVideoInfoProbe(
         stored = { currentAccount().videoInfo },
-        save = { key, info ->
-            updateAccount { current ->
-                current.copy(
-                    videoInfo = (current.videoInfo - key + (key to info)).entries
-                        .toList().takeLast(MAX_VIDEO_INFO).associate { it.key to it.value },
-                )
-            }
-        },
+        save = ::saveVideoInfo,
         probe = { file -> MediaStreamProbe.probe(httpClient, WebDav.urlOf(this.protocol, file.fid), playbackHeaders(currentAccount())) },
         onLateInfo = { DriveVideoInfoRefresh.markStale(this.protocol.driveMediaSourceId) },
     )
 
     /**
-     * WebDAV 上 [current] (当前这一集的) 与 [others] (其余各集的) 视频里读得出画面高度与时长的那些 (文件 id → 补上这两项的文件);
-     * 其他网盘列目录就给了, 为空. 当前这一集没读过的要读文件头, 最多等 [DriveVideoInfoProbe.WAIT]; 其余的在后台读.
+     * 列目录就给了画面信息、播放接口带着原文件信息 ([DriveVideoMetaFields]) 的网盘: 当前这一集的文件各调一次播放接口, 认出 HDR 与杜比视界
+     * (列目录只标杜比视界). 不等, 读到了记进 [ProbedMediaAvFeatures], 选源界面跟着重拼; 读过的记在账号里, 文件不换不再读.
+     */
+    private val videoMetaProbe = DriveVideoInfoProbe(
+        stored = { currentAccount().videoInfo },
+        save = ::saveVideoInfo,
+        probe = { file -> api.videoMeta(file.fid) },
+        wanted = { it.isVideo && !it.dir },
+        wait = Duration.ZERO,
+        onProbed = { file, info ->
+            ProbedMediaAvFeatures.record(
+                "${this.protocol.driveMediaSourceId}.${file.fid}",
+                MediaAvFeatures(info.dynamicRange, info.audio, info.dolbyVisionProfile),
+            )
+        },
+    )
+
+    /**
+     * [current] (当前这一集的) 与 [others] (其余各集的) 视频里已经读到信息的那些 (文件 id → 补上信息的文件).
+     * WebDAV 列目录不给画面高度与时长, 读文件头: 当前这一集没读过的最多等 [DriveVideoInfoProbe.WAIT], 其余的在后台读.
+     * 播放接口带原文件信息的网盘只读当前这一集的 (见 [videoMetaProbe]), 不等. 其余网盘为空.
      */
     internal suspend fun videoInfoOf(current: List<DriveFile>, others: List<DriveFile>): Map<String, DriveFile> {
-        if (!protocol.isWebDav) return emptyMap()
-        DriveVideoInfoRefresh.clear(protocol.driveMediaSourceId)
-        return videoInfoProbe.fill(current, others)
+        if (protocol.isWebDav) {
+            DriveVideoInfoRefresh.clear(protocol.driveMediaSourceId)
+            return videoInfoProbe.fill(current, others)
+        }
+        if (protocol.api.transcoded?.meta != null) return videoMetaProbe.fill(current)
+        return emptyMap()
     }
 
     // endregion

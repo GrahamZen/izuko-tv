@@ -136,6 +136,7 @@ data class DriveRememberedFolder(val fid: String, val path: List<String>)
  * @property durationSeconds 时长, 读不出为 0
  * @property dynamicRange 画面的动态范围 (HDR 一类), SDR 或读不出为 null
  * @property audio 值得标出来的音轨格式 (无损多声道), 没有为 null
+ * @property dolbyVisionProfile 杜比视界的 profile, 不是杜比视界或读不出为 null
  * @property version 读出这份信息的读法版本 (见 `DriveVideoInfoProbe.PROBE_VERSION`); 比当前的旧就在后台重读
  */
 @Serializable
@@ -148,6 +149,7 @@ data class DriveVideoInfo(
     @Serializable(with = LenientSurroundAudioSerializer::class)
     val audio: MediaSurroundAudio? = null,
     val version: Int = 0,
+    val dolbyVisionProfile: Int? = null,
 )
 
 /**
