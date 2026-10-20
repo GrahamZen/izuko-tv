@@ -246,7 +246,7 @@ internal actual fun <T : Any> TvNativeGridPageHostContent(
                 view.onBindCard = { index -> currentOnBind(index) }
                 view.heroEnabled = heroEnabled
                 view.onTouchSwipe = if (touchInput && callbacks.onSwipe != null) { delta -> currentCallbacks.onSwipe?.invoke(delta) } else null
-                view.exitHeroOnBlankTap = touchInput
+                view.touchInput = touchInput
                 view.confirmFocusesWall = !(posterConfirm == TvPosterConfirmAction.Play && callbacks.onCardPlay != null)
                 view.contentScrollLimitPx = topBarScrollAwayPx
                 view.transitions = visualEffects.transitions

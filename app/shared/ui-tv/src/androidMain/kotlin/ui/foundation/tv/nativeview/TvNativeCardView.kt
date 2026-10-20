@@ -38,7 +38,9 @@ import android.util.FloatProperty
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.GestureDetector
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.View
 import android.view.ViewOutlineProvider
 import android.view.animation.LinearInterpolator
@@ -139,6 +141,24 @@ class TvNativeCardView(context: Context, private val style: TvNativeWallStyle) :
             if (!value && !isFocused) {
                 refreshDrawableState()
                 stateListAnimator?.jumpToCurrentState()
+            }
+            applyFocus()
+        }
+
+    /**
+     * 按触屏的规矩走时卡片墙上不画聚焦效果 (手指操作时焦点对用户没意义; hero 态里聚焦那张照画), 页面给. 放开时这张已经聚焦到位就照聚焦的动画
+     * 放大 (卡片墙上点一下进 hero 态, 那张早就拿着焦点); 正在聚焦途中就接着那段动画.
+     */
+    var touchLookHidden: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            if (!value && isFocused && focusProgress >= 1f) {
+                ObjectAnimator.ofFloat(this, TV_NATIVE_FOCUS_PROGRESS, 0f, 1f).apply {
+                    duration = style.focusMillis
+                    interpolator = TV_NATIVE_FAST_OUT_SLOW_IN
+                    start()
+                }
             }
             applyFocus()
         }
@@ -377,6 +397,41 @@ class TvNativeCardView(context: Context, private val style: TvNativeWallStyle) :
     var tapConfirmsWhileFocusing: (() -> Boolean)? = null
 
     /**
+     * 此刻按触屏的规矩走 (平板, 见 [TvNativeCardListener.touchTaps]): 手指按下不动焦点, 轻点抬起交给 [onTouchTap], 长按同确定键长按
+     * ([longPressHandler]). 由适配器给.
+     */
+    var touchTaps: (() -> Boolean)? = null
+
+    /** 按触屏的规矩走时 (见 [touchTaps]) 手指轻点这张. */
+    var onTouchTap: (() -> Unit)? = null
+
+    /** 这一下按下时按触屏的规矩走 (见 [touchTaps]), 抬起前不换. */
+    private var touchGesture = false
+
+    private val touchGestures: GestureDetector by lazy(LazyThreadSafetyMode.NONE) {
+        GestureDetector(
+            context,
+            object : GestureDetector.SimpleOnGestureListener() {
+                override fun onDown(e: MotionEvent): Boolean = true
+
+                override fun onSingleTapUp(e: MotionEvent): Boolean {
+                    onTouchTap?.invoke()
+                    return true
+                }
+
+                override fun onLongPress(e: MotionEvent) {
+                    val handler = longPressHandler ?: return
+                    performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                    handler(coverRectInWindow())
+                }
+            },
+        ).apply {
+            // 不认双击: 连点两下各算一下轻点
+            setOnDoubleTapListener(null)
+        }
+    }
+
+    /**
      * 触摸要接的范围只有封面: 番名淡出时 (hero 态) 卡片四周的留白与番名那一块看着是空白, 点在那里让给页面 (退出 hero 态, 见 TvNativeHeroBlankTap),
      * 不当成点了这张. 番名在的时候整张都接.
      */
@@ -386,20 +441,24 @@ class TvNativeCardView(context: Context, private val style: TvNativeWallStyle) :
     internal fun touchTargetVisibleRect(out: Rect): Boolean = (if (touchCoverOnly) cover else this).getGlobalVisibleRect(out)
 
     /**
-     * 触摸屏 (平板装了 TV 包) 上的点按: 触摸模式下可聚焦的视图没聚焦时, 系统的点按只拿焦点不点击 (= 遥控器上移过去). 页面答应
-     * ([tapConfirmsWhileFocusing], 卡片墙上进 hero 态) 时按下先聚焦, 抬起就是点击 = 移过去再按确认, 一下进 hero 态.
-     * 番名淡出时只接封面上的按下 (见 [touchCoverOnly]). 电视上没有触摸事件, 不经过这里.
+     * 触摸屏 (平板装了 TV 包) 上的点按. 按触屏的规矩走时 ([touchTaps]) 按下不动焦点, 轻点与长按交给页面 (见 [onTouchTap]). 否则照系统的点按:
+     * 触摸模式下可聚焦的视图没聚焦时, 点按只拿焦点不点击 (= 遥控器上移过去); 页面答应 ([tapConfirmsWhileFocusing], 卡片墙上进 hero 态) 时
+     * 按下先聚焦, 抬起就是点击 = 移过去再按确认, 一下进 hero 态. 番名淡出时只接封面上的按下 (见 [touchCoverOnly]). 电视上没有触摸事件, 不经过这里.
      */
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (event.actionMasked == MotionEvent.ACTION_DOWN && event.isFromSource(InputDevice.SOURCE_TOUCHSCREEN) && touchCoverOnly &&
+        val touch = event.isFromSource(InputDevice.SOURCE_TOUCHSCREEN)
+        if (event.actionMasked == MotionEvent.ACTION_DOWN && touch && touchCoverOnly &&
             !(event.x >= cover.left && event.x < cover.right && event.y >= cover.top && event.y < cover.bottom)
         ) {
             return false
         }
-        if (event.actionMasked == MotionEvent.ACTION_DOWN && event.isFromSource(InputDevice.SOURCE_TOUCHSCREEN) && !isFocused &&
-            tapConfirmsWhileFocusing?.invoke() == true
-        ) {
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) touchGesture = touch && touchTaps?.invoke() == true
+        if (touchGesture) {
+            touchGestures.onTouchEvent(event)
+            return true
+        }
+        if (event.actionMasked == MotionEvent.ACTION_DOWN && touch && !isFocused && tapConfirmsWhileFocusing?.invoke() == true) {
             requestFocus()
         }
         return super.onTouchEvent(event)
@@ -432,7 +491,7 @@ class TvNativeCardView(context: Context, private val style: TvNativeWallStyle) :
 
     private fun applyFocus() {
         val p = when {
-            focusEffectSuppressed -> 0f
+            focusEffectSuppressed || touchLookHidden -> 0f
             focusLookHeld -> 1f
             else -> focusProgress
         }

@@ -183,6 +183,14 @@ class TvNativeExploreList(
             for (i in 0 until childCount) (getChildAt(i) as? TvNativeRowView)?.let { it.cards.setFocusEffectSuppressed(it, value) }
         }
 
+    /** 按触屏的规矩走时卡片墙上不画聚焦效果 (见 [TvNativeCardView.touchLookHidden]). 屏上的行当场改, 之后排出来 / 重新上屏的行补上. */
+    var touchLookHidden: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            for (i in 0 until childCount) (getChildAt(i) as? TvNativeRowView)?.let { it.cards.setTouchLookHidden(it, value) }
+        }
+
     /**
      * 没有焦点也画成聚焦态的那张 (行键, 下标; 见 [TvNativeCardAdapter.setFocusLookHeld]), null = 没有. 屏上的行当场改, 之后排出来 / 重新上屏的
      * 行绑定时补上.
@@ -433,6 +441,7 @@ class TvNativeExploreList(
                     row.tag = item.key
                     row.animatedScroll = scroll.animated
                     row.cards.setFocusEffectSuppressed(row, focusEffectSuppressed)
+                    row.cards.setTouchLookHidden(row, touchLookHidden)
                     applyHeldFocus(row)
                     row.cards.listener = cardListener?.invoke(item.key)
                     row.cards.onBind = { index -> onBindCard?.invoke(item.key, index) }
@@ -458,6 +467,7 @@ class TvNativeExploreList(
             when (val view = holder.itemView) {
                 is TvNativeRowView -> {
                     view.cards.setFocusEffectSuppressed(view, focusEffectSuppressed)
+                    view.cards.setTouchLookHidden(view, touchLookHidden)
                     applyHeldFocus(view)
                 }
 
