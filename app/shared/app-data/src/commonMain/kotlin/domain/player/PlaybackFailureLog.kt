@@ -47,9 +47,12 @@ object PlaybackFailureLog {
 
     /**
      * 播放器上报的原因 (同播放页上的提示). [HTTP_ERROR] 是服务器回了 4xx / 5xx, 状态码见 [Entry.httpStatus];
-     * [TOO_SHORT] 是播完的视频短得不像正片 (公告、广告片), 时长见 [Entry.mediaDurationMillis]; [DRIVE_LOGIN] 是网盘没登录 (分享要转存).
+     * [TOO_SHORT] 是播完的视频短得不像正片 (公告、广告片), 时长见 [Entry.mediaDurationMillis]; [DRIVE_LOGIN] 是网盘没登录 (分享要转存);
+     * [DRIVE_FULL] 是网盘空间不够, 分享里的文件转存不进去; [NOT_VIDEO] 是视频地址回的不是视频 (见 [isNotVideoResponse]).
      */
-    enum class Reason { RESOLUTION_TIMED_OUT, NETWORK, HTTP_ERROR, NO_MATCHING_FILE, UNSUPPORTED, PLAYER_ERROR, TOO_SHORT, UNKNOWN, DRIVE_LOGIN }
+    enum class Reason {
+        RESOLUTION_TIMED_OUT, NETWORK, HTTP_ERROR, NO_MATCHING_FILE, UNSUPPORTED, PLAYER_ERROR, TOO_SHORT, UNKNOWN, DRIVE_LOGIN, DRIVE_FULL, NOT_VIDEO,
+    }
 
     class Entry(
         val timeMillis: Long,
@@ -227,6 +230,20 @@ fun Throwable.httpErrorStatus(): Int? {
         current = current.cause?.takeIf { it !== current }
     }
     return null
+}
+
+/**
+ * 视频地址回的不是视频: 播放器读不懂拿到的内容 (ExoPlayer 的 `ERROR_CODE_PARSING_*`), 多是链接失效或防盗链后站点回了网页 / JSON,
+ * 也可能是播放器不认的封装. 编码格式放不了 (解码器那一层) 不算, 见 [UnsupportedFormat].
+ */
+fun Throwable.isNotVideoResponse(): Boolean {
+    var current: Throwable? = this
+    var depth = 0
+    while (current != null && depth++ < 8) {
+        if (current.message.orEmpty().contains("ERROR_CODE_PARSING_")) return true
+        current = current.cause?.takeIf { it !== current }
+    }
+    return false
 }
 
 private val HTTP_STATUS_PATTERNS = listOf(
