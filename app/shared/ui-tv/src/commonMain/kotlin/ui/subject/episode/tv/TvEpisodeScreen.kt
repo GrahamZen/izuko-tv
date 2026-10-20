@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.subject.episode.tv
 
+import me.him188.ani.app.ui.diagnostics.TraceSection
 import me.him188.ani.app.ui.foundation.focus.tvSwallowKeysWhenLeaving
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
@@ -1647,20 +1648,24 @@ fun TvEpisodeScreenContent(
             ) {
                 // 弹幕层: 单独的表面, 要在视频面之前组合 (见 DanmakuLayer).
                 // 拖动预览画在全屏上时藏起来: 弹幕停在开始拖的那一刻, 盖在预览位置的画面上对不上
-                TvPlayerDanmaku(
-                    vm.player, danmakuHostState, vm.uiDanmakuEventFlow,
-                    enabled = page.danmakuEnabled,
-                    hidden = { seekPreview?.hidesFullScreenExtras == true },
-                    modifier = Modifier.matchParentSize(),
-                )
+                TraceSection("Izuko:Player/Danmaku") {
+                    TvPlayerDanmaku(
+                        vm.player, danmakuHostState, vm.uiDanmakuEventFlow,
+                        enabled = page.danmakuEnabled,
+                        hidden = { seekPreview?.hidesFullScreenExtras == true },
+                        modifier = Modifier.matchParentSize(),
+                    )
+                }
 
                 // 视频面: 独立稳定槽位, 覆盖层任何变化不触碰. 控制层在场时底部字幕挪到它上面
                 val subtitleObstructionTop = remember(overlay) { { overlay.subtitleObstructionTopPx() } }
                 CompositionLocalProvider(LocalSubtitleObstructionTop provides subtitleObstructionTop) {
-                    VideoPlayer(
-                        vm.player,
-                        Modifier.matchParentSize(),
-                    )
+                    TraceSection("Izuko:Player/VideoPlayer") {
+                        VideoPlayer(
+                            vm.player,
+                            Modifier.matchParentSize(),
+                        )
+                    }
                 }
 
                 // 触屏手势层 (电视上不组合): 在视频面之上、一切覆盖层之下 —— 覆盖层里可点/可滚的节点
@@ -1686,13 +1691,15 @@ fun TvEpisodeScreenContent(
                 //
                 // 状态读在 graphicsLayer 的 lambda 里: 直接读会让整个播放器界面随反馈的出现/消失重组
                 // 主播放器解预览画面时 (见 PlayerSeekPreviewState) 每挪一步都要重新缓冲一下, 取消后跳回原处也要缓冲一下 (全屏停着的就是原处的画面), 都不报
-                TvPlayerLoadingLayer(
-                    vm,
-                    hintEnabled = overlay.layer == TvPlayerLayer.HIDDEN,
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .graphicsLayer { alpha = if (seekFlash.visible || seekPreview?.holdsFrame == true) 0f else 1f },
-                )
+                TraceSection("Izuko:Player/LoadingLayer") {
+                    TvPlayerLoadingLayer(
+                        vm,
+                        hintEnabled = overlay.layer == TvPlayerLayer.HIDDEN,
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .graphicsLayer { alpha = if (seekFlash.visible || seekPreview?.holdsFrame == true) 0f else 1f },
+                    )
+                }
 
                 // 播放/暂停切换反馈: 画面中央浮现对应图标并渐隐 (监听播放器状态流,
                 // 无论切换来自确认键/控制按钮/面板操作都有反馈)
@@ -1753,55 +1760,57 @@ fun TvEpisodeScreenContent(
                     visible = overlay.layer == TvPlayerLayer.CONTROLS || skipTipVisible || controlsRetained.value,
                     modifier = Modifier.matchParentSize(),
                 ) {
-                    TvPlayerControlsOverlay(
-                        chromeVisible = overlay.layer == TvPlayerLayer.CONTROLS,
-                        trailingVisible = skipTipVisible,
-                        overlay = overlay,
-                        vm = vm,
-                        page = page,
-                        upNext = upNext,
-                        danmakuEditorState = danmakuEditorState,
-                        progressSliderState = progressSliderState,
-                        framePreview = seekPreview?.framePreview,
-                        playerFocus = focus,
-                        sheetsController = sheetsController,
-                        onEditChromeItem = editChromeItem,
-                        // 胶囊行最右的插槽 (OP/ED 提示按钮): 底边与胶囊对齐, 面板从上方浮出也不顶它
-                        pillsRowTrailing = {
-                            // OP/ED 提示按钮 (取舍见 TvSkipOpEdTipButton 的 KDoc)
-                            val shownTip = skipTip ?: lastSkipTip
-                            AniAnimatedVisibility(visible = skipTipVisible) {
-                                if (shownTip == null) return@AniAnimatedVisibility
-                                TvSkipOpEdTipButton(
-                                    tip = shownTip,
-                                    onClick = {
-                                        if (shownTip.canCancel) {
-                                            vm.playerSkipOpEdState.cancelSkipOpEd()
-                                        } else {
-                                            vm.playerSkipOpEdState.skipOpEd()
-                                        }
-                                    },
-                                    modifier = Modifier
-                                        // 吞掉"按钮出现时手上那次按住"的余波, 直到看见新的一次按下为止 ——
-                                        // 与详情页"长按开始观看 -> 跳到选集卡片"是同一个局面: 本按钮一出现
-                                        // 就抢焦点, 用户手还按着 (长按倍速), 那次按住剩下的连发与 KeyUp 就
-                                        // 全落在它身上, 松手即"取消跳过". 判据与原生控件同一条 (repeatCount
-                                        // == 0 才算新手势), 不依赖根路由的记账: 根路由并非每条分支都消费
-                                        // 确认键 (控制层那条 `if (!isKeyDown) return false` 会把所有 KeyUp
-                                        // 放行给持焦控件), 少一条就漏
-                                        .consumeHeldConfirmKey()
-                                        // 提示已经没了、按钮还在淡出: 吞掉按键, 免得用旧内容再取消 / 跳过一次 (2026-09-14 审查)
-                                        .tvSwallowKeysWhenLeaving { vm.playerSkipOpEdState.currentTip == null }
-                                        .tvFocusAnchor(focus, TvEpisodeFocus.SKIP_TIP)
-                                        .onFocusChanged {
-                                            skipTipFocused = it.hasFocus
-                                            if (it.hasFocus) overlay.markInteraction()
+                    TraceSection("Izuko:Player/Controls") {
+                        TvPlayerControlsOverlay(
+                            chromeVisible = overlay.layer == TvPlayerLayer.CONTROLS,
+                            trailingVisible = skipTipVisible,
+                            overlay = overlay,
+                            vm = vm,
+                            page = page,
+                            upNext = upNext,
+                            danmakuEditorState = danmakuEditorState,
+                            progressSliderState = progressSliderState,
+                            framePreview = seekPreview?.framePreview,
+                            playerFocus = focus,
+                            sheetsController = sheetsController,
+                            onEditChromeItem = editChromeItem,
+                            // 胶囊行最右的插槽 (OP/ED 提示按钮): 底边与胶囊对齐, 面板从上方浮出也不顶它
+                            pillsRowTrailing = {
+                                // OP/ED 提示按钮 (取舍见 TvSkipOpEdTipButton 的 KDoc)
+                                val shownTip = skipTip ?: lastSkipTip
+                                AniAnimatedVisibility(visible = skipTipVisible) {
+                                    if (shownTip == null) return@AniAnimatedVisibility
+                                    TvSkipOpEdTipButton(
+                                        tip = shownTip,
+                                        onClick = {
+                                            if (shownTip.canCancel) {
+                                                vm.playerSkipOpEdState.cancelSkipOpEd()
+                                            } else {
+                                                vm.playerSkipOpEdState.skipOpEd()
+                                            }
                                         },
-                                )
-                            }
-                        },
-                        modifier = Modifier.fillMaxSize(),
-                    )
+                                        modifier = Modifier
+                                            // 吞掉"按钮出现时手上那次按住"的余波, 直到看见新的一次按下为止 ——
+                                            // 与详情页"长按开始观看 -> 跳到选集卡片"是同一个局面: 本按钮一出现
+                                            // 就抢焦点, 用户手还按着 (长按倍速), 那次按住剩下的连发与 KeyUp 就
+                                            // 全落在它身上, 松手即"取消跳过". 判据与原生控件同一条 (repeatCount
+                                            // == 0 才算新手势), 不依赖根路由的记账: 根路由并非每条分支都消费
+                                            // 确认键 (控制层那条 `if (!isKeyDown) return false` 会把所有 KeyUp
+                                            // 放行给持焦控件), 少一条就漏
+                                            .consumeHeldConfirmKey()
+                                            // 提示已经没了、按钮还在淡出: 吞掉按键, 免得用旧内容再取消 / 跳过一次 (2026-09-14 审查)
+                                            .tvSwallowKeysWhenLeaving { vm.playerSkipOpEdState.currentTip == null }
+                                            .tvFocusAnchor(focus, TvEpisodeFocus.SKIP_TIP)
+                                            .onFocusChanged {
+                                                skipTipFocused = it.hasFocus
+                                                if (it.hasFocus) overlay.markInteraction()
+                                            },
+                                    )
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
                 }
 
                 // 播放器统计悬浮层 (三个点菜单开关)
@@ -1830,16 +1839,18 @@ fun TvEpisodeScreenContent(
                         }
                     }
                     CompositionLocalProvider(LocalPageIsForeground provides detailsForeground) {
-                        TvPlayerDetailsOverlay(
-                            vm = vm,
-                            page = page,
-                            onClose = { overlay.hideAll() },
-                            onExitUpToStrip = { overlay.returnToEpisodeStrip() },
-                            onContentComposedChanged = { overlay.detailsContentComposed = it },
-                            // 层已切走、还在淡出时吞掉按键: 选集条接到焦点前的一两帧里, 确认键会点中淡出中的简介块等 (2026-09-14 审查)
-                            modifier = Modifier.matchParentSize()
-                                .tvSwallowKeysWhenLeaving { overlay.layer != TvPlayerLayer.DETAILS },
-                        )
+                        TraceSection("Izuko:Player/Details") {
+                            TvPlayerDetailsOverlay(
+                                vm = vm,
+                                page = page,
+                                onClose = { overlay.hideAll() },
+                                onExitUpToStrip = { overlay.returnToEpisodeStrip() },
+                                onContentComposedChanged = { overlay.detailsContentComposed = it },
+                                // 层已切走、还在淡出时吞掉按键: 选集条接到焦点前的一两帧里, 确认键会点中淡出中的简介块等 (2026-09-14 审查)
+                                modifier = Modifier.matchParentSize()
+                                    .tvSwallowKeysWhenLeaving { overlay.layer != TvPlayerLayer.DETAILS },
+                            )
+                        }
                     }
                 }
 
@@ -1853,14 +1864,16 @@ fun TvEpisodeScreenContent(
                     enter = fadeIn(tween(TV_SOURCES_FADE_MS)) + slideInVertically(tween(TV_SOURCES_FADE_MS)) { -it / TV_SOURCES_SLIDE_DIVISOR },
                     exit = fadeOut(tween(TV_SOURCES_FADE_MS)) + slideOutVertically(tween(TV_SOURCES_FADE_MS)) { -it / TV_SOURCES_SLIDE_DIVISOR },
                 ) {
-                    TvPlayerSourcePanel(
-                        vm = vm,
-                        page = page,
-                        controller = sourcePanel,
-                        leaving = overlay.layer != TvPlayerLayer.SOURCES,
-                        onClose = { closeSourcePanel() },
-                        modifier = Modifier.matchParentSize(),
-                    )
+                    TraceSection("Izuko:Player/SourcePanel") {
+                        TvPlayerSourcePanel(
+                            vm = vm,
+                            page = page,
+                            controller = sourcePanel,
+                            leaving = overlay.layer != TvPlayerLayer.SOURCES,
+                            onClose = { closeSourcePanel() },
+                            modifier = Modifier.matchParentSize(),
+                        )
+                    }
                 }
 
                 // 右侧侧边 sheets (选集/弹幕设置), 复用现有实现
