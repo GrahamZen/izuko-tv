@@ -42,6 +42,7 @@ import me.him188.ani.app.ui.foundation.TV_CONFIRM_KEYS
 import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
 import me.him188.ani.app.ui.foundation.navigation.BackHandler
 import me.him188.ani.app.ui.foundation.session.TvNavigationRailDefaults
+import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
 import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallScale
 import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallTone
@@ -55,7 +56,10 @@ import me.him188.ani.app.ui.foundation.tv.rememberTvWallPreviewSamples
 import me.him188.ani.app.ui.foundation.tv.tvPageBackdropTreatment
 import me.him188.ani.app.ui.foundation.tv.tvWallPreviewSubjectId
 import me.him188.ani.app.ui.foundation.tv.tvWallPreviewTextColors
+import me.him188.ani.app.ui.lang.Lang
+import me.him188.ani.app.ui.lang.collection_tv_progress_tab
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
+import org.jetbrains.compose.resources.stringResource
 
 /**
  * 「海报墙大小」里追番页的假页面: 与 [TvCollectionPage] 同一套玻璃标签栏、同一个原生海报墙、同一份几何 ([tvCollectionWallLayout]), 数据换成示例
@@ -162,7 +166,10 @@ internal fun TvCollectionWallPreview(
         // 页面从屏幕左缘铺起, 左边让开 (换成滑块的) 侧边栏, 同真页面
         Column(Modifier.fillMaxSize().padding(start = TvNavigationRailDefaults.CollapsedWidth + TV_COLLECTION_START_PAD, top = TV_COLLECTION_TOP_PAD)) {
             TvCollectionGlassTabBar(Modifier.height(TV_COLLECTION_TAB_ROW_HEIGHT).graphicsLayer { alpha = 1f - nativeState.wallFade }) {
+                // 「追更」摆在用户排的位置, 同真页面 (见 rememberTvCollectionRailTabs); 示例页里只摆出来, 不收焦点
+                val progressIndex = LocalThemeSettings.current.tvCollectionProgressTabIndex.coerceIn(0, tabs.size)
                 tabs.forEachIndexed { index, type ->
+                    if (index == progressIndex) TvWallPreviewProgressTab()
                     key(type) {
                         val interactionSource = remember { MutableInteractionSource() }
                         var focused by remember { mutableStateOf(false) }
@@ -187,6 +194,7 @@ internal fun TvCollectionWallPreview(
                         )
                     }
                 }
+                if (progressIndex == tabs.size) TvWallPreviewProgressTab()
             }
         }
     }
@@ -210,3 +218,17 @@ private val TV_WALL_PREVIEW_PROGRESS = floatArrayOf(0.3f, 0.75f, 0.1f, 0.5f, 0.9
 
 /** 各标签后面的示例数字, 按标签的显示顺序轮着用. */
 private val TV_WALL_PREVIEW_TAB_COUNTS = intArrayOf(12, 30, 3, 86, 5)
+
+/** 「追更」后面的示例数字. */
+private const val TV_WALL_PREVIEW_PROGRESS_COUNT = 8
+
+/** 示例页标签行上的「追更」: 只摆出来, 不收焦点. */
+@Composable
+private fun TvWallPreviewProgressTab() {
+    TvCollectionGlassTab(
+        label = stringResource(Lang.collection_tv_progress_tab),
+        selected = false,
+        focused = false,
+        count = TV_WALL_PREVIEW_PROGRESS_COUNT,
+    )
+}

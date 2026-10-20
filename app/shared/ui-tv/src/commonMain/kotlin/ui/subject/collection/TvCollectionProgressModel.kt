@@ -16,6 +16,7 @@ import kotlinx.datetime.UtcOffset
 import kotlinx.datetime.asTimeZone
 import kotlinx.datetime.toLocalDateTime
 import me.him188.ani.app.data.models.episode.EpisodeCollectionInfo
+import me.him188.ani.app.data.models.preference.NsfwMode
 import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
 import me.him188.ani.app.domain.episode.EpisodeAirTime
 import me.him188.ani.app.domain.episode.EpisodeCompletionContext.resolveEpisodeAirTime
@@ -61,6 +62,7 @@ enum class TvProgressGroup {
  * @property latestAirTime 已播最新一集的播出时刻 (想看的番分集还没到时是首播)
  * @property nextSort 下一集 (还没播的第一集) 的序号; 未开播时是第一集
  * @property nextAirTime 下一集的播出时刻 ([EpisodeAirTime.exact] = 知道几点); 未开播时是首播
+ * @property nextIsFinal 下一集是最后一集 (再播一集就完结)
  */
 @Immutable
 data class TvProgressEntry(
@@ -72,6 +74,7 @@ data class TvProgressEntry(
     val latestAirTime: EpisodeAirTime?,
     val nextSort: EpisodeSort?,
     val nextAirTime: EpisodeAirTime?,
+    val nextIsFinal: Boolean = false,
 ) {
     val subjectId: Int get() = info.subjectId
 }
@@ -84,7 +87,8 @@ data class TvProgressSection(
 )
 
 /**
- * 把在看 [doing] 与想看 [wish] 按 [now] 分组, 返回有条目的组 (按 [TvProgressGroup] 的顺序). 同一部两边都有时按在看算.
+ * 把在看 [doing] 与想看 [wish] 按 [now] 分组, 返回有条目的组 (按 [TvProgressGroup] 的顺序). 同一部两边都有时按在看算;
+ * NSFW 设为隐藏时去掉这类条目 (同收藏页别的标签).
  * [timeZone] 决定「今天」是哪一天.
  */
 fun tvProgressSections(
@@ -96,9 +100,11 @@ fun tvProgressSections(
     val seen = HashSet<Int>()
     val entries = ArrayList<TvProgressEntry>()
     for (info in doing) {
+        if (info.isHiddenNsfw()) continue
         if (seen.add(info.subjectId)) tvProgressEntryOf(info, wished = false, now, timeZone)?.let(entries::add)
     }
     for (info in wish) {
+        if (info.isHiddenNsfw()) continue
         if (seen.add(info.subjectId)) tvProgressEntryOf(info, wished = true, now, timeZone)?.let(entries::add)
     }
     return TvProgressGroup.entries.mapNotNull { group ->
@@ -106,6 +112,9 @@ fun tvProgressSections(
         if (inGroup.isEmpty()) null else TvProgressSection(group, inGroup.sortedWith(tvProgressOrder(group)))
     }
 }
+
+/** NSFW 设为隐藏时这部不该出现 (收藏页各标签的分页在库里就去掉了这类条目, 见 `filterByCollectionTypePaging`). */
+internal fun SubjectCollectionInfo.isHiddenNsfw(): Boolean = subjectInfo.nsfw && nsfwMode == NsfwMode.HIDE
 
 /** 一部算进哪一组; 不在播 (早已完结 / 开播还远 / 日期未知) 时 null. */
 internal fun tvProgressEntryOf(
@@ -166,6 +175,7 @@ internal fun tvProgressEntryOf(
         latestAirTime = latestAir,
         nextSort = next?.episodeInfo?.sort,
         nextAirTime = nextAir,
+        nextIsFinal = next != null && airedIndex + 1 == mains.lastIndex,
     )
 }
 

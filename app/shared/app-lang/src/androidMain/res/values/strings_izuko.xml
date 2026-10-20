@@ -795,10 +795,11 @@
     <string name="collection_tv_progress_group_caught_up">Caught up</string>
     <string name="collection_tv_progress_group_upcoming">Premiering soon</string>
     <string name="collection_tv_progress_header">%1$s · %2$d</string>
-    <string name="collection_tv_progress_unwatched_today">%1$d unwatched · today</string>
-    <string name="collection_tv_progress_unwatched">%1$d unwatched / aired %2$s</string>
-    <string name="collection_tv_progress_wish_aired">%1$d aired</string>
-    <string name="collection_tv_progress_wish_aired_next">%1$d aired · next %2$s</string>
+    <string name="collection_tv_progress_updates_day">Next %1$s</string>
+    <string name="collection_tv_progress_updates_at">Next %1$s %2$s</string>
+    <string name="collection_tv_progress_finale_day">Finale %1$s</string>
+    <string name="collection_tv_progress_finale_at">Finale %1$s %2$s</string>
+    <string name="collection_tv_progress_completed">All %1$s eps out</string>
     <string name="collection_tv_progress_wish_started">Now airing</string>
     <string name="collection_tv_progress_next">%1$s · Ep %2$s</string>
     <string name="collection_tv_progress_next_unknown">Next date TBA</string>
