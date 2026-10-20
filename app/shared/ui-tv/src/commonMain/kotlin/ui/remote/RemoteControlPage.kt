@@ -7427,6 +7427,8 @@ private val PROFILES_SCRIPT = """
   // 同电视选人页的头像底色, 按编号取 (同一个人每次一样)
   var COLORS = ['#5E81AC', '#BF616A', '#A3BE8C', '#D08770', '#B48EAD', '#88C0D0', '#EBCB8B'];
   var data = null, last = '';
+  // 这次打开页面问过「之前的本地收藏」没有 (见 maybeAskMerge)
+  var mergeAsked = false;
   // 展开了谁的菜单 (改名 / 删除)、正在改谁的名字 (编号), 添加用户的表单开着没有, 表单里选的是哪一种
   var menu = null, renaming = null, adding = false, addKind = 'bangumi';
   // 换了用户要整页重载时经这里: 记一笔, 重载后提示现在是谁
@@ -7437,11 +7439,20 @@ private val PROFILES_SCRIPT = """
   };
   function load() {
     return getJson('api/profiles').then(function (d) {
-      if (d.ok) { data = d; render(); }
+      if (d.ok) { data = d; render(); maybeAskMerge(); }
       return d;
     }).catch(function () {});
   }
   window.loadProfiles = load;
+  // 本地用户改成 Bangumi 用户时留下的本地收藏 (见 RemotePendingCollections): 登录着就问一次合并还是删除. 每次打开页面最多主动问一次,
+  // 之后用户卡片下面的按钮再打开; 电视上同时也会问, 哪边先选算哪边. 在网页上刚登录 (hooks.login) 也重读到这里, 手机上登录的就在手机上选
+  function maybeAskMerge() {
+    var d = data;
+    if (mergeAsked || imp || !d || !d.pendingLocal || !d.canMerge || d.importing) return;
+    mergeAsked = true;
+    openMerge();
+  }
+  if (window.remoteHooks) window.remoteHooks.login.push(function () { load(); });
   var reloaded = false;
   try { reloaded = !!sessionStorage.getItem(RELOADED); sessionStorage.removeItem(RELOADED); } catch (e) {}
   if (reloaded) {
@@ -7473,6 +7484,12 @@ private val PROFILES_SCRIPT = """
         '<span class="pf-name">' + esc(u.name) + '</span>' + (u.local ? '<span class="pf-tag">' + T('本地') + '</span>' : '') + '</button>' +
         (u.current ? '<span class="pf-cur">' + T('当前') + '</span>'
           : '<button type="button" class="pf-go" data-pf="switch" data-id="' + u.id + '">' + T('切换') + '</button>') + '</div>';
+      // 改成 Bangumi 用户时留下的本地收藏: 登录着能处理, 没登录写一句收藏还在
+      if (u.current && d.pendingLocal) {
+        h += d.canMerge
+          ? '<div class="row"><button type="button" class="ghost" data-pf="merge" data-id="' + u.id + '">' + T('处理之前的本地收藏（{0} 部）', d.pendingLocal) + '</button></div>'
+          : '<p class="hint">' + T('之前的 {0} 部本地收藏还留着，登录 Bangumi 后可以合并到账号，也可以删除。', d.pendingLocal) + '</p>';
+      }
       if (renaming === u.id) {
         h += '<form class="acct-nick" id="pf-rename" data-id="' + u.id + '"><input type="text" name="name" maxlength="20" autocomplete="off" value="' +
           esc(u.raw) + '" placeholder="' + esc(T('用户 {0}', u.id)) + '"><button type="submit">' + T('保存') + '</button></form>';
@@ -7574,11 +7591,17 @@ private val PROFILES_SCRIPT = """
       impDlg.addEventListener('click', function (e) {
         var b = e.target.closest('[data-pfi]');
         if (!b || b.disabled) return;
-        if (b.getAttribute('data-pfi') === 'go') startImport(b); else closeImport();
+        var a = b.getAttribute('data-pfi');
+        if (a === 'go') startImport(b);
+        else if (a === 'discard') discardPending(b);
+        // 留下的收藏账号里都有了: 知道了 = 处理完了
+        else if (a === 'done') discardPending(null);
+        else closeImport();
       });
       document.body.appendChild(impDlg);
     }
-    impDlg.innerHTML = '<div class="link-dlg-box"><div class="link-dlg-t">' + esc(T('导入「{0}」的收藏', imp ? imp.name : '')) + '</div>' + inner + '</div>';
+    impDlg.innerHTML = '<div class="link-dlg-box"><div class="link-dlg-t">' +
+      esc(imp && imp.pending ? T('合并之前的本地收藏') : T('导入「{0}」的收藏', imp ? imp.name : '')) + '</div>' + inner + '</div>';
   }
   function impCloseRow() {
     return '<div class="row"><button type="button" class="primary" data-pfi="close">' + T('知道了') + '</button></div>';
@@ -7591,17 +7614,28 @@ private val PROFILES_SCRIPT = """
   }
   function openImport(u) {
     imp = { id: u.id, name: u.name };
+    loadImportPreview('api/profiles/import?id=' + u.id);
+  }
+  // 本地用户改成 Bangumi 用户时留下的 (见 RemotePendingCollections): 同导入的预览, 多一个「删除」, 「取消」写作「以后再说」
+  function openMerge() {
+    imp = { pending: true, total: data && data.pendingLocal || 0 };
+    loadImportPreview('api/profiles/pending');
+  }
+  function loadImportPreview(url) {
     impBox('<p class="dlg-p">' + T('正在读取 Bangumi 上的收藏…') + '</p>');
-    getJson('api/profiles/import?id=' + u.id, 70000).then(function (d) {
+    getJson(url, 70000).then(function (d) {
       if (!imp) return;
       if (!d.ok) { impBox('<p class="dlg-p">' + esc(d.message) + '</p>' + impCloseRow()); return; }
       var add = d.add || [];
+      if (d.total) imp.total = d.total;
       if (!add.length) {
-        impBox('<p class="dlg-p">' + T('没有要导入的：这些收藏在 Bangumi 上都已经有了。') + '</p>' + impCloseRow());
+        impBox('<p class="dlg-p">' + T('没有要导入的：这些收藏在 Bangumi 上都已经有了。') + '</p>' + (imp.pending
+          ? '<div class="row"><button type="button" class="primary" data-pfi="done">' + T('知道了') + '</button></div>' : impCloseRow()));
         return;
       }
       imp.count = add.length;
-      impBox('<p class="dlg-p">' + T('会在当前用户的 Bangumi 账号里新加 {0} 部收藏，带上评分与短评，看过的集标成看过。', add.length) +
+      impBox((imp.pending ? '<p class="dlg-p">' + T('这个用户改成 Bangumi 用户之前在这台电视上的收藏，可以合并到刚登录的账号，也可以删除。') + '</p>' : '') +
+        '<p class="dlg-p">' + T('会在当前用户的 Bangumi 账号里新加 {0} 部收藏，带上评分与短评，看过的集标成看过。', add.length) +
         (d.skipped ? T('Bangumi 上已经收藏的 {0} 部不动。', d.skipped) : '') + '</p>' +
         '<p class="dlg-p risk">' + T('加上去的每一条都会出现在这个账号的 Bangumi 时间线上。Bangumi 不能取消收藏，要撤回只能去 Bangumi 网页上逐条改。') + '</p>' +
         '<ol class="pf-imp-list">' + add.map(function (x) {
@@ -7609,15 +7643,16 @@ private val PROFILES_SCRIPT = """
           if (x.score > 0) bits.push(T('{0} 分', x.score));
           if (x.episodes > 0) bits.push(T('看过 {0} 集', x.episodes));
           return '<li>' + esc(x.name) + ' <small>' + esc(bits.join(' · ')) + '</small></li>';
-        }).join('') + '</ol><div class="row"><button type="button" class="ghost" data-pfi="close">' + T('取消') + '</button>' +
-        '<button type="button" class="primary" data-pfi="go">' + T('导入 {0} 部', add.length) + '</button></div>');
+        }).join('') + '</ol><div class="row"><button type="button" class="ghost" data-pfi="close">' + (imp.pending ? T('以后再说') : T('取消')) + '</button>' +
+        (imp.pending ? '<button type="button" class="ghost acct-danger" data-pfi="discard">' + T('删除') + '</button>' : '') +
+        '<button type="button" class="primary" data-pfi="go">' + (imp.pending ? T('合并 {0} 部', add.length) : T('导入 {0} 部', add.length)) + '</button></div>');
     }).catch(function () {
       if (imp) impBox('<p class="dlg-p">' + T('读取失败，请确认手机与电视在同一网络') + '</p>' + impCloseRow());
     });
   }
   function startImport(b) {
     b.disabled = true;
-    post('api/profiles/import', { id: imp.id }).then(function (r) {
+    post(imp.pending ? 'api/profiles/pending/merge' : 'api/profiles/import', imp.pending ? {} : { id: imp.id }).then(function (r) {
       if (!r.ok) { impBox('<p class="dlg-p">' + esc(r.message) + '</p>' + impCloseRow()); return; }
       pollImport();
     }).catch(function () { b.disabled = false; fail(); });
@@ -7626,15 +7661,20 @@ private val PROFILES_SCRIPT = """
     getJson('api/profiles/import/state', 8000).then(function (s) {
       if (!imp) return;
       if (s.running) {
-        impBox('<p class="dlg-p">' + T('正在导入 {0}/{1}…', s.done, s.total || imp.count || 0) + '</p>' +
+        impBox('<p class="dlg-p">' + (imp.pending ? T('正在合并 {0}/{1}…', s.done, s.total || imp.count || 0)
+          : T('正在导入 {0}/{1}…', s.done, s.total || imp.count || 0)) + '</p>' +
           (s.waiting ? '<p class="dlg-p">' + T('Bangumi 每 5 分钟只允许改 15 次收藏，稍等一会儿会自动接着导。') + '</p>' : ''));
         impTimer = setTimeout(pollImport, 1000);
         return;
       }
       if (s.error) { impBox('<p class="dlg-p">' + T('导入没有完成：{0}', esc(s.error)) + '</p>' + impCloseRow()); return; }
       var r = s.result || {}, fails = r.failures || [];
-      impBox('<p class="dlg-p">' + T('导入完成：新加 {0} 部收藏，标了 {1} 集看过。', r.added || 0, r.episodes || 0) +
-        (r.skipped ? T('跳过已经有的 {0} 部。', r.skipped) : '') + '</p>' +
+      // 合并的: 收藏没加上的还留在电视上, 下次再问; 用户卡片下面的按钮跟着更新
+      var kept = fails.filter(function (f) { return !f.added; }).length;
+      if (imp.pending) load();
+      impBox('<p class="dlg-p">' + (imp.pending ? T('合并完成：新加 {0} 部收藏，标了 {1} 集看过。', r.added || 0, r.episodes || 0)
+          : T('导入完成：新加 {0} 部收藏，标了 {1} 集看过。', r.added || 0, r.episodes || 0)) +
+        (r.skipped ? T('跳过已经有的 {0} 部。', r.skipped) : '') + (imp.pending && kept ? T('没合并上的 {0} 部还留着，下次再问。', kept) : '') + '</p>' +
         (fails.length ? '<p class="dlg-p risk">' + T('{0} 部没有导好：', fails.length) + '</p><ol class="pf-imp-list">' + fails.map(function (f) {
           return '<li>' + esc(f.name) + ' <small>' + esc((f.added ? T('收藏加上了，看过的集没标上') + T('：') : '') + (f.message || '')) + '</small></li>';
         }).join('') + '</ol>' : '') + impCloseRow());
@@ -7642,6 +7682,16 @@ private val PROFILES_SCRIPT = """
       // 电视一时没答 (正忙着写): 过一会儿再问
       if (imp) impTimer = setTimeout(pollImport, 2000);
     });
+  }
+  // 不要留下的本地收藏了 (删了找不回来, 先问一句); b 为 null = 账号里都有了, 不用问
+  function discardPending(b) {
+    if (b && !confirm(T('删除这 {0} 部本地收藏？删除后找不回来。', imp && imp.total || 0))) return;
+    if (b) b.disabled = true;
+    post('api/profiles/pending/discard', {}).then(function (r) {
+      if (b || !r.ok) toast(r.message);
+      closeImport();
+      load();
+    }).catch(function () { if (b) b.disabled = false; fail(); });
   }
   // 本地用户的导出与导入 (见 RemoteProfileArchive): 导出成 JSON 文件存在手机上, 换电视或重装后再导回来.
   // 导入只进当前的本地用户, 逐条发 (电视要去 Bangumi 取条目信息, 一条一两秒), 已经收藏的不动; 中途停下再导一遍会接着导
@@ -7832,6 +7882,7 @@ private val PROFILES_SCRIPT = """
     if (act === 'rename') { renaming = u.id; menu = null; render(); focusField('#pf-rename'); return; }
     if (act === 'switch') { startSwitch(u, b); return; }
     if (act === 'import') { openImport(u); return; }
+    if (act === 'merge') { openMerge(); return; }
     if (act === 'export') { exportProfile(u, b); return; }
     if (act === 'restore') { pickRestore(u); return; }
     if (act === 'delete') {
@@ -7939,9 +7990,9 @@ private val ACCOUNT_SCRIPT = """
     window.setNote('account', 1, d.local ? T('本地用户') : d.loggedIn ? T('已连接 Bangumi') : d.offline ? ''
       : d.login && d.login.state === 'waiting' ? T('等待授权') : T('未登录 Bangumi'));
     if (d.local) {
-      // 本地档: 没有 Bangumi 账号, 也不能登录 (见 RemoteAccount)
+      // 本地档: 没有 Bangumi 账号 (要登录先在电视上改成 Bangumi 用户, 见 RemoteAccount)
       var lh = '<div class="card set-card"><div class="set-title">' + T('账号') + '</div><p class="hint">' +
-        T('这是本地用户：收藏、看过和评分只记在这台电视上，不能登录 Bangumi。想同步到 Bangumi，请在上面的「用户」里新建一个登录 Bangumi 的用户。') +
+        T('这是本地用户：收藏、看过和评分只记在这台电视上。想同步到 Bangumi，可以在电视的「设置 → 账号」里改成 Bangumi 用户，或者在上面的「用户」里新建一个登录 Bangumi 的用户。') +
         '</p></div>';
       if (lh !== last) { box.innerHTML = lh; last = lh; }
       waiting = false;
