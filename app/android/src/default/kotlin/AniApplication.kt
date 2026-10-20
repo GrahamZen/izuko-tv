@@ -12,6 +12,7 @@ package me.him188.ani.android
 import android.annotation.SuppressLint
 import android.app.Application
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.util.Log
@@ -40,6 +41,7 @@ import me.him188.ani.app.domain.torrent.service.AniTorrentService
 import me.him188.ani.app.domain.torrent.service.PikPakCacheServiceController
 import me.him188.ani.app.domain.torrent.service.TorrentServiceConnectionManager
 import me.him188.ani.app.platform.AndroidLoggingConfigurator
+import me.him188.ani.app.platform.DevSwitchesAndroid
 import me.him188.ani.app.platform.PreviousExits
 import me.him188.ani.app.videoplayer.media.SeekPreviewCrashMarker
 import me.him188.ani.app.platform.AppStartupTasks
@@ -98,6 +100,11 @@ class AniApplication : Application() {
     }
 
     inner class Instance()
+
+    override fun attachBaseContext(base: Context) {
+        super.attachBaseContext(base)
+        DevSwitchesAndroid.install(base)
+    }
 
     @OptIn(ExperimentalUuidApi::class)
     override fun onCreate() {
