@@ -747,10 +747,11 @@
     <string name="collection_tv_progress_group_caught_up">已追平</string>
     <string name="collection_tv_progress_group_upcoming">即將開播</string>
     <string name="collection_tv_progress_header">%1$s · %2$d 部</string>
-    <string name="collection_tv_progress_unwatched_today">未看 %1$d · 今天更新</string>
-    <string name="collection_tv_progress_unwatched">未看 %1$d / 已更新 %2$s</string>
-    <string name="collection_tv_progress_wish_aired">已播 %1$d 集</string>
-    <string name="collection_tv_progress_wish_aired_next">已播 %1$d 集 · %2$s更新</string>
+    <string name="collection_tv_progress_updates_day">%1$s更新</string>
+    <string name="collection_tv_progress_updates_at">%1$s %2$s 更新</string>
+    <string name="collection_tv_progress_finale_day">%1$s完結</string>
+    <string name="collection_tv_progress_finale_at">%1$s %2$s 完結</string>
+    <string name="collection_tv_progress_completed">全 %1$s 話已完結</string>
     <string name="collection_tv_progress_wish_started">已開播</string>
     <string name="collection_tv_progress_next">%1$s · 第 %2$s 話</string>
     <string name="collection_tv_progress_next_unknown">下一集日期未定</string>

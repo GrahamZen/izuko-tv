@@ -61,6 +61,7 @@ enum class TvProgressGroup {
  * @property latestAirTime 已播最新一集的播出时刻 (想看的番分集还没到时是首播)
  * @property nextSort 下一集 (还没播的第一集) 的序号; 未开播时是第一集
  * @property nextAirTime 下一集的播出时刻 ([EpisodeAirTime.exact] = 知道几点); 未开播时是首播
+ * @property nextIsFinal 下一集是最后一集 (再播一集就完结)
  */
 @Immutable
 data class TvProgressEntry(
@@ -72,6 +73,7 @@ data class TvProgressEntry(
     val latestAirTime: EpisodeAirTime?,
     val nextSort: EpisodeSort?,
     val nextAirTime: EpisodeAirTime?,
+    val nextIsFinal: Boolean = false,
 ) {
     val subjectId: Int get() = info.subjectId
 }
@@ -166,6 +168,7 @@ internal fun tvProgressEntryOf(
         latestAirTime = latestAir,
         nextSort = next?.episodeInfo?.sort,
         nextAirTime = nextAir,
+        nextIsFinal = next != null && airedIndex + 1 == mains.lastIndex,
     )
 }
 

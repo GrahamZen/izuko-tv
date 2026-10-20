@@ -84,6 +84,8 @@ class ThemeSettingsTest {
     fun `never sorted means the default order`() {
         assertEquals(emptyList(), ThemeSettings.Default.tvCollectionTabOrder)
         assertEquals(COLLECTION_TABS, resolveSavedOrder(ThemeSettings.Default.tvCollectionTabOrder, COLLECTION_TABS))
+        // 「追更」默认排在最前
+        assertEquals(0, ThemeSettings.Default.tvCollectionProgressTabIndex)
     }
 
     @Test
