@@ -195,7 +195,8 @@ class TvNativeGridView(
             override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
                 if (newState == RecyclerView.SCROLL_STATE_DRAGGING && !draggedByTouch) {
                     draggedByTouch = true
-                    setFocusScrollStrategy(BaseGridView.FOCUS_SCROLL_ITEM)
+                    applyScrollStrategy()
+                    onTouchDragStart?.invoke()
                 }
                 if (newState == RecyclerView.SCROLL_STATE_IDLE) {
                     if (draggedByTouch) settleAfterTouch()
@@ -249,14 +250,38 @@ class TvNativeGridView(
 
     /**
      * 手指甩出去时不照惯性滚 (停在哪是哪, 常停在两行之间): 记下速度、当场停住, 停稳时按它预判的落点挑最近的一行滚过去 (见 [settleAfterTouch]).
-     * 只在手指拖过时这样; 其余 (点按带出的小速度) 照旧, 横向速度一律清零.
+     * 只在手指拖过时这样, 按触屏的规矩走时 ([touchFree]) 照惯性滚; 其余 (点按带出的小速度) 照旧, 横向速度一律清零.
      */
     override fun fling(velocityX: Int, velocityY: Int): Boolean {
-        if (draggedByTouch) {
+        if (draggedByTouch && !touchFree) {
             touchFlingVelocity = velocityY
             return false
         }
         return super.fling(0, velocityY)
+    }
+
+    /**
+     * 此刻按触屏的规矩走 (平板, 页面按 TvNativeGridPageView.touchMode 给): 网格由手指滚, 停在哪是哪 (不就近停); 卡片墙上焦点不带着滚动
+     * (按需挪: 焦点那张完整露着就不滚), hero 态里照对齐的停位走.
+     */
+    var touchFree: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            applyScrollStrategy()
+        }
+
+    /** 手指刚把网格拖起来 (页面据此按触屏的规矩把焦点停放、退出 hero 态). */
+    var onTouchDragStart: (() -> Unit)? = null
+
+    /**
+     * leanback 的焦点滚动方式: 平时对齐 (焦点那张停到停位); 手指拖动途中与按触屏的规矩走的卡片墙上按需挪 —— 对齐的话 leanback 每次排版
+     * (分页的新数据插进来就是一次) 都把焦点那张滚回停位, 手指翻下去的网格会跳回原处.
+     */
+    private fun applyScrollStrategy() {
+        setFocusScrollStrategy(
+            if (draggedByTouch || touchFree && !heroActive) BaseGridView.FOCUS_SCROLL_ITEM else BaseGridView.FOCUS_SCROLL_ALIGNED,
+        )
     }
 
     /**
@@ -275,7 +300,12 @@ class TvNativeGridView(
      */
     private fun settleAfterTouch() {
         draggedByTouch = false
-        setFocusScrollStrategy(BaseGridView.FOCUS_SCROLL_ALIGNED)
+        applyScrollStrategy()
+        // 按触屏的规矩走时停在哪是哪 (见 touchFree)
+        if (touchFree) {
+            touchFlingVelocity = 0
+            return
+        }
         val travel = tvNativeFlingDistance(context, touchFlingVelocity)
         touchFlingVelocity = 0
         val cols = metrics.columns.coerceAtLeast(1)
@@ -340,6 +370,7 @@ class TvNativeGridView(
         val index = selectedPosition
         val before = findViewHolderForAdapterPosition(index)?.itemView?.top
         heroActive = active
+        applyScrollStrategy()
         applyAlignment()
         val target = if (active) heroShiftFor(index) else 0f
         if (animated && before != null && index >= 0) {
@@ -353,6 +384,39 @@ class TvNativeGridView(
             animateShift(target, TvScrollSpring.Far, animated = false)
         }
         cards.refreshDim(this)
+    }
+
+    /**
+     * 原地退回卡片墙 (按触屏的规矩走时): 网格不滚回聚焦行的停位, 只把 hero 态补的整片平移撤掉 (前几行靠上去不留空白, 末几行落回原处).
+     * [animated] = false 时当场到位.
+     */
+    fun exitHeroInPlace(animated: Boolean) {
+        if (!heroActive) return
+        heroActive = false
+        applyScrollStrategy()
+        applyAlignment()
+        animateShift(0f, TvScrollSpring.Far, animated)
+        cards.refreshDim(this)
+    }
+
+    /** 已排出来的行里中线离视口中线最近的那一行第 [column] 列那张 (那一行短了落末张); 一张都没排出来时 null. */
+    fun indexNearestViewportCenter(column: Int): Int? {
+        val cols = metrics.columns.coerceAtLeast(1)
+        val center = metrics.topBleedPx + viewportPx / 2f
+        var bestRow = -1
+        var best = Float.MAX_VALUE
+        for (i in 0 until childCount) {
+            val child = getChildAt(i)
+            val index = getChildAdapterPosition(child)
+            if (index < 0) continue
+            val distance = abs(child.top + translationY + style.cardBlockHeightPx / 2f - center)
+            if (distance < best) {
+                best = distance
+                bestRow = index / cols
+            }
+        }
+        if (bestRow < 0) return null
+        return (bestRow * cols + column.coerceIn(0, cols - 1)).coerceAtMost(cards.itemCount - 1)
     }
 
     override fun requestChildFocus(child: View?, focused: View?) {
