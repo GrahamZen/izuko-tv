@@ -86,6 +86,7 @@ import me.him188.ani.app.ui.foundation.tv.TV_FULLSCREEN_BACKDROP_DIM_ALPHA
 import me.him188.ani.app.ui.foundation.tv.TV_TAB_CONTENT_SLIDE_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TvBackdropTreatment
 import me.him188.ani.app.ui.foundation.tv.TvWallConfirm
+import me.him188.ani.app.ui.foundation.tv.TvWallTouchTap
 import me.him188.ani.app.ui.foundation.tv.TvWallDirection
 import me.him188.ani.app.ui.foundation.tv.TvWallGridKey
 import me.him188.ani.app.ui.foundation.tv.nativeview.TV_HERO_BLUR_DIM_ALPHA
@@ -105,6 +106,7 @@ import me.him188.ani.app.ui.foundation.tv.tvPosterWallBackground
 import me.him188.ani.app.ui.foundation.tv.tvWallConfirm
 import me.him188.ani.app.ui.foundation.tv.tvWallGridKey
 import me.him188.ani.app.ui.foundation.tv.tvWallTapConfirmsWhileFocusing
+import me.him188.ani.app.ui.foundation.tv.tvWallTouchTap
 
 /*
  * 网格页 (追番 / 搜索 / 新番时间表) 海报墙的 Compose 版 (安卓电视上是原生的 TvNativeGridPageView, 参数与行为见 TvNativeGridPageHost):
@@ -667,17 +669,24 @@ internal class TvWallGridSurface(
         openWall: (index: Int, proceed: () -> Unit) -> Boolean,
         openBehind: (index: Int) -> Unit,
     ) {
-        // 触屏上 hero 态里点到聚焦行上面那几行 (淡没在 hero 区里, 看不见): 算点 hero 区, 同点聚焦那张
         val cols = columnsValue.coerceAtLeast(1)
-        if (touchMode && timeline.active && focusedIndex >= 0 && index / cols < focusedIndex / cols) {
+        val touchTap = if (touchMode) {
+            val above = focusedIndex >= 0 && index / cols < focusedIndex / cols
+            tvWallTouchTap(isMore = false, heroEnabled, timeline.active, index == focusedIndex, above)
+        } else {
+            null
+        }
+        if (touchTap == TvWallTouchTap.OpenFocused) {
             onCardClick(focusedIndex, posterConfirm, callbacks, itemAt, openWall, openBehind)
             return
         }
         val item = itemAt(index) ?: return
-        if (touchMode && index != focusedIndex && heroEnabled) {
-            setFocused(shownKey, index)
-            focusAt(index)
-            if (timeline.active) return
+        if (touchTap == TvWallTouchTap.FocusOnly || touchTap == TvWallTouchTap.FocusAndConfirm) {
+            if (index != focusedIndex) {
+                setFocused(shownKey, index)
+                focusAt(index)
+            }
+            if (touchTap == TvWallTouchTap.FocusOnly) return
         }
         if (tvWallConfirm(isMore = false, heroEnabled, timeline.active) == TvWallConfirm.EnterHero) {
             setHeroActive(true)
