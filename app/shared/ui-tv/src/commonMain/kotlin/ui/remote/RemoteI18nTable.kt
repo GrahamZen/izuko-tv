@@ -1749,4 +1749,11 @@ private fun part17() = listOf(
     RemoteText("这个文件不是设置备份，或者已经损坏", "This file is not a settings backup, or it is damaged", "這個文件不是設置備份，或者已經損壞", "這個檔案不是設定備份，或者已經損壞"),
     RemoteText("已导入设置", "Settings imported", "已導入設置", "已匯入設定"),
     RemoteText("Bangumi 每 5 分钟只允许改 15 次收藏，稍等一会儿会自动接着导。", "Bangumi allows 15 collection changes every 5 minutes. The import will resume automatically shortly.", "Bangumi 每 5 分鐘只允許改 15 次收藏，稍等一會兒會自動接著導入。", "Bangumi 每 5 分鐘只允許改 15 次收藏，稍等一下會自動繼續匯入。"),
+    RemoteText("方法采样", "Method sampling", "方法採樣", "方法取樣"),
+    RemoteText("看主线程卡在哪段代码上：开始后在电视上操作要测的界面，结束后下载 .trace 文件，用 Android Studio 的 Profiler 打开。采样本身很重，时长会被放大，只用来看卡在哪。", "See which code the main thread gets stuck on: start sampling, use the screen you want to test on the TV, then download the .trace file and open it in the Android Studio Profiler. Sampling itself is heavy and stretches durations, so use it only to find where it gets stuck.", "看主線程卡在哪段代碼上：開始後在電視上操作要測的界面，結束後下載 .trace 文件，用 Android Studio 的 Profiler 打開。採樣本身很重，時長會被放大，只用來看卡在哪。", "看主執行緒卡在哪段程式碼上：開始後在電視上操作要測的介面，結束後下載 .trace 檔案，用 Android Studio 的 Profiler 開啟。取樣本身很重，時長會被放大，只用來看卡在哪。"),
+    RemoteText("正在方法采样，还剩 {0} 秒。", "Method sampling, {0} s left.", "正在方法採樣，還剩 {0} 秒。", "正在方法取樣，還剩 {0} 秒。"),
+    RemoteText("采样 {0} 秒", "Sample for {0} s", "採樣 {0} 秒", "取樣 {0} 秒"),
+    RemoteText("下载上次的（{0}）", "Download the last one ({0})", "下載上次的（{0}）", "下載上次的（{0}）"),
+    RemoteText("开始方法采样 {0} 秒，请在电视上操作要测的界面", "Method sampling for {0} s. Use the screen you want to test on the TV.", "開始方法採樣 {0} 秒，請在電視上操作要測的界面", "開始方法取樣 {0} 秒，請在電視上操作要測的介面"),
+    RemoteText("正在采样", "Sampling is already running", "正在採樣", "正在取樣"),
 )

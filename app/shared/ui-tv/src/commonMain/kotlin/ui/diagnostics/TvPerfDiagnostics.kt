@@ -265,6 +265,9 @@ internal object TvPerfDiagnostics {
 
     private fun dir(): File? = appContext?.let { File(it.filesDir, "perf-diagnostics").apply { mkdirs() } }
 
+    /** 诊断文件放哪 (报告、方法采样); 界面还没起来时为 null */
+    internal fun storageDir(): File? = dir()
+
     private fun save(kind: String, seconds: Int, page: String, body: JsonObject): JsonObject {
         val now = Date()
         val id = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.ROOT).format(now) + "-" + kind
