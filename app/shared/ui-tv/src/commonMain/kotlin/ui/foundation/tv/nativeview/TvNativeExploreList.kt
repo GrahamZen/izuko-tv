@@ -106,10 +106,17 @@ internal fun TvNativeExploreMetrics.centeredScroll(items: List<TvNativeExploreIt
 
 /**
  * hero 态聚焦第 [index] 行时列表该滚到哪: 这一行的组标题位置落在 hero 线 [TvNativeExploreMetrics.heroHeaderTopPx] 上 (hero 简介块下沿),
- * 行紧跟在下面; 没有组标题的行 (同组第二行起) 上一行越线淡出. 开头滚不到 (负数) 就停在顶.
+ * 行紧跟在下面; 没有组标题的行 (同组第二行起) 上一行越线淡出. 开头滚不到 (负数) 就停在顶, 差的那截见 [heroShortfall].
  */
 internal fun TvNativeExploreMetrics.heroScroll(items: List<TvNativeExploreItem>, index: Int): Int =
     (itemTop(items, index) - headerPx - heroHeaderTopPx).coerceAtLeast(0)
+
+/**
+ * hero 态聚焦第 [index] 行时滚不到 hero 线的那截 (px, ≥ 0): 列表上面没有顶部区域的占位 (追番页「追更」) 时开头几行停在顶也还在 hero 线之上,
+ * 由列表整片往下推这么多补上. 有轮播占位的探索页恒 0.
+ */
+internal fun TvNativeExploreMetrics.heroShortfall(items: List<TvNativeExploreItem>, index: Int): Int =
+    (headerPx + heroHeaderTopPx - itemTop(items, index)).coerceAtLeast(0)
 
 /**
  * 热门轮播的背景图此刻往上挪了多少 (px), 照 Apple TV 首页的 hero: 跟着列表一起滚, 再按进度额外上移 [overhangPx] —— 进度 = 列表滚过的量 /

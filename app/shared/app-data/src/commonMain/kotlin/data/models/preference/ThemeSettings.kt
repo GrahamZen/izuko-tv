@@ -327,6 +327,11 @@ data class ThemeSettings(
      */
     val tvCollectionTabOrder: List<UnifiedCollectionType> = emptyList(),
     /**
+     * TV: 追番页标签行上「追更」那一格排在第几 (0 = 最前); 与 [tvCollectionTabOrder] 排的分类一起组成整排, 超出按排在最后.
+     * 「追更」不是收藏分类, 位置单独存, 分类顺序那份不变.
+     */
+    val tvCollectionProgressTabIndex: Int = 0,
+    /**
      * TV: 退出播放页后保留播放会话 (播放器与整条"搜索数据源 → 选源 → 起播"的流水线),
      * 由侧边栏"正在播放"条目回去; 数据源在后台就绪时弹一次提示.
      *

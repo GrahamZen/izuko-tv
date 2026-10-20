@@ -28,7 +28,7 @@ import kotlinx.coroutines.CoroutineScope
 import me.him188.ani.app.ui.foundation.focus.TV_TRANSIT_PARK_KEY_GRACE_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TV_TAB_CONTENT_SLIDE_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TvBackdropTreatment
-import me.him188.ani.app.ui.foundation.tv.tvPosterWallToneGate
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
@@ -100,6 +100,9 @@ interface TvNativeGridPageListener : TvNativeGridListener {
  *
  * 新番时间表 (没有 hero 态) 在最底下另铺一层整屏背景 ([enableWallBackdrop]): 聚焦那部的模糊版, 点按 / 长按时对焦 (见 [TvNativeWallFocus]).
  * 开了 [heroBlur] 的追番 / 搜索页, hero 态也在底下铺这一层 (背景图与 hero 文字照旧画在它上面; 按确定对焦变清晰再进详情页).
+ *
+ * 除了网格, 还能放一份一组一行的内容 ([rows], 追番页「追更」, 行式海报墙的宾客模式): 占一个 key, 与各份网格同样水平滑着换; hero 态、
+ * 背景图与文字、点开对焦都是本页这一份, 跨标签时 hero 态留着, 进详情页同网格.
  */
 @SuppressLint("ViewConstructor")
 class TvNativeGridPageView(
@@ -171,48 +174,82 @@ class TvNativeGridPageView(
     }
 
     var transitions: Boolean = true
+        set(value) {
+            field = value
+            rows?.transitions = value
+        }
     var animatedScroll: Boolean = true
         set(value) {
             field = value
             grids.forEach { it.animatedScroll = value }
-        }
-
-    var composeRoot: View? = null
-        set(value) {
-            field = value
-            backdrop.composeRoot = value
-            heroText.composeRoot = value
-            wallBackdrop?.composeRoot = value
-        }
-
-    /** 深色主题: hero 态整屏压黑, 背景图等黑透才露面 (铺着模糊背景时不压黑, 见 [heroDarkens]). */
-    var dark: Boolean = true
-        set(value) {
-            if (field == value) return
-            field = value
-            applyHeroTone()
+            rows?.animatedScroll = value
         }
 
     /**
-     * hero 态把整屏底色压黑: 深色主题、且没铺模糊背景 —— 模糊背景 ([heroBlur]) 盖满整屏, 压黑只会在进出 hero 态时先闪一下黑; 浅色主题 hero
-     * 底与卡片墙同色. 不压黑时 hero 时间线按不压黑的时长走, 背景图不等底色, 报给页面的黑度恒为 0.
+     * hero 舞台 (背景图、hero 文字、整屏背景、hero 时间线、点开的对焦, 见 [TvNativeHeroStage]): 内容怎么换、各层跟着时间线透明到什么程度在那里,
+     * 摆在哪里、网格怎么跟着进出 hero 态在本类.
      */
-    private val heroDarkens: Boolean get() = dark && !heroBlur
+    private val stage: TvNativeHeroStage = TvNativeHeroStage(
+        this, sketch, scope, heroTextStyle,
+        object : TvNativeHeroStage.Host {
+            override val transitions: Boolean get() = this@TvNativeGridPageView.transitions
 
-    /** 压不压黑变了 (换主题 / 开关模糊背景): 时间线的时长、背景图的放行与报给页面的黑度跟着换. */
-    private fun applyHeroTone() {
-        timeline.darkens = heroDarkens
-        applyHero()
-        listener?.onToneChanged(heroTone())
-    }
+            override fun onHeroFrame() {
+                applyHero()
+                listener?.onToneChanged(stage.tone)
+            }
 
-    /** 报给页面画整屏底色的黑度 (不压黑时恒 0). */
-    private fun heroTone(): Float = if (heroDarkens) timeline.tone else 0f
+            override fun onHeroBlurChanged(enabled: Boolean) {
+                // 进详情页从整屏背景起, 背景图不登记成放大转场的来源; 叠在模糊背景上时边缘擦成透明
+                backdrop.feather = enabled
+                backdrop.zoomSource = !enabled
+                applySource()
+            }
+
+            override fun applyOpenFade(fade: Float, keep: Int, chrome: Boolean) {
+                current?.let { g ->
+                    g.pullKeepIndex = keep
+                    g.pullFade = fade
+                }
+                // 一组一行的内容: 点开时各行跟着淡没 (见 TvNativeRowWallView.applyItemFades)
+                rowsShown()?.onHostHeroFrame()
+                // 点开: 背景图与 hero 文字里标题以外的几行跟着卡片淡没 (标题留着, 交给详情页的标题接着画), 顶栏由页面跟着淡
+                applyHeroAlpha()
+                if (chrome) listener?.onWallFade(fade)
+            }
+
+            override fun onOpeningChanged(opening: Boolean) {
+                listener?.onWallOpeningChanged(opening)
+            }
+
+            override fun onOpened(index: Int) {
+                listener?.onWallOpened(index)
+                val rows = rowsShown()
+                if (rows != null) rows.onHostWallOpened(index) else listener?.onClick(index)
+            }
+        },
+    )
+    private val backdrop: TvNativeBackdropView get() = stage.backdrop
+    private val timeline: TvNativeHeroTimeline get() = stage.timeline
+    private val wallFocus: TvNativeWallFocus get() = stage.wallFocus
+
+    var composeRoot: View?
+        get() = stage.composeRoot
+        set(value) {
+            stage.composeRoot = value
+        }
+
+    /** 深色主题 (见 [TvNativeHeroStage.dark]). */
+    var dark: Boolean
+        get() = stage.dark
+        set(value) {
+            stage.dark = value
+        }
 
     var fadeColor: Int
-        get() = backdrop.fadeColor
+        get() = stage.fadeColor
         set(value) {
-            backdrop.fadeColor = value
+            stage.fadeColor = value
         }
 
     var treatment: TvBackdropTreatment?
@@ -221,20 +258,17 @@ class TvNativeGridPageView(
             backdrop.treatment = value
         }
 
-    private val backdrop = TvNativeBackdropView(context, sketch, scope)
-
     /** 此刻在不在导航: 背景图的剧照升档等它为 false 才去取原图 (见 [TvNativeBackdropView.navigating]). */
     var backdropNavigating: () -> Boolean
-        get() = backdrop.navigating
+        get() = stage.backdropNavigating
         set(value) {
-            backdrop.navigating = value
+            stage.backdropNavigating = value
         }
 
-    val heroText = TvNativeHeroTextView(context, heroTextStyle).also { it.sketch = sketch }
+    val heroText: TvNativeHeroTextView get() = stage.heroText
 
-    /** 最底下的整屏背景 (新番时间表, 见 [enableWallBackdrop]); null = 没有 (追番 / 搜索). */
-    var wallBackdrop: TvNativeWallBackdropView? = null
-        private set
+    /** 最底下的整屏背景 (新番时间表, 见 [enableWallBackdrop]; 开了 [heroBlur] 的 hero 态); null = 没有. */
+    val wallBackdrop: TvNativeWallBackdropView? get() = stage.wallBackdrop
 
     /**
      * 装 hero 文字的一层, hero 时间线的显隐 ([TvNativeHeroTimeline.text]) 调它的透明度: 文字块换字时自己也调自己的透明度 (旧字淡出、新字进场),
@@ -243,19 +277,32 @@ class TvNativeGridPageView(
     private val heroBox = object : FrameLayout(context) {
         override fun hasOverlappingRendering(): Boolean = false
     }
-    private val gridBox = FrameLayout(context)
+    private val gridBox = object : FrameLayout(context) {
+        override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+            super.onLayout(changed, left, top, right, bottom)
+            // 一组一行的内容按整页的坐标排 (它的几何从页顶算, 见 TvNativeExploreMetrics): 往上挪到页顶, 同样只在框里画
+            rows?.let { it.layout(0, -top, it.measuredWidth, -top + it.measuredHeight) }
+        }
+    }
 
     /** 网格框的裁剪框 (框自己的坐标, 见 init). */
     private val gridClip = Rect()
     private val grids = ArrayList<TvNativeGridView>(2)
     private val gridKeys = HashMap<TvNativeGridView, Any>()
     private var current: TvNativeGridView? = null
+
+    /** 此刻显示的那份内容: 网格 ([current]) 或一组一行的内容 ([rows]). */
+    private var shown: View? = null
+
+    /** 一组一行的内容 (见类说明), 页面要了才建 ([ensureRows]); 宾客模式的行式海报墙, 焦点与列表在它那里. */
+    var rows: TvNativeRowWallView? = null
+        private set
+    private var rowsKey: Any? = null
     private var slideAnimator: ValueAnimator? = null
     private val savedPosition = HashMap<Any, Int>()
 
     /** 返回本页时焦点要回的那张 (见 [holdLandingLook]), -1 = 没有. */
     private var landingHeld = -1
-    private val timeline = TvNativeHeroTimeline { onTimeline() }
     private val scrollTracker = TvNativeScrollTracker { listener?.onScrollingChanged(it) }
     private var source: TvNativeHeroSource? = null
     private var lastDimSubject: Int? = null
@@ -284,7 +331,6 @@ class TvNativeGridPageView(
         addView(gridBox)
         backdrop.alpha = 0f
         heroBox.alpha = 0f
-        timeline.darkens = heroDarkens
         applyHero()
     }
 
@@ -315,20 +361,17 @@ class TvNativeGridPageView(
     /** 网格的几何: 起点加上侧边栏底下那一截 (见 [TvNativeGridPageMetrics.bleedLeftPx]). */
     private fun gridMetrics(): TvNativeGridMetrics = metrics.grid.let { it.copy(startPx = it.startPx + metrics.bleedLeftPx) }
 
-    /** 此刻显示的那份网格的 key. */
-    val currentKey: Any? get() = current?.let { gridKeys[it] }
+    /** 此刻显示的那份内容的 key (网格的, 或一组一行的内容的). */
+    val currentKey: Any? get() = shown?.let { if (it === rows) rowsKey else gridKeys[it] }
 
     /**
      * 换成 [key] 那份网格 (追番页的标签; 搜索页只有一份). [direction] = 新网格从哪边滑进来 (+1 右边, −1 左边, 0 不滑);
      * 流畅档 / [animated] = false 直接换. 新网格停在这个 key 上次的位置.
      */
     fun showGrid(key: Any, direction: Int, animated: Boolean) {
-        val cur = current
-        if (cur != null && gridKeys[cur] == key) return
-        // 焦点还在要换下去的网格上: 先停放 (见类说明)
-        if (gridBox.hasFocus()) parkFocus()
-        cur?.let { savedPosition[gridKeys[it] ?: return@let] = it.selectedPosition }
-        slideAnimator?.end()
+        val cur = shown
+        if (cur != null && cur === current && gridKeys[cur] == key) return
+        beginSwitch()
         val next = grids.firstOrNull { it !== cur } ?: newGrid()
         gridKeys[next] = key
         next.cards.submit(emptyList()) { it.toLong() }
@@ -343,6 +386,57 @@ class TvNativeGridPageView(
         // 没记过位置的 (头一回显示 / 被 forgetPosition 忘掉的) 从第一张排起: 复用的那份网格还停在上一个 key 的位置上
         next.selectedPosition = savedPosition[key] ?: 0
         current = next
+        // 进页恢复的那一张只属于建视图后的第一份网格; 换了标签就作废
+        if (cur == null && landingHeld >= 0) next.cards.setFocusLookHeld(next, landingHeld) else landingHeld = -1
+        slideIn(cur, next, direction, animated)
+    }
+
+    /**
+     * 建出一组一行的内容 (已建过就换样式与几何): 宾客模式的行式海报墙, 占 [showRows] 给的那个 key. 列表与焦点的接线 (数据、事件) 由页面对
+     * 返回的视图做.
+     */
+    fun ensureRows(style: TvNativeWallStyle, metrics: TvNativeExploreMetrics, headerStyle: TvNativeTextStyle): TvNativeRowWallView {
+        rows?.let {
+            it.updateContent(style, metrics)
+            return it
+        }
+        val view = TvNativeRowWallView(context, sketch, scope, style, metrics, headerStyle, RowsGuest())
+        view.transitions = transitions
+        view.animatedScroll = animatedScroll
+        view.visibility = INVISIBLE
+        gridBox.addView(view, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
+        rows = view
+        return view
+    }
+
+    /** 换成一组一行的内容 ([ensureRows] 建的), 占 [key]; 滑动同 [showGrid]. 没建过时不换. */
+    fun showRows(key: Any, direction: Int, animated: Boolean) {
+        val next = rows ?: return
+        val cur = shown
+        if (cur === next && rowsKey == key) return
+        beginSwitch()
+        rowsKey = key
+        next.translationX = 0f
+        next.visibility = VISIBLE
+        // 跟上此刻的 hero 态 (换过来时当场到位, 同网格)
+        next.onHostHeroChanged(animated = false)
+        current = null
+        landingHeld = -1
+        slideIn(cur, next, direction, animated)
+    }
+
+    /** 换内容之前: 焦点还在要换下去的那份上就先停放 (见类说明), 记下网格的位置, 上一次的滑动收尾. */
+    private fun beginSwitch() {
+        if (gridBox.hasFocus()) parkFocus()
+        current?.let { g -> gridKeys[g]?.let { savedPosition[it] = g.selectedPosition } }
+        slideAnimator?.end()
+    }
+
+    private fun rowsShown(): TvNativeRowWallView? = rows?.takeIf { shown === it }
+
+    /** 新那份 [next] 从 [direction] 那边滑进来、旧的 [cur] 滑出去 (不滑时当场换). */
+    private fun slideIn(cur: View?, next: View, direction: Int, animated: Boolean) {
+        shown = next
         val width = gridBox.width.toFloat()
         val slide = cur != null && direction != 0 && animated && transitions && width > 0f
         // 顶栏跟着滚走的量 (见 emitContentScroll): 滑动的话从换之前报出去的值起步, 跟着滑动进度滑到新那份网格的; 不滑动当场换
@@ -350,8 +444,6 @@ class TvNativeGridPageView(
         contentScrollProgress = 0f
         contentScrollSliding = slide
         reportContentScroll()
-        // 进页恢复的那一张只属于建视图后的第一份网格; 换了标签就作废
-        if (cur == null && landingHeld >= 0) next.cards.setFocusLookHeld(next, landingHeld) else landingHeld = -1
         if (cur == null || !slide) {
             cur?.let { retire(it) }
             return
@@ -372,19 +464,19 @@ class TvNativeGridPageView(
                     slideAnimator = null
                     contentScrollSliding = false
                     emitContentScroll()
-                    if (current !== cur) retire(cur)
+                    if (shown !== cur) retire(cur)
                 }
             })
             start()
         }
     }
 
-    /** 退场的网格: 不画、不收焦点, 下次换标签时拿来复用. */
-    private fun retire(grid: TvNativeGridView) {
+    /** 退场的那份 (网格 / 一组一行的内容): 不画、不收焦点, 网格下次换标签时拿来复用. */
+    private fun retire(view: View) {
         // 还持着焦点就先停放: 收起时系统会清掉焦点, 全局兜底把它塞给首个标签
-        if (grid.hasFocus()) parkFocus()
-        grid.visibility = INVISIBLE
-        grid.translationX = 0f
+        if (view.hasFocus()) parkFocus()
+        view.visibility = INVISIBLE
+        view.translationX = 0f
     }
 
     /**
@@ -483,6 +575,40 @@ class TvNativeGridPageView(
     /** 此刻那份网格顶线以下第一张 (见 [TvNativeGridView.firstIndexBelowTopLine]). */
     fun firstIndexBelowTopLine(): Int? = current?.firstIndexBelowTopLine()
 
+    private val windowXY = IntArray(2)
+
+    /** 此刻那份网格里聚焦那张卡的中线在窗口里的纵坐标 (换到别的标签时就近找行用); 焦点不在网格的卡上时 null. */
+    fun focusedCardCenterYInWindow(): Int? {
+        rowsShown()?.let { return it.focusedCardCenterYInWindow() }
+        val grid = current ?: return null
+        val card = grid.findFocus()?.takeIf { it !== grid } ?: return null
+        card.getLocationInWindow(windowXY)
+        return windowXY[1] + card.height / 2
+    }
+
+    /**
+     * 此刻那份网格已排出来的卡里, 中线离 [windowY] (窗口坐标) 最近的那一行 (行号); 一张都没排出来时 null. 从别的版式的标签 (追番页「追更」的
+     * 一组一行) 换过来时按屏上的高度就近接住.
+     */
+    fun rowNearestWindowY(windowY: Int): Int? {
+        val grid = current ?: return null
+        val columns = metrics.grid.columns.coerceAtLeast(1)
+        var best: Int? = null
+        var bestDistance = Int.MAX_VALUE
+        for (i in 0 until grid.childCount) {
+            val child = grid.getChildAt(i)
+            val position = grid.getChildAdapterPosition(child)
+            if (position == RecyclerView.NO_POSITION) continue
+            child.getLocationInWindow(windowXY)
+            val distance = abs(windowXY[1] + child.height / 2 - windowY)
+            if (distance < bestDistance) {
+                bestDistance = distance
+                best = position / columns
+            }
+        }
+        return best
+    }
+
     /** 远跳到第 [index] 张 (返回键回首卡), 见 [TvNativeGridView.farJumpTo]. */
     fun farJumpTo(index: Int) {
         current?.farJumpTo(index)
@@ -555,6 +681,7 @@ class TvNativeGridPageView(
     }
 
     override fun onRequestFocusInDescendants(direction: Int, previouslyFocusedRect: Rect?): Boolean {
+        rowsShown()?.let { return it.requestFocus(direction, previouslyFocusedRect) }
         val g = current ?: return false
         val count = g.cards.itemCount
         if (count == 0) return false
@@ -566,7 +693,8 @@ class TvNativeGridPageView(
         super.requestChildFocus(child, focused)
         // 停放的焦点落地了 (新那份网格的卡拿到焦点)
         unparkFocus()
-        setGridFocus(child === gridBox)
+        // 一组一行的内容拿到焦点不算 (它自己报卡片区的焦点)
+        setGridFocus(child === gridBox && current?.hasFocus() == true)
     }
 
     override fun clearChildFocus(child: View?) {
@@ -662,6 +790,7 @@ class TvNativeGridPageView(
         timeline.setActive(active, animated)
         TvNativeFocusCues.setSpotlight(this, active, animated)
         current?.setHeroActive(active, animated = animated && animatedScroll)
+        rowsShown()?.onHostHeroChanged(animated)
         listener?.onHeroActiveChanged(active)
         // 退出途中又进来 (内容还在屏上): 退出时内容定格没跟着导航换 (见 applySource), 这里对上此刻的
         if (active) applySource()
@@ -687,12 +816,9 @@ class TvNativeGridPageView(
         } else {
             backdrop.show(src.backdrop)
             if (heroBlur) setWallTarget(src.wall)
-            heroText.setText(heroTextOf(src), TvNativeTextTransition.Key)
+            heroText.setText(stage.textOf(src), TvNativeTextTransition.Key)
         }
     }
-
-    /** hero 文字: 铺着模糊背景时照 vibrancy 画 (深色主题). */
-    private fun heroTextOf(src: TvNativeHeroSource): TvNativeHeroText? = src.text?.copy(vibrant = heroBlur && dark)
 
     /**
      * 进 hero 态时换上内容 (不交叉淡入, 图层这时还是透明的). 只认聚焦那张卡的: 页面的内容在 Compose 里算, 比原生晚一两帧 ——
@@ -702,17 +828,12 @@ class TvNativeGridPageView(
     private fun showEnteringContent() {
         val src = source ?: return
         val grid = current
-        val focusedSubject = grid?.cards?.subjectIdAt(grid.selectedPosition)
+        val focusedSubject = if (grid != null) grid.cards.subjectIdAt(grid.selectedPosition) else rowsShown()?.focusedSubjectId
         if (focusedSubject != null && (src.rawSubjectId != focusedSubject || src.dimming)) return
         enteringPending = false
         backdrop.show(src.backdrop, crossfade = false)
         if (heroBlur) setWallTarget(src.wall)
-        heroText.setText(heroTextOf(src), TvNativeTextTransition.Reset)
-    }
-
-    private fun onTimeline() {
-        applyHero()
-        listener?.onToneChanged(heroTone())
+        heroText.setText(stage.textOf(src), TvNativeTextTransition.Reset)
     }
 
     private fun applyHero() {
@@ -736,16 +857,16 @@ class TvNativeGridPageView(
             g.heroTransitioning = timeline.content < 1f && timeline.above > 0f
             g.cards.setTitleVisibility(g, 1f - timeline.above)
         }
+        rowsShown()?.onHostHeroFrame()
     }
 
     /**
-     * 背景图与 hero 态模糊背景的透明度: 都跟着 hero 时间线 (压黑时等底色黑透才淡入); 点开时 ([wallOpenFade]) 背景图随卡片淡没, 底下的模糊背景
-     * 变清晰接上. 新番时间表的整屏背景常在, 不归时间线管.
+     * 背景图与 hero 态模糊背景的透明度: 都跟着 hero 时间线 (压黑时等底色黑透才淡入, 见 [TvNativeHeroStage.contentAlpha]); 点开时
+     * ([TvNativeHeroStage.openFade]) 背景图随卡片淡没, 底下的模糊背景变清晰接上. 新番时间表的整屏背景常在, 不归时间线管.
      */
     private fun applyHeroAlpha() {
-        val contentGate = if (heroDarkens) tvPosterWallToneGate(timeline.tone) else 1f
-        val shown = timeline.content * contentGate
-        backdrop.alpha = shown * (1f - wallOpenFade)
+        val shown = stage.contentAlpha
+        backdrop.alpha = shown * (1f - stage.openFade)
         if (heroBlur) wallBackdrop?.alpha = shown
     }
 
@@ -754,95 +875,53 @@ class TvNativeGridPageView(
     // ------------------------------------------------------------------
 
     /**
-     * hero 态在整页底下铺模糊背景 (设置里的「hero 态铺模糊背景」, 同新番时间表): 进 hero 态时整屏背景 ([wallBackdrop]) 随 hero 时间线淡入,
-     * 铺的是停稳后聚焦那部的横版背景图的模糊版 ([TvNativeHeroSource.wall]: 整部的那张, 不是单集剧照); 贴右上角的背景图 ([backdrop]) 与
-     * hero 文字照旧画在它上面, 背景图的边缘擦成透明露出模糊背景 ([TvNativeBackdropView.feather]); 整屏底色不压黑 (深色主题也是, 见
-     * [heroDarkens]). hero 态里按确定: 卡片、背景图、简介淡没, 模糊背景对焦变清晰 (就是详情页的背景), 到位再进详情页 (见
-     * [TvNativeWallFocus]), 代替从背景图放大; 回来倒放. 卡片墙上 (不在 hero 态) 不铺; 长按不对焦, 照旧只弹菜单. 新番时间表
-     * ([heroEnabled] = false) 不用它.
+     * hero 态在整页底下铺模糊背景 (见 [TvNativeHeroStage.heroBlur]): 贴右上角的背景图与 hero 文字照旧画在它上面, 背景图的边缘擦成透明露出模糊背景
+     * ([TvNativeBackdropView.feather]); hero 态里按确定由模糊背景对焦变清晰再进详情页, 代替从背景图放大. 卡片墙上 (不在 hero 态) 不铺;
+     * 长按不对焦, 照旧只弹菜单. 新番时间表 ([heroEnabled] = false) 不用它.
      */
-    var heroBlur: Boolean = false
+    var heroBlur: Boolean
+        get() = stage.heroBlur
         set(value) {
-            if (field == value) return
-            field = value
-            if (value) {
-                // 连着换卡时模糊层同时只有一张在淡入 (单次按键当场换)
-                enableWallBackdrop().coalesceSwaps = true
-                // hero 标题的 logo 压在模糊背景上: 按正下方的背景判看不看得清
-                heroText.logoBackdrop = TvNativeLogoBackdrop { subjectId, rect -> wallBackdrop?.sampler(subjectId, rect) }
-            } else {
-                wallFocus.reset()
-                wallBackdrop?.let { removeView(it) }
-                wallBackdrop = null
-                heroText.logoBackdrop = null
-            }
-            // 进详情页从整屏背景起, 背景图不登记成放大转场的来源; 叠在模糊背景上时边缘擦成透明
-            backdrop.feather = value
-            backdrop.zoomSource = !value
-            applySource()
-            applyHeroTone()
+            stage.heroBlur = value
         }
-
-    /** 点开时背景图随卡片淡没的程度 (0..1, 见 [applyHeroAlpha]); 长按的对焦不算. */
-    private var wallOpenFade = 0f
-
-    private val wallFocus = TvNativeWallFocus(
-        this,
-        object : TvNativeWallFocus.Host {
-            override val wall: TvNativeWallBackdropView? get() = wallBackdrop
-            override val transitions: Boolean get() = this@TvNativeGridPageView.transitions
-
-            override fun applyFade(fade: Float, keep: Int, chrome: Boolean) {
-                current?.let { g ->
-                    g.pullKeepIndex = keep
-                    g.pullFade = fade
-                }
-                // 点开: 背景图与 hero 文字里标题以外的几行跟着卡片淡没 (标题留着, 交给详情页的标题接着画), 顶栏由页面跟着淡
-                wallOpenFade = if (chrome) fade else 0f
-                heroText.detailAlpha = 1f - wallOpenFade
-                // 标题跟着变成详情页的样子 (浅色主题: 黑字 → 白字压黑影), 背景对上焦时已经是白字
-                heroText.titleLook = wallOpenFade
-                applyHeroAlpha()
-                if (chrome) listener?.onWallFade(fade)
-            }
-
-            override fun onOpeningChanged(opening: Boolean) {
-                listener?.onWallOpeningChanged(opening)
-            }
-
-            override fun onOpened(index: Int) {
-                listener?.onWallOpened(index)
-                listener?.onClick(index)
-            }
-        },
-    )
 
     /** 建出整屏背景 (页面给了才建, 画在最底下). */
-    fun enableWallBackdrop(): TvNativeWallBackdropView =
-        wallBackdrop ?: TvNativeWallBackdropView(context, sketch, scope).also { view ->
-            view.composeRoot = composeRoot
-            view.onSharpReady = { wallFocus.onSharpReady() }
-            view.onShownChanged = { heroText.logoBackdropChanged() }
-            addView(view, 0)
-            wallBackdrop = view
-        }
+    fun enableWallBackdrop(): TvNativeWallBackdropView = stage.enableWallBackdrop()
 
     /**
      * 整屏背景换图 (新番时间表: 页面按停稳后的聚焦条目给; hero 态的模糊背景: 本视图按 hero 内容的 [TvNativeHeroSource.wall] 给). 对焦期间
      * 要清晰图就当场解, 长按时背景还没换到那张卡, 换到了就接着变清晰 (见 [TvNativeWallFocus.onTargetChanged]).
      */
     fun setWallTarget(target: TvNativeWallBackdropTarget?) {
-        val wb = wallBackdrop ?: return
-        wb.show(target)
-        val grid = current
-        wallFocus.onTargetChanged(keepMatches = grid != null && wallMatches(grid, wallFocus.keep))
+        stage.showWall(target) {
+            val grid = current
+            if (grid != null) {
+                wallMatches(grid, wallFocus.keep)
+            } else {
+                rowsShown()?.openingSubjectId(wallFocus.keep)?.let { wallMatchesSubject(it) } == true
+            }
+        }
     }
 
     /** 背景此刻是 [grid] 第 [index] 张卡的、能变清晰. */
     private fun wallMatches(grid: TvNativeGridView, index: Int): Boolean {
-        val t = wallBackdrop?.currentTarget ?: return false
         val subject = grid.cards.subjectIdAt(index) ?: return false
-        return t.sharp && t.subjectId == subject
+        return wallMatchesSubject(subject)
+    }
+
+    /** 背景此刻是 [subjectId] 那部的、能变清晰. */
+    private fun wallMatchesSubject(subjectId: Int): Boolean {
+        val t = wallBackdrop?.currentTarget ?: return false
+        return t.sharp && t.subjectId == subjectId
+    }
+
+    /** 一组一行的内容 ([rows]) 用本页的 hero: 进出 hero 态、点开前核对模糊背景都交给本页. */
+    private inner class RowsGuest : TvNativeRowWallGuest {
+        override val stage: TvNativeHeroStage get() = this@TvNativeGridPageView.stage
+
+        override fun requestHeroActive(active: Boolean) = setHeroActive(active)
+
+        override fun wallMatches(subjectId: Int): Boolean = wallMatchesSubject(subjectId)
     }
 
     /** 点开途中按了返回: 不进了, 倒放. */
@@ -893,7 +972,7 @@ class TvNativeGridPageView(
         TvNativeFocusCues.detachPage(this)
         super.onDetachedFromWindow()
         scrollTracker.stop()
-        wallFocus.detach()
+        stage.detach()
         // 停放中离开页面: 收回停放标记, 不然页面的焦点域一直当焦点驻留着, 之后的按键再也取消不了在途送焦
         if (parkedAt >= 0) {
             parkedAt = -1L

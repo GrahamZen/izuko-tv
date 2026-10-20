@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
@@ -78,6 +79,10 @@ class TvNativeGridPageState internal constructor(
     wallOpenIndex: Int,
 ) {
     var view: TvNativeGridPageView? by mutableStateOf(null)
+        internal set
+
+    /** 一组一行的内容 (给了 [TvNativeGridPageRows] 才建, 见 TvNativeGridPageView.rows): 页面对它接数据与事件. */
+    var rows: TvNativeRowWallView? by mutableStateOf(null)
         internal set
 
     /** hero 态 (页面的返回键按它开关). */
@@ -164,6 +169,18 @@ class TvNativeWallBackdropSpec(
     val textColor: Color,
 )
 
+/**
+ * 网格页里与各份网格换着显示的一组一行的内容 (追番页「追更」, 见 TvNativeGridPageView.rows): [key] = 它占的 gridKey, [style] / [metrics] /
+ * [headerStyle] = 卡片、几何 (从页顶算) 与组标题. 数据与事件由页面对 [TvNativeGridPageState.rows] 接.
+ */
+@Immutable
+class TvNativeGridPageRows(
+    val key: Int,
+    val style: TvNativeWallStyle,
+    val metrics: TvNativeExploreMetrics,
+    val headerStyle: TvNativeTextStyle,
+)
+
 /** 原生网格的事件, 由页面给 (焦点簿记、hero、导航). [T] = 列表项. */
 class TvNativeGridPageCallbacks<T : Any>(
     val onCardFocused: (index: Int, item: T?) -> Unit,
@@ -182,7 +199,7 @@ class TvNativeGridPageCallbacks<T : Any>(
  * 网格页的原生海报墙: [gridKey] 那份网格显示 [items] (分页快照, 用 [cardOf] 换成卡片), 换 [gridKey] 时新旧两份按 [slideDirection] 水平滑过
  * (追番页换标签; 搜索页恒一份). 页面的网格送焦请求 ([gridFocus]) 转给原生送焦 ([farJump] 为 true 的那一发是返回键回首卡的远跳).
  * [emptyContent] 画在网格上面 (空列表提示 / 首屏加载), 由页面决定何时出现. [landingIndex] = 返回本页 (页面重建) 时进页落点要回的那张 (-1 = 不回网格):
- * 建视图时就按住它的聚焦态, 焦点到了不再放大一遍 (只在建视图那一次读).
+ * 建视图时就按住它的聚焦态, 焦点到了不再放大一遍 (只在建视图那一次读). [rows] 给了就另建一份一组一行的内容, [gridKey] 是它的 key 时显示它.
  */
 @Composable
 fun <T : Any> TvNativeGridPageHost(
@@ -204,6 +221,7 @@ fun <T : Any> TvNativeGridPageHost(
     menuFor: (T) -> @Composable (expanded: Boolean, onDismiss: () -> Unit) -> Unit,
     modifier: Modifier = Modifier,
     landingIndex: Int = -1,
+    rows: TvNativeGridPageRows? = null,
     emptyContent: @Composable BoxScope.() -> Unit = {},
 ) {
     val currentItems by rememberUpdatedState(items)
@@ -219,7 +237,7 @@ fun <T : Any> TvNativeGridPageHost(
         // 「海报上按确定」只有先看简介这一档有 hero 态
         heroEnabled = LocalThemeSettings.current.tvPosterConfirm == TvPosterConfirmAction.Hero, badge = null, source, fadeColor, treatment, gridFocus, farJump, onFarJumpConsumed, callbacks, menuFor,
         wallBackdrop = null, modifier, landingIndex, topBarScrollAwayPx = 0, columnSpacing = TV_POSTER_WALL_COLUMN_SPACING,
-        cardHeight = null, labelVibrancy = false, emptyContent,
+        cardHeight = null, labelVibrancy = false, rows, emptyContent,
     )
 }
 
@@ -266,7 +284,7 @@ fun <T : Any> TvNativeGridPageHost(
         itemCount = focusableCount,
         onBind = {},
         heroEnabled = heroEnabled, badge = badge, source = null, fadeColor, treatment, gridFocus, farJump, onFarJumpConsumed, callbacks,
-        menuFor, wallBackdrop, modifier, landingIndex, topBarScrollAwayPx, columnSpacing, cardHeight, labelVibrancy, emptyContent,
+        menuFor, wallBackdrop, modifier, landingIndex, topBarScrollAwayPx, columnSpacing, cardHeight, labelVibrancy, rows = null, emptyContent,
     )
 }
 
@@ -299,6 +317,7 @@ private fun <T : Any> TvNativeGridPageHostContent(
     columnSpacing: Dp,
     cardHeight: Dp?,
     labelVibrancy: Boolean,
+    rows: TvNativeGridPageRows?,
     emptyContent: @Composable BoxScope.() -> Unit,
 ) {
     val sketch = LocalSketch.current
@@ -474,10 +493,17 @@ private fun <T : Any> TvNativeGridPageHostContent(
     val view = state.view
     SideEffect {
         if (view != null) {
+            // 一组一行的内容: 建出来 (样式与几何跟着换), 交给页面接数据
+            val rowsView = rows?.let { view.ensureRows(it.style, it.metrics, it.headerStyle) }
+            if (state.rows !== rowsView) state.rows = rowsView
             val previous = view.currentKey as? Int
             val direction = if (previous == null || previous == gridKey) 0 else slideDirection(previous, gridKey)
-            view.showGrid(gridKey, direction, animated = visualEffects.transitions)
-            view.setCards(gridKey, shownCards)
+            if (rows != null && gridKey == rows.key) {
+                view.showRows(gridKey, direction, animated = visualEffects.transitions)
+            } else {
+                view.showGrid(gridKey, direction, animated = visualEffects.transitions)
+                view.setCards(gridKey, shownCards)
+            }
             shownSource?.let { view.setSource(it) }
         }
     }

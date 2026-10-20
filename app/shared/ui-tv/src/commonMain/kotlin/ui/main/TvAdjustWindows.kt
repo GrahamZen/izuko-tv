@@ -78,9 +78,12 @@ sealed interface TvAdjustWindow {
         val onClosed: (changed: Boolean) -> Unit = {},
     ) : TvAdjustWindow
 
-    /** 追番页标签顺序; [focused] = 进页焦点落在哪个标签上 (长按它进来的; 不拿起). [onClosed] 带着改没改. */
+    /**
+     * 追番页标签顺序; [focused] / [focusedProgress] = 进页焦点落在哪个分类 / 落在「追更」上 (长按它进来的; 不拿起). [onClosed] 带着改没改.
+     */
     class TabOrder(
         val focused: UnifiedCollectionType?,
+        val focusedProgress: Boolean = false,
         val onClosed: (changed: Boolean) -> Unit = {},
     ) : TvAdjustWindow
 
@@ -133,6 +136,7 @@ fun TvAdjustWindowHost(windows: TvAdjustWindows) {
                                 window.onClosed(committed != null)
                             },
                             initialFocus = window.focused,
+                            initialFocusProgress = window.focusedProgress,
                             onCommit = { committed = it },
                         )
 

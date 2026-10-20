@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnitType
 import androidx.compose.ui.unit.isSpecified
+import androidx.compose.ui.unit.sp
 import me.him188.ani.app.ui.foundation.LocalImageCrossfade
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tv.LocalTvNavKeyTracker
@@ -171,6 +172,8 @@ data class TvNativeWallStyle(
     val prefetchItems: Int,
     /** 封面右上角的角标 (卡片的 [TvNativeCard.badge]); null = 这一组卡不画. */
     val badge: TvNativeCardBadgeStyle? = null,
+    /** 封面右上角的数字角标 (卡片的 [TvNativeCard.count]); null = 这一组卡不画. */
+    val countBadge: TvNativeCardCountBadgeStyle? = null,
     /**
      * 番名与副标题照 tvOS 的 vibrancy 画 (见 setTvVibrancy): 字色 (副标题乘上没聚焦时的透明度) 加在底下的背景上, 不是半透明盖上去 —— 压在
      * 模糊背景上时中等亮度的底上也清楚. 新番时间表与 hero 态铺模糊背景的探索 / 追番 / 搜索页开着. 只用于浅色字 (深色主题); 深色字照常画.
@@ -200,10 +203,25 @@ data class TvNativeCardBadgeStyle(
 )
 
 /**
+ * 封面右上角的数字角标: 高 [heightPx] 的圆角块, 离封面上缘与右缘 [insetPx]; 一位数是圆, 两位数起按字宽加左右 [paddingPx] 变成胶囊.
+ * 字 [textSizePx] 粗体 [textColor], 底 [backgroundColor].
+ */
+@Immutable
+data class TvNativeCardCountBadgeStyle(
+    val heightPx: Float,
+    val paddingPx: Float,
+    val insetPx: Float,
+    val textSizePx: Float,
+    val backgroundColor: Int,
+    val textColor: Int,
+)
+
+/**
  * [TvNativeWallStyle]. [cardWidth] = 卡宽 (含聚焦框空隙, 屏幕上的 dp): 探索 / 追番 / 搜索页是 tvPosterWallGrid 按内容区算的,
  * 详情页的关联行另算. [columns] = 屏上一排完整放得下的张数 (预取用). [badge] 见 [TvNativeWallStyle.badge].
  * [columnSpacing] = 卡格之间的距离 (不含卡格里的聚焦框空隙). [cardHeight] = 卡格高 (含聚焦框空隙); null = 按卡宽与封面比例
- * [TV_PORTRAIT_CARD_COVER_RATIO] 算. [labelVibrancy] 见 [TvNativeWallStyle.labelVibrancy] (浅色主题下不生效).
+ * [TV_PORTRAIT_CARD_COVER_RATIO] 算. [labelVibrancy] 见 [TvNativeWallStyle.labelVibrancy] (浅色主题下不生效). [countBadge] = 卡片的 [TvNativeCard.count]
+ * 画成数字角标 (白底黑字, 照 tvOS 灰阶: 深浅主题一样, 压在封面图上).
  *
  * 在海报墙大小 ([LocalTvPosterWallScale]) 里面时, 卡宽卡高之外的卡片尺寸 (番名字号与块高、行距与列距、聚焦框空隙、圆角、投影、进度条) 一起按它缩放.
  */
@@ -215,6 +233,7 @@ fun rememberTvNativeWallStyle(
     columnSpacing: Dp = TV_POSTER_WALL_COLUMN_SPACING,
     cardHeight: Dp? = null,
     labelVibrancy: Boolean = false,
+    countBadge: Boolean = false,
 ): TvNativeWallStyle {
     val density = LocalDensity.current
     val colors = MaterialTheme.colorScheme
@@ -236,7 +255,7 @@ fun rememberTvNativeWallStyle(
     val subtitleStyle = tvPosterWallSubtitleStyle()
     val labelHeight = tvPosterWallLabelHeight()
     val cardScale = LocalTvPosterWallScale.current
-    return remember(density, cardScale, colors, light, visualEffects, crossfade, titleColor, titleStyle, subtitleStyle, labelHeight, cardWidth, columns, badge, columnSpacing, cardHeight, labelVibrancy) {
+    return remember(density, cardScale, colors, light, visualEffects, crossfade, titleColor, titleStyle, subtitleStyle, labelHeight, cardWidth, columns, badge, columnSpacing, cardHeight, labelVibrancy, countBadge) {
         val cardWidthPx = with(density) { cardWidth.roundToPx() }
         val cardHeightPx = with(density) { (cardHeight ?: (cardWidth / TV_PORTRAIT_CARD_COVER_RATIO)).roundToPx() }
         // 卡片自己的尺寸按海报墙大小换算 (卡宽卡高已经由调用方按它算好)
@@ -288,6 +307,18 @@ fun rememberTvNativeWallStyle(
                 marquee = visualEffects.marquee,
                 prefetchItems = columns + 1,
                 badge = badge,
+                countBadge = if (countBadge) {
+                    TvNativeCardCountBadgeStyle(
+                        heightPx = TV_NATIVE_COUNT_BADGE_HEIGHT.toPx(),
+                        paddingPx = TV_NATIVE_COUNT_BADGE_PADDING.toPx(),
+                        insetPx = TV_NATIVE_COUNT_BADGE_INSET.toPx(),
+                        textSizePx = TV_NATIVE_COUNT_BADGE_TEXT.toPx(),
+                        backgroundColor = Color.White.toArgb(),
+                        textColor = TV_NATIVE_COUNT_BADGE_TEXT_COLOR.toArgb(),
+                    )
+                } else {
+                    null
+                },
                 labelVibrancy = labelVibrancy && !light,
                 moreGlass = if (light) TV_NATIVE_MORE_GLASS_LIGHT else TV_NATIVE_MORE_GLASS_DARK,
                 focusCues = TvNativeFocusCueStyle(
@@ -299,6 +330,13 @@ fun rememberTvNativeWallStyle(
         }
     }
 }
+
+/** 数字角标的高、两位数时字两边的留白、离封面上缘与右缘、字号与字色 (见 [TvNativeCardCountBadgeStyle]). */
+private val TV_NATIVE_COUNT_BADGE_HEIGHT = 20.dp
+private val TV_NATIVE_COUNT_BADGE_PADDING = 6.dp
+private val TV_NATIVE_COUNT_BADGE_INSET = 6.dp
+private val TV_NATIVE_COUNT_BADGE_TEXT = 12.sp
+private val TV_NATIVE_COUNT_BADGE_TEXT_COLOR = Color(0xFF111111)
 
 /** 停手压暗时其余卡压暗多少 (深色 / 浅色主题; 浅色底上同样的压暗显得更重, 轻一档). */
 private const val TV_NATIVE_IDLE_DIM = 0.27f

@@ -29,6 +29,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.datetime.TimeZone
+import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
 import me.him188.ani.app.domain.foundation.LoadError
 import me.him188.ani.app.domain.usecase.GlobalKoin
@@ -61,18 +62,45 @@ internal class TvCollectionProgressState(
 
     private val syncLock = Mutex()
 
+    /** 最近一次读出来的在看 / 想看整类 (算长按跳过去时那一部在网格里排第几用, 见 [gridIndexOf]); 只在主线程读写. */
+    private var doing: List<SubjectCollectionInfo> = emptyList()
+    private var wish: List<SubjectCollectionInfo> = emptyList()
+
     suspend fun collect() {
         combine(
             repository.mostRecentlyUpdatedSubjectCollectionsFlow(TV_PROGRESS_DOING_LIMIT, listOf(UnifiedCollectionType.DOING)),
             repository.mostRecentlyUpdatedSubjectCollectionsFlow(TV_PROGRESS_WISH_LIMIT, listOf(UnifiedCollectionType.WISH)),
             minuteTicker(),
         ) { doing, wish, now ->
-            tvProgressSections(doing, wish, now, TimeZone.currentSystemDefault())
+            TvProgressSnapshot(doing, wish, tvProgressSections(doing, wish, now, TimeZone.currentSystemDefault()))
         }.flowOn(Dispatchers.Default).collect {
-            sections = it
-            backfillWishEpisodes(it)
+            doing = it.doing
+            wish = it.wish
+            sections = it.sections
+            backfillWishEpisodes(it.sections)
         }
     }
+
+    /**
+     * [info] 在它那一类 (在看 / 想看) 的网格里排第几张, 按网格分页的排序算 (`filterByCollectionTypePaging`: 最后改动时间倒序、同时间按条目号倒序,
+     * NSFW 设为隐藏时不含这类条目); 不在本地那份里时 null. 长按跳过去之前先把网格定位到这一张, 换过去不用再滚 —— 算错了 (库里刚变过) 页面会按
+     * 实际列表再找一遍.
+     */
+    fun gridIndexOf(info: SubjectCollectionInfo): Int? {
+        val list = when (info.collectionType) {
+            UnifiedCollectionType.DOING -> doing
+            UnifiedCollectionType.WISH -> wish
+            else -> return null
+        }
+        val index = tvGridOrder(list).indexOfFirst { it.subjectId == info.subjectId }
+        return index.takeIf { it >= 0 }
+    }
+
+    private class TvProgressSnapshot(
+        val doing: List<SubjectCollectionInfo>,
+        val wish: List<SubjectCollectionInfo>,
+        val sections: List<TvProgressSection>,
+    )
 
     /**
      * 从服务端同步在看与想看两类 (同追番页那两个标签的刷新: 第一页对得上就停, 对不上整类补齐, 在看的分集随之补齐). [force] = false 时离上次
@@ -139,6 +167,11 @@ internal fun rememberTvCollectionProgress(): TvCollectionProgressState {
     LaunchedEffect(state) { state.sync(force = false) }
     return state
 }
+
+/** 网格分页的排序 (同 `SubjectCollectionDao.filterByCollectionTypePaging`): 最后改动时间倒序、同时间按条目号倒序, NSFW 设为隐藏时去掉这类条目. */
+internal fun tvGridOrder(list: List<SubjectCollectionInfo>): List<SubjectCollectionInfo> =
+    list.filterNot { it.isHiddenNsfw() }
+        .sortedWith(compareByDescending<SubjectCollectionInfo> { it.lastUpdated }.thenByDescending { it.subjectId })
 
 /** 每分钟一次的当前时刻 (分组按它算). */
 private fun minuteTicker(): Flow<Instant> = flow {
