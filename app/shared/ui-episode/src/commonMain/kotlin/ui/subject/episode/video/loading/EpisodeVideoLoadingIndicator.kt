@@ -37,12 +37,14 @@ import kotlinx.coroutines.flow.flowOf
 import me.him188.ani.app.domain.media.cache.engine.MediaCacheEngineKey
 import me.him188.ani.app.domain.media.resolver.MediaResolveDeadline
 import me.him188.ani.app.domain.media.resolver.TorrentOpenProgress
-import me.him188.ani.app.domain.mediasource.clouddrive.isCloudDriveLoginRequired
+import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveFailure
+import me.him188.ani.app.domain.mediasource.clouddrive.cloudDriveFailure
 import me.him188.ani.app.domain.player.UnsupportedFormat
 import me.him188.ani.app.domain.player.VideoLoadingState
 import me.him188.ani.app.domain.player.downloadSpeedFlow
 import me.him188.ani.app.domain.player.httpErrorStatus
 import me.him188.ani.app.domain.player.isNetworkFailure
+import me.him188.ani.app.domain.player.isNotVideoResponse
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
 import me.him188.ani.app.ui.foundation.TextWithBorder
 import me.him188.ani.app.ui.lang.Lang
@@ -54,11 +56,15 @@ import me.him188.ani.app.ui.lang.subject_episode_video_loading_buffering_bt_no_s
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_buffering_bt_too_long
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_buffering_too_long
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_cause_cancelled
+import me.him188.ani.app.ui.lang.subject_episode_video_loading_cause_drive_error
+import me.him188.ani.app.ui.lang.subject_episode_video_loading_cause_drive_full
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_cause_drive_login
+import me.him188.ani.app.ui.lang.subject_episode_video_loading_cause_drive_share_unavailable
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_cause_http_error
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_cause_http_rejected
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_cause_network_error
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_cause_no_matching_file
+import me.him188.ani.app.ui.lang.subject_episode_video_loading_cause_not_video
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_cause_resolution_timed_out
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_cause_unknown_error
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_cause_unsupported_media
@@ -71,6 +77,7 @@ import me.him188.ani.app.ui.lang.subject_episode_video_loading_failed_prefix
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_needs_manual_selection
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_no_media
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_player_error
+import me.him188.ani.app.ui.lang.subject_episode_video_loading_player_error_cause
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_preparing_elapsed
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_resolve_deadline
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_resolve_deadline_auto_switch
@@ -148,6 +155,7 @@ fun EpisodeVideoLoadingIndicator(
             optimizeForFullscreen = optimizeForFullscreen,
             playerError = state.mediaStatus is MediaStatus.Error,
             unsupportedFormat = unsupportedFormatOf(state.mediaStatus),
+            playerErrorCause = playerErrorCauseOf(state.mediaStatus),
             modifier = modifier,
             details = details.copy(bufferedAheadMillis = bufferedAheadMillis),
         )
@@ -181,6 +189,8 @@ fun EpisodeVideoLoadingIndicator(
     playerError: Boolean = false,
     /** 播放器报错的原因是设备放不了这个视频的编码格式时是哪种, 提示里说清楚 */
     unsupportedFormat: UnsupportedFormat? = null,
+    /** 播放器报错时认得出的原因 (见 [playerErrorCauseOf]), 提示里写上 */
+    playerErrorCause: String? = null,
     modifier: Modifier = Modifier,
     textStyle: TextStyle = MaterialTheme.typography.labelLarge,
     details: EpisodeLoadingDetails = EpisodeLoadingDetails.None,
@@ -206,7 +216,9 @@ fun EpisodeVideoLoadingIndicator(
         progress = searching?.let { search -> { search.finished.toFloat() / search.total } },
         text = {
             if (playerError) {
-                val text = unsupportedFormat?.let { unsupportedFormatError(it) } ?: playerErrorText
+                val text = unsupportedFormat?.let { unsupportedFormatError(it) }
+                    ?: playerErrorCause?.let { stringResource(Lang.subject_episode_video_loading_player_error_cause, it) }
+                    ?: playerErrorText
                 TextWithBorder(text, color = MaterialTheme.colorScheme.error)
                 return@VideoLoadingIndicator
             }
@@ -482,6 +494,14 @@ data class VideoLoadingCauseLabels(
     val httpError: String,
     /** 网盘没登录 (播网盘里的文件要登录, 分享的要转存). */
     val driveLoginRequired: String,
+    /** 网盘空间不够, 分享里的文件转存不进去; 文件大小处是 [FILE_SIZE_PLACEHOLDER]. */
+    val driveFull: String,
+    /** 网盘分享打不开 (已取消、被封或要提取码). */
+    val driveShareUnavailable: String,
+    /** 网盘报了别的错; 网盘的说法处是 [MESSAGE_PLACEHOLDER]. */
+    val driveError: String,
+    /** 视频地址回的不是视频 (链接失效、防盗链后回了网页). */
+    val notVideo: String,
 ) {
     /** 把每句原因再包一层 (例如套进"后台播放遇到问题: ……"的模板). */
     inline fun map(transform: (String) -> String) = VideoLoadingCauseLabels(
@@ -495,6 +515,10 @@ data class VideoLoadingCauseLabels(
         httpRejected = transform(httpRejected),
         httpError = transform(httpError),
         driveLoginRequired = transform(driveLoginRequired),
+        driveFull = transform(driveFull),
+        driveShareUnavailable = transform(driveShareUnavailable),
+        driveError = transform(driveError),
+        notVideo = transform(notVideo),
     )
 }
 
@@ -510,17 +534,43 @@ fun videoLoadingCauseLabels(): VideoLoadingCauseLabels = VideoLoadingCauseLabels
     httpRejected = stringResource(Lang.subject_episode_video_loading_cause_http_rejected, HTTP_STATUS_PLACEHOLDER),
     httpError = stringResource(Lang.subject_episode_video_loading_cause_http_error, HTTP_STATUS_PLACEHOLDER),
     driveLoginRequired = stringResource(Lang.subject_episode_video_loading_cause_drive_login),
+    driveFull = stringResource(Lang.subject_episode_video_loading_cause_drive_full, FILE_SIZE_PLACEHOLDER),
+    driveShareUnavailable = stringResource(Lang.subject_episode_video_loading_cause_drive_share_unavailable),
+    driveError = stringResource(Lang.subject_episode_video_loading_cause_drive_error, MESSAGE_PLACEHOLDER),
+    notVideo = stringResource(Lang.subject_episode_video_loading_cause_not_video),
 )
 
 /** [VideoLoadingCauseLabels.httpRejected] 里状态码的位置: 先按它取出句子, 渲染原因时换成真正的状态码. */
 private const val HTTP_STATUS_PLACEHOLDER = "%%ANI_HTTP_STATUS%%"
 
-/** 未知错误里认得出的原因: 网盘没登录 / 连不上网 / 服务器回了 HTTP 错误, 其余照旧是「未知错误」. */
-private fun renderUnknownError(error: Throwable, labels: VideoLoadingCauseLabels): String {
-    if (error.isCloudDriveLoginRequired()) return labels.driveLoginRequired
+/** [VideoLoadingCauseLabels.driveFull] 里文件大小的位置. */
+private const val FILE_SIZE_PLACEHOLDER = "%%ANI_FILE_SIZE%%"
+
+/** [VideoLoadingCauseLabels.driveError] 里网盘说法的位置. */
+private const val MESSAGE_PLACEHOLDER = "%%ANI_MESSAGE%%"
+
+/** 未知错误里认得出的原因 (见 [knownCauseOf]), 其余照旧是「未知错误」. */
+private fun renderUnknownError(error: Throwable, labels: VideoLoadingCauseLabels): String =
+    knownCauseOf(error, labels) ?: labels.unknownError
+
+/**
+ * 异常里认得出的原因: 网盘那一层的 (没登录、满了、分享失效、网盘的说法) / 连不上网 / 服务器回了 HTTP 错误 / 地址回的不是视频; 认不出为 null.
+ * 打开时的失败 ([VideoLoadingState.UnknownError]) 与播到一半播放器报的错共用.
+ */
+fun knownCauseOf(error: Throwable, labels: VideoLoadingCauseLabels): String? {
+    when (val drive = error.cloudDriveFailure()) {
+        CloudDriveFailure.LoginRequired -> return labels.driveLoginRequired
+        is CloudDriveFailure.Full -> return labels.driveFull.replace(FILE_SIZE_PLACEHOLDER, drive.requiredBytes.bytes.toString())
+        CloudDriveFailure.ShareUnavailable -> return labels.driveShareUnavailable
+        is CloudDriveFailure.Other -> return labels.driveError.replace(MESSAGE_PLACEHOLDER, drive.message)
+        null -> {}
+    }
     if (error.isNetworkFailure()) return labels.networkError
-    val status = error.httpErrorStatus() ?: return labels.unknownError
-    return (if (status >= 500) labels.httpError else labels.httpRejected).replace(HTTP_STATUS_PLACEHOLDER, status.toString())
+    error.httpErrorStatus()?.let { status ->
+        return (if (status >= 500) labels.httpError else labels.httpRejected).replace(HTTP_STATUS_PLACEHOLDER, status.toString())
+    }
+    if (error.isNotVideoResponse()) return labels.notVideo
+    return null
 }
 
 fun renderCause(cause: VideoLoadingState.Failed, labels: VideoLoadingCauseLabels): String = when (cause) {
