@@ -190,7 +190,8 @@ interface TvSourcePanelListener {
  * 左右走到头 (源那一栏按左、条目按右、源进不去时按右、小胶囊到头、没有源那一栏的列表按左右) 换到胶囊行相邻的那一项: 进去过就回到上次离开时
  * 停的地方 (源那一栏那个源或条目那一行, 不在了落第一个), 没去过或从胶囊上离开的停在胶囊上 (按住连走只挪胶囊, 松手才落);
  * 胶囊上按下回到内容里上次停的地方.
- * 焦点在表头或分类胶囊上时胶囊行下面都收着, 按下 / 确定进去才展开, 退回胶囊上又收起来. 选中的胶囊靠左停, 到了最后几颗才往右走.
+ * 焦点在表头上时胶囊行下面都收着; 在分类胶囊上展开那一项 (焦点留在胶囊上): 有源那一栏的只出这一栏, 右边的条目进去了才出.
+ * 选中的胶囊靠左停, 到了最后几颗才往右走.
  * 关面板只有返回键 (表头按上不收, 免得往上多按一下就误关).
  * 「筛选」是弹窗 (TvSourceFilterDialog).
  *
@@ -350,8 +351,9 @@ class TvSourcePanelView(
     private var groupCross: GroupCross? = null
 
     /**
-     * 胶囊行下面收着 (见 [updateBranchCollapse]): 焦点在表头或分类胶囊上时什么都不展开, 只露胶囊行 —— 少挡画面; 在胶囊上按下 / 确定进去,
-     * 源那一栏与条目 (或那一项的列表) 才淡入, 退回胶囊上又收起来. 收着时源那一栏也不标显示的是哪个源.
+     * 胶囊行下面收着哪些 (见 [updateBranchCollapse]): 焦点在表头上 (刚打开时停在「正在播放」) 时都收着, 只露胶囊行 —— 少挡画面;
+     * 在分类胶囊上展开那一项, 焦点留在胶囊上: 没有源那一栏的出它的列表, 有的只出源那一栏 (右边的条目收着, 这一栏也不标显示的是哪个源),
+     * 进了这一栏或条目全部淡入.
      */
     private var branchCollapsed = false
     private var columnCollapsed = false
@@ -1805,7 +1807,7 @@ class TvSourcePanelView(
         branchEntering = false
         branchHidden = false
         branchAnimator?.cancel()
-        // 焦点在胶囊上 (收着): 排好了也不出来, 进了这一栏或条目再淡入 (见 updateBranchCollapse)
+        // 收着 (焦点在表头上, 或在有源那一栏的胶囊上): 排好了也不出来, 进了这一栏或条目再淡入 (见 updateBranchCollapse)
         if (branchCollapsed) return
         branchAnimator = fadeIn(branchViews)
     }
@@ -1814,8 +1816,7 @@ class TvSourcePanelView(
     private fun updateBranchCollapse(region: Region) {
         if (region == Region.NONE) return
         val columnShown = column.visibility == VISIBLE
-        val outside = region == Region.HEADER || region == Region.RAIL
-        val collapseColumn = columnShown && outside
+        val collapseColumn = columnShown && region == Region.HEADER
         if (collapseColumn != columnCollapsed) {
             columnCollapsed = collapseColumn
             columnAnimator?.cancel()
@@ -1825,7 +1826,7 @@ class TvSourcePanelView(
                 columnAnimator = fadeIn(arrayOf(column))
             }
         }
-        val collapse = outside
+        val collapse = region == Region.HEADER || (columnShown && region == Region.RAIL)
         if (collapse == branchCollapsed) return
         branchCollapsed = collapse
         columnAdapter.activeId = if (collapse) null else selectedSourceKey()

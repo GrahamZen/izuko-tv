@@ -171,8 +171,8 @@ class TvSourcePanelViewTest {
         val below = host.onMain { nearestPillBelow(TvSourceRailKeys.NOW_PLAYING) }
         host.press(KeyEvent.KEYCODE_DPAD_DOWN)
         waitFocus(below)
-        // 在分类胶囊上也收着
-        host.waitUntil("胶囊上也收着 (透明度 ${columnAlpha()} / ${listAlpha()})") { columnAlpha() == 0f && listAlpha() == 0f }
+        // 在分类胶囊上: 出源那一栏, 条目还收着
+        host.waitUntil("胶囊上: 源那一栏出来, 条目收着 (透明度 ${columnAlpha()} / ${listAlpha()})") { columnAlpha() == 1f && listAlpha() == 0f }
         host.press(KeyEvent.KEYCODE_DPAD_UP)
         waitFocus(TvSourceRailKeys.NOW_PLAYING)
     }
@@ -209,20 +209,24 @@ class TvSourcePanelViewTest {
     }
 
     @Test
-    fun `a list shows only once entered and folds again back on its pill`() {
+    fun `a list without a source column shows on its pill and hides in the header`() {
         fun listAlpha() = (rowView("line:0")?.parent as? View)?.alpha
         show(flatContent())
         waitFocus(GROUP_B)
-        host.waitUntil("胶囊上: 收着 (透明度 ${listAlpha()})") { listAlpha() == 0f }
+        host.waitUntil("胶囊上: 列表出来, 焦点还在胶囊上 (透明度 ${listAlpha()})") { listAlpha() == 1f }
+        assertEquals(GROUP_B, focusedId())
         host.press(KeyEvent.KEYCODE_DPAD_DOWN)
         waitFocus("line:1")
-        host.waitUntil("进去了: 出来") { listAlpha() == 1f }
+        // 返回到胶囊: 不收起 (再按返回就关面板)
         assertTrue(host.onMain { view.handleBack() })
         waitFocus(GROUP_B)
-        host.waitUntil("返回到胶囊: 又收起来 (透明度 ${listAlpha()})") { listAlpha() == 0f }
+        assertEquals(1f, host.onMain { listAlpha() })
         host.press(KeyEvent.KEYCODE_DPAD_UP)
         waitFocus(TvSourceRailKeys.ACTION_REFRESH)
-        host.waitUntil("表头上: 收着") { listAlpha() == 0f }
+        host.waitUntil("表头上: 收着 (透明度 ${listAlpha()})") { listAlpha() == 0f }
+        host.press(KeyEvent.KEYCODE_DPAD_DOWN)
+        waitFocus(GROUP_B)
+        host.waitUntil("回到胶囊: 又出来 (透明度 ${listAlpha()})") { listAlpha() == 1f }
     }
 
     @Test
@@ -297,13 +301,14 @@ class TvSourcePanelViewTest {
     }
 
     @Test
-    fun `back from the entries folds on the group pill and closes from there`() {
+    fun `back from the entries goes to the group pill and closes from there`() {
         fun columnAlpha() = (rowView("web:a1")?.parent as? View)?.alpha
+        fun listAlpha() = (rowView("line:0")?.parent as? View)?.alpha
         showAt(playingContent(), "line:1")
-        // 条目 → 分类胶囊 (下面收起来) → 交给宿主关面板 (有「正在播放」也不再绕过去)
+        // 条目 → 分类胶囊 (源那一栏还在, 条目收起) → 交给宿主关面板 (有「正在播放」也不再绕过去)
         assertTrue(host.onMain { view.handleBack() })
         waitFocus(GROUP_A)
-        host.waitUntil("关之前下面都收着 (源那一栏透明度 ${columnAlpha()})") { columnAlpha() == 0f }
+        host.waitUntil("胶囊上: 源那一栏在, 条目收着 (透明度 ${columnAlpha()} / ${listAlpha()})") { columnAlpha() == 1f && listAlpha() == 0f }
         assertFalse(host.onMain { view.handleBack() })
         // 再打开回到这颗胶囊, 内容里停的那一行记着
         assertEquals(
@@ -908,13 +913,14 @@ class TvSourcePanelViewTest {
     }
 
     @Test
-    fun `a group pill does not expand any source`() {
+    fun `a group pill shows its source column but not the entries`() {
         fun listAlpha() = (rowView("line:0")?.parent as? View)?.alpha
         fun columnAlpha() = (rowView("web:a1")?.parent as? View)?.alpha
         showOnRail(groupContent())
-        host.waitUntil("胶囊上: 源那一栏与条目都收着, 源那一栏不标哪个源 (透明度 ${columnAlpha()} / ${listAlpha()})") {
-            listAlpha() == 0f && columnAlpha() == 0f && rowView("web:a1")?.outlined == false
+        host.waitUntil("胶囊上: 源那一栏出来, 条目收着, 源那一栏不标哪个源 (透明度 ${columnAlpha()} / ${listAlpha()})") {
+            listAlpha() == 0f && columnAlpha() == 1f && rowView("web:a1")?.outlined == false
         }
+        assertEquals(GROUP_A, focusedId())
         host.press(KeyEvent.KEYCODE_DPAD_DOWN)
         waitFocus("web:a1")
         host.waitUntil("进了源那一栏: 都展开 (透明度 ${columnAlpha()} / ${listAlpha()})") { columnAlpha() == 1f && listAlpha() == 1f }
@@ -998,7 +1004,7 @@ class TvSourcePanelViewTest {
     }
 
     @Test
-    fun `closing from the entries reopens folded on the pill and down goes back to the entry`() {
+    fun `closing from the entries reopens on the pill and down goes back to the entry`() {
         fun listAlpha() = (rowView("line:0")?.parent as? View)?.alpha
         fun columnAlpha() = (rowView("web:a1")?.parent as? View)?.alpha
         showAt(groupContent(), "line:1")
@@ -1009,7 +1015,7 @@ class TvSourcePanelViewTest {
         assertEquals(TvSourceResumePoint(GROUP_A, null, TvSourceFocusPosition(GROUP_A, "web:a1", "line:1")), point)
         reopenInNewView(point, groupContent())
         waitFocus(GROUP_A)
-        host.waitUntil("再打开: 下面收着 (透明度 ${columnAlpha()} / ${listAlpha()})") { columnAlpha() == 0f && listAlpha() == 0f }
+        host.waitUntil("再打开: 胶囊上, 源那一栏出来, 条目收着 (透明度 ${columnAlpha()} / ${listAlpha()})") { columnAlpha() == 1f && listAlpha() == 0f }
         host.press(KeyEvent.KEYCODE_DPAD_DOWN)
         waitFocus("line:1")
         host.waitUntil("进去了: 展开") { columnAlpha() == 1f && listAlpha() == 1f }
