@@ -13,6 +13,7 @@ import android.content.Context
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.os.Trace
 import android.view.Surface
 import android.view.SurfaceView
 import androidx.annotation.OptIn as AndroidxOptIn
@@ -1068,13 +1069,19 @@ class LibassExoPlayerMediampPlayerFactory(
         } else {
             ExoPlayerAudioTimeStretch.Media3Default
         }
-        return LibassExoPlayerMediampPlayer(
-            context,
-            parentCoroutineContext,
-            audioTimeStretch,
-            proxyConfig = proxyConfig,
-            diskCacheEnabled = diskCacheEnabled,
-            audioPassthrough = audioPassthrough,
-        )
+        // 进播放页时在主线程上建 (ExoPlayer、渲染器、解码器能力), Perfetto 里看得到这一段
+        Trace.beginSection("Izuko:CreatePlayer")
+        try {
+            return LibassExoPlayerMediampPlayer(
+                context,
+                parentCoroutineContext,
+                audioTimeStretch,
+                proxyConfig = proxyConfig,
+                diskCacheEnabled = diskCacheEnabled,
+                audioPassthrough = audioPassthrough,
+            )
+        } finally {
+            Trace.endSection()
+        }
     }
 }

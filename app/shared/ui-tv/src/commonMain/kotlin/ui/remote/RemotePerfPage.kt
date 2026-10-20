@@ -37,10 +37,12 @@ internal val PERF_STYLE = """
 .perf-kv dt { color: var(--mute); }
 .perf-kv dd { margin: 0; word-break: break-word; }
 .perf-detail a.ghost { display: block; margin-top: 10px; text-align: center; text-decoration: none; }
+.perf-trace-title { margin-top: 20px; }
+a.perf-trace-dl { display: flex; align-items: center; justify-content: center; text-decoration: none; }
 """.trimIndent()
 
 /**
- * 「设置 → 维护 → 性能诊断」: 设备体检 / 录制 N 秒, 报告按类型分两个标签列出 (默认收起只显示结论, 点标题行展开看关键数字,
+ * 「设置 → 维护 → 性能诊断」: 设备体检 / 录制 N 秒 / 方法采样 (下载 .trace), 报告按类型分两个标签列出 (默认收起只显示结论, 点标题行展开看关键数字,
  * 可下载整份 JSON; 左滑删除, 同播放记录). 录制中每秒读一次状态; 其余时候只在进「维护」与点按钮时读.
  */
 internal val PERF_SCRIPT = """
@@ -60,11 +62,13 @@ internal val PERF_SCRIPT = """
       data = d;
       render();
       clearTimeout(timer);
-      if (d.status.state !== 'idle' && !document.hidden) timer = setTimeout(load, 1000);
+      if (polling(d) && !document.hidden) timer = setTimeout(load, 1000);
     }).catch(function () { setHtml(box, ''); });
   }
   window.loadPerf = load;
-  document.addEventListener('visibilitychange', function () { if (!document.hidden && data && data.status.state !== 'idle') load(); });
+  /** 录制 / 体检 / 方法采样进行中: 每秒读一次状态 */
+  function polling(d) { return d.status.state !== 'idle' || !!(d.trace && d.trace.running); }
+  document.addEventListener('visibilitychange', function () { if (!document.hidden && data && polling(data)) load(); });
   function kindText(r) {
     if (r.kind === 'auto') return T('自动 · 画面卡顿');
     return r.kind === 'health' ? T('设备体检') : T('录制 {0} 秒', r.seconds);
@@ -156,6 +160,15 @@ internal val PERF_SCRIPT = """
           return '<option value="' + n + '"' + (n === dur ? ' selected' : '') + '>' + T('{0} 秒', n) + '</option>';
         }).join('') + '</select></div>';
     }
+    var mt = data.trace || {};
+    h += '<div class="set-title perf-trace-title">' + T('方法采样') + '</div>' +
+      '<p class="hint">' + T('看主线程卡在哪段代码上：开始后在电视上操作要测的界面，结束后下载 .trace 文件，用 Android Studio 的 Profiler 打开。采样本身很重，时长会被放大，只用来看卡在哪。') + '</p>';
+    if (mt.running) {
+      h += '<p class="perf-status">' + T('正在方法采样，还剩 {0} 秒。', mt.remaining) + '</p>';
+    } else {
+      h += '<div class="row"><button type="button" class="ghost" data-perf="trace"' + (busy ? ' disabled' : '') + '>' + T('采样 {0} 秒', 10) + '</button>' +
+        (mt.size ? '<a class="ghost perf-trace-dl" href="api/diag/trace/file" download="izuko-method-trace.trace">' + T('下载上次的（{0}）', mt.time) + '</a>' : '') + '</div>';
+    }
     if (data.reports.length) {
       var tabs = [['health', T('设备体检')], ['record', T('录制')]];
       h += '<div class="seg perf-tabs">' + tabs.map(function (t) {
@@ -213,6 +226,13 @@ internal val PERF_SCRIPT = """
         }, function () { busy = false; fail(); load(); });
       } else if (act === 'stop') {
         window.post('api/diag/stop', {}).then(function () { load(); }, fail);
+      } else if (act === 'trace') {
+        busy = true; render();
+        window.post('api/diag/trace', { seconds: 10 }).then(function (d) {
+          busy = false;
+          toast(d.message);
+          load();
+        }, function () { busy = false; fail(); load(); });
       }
       return;
     }
