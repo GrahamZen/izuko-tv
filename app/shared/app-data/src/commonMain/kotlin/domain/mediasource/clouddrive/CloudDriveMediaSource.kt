@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.Serializable
 import me.him188.ani.app.domain.episode.servesWholeSubject
+import me.him188.ani.app.domain.media.ProbedMediaAvFeatures
 import me.him188.ani.app.domain.media.fetch.SelfLimitedMediaSource
 import me.him188.ani.app.domain.mediasource.codec.DefaultMediaSourceCodec
 import me.him188.ani.app.domain.mediasource.codec.DontForgetToRegisterCodec
@@ -247,6 +248,7 @@ class CloudDriveMediaSource(
             val sourceId = protocol.driveMediaSourceId
             val mediaId = "$sourceId.${file.fid}"
             DriveVideoBitrates.record(mediaId, file)
+            ProbedMediaAvFeatures.record(mediaId, file.avFeatures)
             if (file.parentFid.isNotEmpty()) DriveMediaFolders.record(mediaId, DriveMediaFolders.Folder(file.parentFid, folders.lastOrNull()))
             return DefaultMedia(
                 mediaId = mediaId,

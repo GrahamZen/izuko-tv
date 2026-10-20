@@ -690,6 +690,8 @@
     <string name="tv_source_playback_failed">加载失败</string>
     <string name="tv_source_playback_buffering">缓冲中</string>
     <string name="tv_source_settings">数据源设置</string>
+    <string name="tv_source_badge_dolby_vision">杜比视界</string>
+    <string name="tv_source_badge_dolby_atmos">杜比全景声</string>
     <string name="tv_source_disabled">已停用</string>
     <string name="tv_source_episode_filter">仅本集</string>
     <string name="tv_source_all_episodes">全部集数</string>
@@ -698,6 +700,7 @@
     <string name="tv_source_show_excluded">显示已排除的 %1$d 条</string>
     <string name="tv_source_hide_excluded">收起已排除的 %1$d 条</string>
     <string name="tv_source_hidden_by_filter">被筛选隐藏 %1$d 条</string>
+    <string name="tv_source_badge_dolby_vision_unsupported">这台设备不支持杜比视界。这个片源是杜比视界 profile 5，颜色可能不对 (偏紫或偏绿)</string>
     <string name="tv_source_sources_count">%1$d 个来源</string>
     <string name="tv_source_pack">合集</string>
     <string name="tv_source_bt_loading">正在查询 BT 资源…</string>
