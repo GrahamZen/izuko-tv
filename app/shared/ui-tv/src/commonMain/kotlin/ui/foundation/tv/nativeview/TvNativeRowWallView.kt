@@ -32,6 +32,10 @@ import me.him188.ani.app.ui.foundation.tv.TV_SCROLL_HIDDEN_TEXT_IN_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TV_SCROLL_STILL_FRAMES
 import me.him188.ani.app.ui.foundation.tv.TV_SCROLL_STILL_PX
 import me.him188.ani.app.ui.foundation.tv.TvBackdropTreatment
+import me.him188.ani.app.ui.foundation.tv.TvKeyRepeatGate
+import me.him188.ani.app.ui.foundation.tv.TvWallConfirm
+import me.him188.ani.app.ui.foundation.tv.tvWallConfirm
+import me.him188.ani.app.ui.foundation.tv.tvWallTapConfirmsWhileFocusing
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -392,8 +396,8 @@ open class TvNativeRowWallView private constructor(
 
     /** 远跳已落地、在等目标那一行的卡拿到焦点再点 (见 [onCardFocused]); null = 没有. */
     private var clickOnLandingRow: String? = null
-    private var lastVerticalRepeat = 0L
-    private var lastHorizontalRepeat = 0L
+    private val verticalRepeat = TvKeyRepeatGate(TV_NATIVE_VERTICAL_REPEAT_MILLIS)
+    private val horizontalRepeat = TvKeyRepeatGate(TV_NATIVE_HORIZONTAL_REPEAT_MILLIS)
     private var pendingScrollPx = -1
 
     /** 各行上次停的那张 (从行外进来 / 返回键分层回这一行时落在它上面), 按行键. */
@@ -1274,19 +1278,13 @@ open class TvNativeRowWallView private constructor(
                 // 焦点还停着的那张卡滚出屏被回收, 焦点丢了; 外面兜底送回来时找不到那张卡, 落到别处 —— hero 态因此被退出,
                 // 之后的连发从那里往下走, 看着像退回卡片墙继续往下滚. 慢的设备 (debug 包、没预编译) 才落不了地
                 if (pendingRow != null) return true
-                val now = SystemClock.uptimeMillis()
-                if (now - lastVerticalRepeat < TV_NATIVE_VERTICAL_REPEAT_MILLIS) return true
-                lastVerticalRepeat = now
             }
+            if (!verticalRepeat.pass(event.repeatCount, SystemClock.uptimeMillis())) return true
             navigateVertical(rowKey, if (code == KeyEvent.KEYCODE_DPAD_UP) -1 else 1)
             return true
         }
-        if (event.repeatCount > 0) {
-            // 同 TvNativeRowView 的横向连发限速 (按键在这里就吃掉了, 到不了行)
-            val now = SystemClock.uptimeMillis()
-            if (now - lastHorizontalRepeat < TV_NATIVE_HORIZONTAL_REPEAT_MILLIS) return true
-            lastHorizontalRepeat = now
-        }
+        // 同横滑行的横向连发限速 (按键在这里就吃掉了, 到不了行)
+        if (!horizontalRepeat.pass(event.repeatCount, SystemClock.uptimeMillis())) return true
         navigateHorizontal(rowKey, if (code == KeyEvent.KEYCODE_DPAD_LEFT) -1 else 1, repeat = event.repeatCount > 0)
         return true
     }
@@ -1429,19 +1427,17 @@ open class TvNativeRowWallView private constructor(
         override fun onFocused(index: Int) = onCardFocused(rowKey, index)
 
         override fun onClick(index: Int) {
-            if (isMoreCard(rowKey, index)) {
-                rowListener?.onMoreClick(rowKey)
-                return
-            }
             // 卡片墙上先切到 hero 态, hero 态里才进详情页 (这时有 hero 背景图, 走放大转场); 没有 hero 态时直接交给页面
-            if (heroEnabled && !timeline.active) {
-                setHeroActive(true)
-            } else {
-                // 进详情页: 焦点交出去之后这张卡仍画成聚焦态, 返回后焦点交还前也不缩 (见 holdLandingLook)
-                list.heldFocus = rowKey to index
-                // hero 态的模糊背景: 先对焦 (背景变清晰、卡片淡没) 再进, 见 TvNativeWallFocus
-                if (openFocusesWall && openWithWallFocus(rowKey, index)) return
-                rowListener?.onCardClick(rowKey, pageIndex(rowKey, index))
+            when (tvWallConfirm(isMoreCard(rowKey, index), heroEnabled, timeline.active)) {
+                TvWallConfirm.More -> rowListener?.onMoreClick(rowKey)
+                TvWallConfirm.EnterHero -> setHeroActive(true)
+                TvWallConfirm.Open -> {
+                    // 进详情页: 焦点交出去之后这张卡仍画成聚焦态, 返回后焦点交还前也不缩 (见 holdLandingLook)
+                    list.heldFocus = rowKey to index
+                    // hero 态的模糊背景: 先对焦 (背景变清晰、卡片淡没) 再进, 见 TvNativeWallFocus
+                    if (openFocusesWall && openWithWallFocus(rowKey, index)) return
+                    rowListener?.onCardClick(rowKey, pageIndex(rowKey, index))
+                }
             }
         }
 
@@ -1450,8 +1446,8 @@ open class TvNativeRowWallView private constructor(
             rowListener?.onCardLongPress(rowKey, pageIndex(rowKey, index), anchor)
         }
 
-        // 卡片墙上点一下 = 聚焦并进 hero 态; hero 态里点另一张只换焦点 (确认就进详情页了), 「更多」卡也只聚焦
-        override fun tapConfirmsWhileFocusing(index: Int): Boolean = heroEnabled && !timeline.active && !isMoreCard(rowKey, index)
+        override fun tapConfirmsWhileFocusing(index: Int): Boolean =
+            tvWallTapConfirmsWhileFocusing(isMoreCard(rowKey, index), heroEnabled, timeline.active)
     }
 
     private fun isMoreCard(rowKey: String, index: Int): Boolean =

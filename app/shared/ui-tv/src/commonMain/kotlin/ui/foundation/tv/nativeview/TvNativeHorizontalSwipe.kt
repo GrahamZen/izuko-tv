@@ -14,7 +14,9 @@ import android.view.MotionEvent
 import android.view.VelocityTracker
 import android.view.View
 import android.view.ViewConfiguration
-import kotlin.math.abs
+import me.him188.ani.app.ui.foundation.tv.TvWallSwipeClaim
+import me.him188.ani.app.ui.foundation.tv.tvWallSwipeClaim
+import me.him188.ani.app.ui.foundation.tv.tvWallSwipeStep
 
 /**
  * 触屏设备 (平板装了 TV 包) 上原生页的左右滑: 左滑 = 下一项、右滑 = 上一项 (同上游手机版轮播 / 分页的方向), 一下翻一项.
@@ -22,8 +24,8 @@ import kotlin.math.abs
  * (见 [TvNativeGridPageView.onTouchSwipe]) 共用. 只在触摸开关打开时建, 电视上不存在.
  *
  * 只认横向: 按下落在 [inArea] 里, 先横着越过 touch slop 且横向占优才接管 —— 子视图收到取消 (按钮不点、列表不滚);
- * 先竖着越过的整个手势放给列表. 松手时横向位移过 [TV_TOUCH_SWIPE_DISTANCE_DP] 或横向速度过
- * [TV_TOUCH_SWIPE_VELOCITY_DP] (方向与位移一致) 就翻一项, 否则不翻.
+ * 先竖着越过的整个手势放给列表. 松手时横向位移过 [TV_WALL_SWIPE_DISTANCE_DP] 或横向速度过
+ * [TV_WALL_SWIPE_VELOCITY_DP] (方向与位移一致) 就翻一项, 否则不翻.
  */
 internal class TvNativeHorizontalSwipe(
     context: Context,
@@ -96,27 +98,24 @@ internal class TvNativeHorizontalSwipe(
     }
 
     private fun decide(event: MotionEvent) {
-        val dx = abs(event.x - downX)
-        val dy = abs(event.y - downY)
-        when {
-            dx > slop && dx > dy -> {
+        when (tvWallSwipeClaim(event.x - downX, event.y - downY, slop.toFloat())) {
+            TvWallSwipeClaim.Claim -> {
                 dragging = true
                 host.parent?.requestDisallowInterceptTouchEvent(true)
             }
 
-            dy > slop -> reset()
+            TvWallSwipeClaim.Release -> reset()
+            TvWallSwipeClaim.Undecided -> {}
         }
     }
 
     private fun finish(event: MotionEvent) {
-        val dx = event.x - downX
         val vx = velocity?.let {
             it.computeCurrentVelocity(1000)
             it.xVelocity
         } ?: 0f
-        val farEnough = abs(dx) >= TV_TOUCH_SWIPE_DISTANCE_DP * density
-        val fastEnough = abs(vx) >= TV_TOUCH_SWIPE_VELOCITY_DP * density && vx * dx > 0f
-        if (farEnough || fastEnough) onSwipe(if (dx < 0f) 1 else -1)
+        val step = tvWallSwipeStep(event.x - downX, vx, density)
+        if (step != 0) onSwipe(step)
     }
 
     private fun reset() {
@@ -126,9 +125,3 @@ internal class TvNativeHorizontalSwipe(
         velocity = null
     }
 }
-
-/** 左右滑翻一项要的横向位移. */
-private const val TV_TOUCH_SWIPE_DISTANCE_DP = 64f
-
-/** 位移不够时, 横向速度过这么多也翻 (同 Compose 分页器的翻页速度门槛). */
-private const val TV_TOUCH_SWIPE_VELOCITY_DP = 400f
