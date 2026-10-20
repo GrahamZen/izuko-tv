@@ -83,7 +83,8 @@
     <string name="settings_player_start_playback_speed_description">The speed when you enter the player. The leftmost step, “Remember last”, keeps the speed you set in the player across episodes and restarts</string>
     <string name="settings_player_start_playback_speed_remember">Remember last</string>
     <string name="settings_player_op_ed_skip_duration_description">How far the “Fast forward N seconds” button in the player jumps, for skipping an OP or ED by hand. “Skip OP and ED” above jumps by chapter and doesn’t use this</string>
-    <string name="settings_app_danmaku_refresh_rate_description">Switches the screen to this refresh rate while the player is open and restores it afterwards. Auto leaves it to the system</string>
+    <string name="settings_app_danmaku_refresh_rate_description">Switches the screen to this refresh rate while the player is open and restores it afterwards. Auto leaves it to the system; Match video switches to a multiple of the frame rate of the video (24 fps → 24 Hz), which takes a second or two of black screen. Some devices do not let apps switch; use the frame rate matching in their system settings</string>
+    <string name="settings_app_display_mode_follow_content">Match video</string>
     <string name="settings_player_up_next_tip">Next episode tip</string>
     <string name="settings_player_up_next_tip_description">Near the end, the episode strip opens with the next episode selected; OK plays it now, Back closes it</string>
     <string name="settings_player_up_next_tip_off">Off</string>
