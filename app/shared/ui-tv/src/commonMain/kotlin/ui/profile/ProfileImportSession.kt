@@ -17,13 +17,15 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import me.him188.ani.app.domain.profile.BangumiProfileConversion
 import me.him188.ani.app.domain.profile.LocalProfileImporter
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
- * 把本地用户的收藏导入 Bangumi 的那一次 (见 [LocalProfileImporter]), 电视上的选人页与 Web 控制台共用: 同一时间只跑一次,
+ * 把本地收藏导入 Bangumi 的那一次 (见 [LocalProfileImporter]): 别的本地用户的收藏, 或本地用户改成 Bangumi 用户时留下的
+ * (见 [BangumiProfileConversion.merge]). 电视与 Web 控制台共用: 同一时间只跑一次,
  * 跑在应用级的作用域上 (关掉弹窗或网页不打断), 结果留着给之后打开的界面看. 在跑的时候不能换用户 —— 换用户会重启应用.
  */
 object ProfileImportSession {
@@ -50,21 +52,32 @@ object ProfileImportSession {
      * 照 [preview] 导入, 在后台跑.
      * @return 开始了; 已经有一次在跑时为 `false`
      */
-    fun start(importer: LocalProfileImporter, preview: LocalProfileImporter.Preview, sourceName: String): Boolean {
+    fun start(importer: LocalProfileImporter, preview: LocalProfileImporter.Preview, sourceName: String): Boolean =
+        start(preview, sourceName) { onProgress -> importer.import(preview, onProgress) }
+
+    /**
+     * 照 [preview] 跑 [run] (导入或合并), 在后台跑.
+     * @return 开始了; 已经有一次在跑时为 `false`
+     */
+    fun start(
+        preview: LocalProfileImporter.Preview,
+        sourceName: String,
+        run: suspend (onProgress: (LocalProfileImporter.Progress) -> Unit) -> LocalProfileImporter.Result,
+    ): Boolean {
         synchronized(this) {
             if (isRunning) return false
             _state.value = State.Running(sourceName, done = 0, total = preview.toAdd.size)
         }
         scope.launch {
             _state.value = try {
-                val result = importer.import(preview) { p ->
+                val result = run { p ->
                     _state.value = State.Running(sourceName, p.done, p.total, p.waitingForRateLimit)
                 }
                 State.Finished(sourceName, result)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                logger.warn(e) { "Importing user profile ${preview.source.id} failed" }
+                logger.warn(e) { "Importing collections of user profile ${preview.source.id} failed" }
                 State.Failed(sourceName, e.message ?: e::class.simpleName.orEmpty())
             }
         }

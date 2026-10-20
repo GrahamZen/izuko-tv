@@ -15,7 +15,7 @@ package me.him188.ani.app.ui.remote
  * 按块分成几个函数, 免得单个方法的字节码超过 JVM 64KB 上限.
  */
 internal val REMOTE_I18N_TABLE: List<RemoteText>
-    get() = part1() + part2() + part3() + part4() + part5() + part6() + part7() + part8() + part9() + part10() + part11() + part12() + part13() + part14() + part15() + part16() + part17() + deviceMigrationTexts() + mirrorTexts() + webDavTexts() + webLoginTexts() + feedbackTexts()
+    get() = part1() + part2() + part3() + part4() + part5() + part6() + part7() + part8() + part9() + part10() + part11() + part12() + part13() + part14() + part15() + part16() + part17() + deviceMigrationTexts() + mirrorTexts() + webDavTexts() + webLoginTexts() + feedbackTexts() + pendingCollectionsTexts()
 
 private fun part1() = listOf(
     RemoteText("这个地址没换到登录凭据，多半是过期了或者已经用过一次。请重新开始一次。", "That address did not yield login credentials, most likely because it expired or was already used. Please start over.", "這個地址沒換到登錄憑據，多半是過期了或者已經用過一次。請重新開始一次。", "這個網址沒換到登入憑證，多半是過期了或者已經用過一次。請重新開始一次。"),
@@ -1187,8 +1187,8 @@ private fun part10() = listOf(
     RemoteText("不登录", "Do not sign in", "不登錄", "不登入"),
     RemoteText("收藏、看过和评分只记在这台电视上，适合登录不了 Bangumi 的人。", "Collections, watched episodes and ratings stay on this TV only. For anyone who cannot sign in to Bangumi.", "收藏、看過和評分只記在這台電視上，適合登錄不了 Bangumi 的人。", "收藏、看過和評分只記在這台電視上，適合無法登入 Bangumi 的人。"),
     RemoteText("收藏、看过和评分同步到这个人的 Bangumi 账号；切过去时先登录，也可以跳过。", "Collections, watched episodes and ratings sync with their Bangumi account. Sign in when switching to them, or skip for now.", "收藏、看過和評分同步到這個人的 Bangumi 帳號；切過去時先登錄，也可以跳過。", "收藏、看過和評分同步到這個人的 Bangumi 帳號；切過去時先登入，也可以跳過。"),
-    RemoteText("本地用户不能登录 Bangumi。想同步到 Bangumi，请在「用户」里新建一个登录 Bangumi 的用户", "A local user cannot sign in to Bangumi. To sync with Bangumi, add a user that signs in to Bangumi under “Users”.", "本地用戶不能登錄 Bangumi。想同步到 Bangumi，請在「用戶」裡新建一個登錄 Bangumi 的用戶", "本地使用者無法登入 Bangumi。想同步到 Bangumi，請在「使用者」裡新增一位登入 Bangumi 的使用者"),
-    RemoteText("这是本地用户：收藏、看过和评分只记在这台电视上，不能登录 Bangumi。想同步到 Bangumi，请在上面的「用户」里新建一个登录 Bangumi 的用户。", "This is a local user: collections, watched episodes and ratings stay on this TV, and it cannot sign in to Bangumi. To sync with Bangumi, add a user that signs in to Bangumi under “Users” above.", "這是本地用戶：收藏、看過和評分只記在這台電視上，不能登錄 Bangumi。想同步到 Bangumi，請在上面的「用戶」裡新建一個登錄 Bangumi 的用戶。", "這是本地使用者：收藏、看過和評分只記在這台電視上，無法登入 Bangumi。想同步到 Bangumi，請在上面的「使用者」裡新增一位登入 Bangumi 的使用者。"),
+    RemoteText("本地用户不能直接登录 Bangumi。想同步到 Bangumi，请在电视的「设置 → 账号」里改成 Bangumi 用户，或者在「用户」里新建一个登录 Bangumi 的用户", "Local users cannot sign in to Bangumi directly. To sync with Bangumi, switch to a Bangumi user under Settings → Account on the TV, or add a user that signs in to Bangumi under “Users”", "本地用戶不能直接登錄 Bangumi。想同步到 Bangumi，請在電視的「設置 → 帳號」裡改成 Bangumi 用戶，或者在「用戶」裡新建一個登錄 Bangumi 的用戶", "本地使用者無法直接登入 Bangumi。想同步到 Bangumi，請在電視的「設定 → 帳號」裡改成 Bangumi 使用者，或者在「使用者」裡新增一位登入 Bangumi 的使用者"),
+    RemoteText("这是本地用户：收藏、看过和评分只记在这台电视上。想同步到 Bangumi，可以在电视的「设置 → 账号」里改成 Bangumi 用户，或者在上面的「用户」里新建一个登录 Bangumi 的用户。", "This is a local user: collections, watched episodes and ratings stay on this TV. To sync with Bangumi, switch to a Bangumi user under Settings → Account on the TV, or add a user that signs in to Bangumi under “Users” above.", "這是本地用戶：收藏、看過和評分只記在這台電視上。想同步到 Bangumi，可以在電視的「設置 → 帳號」裡改成 Bangumi 用戶，或者在上面的「用戶」裡新建一個登錄 Bangumi 的用戶。", "這是本地使用者：收藏、看過和評分只記在這台電視上。想同步到 Bangumi，可以在電視的「設定 → 帳號」裡改成 Bangumi 使用者，或者在上面的「使用者」裡新增一位登入 Bangumi 的使用者。"),
     RemoteText("添加时选「不登录」就是本地用户：收藏、看过和评分只记在这台电视上，不能登录 Bangumi。", "Choose “Do not sign in” when adding to create a local user: collections, watched episodes and ratings stay on this TV, and it cannot sign in to Bangumi.", "添加時選「不登錄」就是本地用戶：收藏、看過和評分只記在這台電視上，不能登錄 Bangumi。", "新增時選「不登入」就是本地使用者：收藏、看過和評分只記在這台電視上，無法登入 Bangumi。"),
     // 本地用户的收藏导入 Bangumi 账号
     RemoteText("把收藏导入当前用户的 Bangumi 账号", "Import collections into the current user’s Bangumi account", "把收藏導入當前用戶的 Bangumi 帳號", "把收藏匯入目前使用者的 Bangumi 帳號"),
