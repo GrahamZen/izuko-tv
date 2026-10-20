@@ -593,7 +593,7 @@ class CloudDriveService internal constructor(
         return try {
             api.saveFromShare(ref.shareId, ref.passcode, refreshed.token, withPairedFileTokens(ref.shareId, refreshed.token, files), folder)
         } catch (e: CloudDriveAuthException) {
-            throw CloudDriveShareUnavailableException(e.code, "网盘拒绝转存 ${ref.fileName}: ${e.message}")
+            throw CloudDriveShareUnavailableException(e.code, "网盘拒绝转存 ${ref.fileName}: ${e.message}", saveRefused = true, displayMessage = "拒绝转存：${e.displayMessage}")
         }
     }
 
@@ -743,12 +743,13 @@ class CloudDriveService internal constructor(
             } catch (e: CloudDriveApiException) {
                 if (!e.isCapacityLimit) throw e
                 // 网盘满了: 转存文件夹里的都是之前播放时转存的副本, 清掉这次用不到的腾出地方, 再转存一次
-                freeSaveFolder(existing.filter { it.fid !in reused }, ref)
+                val needed = missing.sumOf { it.size.coerceAtLeast(0) }
+                freeSaveFolder(existing.filter { it.fid !in reused }, needed, ref)
                 try {
                     saveFromShare(ref, missing, folder)
                 } catch (e: CloudDriveApiException) {
                     if (!e.isCapacityLimit) throw e
-                    throw CloudDriveCapacityException("网盘空间不够: 清空「$SAVE_FOLDER_NAME」后仍放不下 ${ref.fileName} (${ref.size / MB} MB)")
+                    throw CloudDriveCapacityException("网盘空间不够: 清掉「$SAVE_FOLDER_NAME」里的副本后仍放不下 ${ref.fileName} (${needed / MB} MB)", needed)
                 }
             }
         } catch (e: CancellationException) {
@@ -799,12 +800,26 @@ class CloudDriveService internal constructor(
         return savedFiles[ref.key] ?: throw CloudDriveApiException("转存后没找到 ${ref.fileName}")
     }
 
-    /** 网盘满了转存不进去时, 删掉转存文件夹里的 [files] (等删除完成) 腾出空间; 没有能删的就是空间被别的文件占着. */
-    private suspend fun freeSaveFolder(files: List<DriveFile>, ref: DriveShareFileRef) {
-        if (files.isEmpty()) {
-            throw CloudDriveCapacityException("网盘空间不够, 「$SAVE_FOLDER_NAME」里也没有能清的, 放不下 ${ref.fileName} (${ref.size / MB} MB)")
+    /**
+     * 网盘满了转存不进去时, 删掉转存文件夹里够用的副本 (等删除完成) 腾出 [needed] 的空间, 挑哪些见 [pickSavedCopiesToFree];
+     * 删什么都没用 (空间被别的文件占着) 时一个不删, 抛 [CloudDriveCapacityException].
+     */
+    private suspend fun freeSaveFolder(clearable: List<DriveFile>, needed: Long, ref: DriveShareFileRef) {
+        val free = try {
+            api.freeSpace()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            logger.warn { "Failed to read the free space of $driveId: $e" }
+            null
         }
-        logger.warn { "Cloud drive $driveId is full: removing ${files.size} files (${files.sumOf { it.size } / MB} MB) from $SAVE_FOLDER_NAME to save ${ref.key}" }
+        val files = pickSavedCopiesToFree(clearable, needed, free)
+        val freeText = free?.let { "${it / MB} MB free" } ?: "free space unknown"
+        if (files.isEmpty()) {
+            logger.warn { "Cloud drive $driveId is full ($freeText): clearing $SAVE_FOLDER_NAME (${clearable.sumOf { it.size } / MB} MB) would not fit ${ref.key} (${needed / MB} MB)" }
+            throw CloudDriveCapacityException("网盘空间不够, 清掉「$SAVE_FOLDER_NAME」里的副本也放不下 ${ref.fileName} (${needed / MB} MB)", needed)
+        }
+        logger.warn { "Cloud drive $driveId is full ($freeText): removing ${files.size} of ${clearable.size} files (${files.sumOf { it.size } / MB} MB) from $SAVE_FOLDER_NAME to save ${ref.key} (${needed / MB} MB)" }
         api.deleteFiles(files.map { it.fid }, wait = true)
         val removed = files.mapTo(HashSet()) { it.fid }
         savedFiles.entries.removeAll { it.value in removed }

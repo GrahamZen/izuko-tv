@@ -30,6 +30,11 @@
     <string name="subject_episode_video_loading_cause_http_rejected">Server refused the request (HTTP %1$s)</string>
     <string name="subject_episode_video_loading_cause_http_error">Server error (HTTP %1$s)</string>
     <string name="subject_episode_video_loading_cause_drive_login">Not signed in to the cloud drive. Sign in to play files from it.</string>
+    <string name="subject_episode_video_loading_cause_drive_full">Not enough space in the cloud drive for this file (%1$s). Delete some files in the drive and try again.</string>
+    <string name="subject_episode_video_loading_cause_drive_share_unavailable">The cloud drive share is unavailable (cancelled, blocked or needs a passcode)</string>
+    <string name="subject_episode_video_loading_cause_drive_error">Cloud drive error: %1$s</string>
+    <string name="subject_episode_video_loading_cause_not_video">The link did not return a video (it may have expired)</string>
+    <string name="subject_episode_video_loading_player_error_cause">Playback failed: %1$s</string>
     <string name="subject_episode_video_loading_bt_service_starting">Starting the BT service\nThe first time takes about ten seconds</string>
     <string name="subject_episode_video_loading_torrent_metadata">Fetching torrent metadata</string>
     <string name="subject_episode_video_loading_torrent_peers">Peers: %1$d · waited %2$d s</string>

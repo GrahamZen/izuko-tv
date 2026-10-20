@@ -200,7 +200,7 @@ data class DriveRequest(
  * 网盘的各项操作. 没有的操作对应的功能不可用 (例如没有 [search] 就不能按名字搜自己网盘).
  *
  * 各操作可用的变量:
- * - [tier] / [nickname]: 无
+ * - [tier] / [nickname] / [capacity]: 无
  * - [search]: `{keyword}` `{page}` `{pageSize}`
  * - [listFolder]: `{folderId}` `{page}` `{pageSize}`
  * - [download]: `{fileIds}` (列表) `{fileId}` (第一个)
@@ -215,6 +215,7 @@ data class DriveRequest(
  *
  * @property tier 账号档位 (如会员类型), 用来显示与决定播放并发数 (见 [CloudDriveProtocol.tiers])
  * @property nickname 账号昵称
+ * @property capacity 网盘的总容量与已用 (字节). 转存时网盘满了, 据此只清转存文件夹里够用的那些; 清光也放不下就不清
  * @property createFolder 取值是新文件夹的 id
  * @property deleteFiles 取值是后台任务 id (空表示已经完成)
  * @property saveFromShare 取值是后台任务 id; 任务完成时 [DriveTaskOp.resultIds] 给出新文件的 id
@@ -223,6 +224,7 @@ data class DriveRequest(
 data class DriveApiConfig(
     val tier: DriveValueOp? = null,
     val nickname: DriveValueOp? = null,
+    val capacity: DriveCapacityOp? = null,
     val search: DriveListOp? = null,
     val listFolder: DriveListOp? = null,
     val download: DriveDownloadOp? = null,
@@ -238,6 +240,10 @@ data class DriveApiConfig(
 /** 取一个值的操作. */
 @Serializable
 data class DriveValueOp(val request: DriveRequest, val value: String = "")
+
+/** 网盘容量: [total] 总容量、[used] 已用的路径 (字节). */
+@Serializable
+data class DriveCapacityOp(val request: DriveRequest, val total: String, val used: String)
 
 /**
  * 列文件的操作.

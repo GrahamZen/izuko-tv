@@ -81,6 +81,18 @@ class PlaybackFailureLogTest {
     }
 
     @Test
+    fun `a link the player cannot parse returned no video`() {
+        val html = FakeThrowable(
+            "ExoPlayer playback failed: ERROR_CODE_PARSING_MANIFEST_MALFORMED (3002): Source error",
+            FakeThrowable("Input does not start with the #EXTM3U header."),
+        )
+        assertTrue(html.isNotVideoResponse())
+        assertEquals(Reason.NOT_VIDEO, PlaybackFailureReportExtension.reasonOf(VideoLoadingState.UnknownError(html)))
+        // 解码器那一层放不了 (编码格式) 不算
+        assertFalse(FakeThrowable("ExoPlayer playback failed: ERROR_CODE_DECODING_FORMAT_UNSUPPORTED (4005)").isNotVideoResponse())
+    }
+
+    @Test
     fun `entries belong to the current episode and reset on a new one`() {
         PlaybackFailureLog.start(1, 10)
         PlaybackFailureLog.record(1, 10, media, Stage.OPEN, Reason.NETWORK, FakeThrowable("Unable to connect to https://cdn.video.test/a.ts?token=abc"))

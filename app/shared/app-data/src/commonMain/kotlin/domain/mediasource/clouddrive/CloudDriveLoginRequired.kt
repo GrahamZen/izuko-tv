@@ -17,11 +17,14 @@ import me.him188.ani.app.domain.media.fetch.MediaSourceFetchState
  */
 
 /** 这次失败里的 [CloudDriveAuthException] (沿 cause 往下找, 播放时它被包在解析异常里); 不是没登录造成的为 null. */
-fun Throwable.cloudDriveAuthException(): CloudDriveAuthException? {
+fun Throwable.cloudDriveAuthException(): CloudDriveAuthException? = causeOfType()
+
+/** 沿 cause 往下找第一个 [T] (至多 8 层, 链可能自引用); 没有为 null. */
+internal inline fun <reified T : Throwable> Throwable.causeOfType(): T? {
     var current: Throwable? = this
     var depth = 0
     while (current != null && depth++ < 8) {
-        if (current is CloudDriveAuthException) return current
+        if (current is T) return current
         current = current.cause?.takeIf { it !== current }
     }
     return null

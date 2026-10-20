@@ -190,8 +190,10 @@ class CloudDriveRegistryTest {
         assertIs<CloudDriveAuthException>(notLoggedIn.cause)
 
         accounts.state.value = CloudDriveAccounts.Default.with(TestDrive.ID, TestDrive.loggedIn.copy(shareSaveFolderId = "save1"))
+        // 带着原因交给播放器: 界面上写「分享已失效」, 不是笼统的「没找到文件」
         val gone = assertFailsWith<MediaResolutionException> { resolver.resolve(shareMedia, episode) }
-        assertEquals(ResolutionFailures.NO_MATCHING_RESOURCE, gone.reason)
+        assertEquals(ResolutionFailures.ENGINE_ERROR, gone.reason)
+        assertEquals(CloudDriveFailure.ShareUnavailable, gone.cloudDriveFailure())
     }
 
     // endregion

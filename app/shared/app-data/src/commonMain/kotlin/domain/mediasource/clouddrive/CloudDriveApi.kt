@@ -83,6 +83,16 @@ internal class CloudDriveApi(
         return send("nickname", op.request).stringByPath(op.value)?.takeIf { it.isNotBlank() }
     }
 
+    /** 网盘还剩多少空间 (字节); 协议没有这项 (见 [DriveApiConfig.capacity]) 或取不到时为 null. */
+    suspend fun freeSpace(): Long? {
+        val op = protocol().api.capacity ?: return null
+        val root = send("capacity", op.request)
+        fun bytes(path: String): Long? = root.stringByPath(path)?.toDoubleOrNull()?.toLong()
+        val total = bytes(op.total) ?: return null
+        val used = bytes(op.used) ?: return null
+        return (total - used).coerceAtLeast(0)
+    }
+
     // endregion
 
     // region 文件
@@ -354,13 +364,15 @@ internal class CloudDriveApi(
         }
         if (status !in 200..399 || (request.envelope && root != null && !codeOk(root))) {
             val code = root?.let { codeOf(it) }
+            val driveMessage = root?.let { messageOf(it) }.orEmpty()
             throw CloudDriveApiException(
-                "网盘接口 $operation 出错: HTTP $status, code=$code, ${root?.let { messageOf(it) }.orEmpty()}",
+                "网盘接口 $operation 出错: HTTP $status, code=$code, $driveMessage",
                 code = code,
                 isCapacityLimit = code != null && code in p.envelope.capacityLimitCodes,
+                displayMessage = driveMessage.ifBlank { "接口出错（HTTP $status${code?.let { "，错误码 $it" }.orEmpty()}）" },
             )
         }
-        return root ?: throw CloudDriveApiException("网盘接口 $operation 没有返回 JSON")
+        return root ?: throw CloudDriveApiException("网盘接口 $operation 没有返回 JSON", displayMessage = "接口没有返回数据")
     }
 
     private fun codeOk(root: DataNode): Boolean {
@@ -568,16 +580,25 @@ internal interface CloudDriveCookieStore {
 /**
  * @property code 接口返回的错误码, 没有时为 null
  * @property isCapacityLimit 网盘空间不够 (例如转存时)
+ * @param displayMessage 给人看的一句 (网盘自己说的话, 或不带接口名、错误码的说明), 播放失败时显示; 默认同 message
  */
 open class CloudDriveApiException(
     message: String,
     cause: Throwable? = null,
     open val code: String? = null,
     val isCapacityLimit: Boolean = false,
-) : Exception(message, cause)
+    displayMessage: String? = null,
+) : Exception(message, cause) {
+    /** 给人看的一句, 见构造参数 displayMessage. */
+    val displayMessage: String = displayMessage ?: message
+}
 
-/** 网盘空间不够, 清空了转存文件夹也放不下 (空间被别的文件占着). */
-class CloudDriveCapacityException(message: String) : CloudDriveApiException(message, isCapacityLimit = true)
+/**
+ * 网盘空间不够, 清掉转存文件夹里的副本也放不下 (空间被别的文件占着).
+ *
+ * @property requiredBytes 这次要转存的文件一共多大 (界面上说「放不下这个文件 (多大)」)
+ */
+class CloudDriveCapacityException(message: String, val requiredBytes: Long) : CloudDriveApiException(message, isCapacityLimit = true)
 
 /**
  * 没登录或登录已失效.
@@ -587,8 +608,17 @@ class CloudDriveCapacityException(message: String) : CloudDriveApiException(mess
 class CloudDriveAuthException(message: String? = null, val driveId: String? = null) :
     CloudDriveApiException(message ?: "网盘未登录或登录已失效")
 
-/** 分享打不开: 已取消、被封或要提取码. */
-class CloudDriveShareUnavailableException(override val code: String?, message: String) : CloudDriveApiException(message)
+/**
+ * 分享打不开: 已取消、被封或要提取码.
+ *
+ * @property saveRefused 分享能看, 是网盘不让转存进自己的网盘 ([displayMessage] 写着网盘的说法)
+ */
+class CloudDriveShareUnavailableException(
+    override val code: String?,
+    message: String,
+    val saveRefused: Boolean = false,
+    displayMessage: String? = null,
+) : CloudDriveApiException(message, displayMessage = displayMessage)
 
 /** 协议没有这项操作. */
 class CloudDriveUnsupportedException(operation: String) : CloudDriveApiException("这个网盘不支持 $operation")

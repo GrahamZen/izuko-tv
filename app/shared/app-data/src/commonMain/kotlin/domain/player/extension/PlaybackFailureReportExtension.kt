@@ -19,13 +19,15 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import me.him188.ani.app.domain.episode.EpisodeSession
-import me.him188.ani.app.domain.mediasource.clouddrive.isCloudDriveLoginRequired
+import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveFailure
+import me.him188.ani.app.domain.mediasource.clouddrive.cloudDriveFailure
 import me.him188.ani.app.domain.player.PlaybackFailureLog
 import me.him188.ani.app.domain.player.PlaybackFailureLog.Reason
 import me.him188.ani.app.domain.player.PlaybackFailureLog.Stage
 import me.him188.ani.app.domain.player.VideoLoadingState
 import me.him188.ani.app.domain.player.httpErrorStatus
 import me.him188.ani.app.domain.player.isNetworkFailure
+import me.him188.ani.app.domain.player.isNotVideoResponse
 import org.koin.core.Koin
 import org.openani.mediamp.PlaybackEvent
 
@@ -110,12 +112,17 @@ class PlaybackFailureReportExtension(
             is VideoLoadingState.UnknownError -> errorReason(state.cause) ?: Reason.UNKNOWN
         }
 
-        /** 从异常认得出的原因: 网盘没登录、连不上网, 或服务器回了 HTTP 错误; 都不是为 null. */
-        private fun errorReason(error: Throwable): Reason? = when {
-            error.isCloudDriveLoginRequired() -> Reason.DRIVE_LOGIN
-            error.isNetworkFailure() -> Reason.NETWORK
-            error.httpErrorStatus() != null -> Reason.HTTP_ERROR
-            else -> null
+        /** 从异常认得出的原因: 网盘没登录、满了或分享失效, 连不上网, 服务器回了 HTTP 错误, 或地址回的不是视频; 都不是为 null. */
+        private fun errorReason(error: Throwable): Reason? = when (error.cloudDriveFailure()) {
+            CloudDriveFailure.LoginRequired -> Reason.DRIVE_LOGIN
+            is CloudDriveFailure.Full -> Reason.DRIVE_FULL
+            CloudDriveFailure.ShareUnavailable -> Reason.NO_MATCHING_FILE
+            is CloudDriveFailure.Other, null -> when {
+                error.isNetworkFailure() -> Reason.NETWORK
+                error.httpErrorStatus() != null -> Reason.HTTP_ERROR
+                error.isNotVideoResponse() -> Reason.NOT_VIDEO
+                else -> null
+            }
         }
     }
 }
