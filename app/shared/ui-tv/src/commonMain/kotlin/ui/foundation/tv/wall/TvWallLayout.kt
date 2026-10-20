@@ -33,7 +33,9 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
-import kotlin.math.abs
+import me.him188.ani.app.ui.foundation.tv.TvWallSwipeClaim
+import me.him188.ani.app.ui.foundation.tv.tvWallSwipeClaim
+import me.him188.ani.app.ui.foundation.tv.tvWallSwipeStep
 
 /**
  * 把这一层按像素摆在父布局 (整页) 里: 左上角 ([x], [y]), 大小 [width] × [height] ([width] < 0 = 父布局的宽). [fromEnd] = [x] 从右边算.
@@ -85,7 +87,7 @@ internal fun Modifier.tvWallBlankTap(enabled: Boolean, onBlankTap: (Offset) -> U
 /**
  * 触屏上的左右滑一下翻一项 (同原生的 TvNativeHorizontalSwipe): 按下落在 [area] 里 (本层坐标), 先横着越过 touch slop 且横向占优才接管 ——
  * 之后的事件在祖先这一遍就消费掉, 里面的列表不滚、按钮不点; 先竖着越过的整个手势放给里面. 画面不跟手指动: 松手时横向位移过
- * [TV_WALL_SWIPE_FLIP_DISTANCE] 或横向速度过 [TV_WALL_SWIPE_FLIP_VELOCITY] (方向与位移一致) 就翻一项 (左滑 +1, 右滑 −1), 过渡由页面自己播.
+ * [TV_WALL_SWIPE_DISTANCE_DP] 或横向速度过 [TV_WALL_SWIPE_VELOCITY_DP] (方向与位移一致) 就翻一项 (左滑 +1, 右滑 −1), 过渡由页面自己播.
  * [enabled] 为 false (电视) 时原样返回.
  */
 @Composable
@@ -98,8 +100,6 @@ internal fun Modifier.tvWallHorizontalSwipe(
     val currentArea by rememberUpdatedState(area)
     val currentSwipe by rememberUpdatedState(onSwipe)
     return pointerInput(Unit) {
-        val distance = TV_WALL_SWIPE_FLIP_DISTANCE.toPx()
-        val velocityThreshold = TV_WALL_SWIPE_FLIP_VELOCITY.toPx()
         val slop = viewConfiguration.touchSlop
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
@@ -114,18 +114,18 @@ internal fun Modifier.tvWallHorizontalSwipe(
                 val dx = change.position.x - down.position.x
                 val dy = change.position.y - down.position.y
                 if (!claimed) {
-                    if (abs(dx) > slop && abs(dx) > abs(dy)) {
-                        claimed = true
-                    } else if (abs(dy) > slop) {
+                    when (tvWallSwipeClaim(dx, dy, slop)) {
+                        TvWallSwipeClaim.Claim -> claimed = true
                         // 竖着先过: 整个手势放给里面 (列表滚动)
-                        break
+                        TvWallSwipeClaim.Release -> break
+                        TvWallSwipeClaim.Undecided -> {}
                     }
                 }
                 if (claimed) change.consume()
                 if (change.changedToUpIgnoreConsumed() || !change.pressed) {
                     if (claimed) {
-                        val vx = tracker.calculateVelocity().x
-                        if (abs(dx) >= distance || (abs(vx) >= velocityThreshold && vx * dx > 0f)) currentSwipe(if (dx < 0) 1 else -1)
+                        val step = tvWallSwipeStep(dx, tracker.calculateVelocity().x, density)
+                        if (step != 0) currentSwipe(step)
                     }
                     break
                 }
@@ -183,9 +183,3 @@ private val TV_WALL_NAV_KEYS = setOf(
 /** [state] 这一行此刻完整露在起始停靠线以后的第一张 (第一张越过了停靠线就算下一张). */
 internal fun tvRowFirstFullIndex(state: LazyListState): Int =
     state.firstVisibleItemIndex + if (state.firstVisibleItemScrollOffset > 0) 1 else 0
-
-/** 左右滑翻一项要的横向位移. */
-private val TV_WALL_SWIPE_FLIP_DISTANCE = 64.dp
-
-/** 位移不够时, 横向速度过这么多也翻 (每秒, 同 Compose 分页器的翻页速度门槛). */
-private val TV_WALL_SWIPE_FLIP_VELOCITY = 400.dp

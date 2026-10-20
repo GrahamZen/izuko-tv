@@ -101,6 +101,7 @@ import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_COLUMN_SPACING
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_HERO_SPLIT_BAND
 import me.him188.ani.app.ui.foundation.tv.TvHeroButton
 import me.him188.ani.app.ui.foundation.tv.TvPageBackdropGeometry
+import me.him188.ani.app.ui.foundation.tv.TvWallConfirm
 import me.him188.ani.app.ui.foundation.tv.nativeview.TV_HERO_BLUR_DIM_ALPHA
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvExploreSurface
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeExploreItem
@@ -115,28 +116,30 @@ import me.him188.ani.app.ui.foundation.tv.tvPosterWallBackground
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallHeaderStyle
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallSecondaryLabelAlpha
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallToneGate
+import me.him188.ani.app.ui.foundation.tv.tvWallConfirm
+import me.him188.ani.app.ui.foundation.tv.tvWallTapConfirmsWhileFocusing
 import me.him188.ani.app.ui.foundation.tv.wall.MenuHolder
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_HERO_TEXT_BOTTOM
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_HERO_WALL_SUMMARY_LINES
+import me.him188.ani.app.ui.foundation.tv.wall.TvPadHeroLayer
 import me.him188.ani.app.ui.foundation.tv.wall.TvWallBlurBackdrop
 import me.him188.ani.app.ui.foundation.tv.wall.TvWallCard
 import me.him188.ani.app.ui.foundation.tv.wall.TvWallCardStyle
 import me.him188.ani.app.ui.foundation.tv.wall.TvWallHeroBackdrop
 import me.him188.ani.app.ui.foundation.tv.wall.TvWallHeroText
 import me.him188.ani.app.ui.foundation.tv.wall.TvWallHeroTimeline
-import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_HERO_TEXT_BOTTOM
-import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_HERO_WALL_SUMMARY_LINES
-import me.him188.ani.app.ui.foundation.tv.wall.TvPadHeroLayer
 import me.him188.ani.app.ui.foundation.tv.wall.TvWallOpen
-import me.him188.ani.app.ui.foundation.tv.wall.TvWallTouchScrollLimit
-import me.him188.ani.app.ui.foundation.tv.wall.tvRowFirstFullIndex
-import me.him188.ani.app.ui.foundation.tv.wall.tvWallInputMode
 import me.him188.ani.app.ui.foundation.tv.wall.TvWallSharpLayer
+import me.him188.ani.app.ui.foundation.tv.wall.TvWallTouchScrollLimit
 import me.him188.ani.app.ui.foundation.tv.wall.rememberTvWallCardStyle
 import me.him188.ani.app.ui.foundation.tv.wall.rememberTvWallHeroTimeline
 import me.him188.ani.app.ui.foundation.tv.wall.tvPastAnchorDim
+import me.him188.ani.app.ui.foundation.tv.wall.tvRowFirstFullIndex
 import me.him188.ani.app.ui.foundation.tv.wall.tvStripLeftIndex
-import me.him188.ani.app.ui.foundation.tv.wall.tvWallPlace
 import me.him188.ani.app.ui.foundation.tv.wall.tvWallBlankTap
 import me.him188.ani.app.ui.foundation.tv.wall.tvWallHorizontalSwipe
+import me.him188.ani.app.ui.foundation.tv.wall.tvWallInputMode
+import me.him188.ani.app.ui.foundation.tv.wall.tvWallPlace
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.exploration_schedule
 import me.him188.ani.app.ui.lang.exploration_tv_watch_now
@@ -745,7 +748,7 @@ private fun TvExploreComposeRow(
                     labelAlpha = { 1f - timeline.above },
                     holdFocusLook = surface.heldFocus == key,
                     // 卡片墙上点一下 = 聚焦并进 hero 态; hero 态里点另一张只换焦点, 「更多」卡也只聚焦
-                    touchTwoStep = !(surface.heroEnabled && !timeline.active && !more),
+                    touchTwoStep = !tvWallTapConfirmsWhileFocusing(more, surface.heroEnabled, timeline.active),
                     // 按触屏的规矩走时卡片墙不画聚焦放大 (hero 态里聚焦那张照画), 按下也不动焦点 (点一下怎么走见 onCardClick)
                     showFocusLook = !surface.touchMode || timeline.active,
                     touchFocusOnPress = !surface.touchMode,
@@ -1126,31 +1129,29 @@ private class TvExploreComposeSurface(
                 requesters[key]?.let { runCatching { it.requestFocus() } }
                 return
             }
-            if (!more && heroEnabled && !timeline.active) {
+            if (tvWallTapConfirmsWhileFocusing(more, heroEnabled, timeline.active)) {
                 requesters[key]?.let { runCatching { it.requestFocus() } }
                 takeCardFocus(rowKey, index)
             }
         }
-        if (more) {
-            listener?.onMoreClick(rowKey)
-            return
-        }
         // 卡片墙上先切到 hero 态, hero 态里才进详情页 (这时有 hero 背景图, 走放大转场); 没有 hero 态时直接交给页面
-        if (heroEnabled && !timeline.active) {
-            setHeroActive(true)
-        } else {
-            // 进详情页: 焦点交出去之后这张卡仍画成聚焦态, 返回后焦点交还前也不缩
-            heldFocus = rowKey to index
-            // 铺着模糊背景: 背景此刻是这张卡的、能变清晰就先对焦, 到位再进
-            val src = card
-            val wall = src?.wall
-            val matches = src != null && !src.dimming && wall != null && wall.subjectId != null && wall.subjectId == src.rawSubjectId
-            val opened = matches && wallOpen?.open(wall) {
-                state.wallOpened = true
-                state.wallOpenLeft = false
-                listener?.onCardClick(rowKey, index)
-            } == true
-            if (!opened) listener?.onCardClick(rowKey, index)
+        when (tvWallConfirm(more, heroEnabled, timeline.active)) {
+            TvWallConfirm.More -> listener?.onMoreClick(rowKey)
+            TvWallConfirm.EnterHero -> setHeroActive(true)
+            TvWallConfirm.Open -> {
+                // 进详情页: 焦点交出去之后这张卡仍画成聚焦态, 返回后焦点交还前也不缩
+                heldFocus = rowKey to index
+                // 铺着模糊背景: 背景此刻是这张卡的、能变清晰就先对焦, 到位再进
+                val src = card
+                val wall = src?.wall
+                val matches = src != null && !src.dimming && wall != null && wall.subjectId != null && wall.subjectId == src.rawSubjectId
+                val opened = matches && wallOpen?.open(wall) {
+                    state.wallOpened = true
+                    state.wallOpenLeft = false
+                    listener?.onCardClick(rowKey, index)
+                } == true
+                if (!opened) listener?.onCardClick(rowKey, index)
+            }
         }
     }
 
