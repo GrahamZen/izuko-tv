@@ -15,9 +15,13 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
+import me.him188.ani.app.ui.diagnostics.TvMethodTrace
 import me.him188.ani.app.ui.diagnostics.TvPerfDiagnostics
 import me.him188.ani.app.ui.foundation.lan.LanHttpRequest
 import me.him188.ani.app.ui.foundation.lan.LanHttpResponse
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * 「设置 → 维护 → 性能诊断」的接口 (网页见 PERF_SCRIPT, 采集与分析见 [TvPerfDiagnostics]):
@@ -28,11 +32,18 @@ import me.him188.ani.app.ui.foundation.lan.LanHttpResponse
  * - `POST api/diag/stop`: 提前结束录制 (录到的照样分析).
  * - `GET api/diag/report/<id>`: 整份报告 (JSON, 网页展开详情与下载都用它).
  * - `POST api/diag/delete` (id): 删掉一份报告 (网页上左滑).
+ * - `POST api/diag/trace` (seconds, us): 方法采样 ([TvMethodTrace]); 状态在 `api/diag` 的 `trace` 里, 结果 `GET api/diag/trace/file` 下载.
  */
 internal object RemotePerfDiagnostics {
     private const val MIN_SECONDS = 5
     private const val MAX_SECONDS = 120
     private val ID = Regex("[0-9a-z-]{1,40}")
+    private const val TRACE_MIN_SECONDS = 3
+    private const val TRACE_MAX_SECONDS = 30
+    private const val TRACE_DEFAULT_SECONDS = 10
+    private const val TRACE_MIN_INTERVAL_US = 500
+    private const val TRACE_MAX_INTERVAL_US = 10_000
+    private const val TRACE_DEFAULT_INTERVAL_US = 1_000
 
     /** 不是本组的路径返回 null. */
     fun handle(request: LanHttpRequest): LanHttpResponse? {
@@ -45,6 +56,8 @@ internal object RemotePerfDiagnostics {
             path == "api/diag/record" && post -> json(record(request))
             path == "api/diag/stop" && post -> json(stop())
             path == "api/diag/delete" && post -> json(delete(request))
+            path == "api/diag/trace" && post -> json(trace(request))
+            path == "api/diag/trace/file" && get -> traceFile()
             path.startsWith("api/diag/report/") && get -> report(path.removePrefix("api/diag/report/"))
             else -> null
         }
@@ -63,6 +76,20 @@ internal object RemotePerfDiagnostics {
 
                 TvPerfDiagnostics.Status.CheckingHealth -> put("state", "checking")
                 TvPerfDiagnostics.Status.Idle -> put("state", "idle")
+            }
+        }
+        putJsonObject("trace") {
+            when (val t = TvMethodTrace.status.value) {
+                is TvMethodTrace.Status.Running -> {
+                    put("running", true)
+                    put("remaining", ((t.endsAtMillis - System.currentTimeMillis() + 999) / 1000).coerceAtLeast(0))
+                }
+
+                TvMethodTrace.Status.Idle -> put("running", false)
+            }
+            TvMethodTrace.file()?.let { file ->
+                put("size", file.length())
+                put("time", SimpleDateFormat("MM-dd HH:mm:ss", Locale.ROOT).format(Date(file.lastModified())))
             }
         }
         putJsonArray("reports") {
@@ -99,6 +126,22 @@ internal object RemotePerfDiagnostics {
         val id = request.formFields()["id"].orEmpty()
         if (!ID.matches(id) || !TvPerfDiagnostics.deleteReport(id)) return result(false, tr("这份报告已经不在了"))
         return result(true, "")
+    }
+
+    private fun trace(request: LanHttpRequest): JsonObject {
+        val fields = request.formFields()
+        val seconds = fields["seconds"]?.toIntOrNull()?.coerceIn(TRACE_MIN_SECONDS, TRACE_MAX_SECONDS) ?: TRACE_DEFAULT_SECONDS
+        val intervalMicros = fields["us"]?.toIntOrNull()?.coerceIn(TRACE_MIN_INTERVAL_US, TRACE_MAX_INTERVAL_US) ?: TRACE_DEFAULT_INTERVAL_US
+        return when (TvMethodTrace.start(seconds, intervalMicros)) {
+            TvMethodTrace.StartResult.STARTED -> result(true, tr("开始方法采样 {0} 秒，请在电视上操作要测的界面", seconds))
+            TvMethodTrace.StartResult.NO_UI -> result(false, tr("电视上的 Izuko 还没打开界面"))
+            TvMethodTrace.StartResult.BUSY -> result(false, tr("正在采样"))
+        }
+    }
+
+    private fun traceFile(): LanHttpResponse {
+        val file = TvMethodTrace.file() ?: return LanHttpResponse.status(404, "Not Found")
+        return LanHttpResponse.fileSnapshot(file, "application/octet-stream")
     }
 
     private fun report(id: String): LanHttpResponse {
