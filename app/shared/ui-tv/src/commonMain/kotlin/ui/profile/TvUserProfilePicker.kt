@@ -134,6 +134,7 @@ import me.him188.ani.app.domain.profile.UserProfileManager
 import me.him188.ani.app.domain.profile.UserProfiles
 import me.him188.ani.app.domain.session.SessionState
 import me.him188.ani.app.domain.session.SessionStateProvider
+import me.him188.ani.app.navigation.AniNavigator
 import me.him188.ani.app.platform.ProfileSwitchFrame
 import me.him188.ani.app.platform.ProfileSwitchFrameDrawable
 import me.him188.ani.app.ui.foundation.avatar.AvatarImage
@@ -218,6 +219,16 @@ object TvUserProfilePicker {
         visible.value = true
     }
 
+    /**
+     * 选人页开着时后面被导航走了 (Web 控制台开了播放器、详情页这些): 有人正以当前用户用着, 当作选了当前用户, 关掉.
+     * 正在换人 (要重启了) 时不关.
+     */
+    internal fun closeAsCurrent() {
+        if (switchTarget.value != null) return
+        held.value = false
+        visible.value = false
+    }
+
     /** 放出藏着的选人页 (见 [held]), 进场放完 (见 [entered]) 或选人页已经关了时返回. */
     suspend fun reveal() {
         held.value = false
@@ -250,9 +261,12 @@ object TvUserProfilePicker {
     }
 }
 
-/** 选人页 (独立窗口, 盖在主页上). 装在 TV 根部. */
+/**
+ * 选人页 (独立窗口, 盖在主页上). 装在 TV 根部.
+ * @param navigator 主界面的导航: 选人页开着时后面换了页就关掉 (见 [TvUserProfilePicker.closeAsCurrent])
+ */
 @Composable
-fun TvUserProfilePickerHost() {
+fun TvUserProfilePickerHost(navigator: AniNavigator? = null) {
     val manager = remember { KoinPlatform.getKoin().get<UserProfileManager>() }
     // 换人 / 改成本地用户重启前的过场由选人页来放, 界面在场时装上
     DisposableEffect(manager) {
@@ -268,9 +282,17 @@ fun TvUserProfilePickerHost() {
             TvUserProfilePicker.visible.value = false
         }
     }
+    // 后面换了页 (打开时还没有返回栈就等它就位, 那一页不算): 当作选了当前用户
+    LaunchedEffect(navigator) {
+        val backStack = navigator?.awaitBackStack() ?: return@LaunchedEffect
+        val opened = snapshotFlow { backStack.lastOrNull() }.first()
+        snapshotFlow { backStack.lastOrNull() }.first { it != opened }
+        TvUserProfilePicker.closeAsCurrent()
+    }
     Dialog(
         onDismissRequest = close,
-        properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false),
+        // 窗口铺满整屏: 不然窗口给系统栏留边, 后面切到全屏的播放器时边上露出一条缝
+        properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false, decorFitsSystemWindows = false),
     ) {
         // 不压暗背后: 选的还是自己时整页淡出, 露出来的主页就是正常亮度
         DialogWindowDimAmount(0f)

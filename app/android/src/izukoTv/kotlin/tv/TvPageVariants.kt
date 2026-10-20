@@ -434,7 +434,7 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
             onNewUserFinished = { rootScope.launch { profileManager.finishPendingLogin() } },
         )
         // 选人页 (启动时或侧边栏头像的「切换用户」打开)
-        TvUserProfilePickerHost()
+        TvUserProfilePickerHost(aniNavigator)
         // 「Web 控制台」二维码弹窗: 侧边栏 (主页 / 搜索页 / 详情页) 与头像菜单都只调 TvRemoteControl.showDialog
         TvRemoteControlDialogHost()
         // 更新后第一次打开时的「本版新功能」页 / 发版后补的通知 (见 TvWhatsNew)
