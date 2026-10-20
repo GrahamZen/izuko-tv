@@ -21,6 +21,7 @@ import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 import org.openani.mediamp.exoplayer.ExoPlayerAudioTimeStretch
+import kotlin.concurrent.thread
 
 /**
  * 设备解不了的音频用 FFmpeg 软解成 PCM 播放: 多数盒子上的 TrueHD / DTS 既没有解码器, HDMI 也接不出直通 (电视、显示器多半只认 AC3 / E-AC3),
@@ -47,7 +48,8 @@ internal object FfmpegAudioFallback {
         val factory = PassthroughGatedRenderersFactory(context, chain, passthrough)
         factory.setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
         builder.setRenderersFactory(factory)
-        logAvailability()
+        // 第一次问 FfmpegLibrary 会加载原生库, 而建播放器在主线程上
+        thread(name = "ani-ffmpeg-log", isDaemon = true) { logAvailability() }
     }
 
     private fun wsolaChain(): AudioProcessorChain? = runCatching {
