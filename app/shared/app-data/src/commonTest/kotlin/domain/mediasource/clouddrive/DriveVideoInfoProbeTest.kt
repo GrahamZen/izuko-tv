@@ -11,6 +11,9 @@ package me.him188.ani.app.domain.mediasource.clouddrive
 
 import kotlinx.coroutines.CompletableDeferred
 import me.him188.ani.app.data.models.preference.DriveVideoInfo
+import me.him188.ani.app.domain.media.MediaAvFeatures
+import me.him188.ani.app.domain.media.MediaDynamicRange
+import me.him188.ani.app.domain.media.MediaSurroundAudio
 import me.him188.ani.app.domain.media.probe.MediaStreamProbe
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -24,7 +27,9 @@ class DriveVideoInfoProbeTest {
 
     @Test
     fun `uses what was read before and reads again only when the file changed`() = realTimeTest {
-        val stored = mapOf(DriveVideoInfoProbe.keyOf("a") to DriveVideoInfo(size = 1000, height = 2160, durationSeconds = 1440))
+        val stored = mapOf(
+            DriveVideoInfoProbe.keyOf("a") to DriveVideoInfo(size = 1000, height = 2160, durationSeconds = 1440, version = DriveVideoInfoProbe.PROBE_VERSION),
+        )
         val probed = mutableListOf<String>()
         val probe = DriveVideoInfoProbe(
             stored = { stored },
@@ -87,6 +92,43 @@ class DriveVideoInfoProbeTest {
         assertTrue(mark.elapsedNow() < DriveVideoInfoProbe.WAIT)
         gate.complete(Unit)
         late.await()
+    }
+
+    @Test
+    fun `info from an older probe version is used at once and read again in the background`() = realTimeTest {
+        val key = DriveVideoInfoProbe.keyOf("a")
+        val stored = HashMap(mapOf(key to DriveVideoInfo(size = 1000, height = 2160, durationSeconds = 1440)))
+        val gate = CompletableDeferred<Unit>()
+        val late = CompletableDeferred<Unit>()
+        var reads = 0
+        val probe = DriveVideoInfoProbe(
+            stored = { HashMap(stored) },
+            save = { k, info -> stored[k] = info },
+            probe = {
+                reads++
+                gate.await()
+                result(3840, 2160, 1440).copy(dynamicRange = MediaDynamicRange.DolbyVision, audio = MediaSurroundAudio.TrueHd)
+            },
+            onLateInfo = { late.complete(Unit) },
+        )
+        val mark = TimeSource.Monotonic.markNow()
+        // 记下的照用, 不等重读
+        val first = probe.fill(listOf(video("a"))).getValue("a")
+        assertTrue(mark.elapsedNow() < DriveVideoInfoProbe.WAIT)
+        assertEquals(2160, first.videoHeight)
+        assertEquals(1440, first.durationSeconds)
+        assertEquals(MediaAvFeatures.NONE, first.avFeatures)
+
+        gate.complete(Unit)
+        late.await()
+        assertEquals(
+            DriveVideoInfo(1000, 2160, 1440, MediaDynamicRange.DolbyVision, MediaSurroundAudio.TrueHd, version = DriveVideoInfoProbe.PROBE_VERSION),
+            stored.getValue(key),
+        )
+        // 重读过的不再读, 带上认出的特性
+        val second = probe.fill(listOf(video("a"))).getValue("a")
+        assertEquals(MediaAvFeatures(MediaDynamicRange.DolbyVision, MediaSurroundAudio.TrueHd), second.avFeatures)
+        assertEquals(1, reads)
     }
 
     @Test
