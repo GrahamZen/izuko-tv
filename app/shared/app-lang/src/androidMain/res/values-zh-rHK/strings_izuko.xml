@@ -131,7 +131,8 @@
     <string name="settings_player_start_playback_speed_description">每次進入播放器時的倍速。最左一格「記住上次」：在播放器裡調過的倍速跨劇集、重啟保持</string>
     <string name="settings_player_start_playback_speed_remember">記住上次</string>
     <string name="settings_player_op_ed_skip_duration_description">播放器裡「快進 N 秒」按鈕一次跳多遠，用來手動跳過 OP、ED。上面的「跳過 OP 和 ED」按章節跳，不看這一項</string>
-    <string name="settings_app_danmaku_refresh_rate_description">進入播放頁時把螢幕切到這個刷新率，退出後恢復；自動 = 不切換，由系統決定</string>
+    <string name="settings_app_danmaku_refresh_rate_description">進入播放頁時把螢幕切到這個刷新率，退出後恢復；自動 = 不切換，由系統決定；跟隨片源 = 按影片幀率切到整數倍的刷新率（24 幀 → 24 Hz），切換時黑屏一兩秒；有的裝置不讓應用切換，請用系統設定裏的「匹配幀率」</string>
+    <string name="settings_app_display_mode_follow_content">跟隨片源</string>
     <string name="settings_player_up_next_tip">片尾提示下一集</string>
     <string name="settings_player_up_next_tip_description">快播完時自動展開選集條並選中下一集，按確認鍵立刻播、按返回鍵關掉</string>
     <string name="settings_player_up_next_tip_off">不提示</string>
