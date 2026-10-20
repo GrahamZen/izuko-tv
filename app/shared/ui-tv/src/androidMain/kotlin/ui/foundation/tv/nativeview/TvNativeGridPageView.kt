@@ -167,9 +167,46 @@ class TvNativeGridPageView(
 
     private val touchModeWatcher = ViewTreeObserver.OnTouchModeChangeListener { applyTouchLook() }
 
-    /** 按触屏的规矩走时网格的卡片墙上不画聚焦效果 (见 [touchMode]; 一组一行的内容自己管). 进出 hero 态、换网格与触摸模式变化时对一次. */
+    /**
+     * 按触屏的规矩走时网格的卡片墙上不画聚焦效果、焦点不带着滚动 (见 [touchMode]; 一组一行的内容自己管). 进出 hero 态、换网格与触摸模式变化时
+     * 对一次.
+     */
     private fun applyTouchLook() {
-        current?.let { it.cards.setTouchLookHidden(it, touchMode && !timeline.active) }
+        current?.let {
+            it.cards.setTouchLookHidden(it, touchMode && !timeline.active)
+            it.touchFree = touchMode
+        }
+    }
+
+    /** 按触屏的规矩把焦点停在了本视图自己身上 (见 [touchPark]). */
+    private var touchParked = false
+
+    /**
+     * 按触屏的规矩走时手指拖动网格: 焦点停在本视图自己身上 (持焦的卡随手指滚出屏被回收也不丢焦点、不被系统塞给别处), 之后按方向键落到屏上
+     * 离视口中线最近的那一行 (见 [dispatchKeyEvent]). 与换标签的停放 ([parkFocus]) 不同, 不报给页面: 焦点仍算在网格里.
+     */
+    private fun touchPark() {
+        if (isFocused) return
+        descendantFocusability = FOCUS_BEFORE_DESCENDANTS
+        isFocusableInTouchMode = true
+        touchParked = requestFocus()
+        if (!touchParked) unparkFocus()
+    }
+
+    /** 按触屏的规矩走时网格被手指拖起来: hero 态里原地退回卡片墙, 焦点停放. */
+    private fun onGridDragStart(grid: TvNativeGridView) {
+        if (grid !== current || !touchMode) return
+        if (timeline.active) setHeroActive(false, animated = true) else touchPark()
+    }
+
+    /** 原地退回卡片墙 (按触屏的规矩走时): hero 背景与文字照常淡出, 网格 / 一组一行的内容停在原地. */
+    private fun exitHeroInPlace(animated: Boolean) {
+        timeline.setActive(false, animated)
+        applyTouchLook()
+        TvNativeFocusCues.setSpotlight(this, false, animated)
+        current?.exitHeroInPlace(animated && animatedScroll)
+        rowsShown()?.onHostHeroChanged(animated)
+        listener?.onHeroActiveChanged(false)
     }
 
     /** hero 区 (背景图与文字, hero 态聚焦行行顶以上) 下缘在窗口里的纵坐标. */
@@ -549,6 +586,7 @@ class TvNativeGridPageView(
         val grid = TvNativeGridView(context, style, sketch, gridMetrics())
         grid.animatedScroll = animatedScroll
         grid.listener = GridListener(grid)
+        grid.onTouchDragStart = { onGridDragStart(grid) }
         grid.cards.onBind = { index -> if (grid === current) onBindCard?.invoke(index) }
         grid.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
@@ -616,6 +654,9 @@ class TvNativeGridPageView(
                 // 没有 hero 态的页面上点一下就进: 焦点同时送到这张, 回来时落在它上面
                 TvWallTouchTap.Confirm -> {
                     if (!card.isFocused) card.requestFocus()
+                    // 整屏背景跟着聚焦卡的页面 (新番时间表) 上背景还不是这张的: 当场进, 照点开过记账 —— 回到本页 (页面重建) 按点开的样子恢复,
+                    // 这张的清晰图淡回它的模糊底 (同 iPad 的 Compose 海报墙)
+                    if (!timeline.active && confirmFocusesWall && wallBackdrop != null && !wallMatches(grid, index)) listener?.onWallOpened(index)
                     onClick(index)
                 }
             }
@@ -763,6 +804,7 @@ class TvNativeGridPageView(
     override fun requestChildFocus(child: View?, focused: View?) {
         super.requestChildFocus(child, focused)
         // 停放的焦点落地了 (新那份网格的卡拿到焦点)
+        touchParked = false
         unparkFocus()
         // 一组一行的内容拿到焦点不算 (它自己报卡片区的焦点)
         setGridFocus(child === gridBox && current?.hasFocus() == true)
@@ -825,6 +867,16 @@ class TvNativeGridPageView(
             code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT
         // 整屏背景: 点开途中吞掉方向键与确认键, 按下确认键当场解清晰图 (见 TvNativeWallFocus.handleKey)
         if (wallFocus.handleKey(event)) return true
+        if (isFocused && touchParked && direction && event.action == KeyEvent.ACTION_DOWN) {
+            // 按触屏的规矩停放后按了方向键 (回到电视的规矩): 落到屏上离中线最近的那一行、上次那一列
+            touchParked = false
+            val grid = current
+            val columns = metrics.grid.columns.coerceAtLeast(1)
+            val target = grid?.indexNearestViewportCenter(grid.selectedPosition.coerceAtLeast(0) % columns)
+            unparkFocus()
+            if (grid != null && target != null) grid.focusItem(target) else rowsShown()?.requestCardsFocus()
+            return true
+        }
         if (!isFocused || parkedAt < 0 || !(direction || tvNativeIsConfirmKey(code))) return super.dispatchKeyEvent(event)
         if (direction && event.action == KeyEvent.ACTION_DOWN) {
             val expired = SystemClock.uptimeMillis() - parkedAt >= TV_TRANSIT_PARK_KEY_GRACE_MILLIS
@@ -860,6 +912,12 @@ class TvNativeGridPageView(
      */
     override fun setHeroActive(active: Boolean, animated: Boolean) {
         if (timeline.active == active || active && !heroEnabled) return
+        // 按触屏的规矩走时退出 (按返回、点空白处、拖动): 停在原地; 网格上的焦点停放 (一组一行的内容自己停放)
+        if (!active && touchMode) {
+            exitHeroInPlace(animated)
+            if (rowsShown() == null) touchPark()
+            return
+        }
         timeline.setActive(active, animated)
         applyTouchLook()
         TvNativeFocusCues.setSpotlight(this, active, animated)

@@ -12,10 +12,13 @@ package me.him188.ani.app.ui.foundation.tv.nativeview
 import android.graphics.Rect
 import android.os.SystemClock
 import android.view.InputDevice
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.widget.FrameLayout
+import androidx.recyclerview.widget.RecyclerView
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
+import kotlin.math.abs
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -26,7 +29,8 @@ import kotlin.test.assertTrue
 /**
  * 网格页 (追番 / 搜索 / 新番时间表) 在触屏设备上照触屏的规矩走 ([TvNativeGridPageView.touchInput], 同 iPad 的 Compose 海报墙, 规则见
  * tvWallTouchTap): 按下不动焦点, 卡片墙上点一下聚焦并进 hero 态, 没有 hero 态的页面点一下就进, 长按弹菜单, hero 态里点 hero 区进聚焦那张;
- * 卡片墙上不画聚焦效果. 触摸经 Instrumentation.sendPointerSync 走窗口的输入派发.
+ * 卡片墙上不画聚焦效果; 网格由手指自由滚 (不就近停), 手指一拖焦点就停放在网格页自己身上 (hero 态里原地退回卡片墙), 之后按方向键落到屏上
+ * 中间那一行. 触摸经 Instrumentation.sendPointerSync 走窗口的输入派发.
  */
 class TvNativeGridPageTouchRulesTest {
     private val host = TvNativeTestHost()
@@ -35,6 +39,7 @@ class TvNativeGridPageTouchRulesTest {
     private val clicks = mutableListOf<Int>()
     private val longPresses = mutableListOf<Int>()
     private val heroChanges = mutableListOf<Boolean>()
+    private val wallOpened = mutableListOf<Int>()
 
     private inner class PageListener : TvNativeGridPageListener {
         override fun onFocused(index: Int) = Unit
@@ -49,6 +54,10 @@ class TvNativeGridPageTouchRulesTest {
         override fun onTopRowUp(): Boolean = true
         override fun onHeroActiveChanged(active: Boolean) {
             heroChanges += active
+        }
+
+        override fun onWallOpened(index: Int) {
+            wallOpened += index
         }
 
         override fun onToneChanged(tone: Float) = Unit
@@ -97,6 +106,7 @@ class TvNativeGridPageTouchRulesTest {
         }
         host.waitUntil("卡片排出来") { (page.grid?.childCount ?: 0) > 0 }
         host.instrumentation.setInTouchMode(true)
+        host.waitUntil("进入触摸模式") { page.isInTouchMode }
     }
 
     @AfterTest
@@ -139,6 +149,61 @@ class TvNativeGridPageTouchRulesTest {
         tapAt(x, y)
     }
 
+    /** 一笔竖着的拖动, 分 [steps] 步, 停在终点不动 [hold] 步再松手 (不甩). */
+    private fun drag(x: Float, fromY: Float, toY: Float, steps: Int = 12, stepMillis: Long = 40, hold: Int = 4) {
+        val total = steps + hold + 1
+        val start = SystemClock.uptimeMillis() - total * stepMillis
+        for (i in 0..total) {
+            val action = when (i) {
+                0 -> MotionEvent.ACTION_DOWN
+                total -> MotionEvent.ACTION_UP
+                else -> MotionEvent.ACTION_MOVE
+            }
+            val y = fromY + (toY - fromY) * i.coerceAtMost(steps) / steps
+            val event = MotionEvent.obtain(start, start + i * stepMillis, action, x, y, 0)
+            event.source = InputDevice.SOURCE_TOUCHSCREEN
+            host.instrumentation.sendPointerSync(event)
+            event.recycle()
+        }
+        host.instrumentation.waitForIdleSync()
+        host.waitUntil("网格停下") { page.grid!!.scrollState == RecyclerView.SCROLL_STATE_IDLE }
+    }
+
+    /** 网格中间一竖条的屏幕横坐标与下、上两处纵坐标. */
+    private fun gridColumn(): Triple<Float, Float, Float> = host.onMain {
+        val location = IntArray(2)
+        page.getLocationOnScreen(location)
+        Triple(location[0] + 1000f, location[1] + 950f, location[1] + 550f)
+    }
+
+    /** 已排出来的卡里下标最小那张的下标与它此刻的屏幕纵坐标 (网格滚了多少按同一张比). */
+    private fun anchorCard(): Pair<Int, Int> = host.onMain {
+        val grid = page.grid!!
+        val child = (0 until grid.childCount).map { grid.getChildAt(it) }.filter { grid.getChildAdapterPosition(it) >= 0 }
+            .minBy { grid.getChildAdapterPosition(it) }
+        val location = IntArray(2)
+        child.getLocationOnScreen(location)
+        grid.getChildAdapterPosition(child) to location[1]
+    }
+
+    private fun topOf(index: Int): Int? = host.onMain {
+        page.grid!!.findViewHolderForAdapterPosition(index)?.itemView?.let { v ->
+            val location = IntArray(2)
+            v.getLocationOnScreen(location)
+            location[1]
+        }
+    }
+
+    /** 先按电视的规矩把焦点送到第 [index] 张, 再切回触摸模式. */
+    private fun focusWithKeysThenTouch(index: Int) {
+        host.instrumentation.setInTouchMode(false)
+        host.waitUntil("离开触摸模式") { !page.isInTouchMode }
+        host.onMain { page.grid!!.focusItem(index) }
+        host.waitUntil("第 $index 张拿到焦点") { cardAt(index).isFocused }
+        host.instrumentation.setInTouchMode(true)
+        host.waitUntil("进入触摸模式") { page.isInTouchMode }
+    }
+
     @Test
     fun `a tap on a wall card focuses it and enters hero at once`() {
         tapCard(2)
@@ -166,6 +231,18 @@ class TvNativeGridPageTouchRulesTest {
         tapCard(2)
         assertEquals(listOf(2), clicks, "第一下就进")
         assertEquals(2, focusedIndex(), "焦点跟到点的那张, 回来时落在它上面")
+    }
+
+    @Test
+    fun `on a page whose backdrop follows the focus a tap opens at once and counts as opened`() {
+        host.onMain {
+            page.heroEnabled = false
+            page.enableWallBackdrop()
+        }
+        tapCard(3)
+        assertEquals(listOf(3), clicks, "第一下就进")
+        assertEquals(listOf(3), wallOpened, "照点开过记账: 回到本页时清晰图淡回模糊底")
+        assertEquals(3, focusedIndex(), "焦点跟到点的那张, 背景随后换成它的")
     }
 
     @Test
@@ -214,6 +291,43 @@ class TvNativeGridPageTouchRulesTest {
         tapCard(0)
         assertEquals(listOf(true), heroChanges)
         assertFalse(host.onMain { cardAt(0).touchLookHidden }, "hero 态里聚焦那张照画")
+    }
+
+    @Test
+    fun `a drag parks the focus and the grid stays where the finger left it`() {
+        focusWithKeysThenTouch(1)
+        val (anchor, before) = anchorCard()
+        val (x, bottom, top) = gridColumn()
+        drag(x, bottom, top)
+        assertTrue(host.onMain { page.isFocused }, "焦点停在网格页自己身上")
+        val after = topOf(anchor) ?: error("第 $anchor 张滚没了")
+        val moved = before - after
+        val distance = (bottom - top).toInt()
+        assertTrue(abs(moved - distance) < 60, "网格跟着手指走了 $moved px (拖了 $distance px), 不就近停到哪一行")
+    }
+
+    @Test
+    fun `a drag in hero exits hero and keeps the focused row where it was`() {
+        tapCard(8)
+        assertEquals(listOf(true), heroChanges)
+        val before = topOf(8) ?: error("第 8 张没排出来")
+        val (x, bottom, _) = gridColumn()
+        drag(x, bottom, bottom - 200f)
+        assertEquals(listOf(true, false), heroChanges, "一拖就退回卡片墙")
+        assertTrue(host.onMain { page.isFocused }, "焦点停放")
+        val after = topOf(8) ?: error("第 8 张没排出来")
+        assertTrue(abs(before - 200 - after) < 60, "聚焦行跟着手指上移了 ${before - after} px, 没滚回卡片墙的停位")
+    }
+
+    @Test
+    fun `a direction key after parking lands on the row nearest the middle`() {
+        focusWithKeysThenTouch(1)
+        val (x, bottom, top) = gridColumn()
+        drag(x, bottom, top)
+        val expected = host.onMain { page.grid!!.indexNearestViewportCenter(1)!! }
+        host.press(KeyEvent.KEYCODE_DPAD_DOWN)
+        host.waitUntil("落到一张卡上") { page.grid!!.hasFocus() }
+        assertEquals(expected, focusedIndex(), "落在屏上中间那一行、原来那一列")
     }
 
     @Test

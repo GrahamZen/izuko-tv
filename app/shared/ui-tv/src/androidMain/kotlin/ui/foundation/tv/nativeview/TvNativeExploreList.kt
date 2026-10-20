@@ -74,10 +74,12 @@ internal fun TvNativeExploreMetrics.itemTop(items: List<TvNativeExploreItem>, in
 internal fun TvNativeExploreMetrics.centeredScroll(items: List<TvNativeExploreItem>, index: Int): Int {
     val rowHeight = rowPx - rowGapPx
     val centered = itemTop(items, index) + rowHeight / 2 - viewportPx / 2
-    val contentEnd = itemTop(items, items.size) - rowGapPx
-    val max = contentEnd + endMarginPx - viewportPx
-    return centered.coerceAtMost(max).coerceAtLeast(0)
+    return centered.coerceAtMost(wallEndScroll(items)).coerceAtLeast(0)
 }
+
+/** 卡片墙最远滚到哪: 末行番名底边离视口底 [TvNativeExploreMetrics.endMarginPx]. 列表末尾补的空白只给 hero 态的停位用. */
+internal fun TvNativeExploreMetrics.wallEndScroll(items: List<TvNativeExploreItem>): Int =
+    (itemTop(items, items.size) - rowGapPx + endMarginPx - viewportPx).coerceAtLeast(0)
 
 /**
  * hero 态聚焦第 [index] 行时列表该滚到哪: 这一行的组标题位置落在 hero 线 [TvNativeExploreMetrics.heroHeaderTopPx] 上 (hero 简介块下沿),
@@ -162,16 +164,40 @@ class TvNativeExploreList(
     private var touchFlingVelocity = 0
 
     /**
-     * 手指拖完甩出去 (只有触摸会进 SCROLL_STATE_DRAGGING) 不照惯性滚 —— 停在哪是哪, 常停在两行之间: 记下速度、当场停住, 由页面按它预判的
-     * 落点就近停到一行 (见 TvNativeExploreView.settleAfterTouch).
+     * 按触屏的规矩走 (平板, 见 TvNativeRowWallView.touchMode): 手指拖完照惯性甩, 停在哪是哪; 手指拖 / 甩最远到卡片墙的末端 ([wallEndScroll]),
+     * 末尾为 hero 停位补的空白进不去 (已经在那以下时只能往回拉). 程序滚动 (停位) 不受限. false 时见 [fling].
+     */
+    var freeTouchScroll: Boolean = false
+
+    /** 这一段滚动是手指甩出去的惯性 (见 [freeTouchScroll]); 停下或程序接手滚动时清掉. */
+    private var touchFling = false
+
+    /** 这一下的滚动是手指带的 (拖着, 或拖完甩出去的惯性). */
+    private val touchDriven: Boolean get() = freeTouchScroll && (scrollState == SCROLL_STATE_DRAGGING || touchFling)
+
+    /**
+     * 手指拖完甩出去 (只有触摸会进 SCROLL_STATE_DRAGGING): 按触屏的规矩走时照惯性滚 (见 [freeTouchScroll]); 否则不照惯性滚 —— 停在哪是哪,
+     * 常停在两行之间: 记下速度、当场停住, 由页面按它预判的落点就近停到一行 (见 TvNativeRowWallView.settleAfterTouch).
      */
     override fun fling(velocityX: Int, velocityY: Int): Boolean {
         if (scrollState == SCROLL_STATE_DRAGGING) {
+            if (freeTouchScroll) {
+                touchFling = true
+                return super.fling(velocityX, velocityY)
+            }
             touchFlingVelocity = velocityY
             return false
         }
         return super.fling(velocityX, velocityY)
     }
+
+    override fun onScrollStateChanged(state: Int) {
+        super.onScrollStateChanged(state)
+        if (state == SCROLL_STATE_IDLE) touchFling = false
+    }
+
+    /** 横滑行被手指横着拖起来了 (页面据此按触屏的规矩把焦点停放, 见 TvNativeRowWallView.touchPark). */
+    var onRowDragStart: (() -> Unit)? = null
 
     fun takeTouchFlingVelocity(): Int = touchFlingVelocity.also { touchFlingVelocity = 0 }
 
@@ -324,6 +350,7 @@ class TvNativeExploreList(
             post { scrollToStop(targetPx, pace, animated) }
             return
         }
+        touchFling = false
         val dy = targetPx - scrolledPx()
         if (dy == 0) return
         if (!animated || !scroll.animated) {
@@ -339,6 +366,7 @@ class TvNativeExploreList(
 
     /** 当场跳到 [targetPx] (进页恢复). */
     fun jumpTo(targetPx: Int) {
+        touchFling = false
         stopScroll()
         scroll.reset()
         val m = metrics
@@ -377,6 +405,12 @@ class TvNativeExploreList(
 
         override fun requestChildRectangleOnScreen(parent: RecyclerView, child: View, rect: Rect, immediate: Boolean): Boolean = false
 
+        // 手指拖 / 甩不进卡片墙末端以下 (见 freeTouchScroll)
+        override fun scrollVerticallyBy(dy: Int, recycler: Recycler, state: State): Int {
+            val limited = if (dy > 0 && touchDriven) dy.coerceAtMost((metrics.wallEndScroll(items) - scrolledPx()).coerceAtLeast(0)) else dy
+            return super.scrollVerticallyBy(limited, recycler, state)
+        }
+
         override fun supportsPredictiveItemAnimations(): Boolean = false
     }
 
@@ -411,7 +445,15 @@ class TvNativeExploreList(
                     startPx = m.rowStartPx, endPx = m.endPadPx, bottomPx = m.rowGapPx,
                     fadeDistancePx = m.fadeDistancePx,
                     anchored = fixedAnchor,
-                )
+                ).also { row ->
+                    row.addOnScrollListener(
+                        object : OnScrollListener() {
+                            override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
+                                if (newState == SCROLL_STATE_DRAGGING) onRowDragStart?.invoke()
+                            }
+                        },
+                    )
+                }
             }
             return object : ViewHolder(view) {}
         }

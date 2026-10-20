@@ -133,9 +133,19 @@ class TvNativeExploreView(
     // 焦点 (顶部区域: 两颗 hero 按钮)
     // ------------------------------------------------------------------
 
-    /** 送焦到 hero 按钮. 还没布局 (刚建出来) 时记下, 布局完成再送. */
+    /**
+     * 送焦到 hero 按钮. 还没布局 (刚建出来) 时记下, 布局完成再送. 按触屏的规矩走时不送 (焦点不带着滚动): 记下这一颗, 焦点停放
+     * (见 touchPark), 页面照样收到这一颗拿到焦点.
+     */
     fun focusHeroButton(button: Int): Boolean {
         cancelPending()
+        if (touchMode) {
+            pendingHeroButton = -1
+            lastHeroButton = button
+            // 已经停放着: 照样报这一颗 (页面据此清掉落点请求)
+            if (touchParkedNow) onTouchParked() else touchPark()
+            return true
+        }
         if (!isLaidOut) {
             pendingHeroButton = button
             return false
@@ -173,6 +183,7 @@ class TvNativeExploreView(
 
     /** 从页面外进来 (侧边栏按右 / 返回、全局兜底): 回上次那张卡, 否则回上次停的那颗 hero 按钮. */
     override fun onRequestFocusInDescendants(direction: Int, previouslyFocusedRect: Rect?): Boolean {
+        if (touchParkOnEntry()) return false
         val rowKey = focusedRowKey
         if (rowKey != null) {
             focusCard(rowKey, -1)
@@ -183,6 +194,14 @@ class TvNativeExploreView(
 
     /** 探索页的焦点交接由页面的落点与 [onAllRowsGone] 管, 不另外改送系统送来的焦点. */
     override val redirectStrayFocus: Boolean get() = false
+
+    /** 按触屏的规矩停放了焦点: 对页面同焦点回到上次那颗 hero 按钮 (页面回到轮播态), 列表不动. */
+    override fun onTouchParked() {
+        focusedRowKey = null
+        listener?.onHeroButtonFocused(lastHeroButton)
+        listener?.onFocusParked()
+        applyFrame()
+    }
 
     override fun settleTouchAtTop(nearTop: Boolean): Boolean {
         if (!nearTop) return false
