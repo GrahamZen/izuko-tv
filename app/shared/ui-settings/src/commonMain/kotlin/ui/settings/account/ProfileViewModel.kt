@@ -18,12 +18,19 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
 import me.him188.ani.app.data.repository.user.UserRepository
 import me.him188.ani.app.domain.foundation.LoadError
+import me.him188.ani.app.domain.profile.BangumiProfileConversion
 import me.him188.ani.app.domain.profile.LocalProfileConversion
 import me.him188.ani.app.domain.profile.SelfCollectionRecords
 import me.him188.ani.app.domain.profile.UserProfileManager
@@ -40,6 +47,7 @@ import me.him188.ani.utils.coroutines.flows.restartable
 import me.him188.ani.utils.platform.annotations.TestOnly
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * It is used on both [AccountSettingsPopupMedium] and [AccountS].
@@ -48,6 +56,7 @@ class ProfileViewModel : AbstractViewModel(), KoinComponent {
     private val subjectCollectionRepo: SubjectCollectionRepository by inject()
     private val userRepo: UserRepository by inject()
     private val localProfileConversion: LocalProfileConversion by inject()
+    private val bangumiProfileConversion: BangumiProfileConversion by inject()
     private val selfRecords: SelfCollectionRecords by inject()
     private val profileManager: UserProfileManager by inject()
 
@@ -65,13 +74,18 @@ class ProfileViewModel : AbstractViewModel(), KoinComponent {
         selfInfoStateProvider.flow,
         avatarUploadState,
         profileManager.state,
-    ) { selfInfoState, avatarState, profiles ->
+        bangumiProfileConversion.pendingCollections.map { it.size },
+    ) { selfInfoState, avatarState, profiles, pendingCount ->
         AccountSettingsState(
             selfInfo = selfInfoState,
             boundBangumi = selfInfoState.isSessionValid == true && selfInfoState.bangumiConnected == true,
             avatarUploadState = avatarState,
-            // 没登录的 1 号可以改成本地用户 (登录着的先退出)
-            canConvertToLocal = localProfileConversion.isOffered && selfInfoState.isSessionValid == false,
+            // Bangumi 用户可以改成本地用户 (登录着的改的时候先退出)
+            canConvertToLocal = localProfileConversion.isOffered,
+            canConvertToBangumi = bangumiProfileConversion.isOffered,
+            canSwitchProfile = profileManager.isSupported,
+            // 改成 Bangumi 用户后还没登录: 之前的本地收藏还等着 (登录后再选合并还是删除)
+            pendingLocalCollections = if (selfInfoState.isLocalProfile || selfInfoState.isSessionValid != false) 0 else pendingCount,
             // 只有一个用户时打开应用本来就不选人
             chooseProfileOnLaunch = profiles.chooseOnLaunch.takeIf { profileManager.isSupported && profiles.profiles.size >= 2 },
         )
@@ -94,14 +108,52 @@ class ProfileViewModel : AbstractViewModel(), KoinComponent {
     /** 本地用户清除自己的收藏记录. */
     suspend fun clearSelfRecords() = selfRecords.clear()
 
-    /** 改成本地用户, 应用随后重启; [clearRecords] 为 true 时先清掉之前登录留下的收藏记录. */
+    /** 退出登录, 改成本地用户, 应用随后重启; [clearRecords] 为 true 时先清掉登录时留下的收藏记录. */
     suspend fun convertToLocal(clearRecords: Boolean, defaultName: String) =
         localProfileConversion.convert(clearRecords, defaultName)
+
+    private val _convertToLocalProgress = MutableStateFlow<ConvertToLocalProgress?>(null)
+
+    /** 「改成本地用户」进行到哪了 (见 [startConvertToLocal]); null = 还没开始. */
+    val convertToLocalProgress: StateFlow<ConvertToLocalProgress?> = _convertToLocalProgress.asStateFlow()
+
+    /**
+     * 在后台改成本地用户 (同 [convertToLocal]), 进度写进 [convertToLocalProgress]: 登录着、留下记录时要先取账号里的收藏, 要一会儿,
+     * 对话框开着显示进度; 跑在这个 ViewModel 的作用域里, 对话框关了也不打断. 成功时应用重启; 失败时什么都没改, 进度换成失败原因.
+     */
+    fun startConvertToLocal(clearRecords: Boolean, defaultName: String) {
+        if (_convertToLocalProgress.value is ConvertToLocalProgress.Downloading) return
+        _convertToLocalProgress.value = ConvertToLocalProgress.Downloading(0, 0)
+        backgroundScope.launch(Dispatchers.Main) {
+            try {
+                localProfileConversion.convert(clearRecords, defaultName) { p ->
+                    _convertToLocalProgress.value = ConvertToLocalProgress.Downloading(p.done, p.total)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _convertToLocalProgress.value = ConvertToLocalProgress.Failed(e.message ?: e::class.simpleName.orEmpty())
+            }
+        }
+    }
+
+    /** 看过失败原因了 (关掉对话框), 下次打开从头来. */
+    fun resetConvertToLocal() {
+        if (_convertToLocalProgress.value is ConvertToLocalProgress.Failed) _convertToLocalProgress.value = null
+    }
+
+    /** 登录着时账号里的收藏条数 (改成本地用户前给人看); 取不到为 null. */
+    suspend fun accountCollectionCount(): Int? =
+        withTimeoutOrNull(ACCOUNT_COUNT_TIMEOUT) { subjectCollectionRepo.subjectCollectionCountsFlow().filterNotNull().first().total }
+
+    /** 本地用户改成 Bangumi 用户, 应用随后重启; 本地收藏留着, 登录后再选合并到账号还是删除 (见 [BangumiProfileConversion]). */
+    suspend fun convertToBangumi() = bangumiProfileConversion.convert()
 
     /** 见 [AccountSettingsState.chooseProfileOnLaunch]. */
     suspend fun setChooseProfileOnLaunch(enabled: Boolean) = profileManager.setChooseOnLaunch(enabled)
 
     companion object {
+        private val ACCOUNT_COUNT_TIMEOUT = 10.seconds
         private val NICKNAME_MATCHER = Regex("^[\u4E00-\u9FFF\u3040-\u309F\u30A0-\u30FFa-zA-Z\\d_]+$")
     }
 }
@@ -113,6 +165,12 @@ class AccountSettingsState(
     val avatarUploadState: EditProfileState.UploadAvatarState,
     /** 显示「改成本地用户」, 见 [LocalProfileConversion]. */
     val canConvertToLocal: Boolean = false,
+    /** 显示「改成 Bangumi 用户」, 见 [BangumiProfileConversion]. */
+    val canConvertToBangumi: Boolean = false,
+    /** 这个平台能换用户 (见 [UserProfileManager.isSupported]): 显示「切换用户」. */
+    val canSwitchProfile: Boolean = false,
+    /** 改成 Bangumi 用户后还没登录时, 等着处理的本地收藏条数 (其余情况为 0). */
+    val pendingLocalCollections: Int = 0,
     /**
      * 「打开应用时选择用户」开着没有 (整机一份, 见 [UserProfilesSave.chooseOnLaunch]);
      * `null` = 不显示这一项: 只有一个用户, 或这个平台不能换人.

@@ -49,7 +49,8 @@ import kotlin.time.Duration.Companion.seconds
  * 记下了新用户却没重启, 电视和网页就对不上了.
  *
  * 当前用户登录了 Bangumi 时, 还能把某个本地用户的收藏导入这个账号 (见 [LocalProfileImporter]): 先预览要加哪些,
- * 确认了照那份预览导, 在后台跑, 网页轮询进度. 本地用户导出成文件、从文件导入见 [RemoteProfileArchive].
+ * 确认了照那份预览导, 在后台跑, 网页轮询进度. 本地用户导出成文件、从文件导入见 [RemoteProfileArchive];
+ * 本地用户改成 Bangumi 用户时留下的收藏见 [RemotePendingCollections].
  */
 internal object RemoteProfiles {
     private val logger = logger<RemoteProfiles>()
@@ -67,6 +68,7 @@ internal object RemoteProfiles {
         if (request.path == "api/profiles/export" || request.path.startsWith("api/profiles/restore/")) {
             return RemoteProfileArchive.handle(request)
         }
+        if (request.path.startsWith("api/profiles/pending")) return RemotePendingCollections.handle(request)
         val get = request.method == "GET" || request.method == "HEAD"
         val post = request.method == "POST"
         return runCatching {
@@ -126,6 +128,8 @@ internal object RemoteProfiles {
             // 能把本地用户的收藏导进当前用户 (登录了 Bangumi) 吗; 有导入在跑时网页接着显示进度
             put("canImport", save.profiles.any { it.isLocal } && canImportIntoCurrent())
             put("importing", ProfileImportSession.isRunning)
+            // 本地用户改成 Bangumi 用户时留下的本地收藏 (登录后问合并还是删除)
+            with(RemotePendingCollections) { putPendingState() }
         }
     }
 

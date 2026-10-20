@@ -117,7 +117,7 @@ internal object RemoteAccount {
                 request.path == "api/account" && get -> state(request)
                 !post -> null
                 // 本地档不能登录 (收藏只在本地库, 登录了也不会同步), 网页上本来就不给入口
-                UserProfiles.current.isLocal -> result(false, tr("本地用户不能登录 Bangumi。想同步到 Bangumi，请在「用户」里新建一个登录 Bangumi 的用户"))
+                UserProfiles.current.isLocal -> result(false, tr("本地用户不能直接登录 Bangumi。想同步到 Bangumi，请在电视的「设置 → 账号」里改成 Bangumi 用户，或者在「用户」里新建一个登录 Bangumi 的用户"))
                 request.path == "api/account/login" -> startLogin(request)
                 request.path == "api/account/login/callback" -> submitCallback(request)
                 request.path == "api/account/login/cancel" -> cancelLogin()

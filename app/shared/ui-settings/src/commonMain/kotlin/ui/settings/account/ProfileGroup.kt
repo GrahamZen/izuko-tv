@@ -34,7 +34,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.window.core.layout.WindowSizeClass
 import kotlinx.coroutines.launch
 import me.him188.ani.app.domain.profile.SelfCollectionRecords
-import me.him188.ani.app.domain.profile.UserProfile
+import me.him188.ani.app.domain.profile.UserProfiles
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.widgets.HeroIcon
 import me.him188.ani.app.ui.foundation.layout.currentWindowAdaptiveInfo1
@@ -81,8 +81,8 @@ fun SettingsScope.ProfileGroup(
     val asyncHandler = rememberAsyncHandler()
     val toaster = LocalToaster.current
     val clearedText = stringResource(Lang.profile_clear_records_done)
-    // 只有 1 号能改成本地用户 (见 LocalProfileConversion)
-    val defaultName = stringResource(Lang.tv_profile_default_name, UserProfile.PRIMARY_ID)
+    // 没起过名字时存下的默认名 (见 LocalProfileConversion)
+    val defaultName = stringResource(Lang.tv_profile_default_name, UserProfiles.currentId)
     ProfileGroupImpl(
         state,
         onLogout = {
@@ -255,6 +255,7 @@ internal fun SettingsScope.ProfileGroupImpl(
                 onConvertToLocal(clearRecords)
             },
             onDismissRequest = { convertDialog = null },
+            loggedIn = state.selfInfo.isSessionValid == true,
         )
     }
     clearDialog?.let { counts ->

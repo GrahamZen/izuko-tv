@@ -127,6 +127,17 @@ class UserProfileManager(
         restarter.restart()
     }
 
+    /**
+     * 把当前的本地用户改成 Bangumi 用户再重启进程, 进来先弹登录那一步 (同新建的 Bangumi 用户).
+     * 留下的本地收藏由调用方先存好, 见 [BangumiProfileConversion].
+     */
+    suspend fun convertCurrentToBangumi() {
+        registry.update(currentId) { it.copy(kind = UserProfileKind.BANGUMI, pendingLogin = true) }
+        registry.find(currentId)?.let { playTransition(it) }
+        logger.info { "Converted user profile $currentId to Bangumi, restarting" }
+        restarter.restart()
+    }
+
     /** 记下当前用户的 Bangumi 头像 (选人页用). */
     suspend fun updateAvatar(avatarUrl: String?) {
         registry.update(currentId) { it.copy(avatarUrl = avatarUrl) }
@@ -144,10 +155,10 @@ class UserProfileManager(
 }
 
 /**
- * 换人 / 改成本地用户重启前界面上的过场 (电视上: 选人页把要换过去的人摆到正中定格, 截下这一帧留给重启途中与新进程接着显示).
+ * 换人 / 改用户类型重启前界面上的过场 (电视上: 选人页把要换过去的人摆到正中定格, 截下这一帧留给重启途中与新进程接着显示).
  * [play] 在这一帧截好 (或截不了) 时返回, 之后进程马上重启.
  */
 fun interface ProfileSwitchTransition {
-    /** @param target 重启后的用户 (改成本地用户时是改好的自己) */
+    /** @param target 重启后的用户 (改用户类型时是改好的自己) */
     suspend fun play(target: UserProfile)
 }
