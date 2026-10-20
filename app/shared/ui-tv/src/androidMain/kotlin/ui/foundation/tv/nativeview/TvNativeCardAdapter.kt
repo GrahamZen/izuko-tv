@@ -38,6 +38,15 @@ interface TvNativeCardListener {
      * 动作时给 true; 确认会进详情页 / 播放 / 打开别的页时只聚焦 (hero 态里点另一张卡 = 换 hero 内容), 再点一下才确认.
      */
     fun tapConfirmsWhileFocusing(index: Int): Boolean = false
+
+    /**
+     * 此刻按触屏的规矩走 (平板, 同 iPad 的 Compose 海报墙): 手指按下不动焦点, 轻点抬起交给 [onTouchTap] (页面按 tvWallTouchTap 判), 长按同确定键长按
+     * ([onLongPress]). false (电视) 时照系统的点按, 见 [tapConfirmsWhileFocusing].
+     */
+    val touchTaps: Boolean get() = false
+
+    /** 按触屏的规矩走时 ([touchTaps]) 手指轻点第 [index] 张, [card] 是那张卡 (要聚焦它时用). */
+    fun onTouchTap(index: Int, card: View) {}
 }
 
 /**
@@ -62,6 +71,10 @@ class TvNativeCardAdapter(
 
     /** 远跳途中压住聚焦效果 (见 [TvNativeCardView.focusEffectSuppressed]); 改用 [setFocusEffectSuppressed]. */
     var focusEffectSuppressed: Boolean = false
+        private set
+
+    /** 按触屏的规矩走时卡片墙上不画聚焦效果 (见 [TvNativeCardView.touchLookHidden]); 改用 [setTouchLookHidden]. */
+    var touchLookHidden: Boolean = false
         private set
 
     /** 第几张卡被绑定 (分页的访问提示: 页面据此让分页往后取). */
@@ -121,6 +134,11 @@ class TvNativeCardAdapter(
             val index = holder.bindingAdapterPosition
             if (index != RecyclerView.NO_POSITION) holder.owner?.listener?.onLongPress(index, anchor)
         }
+        holder.card.touchTaps = { holder.owner?.listener?.touchTaps == true }
+        holder.card.onTouchTap = {
+            val index = holder.bindingAdapterPosition
+            if (index != RecyclerView.NO_POSITION) holder.owner?.listener?.onTouchTap(index, holder.card)
+        }
         return holder
     }
 
@@ -133,6 +151,7 @@ class TvNativeCardAdapter(
         }
         holder.card.titleVisibility = titleVisibility
         holder.card.focusEffectSuppressed = focusEffectSuppressed
+        holder.card.touchLookHidden = touchLookHidden
         holder.card.setFocusLookHeld(position == heldFocusIndex, animate = false)
         holder.card.dim = dimOf?.invoke(position, holder.card) ?: 1f
         onBind?.invoke(position)
@@ -142,6 +161,7 @@ class TvNativeCardAdapter(
         // 回收缓存里原样拿回同一位置的卡不重绑: 按组统一的状态在重新上屏时补上 (离屏期间改的只落到了当时屏上那些卡)
         holder.card.titleVisibility = titleVisibility
         holder.card.focusEffectSuppressed = focusEffectSuppressed
+        holder.card.touchLookHidden = touchLookHidden
         holder.card.setFocusLookHeld(holder.bindingAdapterPosition == heldFocusIndex && heldFocusIndex >= 0, animate = false)
     }
 
@@ -162,6 +182,13 @@ class TvNativeCardAdapter(
     fun setFocusEffectSuppressed(recycler: RecyclerView, value: Boolean) {
         focusEffectSuppressed = value
         for (i in 0 until recycler.childCount) (recycler.getChildAt(i) as? TvNativeCardView)?.focusEffectSuppressed = value
+    }
+
+    /** 这一组卡在不在按触屏的规矩藏聚焦效果 (屏上的当场改, 离屏的重新上屏时补). */
+    fun setTouchLookHidden(recycler: RecyclerView, value: Boolean) {
+        if (touchLookHidden == value) return
+        touchLookHidden = value
+        for (i in 0 until recycler.childCount) (recycler.getChildAt(i) as? TvNativeCardView)?.touchLookHidden = value
     }
 
     /** 按 [dimOf] 重算屏上每张卡的压暗 (滚动中 / 淡化动画每帧调). */

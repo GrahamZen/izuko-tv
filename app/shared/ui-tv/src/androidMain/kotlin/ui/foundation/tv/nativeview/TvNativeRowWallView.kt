@@ -35,8 +35,10 @@ import me.him188.ani.app.ui.foundation.tv.TV_SCROLL_STILL_PX
 import me.him188.ani.app.ui.foundation.tv.TvBackdropTreatment
 import me.him188.ani.app.ui.foundation.tv.TvKeyRepeatGate
 import me.him188.ani.app.ui.foundation.tv.TvWallConfirm
+import me.him188.ani.app.ui.foundation.tv.TvWallTouchTap
 import me.him188.ani.app.ui.foundation.tv.tvWallConfirm
 import me.him188.ani.app.ui.foundation.tv.tvWallTapConfirmsWhileFocusing
+import me.him188.ani.app.ui.foundation.tv.tvWallTouchTap
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -197,8 +199,8 @@ open class TvNativeRowWallView private constructor(
         }
 
     /**
-     * 触屏设备 (平板装了 TV 包) 才为 true, 宿主按 LocalTvTouchInputEnabled 给; 电视上恒 false. hero 态里点卡片之间的空白处退回卡片墙
-     * (见 [TvNativeHeroBlankTap]); 顶部区域另有的触摸处理见 [onTouchInputChanged].
+     * 触屏设备 (平板装了 TV 包) 才为 true, 宿主按 LocalTvTouchInputEnabled 给; 电视上恒 false. 手指点卡片照触屏的规矩 (见 [touchMode]);
+     * hero 态里点卡片之间的空白处退回卡片墙、点 hero 区打开聚焦那张 (见 [TvNativeHeroBlankTap]); 顶部区域另有的触摸处理见 [onTouchInputChanged].
      */
     override var touchInput: Boolean = false
         set(value) {
@@ -206,12 +208,46 @@ open class TvNativeRowWallView private constructor(
             field = value
             // 宾客模式下由宿主装 (点在整页的空白处)
             heroBlankTap = if (value && guest == null) {
-                TvNativeHeroBlankTap(this, { timeline.active && !wallFocus.opening }) { setHeroActive(false) }
+                TvNativeHeroBlankTap(this, { timeline.active && !wallFocus.opening }, ::heroAreaBottomInWindow, ::openFocusedCard) {
+                    setHeroActive(false)
+                }
             } else {
                 null
             }
+            applyTouchLook()
             onTouchInputChanged(value)
         }
+
+    /**
+     * 此刻按触屏的规矩走 (同 iPad 的 Compose 海报墙): 触屏设备上最近一次输入是手指 (系统的触摸模式, 按方向键就退出). 手指点卡片按
+     * tvWallTouchTap 判 (按下不动焦点), 卡片墙上不画聚焦效果 (hero 态里照画).
+     */
+    protected val touchMode: Boolean get() = touchInput && isInTouchMode
+
+    private val touchModeWatcher = ViewTreeObserver.OnTouchModeChangeListener { applyTouchLook() }
+
+    /** 按触屏的规矩走时卡片墙上不画聚焦效果 (见 [touchMode]); 进出 hero 态、hero 时间线每一帧与触摸模式变化时对一次. */
+    private fun applyTouchLook() {
+        list.touchLookHidden = touchMode && !timeline.active
+    }
+
+    /** hero 区 (背景图与文字, 聚焦行的组标题以上) 下缘在窗口里的纵坐标. */
+    internal fun heroAreaBottomInWindow(): Int {
+        getLocationInWindow(windowXY)
+        return windowXY[1] + metrics.listTopPx + metrics.heroHeaderTopPx
+    }
+
+    /** 触屏上 hero 态里点 hero 区 (背景图、文字, 及淡没在那里的上面几行): 同点聚焦的那张. */
+    internal fun openFocusedCard() {
+        val rowKey = focusedRowKey ?: return
+        if (!timeline.active) return
+        RowListener(rowKey).onClick(focusedCardIndex)
+    }
+
+    private fun isAboveFocusedRow(rowKey: String): Boolean {
+        val focused = focusedRowKey?.let { list.indexOfKey(it) } ?: -1
+        return focused >= 0 && list.indexOfKey(rowKey) in 0 until focused
+    }
     private var heroBlankTap: TvNativeHeroBlankTap? = null
 
     /** 子类的触摸处理跟着 [touchInput] 装卸. */
@@ -221,6 +257,10 @@ open class TvNativeRowWallView private constructor(
         heroBlankTap?.onTouch(ev)
         return super.dispatchTouchEvent(ev)
     }
+
+    // 按在 hero 区 / 空白处而子视图都不接的这一下由本视图接住, 抬起才派发得到 (见 TvNativeHeroBlankTap)
+    @SuppressLint("ClickableViewAccessibility")
+    override fun onTouchEvent(event: MotionEvent): Boolean = heroBlankTap?.tracking == true || super.onTouchEvent(event)
 
     /** hero 态 (聚焦卡) 在整页底下铺模糊背景 (见 [TvNativeHeroStage.heroBlur]); 背景图的边缘擦成透明露出模糊背景, 整屏底色不压黑. */
     var heroBlur: Boolean
@@ -368,6 +408,7 @@ open class TvNativeRowWallView private constructor(
         override val transitions: Boolean get() = this@TvNativeRowWallView.transitions
 
         override fun onHeroFrame() {
+            applyTouchLook()
             applyFrame()
             reportTone()
         }
@@ -1033,6 +1074,7 @@ open class TvNativeRowWallView private constructor(
             return
         }
         timeline.setActive(active, animated = true)
+        applyTouchLook()
         if (!fixedAnchor) TvNativeFocusCues.setSpotlight(this, active, animated = true)
         rowListener?.onHeroActiveChanged(active)
         // 焦点没换, 只是进出 hero 态: 停位换成 hero 线 / 视口正中, 走 Far
@@ -1049,6 +1091,7 @@ open class TvNativeRowWallView private constructor(
      * (换标签滑进来、返回本页恢复).
      */
     internal fun onHostHeroChanged(animated: Boolean) {
+        applyTouchLook()
         if (animated) {
             updateStop(heroToggled = true)
         } else {
@@ -1062,7 +1105,10 @@ open class TvNativeRowWallView private constructor(
     }
 
     /** 宾客模式: 宿主的 hero 时间线 / 点开的淡化走了一帧. */
-    internal fun onHostHeroFrame() = applyFrame()
+    internal fun onHostHeroFrame() {
+        applyTouchLook()
+        applyFrame()
+    }
 
     /** 点开对焦到位: 交给页面进详情页 (宾客模式下由宿主转过来). */
     internal fun onHostWallOpened(index: Int) {
@@ -1349,6 +1395,21 @@ open class TvNativeRowWallView private constructor(
 
         override fun tapConfirmsWhileFocusing(index: Int): Boolean =
             tvWallTapConfirmsWhileFocusing(isMoreCard(rowKey, index), heroEnabled, timeline.active)
+
+        override val touchTaps: Boolean get() = touchInput
+
+        override fun onTouchTap(index: Int, card: View) {
+            when (tvWallTouchTap(isMoreCard(rowKey, index), heroEnabled, timeline.active, card.isFocused, isAboveFocusedRow(rowKey))) {
+                TvWallTouchTap.OpenFocused -> openFocusedCard()
+                TvWallTouchTap.FocusOnly -> card.requestFocus()
+                TvWallTouchTap.FocusAndConfirm -> {
+                    card.requestFocus()
+                    onClick(index)
+                }
+
+                TvWallTouchTap.Confirm -> onClick(index)
+            }
+        }
     }
 
     private fun isMoreCard(rowKey: String, index: Int): Boolean =
@@ -1535,6 +1596,8 @@ open class TvNativeRowWallView private constructor(
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         viewTreeObserver.addOnGlobalFocusChangeListener(focusWatcher)
+        viewTreeObserver.addOnTouchModeChangeListener(touchModeWatcher)
+        applyTouchLook()
         // 宾客模式下聚焦提示按宿主那一页算
         if (guest == null) TvNativeFocusCues.attachPage(this)
     }
@@ -1821,6 +1884,7 @@ open class TvNativeRowWallView private constructor(
 
     override fun onDetachedFromWindow() {
         viewTreeObserver.removeOnGlobalFocusChangeListener(focusWatcher)
+        viewTreeObserver.removeOnTouchModeChangeListener(touchModeWatcher)
         if (guest == null) TvNativeFocusCues.detachPage(this)
         super.onDetachedFromWindow()
         scrollTracker.stop()
