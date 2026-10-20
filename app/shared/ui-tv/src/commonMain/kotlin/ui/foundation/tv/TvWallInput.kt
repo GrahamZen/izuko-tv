@@ -90,6 +90,39 @@ fun tvWallConfirm(isMore: Boolean, heroEnabled: Boolean, heroActive: Boolean): T
 fun tvWallTapConfirmsWhileFocusing(isMore: Boolean, heroEnabled: Boolean, heroActive: Boolean): Boolean =
     tvWallConfirm(isMore, heroEnabled, heroActive) == TvWallConfirm.EnterHero
 
+/** 按触屏的规矩走时 (平板: 按下不动焦点, 轻点抬起才算) 手指点一张卡的结果, 见 [tvWallTouchTap]. */
+enum class TvWallTouchTap {
+    /** 当成点 hero 区: 打开聚焦的那张. */
+    OpenFocused,
+
+    /** 只把焦点换到这张 (hero 态里换 hero 内容). */
+    FocusOnly,
+
+    /** 聚焦这张并确认 (卡片墙上一下进 hero 态). */
+    FocusAndConfirm,
+
+    /** 确认 (同按确定, 见 [tvWallConfirm]). */
+    Confirm,
+}
+
+/**
+ * 按触屏的规矩走时手指点一张卡: hero 态里点到聚焦行上面那几行 ([aboveFocusedRow], 它们淡没在 hero 区里, 看不见) 算点 hero 区,
+ * 点没聚焦的那张 ([isFocused] 为 false) 只换焦点、再点才打开; 卡片墙上点一下就聚焦并进 hero 态 (见 [tvWallTapConfirmsWhileFocusing]);
+ * 「更多」卡与没有 hero 态的页面上点一下就确认.
+ */
+fun tvWallTouchTap(
+    isMore: Boolean,
+    heroEnabled: Boolean,
+    heroActive: Boolean,
+    isFocused: Boolean,
+    aboveFocusedRow: Boolean,
+): TvWallTouchTap = when {
+    heroActive && aboveFocusedRow -> TvWallTouchTap.OpenFocused
+    heroActive && !isFocused -> TvWallTouchTap.FocusOnly
+    tvWallTapConfirmsWhileFocusing(isMore, heroEnabled, heroActive) -> TvWallTouchTap.FocusAndConfirm
+    else -> TvWallTouchTap.Confirm
+}
+
 /** 手指横滑的接管判定, 见 [tvWallSwipeClaim]. */
 enum class TvWallSwipeClaim {
     /** 还没越过 slop, 接着看. */
