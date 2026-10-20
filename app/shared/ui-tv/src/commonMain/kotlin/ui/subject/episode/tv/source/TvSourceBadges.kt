@@ -99,6 +99,15 @@ internal fun tvSourceBadgesOf(
     },
 )
 
+/**
+ * 胶囊 / 源那一栏右端的标签: [media] 里最好的画面特性 (组里有一条是杜比视界就标杜比视界), 不进去也看得出有没有 HDR 片源.
+ * 只标画面一个 (地方小), 也不标「不支持」(组里各条的 profile 不一样, 进去看条目).
+ */
+internal fun tvSourceBestPictureBadges(media: List<Media>): List<TvSourceBadge> {
+    val best = media.mapNotNull { MediaAvFeatures.of(it).dynamicRange }.minOrNull() ?: return emptyList()
+    return tvSourceBadgesOf(MediaAvFeatures(dynamicRange = best), decodesDolbyVision = true)
+}
+
 /** 这台设备有没有杜比视界的视频解码器 (查一次). */
 private val deviceDecodesDolbyVision: Boolean by lazy {
     runCatching {

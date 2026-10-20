@@ -12,6 +12,12 @@ package me.him188.ani.app.ui.subject.episode.tv.source
 import me.him188.ani.app.domain.media.MediaAvFeatures
 import me.him188.ani.app.domain.media.MediaDynamicRange
 import me.him188.ani.app.domain.media.MediaSurroundAudio
+import me.him188.ani.app.domain.media.ProbedMediaAvFeatures
+import me.him188.ani.app.domain.media.createTestDefaultMedia
+import me.him188.ani.app.domain.media.createTestMediaProperties
+import me.him188.ani.datasources.api.source.MediaSourceKind
+import me.him188.ani.datasources.api.source.MediaSourceLocation
+import me.him188.ani.datasources.api.topic.ResourceLocation
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -51,6 +57,30 @@ class TvSourceBadgesTest {
         assertEquals(TvSourceBadge.DolbyVision, badge(8, decodes = false))
         // 标题里看不出 profile
         assertEquals(TvSourceBadge.DolbyVision, badge(null, decodes = false))
+    }
+
+    @Test
+    fun `a pill shows the best picture badge among its entries`() {
+        fun media(id: String, title: String) = createTestDefaultMedia(
+            mediaId = id,
+            mediaSourceId = "drive",
+            originalUrl = "",
+            download = ResourceLocation.HttpStreamingFile("https://drive.test/$id"),
+            originalTitle = title,
+            publishedTime = 0,
+            properties = createTestMediaProperties(),
+            episodeRange = null,
+            location = MediaSourceLocation.Online,
+            kind = MediaSourceKind.WEB,
+        )
+        val plain = media("badge-plain", "01.mkv")
+        val hdr = media("badge-hdr", "02 2160p HDR10.mkv")
+        // 标题里没写, 网盘读到的是杜比视界 profile 5: 胶囊上照常标杜比视界, 不标不支持
+        val probed = media("badge-probed", "03.mkv")
+        ProbedMediaAvFeatures.record(probed.mediaId, MediaAvFeatures(MediaDynamicRange.DolbyVision, dolbyVisionProfile = 5))
+        assertTrue(tvSourceBestPictureBadges(listOf(plain)).isEmpty())
+        assertEquals(listOf(TvSourceBadge.Hdr10), tvSourceBestPictureBadges(listOf(plain, hdr)))
+        assertEquals(listOf(TvSourceBadge.DolbyVision), tvSourceBestPictureBadges(listOf(plain, hdr, probed)))
     }
 
     @Test
