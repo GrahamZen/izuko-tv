@@ -11,6 +11,7 @@ package me.him188.ani.app.videoplayer.media
 
 import android.content.Context
 import android.media.MediaCodecList
+import android.media.MediaFormat
 import android.os.Build
 import android.os.Handler
 import android.view.Surface
@@ -67,17 +68,34 @@ internal object UndecodableVideoProfiles {
 internal class UndecodableProfileGuardingVideoRenderer(
     builder: MediaCodecVideoRenderer.Builder,
 ) : MediaCodecVideoRenderer(builder) {
+    // 杜比视界 profile 7 没有解码器支持时当 HDR10 基础层放 (见 DolbyVisionBaseLayer): 选轨与找解码器都按基础层算
+    override fun supportsFormat(mediaCodecSelector: MediaCodecSelector, format: Format): Int =
+        super.supportsFormat(mediaCodecSelector, DolbyVisionBaseLayer.decodableFormat(format))
+
+    override fun getMediaFormat(
+        format: Format,
+        codecMimeType: String,
+        codecMaxValues: MediaCodecVideoRenderer.CodecMaxValues,
+        codecOperatingRate: Float,
+        deviceNeedsNoPostProcessWorkaround: Boolean,
+        tunnelingAudioSessionId: Int,
+    ): MediaFormat = super.getMediaFormat(
+        format, codecMimeType, codecMaxValues, codecOperatingRate, deviceNeedsNoPostProcessWorkaround, tunnelingAudioSessionId,
+    ).also { if (codecMimeType == MimeTypes.VIDEO_H265 && DolbyVisionBaseLayer.isProfile7(format)) DolbyVisionBaseLayer.configureBaseLayer(it, format) }
+
     override fun getDecoderInfos(
         mediaCodecSelector: MediaCodecSelector,
-        format: Format,
+        requested: Format,
         requiresSecureDecoder: Boolean,
     ): List<MediaCodecInfo> {
+        val format = DolbyVisionBaseLayer.decodableFormat(requested)
         val infos = super.getDecoderInfos(mediaCodecSelector, format, requiresSecureDecoder)
         val supports = infos.map { runCatching { it.isFormatSupported(format) }.getOrDefault(false) }
         val guarded = UndecodableVideoProfiles.isGuarded(format.sampleMimeType, format.codecs)
         // 画面花屏、解码报错时先看这一行: 格式与各候选解码器认不认它 (见 UndecodableVideoProfiles)
         logger.info {
-            "[VideoDecoder] ${format.sampleMimeType} ${format.codecs} ${format.width}x${format.height}" + (if (guarded) " (guarded profile)" else "") + ": " +
+            "[VideoDecoder] ${requested.sampleMimeType} ${requested.codecs} ${format.width}x${format.height}" + (if (guarded) " (guarded profile)" else "") +
+                    (if (format !== requested) " (Dolby Vision base layer as HDR10)" else "") + ": " +
                     infos.zip(supports).joinToString { (info, ok) ->
                         "${info.name} ${if (info.hardwareAccelerated) "hw" else "sw"} ${if (ok) "supported" else "exceeds"}"
                     }.ifEmpty { "no decoder" }
