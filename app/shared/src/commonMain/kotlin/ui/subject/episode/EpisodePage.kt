@@ -304,6 +304,7 @@ private fun EpisodeScreenContent(
         pictureInPictureController = pictureInPictureController,
     )
     DisplayModeEffect(vm.videoScaffoldConfig)
+    PlayerFrameRateMatching(vm)
 
     VideoNotifEffect(vm)
 

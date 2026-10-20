@@ -11,6 +11,7 @@ package me.him188.ani.app.ui.settings.tv
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import me.him188.ani.app.data.models.preference.DISPLAY_MODE_FOLLOW_CONTENT
 import me.him188.ani.app.data.models.preference.DarkMode
 import me.him188.ani.app.data.models.preference.HlsAdFilteringMode
 import me.him188.ani.app.data.models.preference.NoticeSoundKind
@@ -47,6 +48,7 @@ import me.him188.ani.app.ui.lang.search_tv_remote_reset
 import me.him188.ani.app.ui.lang.search_tv_remote_unavailable
 import me.him188.ani.app.ui.lang.settings_app_danmaku_refresh_rate
 import me.him188.ani.app.ui.lang.settings_app_danmaku_refresh_rate_description
+import me.him188.ani.app.ui.lang.settings_app_display_mode_follow_content
 import me.him188.ani.app.ui.lang.settings_app_initial_page
 import me.him188.ani.app.ui.lang.settings_app_initial_page_description
 import me.him188.ani.app.ui.lang.settings_app_language
@@ -288,6 +290,9 @@ internal fun consoleQr(values: TvSettingsValues, fragment: String, legacy: Boole
 
 /** 一个显示模式: [id] = 0 表示「自动」(不指定). */
 data class TvDisplayMode(val id: Int, val refreshRate: Int)
+
+/** 「跟随片源」那一档 (不是屏幕的哪个显示模式, 见 [DISPLAY_MODE_FOLLOW_CONTENT]). */
+private val FOLLOW_CONTENT_MODE = TvDisplayMode(DISPLAY_MODE_FOLLOW_CONTENT, 0)
 
 /**
  * 电视设置页的全部设置. 加一项就在对应分类里加一行. 分类与先后同原来的设置页 (左栏分组一样); 要打字才能设的 (地址、账号密码、规则文本)
@@ -831,14 +836,21 @@ private fun TvSettingsItemsBuilder.playerItems() {
         read = { speedHundredths(it.fastForwardSpeed) },
         write = { copy(fastForwardSpeed = it / 100f) },
     )
-    // 播放时屏幕刷新率 (DisplayModeEffect): 第一档自动 = 不指定; 选项是屏幕支持的显示模式
+    // 播放时屏幕刷新率 (DisplayModeEffect): 第一档自动 = 不指定, 第二档跟随片源 (ContentFrameRateEffect); 其余是屏幕支持的显示模式
     choiceOf(
         listOf(player, TvSettingKeys.displayModes),
         Lang.settings_app_danmaku_refresh_rate, Lang.settings_app_danmaku_refresh_rate_description,
-        options = { values -> listOf(TvDisplayMode(0, 0)) + values[TvSettingKeys.displayModes].orEmpty() },
-        label = { if (it.id == 0) tvText(Lang.settings_theme_mode_auto) else tvText(it.refreshRate.toString()) },
+        options = { values -> listOf(TvDisplayMode(0, 0), FOLLOW_CONTENT_MODE) + values[TvSettingKeys.displayModes].orEmpty() },
+        label = {
+            when (it.id) {
+                0 -> tvText(Lang.settings_theme_mode_auto)
+                DISPLAY_MODE_FOLLOW_CONTENT -> tvText(Lang.settings_app_display_mode_follow_content)
+                else -> tvText(it.refreshRate.toString())
+            }
+        },
         read = { values ->
             val id = values[player]?.displayModeId ?: return@choiceOf null
+            if (id == DISPLAY_MODE_FOLLOW_CONTENT) return@choiceOf FOLLOW_CONTENT_MODE
             values[TvSettingKeys.displayModes]?.firstOrNull { it.id == id } ?: TvDisplayMode(0, 0)
         },
         write = { mode -> listOf(TvSettingsEdit.Update(player) { it.copy(displayModeId = mode.id) }) },
