@@ -62,6 +62,8 @@ object MediaStreamProbe {
         val dynamicRange: MediaDynamicRange? = null,
         /** 各音轨里最好的那种值得标出来的格式 (TrueHD、DTS-HD MA 等); 没有或读不出为 null. */
         val audio: MediaSurroundAudio? = null,
+        /** 杜比视界的 profile; 不是杜比视界或读不出为 null. */
+        val dolbyVisionProfile: Int? = null,
     )
 
     private const val HEAD_BYTES = 64 * 1024

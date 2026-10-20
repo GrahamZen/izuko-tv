@@ -2330,6 +2330,7 @@ internal class TvSourceRowView(context: Context, private val sketch: Sketch, var
         )
         if (loadedIconUrl == null) icon.colorFilter = PorterDuffColorFilter(primary, PorterDuff.Mode.SRC_IN)
         badges.outlineColor = tvNativeLerpColor(s.textSecondary, s.focusedTextSecondary, p)
+        badges.warningColor = tvNativeLerpColor(s.error, s.focusedError, p)
         badges.alpha = dim
         spinner.indeterminateTintList = ColorStateList.valueOf(secondary)
         // 描边只标「下面 / 右边显示的是它」与筛选的当前值; 正在播放的靠图标与右端的字 (见 TvSourceRow.playing)

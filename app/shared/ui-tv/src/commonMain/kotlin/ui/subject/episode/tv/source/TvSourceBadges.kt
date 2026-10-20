@@ -15,10 +15,13 @@ import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Shader
+import android.media.MediaCodecList
+import android.media.MediaFormat
 import android.view.View
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -43,16 +46,20 @@ import me.him188.ani.app.ui.foundation.tv.nativeview.tvNativeTypeface
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.tv_source_badge_dolby_atmos
 import me.him188.ani.app.ui.lang.tv_source_badge_dolby_vision
+import me.him188.ani.app.ui.lang.tv_source_badge_dolby_vision_unsupported
 import me.him188.ani.datasources.api.Media
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.ceil
 
 /**
  * 资源条目上的特性标签 (见 [tvSourceBadgesOf]): 画面的动态范围 ([picture], 画成金色实底, 一眼看得出是 HDR 片源) 与多声道 / 无损音轨 (描边).
- * 条目本身的底色不变 —— 底色只表示焦点与选中 (见 TvSourceRowView), 特性靠标签.
+ * 条目本身的底色不变 —— 底色只表示焦点与选中 (见 TvSourceRowView), 特性靠标签. [warning] 的标签用错误色描边, 详情里写一句原因.
  */
-enum class TvSourceBadge(val picture: Boolean) {
+enum class TvSourceBadge(val picture: Boolean, val warning: Boolean = false) {
     DolbyVision(true),
+
+    /** 杜比视界 profile 5, 而这台设备没有杜比视界解码器: 放出来颜色不对 (偏紫偏绿). */
+    DolbyVisionUnsupported(false, warning = true),
     Hdr10Plus(true),
     Hdr10(true),
     Hlg(true),
@@ -63,12 +70,20 @@ enum class TvSourceBadge(val picture: Boolean) {
     DtsHd(false),
 }
 
-/** [media] 的特性标签: 画面、声音各至多一个 (取最好的那种), 来自标题与读文件头读到的 (见 [MediaAvFeatures.of]). */
+/** [media] 的特性标签: 画面、声音各至多一个 (取最好的那种), 来自标题与网盘读到的 (见 [MediaAvFeatures.of]). */
 internal fun tvSourceBadgesOf(media: Media): List<TvSourceBadge> = tvSourceBadgesOf(MediaAvFeatures.of(media))
 
-internal fun tvSourceBadgesOf(features: MediaAvFeatures): List<TvSourceBadge> = listOfNotNull(
+/**
+ * @param decodesDolbyVision 这台设备有没有杜比视界解码器. 没有时 profile 5 (没有 HDR10 底层) 标成 [TvSourceBadge.DolbyVisionUnsupported];
+ * profile 8 能当 HDR10 放, 不标. 标题里看不出 profile, 照常标.
+ */
+internal fun tvSourceBadgesOf(
+    features: MediaAvFeatures,
+    decodesDolbyVision: Boolean = deviceDecodesDolbyVision,
+): List<TvSourceBadge> = listOfNotNull(
     when (features.dynamicRange) {
-        MediaDynamicRange.DolbyVision -> TvSourceBadge.DolbyVision
+        MediaDynamicRange.DolbyVision ->
+            if (features.dolbyVisionProfile == 5 && !decodesDolbyVision) TvSourceBadge.DolbyVisionUnsupported else TvSourceBadge.DolbyVision
         MediaDynamicRange.Hdr10Plus -> TvSourceBadge.Hdr10Plus
         MediaDynamicRange.Hdr10 -> TvSourceBadge.Hdr10
         MediaDynamicRange.Hlg -> TvSourceBadge.Hlg
@@ -83,6 +98,15 @@ internal fun tvSourceBadgesOf(features: MediaAvFeatures): List<TvSourceBadge> = 
         null -> null
     },
 )
+
+/** 这台设备有没有杜比视界的视频解码器 (查一次). */
+private val deviceDecodesDolbyVision: Boolean by lazy {
+    runCatching {
+        MediaCodecList(MediaCodecList.ALL_CODECS).codecInfos.any { info ->
+            !info.isEncoder && info.supportedTypes.any { it.equals(MediaFormat.MIMETYPE_VIDEO_DOLBY_VISION, ignoreCase = true) }
+        }
+    }.getOrDefault(true)
+}
 
 /**
  * 标签的样子 (见 [TvSourceBadgeView]). 画面类金色实底深色字 (聚焦的白底上也看得清); 其余描边, 颜色跟着行的次要字色.
@@ -137,7 +161,7 @@ private fun tvSourceBadgeLabels(): Map<TvSourceBadge, String> {
     return remember(dolbyVision, dolbyAtmos) {
         TvSourceBadge.entries.associateWith { badge ->
             when (badge) {
-                TvSourceBadge.DolbyVision -> dolbyVision
+                TvSourceBadge.DolbyVision, TvSourceBadge.DolbyVisionUnsupported -> dolbyVision
                 TvSourceBadge.Hdr10Plus -> "HDR10+"
                 TvSourceBadge.Hdr10 -> "HDR10"
                 TvSourceBadge.Hlg -> "HLG"
@@ -163,6 +187,14 @@ internal class TvSourceBadgeView(context: Context) : View(context) {
 
     /** 描边标签的颜色: 行的次要字色 (聚焦时跟着变深). */
     var outlineColor: Int = 0
+        set(value) {
+            if (field == value) return
+            field = value
+            invalidate()
+        }
+
+    /** [TvSourceBadge.warning] 的标签的颜色: 行的错误色. */
+    var warningColor: Int = 0
         set(value) {
             if (field == value) return
             field = value
@@ -208,11 +240,12 @@ internal class TvSourceBadgeView(context: Context) : View(context) {
                 canvas.drawRoundRect(rect, style.cornerPx, style.cornerPx, fillPaint)
                 textPaint.color = style.pictureText
             } else {
+                val color = if (badge.warning) warningColor else outlineColor
                 val inset = style.strokePx / 2f
                 rect.inset(inset, inset)
-                strokePaint.color = outlineColor
+                strokePaint.color = color
                 canvas.drawRoundRect(rect, style.cornerPx - inset, style.cornerPx - inset, strokePaint)
-                textPaint.color = outlineColor
+                textPaint.color = color
             }
             canvas.drawText(label, x + style.paddingHPx, baseline, textPaint)
             x += w + style.gapPx
@@ -236,27 +269,34 @@ internal fun tvSourceBadgePaint(style: TvSourceBadgeStyle, paint: Paint = Paint(
 private fun badgeWidth(label: String, style: TvSourceBadgeStyle, paint: Paint): Int =
     ceil(paint.measureText(label)).toInt() + style.paddingHPx * 2
 
-/** 详情弹窗里的同一排标签 (Compose). */
+/** 详情弹窗里的同一排标签 (Compose); 有 [TvSourceBadge.warning] 的标签时下面写一句原因. */
 @Composable
 internal fun TvSourceBadgeChips(badges: List<TvSourceBadge>, modifier: Modifier = Modifier) {
     val labels = tvSourceBadgeLabels()
     val outline = LocalContentColor.current.copy(alpha = 0.7f)
+    val error = MaterialTheme.colorScheme.error
     val shape = RoundedCornerShape(4.dp)
     val textStyle = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        for (badge in badges) {
-            val chip = if (badge.picture) {
-                Modifier.background(Brush.verticalGradient(listOf(TV_SOURCE_BADGE_PICTURE_TOP, TV_SOURCE_BADGE_PICTURE_BOTTOM)), shape)
-            } else {
-                Modifier.border(1.dp, outline, shape)
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            for (badge in badges) {
+                val color = if (badge.warning) error else outline
+                val chip = if (badge.picture) {
+                    Modifier.background(Brush.verticalGradient(listOf(TV_SOURCE_BADGE_PICTURE_TOP, TV_SOURCE_BADGE_PICTURE_BOTTOM)), shape)
+                } else {
+                    Modifier.border(1.dp, color, shape)
+                }
+                Text(
+                    labels[badge].orEmpty(),
+                    chip.padding(horizontal = 7.dp, vertical = 2.dp),
+                    color = if (badge.picture) TV_SOURCE_BADGE_PICTURE_TEXT else color,
+                    style = textStyle,
+                    maxLines = 1,
+                )
             }
-            Text(
-                labels[badge].orEmpty(),
-                chip.padding(horizontal = 7.dp, vertical = 2.dp),
-                color = if (badge.picture) TV_SOURCE_BADGE_PICTURE_TEXT else outline,
-                style = textStyle,
-                maxLines = 1,
-            )
+        }
+        if (TvSourceBadge.DolbyVisionUnsupported in badges) {
+            Text(stringResource(Lang.tv_source_badge_dolby_vision_unsupported), style = MaterialTheme.typography.bodyMedium, color = error)
         }
     }
 }

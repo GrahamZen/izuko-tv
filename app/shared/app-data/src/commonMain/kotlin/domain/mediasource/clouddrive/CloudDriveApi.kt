@@ -32,6 +32,8 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import me.him188.ani.app.domain.media.MediaAvFeatures
+import me.him188.ani.app.domain.media.MediaDynamicRange
+import me.him188.ani.app.domain.media.probe.MediaStreamProbe
 import me.him188.ani.app.domain.mediasource.directapi.DataNode
 import me.him188.ani.app.domain.mediasource.directapi.JsonNode
 import me.him188.ani.app.domain.mediasource.directapi.selectByPath
@@ -135,6 +137,32 @@ internal class CloudDriveApi(
                 accessible = op.accessible.isBlank() || item.stringByPath(op.accessible) in op.accessibleValues,
             )
         }
+    }
+
+    /**
+     * 原文件的视频信息 (播放接口的响应里的, 见 [DriveVideoMetaFields]); 协议没给这些字段为 null. 文件刚传上去、网盘还在处理时接口报错, 抛出 (下次再读).
+     */
+    suspend fun videoMeta(fileId: String): MediaStreamProbe.Result? {
+        val op = protocol().api.transcoded ?: return null
+        val meta = op.meta ?: return null
+        val root = send("transcoded", op.request, mapOf("fileId" to fileId.json))
+        fun value(path: String): String? = path.ifBlank { null }?.let { root.stringByPath(it) }?.takeIf { it.isNotBlank() }
+        fun number(path: String): Int? = value(path)?.toDoubleOrNull()?.toInt()
+        val profile = number(meta.dolbyVisionProfile)
+        val hdr = value(meta.hdr)?.let { it in meta.hdrValues } == true
+        return MediaStreamProbe.Result(
+            container = "drive",
+            width = number(meta.width),
+            height = number(meta.height),
+            codec = value(meta.codec),
+            durationSeconds = number(meta.duration),
+            dynamicRange = when {
+                profile != null -> MediaDynamicRange.DolbyVision
+                hdr -> MediaDynamicRange.Hdr
+                else -> null
+            },
+            dolbyVisionProfile = profile,
+        )
     }
 
     /** 在 [parentId] 下新建文件夹, 返回新文件夹的 id. */
@@ -472,6 +500,11 @@ internal class CloudDriveApi(
                 isVideo = isVideo,
                 shareToken = value(fields.shareToken).orEmpty(),
                 durationSeconds = value(fields.duration)?.toDoubleOrNull()?.toInt() ?: 0,
+                avFeatures = if (value(fields.dolbyVision)?.let { it in fields.dolbyVisionValues } == true) {
+                    MediaAvFeatures(dynamicRange = MediaDynamicRange.DolbyVision)
+                } else {
+                    MediaAvFeatures.NONE
+                },
             )
         }
 
