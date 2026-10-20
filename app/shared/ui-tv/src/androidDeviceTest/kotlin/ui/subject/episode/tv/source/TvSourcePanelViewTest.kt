@@ -1115,6 +1115,44 @@ class TvSourcePanelViewTest {
     }
 
     @Test
+    fun `pills and source rows show the best picture badge`() {
+        val dv = listOf(TvSourceBadge.DolbyVision)
+        val content = groupContent(sources = listOf(source("web:a1").copy(badges = dv), source("web:a2"), source("web:a3")))
+            .let { c -> c.copy(rail = c.rail.map { if (it.id == GROUP_A) it.copy(badges = dv) else it }) }
+        showOnColumn(content)
+        fun badgesOf(id: String): TvSourceBadgeView? = (rowView(id) as ViewGroup?)?.let { row ->
+            (0 until row.childCount).map { row.getChildAt(it) }.filterIsInstance<TvSourceBadgeView>().firstOrNull()
+        }
+        host.waitUntil("胶囊与源那一栏都画出标签") { (badgesOf(GROUP_A)?.width ?: 0) > 0 && (badgesOf("web:a1")?.width ?: 0) > 0 }
+        host.onMain {
+            assertEquals(badgesOf(GROUP_A)!!.width, badgesOf("web:a1")!!.width, "胶囊与源那一栏写法一样")
+            assertEquals(View.GONE, badgesOf("web:a2")!!.visibility, "没有特性的源不画")
+            // 标签在名字与右端的字之间, 不压在名字上
+            val pill = rowView(GROUP_A) as ViewGroup
+            val title = (0 until pill.childCount).map { pill.getChildAt(it) }.filterIsInstance<TextView>().filter { it.visibility == View.VISIBLE }.minBy { it.left }
+            assertTrue(title.right <= badgesOf(GROUP_A)!!.left, "胶囊的名字没被标签盖住")
+        }
+    }
+
+    @Test
+    fun `the source column fits its names between the minimum and the limit and only widens within a group`() {
+        host.onMain { view.applyStyle(testPanelStyle().copy(columnMinWidthPx = 200, columnWidthPx = 900)) }
+        fun width() = rowView("web:a1")?.width ?: 0
+        fun content(name: String) = groupContent(sources = listOf(source("web:a1").copy(title = name), source("web:a2"), source("web:a3")))
+        showOnColumn(content("a"))
+        host.waitUntil("短名字: 不窄于下限 (现在 ${width()})") { width() >= 200 }
+        val short = host.onMain { width() }
+        host.onMain { view.submit(content("a much longer source name that still fits")) }
+        host.waitUntil("长名字: 放宽 (现在 ${width()})") { width() > short }
+        host.onMain { view.submit(content("x".repeat(200))) }
+        host.waitUntil("再长: 到上限为止 (现在 ${width()})") { width() == 900 }
+        // 同一组里名字又变短: 不缩回去
+        host.onMain { view.submit(content("a")) }
+        host.instrumentation.waitForIdleSync()
+        assertEquals(900, host.onMain { width() })
+    }
+
+    @Test
     fun `reopening at a remembered row lands on it`() {
         host.onMain { view.resumeRow = TvSourceFocusPosition(GROUP_A, "web:a2", "line:0") }
         show(groupContent(sourceKey = "web:a2"))
@@ -1407,7 +1445,6 @@ class TvSourcePanelViewTest {
                 railGapPx = 28,
                 railPillHeightPx = 80,
                 railPillGapPx = 20,
-                railPillMaxWidthPx = 520,
                 fadeLengthPx = 64,
                 rowGapPx = 12,
                 dividerGapPx = 28,
@@ -1424,6 +1461,7 @@ class TvSourcePanelViewTest {
                 metaSplitWidthPx = 300,
                 branchMinWidthPx = 240,
                 columnWidthPx = COLUMN_WIDTH,
+                columnMinWidthPx = COLUMN_WIDTH,
                 columnRowHeightPx = 76,
                 columnGapPx = COLUMN_GAP,
                 optionRowHeightPx = 92,

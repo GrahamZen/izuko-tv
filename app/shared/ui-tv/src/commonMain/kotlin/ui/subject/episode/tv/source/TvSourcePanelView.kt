@@ -73,8 +73,6 @@ data class TvSourcePanelStyle(
     val railGapPx: Int,
     val railPillHeightPx: Int,
     val railPillGapPx: Int,
-    /** 胶囊行一颗最宽多少, 名字再长聚焦时跑马灯. */
-    val railPillMaxWidthPx: Int,
     /**
      * 渐隐的长度: 胶囊行两头 (滚出去的胶囊在左右边距里渐隐, 不大于 [paddingStartPx] / [paddingEndPx]) 与列表上下 (被面板截住的那一头).
      */
@@ -101,8 +99,12 @@ data class TvSourcePanelStyle(
      * 最宽同占满宽度的 (BT 那么宽), 再放不下的聚焦时跑马灯.
      */
     val branchMinWidthPx: Int,
-    /** 源那一栏 (在线源的组里竖排各个源) 的宽度与行高, 与右边内容之间的间距. */
+    /**
+     * 源那一栏 (在线源的组里竖排各个源) 最宽多少: 这一栏按各个源的行 (名字、标签、条数) 要多宽定宽, 不窄于 [columnMinWidthPx],
+     * 再长的名字省略、聚焦时跑马灯. 还有行高, 与右边内容之间的间距.
+     */
     val columnWidthPx: Int,
+    val columnMinWidthPx: Int,
     val columnRowHeightPx: Int,
     val columnGapPx: Int,
     val optionRowHeightPx: Int,
@@ -485,7 +487,9 @@ class TvSourcePanelView(
             grid.setFadingEdgeLength(style.fadeLengthPx)
             grid.setPadding(style.focusBleedPx, style.focusBleedPx, style.focusBleedPx, style.focusBleedPx)
         }
-        column.setColumnWidth(style.columnWidthPx)
+        // 换了样式: 下一次提交这一栏时重新量
+        columnWidthKey = null
+        column.setColumnWidth(columnWidth())
         railAdapter.style = style
         columnAdapter.style = style
         listAdapter.style = style
@@ -584,6 +588,43 @@ class TvSourcePanelView(
         resolvePending()
     }
 
+    /** 源那一栏现在的宽度 (见 [fitColumnWidth]); 还没量过时是上限. */
+    private var columnFitWidthPx = 0
+
+    /** [columnFitWidthPx] 是按哪一组量的. */
+    private var columnWidthKey: String? = null
+
+    /** 量源那一栏的行要多宽用的 (不挂在界面上). */
+    private var columnProbe: TvSourceRowView? = null
+
+    private fun columnWidth(): Int = columnFitWidthPx.takeIf { it > 0 } ?: style.columnWidthPx
+
+    /**
+     * 源那一栏的宽度: 这一组各个源的行 (名字、画面特性标签、条数) 都排得下要多宽, 在 [TvSourcePanelStyle.columnMinWidthPx] 与上限
+     * [TvSourcePanelStyle.columnWidthPx] 之间 (平板上字大, 固定宽度会把名字截掉). 同一组里只放宽 (查询途中条数、标签陆续到, 不来回伸缩),
+     * 换一组重新量.
+     */
+    private fun fitColumnWidth(key: String?, rows: List<TvSourceRow>) {
+        if (key == null) return
+        val s = style
+        val max = max(s.columnMinWidthPx, s.columnWidthPx)
+        val probe = columnProbe ?: TvSourceRowView(context, sketch, s).also { columnProbe = it }
+        val atMost = MeasureSpec.makeMeasureSpec(max, MeasureSpec.AT_MOST)
+        val height = MeasureSpec.makeMeasureSpec(s.columnRowHeightPx, MeasureSpec.EXACTLY)
+        val needed = rows.maxOfOrNull { row ->
+            probe.bind(row, s)
+            probe.measure(atMost, height)
+            probe.measuredWidth + TEXT_ROUNDING_SLACK_PX
+        } ?: 0
+        val fit = needed.coerceIn(s.columnMinWidthPx, max)
+        val width = if (key == columnWidthKey) max(columnFitWidthPx, fit) else fit
+        columnWidthKey = key
+        if (width == columnFitWidthPx) return
+        columnFitWidthPx = width
+        column.setColumnWidth(width)
+        panel.requestLayout()
+    }
+
     /** 源那一栏: 换了一组 (或这一栏出现 / 消失) 时先藏起来, 排好后淡入, 滚到选中的源; 同一组里只是行变了就原地更新. */
     private fun submitColumn(content: TvSourcePanelContent) {
         val key = content.railKey.takeIf { content.sources.isNotEmpty() }
@@ -601,6 +642,7 @@ class TvSourcePanelView(
             updateBranchCollapse(regionOf(findFocus()))
         }
         if (!sourceCommitPending) columnAdapter.activeId = content.sourceKey.takeUnless { branchCollapsed }
+        fitColumnWidth(key, content.sources)
         columnAdapter.submitList(content.sources) {
             val index = content.sources.indexOfFirst { it.id == selectedSourceKey() }
             if (columnKey != key) {
@@ -1917,11 +1959,11 @@ class TvSourcePanelView(
             val beside = column.visibility != GONE
             if (beside) {
                 column.measure(
-                    MeasureSpec.makeMeasureSpec(s.columnWidthPx + bleed * 2, MeasureSpec.EXACTLY),
+                    MeasureSpec.makeMeasureSpec(columnWidth() + bleed * 2, MeasureSpec.EXACTLY),
                     MeasureSpec.makeMeasureSpec(available + bleed * 2, MeasureSpec.EXACTLY),
                 )
             }
-            branchLeft = s.paddingStartPx + if (beside) s.columnWidthPx + s.columnGapPx else 0
+            branchLeft = s.paddingStartPx + if (beside) columnWidth() + s.columnGapPx else 0
             val branchRoom = (w - s.paddingEndPx - branchLeft).coerceAtLeast(0)
             // 右边的内容: 占满可用的宽度, 或按内容定宽
             val branchWidth = if (branchFitWidthPx > 0) min(branchFitWidthPx, branchRoom) else branchRoom
@@ -2107,7 +2149,8 @@ private class TvSourceListGridView(context: Context) : VerticalGridView(context)
  * 一行 (胶囊行的一项、表头的按钮、源那一栏的源、列表的行、小胶囊、剧集方块共用): 自己画圆角底, 自己摆图标、标题、信息、右端字与转圈 —— 不嵌套布局, 列表滚动时测量便宜.
  * 聚焦程度 [focusProgress] 0..1 驱动底色、字色与放大, 失焦比得焦快 (同播放器胶囊).
  *
- * 胶囊行与表头的 [TvSourceRowStyle.Rail] 行宽度按内容 (宽度不是 EXACTLY 时: 图标 + 名字 + 右端字, 不超过给的上限 / [TvSourcePanelStyle.railPillMaxWidthPx]),
+ * 胶囊行与表头的 [TvSourceRowStyle.Rail] 行宽度按内容 (宽度不是 EXACTLY 时: 图标 + 名字 + 标签 + 右端字; 给了上限 (AT_MOST) 时不超过它,
+ * 胶囊行的分类名是固定的几个, 不设上限),
  * 高度是 EXACTLY 时用给的; 源那一栏的 Rail 行宽度是这一栏的宽, 高度是 [TvSourcePanelStyle.columnRowHeightPx].
  */
 internal class TvSourceRowView(context: Context, private val sketch: Sketch, var style: TvSourcePanelStyle) : ViewGroup(context) {
@@ -2370,13 +2413,17 @@ internal class TvSourceRowView(context: Context, private val sketch: Sketch, var
             // 按内容: 名字与右端字都排得下的宽度
             title.measure(unspecified, unspecified)
             var natural = s.rowPaddingHPx * 2 + iconSlot + if (compact) 0 else title.measuredWidth
+            if (badges.visibility != GONE) {
+                badges.measure(unspecified, unspecified)
+                natural += badges.measuredWidth + s.trailingGapPx
+            }
             if (trailing.visibility != GONE) {
                 trailing.measure(unspecified, unspecified)
                 natural += trailing.measuredWidth + s.trailingGapPx
             } else if (spinner.visibility != GONE) {
                 natural += s.spinnerSizePx + s.trailingGapPx
             }
-            min(natural, if (widthMode == MeasureSpec.AT_MOST) MeasureSpec.getSize(widthMeasureSpec) else s.railPillMaxWidthPx)
+            if (widthMode == MeasureSpec.AT_MOST) min(natural, MeasureSpec.getSize(widthMeasureSpec)) else natural
         } else {
             MeasureSpec.getSize(widthMeasureSpec)
         }
@@ -2389,9 +2436,14 @@ internal class TvSourceRowView(context: Context, private val sketch: Sketch, var
         }
         var textWidth = (width - s.rowPaddingHPx * 2 - iconSlot - trailingWidth).coerceAtLeast(0)
         if (badges.visibility != GONE) {
-            // 标签紧挨着靠右的信息 (没有信息时离标题同信息那么远)
+            // 标签紧挨着靠右的信息 (没有信息时离标题同信息那么远; 胶囊与源那一栏离名字同右端的字那么远)
             badges.measure(unspecified, unspecified)
-            textWidth = (textWidth - badges.measuredWidth - if (meta.visibility != GONE) s.badge.metaGapPx else s.metaGapPx).coerceAtLeast(0)
+            val gap = when {
+                meta.visibility != GONE -> s.badge.metaGapPx
+                row?.style == TvSourceRowStyle.Rail -> s.trailingGapPx
+                else -> s.metaGapPx
+            }
+            textWidth = (textWidth - badges.measuredWidth - gap).coerceAtLeast(0)
         }
         if (meta.visibility != GONE) {
             // 信息靠右: 标题用不完的都可以给它, 标题长时至少也有字区的一小半; 标题用剩下的
@@ -2766,9 +2818,10 @@ private fun reservesIconSlot(row: TvSourceRow) =
     row.style == TvSourceRowStyle.Rail || row.style == TvSourceRowStyle.Option || row.style == TvSourceRowStyle.Line ||
             row.style == TvSourceRowStyle.Resource || row.style == TvSourceRowStyle.File
 
-/** 特性标签只画在资源 / 文件 / 线路行上. */
+/** 特性标签画在资源 / 文件 / 线路行与胶囊 / 源那一栏上. */
 private fun showsBadges(row: TvSourceRow) = row.badges.isNotEmpty() &&
-        (row.style == TvSourceRowStyle.Resource || row.style == TvSourceRowStyle.File || row.style == TvSourceRowStyle.Line)
+        (row.style == TvSourceRowStyle.Resource || row.style == TvSourceRowStyle.File || row.style == TvSourceRowStyle.Line ||
+                row.style == TvSourceRowStyle.Rail)
 
 private fun showsMeta(row: TvSourceRow) = row.meta.isNotEmpty() && row.style != TvSourceRowStyle.Rail &&
         row.style != TvSourceRowStyle.Option && row.style != TvSourceRowStyle.Pill && row.style != TvSourceRowStyle.Cell

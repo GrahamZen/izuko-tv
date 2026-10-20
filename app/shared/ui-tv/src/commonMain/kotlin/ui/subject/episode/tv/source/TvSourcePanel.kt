@@ -404,7 +404,6 @@ fun rememberTvSourcePanelStyle(): TvSourcePanelStyle {
                 // 同新番时间表的日期胶囊
                 railPillHeightPx = 34.dp.roundToPx(),
                 railPillGapPx = 8.dp.roundToPx(),
-                railPillMaxWidthPx = 220.dp.roundToPx(),
                 fadeLengthPx = 32.dp.roundToPx(),
                 rowGapPx = 5.dp.roundToPx(),
                 dividerGapPx = 12.dp.roundToPx(),
@@ -420,8 +419,9 @@ fun rememberTvSourcePanelStyle(): TvSourcePanelStyle {
                 metaGapPx = 16.dp.roundToPx(),
                 metaSplitWidthPx = 150.dp.roundToPx(),
                 branchMinWidthPx = 120.dp.roundToPx(),
-                // 同旧竖版的左栏
-                columnWidthPx = 184.dp.roundToPx(),
+                // 按各个源的名字定宽: 不窄于旧竖版的左栏, 最宽到上限
+                columnWidthPx = 280.dp.roundToPx(),
+                columnMinWidthPx = 184.dp.roundToPx(),
                 columnRowHeightPx = 38.dp.roundToPx(),
                 columnGapPx = 12.dp.roundToPx(),
                 optionRowHeightPx = 38.dp.roundToPx(),
