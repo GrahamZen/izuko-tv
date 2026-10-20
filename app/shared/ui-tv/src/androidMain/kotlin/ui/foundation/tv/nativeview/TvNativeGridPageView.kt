@@ -29,8 +29,10 @@ import me.him188.ani.app.ui.foundation.focus.TV_TRANSIT_PARK_KEY_GRACE_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TV_TAB_CONTENT_SLIDE_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TvBackdropTreatment
 import me.him188.ani.app.ui.foundation.tv.TvWallConfirm
+import me.him188.ani.app.ui.foundation.tv.TvWallTouchTap
 import me.him188.ani.app.ui.foundation.tv.tvWallConfirm
 import me.him188.ani.app.ui.foundation.tv.tvWallTapConfirmsWhileFocusing
+import me.him188.ani.app.ui.foundation.tv.tvWallTouchTap
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -135,16 +137,57 @@ class TvNativeGridPageView(
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean =
-        touchSwipe?.onTouch(event) == true || super.onTouchEvent(event)
+        // 按在 hero 区 / 空白处而子视图都不接的这一下由本视图接住, 抬起才派发得到 (见 TvNativeHeroBlankTap)
+        touchSwipe?.onTouch(event) == true || heroBlankTap?.tracking == true || super.onTouchEvent(event)
 
-    /** 触屏设备上 hero 态里点卡片之间的空白处退回卡片墙 (见 [TvNativeHeroBlankTap]); 宿主在触摸开关打开时给 true, 电视上不装. */
-    var exitHeroOnBlankTap: Boolean = false
+    /**
+     * 触屏设备 (平板装了 TV 包) 才为 true, 宿主按 LocalTvTouchInputEnabled 给; 电视上恒 false. 手指点卡片照触屏的规矩 (见 [touchMode]);
+     * hero 态里点卡片之间的空白处退回卡片墙、点 hero 区打开聚焦那张 (见 [TvNativeHeroBlankTap]).
+     */
+    var touchInput: Boolean = false
         set(value) {
             if (field == value) return
             field = value
-            heroBlankTap = if (value) TvNativeHeroBlankTap(this, { timeline.active && !wallFocus.opening }) { setHeroActive(false) } else null
+            heroBlankTap = if (value) {
+                TvNativeHeroBlankTap(this, { timeline.active && !wallFocus.opening }, ::heroAreaBottomInWindow, ::openFocusedCard) {
+                    setHeroActive(false)
+                }
+            } else {
+                null
+            }
+            applyTouchLook()
         }
     private var heroBlankTap: TvNativeHeroBlankTap? = null
+
+    /**
+     * 此刻按触屏的规矩走 (同 iPad 的 Compose 海报墙): 触屏设备上最近一次输入是手指 (系统的触摸模式, 按方向键就退出). 手指点卡片按
+     * tvWallTouchTap 判 (按下不动焦点), 卡片墙上不画聚焦效果 (hero 态里照画).
+     */
+    private val touchMode: Boolean get() = touchInput && isInTouchMode
+
+    private val touchModeWatcher = ViewTreeObserver.OnTouchModeChangeListener { applyTouchLook() }
+
+    /** 按触屏的规矩走时网格的卡片墙上不画聚焦效果 (见 [touchMode]; 一组一行的内容自己管). 进出 hero 态、换网格与触摸模式变化时对一次. */
+    private fun applyTouchLook() {
+        current?.let { it.cards.setTouchLookHidden(it, touchMode && !timeline.active) }
+    }
+
+    /** hero 区 (背景图与文字, hero 态聚焦行行顶以上) 下缘在窗口里的纵坐标. */
+    private fun heroAreaBottomInWindow(): Int {
+        rowsShown()?.let { return it.heroAreaBottomInWindow() }
+        getLocationInWindow(windowXY)
+        return windowXY[1] + metrics.gridTopPx + metrics.grid.heroLinePx
+    }
+
+    /** 触屏上 hero 态里点 hero 区 (背景图、文字, 及淡没在那里的上面几行): 同点聚焦的那张. */
+    private fun openFocusedCard() {
+        rowsShown()?.let {
+            it.openFocusedCard()
+            return
+        }
+        val grid = current ?: return
+        if (timeline.active && grid.selectedPosition >= 0) GridListener(grid).onClick(grid.selectedPosition)
+    }
 
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
         heroBlankTap?.onTouch(ev)
@@ -366,6 +409,7 @@ class TvNativeGridPageView(
         // 没记过位置的 (头一回显示 / 被 forgetPosition 忘掉的) 从第一张排起: 复用的那份网格还停在上一个 key 的位置上
         next.selectedPosition = savedPosition[key] ?: 0
         current = next
+        applyTouchLook()
         // 进页恢复的那一张只属于建视图后的第一份网格; 换了标签就作废
         if (cur == null && landingHeld >= 0) next.cards.setFocusLookHeld(next, landingHeld) else landingHeld = -1
         slideIn(cur, next, direction, animated)
@@ -553,6 +597,29 @@ class TvNativeGridPageView(
         // hero 态里 / 没有 hero 态 (确认就进详情页或播放) 点一下只换焦点
         override fun tapConfirmsWhileFocusing(index: Int): Boolean =
             grid === current && tvWallTapConfirmsWhileFocusing(isMore = false, heroEnabled, timeline.active)
+
+        override val touchTaps: Boolean get() = touchInput
+
+        override fun onTouchTap(index: Int, card: View) {
+            if (grid !== current) return
+            val focused = grid.selectedPosition
+            val columns = metrics.grid.columns.coerceAtLeast(1)
+            val above = focused >= 0 && index / columns < focused / columns
+            when (tvWallTouchTap(isMore = false, heroEnabled, timeline.active, card.isFocused, above)) {
+                TvWallTouchTap.OpenFocused -> openFocusedCard()
+                TvWallTouchTap.FocusOnly -> card.requestFocus()
+                TvWallTouchTap.FocusAndConfirm -> {
+                    card.requestFocus()
+                    onClick(index)
+                }
+
+                // 没有 hero 态的页面上点一下就进: 焦点同时送到这张, 回来时落在它上面
+                TvWallTouchTap.Confirm -> {
+                    if (!card.isFocused) card.requestFocus()
+                    onClick(index)
+                }
+            }
+        }
 
         override fun onTopRowUp(): Boolean = listener?.onTopRowUp() ?: false
 
@@ -770,6 +837,8 @@ class TvNativeGridPageView(
         super.onAttachedToWindow()
         viewTreeObserver.addOnGlobalFocusChangeListener(focusWatcher)
         viewTreeObserver.addOnGlobalLayoutListener(layoutWatcher)
+        viewTreeObserver.addOnTouchModeChangeListener(touchModeWatcher)
+        applyTouchLook()
         TvNativeFocusCues.attachPage(this)
     }
 
@@ -792,6 +861,7 @@ class TvNativeGridPageView(
     override fun setHeroActive(active: Boolean, animated: Boolean) {
         if (timeline.active == active || active && !heroEnabled) return
         timeline.setActive(active, animated)
+        applyTouchLook()
         TvNativeFocusCues.setSpotlight(this, active, animated)
         current?.setHeroActive(active, animated = animated && animatedScroll)
         rowsShown()?.onHostHeroChanged(animated)
@@ -841,6 +911,7 @@ class TvNativeGridPageView(
     }
 
     private fun applyHero() {
+        applyTouchLook()
         val visible = timeline.visible
         val wallShown = heroBlur && wallBackdrop?.currentTarget != null
         if (visible && !enteringPending && backdrop.currentTarget == null && heroText.shownSubjectId == null) {
@@ -973,6 +1044,7 @@ class TvNativeGridPageView(
     override fun onDetachedFromWindow() {
         viewTreeObserver.removeOnGlobalFocusChangeListener(focusWatcher)
         viewTreeObserver.removeOnGlobalLayoutListener(layoutWatcher)
+        viewTreeObserver.removeOnTouchModeChangeListener(touchModeWatcher)
         TvNativeFocusCues.detachPage(this)
         super.onDetachedFromWindow()
         scrollTracker.stop()
