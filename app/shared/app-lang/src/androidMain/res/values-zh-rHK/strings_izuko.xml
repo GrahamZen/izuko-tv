@@ -1029,4 +1029,5 @@
     <string name="touch_login_token_network">連不上 Bangumi。在中國大陸請在「%1$s」裡打開「%2$s」，或者設置代理</string>
     <string name="touch_login_mirror_credentials">要先打開「%1$s」，不然令牌校驗發不出去。打開後，令牌、收藏和觀看進度都會經過第三方鏡像，對方能看到並使用你的帳號。</string>
     <string name="touch_login_mirror_credentials_enable">我了解風險，打開</string>
+    <string name="media_selector_item_published_before_airing">早於本集開播</string>
 </resources>
