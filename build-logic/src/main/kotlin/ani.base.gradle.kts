@@ -29,6 +29,7 @@ configurations.configureEach {
 
 configureEncoding()
 runConnectedDeviceTestsExclusively()
+useRebuiltAnitorrentNative()
 
 // 按类型挂钩, 避免枚举 Kotlin 插件 id; 一个项目可能应用多个, flag 保证只配置一次.
 var kotlinConventionsConfigured = false

@@ -153,6 +153,8 @@ class AnitorrentDownloadSession(
     }
 
     private val openFiles = MutableStateFlow(persistentListOf<AnitorrentEntry.EntryHandle>())
+    private val fileDiscard = TorrentFileDiscard(handle, fastResumeFile, ::saveResumeData)
+    private val downloadOrder = TorrentFileDownloadOrder(this, handle) { actualTorrentInfo.takeIf { it.isCompleted }?.getCompleted()?.entries }
     private val prioritizer = createPiecePriorities()
 
     inner class AnitorrentEntry(
@@ -175,7 +177,7 @@ class AnitorrentDownloadSession(
             if (pieces.isEmpty()) IntRange.EMPTY else pieces.first().pieceIndex..pieces.last().pieceIndex
         }
 
-        val controller: TorrentDownloadController = with(pieces) {
+        private fun createController(): TorrentDownloadController = with(pieces) {
             val pieceSize = if (pieces.isEmpty()) 1024 else pieces.first().size
             TorrentDownloadController(
                 pieces,
@@ -188,16 +190,35 @@ class AnitorrentDownloadSession(
             )
         }
 
+        /** 丢掉这个文件的数据后换一个新的 (旧的以为首尾和下过的分块都有了, 窗口不会再动) */
+        var controller: TorrentDownloadController = createController()
+            private set
+
+        fun resetController() {
+            controller = createController()
+        }
+
+        /**
+         * 有句柄在请求下载这个文件 (没暂停), 也没在排队等同一个种子里排在前面的文件 (见 [TorrentFileDownloadOrder]).
+         * 在事件线程上读, 由改优先级的那个线程在 [updatePriority] 里更新, 不必在事件线程上遍历优先级请求的表.
+         */
+        @Volatile
+        var isWanted: Boolean = false
+            internal set
+
         inner class EntryHandle : AbstractTorrentFileHandle() {
             override val entry get() = this@AnitorrentEntry
 
+            /** 关句柄时不顺带关会话, 见 [closeAndDiscard] */
+            private var keepsSessionOnClose = false
+
             override suspend fun closeImpl() {
                 openFiles.update { remove(this@EntryHandle) }
-                closeIfNotInUse()
+                if (!keepsSessionOnClose) closeIfNotInUse()
             }
 
             override fun resumeImpl(priority: FilePriority) {
-                controller.resume()
+                if (isWanted) controller.resume() // 排队时不排下载窗口, 轮到时由 downloadOrder 排
                 handle.resume()
             }
 
@@ -209,7 +230,20 @@ class AnitorrentDownloadSession(
 
             override suspend fun closeAndDelete() {
                 close()
-                withContext(Dispatchers.IO_) { deleteEntireTorrentIfNotInUse() }
+                withContext(Dispatchers.IO_) {
+                    deleteEntireTorrentIfNotInUse()
+                    discardEntryIfOthersInUse(this@AnitorrentEntry)
+                }
+            }
+
+            // 会话要留到丢完数据再关: 这是最后一个句柄时, 关了会话就没法让 libtorrent 忘掉那些分块了
+            override suspend fun closeAndDiscard(filesInUse: Set<String>) {
+                keepsSessionOnClose = true
+                close()
+                withContext(Dispatchers.IO_) {
+                    if (pathInTorrent !in filesInUse) discardEntry(this@AnitorrentEntry)
+                }
+                closeIfNotInUse()
             }
         }
 
@@ -231,7 +265,7 @@ class AnitorrentDownloadSession(
 
         override fun updatePriority() {
             logger.info { "[$handleId] Set file priority to $requestingPriority: $relativePath" }
-            handle.setFilePriority(index, requestingPriority)
+            downloadOrder.request(this, requestingPriority)
         }
 
         val downloadedBytes: MutableStateFlow<Long> = MutableStateFlow(initialDownloadedBytes)
@@ -467,7 +501,9 @@ class AnitorrentDownloadSession(
             info.allPiecesInTorrent.getByPieceIndex(pieceIndex).state = PieceState.FINISHED
         }
         for (file in openFiles.value) {
-            if (pieceIndex in file.entry.pieceIndexRange) {
+            // 句柄都暂停了的文件不推进下载窗口: 窗口里的分块会被设截止时间, libtorrent 不管文件优先级照样下.
+            // 继续时 controller.resume() 按分块状态重排窗口
+            if (pieceIndex in file.entry.pieceIndexRange && file.entry.isWanted) {
                 file.entry.controller.onPieceDownloaded(pieceIndex)
             }
         }
@@ -486,6 +522,7 @@ class AnitorrentDownloadSession(
                 calculateTotalFinishedSize(entry.pieces).coerceAtMost(entry.length),
             ) // lazy set, if already finished, don't update
         }
+        downloadOrder.onPieceFinished(info.entries, pieceIndex)
     }
 
     // 这可能会被调用多次
@@ -518,6 +555,7 @@ class AnitorrentDownloadSession(
             val entry = info.entries.getOrNull(index) ?: return@useTorrentInfoOrLaunch
             // 没有设置 pieces 状态, 因为假如首尾 pieces 不是精确匹配, 首尾 pieces 可能实际上没有完成
             entry.downloadedBytes.value = entry.length
+            downloadOrder.onFileCompleted(info.entries, index)
         }
     }
 
@@ -620,14 +658,50 @@ class AnitorrentDownloadSession(
             onDelete(this)
         } else {
             // 会话仍被占用 (如同种子的磁力流播持有句柄) 时跳过删除, 目录保留并延迟到下次启动的
-            // deleteUnusedCaches 清扫回收. 单集文件从不被单删, 此时磁盘与 piece 状态是一致的,
-            // 保留是安全的; 绝不能从活会话脚下直接删目录 (会话会重建文件/fastresume, 重缓存又会
+            // deleteUnusedCaches 清扫回收; 单集的数据由 [discardEntryIfOthersInUse] 经 libtorrent 丢掉,
+            // 磁盘与 piece 状态始终一致. 绝不能从活会话脚下直接删目录 (会话会重建文件/fastresume, 重缓存又会
             // 复用其内存 piece 状态得到稀疏坏文件). 打 warn 是为了让"以为删了实际没删"可取证.
             logger.warn {
                 "[$handleId] Skip deleting torrent save directory, still in use: " +
                         "openFiles=${openFiles.value.size}, closed=$closed, dir=${saveDirectory.absolutePath}"
             }
         }
+    }
+
+    /**
+     * 同一种子还有别的句柄开着 (比如在播别的集) 时, 丢掉 [entry] 这一集已下载的数据;
+     * 整个种子没人用时由 [deleteEntireTorrentIfNotInUse] 整目录回收.
+     */
+    private suspend fun discardEntryIfOthersInUse(entry: AnitorrentEntry) {
+        if (openFiles.value.isEmpty()) return
+        discardEntry(entry)
+    }
+
+    /**
+     * 丢掉 [entry] 已下载的数据, 腾出空间 (见 [TorrentFileDiscard]); 这一集还有句柄 (比如正在播放) 时不动.
+     * 不能绕过 libtorrent 直接删文件: 它仍以为有这些分块, 别人来要时读不到, 整个种子报错停下;
+     * 重新缓存这一集时也会秒判完成而交出不存在的文件.
+     */
+    private suspend fun discardEntry(entry: AnitorrentEntry): Boolean {
+        if (openFiles.value.any { it.entry === entry } || !actualTorrentInfo.isCompleted) return false
+        if (!fileDiscard.discard(entry.index)) return false
+        // 与原生层同一个口径: 完全落在这个文件里的分块算没下载, 首尾与相邻集共用的不动
+        val fileEnd = entry.offset + entry.length
+        with(actualTorrentInfo.getCompleted().allPiecesInTorrent) {
+            for (index in entry.pieceIndexRange) {
+                val piece = getByPieceIndex(index)
+                if (piece.dataStartOffset >= entry.offset && piece.dataEndOffset <= fileEnd) piece.state = PieceState.READY
+            }
+        }
+        entry.downloadedBytes.value = calculateTotalFinishedSize(entry.pieces).coerceAtMost(entry.length)
+        entry.resetController()
+        logger.info { "[$handleId] Discarded the downloaded data of ${entry.relativePath}" }
+        return true
+    }
+
+    override suspend fun discardFilesExcept(filesInUse: Set<String>): Int {
+        val info = actualTorrentInfo.takeIf { it.isCompleted }?.getCompleted() ?: return 0
+        return info.entries.count { entry -> entry.pathInTorrent !in filesInUse && discardEntry(entry) }
     }
 
     private fun createPiecePriorities(): PiecePriorities {

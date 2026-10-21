@@ -17,4 +17,7 @@ interface IRemoteTorrentFileHandle {
     void close();
     
     void closeAndDelete();
+
+    /** TorrentFileHandle.closeAndDiscard */
+    void closeAndDiscard(in String[] filesInUse);
 }
