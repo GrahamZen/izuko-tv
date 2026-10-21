@@ -205,6 +205,8 @@ internal class SwigAnitorrentTorrentDownloader(
         }
     }
 
+    private val writeBack = SwigTorrentWriteBack(native.native, scope)
+
     init {
         native.native.set_new_event_listener(newEventListener)
         native.native.set_peer_filter(nativePeerFilter)
@@ -219,6 +221,7 @@ internal class SwigAnitorrentTorrentDownloader(
     override fun close() {
         native.native.remove_listener() // must remove, before gc-ing this object
         native.native.set_peer_filter(null) // clear filter
+        writeBack.close()
         super.close()
     }
 }

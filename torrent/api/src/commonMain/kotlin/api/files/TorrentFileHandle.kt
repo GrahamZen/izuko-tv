@@ -48,4 +48,10 @@ interface TorrentFileHandle {
      * [close] 并且删除文件. 如果已经 close 了, 本函数仍然会删除相关文件.
      */
     suspend fun closeAndDelete()
+
+    /**
+     * 同一个种子还有别的缓存记录时的 [closeAndDelete]: [filesInUse] 是那些记录用着的文件 (见 [TorrentFileEntry.pathInTorrent]),
+     * 只丢掉这个文件的数据 (它不在 [filesInUse] 里时), 种子目录与其他文件不动. 默认同 [closeAndDelete].
+     */
+    suspend fun closeAndDiscard(filesInUse: Set<String>) = closeAndDelete()
 }

@@ -124,6 +124,7 @@ class TorrentMediaCacheStorage(
                                 // allRecovered 是恢复完成时的冻结快照. 清扫期间继续持 storage 锁,
                                 // 防止 cache() 在快照之后创建目录又被本次清扫当作垃圾删除.
                                 torrentEngine.deleteUnusedCaches(allRecovered)
+                                torrentEngine.discardFilesWithoutRecords(allRecovered)
                             }
                         } catch (e: CancellationException) {
                             throw e
@@ -209,6 +210,11 @@ class TorrentMediaCacheStorage(
             }
         }
         return true
+    }
+
+    // 暂停过的下载恢复出来仍暂停 (MediaCacheMetadata.paused)
+    override suspend fun resumeRestored(cache: MediaCache) {
+        if (cache.metadata.paused) cache.pause() else cache.resume()
     }
 
     override suspend fun restoreFile(

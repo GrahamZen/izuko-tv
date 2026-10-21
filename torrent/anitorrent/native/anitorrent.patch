@@ -1,0 +1,1422 @@
+diff --git a/anitorrent-native/CMakeLists.txt b/anitorrent-native/CMakeLists.txt
+index 816af761..12985cd8 100644
+--- a/anitorrent-native/CMakeLists.txt
++++ b/anitorrent-native/CMakeLists.txt
+@@ -155,6 +155,9 @@ add_library(anitorrent
+         cpp/src/plugin/peer_filter_plugin.cpp
+         cpp/include/peer_filter.hpp
+         cpp/src/peer_filter.cpp
++        cpp/include/write_back.hpp
++        cpp/include/write_back_disk_io.hpp
++        cpp/src/write_back_disk_io.cpp
+ )
+ target_include_directories(anitorrent PRIVATE cpp/include include)
+ 
+diff --git a/anitorrent-native/anitorrent.i b/anitorrent-native/anitorrent.i
+index bc9dc9aa..c2751925 100644
+--- a/anitorrent-native/anitorrent.i
++++ b/anitorrent-native/anitorrent.i
+@@ -7,6 +7,7 @@
+ #include "torrent_add_info_t.hpp"
+ #include "torrent_handle_t.hpp"
+ #include "torrent_info_t.hpp"
++#include "write_back.hpp"
+ 
+ %}
+ 
+@@ -15,6 +16,7 @@
+ 
+ %feature("director") event_listener_t;
+ %feature("director") peer_filter_t;
++%feature("director") write_back_listener_t;
+ 
+ %template(PeerInfoList) std::vector<anilt::peer_info_t>;
+ %template(CharVector) std::vector<char>;
+@@ -27,6 +29,7 @@
+ %include "cpp/include/torrent_handle_t.hpp"
+ %include "cpp/include/events.hpp"
+ %include "cpp/include/peer_filter.hpp"
++%include "cpp/include/write_back.hpp"
+ %include "cpp/include/session_t.hpp"
+ %include "cpp/include/anitorrent.hpp"
+ 
+diff --git a/anitorrent-native/cpp/include/session_t.hpp b/anitorrent-native/cpp/include/session_t.hpp
+index 760a3143..8c768ddd 100644
+--- a/anitorrent-native/cpp/include/session_t.hpp
++++ b/anitorrent-native/cpp/include/session_t.hpp
+@@ -8,8 +8,11 @@
+ #include "torrent_handle_t.hpp"
+ #include "torrent_info_t.hpp"
+ #include "peer_filter.hpp"
++#include "write_back.hpp"
+ 
+ namespace anilt {
++struct write_back_control;
++
+ extern "C" {
+ 
+ struct session_settings_t final {
+@@ -64,6 +67,8 @@ class new_event_listener_t {
+ 
+ class session_t final {
+   public:
++    session_t();
++
+     // session_settings_t is owned by Java and will be destroyed after this call
+     void start(const session_settings_t &settings);
+     void apply_settings(const session_settings_t &settings);
+@@ -92,9 +97,19 @@ class session_t final {
+ 
+     void post_session_stats() const;
+ 
++    /// 写盘回调 (见 write_back_listener_t), nullptr 关闭. 返回后不再有对旧回调的调用. 回调对象由调用方持有.
++    void set_write_back_listener(write_back_listener_t *listener);
++
++    /// 任意线程: path 已经落盘, 放开它上面的等待 (所有路径都放开后 libtorrent 继续收数据).
++    void write_back_done(const std::string &path);
++
++    /// 等落盘过久、被强制放开的次数 (调用方用来记日志).
++    int64_t write_back_forced_releases() const;
++
+   private:
+     std::shared_ptr<libtorrent::session> session_;
+     peer_filter_t * peer_filter_ = nullptr;
++    std::shared_ptr<write_back_control> write_back_;
+     static bool compute_add_torrent_params(const torrent_add_info_t &info, lt::add_torrent_params &params);
+ };
+ }
+diff --git a/anitorrent-native/cpp/include/torrent_handle_t.hpp b/anitorrent-native/cpp/include/torrent_handle_t.hpp
+index 23f5d5d5..55f7420a 100644
+--- a/anitorrent-native/cpp/include/torrent_handle_t.hpp
++++ b/anitorrent-native/cpp/include/torrent_handle_t.hpp
+@@ -50,6 +50,24 @@ class torrent_handle_t final {
+ 
+     void set_file_priority(int index, uint8_t priority) const;
+ 
++    /**
++     * 丢掉文件 [index] 已下载的数据, 腾出空间 (整季包里删掉一集). 完全落在这个文件里的分块交给 libtorrent 忘掉
++     * (不再上传给别人, 再想要时重新下), 再把文件里这一段变成空洞: 文件大小不变, 空间还给系统.
++     * 首尾与相邻文件共用的分块不动, 那两块仍完整可用. 文件系统不支持打洞 (安卓的 sdcardfs) 时把文件重写成
++     * 只留首尾数据的稀疏文件再换回原处 (libtorrent 每次写都重新打开文件, 换掉是安全的).
++     *
++     * 忘掉分块的同时删掉续传数据 [resume_path]: 它还记着这些分块, 和打过洞的文件对不上 (见 resume_data_mutex).
++     * 调用方随后写一份新的; 来不及写就没了, 下次打开全量校验. 空间还不回去 (FAT / exFAT 不支持空洞) 时什么都不动.
++     *
++     * 调用方要先把这个文件的优先级设成不下载. 阻塞到 libtorrent 处理完.
++     * 返回 0: 丢掉了. 1000 + errno: 分块已经忘掉、续传数据已删, 但空间没还回去.
++     * 其他正数是 errno, 什么都没动; 句柄或文件无效时返回 -1, 不支持的平台返回 -2.
++     */
++    int discard_file(int index, const std::string &resume_path) const;
++
++    /** discard_file 还有没有东西可丢: libtorrent 还有完全落在这个文件里的分块. */
++    bool has_discardable_data(int index) const;
++
+     void get_peers(std::vector<anilt::peer_info_t> &peers) const;
+ 
+     // Return empty string if handle is not valid
+diff --git a/anitorrent-native/cpp/include/write_back.hpp b/anitorrent-native/cpp/include/write_back.hpp
+new file mode 100644
+index 00000000..47410483
+--- /dev/null
++++ b/anitorrent-native/cpp/include/write_back.hpp
+@@ -0,0 +1,30 @@
++#ifndef ANITORRENT_WRITE_BACK_H
++#define ANITORRENT_WRITE_BACK_H
++
++#include <cstdint>
++#include <string>
++
++namespace anilt {
++extern "C" {
++
++/**
++ * 写盘回调, 由调用方决定什么时候落盘 (与在线源下载用同一套「写够一段就落盘, 落完再收」).
++ *
++ * libtorrent 每往一个文件写够 write_back_report_bytes 就调用一次 on_written (在网络线程上, 要尽快返回).
++ * 返回 true 表示现在要把这个文件落盘: 在调用方对同一路径调用 session_t::write_back_done 之前,
++ * libtorrent 不再从连接里收数据 (连接不断开, 只是暂不读取). 没选中的文件里的数据写在种子的 .parts 文件里,
++ * 这时 path 是 .parts 文件的路径.
++ */
++class write_back_listener_t {
++  public:
++    virtual ~write_back_listener_t() = default;
++
++    virtual bool on_written(const std::string &path, int64_t bytes) = 0;
++};
++
++/// 累计写够这么多字节才回调一次 on_written, 免得每个 16 KiB 的块都调用一次 Java.
++constexpr int64_t write_back_report_bytes = 256 * 1024;
++}
++} // namespace anilt
++
++#endif // ANITORRENT_WRITE_BACK_H
+diff --git a/anitorrent-native/cpp/include/write_back_disk_io.hpp b/anitorrent-native/cpp/include/write_back_disk_io.hpp
+new file mode 100644
+index 00000000..0d4d0a99
+--- /dev/null
++++ b/anitorrent-native/cpp/include/write_back_disk_io.hpp
+@@ -0,0 +1,60 @@
++#ifndef ANITORRENT_WRITE_BACK_DISK_IO_H
++#define ANITORRENT_WRITE_BACK_DISK_IO_H
++
++#include <atomic>
++#include <memory>
++#include <mutex>
++#include <string>
++
++#include "libtorrent/disk_interface.hpp"
++#include "libtorrent/io_context.hpp"
++
++#include "write_back.hpp"
++
++namespace anilt {
++class write_back_disk_io;
++
++/**
++ * session_t 与磁盘读写包装层 (write_back_disk_io) 共享的状态.
++ *
++ * 两把锁分开: listener_mutex 在调用 Java 回调期间一直持有, 保证 set_listener(nullptr) 返回后不再有回调;
++ * disk_mutex 只保护包装层与网络线程的入口, write_back_done 只碰它. disk_mutex 可重入: 放开接收时 (持有它)
++ * 放出的写入可能再次回调, 回调里直接调用 write_back_done 也不会死锁.
++ * 都不用 anitorrent 的全局锁: wait_for_alert 会持有它好几秒, 放开接收不能被它拖住.
++ */
++struct write_back_control : std::enable_shared_from_this<write_back_control> {
++    std::mutex listener_mutex;
++    write_back_listener_t *listener = nullptr; // guarded by listener_mutex
++
++    std::recursive_mutex disk_mutex;
++    write_back_disk_io *disk = nullptr; // guarded by disk_mutex, 包装层存活期间有效
++    lt::io_context *ios = nullptr;      // guarded by disk_mutex
++
++    /// 等落盘超过 write_back_disk_io 的超时、被强制放开的次数
++    std::atomic<int64_t> forced_releases{0};
++
++    void set_listener(write_back_listener_t *l);
++
++    /// 任意线程. 交给网络线程放开 path 上的等待.
++    void done(const std::string &path);
++};
++
++/**
++ * 换掉种子里的文件 (torrent_handle_t::discard_file 打洞或重写成稀疏文件) 期间持有. 包装层转给里层的读写都先拿它:
++ * 里层在网络线程上同步读写, 换文件时就不会写进将被换掉的旧文件 (那段数据会随旧文件丢掉, 分块却已算下好).
++ */
++std::recursive_mutex &file_replace_mutex();
++
++/**
++ * 续传数据的写入 (events.cpp 检查后交给 Java 写盘, 整段拿着它) 与 torrent_handle_t::discard_file 忘掉分块、删掉旧续传数据互斥:
++ * 写到一半的旧数据不会在删掉之后又写回来; 忘掉之前生成、之后才送到的旧数据过不了检查 (它还记着忘掉的分块).
++ */
++std::mutex &resume_data_mutex();
++
++std::unique_ptr<lt::disk_interface> create_write_back_disk_io(lt::io_context &ios,
++                                                              lt::settings_interface const &settings,
++                                                              lt::counters &counters,
++                                                              std::shared_ptr<write_back_control> control);
++} // namespace anilt
++
++#endif // ANITORRENT_WRITE_BACK_DISK_IO_H
+diff --git a/anitorrent-native/cpp/src/events.cpp b/anitorrent-native/cpp/src/events.cpp
+index 3418bf0a..41dbe239 100644
+--- a/anitorrent-native/cpp/src/events.cpp
++++ b/anitorrent-native/cpp/src/events.cpp
+@@ -6,11 +6,34 @@
+ #include "global_lock.h"
+ #include "libtorrent/alert_types.hpp"
+ #include "libtorrent/bencode.hpp"
++#include "libtorrent/torrent_status.hpp"
++#include "write_back_disk_io.hpp"
+ #include "libtorrent/write_resume_data.hpp"
+ 
+ namespace anilt {
+ 
+ 
++namespace {
++/**
++ * 续传数据里记着现在已经没有的分块: 生成它之后 torrent_handle_t::discard_file 又丢掉了一些分块.
++ * 写下去的话, 下次打开会把打过洞的那段当成下好的数据. 种子已经移除、查不了时也不写.
++ */
++bool claims_pieces_no_longer_had(const lt::torrent_handle &handle, const lt::add_torrent_params &params) {
++    const auto &saved = params.have_pieces;
++    if (saved.empty()) return false;
++    try {
++        const auto now = handle.status(lt::torrent_handle::query_pieces).pieces;
++        if (now.size() != saved.size()) return false;
++        for (lt::piece_index_t i(0); i < saved.end_index(); ++i) {
++            if (saved[i] && !now[i]) return true;
++        }
++        return false;
++    } catch (const std::exception &) {
++        return true;
++    }
++}
++} // namespace
++
+ void call_listener(lt::alert *alert, libtorrent::session &session, event_listener_t &listener) {
+     // Non-torrent alerts
+ 
+@@ -79,7 +102,9 @@ void call_listener(lt::alert *alert, libtorrent::session &session, event_listene
+     }
+     if (const auto a = lt::alert_cast<lt::save_resume_data_alert>(torrent_alert)) {
+         function_printer_t _fp("call_listener:torrent_save_resume_data_event_t");
++        std::lock_guard g(resume_data_mutex());
+         const auto params = a->params;
++        if (claims_pieces_no_longer_had(handle, params)) return;
+         torrent_resume_data_t data;
+         data.data_ = write_resume_data_buf(params);
+         listener.on_save_resume_data(handle.id(), data);
+diff --git a/anitorrent-native/cpp/src/session_t.cpp b/anitorrent-native/cpp/src/session_t.cpp
+index 90c0c0f5..9f39902b 100644
+--- a/anitorrent-native/cpp/src/session_t.cpp
++++ b/anitorrent-native/cpp/src/session_t.cpp
+@@ -13,6 +13,8 @@
+ #include "libtorrent/read_resume_data.hpp"
+ #include "torrent_handle_t.hpp"
+ #include "peer_filter.hpp"
++#include "libtorrent/session_params.hpp"
++#include "write_back_disk_io.hpp"
+ 
+ namespace anilt {
+ static std::string compute_torrent_hash(const std::shared_ptr<const lt::torrent_info> &ti) {
+@@ -156,6 +158,8 @@ static void apply_settings_to_pack(libtorrent::settings_pack &s, const session_s
+               libtorrent::alert_category::upload);
+ }
+ 
++session_t::session_t() : write_back_(std::make_shared<write_back_control>()) {}
++
+ void session_t::start(const session_settings_t &settings) {
+     function_printer_t _fp("session_t::start");
+     guard_global_lock;
+@@ -173,8 +177,14 @@ void session_t::start(const session_settings_t &settings) {
+ 
+     START_LOG("create session");
+ 
+-    session_ = std::make_shared<libtorrent::session>(s);
+-    
++    // 磁盘读写包一层, 见 write_back_disk_io
++    libtorrent::session_params params(std::move(s));
++    params.disk_io_constructor = [control = write_back_](lt::io_context &ios, lt::settings_interface const &sett,
++                                                         lt::counters &cnt) {
++        return create_write_back_disk_io(ios, sett, cnt, control);
++    };
++    session_ = std::make_shared<libtorrent::session>(std::move(params));
++
+     // peer connection filter
+     session_->add_extension([this](lt::torrent_handle const& handle, lt::client_data_t) -> std::shared_ptr<lt::torrent_plugin> {
+         return create_peer_filter(handle, [this](const peer_info_t &peer_info) -> bool {
+@@ -193,6 +203,19 @@ void session_t::apply_settings(const session_settings_t &settings) {
+     using libtorrent::settings_pack;
+     settings_pack s = session_->get_settings();
+     apply_settings_to_pack(s, settings);
++    session_->apply_settings(std::move(s));
++}
++
++void session_t::set_write_back_listener(write_back_listener_t *listener) {
++    write_back_->set_listener(listener);
++}
++
++void session_t::write_back_done(const std::string &path) {
++    write_back_->done(path);
++}
++
++int64_t session_t::write_back_forced_releases() const {
++    return write_back_->forced_releases.load();
+ }
+ 
+ void session_t::resume() const {
+diff --git a/anitorrent-native/cpp/src/torrent_handle_t.cpp b/anitorrent-native/cpp/src/torrent_handle_t.cpp
+index 9019d14c..1e628c60 100644
+--- a/anitorrent-native/cpp/src/torrent_handle_t.cpp
++++ b/anitorrent-native/cpp/src/torrent_handle_t.cpp
+@@ -1,8 +1,20 @@
+ 
+ #include "torrent_handle_t.hpp"
+ 
++#include <algorithm>
++#include <vector>
++
+ #include "global_lock.h"
+ #include "libtorrent/magnet_uri.hpp"
++#include "write_back_disk_io.hpp"
++
++#if defined(__linux__)
++#include <cerrno>
++#include <fcntl.h>
++#include <linux/falloc.h>
++#include <sys/stat.h>
++#include <unistd.h>
++#endif
+ 
+ namespace anilt {
+ torrent_handle_t::reload_file_result_t torrent_handle_t::reload_file() {
+@@ -137,6 +149,185 @@ void torrent_handle_t::set_file_priority(const int index, const uint8_t priority
+     }
+ }
+ 
++#if defined(__linux__)
++namespace {
++/// 把 [from, to) 从 in 抄到 out 的同一位置. 成功返回 0, 否则 errno.
++int copy_range(const int in, const int out, std::int64_t from, const std::int64_t to) {
++    std::vector<char> buf(1 << 20);
++    while (from < to) {
++        auto const want = static_cast<std::size_t>(std::min<std::int64_t>(static_cast<std::int64_t>(buf.size()), to - from));
++        ssize_t const n = ::pread(in, buf.data(), want, from);
++        if (n < 0) return errno;
++        if (n == 0) return 0; // 文件比记的短 (还没下到那里): 剩下的本来就是空洞
++        if (::pwrite(out, buf.data(), static_cast<std::size_t>(n), from) != n) return errno;
++        from += n;
++    }
++    return 0;
++}
++
++/// 把 [path] 的 [hole_begin, hole_end) 变成空洞, 文件大小不变. 成功返回 0, 否则 errno.
++int punch_out(const std::string &path, const std::int64_t hole_begin, const std::int64_t hole_end) {
++    int const fd = ::open(path.c_str(), O_RDWR | O_CLOEXEC);
++    if (fd < 0) return errno == ENOENT ? 0 : errno; // 还没建出来的文件没有要还的空间
++    if (::fallocate(fd, FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE, hole_begin, hole_end - hole_begin) == 0) {
++        ::close(fd);
++        return 0;
++    }
++    int const err = errno;
++    if (err != EOPNOTSUPP && err != ENOSYS) {
++        ::close(fd);
++        return err;
++    }
++    // 不支持打洞: 重写成只留首尾数据的稀疏文件
++    struct stat st{};
++    if (::fstat(fd, &st) != 0) {
++        int const e = errno;
++        ::close(fd);
++        return e;
++    }
++    std::string const tmp = path + ".discarding";
++    int const out = ::open(tmp.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, st.st_mode & 07777);
++    if (out < 0) {
++        int const e = errno;
++        ::close(fd);
++        return e;
++    }
++    int r = ::ftruncate(out, st.st_size) == 0 ? 0 : errno;
++    if (r == 0) r = copy_range(fd, out, 0, std::min<std::int64_t>(hole_begin, st.st_size));
++    if (r == 0) r = copy_range(fd, out, hole_end, st.st_size);
++    if (r == 0 && ::fsync(out) != 0) r = errno;
++    ::close(out);
++    ::close(fd);
++    if (r == 0 && ::rename(tmp.c_str(), path.c_str()) != 0) r = errno;
++    if (r != 0) ::unlink(tmp.c_str());
++    return r;
++}
++
++/// 打洞或改写成稀疏文件能不能把 [path] 的空间还回去 (FAT / exFAT 不能). 能返回 0, 文件不在也算能; 否则返回 errno.
++int check_space_releasable(const std::string &path, const std::int64_t probe_size) {
++    int const fd = ::open(path.c_str(), O_RDWR | O_CLOEXEC);
++    if (fd < 0) return errno == ENOENT ? 0 : errno;
++    struct stat st{};
++    if (::fstat(fd, &st) != 0) {
++        int const e = errno;
++        ::close(fd);
++        return e;
++    }
++    // 在文件末尾之后打洞什么都不改, 只看支不支持
++    if (::fallocate(fd, FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE, st.st_size, 1) == 0) {
++        ::close(fd);
++        return 0;
++    }
++    int const err = errno;
++    ::close(fd);
++    if (err != EOPNOTSUPP && err != ENOSYS) return err;
++    // 不支持打洞: 改写成稀疏文件要靠文件系统支持空洞, 拿一个只设了大小的文件试
++    std::string const probe = path + ".probe";
++    int const out = ::open(probe.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
++    if (out < 0) return errno;
++    int r = ::ftruncate(out, probe_size) == 0 ? 0 : errno;
++    struct stat ps{};
++    if (r == 0 && ::fstat(out, &ps) != 0) r = errno;
++    ::close(out);
++    ::unlink(probe.c_str());
++    if (r != 0) return r;
++    return static_cast<std::int64_t>(ps.st_blocks) * 512 < probe_size / 2 ? 0 : EOPNOTSUPP;
++}
++} // namespace
++#endif
++
++namespace {
++/// 完全落在一个文件里的分块 [first, end), 以及它们在文件里占的那一段 [hole_begin, hole_end)
++struct own_pieces_t {
++    std::int64_t first = 0;
++    std::int64_t end = 0;
++    std::int64_t hole_begin = 0;
++    std::int64_t hole_end = 0;
++    std::int64_t file_size = 0;
++    std::int64_t piece_length = 0;
++};
++
++own_pieces_t own_pieces(const libtorrent::file_storage &fs, const libtorrent::file_index_t file) {
++    own_pieces_t r;
++    std::int64_t const offset = fs.file_offset(file);
++    r.file_size = fs.file_size(file);
++    r.piece_length = fs.piece_length();
++    r.first = (offset + r.piece_length - 1) / r.piece_length;
++    // 种子最后一块不满一整块, 落在最后一个文件里时也只属于它
++    r.end = offset + r.file_size == fs.total_size() ? fs.num_pieces() : (offset + r.file_size) / r.piece_length;
++    if (r.first < r.end) {
++        r.hole_begin = r.first * r.piece_length - offset;
++        r.hole_end = std::min(r.end * r.piece_length, offset + r.file_size) - offset;
++    }
++    return r;
++}
++} // namespace
++
++// 种子在 is_valid() 之后被移除时, 同步调用会抛出 system_error; 不能让它穿过 JNI
++int torrent_handle_t::discard_file(const int index, const std::string &resume_path) const {
++    function_printer_t _fp("torrent_handle_t::discard_file");
++    guard_global_lock;
++    try {
++        const auto handle = handle_;
++        if (!handle || !handle->is_valid()) return -1;
++        const auto ti = handle->torrent_file();
++        if (!ti || !ti->is_valid()) return -1;
++        const auto &fs = ti->files();
++        const libtorrent::file_index_t file{index};
++        if (index < 0 || file >= fs.end_file() || fs.pad_file_at(file)) return -1;
++
++        const own_pieces_t own = own_pieces(fs, file);
++        if (own.first >= own.end) return 0; // 文件比一块还小, 没有能丢的整块
++
++#if defined(__linux__)
++        std::string const path =
++            fs.file_path(file, handle->status(libtorrent::torrent_handle::query_save_path).save_path);
++        // 还不回空间就什么都不动: 分块留着照样能用
++        if (int const r = check_space_releasable(path, 2 * own.piece_length); r != 0) return r;
++
++        std::vector<libtorrent::piece_index_t> pieces;
++        pieces.reserve(static_cast<std::size_t>(own.end - own.first));
++        for (std::int64_t p = own.first; p < own.end; ++p) pieces.emplace_back(static_cast<int>(p));
++        {
++            std::lock_guard g(resume_data_mutex());
++            handle->forget_pieces(std::move(pieces));
++            ::unlink(resume_path.c_str());
++        }
++        // 首尾与相邻集共用的分块可能正在下载, 重写期间不能让网络线程往旧文件里写
++        std::lock_guard g(file_replace_mutex());
++        int const r = punch_out(path, own.hole_begin, own.hole_end);
++        return r == 0 ? 0 : 1000 + r;
++#else
++        return -2;
++#endif
++    } catch (const std::exception &) {
++        return -1;
++    }
++}
++
++bool torrent_handle_t::has_discardable_data(const int index) const {
++    function_printer_t _fp("torrent_handle_t::has_discardable_data");
++    guard_global_lock;
++    try {
++        const auto handle = handle_;
++        if (!handle || !handle->is_valid()) return false;
++        const auto ti = handle->torrent_file();
++        if (!ti || !ti->is_valid()) return false;
++        const auto &fs = ti->files();
++        const libtorrent::file_index_t file{index};
++        if (index < 0 || file >= fs.end_file() || fs.pad_file_at(file)) return false;
++
++        const own_pieces_t own = own_pieces(fs, file);
++        const auto pieces = handle->status(libtorrent::torrent_handle::query_pieces).pieces;
++        for (std::int64_t p = own.first; p < own.end && p < pieces.size(); ++p) {
++            if (pieces[libtorrent::piece_index_t(static_cast<int>(p))]) return true;
++        }
++        return false;
++    } catch (const std::exception &) {
++        return false;
++    }
++}
++
+ void torrent_handle_t::get_peers(std::vector<anilt::peer_info_t> &peers) const {
+     function_printer_t _fp("torrent_handle_t::get_peers");
+     guard_global_lock;
+diff --git a/anitorrent-native/cpp/src/write_back_disk_io.cpp b/anitorrent-native/cpp/src/write_back_disk_io.cpp
+new file mode 100644
+index 00000000..8fa6dd59
+--- /dev/null
++++ b/anitorrent-native/cpp/src/write_back_disk_io.cpp
+@@ -0,0 +1,319 @@
++#include "write_back_disk_io.hpp"
++
++#include <chrono>
++#include <functional>
++#include <map>
++#include <unordered_map>
++#include <utility>
++#include <vector>
++
++#include <boost/asio/post.hpp>
++#include <boost/asio/steady_timer.hpp>
++
++#include "libtorrent/aux_/vector.hpp"
++#include "libtorrent/disk_observer.hpp"
++#include "libtorrent/download_priority.hpp"
++#include "libtorrent/error_code.hpp"
++#include "libtorrent/file_storage.hpp"
++#include "libtorrent/peer_request.hpp"
++#include "libtorrent/session.hpp"
++#include "libtorrent/sha1_hash.hpp"
++#include "libtorrent/storage_defs.hpp"
++
++namespace anilt {
++namespace {
++/// 调用方迟迟不放开时 (出错 / 卡住) 的兜底: 等这么久就自己放开, 接收不会一直停着.
++constexpr auto hold_timeout = std::chrono::seconds(10);
++
++std::string to_hex(lt::sha1_hash const &h) {
++    static constexpr char digits[] = "0123456789abcdef";
++    auto const *const bytes = reinterpret_cast<unsigned char const *>(h.data());
++    std::string out;
++    out.reserve(static_cast<std::size_t>(h.size()) * 2);
++    for (std::ptrdiff_t i = 0; i < h.size(); ++i) {
++        out.push_back(digits[bytes[i] >> 4]);
++        out.push_back(digits[bytes[i] & 0xf]);
++    }
++    return out;
++}
++
++std::string combine(std::string const &dir, std::string const &name) {
++    if (dir.empty() || dir.back() == '/') return dir + name;
++    return dir + "/" + name;
++}
++} // namespace
++
++/**
++ * 包在 libtorrent 自带的磁盘读写 (anitorrent 关了 mmap, 是 posix 那套) 外面, 让 BT 下载和在线源一样
++ * 「写够一段就落盘, 落完再收」.
++ *
++ * posix 那套在网络线程上同步写盘 (每块 fopen / fwrite / fclose, 数据进内核的页缓存), 永远告诉连接「磁盘不忙」,
++ * 网速比磁盘快时没落盘的数据就越积越多. 本层把每次写入按文件报给 write_back_listener_t; 回调要求落盘时,
++ * 先把写完成的回调压住并告诉连接「磁盘忙」 (async_write 返回 true), 连接于是暂不读取;
++ * 调用方落完盘调用 write_back_done 后再一起放出, 并通知连接继续 (disk_observer::on_disk).
++ *
++ * 除 release 外全部在网络线程上调用. 转给里层的读写都拿着 file_replace_mutex.
++ */
++class write_back_disk_io final : public lt::disk_interface {
++  public:
++    write_back_disk_io(lt::io_context &ios, std::unique_ptr<lt::disk_interface> inner,
++                       std::shared_ptr<write_back_control> control)
++        : ios_(ios), inner_(std::move(inner)), control_(std::move(control)), timer_(ios) {
++        std::lock_guard g(control_->disk_mutex);
++        control_->disk = this;
++        control_->ios = &ios_;
++    }
++
++    ~write_back_disk_io() override {
++        std::lock_guard g(control_->disk_mutex);
++        control_->disk = nullptr;
++        control_->ios = nullptr;
++    }
++
++    /// 网络线程. 调用方对 path 落完盘了; 所有路径都落完时放开接收.
++    void release(const std::string &path) {
++        auto const it = holding_.find(path);
++        if (it == holding_.end()) return;
++        if (--it->second <= 0) holding_.erase(it);
++        if (holding_.empty()) release_all();
++    }
++
++    lt::storage_holder new_torrent(lt::storage_params const &p, std::shared_ptr<void> const &torrent) override {
++        lt::storage_holder inner = inner_->new_torrent(p, torrent);
++        lt::storage_index_t const idx = inner;
++        torrent_files entry{
++            p.mapped_files ? p.mapped_files : &p.files,
++            p.path,
++            combine(p.path, "." + to_hex(p.info_hash) + ".parts"),
++            p.priorities,
++            std::move(inner),
++        };
++        torrents_.erase(idx);
++        torrents_.emplace(idx, std::move(entry));
++        // 句柄改由本层持有: 种子移除时先经过本层的 remove_torrent, 里层的句柄随条目一起释放
++        return {idx, *this};
++    }
++
++    void remove_torrent(lt::storage_index_t idx) override { torrents_.erase(idx); }
++
++    void async_read(lt::storage_index_t storage, lt::peer_request const &r,
++                    std::function<void(lt::disk_buffer_holder, lt::storage_error const &)> handler,
++                    lt::disk_job_flags_t flags) override {
++        std::lock_guard g(file_replace_mutex());
++        inner_->async_read(storage, r, std::move(handler), flags);
++    }
++
++    bool async_write(lt::storage_index_t storage, lt::peer_request const &r, char const *buf,
++                     std::shared_ptr<lt::disk_observer> o, std::function<void(lt::storage_error const &)> handler,
++                     lt::disk_job_flags_t flags) override {
++        // 里层在这里就同步写完了, 写完成的回调稍后才投递到网络线程: 那时若在等落盘, 先压住
++        {
++            std::lock_guard g(file_replace_mutex());
++            inner_->async_write(
++                storage, r, buf, o,
++                [this, handler = std::move(handler)](lt::storage_error const &e) {
++                    if (!holding_.empty()) {
++                        held_.emplace_back([handler, e] { handler(e); });
++                        return;
++                    }
++                    handler(e);
++                },
++                flags);
++        }
++        report(storage, r);
++        if (holding_.empty()) return false;
++        if (o) observers_.emplace_back(o);
++        return true;
++    }
++
++    void async_hash(lt::storage_index_t storage, lt::piece_index_t piece, lt::span<lt::sha256_hash> v2,
++                    lt::disk_job_flags_t flags,
++                    std::function<void(lt::piece_index_t, lt::sha1_hash const &, lt::storage_error const &)> handler)
++        override {
++        std::lock_guard g(file_replace_mutex());
++        inner_->async_hash(storage, piece, v2, flags, std::move(handler));
++    }
++
++    void async_hash2(lt::storage_index_t storage, lt::piece_index_t piece, int offset, lt::disk_job_flags_t flags,
++                     std::function<void(lt::piece_index_t, lt::sha256_hash const &, lt::storage_error const &)> handler)
++        override {
++        std::lock_guard g(file_replace_mutex());
++        inner_->async_hash2(storage, piece, offset, flags, std::move(handler));
++    }
++
++    void async_move_storage(lt::storage_index_t storage, std::string p, lt::move_flags_t flags,
++                            std::function<void(lt::status_t, std::string const &, lt::storage_error const &)> handler)
++        override {
++        std::lock_guard g(file_replace_mutex());
++        inner_->async_move_storage(storage, std::move(p), flags, std::move(handler));
++    }
++
++    void async_release_files(lt::storage_index_t storage, std::function<void()> handler) override {
++        inner_->async_release_files(storage, std::move(handler));
++    }
++
++    void async_check_files(lt::storage_index_t storage, lt::add_torrent_params const *resume_data,
++                           lt::aux::vector<std::string, lt::file_index_t> links,
++                           std::function<void(lt::status_t, lt::storage_error const &)> handler) override {
++        std::lock_guard g(file_replace_mutex());
++        inner_->async_check_files(storage, resume_data, std::move(links), std::move(handler));
++    }
++
++    void async_stop_torrent(lt::storage_index_t storage, std::function<void()> handler) override {
++        inner_->async_stop_torrent(storage, std::move(handler));
++    }
++
++    void async_rename_file(lt::storage_index_t storage, lt::file_index_t index, std::string name,
++                           std::function<void(std::string const &, lt::file_index_t, lt::storage_error const &)> handler)
++        override {
++        std::lock_guard g(file_replace_mutex());
++        inner_->async_rename_file(storage, index, std::move(name), std::move(handler));
++    }
++
++    void async_delete_files(lt::storage_index_t storage, lt::remove_flags_t options,
++                            std::function<void(lt::storage_error const &)> handler) override {
++        std::lock_guard g(file_replace_mutex());
++        inner_->async_delete_files(storage, options, std::move(handler));
++    }
++
++    void async_set_file_priority(
++        lt::storage_index_t storage, lt::aux::vector<lt::download_priority_t, lt::file_index_t> prio,
++        std::function<void(lt::storage_error const &, lt::aux::vector<lt::download_priority_t, lt::file_index_t>)>
++            handler) override {
++        // 不下载的文件里的数据写进 .parts, 上报时要据此选路径
++        if (auto const t = torrents_.find(storage); t != torrents_.end()) t->second.priorities = prio;
++        std::lock_guard g(file_replace_mutex());
++        inner_->async_set_file_priority(storage, std::move(prio), std::move(handler));
++    }
++
++    void async_clear_piece(lt::storage_index_t storage, lt::piece_index_t index,
++                           std::function<void(lt::piece_index_t)> handler) override {
++        inner_->async_clear_piece(storage, index, std::move(handler));
++    }
++
++    void update_stats_counters(lt::counters &c) const override { inner_->update_stats_counters(c); }
++
++    std::vector<lt::open_file_state> get_status(lt::storage_index_t storage) const override {
++        return inner_->get_status(storage);
++    }
++
++    void abort(bool wait) override {
++        holding_.clear();
++        release_all();
++        inner_->abort(wait);
++    }
++
++    void submit_jobs() override { inner_->submit_jobs(); }
++
++    void settings_updated() override { inner_->settings_updated(); }
++
++  private:
++    struct torrent_files {
++        lt::file_storage const *files;
++        std::string save_path;
++        std::string part_file;
++        lt::aux::vector<lt::download_priority_t, lt::file_index_t> priorities;
++        lt::storage_holder inner;
++    };
++
++    void report(lt::storage_index_t storage, lt::peer_request const &r) {
++        auto const t = torrents_.find(storage);
++        if (t == torrents_.end()) return;
++        torrent_files const &tf = t->second;
++        for (auto const &slice : tf.files->map_block(r.piece, r.start, r.length)) {
++            if (tf.files->pad_file_at(slice.file_index)) continue;
++            bool const to_part_file = slice.file_index < tf.priorities.end_index() &&
++                                      tf.priorities[slice.file_index] == lt::dont_download;
++            std::string path =
++                to_part_file ? tf.part_file : tf.files->file_path(slice.file_index, tf.save_path);
++            int64_t &pending = unreported_[path];
++            pending += slice.size;
++            if (pending < write_back_report_bytes) continue;
++            int64_t const bytes = pending;
++            pending = 0;
++            if (notify(path, bytes)) hold(path);
++        }
++    }
++
++    bool notify(const std::string &path, int64_t bytes) {
++        std::lock_guard g(control_->listener_mutex);
++        write_back_listener_t *const listener = control_->listener;
++        if (!listener) return false;
++        try {
++            return listener->on_written(path, bytes);
++        } catch (...) {
++            return false;
++        }
++    }
++
++    void hold(const std::string &path) {
++        bool const first = holding_.empty();
++        ++holding_[path];
++        if (!first) return;
++        timer_.expires_after(hold_timeout);
++        timer_.async_wait([this](boost::system::error_code const &ec) {
++            // 取消 (正常放开 / 本层析构) 时 ec 非空, 不能再碰 this
++            if (ec || holding_.empty()) return;
++            control_->forced_releases.fetch_add(1);
++            holding_.clear();
++            release_all();
++        });
++    }
++
++    void release_all() {
++        timer_.cancel();
++        std::vector<std::function<void()>> held = std::move(held_);
++        held_.clear();
++        std::vector<std::weak_ptr<lt::disk_observer>> observers = std::move(observers_);
++        observers_.clear();
++        for (auto &h : held) h();
++        for (auto &w : observers) {
++            if (auto const o = w.lock()) o->on_disk();
++        }
++    }
++
++    lt::io_context &ios_;
++    std::unique_ptr<lt::disk_interface> inner_;
++    std::shared_ptr<write_back_control> control_;
++    boost::asio::steady_timer timer_;
++
++    // 在 inner_ 之后声明: 先于 inner_ 析构, 条目里的里层句柄才能交还给还活着的 inner_
++    std::map<lt::storage_index_t, torrent_files> torrents_;
++    std::unordered_map<std::string, int64_t> unreported_;
++    std::map<std::string, int> holding_;
++    std::vector<std::function<void()>> held_;
++    std::vector<std::weak_ptr<lt::disk_observer>> observers_;
++};
++
++std::recursive_mutex &file_replace_mutex() {
++    static std::recursive_mutex m;
++    return m;
++}
++
++std::mutex &resume_data_mutex() {
++    static std::mutex m;
++    return m;
++}
++
++void write_back_control::set_listener(write_back_listener_t *l) {
++    std::lock_guard g(listener_mutex);
++    listener = l;
++}
++
++void write_back_control::done(const std::string &path) {
++    std::lock_guard g(disk_mutex);
++    if (!ios) return;
++    boost::asio::post(*ios, [self = shared_from_this(), path] {
++        std::lock_guard g2(self->disk_mutex);
++        if (self->disk) self->disk->release(path);
++    });
++}
++
++std::unique_ptr<lt::disk_interface> create_write_back_disk_io(lt::io_context &ios,
++                                                              lt::settings_interface const &settings,
++                                                              lt::counters &counters,
++                                                              std::shared_ptr<write_back_control> control) {
++    return std::make_unique<write_back_disk_io>(ios, lt::default_disk_io_constructor(ios, settings, counters),
++                                                std::move(control));
++}
++} // namespace anilt
+diff --git a/anitorrent-native/gen/cpp/anitorrent_wrap.cpp b/anitorrent-native/gen/cpp/anitorrent_wrap.cpp
+index 826759e0..6787fb70 100644
+--- a/anitorrent-native/gen/cpp/anitorrent_wrap.cpp
++++ b/anitorrent-native/gen/cpp/anitorrent_wrap.cpp
+@@ -781,7 +781,7 @@ namespace Swig {
+ namespace Swig {
+   namespace {
+     jclass jclass_anitorrentJNI = NULL;
+-    jmethodID director_method_ids[13];
++    jmethodID director_method_ids[14];
+   }
+ }
+ 
+@@ -840,6 +840,7 @@ template <typename T> T SwigValueInit() {
+ #include "torrent_add_info_t.hpp"
+ #include "torrent_handle_t.hpp"
+ #include "torrent_info_t.hpp"
++#include "write_back.hpp"
+ 
+ 
+ 
+@@ -2019,6 +2020,67 @@ void SwigDirector_peer_filter_t::swig_connect_director(JNIEnv *jenv, jobject jse
+ }
+ 
+ 
++SwigDirector_write_back_listener_t::SwigDirector_write_back_listener_t(JNIEnv *jenv) : anilt::write_back_listener_t(), Swig::Director(jenv) {
++}
++
++SwigDirector_write_back_listener_t::~SwigDirector_write_back_listener_t() {
++  swig_disconnect_director_self("swigDirectorDisconnect");
++}
++
++
++bool SwigDirector_write_back_listener_t::on_written(std::string const &path,int64_t bytes) {
++  bool c_result = SwigValueInit< bool >() ;
++  jboolean jresult = 0 ;
++  JNIEnvWrapper swigjnienv(this) ;
++  JNIEnv * jenv = swigjnienv.getJNIEnv() ;
++  jobject swigjobj = (jobject) NULL ;
++  jstring jpath = 0 ;
++  jlong jbytes  ;
++  
++  if (!swig_override[0]) {
++    SWIG_JavaThrowException(JNIEnvWrapper(this).getJNIEnv(), SWIG_JavaDirectorPureVirtual, "Attempted to invoke pure virtual method anilt::write_back_listener_t::on_written.");
++    return c_result;
++  }
++  swigjobj = swig_get_self(jenv);
++  if (swigjobj && jenv->IsSameObject(swigjobj, NULL) == JNI_FALSE) {
++    jpath = jenv->NewStringUTF((&path)->c_str());
++    Swig::LocalRefGuard path_refguard(jenv, jpath); 
++    jbytes = (jlong) bytes;
++    jresult = (jboolean) jenv->CallStaticBooleanMethod(Swig::jclass_anitorrentJNI, Swig::director_method_ids[12], swigjobj, jpath, jbytes);
++    jthrowable swigerror = jenv->ExceptionOccurred();
++    if (swigerror) {
++      Swig::DirectorException::raise(jenv, swigerror);
++    }
++    
++    c_result = jresult ? true : false; 
++  } else {
++    SWIG_JavaThrowException(jenv, SWIG_JavaNullPointerException, "null upcall object in anilt::write_back_listener_t::on_written ");
++  }
++  if (swigjobj) jenv->DeleteLocalRef(swigjobj);
++  return c_result;
++}
++
++void SwigDirector_write_back_listener_t::swig_connect_director(JNIEnv *jenv, jobject jself, jclass jcls, bool swig_mem_own, bool weak_global) {
++  static jclass baseclass = swig_new_global_ref(jenv, "org/openani/anitorrent/binding/write_back_listener_t");
++  if (!baseclass) return;
++  static SwigDirectorMethod methods[] = {
++    SwigDirectorMethod(jenv, baseclass, "on_written", "(Ljava/lang/String;J)Z")
++  };
++  
++  if (swig_set_self(jenv, jself, swig_mem_own, weak_global)) {
++    bool derived = (jenv->IsSameObject(baseclass, jcls) ? false : true);
++    for (int i = 0; i < 1; ++i) {
++      swig_override[i] = false;
++      if (derived) {
++        jmethodID methid = jenv->GetMethodID(jcls, methods[i].name, methods[i].desc);
++        swig_override[i] = methods[i].methid && (methid != methods[i].methid);
++        jenv->ExceptionClear();
++      }
++    }
++  }
++}
++
++
+ SwigDirector_new_event_listener_t::SwigDirector_new_event_listener_t(JNIEnv *jenv) : anilt::new_event_listener_t(), Swig::Director(jenv) {
+ }
+ 
+@@ -2038,7 +2100,7 @@ void SwigDirector_new_event_listener_t::on_new_events() {
+   }
+   swigjobj = swig_get_self(jenv);
+   if (swigjobj && jenv->IsSameObject(swigjobj, NULL) == JNI_FALSE) {
+-    jenv->CallStaticVoidMethod(Swig::jclass_anitorrentJNI, Swig::director_method_ids[12], swigjobj);
++    jenv->CallStaticVoidMethod(Swig::jclass_anitorrentJNI, Swig::director_method_ids[13], swigjobj);
+     jthrowable swigerror = jenv->ExceptionOccurred();
+     if (swigerror) {
+       Swig::DirectorException::raise(jenv, swigerror);
+@@ -3493,6 +3555,50 @@ SWIGEXPORT void JNICALL Java_org_openani_anitorrent_binding_anitorrentJNI_torren
+ }
+ 
+ 
++SWIGEXPORT jint JNICALL Java_org_openani_anitorrent_binding_anitorrentJNI_torrent_1handle_1t_1discard_1file(JNIEnv *jenv, jclass jcls, jlong jarg1, jobject jarg1_, jint jarg2, jstring jarg3) {
++  jint jresult = 0 ;
++  anilt::torrent_handle_t *arg1 = (anilt::torrent_handle_t *) 0 ;
++  int arg2 ;
++  std::string *arg3 = 0 ;
++  int result;
++  
++  (void)jenv;
++  (void)jcls;
++  (void)jarg1_;
++  arg1 = *(anilt::torrent_handle_t **)&jarg1; 
++  arg2 = (int)jarg2; 
++  if(!jarg3) {
++    SWIG_JavaThrowException(jenv, SWIG_JavaNullPointerException, "null string");
++    return 0;
++  }
++  const char *arg3_pstr = (const char *)jenv->GetStringUTFChars(jarg3, 0); 
++  if (!arg3_pstr) return 0;
++  std::string arg3_str(arg3_pstr);
++  arg3 = &arg3_str;
++  jenv->ReleaseStringUTFChars(jarg3, arg3_pstr); 
++  result = (int)((anilt::torrent_handle_t const *)arg1)->discard_file(arg2,(std::string const &)*arg3);
++  jresult = (jint)result; 
++  return jresult;
++}
++
++
++SWIGEXPORT jboolean JNICALL Java_org_openani_anitorrent_binding_anitorrentJNI_torrent_1handle_1t_1has_1discardable_1data(JNIEnv *jenv, jclass jcls, jlong jarg1, jobject jarg1_, jint jarg2) {
++  jboolean jresult = 0 ;
++  anilt::torrent_handle_t *arg1 = (anilt::torrent_handle_t *) 0 ;
++  int arg2 ;
++  bool result;
++  
++  (void)jenv;
++  (void)jcls;
++  (void)jarg1_;
++  arg1 = *(anilt::torrent_handle_t **)&jarg1; 
++  arg2 = (int)jarg2; 
++  result = (bool)((anilt::torrent_handle_t const *)arg1)->has_discardable_data(arg2);
++  jresult = (jboolean)result; 
++  return jresult;
++}
++
++
+ SWIGEXPORT void JNICALL Java_org_openani_anitorrent_binding_anitorrentJNI_torrent_1handle_1t_1get_1peers(JNIEnv *jenv, jclass jcls, jlong jarg1, jobject jarg1_, jlong jarg2, jobject jarg2_) {
+   anilt::torrent_handle_t *arg1 = (anilt::torrent_handle_t *) 0 ;
+   std::vector< anilt::peer_info_t > *arg2 = 0 ;
+@@ -4854,6 +4960,85 @@ SWIGEXPORT jlong JNICALL Java_org_openani_anitorrent_binding_anitorrentJNI_creat
+ }
+ 
+ 
++SWIGEXPORT void JNICALL Java_org_openani_anitorrent_binding_anitorrentJNI_delete_1write_1back_1listener_1t(JNIEnv *jenv, jclass jcls, jlong jarg1) {
++  anilt::write_back_listener_t *arg1 = (anilt::write_back_listener_t *) 0 ;
++  
++  (void)jenv;
++  (void)jcls;
++  arg1 = *(anilt::write_back_listener_t **)&jarg1; 
++  delete arg1;
++}
++
++
++SWIGEXPORT jboolean JNICALL Java_org_openani_anitorrent_binding_anitorrentJNI_write_1back_1listener_1t_1on_1written(JNIEnv *jenv, jclass jcls, jlong jarg1, jobject jarg1_, jstring jarg2, jlong jarg3) {
++  jboolean jresult = 0 ;
++  anilt::write_back_listener_t *arg1 = (anilt::write_back_listener_t *) 0 ;
++  std::string *arg2 = 0 ;
++  int64_t arg3 ;
++  bool result;
++  
++  (void)jenv;
++  (void)jcls;
++  (void)jarg1_;
++  arg1 = *(anilt::write_back_listener_t **)&jarg1; 
++  if(!jarg2) {
++    SWIG_JavaThrowException(jenv, SWIG_JavaNullPointerException, "null string");
++    return 0;
++  }
++  const char *arg2_pstr = (const char *)jenv->GetStringUTFChars(jarg2, 0); 
++  if (!arg2_pstr) return 0;
++  std::string arg2_str(arg2_pstr);
++  arg2 = &arg2_str;
++  jenv->ReleaseStringUTFChars(jarg2, arg2_pstr); 
++  arg3 = (int64_t)jarg3; 
++  result = (bool)(arg1)->on_written((std::string const &)*arg2,arg3);
++  jresult = (jboolean)result; 
++  return jresult;
++}
++
++
++SWIGEXPORT jlong JNICALL Java_org_openani_anitorrent_binding_anitorrentJNI_new_1write_1back_1listener_1t(JNIEnv *jenv, jclass jcls) {
++  jlong jresult = 0 ;
++  anilt::write_back_listener_t *result = 0 ;
++  
++  (void)jenv;
++  (void)jcls;
++  result = (anilt::write_back_listener_t *)new SwigDirector_write_back_listener_t(jenv);
++  *(anilt::write_back_listener_t **)&jresult = result; 
++  return jresult;
++}
++
++
++SWIGEXPORT void JNICALL Java_org_openani_anitorrent_binding_anitorrentJNI_write_1back_1listener_1t_1director_1connect(JNIEnv *jenv, jclass jcls, jobject jself, jlong objarg, jboolean jswig_mem_own, jboolean jweak_global) {
++  anilt::write_back_listener_t *obj = *((anilt::write_back_listener_t **)&objarg);
++  (void)jcls;
++  SwigDirector_write_back_listener_t *director = static_cast<SwigDirector_write_back_listener_t *>(obj);
++  director->swig_connect_director(jenv, jself, jenv->GetObjectClass(jself), (jswig_mem_own == JNI_TRUE), (jweak_global == JNI_TRUE));
++}
++
++
++SWIGEXPORT void JNICALL Java_org_openani_anitorrent_binding_anitorrentJNI_write_1back_1listener_1t_1change_1ownership(JNIEnv *jenv, jclass jcls, jobject jself, jlong objarg, jboolean jtake_or_release) {
++  anilt::write_back_listener_t *obj = *((anilt::write_back_listener_t **)&objarg);
++  SwigDirector_write_back_listener_t *director = dynamic_cast<SwigDirector_write_back_listener_t *>(obj);
++  (void)jcls;
++  if (director) {
++    director->swig_java_change_ownership(jenv, jself, jtake_or_release ? true : false);
++  }
++}
++
++
++SWIGEXPORT jlong JNICALL Java_org_openani_anitorrent_binding_anitorrentJNI_write_1back_1report_1bytes_1get(JNIEnv *jenv, jclass jcls) {
++  jlong jresult = 0 ;
++  int64_t result;
++  
++  (void)jenv;
++  (void)jcls;
++  result = (int64_t)anilt::write_back_report_bytes;
++  jresult = (jlong)result; 
++  return jresult;
++}
++
++
+ SWIGEXPORT void JNICALL Java_org_openani_anitorrent_binding_anitorrentJNI_session_1settings_1t_1download_1rate_1limit_1set(JNIEnv *jenv, jclass jcls, jlong jarg1, jobject jarg1_, jint jarg2) {
+   anilt::session_settings_t *arg1 = (anilt::session_settings_t *) 0 ;
+   int arg2 ;
+@@ -5327,6 +5512,18 @@ SWIGEXPORT void JNICALL Java_org_openani_anitorrent_binding_anitorrentJNI_new_1e
+ }
+ 
+ 
++SWIGEXPORT jlong JNICALL Java_org_openani_anitorrent_binding_anitorrentJNI_new_1session_1t(JNIEnv *jenv, jclass jcls) {
++  jlong jresult = 0 ;
++  anilt::session_t *result = 0 ;
++  
++  (void)jenv;
++  (void)jcls;
++  result = (anilt::session_t *)new anilt::session_t();
++  *(anilt::session_t **)&jresult = result; 
++  return jresult;
++}
++
++
+ SWIGEXPORT void JNICALL Java_org_openani_anitorrent_binding_anitorrentJNI_session_1t_1start(JNIEnv *jenv, jclass jcls, jlong jarg1, jobject jarg1_, jlong jarg2, jobject jarg2_) {
+   anilt::session_t *arg1 = (anilt::session_t *) 0 ;
+   anilt::session_settings_t *arg2 = 0 ;
+@@ -5511,14 +5708,52 @@ SWIGEXPORT void JNICALL Java_org_openani_anitorrent_binding_anitorrentJNI_sessio
+ }
+ 
+ 
+-SWIGEXPORT jlong JNICALL Java_org_openani_anitorrent_binding_anitorrentJNI_new_1session_1t(JNIEnv *jenv, jclass jcls) {
++SWIGEXPORT void JNICALL Java_org_openani_anitorrent_binding_anitorrentJNI_session_1t_1set_1write_1back_1listener(JNIEnv *jenv, jclass jcls, jlong jarg1, jobject jarg1_, jlong jarg2, jobject jarg2_) {
++  anilt::session_t *arg1 = (anilt::session_t *) 0 ;
++  anilt::write_back_listener_t *arg2 = (anilt::write_back_listener_t *) 0 ;
++  
++  (void)jenv;
++  (void)jcls;
++  (void)jarg1_;
++  (void)jarg2_;
++  arg1 = *(anilt::session_t **)&jarg1; 
++  arg2 = *(anilt::write_back_listener_t **)&jarg2; 
++  (arg1)->set_write_back_listener(arg2);
++}
++
++
++SWIGEXPORT void JNICALL Java_org_openani_anitorrent_binding_anitorrentJNI_session_1t_1write_1back_1done(JNIEnv *jenv, jclass jcls, jlong jarg1, jobject jarg1_, jstring jarg2) {
++  anilt::session_t *arg1 = (anilt::session_t *) 0 ;
++  std::string *arg2 = 0 ;
++  
++  (void)jenv;
++  (void)jcls;
++  (void)jarg1_;
++  arg1 = *(anilt::session_t **)&jarg1; 
++  if(!jarg2) {
++    SWIG_JavaThrowException(jenv, SWIG_JavaNullPointerException, "null string");
++    return ;
++  }
++  const char *arg2_pstr = (const char *)jenv->GetStringUTFChars(jarg2, 0); 
++  if (!arg2_pstr) return ;
++  std::string arg2_str(arg2_pstr);
++  arg2 = &arg2_str;
++  jenv->ReleaseStringUTFChars(jarg2, arg2_pstr); 
++  (arg1)->write_back_done((std::string const &)*arg2);
++}
++
++
++SWIGEXPORT jlong JNICALL Java_org_openani_anitorrent_binding_anitorrentJNI_session_1t_1write_1back_1forced_1releases(JNIEnv *jenv, jclass jcls, jlong jarg1, jobject jarg1_) {
+   jlong jresult = 0 ;
+-  anilt::session_t *result = 0 ;
++  anilt::session_t *arg1 = (anilt::session_t *) 0 ;
++  int64_t result;
+   
+   (void)jenv;
+   (void)jcls;
+-  result = (anilt::session_t *)new anilt::session_t();
+-  *(anilt::session_t **)&jresult = result; 
++  (void)jarg1_;
++  arg1 = *(anilt::session_t **)&jarg1; 
++  result = (int64_t)((anilt::session_t const *)arg1)->write_back_forced_releases();
++  jresult = (jlong)result; 
+   return jresult;
+ }
+ 
+@@ -5558,7 +5793,7 @@ SWIGEXPORT void JNICALL Java_org_openani_anitorrent_binding_anitorrentJNI_swig_1
+   static struct {
+     const char *method;
+     const char *signature;
+-  } methods[13] = {
++  } methods[14] = {
+     {
+       "SwigDirector_event_listener_t_on_checked", "(Lorg/openani/anitorrent/binding/event_listener_t;J)V" 
+     },
+@@ -5595,6 +5830,9 @@ SWIGEXPORT void JNICALL Java_org_openani_anitorrent_binding_anitorrentJNI_swig_1
+     {
+       "SwigDirector_peer_filter_t_on_filter", "(Lorg/openani/anitorrent/binding/peer_filter_t;J)Z" 
+     },
++    {
++      "SwigDirector_write_back_listener_t_on_written", "(Lorg/openani/anitorrent/binding/write_back_listener_t;Ljava/lang/String;J)Z" 
++    },
+     {
+       "SwigDirector_new_event_listener_t_on_new_events", "(Lorg/openani/anitorrent/binding/new_event_listener_t;)V" 
+     }
+diff --git a/anitorrent-native/gen/cpp/anitorrent_wrap.h b/anitorrent-native/gen/cpp/anitorrent_wrap.h
+index c3200fe7..b8b6bfcd 100644
+--- a/anitorrent-native/gen/cpp/anitorrent_wrap.h
++++ b/anitorrent-native/gen/cpp/anitorrent_wrap.h
+@@ -49,6 +49,21 @@ protected:
+     Swig::BoolArray<1> swig_override;
+ };
+ 
++class SwigDirector_write_back_listener_t : public anilt::write_back_listener_t, public Swig::Director {
++
++public:
++    void swig_connect_director(JNIEnv *jenv, jobject jself, jclass jcls, bool swig_mem_own, bool weak_global);
++    SwigDirector_write_back_listener_t(JNIEnv *jenv);
++    virtual ~SwigDirector_write_back_listener_t();
++    virtual bool on_written(std::string const &path,int64_t bytes);
++public:
++    bool swig_overrides(int n) {
++      return (n < 1 ? swig_override[n] : false);
++    }
++protected:
++    Swig::BoolArray<1> swig_override;
++};
++
+ class SwigDirector_new_event_listener_t : public anilt::new_event_listener_t, public Swig::Director {
+ 
+ public:
+diff --git a/anitorrent-native/gen/java/org/openani/anitorrent/binding/anitorrent.java b/anitorrent-native/gen/java/org/openani/anitorrent/binding/anitorrent.java
+index ebeb45e6..799b6927 100644
+--- a/anitorrent-native/gen/java/org/openani/anitorrent/binding/anitorrent.java
++++ b/anitorrent-native/gen/java/org/openani/anitorrent/binding/anitorrent.java
+@@ -21,6 +21,10 @@ public class anitorrent {
+     return new SWIGTYPE_p_std__shared_ptrT_lt__torrent_plugin_t(anitorrentJNI.create_peer_filter(SWIGTYPE_p_lt__torrent_handle.getCPtr(th), SWIGTYPE_p_std__functionT_bool_fanilt__peer_info_t_RF_t.getCPtr(filter)), true);
+   }
+ 
++  public static long getWrite_back_report_bytes() {
++    return anitorrentJNI.write_back_report_bytes_get();
++  }
++
+   public static String lt_version() {
+     return anitorrentJNI.lt_version();
+   }
+diff --git a/anitorrent-native/gen/java/org/openani/anitorrent/binding/anitorrentJNI.java b/anitorrent-native/gen/java/org/openani/anitorrent/binding/anitorrentJNI.java
+index ebdf4c4c..3661bb45 100644
+--- a/anitorrent-native/gen/java/org/openani/anitorrent/binding/anitorrentJNI.java
++++ b/anitorrent-native/gen/java/org/openani/anitorrent/binding/anitorrentJNI.java
+@@ -98,6 +98,8 @@ public class anitorrentJNI {
+   public final static native void torrent_handle_t_resume(long jarg1, torrent_handle_t jarg1_);
+   public final static native void torrent_handle_t_ignore_all_files(long jarg1, torrent_handle_t jarg1_);
+   public final static native void torrent_handle_t_set_file_priority(long jarg1, torrent_handle_t jarg1_, int jarg2, short jarg3);
++  public final static native int torrent_handle_t_discard_file(long jarg1, torrent_handle_t jarg1_, int jarg2, String jarg3);
++  public final static native boolean torrent_handle_t_has_discardable_data(long jarg1, torrent_handle_t jarg1_, int jarg2);
+   public final static native void torrent_handle_t_get_peers(long jarg1, torrent_handle_t jarg1_, long jarg2, PeerInfoList jarg2_);
+   public final static native String torrent_handle_t_make_magnet_uri(long jarg1, torrent_handle_t jarg1_);
+   public final static native long new_torrent_handle_t();
+@@ -191,6 +193,12 @@ public class anitorrentJNI {
+   public final static native void peer_filter_t_change_ownership(peer_filter_t obj, long cptr, boolean take_or_release);
+   public final static native long parse_peer_info(long jarg1, long jarg2);
+   public final static native long create_peer_filter(long jarg1, long jarg2);
++  public final static native void delete_write_back_listener_t(long jarg1);
++  public final static native boolean write_back_listener_t_on_written(long jarg1, write_back_listener_t jarg1_, String jarg2, long jarg3);
++  public final static native long new_write_back_listener_t();
++  public final static native void write_back_listener_t_director_connect(write_back_listener_t obj, long cptr, boolean mem_own, boolean weak_global);
++  public final static native void write_back_listener_t_change_ownership(write_back_listener_t obj, long cptr, boolean take_or_release);
++  public final static native long write_back_report_bytes_get();
+   public final static native void session_settings_t_download_rate_limit_set(long jarg1, session_settings_t jarg1_, int jarg2);
+   public final static native int session_settings_t_download_rate_limit_get(long jarg1, session_settings_t jarg1_);
+   public final static native void session_settings_t_upload_rate_limit_set(long jarg1, session_settings_t jarg1_, int jarg2);
+@@ -224,6 +232,7 @@ public class anitorrentJNI {
+   public final static native long new_new_event_listener_t();
+   public final static native void new_event_listener_t_director_connect(new_event_listener_t obj, long cptr, boolean mem_own, boolean weak_global);
+   public final static native void new_event_listener_t_change_ownership(new_event_listener_t obj, long cptr, boolean take_or_release);
++  public final static native long new_session_t();
+   public final static native void session_t_start(long jarg1, session_t jarg1_, long jarg2, session_settings_t jarg2_);
+   public final static native void session_t_apply_settings(long jarg1, session_t jarg1_, long jarg2, session_settings_t jarg2_);
+   public final static native void session_t_resume(long jarg1, session_t jarg1_);
+@@ -235,7 +244,9 @@ public class anitorrentJNI {
+   public final static native void session_t_set_peer_filter(long jarg1, session_t jarg1_, long jarg2, peer_filter_t jarg2_);
+   public final static native void session_t_wait_for_alert(long jarg1, session_t jarg1_, int jarg2);
+   public final static native void session_t_post_session_stats(long jarg1, session_t jarg1_);
+-  public final static native long new_session_t();
++  public final static native void session_t_set_write_back_listener(long jarg1, session_t jarg1_, long jarg2, write_back_listener_t jarg2_);
++  public final static native void session_t_write_back_done(long jarg1, session_t jarg1_, String jarg2);
++  public final static native long session_t_write_back_forced_releases(long jarg1, session_t jarg1_);
+   public final static native void delete_session_t(long jarg1);
+   public final static native String lt_version();
+   public final static native void install_signal_handlers();
+@@ -276,6 +287,9 @@ public class anitorrentJNI {
+   public static boolean SwigDirector_peer_filter_t_on_filter(peer_filter_t jself, long arg0) {
+     return jself.on_filter(new peer_info_t(arg0, false));
+   }
++  public static boolean SwigDirector_write_back_listener_t_on_written(write_back_listener_t jself, String path, long bytes) {
++    return jself.on_written(path, bytes);
++  }
+   public static void SwigDirector_new_event_listener_t_on_new_events(new_event_listener_t jself) {
+     jself.on_new_events();
+   }
+diff --git a/anitorrent-native/gen/java/org/openani/anitorrent/binding/session_t.java b/anitorrent-native/gen/java/org/openani/anitorrent/binding/session_t.java
+index b88268c1..a83ec8d0 100644
+--- a/anitorrent-native/gen/java/org/openani/anitorrent/binding/session_t.java
++++ b/anitorrent-native/gen/java/org/openani/anitorrent/binding/session_t.java
+@@ -48,6 +48,10 @@ public class session_t {
+     }
+   }
+ 
++  public session_t() {
++    this(anitorrentJNI.new_session_t(), true);
++  }
++
+   public void start(session_settings_t settings) {
+     anitorrentJNI.session_t_start(swigCPtr, this, session_settings_t.getCPtr(settings), settings);
+   }
+@@ -92,8 +96,16 @@ public class session_t {
+     anitorrentJNI.session_t_post_session_stats(swigCPtr, this);
+   }
+ 
+-  public session_t() {
+-    this(anitorrentJNI.new_session_t(), true);
++  public void set_write_back_listener(write_back_listener_t listener) {
++    anitorrentJNI.session_t_set_write_back_listener(swigCPtr, this, write_back_listener_t.getCPtr(listener), listener);
++  }
++
++  public void write_back_done(String path) {
++    anitorrentJNI.session_t_write_back_done(swigCPtr, this, path);
++  }
++
++  public long write_back_forced_releases() {
++    return anitorrentJNI.session_t_write_back_forced_releases(swigCPtr, this);
+   }
+ 
+ }
+diff --git a/anitorrent-native/gen/java/org/openani/anitorrent/binding/torrent_handle_t.java b/anitorrent-native/gen/java/org/openani/anitorrent/binding/torrent_handle_t.java
+index 1707da7f..724435ab 100644
+--- a/anitorrent-native/gen/java/org/openani/anitorrent/binding/torrent_handle_t.java
++++ b/anitorrent-native/gen/java/org/openani/anitorrent/binding/torrent_handle_t.java
+@@ -117,6 +117,14 @@ public class torrent_handle_t {
+     anitorrentJNI.torrent_handle_t_set_file_priority(swigCPtr, this, index, priority);
+   }
+ 
++  public int discard_file(int index, String resume_path) {
++    return anitorrentJNI.torrent_handle_t_discard_file(swigCPtr, this, index, resume_path);
++  }
++
++  public boolean has_discardable_data(int index) {
++    return anitorrentJNI.torrent_handle_t_has_discardable_data(swigCPtr, this, index);
++  }
++
+   public void get_peers(PeerInfoList peers) {
+     anitorrentJNI.torrent_handle_t_get_peers(swigCPtr, this, PeerInfoList.getCPtr(peers), peers);
+   }
+diff --git a/anitorrent-native/gen/java/org/openani/anitorrent/binding/write_back_listener_t.java b/anitorrent-native/gen/java/org/openani/anitorrent/binding/write_back_listener_t.java
+new file mode 100644
+index 00000000..88a53bc4
+--- /dev/null
++++ b/anitorrent-native/gen/java/org/openani/anitorrent/binding/write_back_listener_t.java
+@@ -0,0 +1,75 @@
++/* ----------------------------------------------------------------------------
++ * This file was automatically generated by SWIG (https://www.swig.org).
++ * Version 4.2.1
++ *
++ * Do not make changes to this file unless you know what you are doing - modify
++ * the SWIG interface file instead.
++ * ----------------------------------------------------------------------------- */
++
++package org.openani.anitorrent.binding;
++
++public class write_back_listener_t {
++  private transient long swigCPtr;
++  protected transient boolean swigCMemOwn;
++
++  protected write_back_listener_t(long cPtr, boolean cMemoryOwn) {
++    swigCMemOwn = cMemoryOwn;
++    swigCPtr = cPtr;
++  }
++
++  protected static long getCPtr(write_back_listener_t obj) {
++    return (obj == null) ? 0 : obj.swigCPtr;
++  }
++
++  protected static long swigRelease(write_back_listener_t obj) {
++    long ptr = 0;
++    if (obj != null) {
++      if (!obj.swigCMemOwn)
++        throw new RuntimeException("Cannot release ownership as memory is not owned");
++      ptr = obj.swigCPtr;
++      obj.swigCMemOwn = false;
++      obj.delete();
++    }
++    return ptr;
++  }
++
++  @SuppressWarnings({"deprecation", "removal"})
++  protected void finalize() {
++    delete();
++  }
++
++  public synchronized void delete() {
++    if (swigCPtr != 0) {
++      if (swigCMemOwn) {
++        swigCMemOwn = false;
++        anitorrentJNI.delete_write_back_listener_t(swigCPtr);
++      }
++      swigCPtr = 0;
++    }
++  }
++
++  protected void swigDirectorDisconnect() {
++    swigCMemOwn = false;
++    delete();
++  }
++
++  public void swigReleaseOwnership() {
++    swigCMemOwn = false;
++    anitorrentJNI.write_back_listener_t_change_ownership(this, swigCPtr, false);
++  }
++
++  public void swigTakeOwnership() {
++    swigCMemOwn = true;
++    anitorrentJNI.write_back_listener_t_change_ownership(this, swigCPtr, true);
++  }
++
++  public boolean on_written(String path, long bytes) {
++    return anitorrentJNI.write_back_listener_t_on_written(swigCPtr, this, path, bytes);
++  }
++
++  public write_back_listener_t() {
++    this(anitorrentJNI.new_write_back_listener_t(), true);
++    anitorrentJNI.write_back_listener_t_director_connect(this, swigCPtr, true, true);
++  }
++
++}

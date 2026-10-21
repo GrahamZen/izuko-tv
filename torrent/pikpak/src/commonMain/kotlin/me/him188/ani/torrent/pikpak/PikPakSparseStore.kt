@@ -34,6 +34,7 @@ import kotlinx.io.IOException
 import me.him188.ani.app.torrent.io.RandomAccessFile
 import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.io.SystemPath
+import me.him188.ani.utils.io.WriteBackCounter
 import me.him188.ani.utils.io.createDirectories
 import me.him188.ani.utils.io.delete
 import me.him188.ani.utils.io.exists
@@ -75,6 +76,8 @@ internal class PikPakSparseStore(
     val blockSize: Long = PikPakStreamReader.DEFAULT_BLOCK_SIZE,
     private val persistInterval: Duration = PERSIST_INTERVAL,
     private val openDataFile: (SystemPath) -> DataFile = ::openRandomAccessDataFile,
+    /** Unsynced bytes that trigger a sync right away, between two persists (see write). */
+    syncEveryBytes: Long = WriteBackCounter.SYNC_EVERY_BYTES,
 ) : DurableBlockStore {
     private val logger = logger<PikPakSparseStore>()
 
@@ -98,6 +101,9 @@ internal class PikPakSparseStore(
 
     @Volatile
     private var handle: DataFile? = null
+
+    // Bytes written since the data file was last synced. Guarded by ioMutex.
+    private val writeBack = WriteBackCounter(syncEveryBytes)
 
     @Volatile
     private var closed = false
@@ -150,6 +156,9 @@ internal class PikPakSparseStore(
                 // Held from here on: other handles on the file read these bytes back. Durability
                 // rides the persist cadence.
                 opened.flush()
+                // Also sync once enough unsynced bytes pile up between two persists, so a fast
+                // download does not hold the whole file system's fsyncs up (see WriteBackCounter).
+                if (writeBack.wrote(bytes.size.toLong())) opened.sync()
             }
         }
         val added = synchronized(lock) {
@@ -259,6 +268,7 @@ internal class PikPakSparseStore(
         withContext(Dispatchers.IO_) {
             ioMutex.withLock {
                 handle?.sync()
+                writeBack.synced()
                 bitmap.flush()
             }
         }

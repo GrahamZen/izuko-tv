@@ -1,0 +1,115 @@
+diff --git a/include/libtorrent/torrent.hpp b/include/libtorrent/torrent.hpp
+index ecca52f..2b9dcf8 100644
+--- a/include/libtorrent/torrent.hpp
++++ b/include/libtorrent/torrent.hpp
+@@ -588,6 +588,8 @@ namespace libtorrent {
+ 		bool is_paused() const;
+ 		bool is_torrent_paused() const { return m_paused; }
+ 		void force_recheck();
++		// forget that we have these pieces (their data was removed on purpose)
++		void forget_pieces(std::vector<piece_index_t> const& pieces);
+ 		void save_resume_data(resume_data_flags_t flags);
+ 
+ 		bool need_save_resume_data(resume_data_flags_t flags) const
+diff --git a/include/libtorrent/torrent_handle.hpp b/include/libtorrent/torrent_handle.hpp
+index 6ffd49f..db46813 100644
+--- a/include/libtorrent/torrent_handle.hpp
++++ b/include/libtorrent/torrent_handle.hpp
+@@ -670,6 +670,14 @@ namespace aux {
+ 		// will be the highest of all torrents in the session.
+ 		void force_recheck() const;
+ 
++		// ``forget_pieces()`` makes the torrent forget that it has the given
++		// pieces, for when their data is removed from disk on purpose (for
++		// instance a file that is no longer wanted). The pieces are no longer
++		// served to peers (outstanding requests are rejected and peers that
++		// support it are told we don't have them), and are downloaded again if
++		// they become wanted. Blocks until the torrent has forgotten them.
++		void forget_pieces(std::vector<piece_index_t> pieces) const;
++
+ 		// the disk cache will be flushed before creating the resume data.
+ 		// This avoids a problem with file timestamps in the resume data in
+ 		// case the cache hasn't been flushed yet.
+diff --git a/src/peer_connection.cpp b/src/peer_connection.cpp
+index c37a5e9..95fa0c7 100644
+--- a/src/peer_connection.cpp
++++ b/src/peer_connection.cpp
+@@ -2627,10 +2627,10 @@ namespace libtorrent {
+ 	void peer_connection::reject_piece(piece_index_t const index)
+ 	{
+ 		TORRENT_ASSERT(is_single_thread());
+-		for (auto i = m_requests.begin(), end(m_requests.end()); i != end; ++i)
++		for (auto i = m_requests.begin(); i != m_requests.end();)
+ 		{
+ 			peer_request const& r = *i;
+-			if (r.piece != index) continue;
++			if (r.piece != index) { ++i; continue; }
+ 			write_reject_request(r);
+ 			i = m_requests.erase(i);
+ 
+diff --git a/src/torrent.cpp b/src/torrent.cpp
+index 5bf07c2..bfd154c 100644
+--- a/src/torrent.cpp
++++ b/src/torrent.cpp
+@@ -2290,6 +2290,45 @@ bool is_downloading_state(int const st)
+ 	}
+ 	catch (...) { handle_exception(); }
+ 
++	void torrent::forget_pieces(std::vector<piece_index_t> const& pieces)
++	{
++		TORRENT_ASSERT(is_single_thread());
++		if (!valid_metadata() || pieces.empty()) return;
++		need_picker();
++		bool const was_finished = is_finished();
++
++		bool forgot = false;
++		for (piece_index_t const index : pieces)
++		{
++			if (index < piece_index_t(0) || index >= m_torrent_file->end_piece()) continue;
++			if (!m_picker->have_piece(index)) continue;
++			m_picker->we_dont_have(index);
++			inc_stats_counter(counters::num_have_pieces, -1);
++			forgot = true;
++			for (auto p : m_connections)
++			{
++				TORRENT_INCREMENT(m_iterating_connections);
++				// the same as when a piece fails its hash check: reject outstanding
++				// requests and tell peers that support it we don't have it
++				p->reject_piece(index);
++				p->write_dont_have(index);
++			}
++		}
++		if (!forgot) return;
++
++		m_have_all = false;
++		m_file_progress.clear();
++		m_file_progress.init(*m_picker, m_torrent_file->files());
++		// a seed that lost pieces nobody wants is only finished. If some of them
++		// are still wanted, update_peer_interest() resumes the download
++		if (m_state == torrent_status::seeding && is_finished())
++			set_state(torrent_status::finished);
++		update_peer_interest(was_finished);
++		update_gauge();
++		set_need_save_resume(torrent_handle::if_download_progress);
++		state_updated();
++	}
++
+ 	void torrent::force_recheck()
+ 	{
+ 		INVARIANT_CHECK;
+diff --git a/src/torrent_handle.cpp b/src/torrent_handle.cpp
+index c255e7a..d53cc7b 100644
+--- a/src/torrent_handle.cpp
++++ b/src/torrent_handle.cpp
+@@ -418,6 +418,11 @@ namespace libtorrent {
+ 		async_call(&torrent::force_recheck);
+ 	}
+ 
++	void torrent_handle::forget_pieces(std::vector<piece_index_t> pieces) const
++	{
++		sync_call(&torrent::forget_pieces, std::move(pieces));
++	}
++
+ 	void torrent_handle::resume() const
+ 	{
+ 		async_call(&torrent::resume);

@@ -56,4 +56,10 @@ class RemoteTorrentFileHandle(
             remote.call { closeAndDelete() }
         }
     }
+
+    override suspend fun closeAndDiscard(filesInUse: Set<String>) {
+        withContext(Dispatchers.IO_) {
+            remote.call { closeAndDiscard(filesInUse.toTypedArray()) }
+        }
+    }
 }

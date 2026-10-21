@@ -90,4 +90,10 @@ interface TorrentSession {
      * 仅当没有文件正在被使用时关闭该下载任务.
      */
     suspend fun closeIfNotInUse()
+
+    /**
+     * 丢掉不在 [filesInUse] 里 (见 [TorrentFileEntry.pathInTorrent])、也没有句柄开着的文件已下载的数据,
+     * 返回丢了几个文件. 用于回收整季包里已经删掉的集; 不支持时什么也不做.
+     */
+    suspend fun discardFilesExcept(filesInUse: Set<String>): Int = 0
 }

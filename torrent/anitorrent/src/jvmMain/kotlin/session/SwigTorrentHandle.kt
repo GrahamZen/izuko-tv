@@ -13,6 +13,8 @@ import me.him188.ani.app.torrent.anitorrent.HandleId
 import me.him188.ani.app.torrent.api.TorrentHandleState
 import me.him188.ani.app.torrent.api.files.FilePriority
 import me.him188.ani.app.torrent.api.peer.PeerInfo
+import me.him188.ani.utils.logging.logger
+import me.him188.ani.utils.logging.warn
 import org.openani.anitorrent.binding.PeerInfoList
 import org.openani.anitorrent.binding.torrent_handle_t
 import org.openani.anitorrent.binding.torrent_info_t
@@ -37,6 +39,33 @@ class SwigTorrentHandle(
 
     override fun setFilePriority(index: Int, priority: FilePriority) {
         native.set_file_priority(index, priority.toLibtorrentValue())
+    }
+
+    // 桌面端的原生库是上游 0.2.0, 没有这个函数
+    override fun discardFile(index: Int, fastResumePath: String): Boolean {
+        val result = try {
+            native.discard_file(index, fastResumePath)
+        } catch (_: UnsatisfiedLinkError) {
+            return false
+        }
+        when {
+            result == 0 -> return true
+            result >= 1000 -> {
+                logger.warn { "[$id] discard_file($index) forgot the pieces but kept the space: errno ${result - 1000}" }
+                return true
+            }
+
+            else -> {
+                logger.warn { "[$id] discard_file($index) left the file as it was: $result (errno, or -1 invalid / -2 unsupported)" }
+                return false
+            }
+        }
+    }
+
+    override fun hasDiscardableData(index: Int): Boolean = try {
+        native.has_discardable_data(index)
+    } catch (_: UnsatisfiedLinkError) {
+        false
     }
 
     override fun getState(): TorrentHandleState? {
@@ -117,6 +146,8 @@ class SwigTorrentDescriptor(
     override val pieceLength: Long
         get() = native.piece_length.toUInt().toLong()
 }
+
+private val logger = logger<SwigTorrentHandle>()
 
 private fun FilePriority.toLibtorrentValue(): Short = when (this) {
     FilePriority.IGNORE -> 0

@@ -61,6 +61,11 @@ data class MediaCacheMetadata(
      */
     val autoCached: Boolean = false,
 
+    /**
+     * 用户 (或存储快满时) 暂停了这条下载: 重新恢复记录时 (重启、BT 服务重连) 保持暂停. 目前只有 BT 缓存读写它.
+     */
+    val paused: Boolean = false,
+
     @Transient @Suppress("unused") private val _primaryConstructorMarker: Byte = 0, // avoid compiler error
 ) {
     constructor(

@@ -24,4 +24,7 @@ interface IRemoteTorrentSession {
     void close();
     
     void closeIfNotInUse();
+
+    /** TorrentSession.discardFilesExcept, 返回丢了几个文件 */
+    int discardFilesExcept(in String[] filesInUse);
 }
