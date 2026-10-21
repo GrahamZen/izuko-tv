@@ -121,6 +121,7 @@ import me.him188.ani.app.ui.foundation.tv.tvWallConfirm
 import me.him188.ani.app.ui.foundation.tv.tvWallTapConfirmsWhileFocusing
 import me.him188.ani.app.ui.foundation.tv.tvWallTouchTap
 import me.him188.ani.app.ui.foundation.tv.wall.MenuHolder
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_CAROUSEL_BUTTONS_BOTTOM
 import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_HERO_TEXT_BOTTOM
 import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_HERO_WALL_SUMMARY_LINES
 import me.him188.ani.app.ui.foundation.tv.wall.TvPadHeroLayer

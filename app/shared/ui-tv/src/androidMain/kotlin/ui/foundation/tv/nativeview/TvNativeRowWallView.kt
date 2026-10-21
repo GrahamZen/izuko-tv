@@ -9,7 +9,6 @@
 
 package me.him188.ani.app.ui.foundation.tv.nativeview
 
-import androidx.compose.ui.graphics.toComposeRect
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
@@ -17,6 +16,7 @@ import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.drawable.ColorDrawable
 import android.os.SystemClock
+import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
@@ -24,11 +24,14 @@ import android.view.ViewGroup
 import android.view.ViewTreeObserver
 import android.widget.FrameLayout
 import androidx.compose.runtime.Immutable
+import androidx.compose.ui.graphics.toComposeRect
+import androidx.compose.ui.unit.Dp
 import androidx.recyclerview.widget.RecyclerView
 import com.github.panpf.sketch.Sketch
 import kotlinx.coroutines.CoroutineScope
 import me.him188.ani.app.ui.foundation.focus.TvScrollSpring
 import me.him188.ani.app.ui.foundation.tv.TV_CARD_PAST_DIM_ALPHA
+import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_ASPECT_RATIO
 import me.him188.ani.app.ui.foundation.tv.TV_SCROLL_HIDDEN_TEXT_IN_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TV_SCROLL_STILL_FRAMES
 import me.him188.ani.app.ui.foundation.tv.TV_SCROLL_STILL_PX
@@ -39,6 +42,11 @@ import me.him188.ani.app.ui.foundation.tv.TvWallTouchTap
 import me.him188.ani.app.ui.foundation.tv.tvWallConfirm
 import me.him188.ani.app.ui.foundation.tv.tvWallTapConfirmsWhileFocusing
 import me.him188.ani.app.ui.foundation.tv.tvWallTouchTap
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_HERO_SUMMARY_LINES
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_HERO_SUMMARY_WIDTH_FRACTION
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_HERO_TEXT_BOTTOM
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_HERO_TITLE_WIDTH_FRACTION
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_HERO_WALL_SUMMARY_LINES
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -190,6 +198,51 @@ open class TvNativeRowWallView private constructor(
      */
     var openFocusesWall: Boolean = true
 
+    /**
+     * 平板版 hero 的摆法 (宿主在触屏设备上给; 几何见 TvPadHeroGeometry): 背景图高度铺满 hero 区、贴右上角,
+     * 文字贴 hero 区左下往上长 (简介压成一段、限行数), 宽度按页面宽的比例. 宾客模式下 hero 归宿主, 这里不管.
+     */
+    var padHero: Boolean = false
+        set(value) {
+            if (field == value || guest != null) return
+            field = value
+            heroText.padLayout = value
+            applyPadText(card = true)
+            onPadHeroChanged(value)
+            requestLayout()
+            applyFrame()
+        }
+
+    /** 子类跟着 [padHero] 换顶部区域的摆法 (探索页的按钮与圆点). */
+    protected open fun onPadHeroChanged(enabled: Boolean) {}
+
+    /** 平板版: 聚焦卡的 hero 区高 —— 页顶到聚焦行的组标题. */
+    protected val padCardRegionPx: Int get() = metrics.listTopPx + metrics.heroHeaderTopPx
+
+    /** 平板版: 标题宽 (文字块宽). */
+    protected val padTitleWidthPx: Int get() = (metrics.pageWidthPx * TV_PAD_HERO_TITLE_WIDTH_FRACTION).roundToInt()
+
+    /** 平板版: 聚焦卡时文字块下沿 (从页顶算). */
+    protected val padCardTextBottomPx: Int get() = padCardRegionPx - dpPx(TV_PAD_HERO_TEXT_BOTTOM)
+
+    /** 平板版背景图的高 (宽按 16:9); 子类 (探索页) 按轮播区量, 聚焦卡时缩放. */
+    protected open fun padBackdropHeightPx(): Int = padCardRegionPx
+
+    /** 平板版文字块的下沿 (块的位置; 子类按两路内容各自的下沿平移). */
+    protected open fun padTextBoxBottomPx(): Int = padCardTextBottomPx
+
+    /** 平板版的简介宽度与行数: 聚焦卡 ([card]) / 轮播. */
+    protected fun applyPadText(card: Boolean) {
+        if (padHero) {
+            heroText.summaryWidthPx = (metrics.pageWidthPx * TV_PAD_HERO_SUMMARY_WIDTH_FRACTION).roundToInt()
+            heroText.summaryCapLines = if (card) TV_PAD_HERO_WALL_SUMMARY_LINES else TV_PAD_HERO_SUMMARY_LINES
+        } else {
+            heroText.summaryCapLines = 0
+        }
+    }
+
+    protected fun dpPx(dp: Dp): Int = (dp.value * resources.displayMetrics.density).roundToInt()
+
     /** hero 态里组标题跟着上面几行淡没 (聚焦行的也藏, 同网格页的 hero 态只剩一排卡); false = 聚焦行的组标题留着 (探索页). */
     override var hideHeadersInHero: Boolean = false
         set(value) {
@@ -220,11 +273,23 @@ open class TvNativeRowWallView private constructor(
         }
 
     /**
-     * 此刻按触屏的规矩走 (同 iPad 的 Compose 海报墙): 触屏设备上最近一次输入是手指 (系统的触摸模式, 按方向键就退出). 手指点卡片按
+     * 此刻按触屏的规矩走 (同 iPad 的 Compose 海报墙): 触屏设备上最近一次输入是手指 (见 [lastInputTouch]). 手指点卡片按
      * tvWallTouchTap 判 (按下不动焦点), 卡片墙上不画聚焦效果 (hero 态里照画); 列表由手指自由滚, 焦点不带着滚动 —— 卡片墙上焦点停在本视图
      * 自己身上 (见 [touchPark]), 只有进 hero 态、hero 态里换卡才滚到停位; 退出 hero 态停在原地.
      */
-    protected val touchMode: Boolean get() = touchInput && isInTouchMode
+    protected val touchMode: Boolean get() = touchInput && lastInputTouch
+
+    /**
+     * 本页最近一次收到的输入是手指 (同 iPad 的 tvWallInputMode): 手指按下算触屏, 方向键与确认键算回到电视的规矩; 焦点在页外时按的键不算.
+     * 不用系统的触摸模式: 页面里的焦点请求 (弹窗关掉后交还焦点等) 也会让窗口退出触摸模式, 手指还在用.
+     */
+    internal var lastInputTouch: Boolean = true
+        set(value) {
+            if (field == value) return
+            field = value
+            applyTouchLook()
+            onTouchModeChanged()
+        }
 
     /** 按触屏的规矩把焦点停在了本视图自己身上 (见 [touchPark]). */
     private var touchParked = false
@@ -327,9 +392,10 @@ open class TvNativeRowWallView private constructor(
         resolvePending(scrollIfMissing = true)
     }
 
-    private val touchModeWatcher = ViewTreeObserver.OnTouchModeChangeListener { applyTouchLook() }
+    /** 换了输入方式 (见 [lastInputTouch]): 子类跟着换 (探索页平板版画法在触屏上只留「新番时间表」). */
+    protected open fun onTouchModeChanged() {}
 
-    /** 按触屏的规矩走时卡片墙上不画聚焦效果 (见 [touchMode]); 进出 hero 态、hero 时间线每一帧与触摸模式变化时对一次. */
+    /** 按触屏的规矩走时卡片墙上不画聚焦效果 (见 [touchMode]); 进出 hero 态、hero 时间线每一帧与换输入方式时对一次. */
     private fun applyTouchLook() {
         list.touchLookHidden = touchMode && !timeline.active
     }
@@ -357,6 +423,7 @@ open class TvNativeRowWallView private constructor(
     protected open fun onTouchInputChanged(enabled: Boolean) {}
 
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        if (ev.actionMasked == MotionEvent.ACTION_DOWN && ev.isFromSource(InputDevice.SOURCE_TOUCHSCREEN)) lastInputTouch = true
         heroBlankTap?.onTouch(ev)
         return super.dispatchTouchEvent(ev)
     }
@@ -1293,6 +1360,7 @@ open class TvNativeRowWallView private constructor(
     // ------------------------------------------------------------------
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN && tvNativeIsWallInputKey(event.keyCode)) lastInputTouch = false
         // 宾客模式下这两样宿主已经过了
         if (guest == null) {
             TvNativeFocusCues.onKey(this, event)
@@ -1730,7 +1798,6 @@ open class TvNativeRowWallView private constructor(
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         viewTreeObserver.addOnGlobalFocusChangeListener(focusWatcher)
-        viewTreeObserver.addOnTouchModeChangeListener(touchModeWatcher)
         applyTouchLook()
         // 宾客模式下聚焦提示按宿主那一页算
         if (guest == null) TvNativeFocusCues.attachPage(this)
@@ -1964,8 +2031,14 @@ open class TvNativeRowWallView private constructor(
         fun exactly(px: Int) = MeasureSpec.makeMeasureSpec(px.coerceAtLeast(0), MeasureSpec.EXACTLY)
         if (guest == null) {
             wallBackdrop?.measure(exactly(width), exactly(height))
-            backdrop.measure(exactly(m.backdropWidthPx), exactly(m.backdropHeightPx))
-            heroBox.measure(exactly(m.pageWidthPx - m.heroStartPx - m.heroEndPadPx), exactly(m.heroBlockExpandedPx))
+            if (padHero) {
+                val backdropHeight = padBackdropHeightPx()
+                backdrop.measure(exactly((backdropHeight * TV_BACKDROP_ASPECT_RATIO).roundToInt()), exactly(backdropHeight))
+                heroBox.measure(exactly(padTitleWidthPx), exactly(padTextBoxBottomPx() - m.heroTopPx))
+            } else {
+                backdrop.measure(exactly(m.backdropWidthPx), exactly(m.backdropHeightPx))
+                heroBox.measure(exactly(m.pageWidthPx - m.heroStartPx - m.heroEndPadPx), exactly(m.heroBlockExpandedPx))
+            }
         }
         list.measure(exactly(width), exactly(height - m.listTopPx + m.listTopBleedPx))
         if (anchorRing.parent != null) anchorRing.measure(exactly(style.cardWidthPx), exactly(style.cardHeightPx))
@@ -2018,7 +2091,6 @@ open class TvNativeRowWallView private constructor(
 
     override fun onDetachedFromWindow() {
         viewTreeObserver.removeOnGlobalFocusChangeListener(focusWatcher)
-        viewTreeObserver.removeOnTouchModeChangeListener(touchModeWatcher)
         if (guest == null) TvNativeFocusCues.detachPage(this)
         super.onDetachedFromWindow()
         scrollTracker.stop()
@@ -2056,6 +2128,14 @@ open class TvNativeRowWallView private constructor(
         override fun measureContent(widthMeasureSpec: Int, heightMeasureSpec: Int) {
             val m = metrics
             val width = MeasureSpec.getSize(widthMeasureSpec)
+            if (padHero) {
+                // 平板版: 文字占满整块、贴底排 (见 TvNativeHeroTextView.padLayout), 按钮不在块里
+                val height = MeasureSpec.getSize(heightMeasureSpec)
+                heroText.titleWidthPx = width
+                heroText.measure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY))
+                setMeasuredDimension(width, height)
+                return
+            }
             val ex = extra?.takeIf { extraPresent }
             val block = if (ex != null) m.heroBlockExpandedPx else m.heroBlockPx
             var extraHeight = 0
@@ -2152,3 +2232,9 @@ private const val TV_NATIVE_NEAR_JUMP_ROWS = 2
 
 /** 换内容滑动开始时跨出那一屏宽的卡淡出多久 (见 TvNativeRowWallView.beginLane): 赶在整片滑起来之前没掉. */
 private const val TV_NATIVE_LANE_CARD_OUT_MILLIS = 120L
+
+/** 算「用键盘 / 遥控器操作」的键 (同 iPad 的 tvWallInputMode): 方向键与确认键. */
+internal fun tvNativeIsWallInputKey(keyCode: Int): Boolean = when (keyCode) {
+    KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> true
+    else -> tvNativeIsConfirmKey(keyCode)
+}
