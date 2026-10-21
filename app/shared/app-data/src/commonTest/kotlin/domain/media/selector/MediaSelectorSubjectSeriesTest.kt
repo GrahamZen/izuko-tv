@@ -78,10 +78,7 @@ class MediaSelectorSubjectSeriesTest {
                         SubjectNameMismatch,
                         FromSeriesSeason,
                     ),
-                    "香格里拉边境" to tentatively(
-                        SubjectNameMismatch,
-                        FromSeriesSeason,
-                    ),
+                    "香格里拉边境" to FromSeriesSeason, // 不带季号的系列名, 本条目是第二季 (见 SeasonNumberConflict.isSeasonlessEarlierSeason)
                     "香格里拉2009" to SubjectNameMismatch, // 这确实是另一个番
                     "香格里拉·开拓异境～粪作猎手挑战神作" to FromSeriesSeason,
                     "这儿是香格里拉" to SubjectNameMismatch,
