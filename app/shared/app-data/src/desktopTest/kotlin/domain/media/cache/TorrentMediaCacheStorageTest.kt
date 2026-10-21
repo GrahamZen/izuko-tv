@@ -49,6 +49,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.assertNotSame
 import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
@@ -276,6 +277,23 @@ class TorrentMediaCacheStorageTest : AbstractTorrentMediaCacheEngineTest() {
         available.value = true
         runCurrent()
         assertSame(cache, restored.listFlow.value.single())
+    }
+
+    @Test
+    fun `a refresh closes the downloads it replaces so pausing the listed one stops the file`() = runTest {
+        val storage = createStorage(createEngine(onDownloadStarted = { it.onTorrentChecked() }))
+        val before = storage.cache(testMedia, mediaCacheMetadata(), resume = true)
+        advanceUntilIdle()
+        assertEquals(FilePriority.NORMAL, before.requestingPriority())
+
+        storage.refreshCache()
+        advanceUntilIdle()
+        val after = storage.listFlow.value.single() as TorrentMediaCacheEngine.TorrentMediaCache
+        assertNotSame(before, after)
+
+        after.pause()
+        advanceUntilIdle()
+        assertEquals(FilePriority.IGNORE, after.requestingPriority(), "the replaced record still requests the file")
     }
 
     private suspend fun TorrentMediaCacheEngine.TorrentMediaCache.requestingPriority(): FilePriority {
