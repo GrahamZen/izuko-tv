@@ -152,6 +152,7 @@ import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
 import me.him188.ani.app.ui.foundation.tvLongPressKey
 import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
 import me.him188.ani.app.ui.foundation.widgets.AniFocusSelectableSurface
+import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFade
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.tv_profile_add
 import me.him188.ani.app.ui.lang.tv_profile_add_description
@@ -1121,8 +1122,9 @@ internal fun ProfileDialogSurface(
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             contentColor = MaterialTheme.colorScheme.onSurface,
         ) {
-            // 可滚动兜底: 添加用户那个 (说明 + 名字 + 两个选项) 在字大的时候可能比屏幕高, 焦点走到哪滚到哪
-            Column(Modifier.tvFocusNavSignal(focus).verticalScroll(rememberScrollState()).padding(32.dp)) {
+            // 可滚动兜底: 添加用户那个 (说明 + 名字 + 两个选项) 在字大的时候可能比屏幕高, 焦点走到哪滚到哪; 滚不完时上下渐隐
+            val scroll = rememberScrollState()
+            Column(Modifier.tvFocusNavSignal(focus).aniVerticalScrollFade(scroll).verticalScroll(scroll).padding(32.dp)) {
                 Text(title, style = MaterialTheme.typography.headlineSmall)
                 Spacer(Modifier.height(16.dp))
                 content(focus)

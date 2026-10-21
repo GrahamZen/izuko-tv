@@ -70,7 +70,7 @@ internal fun TvDriveLoginDialog(driveId: String, onLoggedIn: () -> Unit, onDismi
     val name = service.protocol.displayName(Locale.current.toLanguageTag())
     AniCenteredPanelDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(Lang.tv_source_drive_login_title, name), style = MaterialTheme.typography.titleLarge) },
+        title = { Text(stringResource(Lang.tv_source_drive_login_title, name)) },
         heightFraction = null,
         maxWidth = DRIVE_LOGIN_MAX_WIDTH,
     ) {
