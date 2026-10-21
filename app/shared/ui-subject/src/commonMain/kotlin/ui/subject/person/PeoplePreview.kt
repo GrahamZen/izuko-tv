@@ -66,15 +66,21 @@ import me.him188.ani.app.ui.foundation.ImageViewerHandler
 import me.him188.ani.app.ui.foundation.rememberImageViewerHandler
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.dialogs.DialogWindowDimAmount
+import me.him188.ani.app.ui.foundation.dialogs.dialogWindowBlurBehind
+import me.him188.ani.app.ui.foundation.widgets.ANI_GLASS_BLUR_RADIUS
+import me.him188.ani.app.ui.foundation.widgets.ANI_GLASS_PANEL_SHAPE
+import me.him188.ani.app.ui.foundation.widgets.ANI_GLASS_WINDOW_DIM
+import me.him188.ani.app.ui.foundation.widgets.aniGlassEdge
+import me.him188.ani.app.ui.foundation.widgets.aniGlassPanelColor
+import me.him188.ani.app.ui.foundation.widgets.aniPanelTitleStyle
+import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFade
 import me.him188.ani.app.ui.foundation.focus.tvContainDirectionalKeys
 import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
 import me.him188.ani.app.ui.foundation.widgets.AniFocusIconButton
-import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_SHAPE
 import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_WINDOW_DIM
 import me.him188.ani.app.ui.foundation.widgets.ModalSideSheet
-import me.him188.ani.app.ui.foundation.widgets.ProvidePopupControlStyle
-import me.him188.ani.app.ui.foundation.widgets.centeredPanelColor
+import me.him188.ani.app.ui.foundation.widgets.ProvideAniGlassPanelContent
 import me.him188.ani.app.ui.foundation.widgets.rememberModalSideSheetState
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.person_details_open_full_page
@@ -205,7 +211,8 @@ private fun PeoplePreviewSideSheet(
         ) {
             // 底色/窗外压暗与 AniCenteredPanelDialog 同一套: 盖在播放器上时画面要透得出来.
             // 四周只靠这层系统压暗, 不再自己多画一层黑 (两层叠起来会把画面压到近乎全黑)
-            DialogWindowDimAmount(CENTERED_PANEL_WINDOW_DIM)
+            val blurred = dialogWindowBlurBehind(ANI_GLASS_BLUR_RADIUS)
+            DialogWindowDimAmount(if (blurred) ANI_GLASS_WINDOW_DIM else CENTERED_PANEL_WINDOW_DIM)
             // Dialog 是独立窗口, 按键到不了播放页的根按键路由 —— 从播放器的角色/制作人员面板
             // 点开时画面还在后面放着, 遥控器播放暂停键仍该管用. 播放页之外为空操作
             Box(Modifier.fillMaxSize().tvOverlayWindowKeys(onDismissRequest)) {
@@ -222,13 +229,14 @@ private fun PeoplePreviewSideSheet(
                     Modifier.align(Alignment.Center)
                         .fillMaxHeight(TV_PEOPLE_PREVIEW_HEIGHT_FRACTION)
                         .width(TV_PEOPLE_PREVIEW_WIDTH),
-                    shape = CENTERED_PANEL_SHAPE,
-                    color = centeredPanelColor,
+                    shape = ANI_GLASS_PANEL_SHAPE,
+                    color = aniGlassPanelColor(blurred),
+                    border = aniGlassEdge(),
                     // 半透明底色查不到 "on" 色, 不显式给会退回 LocalContentColor 的默认纯黑
                     contentColor = MaterialTheme.colorScheme.onSurface,
                 ) {
-                    // 弹窗里的控件约定 (按钮画成动作按钮), 见 ProvidePopupControlStyle
-                    ProvidePopupControlStyle {
+                    // 玻璃面板里的控件约定 (项目换成玻璃底、按钮画成动作按钮), 见 ProvideAniGlassPanelContent
+                    ProvideAniGlassPanelContent {
                         // 方向键在弹窗里走完: 里面有原生横滑行, 没接住的方向键交给系统会按屏幕位置挑中行里的卡
                         Box(Modifier.tvContainDirectionalKeys()) {
                             // 居中形态没有退场动画, 关闭就是直接清空目标. 横滑行用电视入口提供的原生实现
@@ -322,7 +330,7 @@ private fun PersonPreviewContent(
             onHeaderFocused = if (focusDriven) scrollToTop else ({}),
         )
         Column(
-            Modifier.fillMaxWidth().verticalScroll(scrollState),
+            Modifier.fillMaxWidth().aniVerticalScrollFade(scrollState).verticalScroll(scrollState),
         ) {
             PersonDetailsContentColumn(
                 details = details,
@@ -365,7 +373,7 @@ private fun CharacterPreviewContent(
             onHeaderFocused = if (focusDriven) scrollToTop else ({}),
         )
         Column(
-            Modifier.fillMaxWidth().verticalScroll(scrollState),
+            Modifier.fillMaxWidth().aniVerticalScrollFade(scrollState).verticalScroll(scrollState),
         ) {
             CharacterDetailsContentColumn(
                 details = details,
@@ -410,7 +418,7 @@ private fun PreviewSheetHeader(
         Text(
             title,
             Modifier.weight(1f),
-            style = MaterialTheme.typography.titleLarge,
+            style = aniPanelTitleStyle,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )

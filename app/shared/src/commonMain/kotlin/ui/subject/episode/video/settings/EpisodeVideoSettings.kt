@@ -46,6 +46,7 @@ import me.him188.ani.app.ui.foundation.LocalPlatform
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
 import me.him188.ani.app.ui.foundation.rememberDebugSettingsViewModel
 import me.him188.ani.app.ui.foundation.widgets.AniFocusChip
+import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFade
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.subject_episode_video_settings_bottom
 import me.him188.ani.app.ui.lang.subject_episode_video_settings_colorful
@@ -183,7 +184,9 @@ fun EpisodeVideoSettings(
     val manageRegexFilterText = stringResource(Lang.subject_episode_video_settings_manage_regex_filter)
     val debugModeText = stringResource(Lang.subject_episode_video_settings_debug_mode)
 
-    SettingsTab(modifier.verticalScroll(rememberScrollState())) {
+    // 放在弹窗 / 侧边栏里: 滚不完时上下渐隐, 不被边框一刀切掉
+    val scroll = rememberScrollState()
+    SettingsTab(modifier.aniVerticalScrollFade(scroll).verticalScroll(scroll)) {
         sources()
         Column {
             Surface(Modifier.fillMaxWidth(), color = SettingsDefaults.groupBackgroundColor) {

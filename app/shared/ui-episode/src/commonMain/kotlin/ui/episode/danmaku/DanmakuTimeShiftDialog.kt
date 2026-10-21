@@ -39,6 +39,7 @@ import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
 import me.him188.ani.app.ui.foundation.widgets.AniOutlinedButton
 import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.foundation.widgets.aniDialogContainerColor
+import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFade
 import me.him188.ani.app.ui.foundation.widgets.dismissDialogButton
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_danmaku_cancel
@@ -94,8 +95,9 @@ fun DanmakuTimeShiftDialog(
         dismissButton = dismissDialogButton(cancelText, onDismissRequest, Modifier.testTag("danmaku-shift-cancel")),
         title = { Text(titleText) },
         text = {
+            val scrollState = rememberScrollState()
             Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
+                modifier = Modifier.aniVerticalScrollFade(scrollState).verticalScroll(scrollState),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Text(descriptionText)

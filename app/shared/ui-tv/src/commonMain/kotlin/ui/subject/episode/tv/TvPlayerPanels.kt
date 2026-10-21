@@ -139,6 +139,7 @@ import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
 import me.him188.ani.app.ui.foundation.tv.tvAmbientMarquee
 import me.him188.ani.app.ui.foundation.tv.tvUseOriginalTitle
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
+import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFade
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.comment_reply_to
 import me.him188.ani.app.ui.lang.episode_danmaku
@@ -474,6 +475,8 @@ private fun TvPanelList(
             state = listState,
             reverseLayout = true,
             modifier = modifier
+                // 聚焦项吸在底缘, 挤出去的是更早的条目 (在上面): 只在顶边渐隐, 底边不隐 (那里就是焦点项)
+                .aniVerticalScrollFade(canScrollUp = { listState.canScrollForward }, canScrollDown = { false })
                 .focusGroup()
                 .onFocusChanged { if (it.hasFocus) overlay.focusRegion = TvPlayerFocusRegion.PANEL },
             verticalArrangement = Arrangement.spacedBy(itemSpacing),

@@ -96,6 +96,11 @@ fun AniScrollableTextDialog(
      */
     onHorizontalNav: ((delta: Int) -> Unit)? = null,
     /**
+     * [onHorizontalNav] 往 `delta` 那一侧还有没有内容. 给了 [onHorizontalNav] 时触屏上面板两侧有左右箭头、横滑也切
+     * (见 [AniPanelSideNavHost]), 没有内容的那一侧箭头变淡、点和滑都不切.
+     */
+    canHorizontalNav: (delta: Int) -> Boolean = { true },
+    /**
      * 满幅铺在弹窗里的背景 (如剧照), 上方自动压遮罩. 不做成正文上方的图块 ——
      * 图按宽高比铺开会吃掉大半高度, 把正文和按钮挤出布局; 当背景既不占布局又有氛围.
      */
@@ -150,10 +155,11 @@ fun AniScrollableTextDialog(
     AniCenteredPanelDialog(
         onDismissRequest = onDismissRequest,
         title = {
-            Text(title, style = MaterialTheme.typography.titleLarge.copy(shadow = titleShadow))
+            Text(title, style = aniPanelTitleStyle.copy(shadow = titleShadow))
         },
         background = background,
         aspectRatio = aspectRatio,
+        sideNav = onHorizontalNav?.let { nav -> AniPanelSideNav(nav, canHorizontalNav) },
     ) {
         // **必须在面板里面读**: 有背景图时白色是面板的 Surface 给的 (见 AniCenteredPanelDialog 的 contentColor),
         // 在外面读到的是弹窗宿主那一层的颜色 —— 浅色主题下是黑的, 压在剧照上看不清 (用户 10-01 报的日期那一行)

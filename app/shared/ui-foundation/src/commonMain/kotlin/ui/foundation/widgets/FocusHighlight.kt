@@ -44,6 +44,7 @@ import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
+import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.ProvideRingOnlyFocus
 
 /*
@@ -110,20 +111,21 @@ fun AniFocusActionButton(
 ) {
     val colorScheme = MaterialTheme.colorScheme
     var focused by remember { mutableStateOf(false) }
+    // 触屏上没人按方向键: 弹窗打开时初始焦点落在按钮上也不画聚焦实底 (否则一打开就是一颗亮着的按钮), 按下有涟漪
+    val showFocus = focused && !LocalTvTouchInputEnabled.current
     val contentColor = when {
         accentColor.isSpecified -> accentColor
-        focused -> aniFocusContentColor()
+        showFocus -> aniFocusContentColor()
         else -> colorScheme.onSurface
     }
     Surface(
         onClick = { if (enabled) onClick() },
         modifier = modifier.onFocusChanged { focused = it.isFocused },
         shape = CircleShape,
-        // 未聚焦的底比面板高一档 (与弹窗里的输入框/引用区同一档), 而不是自定 alpha:
-        // 走配色表才能保证各个弹窗里的按钮长得一样
-        color = if (focused) aniFocusContainerColor() else colorScheme.surfaceContainerHighest,
+        // 未聚焦是玻璃按钮 (淡白底 + 上亮下暗的细高光边, 同面板边缘, 见 AniGlass.kt), 叠在玻璃面板或剧照上都看得出是按钮
+        color = if (showFocus) aniFocusContainerColor() else aniGlassButtonColor(),
         contentColor = if (enabled) contentColor else contentColor.copy(alpha = DISABLED_ALPHA),
-        border = if (focused) null else BorderStroke(1.dp, colorScheme.outlineVariant),
+        border = if (showFocus) null else aniGlassEdge(),
     ) {
         Box(
             Modifier.padding(horizontal = 24.dp, vertical = 10.dp),
@@ -162,12 +164,13 @@ fun AniFocusIconButton(
     }
     val colorScheme = MaterialTheme.colorScheme
     var focused by remember { mutableStateOf(false) }
+    val showFocus = focused && !LocalTvTouchInputEnabled.current
     Surface(
         onClick = onClick,
         modifier = modifier.onFocusChanged { focused = it.isFocused },
         shape = CircleShape,
-        color = if (focused) aniFocusContainerColor() else Color.Transparent,
-        contentColor = if (focused) aniFocusContentColor() else LocalContentColor.current,
+        color = if (showFocus) aniFocusContainerColor() else Color.Transparent,
+        contentColor = if (showFocus) aniFocusContentColor() else LocalContentColor.current,
     ) {
         Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
             content()
@@ -176,8 +179,8 @@ fun AniFocusIconButton(
 }
 
 /**
- * 弹窗里可选中的小控件 (胶囊 / 选项格 / 集号方块) 的底座: 聚焦实底 ([aniFocusContainerColor]), 选中 secondaryContainer,
- * 其余 [unselectedColor] (默认比面板高一档的 surfaceContainerHighest, 与 [AniFocusActionButton] 常态同一档).
+ * 弹窗里可选中的小控件 (胶囊 / 选项格 / 集号方块) 的底座: 聚焦实底 ([aniFocusContainerColor], 触屏上不画), 选中 secondaryContainer,
+ * 其余 [unselectedColor] (默认: 玻璃面板里是淡白的 [aniGlassItemColor], 否则比面板高一档的 surfaceContainerHighest).
  * 内容色随三态由 [Surface] 供给; [content] 拿到是否聚焦, 自己另外着色的部分 (如状态尾标) 聚焦时要让位给内容色.
  *
  * 选中的 ✓ 由上层按版式自己摆 ([AniFocusChip] 在字前, 网格格子在右端).
@@ -188,28 +191,29 @@ fun AniFocusSelectableSurface(
     selected: Boolean,
     shape: Shape,
     modifier: Modifier = Modifier,
-    unselectedColor: Color = MaterialTheme.colorScheme.surfaceContainerHighest,
+    unselectedColor: Color = aniPanelItemColor(MaterialTheme.colorScheme.surfaceContainerHighest),
     unselectedContentColor: Color = MaterialTheme.colorScheme.onSurface,
     content: @Composable (focused: Boolean) -> Unit,
 ) {
     val colorScheme = MaterialTheme.colorScheme
     var focused by remember { mutableStateOf(false) }
+    val showFocus = focused && !LocalTvTouchInputEnabled.current
     Surface(
         onClick = onClick,
         modifier = modifier.onFocusChanged { focused = it.isFocused },
         shape = shape,
         color = when {
-            focused -> aniFocusContainerColor()
+            showFocus -> aniFocusContainerColor()
             selected -> colorScheme.secondaryContainer
             else -> unselectedColor
         },
         contentColor = when {
-            focused -> aniFocusContentColor()
+            showFocus -> aniFocusContentColor()
             selected -> colorScheme.onSecondaryContainer
             else -> unselectedContentColor
         },
     ) {
-        content(focused)
+        content(showFocus)
     }
 }
 
@@ -223,11 +227,12 @@ fun AniFocusRingSurface(
     selected: Boolean,
     shape: Shape,
     modifier: Modifier = Modifier,
-    unselectedColor: Color = MaterialTheme.colorScheme.surfaceContainerHighest,
+    unselectedColor: Color = aniPanelItemColor(MaterialTheme.colorScheme.surfaceContainerHighest),
     content: @Composable () -> Unit,
 ) {
     val colorScheme = MaterialTheme.colorScheme
     var focused by remember { mutableStateOf(false) }
+    val showFocus = focused && !LocalTvTouchInputEnabled.current
     ProvideRingOnlyFocus {
         Surface(
             onClick = onClick,
@@ -235,7 +240,7 @@ fun AniFocusRingSurface(
             shape = shape,
             color = if (selected) colorScheme.secondaryContainer else unselectedColor,
             contentColor = if (selected) colorScheme.onSecondaryContainer else colorScheme.onSurface,
-            border = if (focused) BorderStroke(FOCUS_RING_WIDTH, colorScheme.primary) else null,
+            border = if (showFocus) BorderStroke(FOCUS_RING_WIDTH, colorScheme.primary) else null,
             content = content,
         )
     }

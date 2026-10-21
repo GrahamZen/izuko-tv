@@ -108,7 +108,7 @@ internal fun TvSourceDetailsDialog(
     val navHint = stringResource(Lang.tv_source_detail_nav_hint)
     AniCenteredPanelDialog(
         onDismissRequest = onDismiss,
-        title = { Text(details.title, style = MaterialTheme.typography.titleLarge) },
+        title = { Text(details.title) },
         heightFraction = null,
         maxWidth = TV_SOURCE_DETAILS_MAX_WIDTH,
     ) {
