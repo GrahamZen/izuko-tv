@@ -155,7 +155,8 @@ class TorrentMediaCacheStorage(
     private suspend fun refreshCacheLocked(): List<MediaCache> {
         statSubscriptionScope.restart()
         statJobs.value = persistentMapOf()
-        return super.refreshCache()
+        val previous = listFlow.value
+        return super.refreshCache().also { closeReplacedTorrentCaches(previous, listFlow.value) }
     }
 
     override suspend fun refreshCache(): List<MediaCache> {
