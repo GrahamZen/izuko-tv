@@ -109,4 +109,10 @@ class RemoteTorrentSession(
             remote.call { closeIfNotInUse() }
         }
     }
+
+    override suspend fun discardFilesExcept(filesInUse: Set<String>): Int {
+        return withContext(Dispatchers.IO_) {
+            remote.call { discardFilesExcept(filesInUse.toTypedArray()) }
+        }
+    }
 }

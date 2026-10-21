@@ -59,6 +59,18 @@ interface TorrentHandle {
     fun addTracker(tracker: String, tier: Short = 0, failLimit: Short = 0)
 
     fun getMagnetUri(): String?
+
+    /**
+     * 丢掉文件 [index] 已下载的数据、腾出空间 (整季包里删掉一集), 见 anitorrent 的 `torrent_handle_t::discard_file`:
+     * 完全落在这个文件里的分块此后算没下载, 续传数据 [fastResumePath] 同时删掉 (调用方随后写一份新的).
+     * 返回这些分块是不是已经忘掉; 原生库不支持或空间还不回去时返回 false, 什么也不变.
+     */
+    fun discardFile(index: Int, fastResumePath: String): Boolean = false
+
+    /**
+     * [discardFile] 对文件 [index] 还有没有东西可丢: libtorrent 还有完全落在这个文件里的分块, 或者那一段还占着磁盘.
+     */
+    fun hasDiscardableData(index: Int): Boolean = false
 }
 
 

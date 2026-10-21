@@ -15,6 +15,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -156,7 +157,9 @@ class TorrentMediaCacheEngine(
     inner class TorrentMediaCache(
         override val origin: Media,
         initialMetadata: MediaCacheMetadata,
-        val fileHandle: FileHandle
+        val fileHandle: FileHandle,
+        /** 种子的保存目录, 见 [TorrentCacheInfoEntity.relativeDir]. 删除时按它找同一个种子的其他记录 */
+        internal val relativeDir: String,
     ) : MediaCache, SynchronizedObject() {
         private val metadataFlow = MutableStateFlow(initialMetadata)
         override val metadata: MediaCacheMetadata get() = metadataFlow.value
@@ -302,8 +305,20 @@ class TorrentMediaCacheEngine(
 
         override suspend fun pause() {
             if (isDeleted.value) return
-            desiredState.value = MediaCacheState.PAUSED
+            // 先记下来 (服务没连上时下面要等它), 记不下来也照样停; 停住之后才算暂停, 中途被打断时空间保护下一轮还会再停
+            persistPaused(true)
             fileHandle.handle.first()?.pause()
+            desiredState.value = MediaCacheState.PAUSED
+        }
+
+        private suspend fun persistPaused(paused: Boolean) {
+            try {
+                withContext(NonCancellable) { updateMetadata { it.copy(paused = paused) } }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.warn { "Failed to persist paused=$paused for ${origin.mediaId}: $e" }
+            }
         }
 
         override suspend fun close() {
@@ -314,6 +329,7 @@ class TorrentMediaCacheEngine(
         override suspend fun resume() {
             if (isDeleted.value) return
             desiredState.value = MediaCacheState.IN_PROGRESS
+            persistPaused(false)
             val file = fileHandle.handle.first()
             logger.info { "Resuming file: $file" }
             file?.resume(FilePriority.NORMAL)
@@ -389,13 +405,12 @@ class TorrentMediaCacheEngine(
                 // 不创建文件, 播放时卡在 resolveDownloadingFile 的 "Still waiting to get file..." 上。
                 // 真机复现: 2026-09-20 删掉第六集重新缓存, 引擎报 progress=1.0 而磁盘上根本没那个文件。
                 //
-                // 所以只关句柄: 物理空间的回收全权交给会话侧的 deleteEntireTorrentIfNotInUse ——
-                // 整个种子没人引用了就整目录 reclaim (先失效 fastresume 再删数据), 还有其他集在就
-                // 跳过并打 warn。代价是"删了其中几集空间不立即回收", 这是 v6.0.6 就做过的取舍:
-                // 宁可晚点回收, 不能交出一个永远下不完的稀疏文件。彻底修法需要 anitorrent 补上
-                // force_recheck 绑定, 另行立项。
+                // 所以这里只关句柄, 物理空间的回收交给会话侧: 整个种子没人引用了就整目录 reclaim
+                // (先失效 fastresume 再删数据); 还有其他集在就只丢掉这一集 —— 先让 libtorrent 忘掉
+                // 这一集的分块, 再在文件里打洞还回空间. 有没有人引用按数据库里的记录判断 (releaseDeletedEpisodeFile).
                 logger.info { "Closing torrent file handle" }
-                handle.closeAndDelete()
+                // 网盘按集存文件, 删一集就是删它自己的文件
+                if (engineKey.isCloud) handle.closeAndDelete() else dao.releaseDeletedEpisodeFile(handle, relativeDir)
             }
         }
 
@@ -622,6 +637,7 @@ class TorrentMediaCacheEngine(
                                         metadata,
                                         coroutineContext,
                                     ),
+                                    relativeDir = torrent.relativeDir,
                                 ).apply {
                                     resume()
                                     closeAndDeleteFiles()
@@ -648,6 +664,7 @@ class TorrentMediaCacheEngine(
                 origin = origin,
                 initialMetadata = metadata,
                 fileHandle = getFileHandle(origin.mediaId, EncodedTorrentInfo.createRaw(data), metadata, parentContext),
+                relativeDir = torrent.relativeDir,
             )
         }
     }
@@ -821,6 +838,7 @@ class TorrentMediaCacheEngine(
                 origin = origin,
                 initialMetadata = metadata,
                 fileHandle = getFileHandle(origin.mediaId, data, metadata, parentContext),
+                relativeDir = relativeDir,
             )
         }
     }
@@ -857,6 +875,14 @@ class TorrentMediaCacheEngine(
                     }
                 }
             }
+        }
+    }
+
+    /** 启动恢复之后丢掉打开的种子里没有记录用着的文件, 见 [TorrentCacheInfoDao.discardFilesWithoutRecords]. */
+    suspend fun discardFilesWithoutRecords(all: List<MediaCache>) {
+        @OptIn(EnsureTorrentEngineIsAccessible::class)
+        engineAccess.withServiceRequest("TorrentMediaCacheEngine#$this-discardFilesWithoutRecords") {
+            dao.discardFilesWithoutRecords(all)
         }
     }
 

@@ -53,6 +53,7 @@ import me.him188.ani.app.ui.update.UpdateCheckProgress
 import me.him188.ani.app.ui.update.UpdateChecker
 import me.him188.ani.app.ui.update.releaseNotesStore
 import me.him188.ani.utils.io.SystemPath
+import me.him188.ani.utils.io.WriteBackCounter
 import me.him188.ani.utils.io.createDirectories
 import me.him188.ani.utils.io.resolve
 import me.him188.ani.utils.io.toFile
@@ -164,6 +165,7 @@ internal object RemoteAppUpdate {
 
     private class Upload(val id: String, val file: File, val size: Long, val info: Uploaded) {
         var received = 0L
+        val writeBack = WriteBackCounter()
     }
 
     /**
@@ -608,7 +610,11 @@ internal object RemoteAppUpdate {
             val u = upload?.takeIf { it.id == id } ?: return result(false, tr("上传已失效，请重新选择文件"))
             when {
                 offset == u.received -> {
-                    FileOutputStream(u.file, true).use { it.write(body) }
+                    FileOutputStream(u.file, true).use {
+                        it.write(body)
+                        // 局域网传得快, 整个安装包的脏页积着会让遥控器失灵 (见 WriteBackCounter)
+                        if (u.writeBack.wrote(body.size.toLong())) it.fd.sync()
+                    }
                     u.received += body.size
                 }
 

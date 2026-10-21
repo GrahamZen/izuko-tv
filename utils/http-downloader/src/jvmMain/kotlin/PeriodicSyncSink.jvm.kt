@@ -12,6 +12,7 @@ package me.him188.ani.utils.httpdownloader
 import kotlinx.io.Buffer
 import kotlinx.io.RawSink
 import kotlinx.io.readAtMostTo
+import me.him188.ani.utils.io.WriteBackCounter
 import java.io.File
 import java.io.FileOutputStream
 
@@ -19,10 +20,10 @@ actual fun openPeriodicSyncSink(absolutePath: String, syncEveryBytes: Long): Raw
     PeriodicSyncFileSink(File(absolutePath), syncEveryBytes)
 
 /** 见 [openPeriodicSyncSink]. 关闭时再 fsync 一次, 保证落盘 (调用方随后会按文件大小校验). */
-private class PeriodicSyncFileSink(file: File, private val syncEveryBytes: Long) : RawSink {
+private class PeriodicSyncFileSink(file: File, syncEveryBytes: Long) : RawSink {
     private val stream = FileOutputStream(file)
     private val transferBuffer = ByteArray(64 * 1024)
-    private var bytesSinceSync = 0L
+    private val writeBack = WriteBackCounter(syncEveryBytes)
 
     override fun write(source: Buffer, byteCount: Long) {
         var remaining = byteCount
@@ -32,11 +33,9 @@ private class PeriodicSyncFileSink(file: File, private val syncEveryBytes: Long)
             if (read <= 0) break
             stream.write(transferBuffer, 0, read)
             remaining -= read
-            bytesSinceSync += read
-            if (bytesSinceSync >= syncEveryBytes) {
+            if (writeBack.wrote(read.toLong())) {
                 stream.flush()
                 stream.fd.sync()
-                bytesSinceSync = 0
             }
         }
     }
@@ -52,17 +51,5 @@ private class PeriodicSyncFileSink(file: File, private val syncEveryBytes: Long)
         } finally {
             stream.close()
         }
-    }
-}
-
-actual fun syncFileContents(absolutePath: String): Boolean {
-    val file = File(absolutePath)
-    if (!file.exists()) return false
-    // append = true: 绝不截断别人正在写的文件; 一个字节也不写, 只借这个 fd 调 fsync
-    return try {
-        FileOutputStream(file, true).use { it.fd.sync() }
-        true
-    } catch (e: java.io.IOException) {
-        false
     }
 }

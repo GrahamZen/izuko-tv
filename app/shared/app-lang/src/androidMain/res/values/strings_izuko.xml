@@ -625,6 +625,7 @@
     <string name="settings_storage_play_cache_without_searching">Play downloads without searching</string>
     <string name="settings_storage_play_cache_without_searching_description">When this episode is fully downloaded, play it right away without searching other sources. Searching starts if the download fails to play, and opening the source panel still searches</string>
     <string name="cache_deleted_when_done">Deleted %2$d cached episodes of “%1$s”</string>
+    <string name="cache_paused_low_space">Only %1$s of storage left. Paused %2$d cache downloads, free up some space before resuming</string>
     <string name="cache_deleted_when_done_playing">Deleted %2$d cached episodes of “%1$s”. The episode now playing is deleted after you leave the player</string>
     <string name="cache_deleted_when_done_after_playback">The cache of “%1$s” is deleted after you leave the player</string>
     <string name="subject_details_nav_home">Home</string>

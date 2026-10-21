@@ -13,5 +13,3 @@ import kotlinx.io.RawSink
 
 // 原生平台暂不支持, 回落到普通 sink (脏页积压是 Android/ext4 上观察到的问题)
 actual fun openPeriodicSyncSink(absolutePath: String, syncEveryBytes: Long): RawSink? = null
-
-actual fun syncFileContents(absolutePath: String): Boolean = false

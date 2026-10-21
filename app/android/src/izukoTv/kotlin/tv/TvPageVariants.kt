@@ -82,6 +82,7 @@ import me.him188.ani.app.ui.lang.playback_session_none
 import me.him188.ani.app.ui.main.LocalTvAdjustWindows
 import me.him188.ani.app.ui.main.TvAdjustWindowHost
 import me.him188.ani.app.ui.main.TvAdjustWindows
+import me.him188.ani.app.ui.main.TvLowSpaceToasts
 import me.him188.ani.app.ui.main.TvMarkedDoneCacheDeletionToasts
 import me.him188.ani.app.ui.main.TvMirrorConsentHost
 import me.him188.ani.app.ui.main.TvQuickActionMenu
@@ -455,6 +456,8 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         })
         // 「标记看过后删除缓存」删了缓存时弹提示 (标记可能在任何一页或 Web 控制台发生)
         TvMarkedDoneCacheDeletionToasts()
+        // 存储快满、缓存下载被全部暂停时弹提示 (见 DownloadSpaceGuard)
+        TvLowSpaceToasts()
         // 更新后第一次打开的「本版新功能」页能不能盖上: 在首页, 而且这次不是新用户先登录 (留到下次). 见 TvWhatsNew
         val whatsNewAllowed = {
             !newUserLoginPending && runCatching { aniNavigator.backStack.lastOrNull() }.getOrNull() is NavRoutes.Main
