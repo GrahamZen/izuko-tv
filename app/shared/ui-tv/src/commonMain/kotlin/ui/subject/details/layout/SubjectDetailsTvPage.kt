@@ -1805,6 +1805,7 @@ fun SubjectDetailsTvPage(
                                 horizontalPadding = pad,
                                 // 返回本页焦点回这一排 (进页恢复): 上次那格一排出来就是聚焦态
                                 restoreFocus = restoreSection == TvDetailsSection.CHARACTERS,
+                                subjectName = info.displayName,
                                 modifier = Modifier
                                     // 区块进入落点 (选集页下键经路由送到这里, 跨页返回也是), 焦点落进这一排即算到位
                                     .tvFocusAnchor(anchors, TvDetailsFocusAnchor.CHARACTERS_SECTION)
@@ -1828,6 +1829,7 @@ fun SubjectDetailsTvPage(
                                 exposedStaff, allStaff, totalStaffCount, imageZoom,
                                 horizontalPadding = pad,
                                 restoreFocus = restoreSection == TvDetailsSection.STAFF,
+                                subjectName = info.displayName,
                                 modifier = Modifier
                                     .tvFocusAnchor(anchors, TvDetailsFocusAnchor.STAFF_SECTION)
                                     .onFocusChanged {

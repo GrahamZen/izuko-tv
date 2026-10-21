@@ -243,6 +243,7 @@
     <string name="subject_details_tv_title_logo_loading">Loading logos…</string>
     <string name="subject_details_tv_title_logo_load_failed">Couldn’t load logos from TMDB. If TMDB is unreachable, set up a proxy in Settings → Proxy and try again</string>
     <string name="subject_details_tv_title_logo_empty">TMDB has no %1$s logo</string>
+    <string name="subject_details_voice_actor_label">CV</string>
     <string name="subject_details_tv_title_logo_no_language">No language</string>
     <string name="subject_details_tv_title_logo_submitting">Submitting… Press Back to cancel</string>
     <string name="subject_details_tv_title_logo_submitted">Submitted (#%1$d). Everyone gets it once approved</string>

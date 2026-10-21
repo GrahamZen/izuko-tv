@@ -150,6 +150,8 @@ fun rememberPeopleClickHandler(): (PeoplePreviewTarget) -> Unit {
 /**
  * 在 [content] 范围内启用人物/角色侧边预览: 提供 [LocalPeoplePreviewHandler],
  * 并在有目标时渲染右侧 modal side sheet. 仅应在中大屏布局使用.
+ *
+ * 电视与平板 (居中弹窗形态) 的页面上不开预览, 原样交给外层: 点人物直接进整页. 播放器里传 [previewInCenteredDialogs] 照旧开预览 (进整页就离开了播放器).
  */
 @Composable
 fun PeoplePreviewHost(
@@ -158,8 +160,11 @@ fun PeoplePreviewHost(
      * 按键不经过播放器根路由, 不上报会在预览开着时被 5 秒计时收掉).
      */
     onPreviewOpenChanged: ((Boolean) -> Unit)? = null,
+    /** 居中弹窗形态 (电视 / 平板) 下也开预览; 默认不开, 点人物直接进整页. */
+    previewInCenteredDialogs: Boolean = false,
     content: @Composable () -> Unit,
 ) {
+    if (LocalAniUiBehavior.current.panelsAsCenteredDialogs && !previewInCenteredDialogs) return content()
     // 跨导航保留: 见 [PeoplePreviewTargetSaver]
     var target by rememberSaveable(stateSaver = PeoplePreviewTargetSaver) {
         mutableStateOf<PeoplePreviewTarget?>(null)

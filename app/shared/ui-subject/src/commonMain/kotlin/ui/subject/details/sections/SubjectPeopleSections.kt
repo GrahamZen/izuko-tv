@@ -349,6 +349,10 @@ fun CharactersViewAllDialog(
      */
     onBeforeOpenPreview: () -> Unit = onDismissRequest,
 ) {
+    // 电视 / 平板的居中弹窗形态是圆头像画廊
+    if (LocalAniUiBehavior.current.panelsAsCenteredDialogs) {
+        return CharactersGalleryDialog(allCharacters, totalCharactersCount, onDismissRequest, onBeforeOpenPreview = onBeforeOpenPreview)
+    }
     val onClickCharacter = rememberPeopleClickHandler()
     // TV: 长按卡片放大. 这一层归本弹窗自己持有 —— 独立窗口, 页面级的大图层在它下面盖不住;
     // 画在窗口内也就不必"先关弹窗再放大" (关掉大图后网格与焦点原样都还在)
@@ -851,6 +855,9 @@ fun StaffViewAllDialog(
     /** 同 [CharactersViewAllDialog] 的同名参数. */
     onBeforeOpenPreview: () -> Unit = onDismissRequest,
 ) {
+    if (LocalAniUiBehavior.current.panelsAsCenteredDialogs) {
+        return StaffGalleryDialog(allStaff, totalStaffCount, onDismissRequest, onBeforeOpenPreview = onBeforeOpenPreview)
+    }
     val onClickPerson = rememberPeopleClickHandler()
     // TV 长按放大, 同 [CharactersViewAllDialog]
     val focusDriven = LocalAniUiBehavior.current.focusDrivenNavigation

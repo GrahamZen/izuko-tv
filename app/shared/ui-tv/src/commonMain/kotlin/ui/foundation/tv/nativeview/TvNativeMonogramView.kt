@@ -47,7 +47,14 @@ sealed interface TvNativeMonogram {
      * 一个人: 圆里是照片 ([imageUrl] 为空 = 写 [initials]), 圆下姓名 + 一行副标题 (角色是声优, 制作人员是职位).
      * 副标题空了也占一行 (同一排格子一样高).
      */
-    data class Person(val imageUrl: String?, val name: String, val subtitle: String, val initials: String) : TvNativeMonogram
+    data class Person(
+        val imageUrl: String?,
+        val name: String,
+        val subtitle: String,
+        val initials: String,
+        /** 压在圆下缘的小标签 (角色的「主角」); 样式给了 [TvNativeMonogramStyle.badge] 才画. */
+        val badge: String? = null,
+    ) : TvNativeMonogram
 
     /** 行末的「查看全部」: 圆里一个箭头, 副标题写还有几个没露出来 (null = 数不出, 留空). */
     data class ViewAll(val remaining: Int?) : TvNativeMonogram
@@ -88,6 +95,8 @@ data class TvNativeMonogramStyle(
     val viewAllLabel: String,
     val focusMillis: Long,
     val crossfade: Boolean,
+    /** 圆下缘的小标签 ([TvNativeMonogram.Person.badge]); null = 这一组不画 (详情页的行). */
+    val badge: TvNativeMonogramBadgeStyle? = null,
 ) {
     /** 一格的高: 圆 + 间距 + 两行字. */
     val cellHeightPx: Int get() = sizePx + textGapPx + name.lineHeightPx + lineGapPx + subtitle.lineHeightPx
@@ -95,6 +104,18 @@ data class TvNativeMonogramStyle(
     /** 相邻两格左缘的距离. */
     val stepPx: Int get() = sizePx + spacingPx
 }
+
+/**
+ * 圆下缘的小标签 (胶囊): 字、底色、高、左右内边距、下缘伸出圆下缘多少 (大半压在圆里). 取值同 Compose 版 (ui-subject 的 ViewAllGalleries.kt).
+ */
+@Immutable
+data class TvNativeMonogramBadgeStyle(
+    val text: TvNativeTextStyle,
+    val containerColor: Int,
+    val heightPx: Int,
+    val paddingPx: Int,
+    val overhangPx: Int,
+)
 
 /**
  * 演职人员的圆头像格 (Apple 管这个形态叫 Monogram): 圆 + 姓名 + 一行副标题, 居中竖排, 没有卡片底板. 聚焦时**只放大圆** (绕圆心,
@@ -111,6 +132,7 @@ class TvNativeMonogramCardView(context: Context, private val style: TvNativeMono
     private val label = TvNativeMonogramLabelView(context)
     private val name = TvNativeTextView(context)
     private val subtitle = TvNativeTextView(context)
+    private val badge: TvNativeTextView? = style.badge?.let { TvNativeTextView(context) }
     private val confirmKey = TvNativeConfirmKey()
     private val nameBar = placeholderBar(style.placeholderNameWidthPx)
     private val subtitleBar = placeholderBar(style.placeholderSubtitleWidthPx)
@@ -186,6 +208,7 @@ class TvNativeMonogramCardView(context: Context, private val style: TvNativeMono
             text.maxLines = 1
             text.gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
         }
+        if (badge != null && style.badge != null) addBadge(badge, style.badge)
         stateListAnimator = StateListAnimator().apply {
             addState(intArrayOf(android.R.attr.state_focused), focusAnimator(1f))
             addState(intArrayOf(), focusAnimator(0f))
@@ -218,6 +241,11 @@ class TvNativeMonogramCardView(context: Context, private val style: TvNativeMono
                 subtitle.text = item.remaining?.takeIf { it > 0 }?.let { "+$it" }.orEmpty()
                 circle.showArrow()
             }
+        }
+        badge?.let { view ->
+            val text = (item as? TvNativeMonogram.Person)?.badge
+            view.text = text.orEmpty()
+            view.visibility = if (text.isNullOrEmpty()) GONE else VISIBLE
         }
         // 占位的字条画成背景. 设背景时 View 会把 InsetDrawable 的内缩当成自己的内边距, 换回 null 也不清 —— 字区缩成字条那么窄、
         // 往下挪, 数据到了之后姓名被截断、下半截被裁掉. 每次设完都把内边距清零 (字条照样按自己的内缩画)
@@ -255,8 +283,30 @@ class TvNativeMonogramCardView(context: Context, private val style: TvNativeMono
         ring.scaleX = s
         ring.scaleY = s
         ring.alpha = p
-        // 圆绕圆心放大, 下缘位移 = 半径 × (倍数 − 1); 字号不变
+        // 圆绕圆心放大, 下缘位移 = 半径 × (倍数 − 1); 字号不变. 标签同字: 不放大, 跟着圆的下缘走
         label.translationY = style.sizePx / 2f * (s - 1f)
+        badge?.translationY = label.translationY
+    }
+
+    /** 圆下缘的标签: 胶囊底, 水平居中, 下缘伸出圆下缘 [TvNativeMonogramBadgeStyle.overhangPx]; 加在圆与环之后, 盖在它们上面. */
+    private fun addBadge(view: TvNativeTextView, badgeStyle: TvNativeMonogramBadgeStyle) {
+        badgeStyle.text.applyTo(view)
+        view.maxLines = 1
+        view.gravity = Gravity.CENTER
+        view.includeFontPadding = false
+        view.background = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = badgeStyle.heightPx / 2f
+            setColor(badgeStyle.containerColor)
+        }
+        view.setPadding(badgeStyle.paddingPx, 0, badgeStyle.paddingPx, 0)
+        view.visibility = GONE
+        addView(
+            view,
+            LayoutParams(LayoutParams.WRAP_CONTENT, badgeStyle.heightPx, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply {
+                topMargin = style.sizePx + badgeStyle.overhangPx - badgeStyle.heightPx
+            },
+        )
     }
 
     private fun placeholderBar(widthPx: Int): InsetDrawable {
@@ -393,7 +443,7 @@ class TvNativeMonogramAdapter(
     /** 事件; 占位格不派发点击与长按. 长按的 anchor 是格在窗口里的框. */
     var listener: TvNativeCardListener? = null
 
-    /** 第几格被绑定 (分页的访问提示). 占位不报. */
+    /** 第几格被绑定 (分页的访问提示). 数据没到时那一排占位 (submit(null)) 不报; 列表里分页还没到的那一格照报 (访问它才会去取). */
     var onBind: ((index: Int) -> Unit)? = null
 
     /** 人物格按住确定键算长按 (派发 [TvNativeCardListener.onLongPress]); false = 按住也只算点击. 在绑定之前定. */
@@ -498,7 +548,7 @@ class TvNativeMonogramAdapter(
             null
         }
         holder.card.setFocusLookHeld(position == heldFocusIndex, animate = false)
-        if (item != null) onBind?.invoke(position)
+        if (items != null) onBind?.invoke(position)
     }
 
     override fun onViewAttachedToWindow(holder: Holder) {

@@ -665,6 +665,7 @@
     <string name="subject_details_tv_title_logo_loading">正在讀取 logo…</string>
     <string name="subject_details_tv_title_logo_load_failed">讀不到 TMDB 上的 logo。如果是連不上，可以在 設定 → 代理 裡設定好代理再試</string>
     <string name="subject_details_tv_title_logo_empty">TMDB 上沒有%1$s的 logo</string>
+    <string name="subject_details_voice_actor_label">配音</string>
     <string name="subject_details_tv_title_logo_no_language">未標語言</string>
     <string name="subject_details_tv_title_logo_submitting">正在提交… 按返回取消</string>
     <string name="subject_details_tv_title_logo_submitted">已提交 (#%1$d)，審核通過後所有人換上</string>
