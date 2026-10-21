@@ -1076,4 +1076,5 @@
     <string name="touch_login_token_network">Can’t reach Bangumi. In mainland China, turn on “%2$s” under “%1$s”, or set up a proxy.</string>
     <string name="touch_login_mirror_credentials">Turn on “%1$s” first, or the token can’t be checked. Once it’s on, your token, collections and watch progress all go through a third-party mirror, which can see and use your account.</string>
     <string name="touch_login_mirror_credentials_enable">I understand the risk, turn it on</string>
+    <string name="media_selector_item_published_before_airing">Published before this episode aired</string>
 </resources>

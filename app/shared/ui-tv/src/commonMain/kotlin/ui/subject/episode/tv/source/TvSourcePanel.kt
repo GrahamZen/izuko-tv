@@ -74,6 +74,7 @@ import me.him188.ani.app.ui.lang.media_selector_filter_subtitle
 import me.him188.ani.app.ui.lang.media_selector_full_search
 import me.him188.ani.app.ui.lang.media_selector_item_cache_not_ready
 import me.him188.ani.app.ui.lang.media_selector_item_excluded_alliance
+import me.him188.ani.app.ui.lang.media_selector_item_published_before_airing
 import me.him188.ani.app.ui.lang.media_selector_item_no_subtitle
 import me.him188.ani.app.ui.lang.media_selector_item_season_mismatch
 import me.him188.ani.app.ui.lang.media_selector_item_single_episode_resource
@@ -558,6 +559,7 @@ private val TV_SOURCE_STRING_RESOURCES: List<StringResource> = listOf(
     Lang.media_selector_item_subject_title_mismatch,
     Lang.media_selector_item_cache_not_ready,
     Lang.media_selector_item_excluded_alliance,
+    Lang.media_selector_item_published_before_airing,
     Lang.subject_episode_cache,
     Lang.tv_source_downloads_open,
     Lang.tv_source_download_caching,
@@ -682,6 +684,7 @@ fun rememberTvSourceStrings(): TvSourceStrings {
             reasonTitleMismatch = next(),
             reasonCacheNotReady = next(),
             reasonExcludedAlliance = next(),
+            reasonPublishedBeforeAiring = next(),
             downloads = next(),
             downloadsOpen = next(),
             downloadCaching = next(),
