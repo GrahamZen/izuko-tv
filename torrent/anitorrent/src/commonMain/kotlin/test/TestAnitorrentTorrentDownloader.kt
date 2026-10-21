@@ -29,6 +29,8 @@ import me.him188.ani.app.torrent.api.files.FilePriority
 import me.him188.ani.app.torrent.api.peer.PeerInfo
 import me.him188.ani.datasources.api.topic.FileSize
 import me.him188.ani.utils.io.SystemPath
+import me.him188.ani.utils.io.createDirectories
+import me.him188.ani.utils.io.delete
 import me.him188.ani.utils.io.inSystem
 import me.him188.ani.utils.io.writeBytes
 import me.him188.ani.utils.platform.annotations.TestOnly
@@ -65,7 +67,14 @@ class TestTorrentAddInfo : TorrentAddInfo {
 open class TestTorrentManagerSession(
     private val dispatchEvent: (id: HandleId, block: (AnitorrentDownloadSession) -> Unit) -> Unit
 ) : TorrentManagerSession<TestTorrentHandle, TestTorrentAddInfo> {
-    override fun createTorrentHandle(): TestTorrentHandle = TestTorrentHandle(dispatchEvent)
+    /** 新建的句柄用的种子文件列表 */
+    var descriptor: () -> TestTorrentDescriptor = { TestTorrentHandle.defaultDescriptor() }
+
+    /** 建过的句柄, 按创建顺序 */
+    val handles: MutableList<TestTorrentHandle> = mutableListOf()
+
+    override fun createTorrentHandle(): TestTorrentHandle =
+        TestTorrentHandle(dispatchEvent, descriptor()).also { handles += it }
     override fun createTorrentAddInfo(): TestTorrentAddInfo = TestTorrentAddInfo()
 
     override fun resume() {
@@ -89,6 +98,8 @@ open class TestTorrentManagerSession(
 @TestOnly
 class TestTorrentResumeData : TorrentResumeData {
     override fun saveToPath(path: Path) {
+        // 测试的会话不建保存目录 (startDownload 不落盘)
+        path.parent?.inSystem?.createDirectories()
         return path.inSystem.writeBytes(byteArrayOf(1))
     }
 }
@@ -140,7 +151,8 @@ data class TestTorrentFileInfo(
 
 @TestOnly
 open class TestTorrentHandle(
-    private val dispatchEvent: (id: HandleId, block: (AnitorrentDownloadSession) -> Unit) -> Unit
+    private val dispatchEvent: (id: HandleId, block: (AnitorrentDownloadSession) -> Unit) -> Unit,
+    protected var descriptor: TestTorrentDescriptor = defaultDescriptor(),
 ) : TorrentHandle {
     override val id: HandleId = Random.nextLong()
     override var isValid: Boolean = true
@@ -174,14 +186,14 @@ open class TestTorrentHandle(
     override fun resume() {
     }
 
+    /** 最后设给各文件的优先级 */
+    val filePriorities: MutableMap<Int, FilePriority> = mutableMapOf()
+
     override fun setFilePriority(index: Int, priority: FilePriority) {
+        filePriorities[index] = priority
     }
 
     override fun getState(): TorrentHandleState? = state
-
-    protected var descriptor: TestTorrentDescriptor = TestTorrentDescriptor("test", 1024_000 / 1024, 1024, 1024).apply {
-        files.add(TestTorrentFileInfo("test.mkv", "test.mkv", 1024_000))
-    }
 
     override fun reloadFile(): TorrentDescriptor {
         return descriptor
@@ -204,6 +216,27 @@ open class TestTorrentHandle(
     }
 
     override fun getMagnetUri(): String? = null
+
+    /** [discardFile] 丢过的文件 */
+    val discardedFiles: MutableList<Int> = mutableListOf()
+
+    /** 像原生层一样, 丢的时候删掉续传数据 */
+    override fun discardFile(index: Int, fastResumePath: String): Boolean {
+        discardedFiles += index
+        Path(fastResumePath).inSystem.delete()
+        return true
+    }
+
+    /** [hasDiscardableData] 的结果, 默认丢过一次就没有了 */
+    var discardable: (index: Int) -> Boolean = { it !in discardedFiles }
+
+    override fun hasDiscardableData(index: Int): Boolean = discardable(index)
+
+    companion object {
+        fun defaultDescriptor(): TestTorrentDescriptor = TestTorrentDescriptor("test", 1024_000 / 1024, 1024, 1024).apply {
+            files.add(TestTorrentFileInfo("test.mkv", "test.mkv", 1024_000))
+        }
+    }
 }
 
 @TestOnly
@@ -234,7 +267,7 @@ open class TestAnitorrentTorrentDownloader(
     }
 
 
-    override val native: TestTorrentManagerSession = TestTorrentManagerSession(
+    public override val native: TestTorrentManagerSession = TestTorrentManagerSession(
         dispatchEvent = { id, block ->
             dispatchToSession1(id, block)
         },

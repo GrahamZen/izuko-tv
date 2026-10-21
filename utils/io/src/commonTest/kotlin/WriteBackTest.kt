@@ -7,7 +7,7 @@
  * https://github.com/open-ani/ani/blob/main/LICENSE
  */
 
-package me.him188.ani.utils.httpdownloader
+package me.him188.ani.utils.io
 
 import kotlinx.io.buffered
 import kotlinx.io.files.Path
@@ -19,17 +19,15 @@ import me.him188.ani.utils.platform.Uuid
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * [syncFileContents] 的安全性: 它是拿来对**别人正在写**的文件 (ffmpeg 的合并输出) 调 fsync 的,
- * 一旦实现里把打开方式写成截断模式, 用户正在合并的缓存会当场被清成 0 字节.
- *
- * 这个不变量光看代码很容易失守 (JVM 上 `FileOutputStream(file)` 与 `FileOutputStream(file, true)`
- * 只差一个参数, 前者截断), 所以钉一个测试.
+ * [WriteBackCounter] 的节奏, 与 [syncFileContents] 的安全性: 后者是拿来对**别人正在写**的文件 (ffmpeg 的合并输出、
+ * libtorrent 下的文件) 调 fsync 的, 一旦实现里把打开方式写成截断模式, 用户正在下的缓存会当场被清成 0 字节.
  */
-class SyncFileContentsTest {
+class WriteBackTest {
     private val created = mutableListOf<Path>()
 
     private fun tempFile(content: String): Path {
@@ -45,11 +43,20 @@ class SyncFileContentsTest {
     }
 
     @Test
+    fun `counter asks for a sync each time enough bytes pile up`() {
+        val counter = WriteBackCounter(syncEveryBytes = 10)
+        assertEquals(listOf(false, false, true, false, true), listOf(4L, 4L, 4L, 4L, 6L).map { counter.wrote(it) })
+        counter.wrote(9)
+        counter.synced()
+        assertFalse(counter.wrote(9), "a sync done elsewhere restarts the count")
+    }
+
+    @Test
     fun `sync must not truncate or modify the file`() {
         val content = "x".repeat(64 * 1024)
         val path = tempFile(content)
 
-        if (!syncFileContents(path.toString())) return // 平台不支持, 无从验证
+        if (!syncFileContents(path.inSystem)) return // 平台做不到, 无从验证
 
         val after = SystemFileSystem.source(path).buffered().use { it.readByteArray() }
         assertContentEquals(content.encodeToByteArray(), after, "syncFileContents 改动了文件内容")
@@ -58,18 +65,18 @@ class SyncFileContentsTest {
     @Test
     fun `sync can be called repeatedly`() {
         val path = tempFile("hello")
-        if (!syncFileContents(path.toString())) return
-        assertTrue(syncFileContents(path.toString()))
-        assertTrue(syncFileContents(path.toString()))
+        if (!syncFileContents(path.inSystem)) return
+        assertTrue(syncFileContents(path.inSystem))
+        assertTrue(syncFileContents(path.inSystem))
         val after = SystemFileSystem.source(path).buffered().use { it.readByteArray() }
         assertContentEquals("hello".encodeToByteArray(), after)
     }
 
     @Test
     fun `sync reports failure for a missing file`() {
-        // 不能顺手把文件创建出来: 合并还没开始写时输出文件不存在, 那时候只该跳过
+        // 不能顺手把文件创建出来: 合并还没开始写、缓存刚被删时文件不存在, 那时候只该跳过
         val missing = Path(SystemTemporaryDirectory, "sync-test-missing-${Uuid.randomString()}.bin")
-        assertFalse(syncFileContents(missing.toString()))
+        assertFalse(syncFileContents(missing.inSystem))
         assertFalse(SystemFileSystem.exists(missing), "syncFileContents 不该凭空创建文件")
     }
 }

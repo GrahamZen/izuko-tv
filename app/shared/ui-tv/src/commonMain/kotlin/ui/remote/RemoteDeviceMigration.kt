@@ -47,6 +47,7 @@ import me.him188.ani.app.ui.foundation.lan.LanHttpRequest
 import me.him188.ani.app.ui.foundation.lan.LanHttpResponse
 import me.him188.ani.app.ui.onboarding.TvOnboardingGate
 import me.him188.ani.app.ui.profile.ProfileImportSession
+import me.him188.ani.utils.io.WriteBackCounter
 import me.him188.ani.utils.io.inSystem
 import me.him188.ani.utils.io.toKtPath
 import me.him188.ani.utils.logging.error
@@ -55,6 +56,7 @@ import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 import org.koin.mp.KoinPlatform
 import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.Proxy
@@ -380,14 +382,17 @@ internal object RemoteDeviceMigration {
                 val total = connection.contentLengthLong
                 var done = 0L
                 connection.inputStream.use { input ->
-                    target.outputStream().use { output ->
+                    FileOutputStream(target).use { output ->
                         val buffer = ByteArray(BUFFER_SIZE)
+                        val writeBack = WriteBackCounter()
                         while (true) {
                             coroutineContext.ensureActive()
                             val read = input.read(buffer)
                             if (read < 0) break
                             output.write(buffer, 0, read)
                             done += read
+                            // 边收边落盘, 脏页积多了遥控器会失灵 (见 WriteBackCounter)
+                            if (writeBack.wrote(read.toLong())) output.fd.sync()
                             onProgress(done, total)
                         }
                     }

@@ -15,6 +15,7 @@ import kotlinx.coroutines.runBlocking
 import me.him188.ani.app.torrent.io.RandomAccessFile
 import me.him188.ani.utils.io.SystemPath
 import me.him188.ani.utils.io.SystemPaths
+import me.him188.ani.utils.io.WriteBackCounter
 import me.him188.ani.utils.io.createTempDirectory
 import me.him188.ani.utils.io.exists
 import me.him188.ani.utils.io.length
@@ -28,6 +29,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
@@ -46,6 +48,7 @@ class PikPakSparseStoreTest {
         persistInterval: Duration = 50.milliseconds,
         onHeld: (Int) -> Unit = {},
         openDataFile: (SystemPath) -> DataFile = ::openRandomAccessDataFile,
+        syncEveryBytes: Long = WriteBackCounter.SYNC_EVERY_BYTES,
     ) = PikPakSparseStore(
         dataFile = file,
         size = size,
@@ -54,6 +57,7 @@ class PikPakSparseStoreTest {
         blockSize = block,
         persistInterval = persistInterval,
         openDataFile = openDataFile,
+        syncEveryBytes = syncEveryBytes,
     )
 
     private fun blockOf(content: ByteArray, index: Int) =
@@ -194,6 +198,35 @@ class PikPakSparseStoreTest {
             assertContentEquals(blockOf(content, 2), store.read("k", block * 2, 1))
         } finally {
             store.close()
+        }
+    }
+
+    @Test
+    fun `a fast download is synced every few blocks without waiting for the next persist`() = runBlocking {
+        val file = SystemPaths.createTempDirectory("sparse-store").resolve("ep.mkv")
+        val content = payload((block * 4).toInt())
+        var counting: CountingSyncs? = null
+        val store = store(
+            file, content.size.toLong(),
+            persistInterval = 1.hours,
+            openDataFile = { CountingSyncs(openRandomAccessDataFile(it)).also { c -> counting = c } },
+            syncEveryBytes = block * 2,
+        )
+        try {
+            for (index in 0 until 4) store.write("k", block * index, blockOf(content, index))
+            assertEquals(2, counting!!.syncs, "synced once per two blocks")
+        } finally {
+            store.close()
+        }
+    }
+
+    private class CountingSyncs(private val delegate: DataFile) : DataFile by delegate {
+        @Volatile
+        var syncs = 0
+
+        override fun sync() {
+            syncs++
+            delegate.sync()
         }
     }
 
