@@ -56,6 +56,8 @@ data class PeopleRowItem(
     val imageUrl: String?,
     val name: String,
     val subtitle: String,
+    /** 压在圆下缘的小标签 (角色的「主角」); null = 不画. 只有「查看全部」的人物画廊画, 见 ViewAllGalleries. */
+    val badge: String? = null,
 )
 
 /** 海报行的一张: 海报, 名字, 下面一行小字 (null = 名字占两行). */

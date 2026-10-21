@@ -37,6 +37,7 @@ import me.him188.ani.app.ui.foundation.LocalImageCrossfade
 import me.him188.ani.app.ui.foundation.tv.TV_CARD_FOCUS_TRANSITION_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TvImageZoomState
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeMonogram
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeMonogramBadgeStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeMonogramStrip
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeMonogramStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativeIcon
@@ -45,9 +46,9 @@ import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.subject_details_characters
 import me.him188.ani.app.ui.lang.subject_details_staff
 import me.him188.ani.app.ui.lang.subject_details_view_all
-import me.him188.ani.app.ui.subject.details.sections.CharactersViewAllDialog
+import me.him188.ani.app.ui.subject.details.sections.CharactersGalleryDialog
 import me.him188.ani.app.ui.subject.details.sections.SectionHeader
-import me.him188.ani.app.ui.subject.details.sections.StaffViewAllDialog
+import me.him188.ani.app.ui.subject.details.sections.StaffGalleryDialog
 import me.him188.ani.app.ui.subject.details.sections.TV_MONOGRAM_FOCUS_RING
 import me.him188.ani.app.ui.subject.details.sections.TV_MONOGRAM_FOCUS_SCALE
 import me.him188.ani.app.ui.subject.details.sections.TV_MONOGRAM_LINE_GAP
@@ -60,7 +61,11 @@ import me.him188.ani.app.ui.subject.details.sections.TV_MONOGRAM_SPACING
 import me.him188.ani.app.ui.subject.details.sections.TV_MONOGRAM_SUBTITLE_ALPHA
 import me.him188.ani.app.ui.subject.details.sections.TV_MONOGRAM_TEXT_GAP
 import me.him188.ani.app.ui.subject.details.sections.monogramInitials
+import me.him188.ani.app.ui.subject.details.sections.VIEW_ALL_GALLERY_BADGE_HEIGHT
+import me.him188.ani.app.ui.subject.details.sections.VIEW_ALL_GALLERY_BADGE_OVERHANG
+import me.him188.ani.app.ui.subject.details.sections.VIEW_ALL_GALLERY_BADGE_PADDING
 import me.him188.ani.app.ui.subject.details.sections.tvPeoplePlaceholderColor
+import me.him188.ani.app.ui.subject.details.sections.viewAllGalleryBadgeStyle
 import me.him188.ani.app.ui.subject.person.PeoplePreviewTarget
 import me.him188.ani.app.ui.subject.person.rememberPeopleClickHandler
 import org.jetbrains.compose.resources.stringResource
@@ -95,6 +100,8 @@ internal fun TvDetailsCharactersRow(
     horizontalPadding: Dp,
     modifier: Modifier = Modifier,
     restoreFocus: Boolean = false,
+    /** 「查看全部」弹窗标题下面那行 (所属条目名). */
+    subjectName: String? = null,
 ) {
     var showAll by rememberSaveable { mutableStateOf(false) }
     val onClickCharacter = rememberPeopleClickHandler()
@@ -131,7 +138,7 @@ internal fun TvDetailsCharactersRow(
         restoreFocus = restoreFocus,
     )
     if (showAll) {
-        CharactersViewAllDialog(all, totalCount, onDismissRequest = { showAll = false })
+        CharactersGalleryDialog(all, totalCount, onDismissRequest = { showAll = false }, subtitle = subjectName)
     }
 }
 
@@ -145,6 +152,7 @@ internal fun TvDetailsStaffRow(
     horizontalPadding: Dp,
     modifier: Modifier = Modifier,
     restoreFocus: Boolean = false,
+    subjectName: String? = null,
 ) {
     var showAll by rememberSaveable { mutableStateOf(false) }
     val onClickPerson = rememberPeopleClickHandler()
@@ -181,7 +189,7 @@ internal fun TvDetailsStaffRow(
         restoreFocus = restoreFocus,
     )
     if (showAll) {
-        StaffViewAllDialog(all, totalCount, onDismissRequest = { showAll = false })
+        StaffGalleryDialog(all, totalCount, onDismissRequest = { showAll = false }, subtitle = subjectName)
     }
 }
 
@@ -224,12 +232,16 @@ private fun TvDetailsPeopleRow(
  * @param size 圆的直径 (= 格宽), 默认详情页的; 字号不跟着变, 占位字条的宽度按比例.
  * @param spacing 格间距.
  * @param viewAllLabel 「查看全部」那格的字 (行里没有这一格时可以不给).
+ * @param textGap 圆下缘到姓名.
+ * @param badges 画圆下缘的标签 (「查看全部」的人物画廊, 取值同 Compose 版 ViewAllGalleries.kt).
  */
 @Composable
 internal fun rememberTvMonogramStyle(
     size: Dp = TV_MONOGRAM_SIZE,
     spacing: Dp = TV_MONOGRAM_SPACING,
     viewAllLabel: String = stringResource(Lang.subject_details_view_all),
+    textGap: Dp = TV_MONOGRAM_TEXT_GAP,
+    badges: Boolean = false,
 ): TvNativeMonogramStyle {
     val density = LocalDensity.current
     val typography = MaterialTheme.typography
@@ -238,13 +250,14 @@ internal fun rememberTvMonogramStyle(
     val placeholder = tvPeoplePlaceholderColor()
     val crossfade = LocalImageCrossfade.current
     val arrow = rememberTvNativeIcon(Icons.AutoMirrored.Outlined.ArrowForward, 24.dp)
-    return remember(density, typography, colors, content, placeholder, crossfade, arrow, viewAllLabel, size, spacing) {
+    val badgeStyle = if (badges) viewAllGalleryBadgeStyle() else null
+    return remember(density, typography, colors, content, placeholder, crossfade, arrow, viewAllLabel, size, spacing, textGap, badgeStyle) {
         with(density) {
             val scale = size / TV_MONOGRAM_SIZE
             TvNativeMonogramStyle(
                 sizePx = size.roundToPx(),
                 spacingPx = spacing.roundToPx(),
-                textGapPx = TV_MONOGRAM_TEXT_GAP.roundToPx(),
+                textGapPx = textGap.roundToPx(),
                 lineGapPx = TV_MONOGRAM_LINE_GAP.roundToPx(),
                 name = typography.titleSmall.copy(fontWeight = FontWeight.SemiBold).toTvNativeTextStyle(density, content),
                 subtitle = typography.bodySmall.toTvNativeTextStyle(density, content),
@@ -264,6 +277,15 @@ internal fun rememberTvMonogramStyle(
                 viewAllLabel = viewAllLabel,
                 focusMillis = TV_CARD_FOCUS_TRANSITION_MILLIS.toLong(),
                 crossfade = crossfade,
+                badge = badgeStyle?.let {
+                    TvNativeMonogramBadgeStyle(
+                        text = it.text.toTvNativeTextStyle(density, it.content),
+                        containerColor = it.container.toArgb(),
+                        heightPx = VIEW_ALL_GALLERY_BADGE_HEIGHT.roundToPx(),
+                        paddingPx = VIEW_ALL_GALLERY_BADGE_PADDING.roundToPx(),
+                        overhangPx = VIEW_ALL_GALLERY_BADGE_OVERHANG.roundToPx(),
+                    )
+                },
             )
         }
     }

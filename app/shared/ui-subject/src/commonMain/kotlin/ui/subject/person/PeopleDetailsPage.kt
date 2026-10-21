@@ -91,6 +91,9 @@ import me.him188.ani.app.ui.lang.person_details_works
 import me.him188.ani.app.ui.lang.subject_details_summary
 import me.him188.ani.app.ui.subject.details.components.PersonCard
 import me.him188.ani.app.ui.subject.details.layout.SubjectDetailsLayoutParams
+import me.him188.ani.app.ui.subject.details.sections.CharacterSubjectsGalleryDialog
+import me.him188.ani.app.ui.subject.details.sections.PersonCastsGalleryDialog
+import me.him188.ani.app.ui.subject.details.sections.PersonWorksGalleryDialog
 import me.him188.ani.app.ui.subject.details.sections.SectionHeader
 import me.him188.ani.app.ui.subject.details.sections.SubjectSummarySection
 import me.him188.ani.app.ui.subject.details.sections.ViewAllSheet
@@ -609,6 +612,12 @@ private fun PersonStrips(
         )
     }
 
+    // 电视 / 平板的居中弹窗形态是圆头像 / 海报画廊
+    if (LocalAniUiBehavior.current.panelsAsCenteredDialogs) {
+        if (showAllCasts) PersonCastsGalleryDialog(casts, navigation, onDismissRequest = { showAllCasts = false })
+        if (showAllWorks) PersonWorksGalleryDialog(works, navigation, onDismissRequest = { showAllWorks = false })
+        return
+    }
     if (showAllCasts) {
         ViewAllSheet(
             title = stringResource(Lang.person_details_casts),
@@ -778,6 +787,10 @@ private fun CharacterStrips(
         )
     }
 
+    if (LocalAniUiBehavior.current.panelsAsCenteredDialogs) {
+        if (showAllSubjects) CharacterSubjectsGalleryDialog(subjects, navigation, onDismissRequest = { showAllSubjects = false })
+        return
+    }
     if (showAllSubjects) {
         ViewAllSheet(
             title = stringResource(Lang.person_details_character_subjects),

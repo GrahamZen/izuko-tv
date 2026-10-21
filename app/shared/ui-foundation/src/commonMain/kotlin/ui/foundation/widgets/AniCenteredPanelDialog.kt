@@ -172,8 +172,11 @@ private fun CenteredPanel(
     }
 }
 
-/** 高最多占给的高的 [fraction], 内容矮时跟着内容 (不撑满); 内容用 fillMaxSize 的照样撑到这个上限. */
-private fun Modifier.fillMaxHeightAtMost(fraction: Float): Modifier = layout { measurable, constraints ->
+/**
+ * 高最多占给的高的 [fraction], 内容矮时跟着内容 (不撑满); 内容用 fillMaxSize 的照样撑到这个上限. 面板弹窗「高度随内容、设最大高」用它
+ * (这里与「查看全部」那类自绘的玻璃弹窗).
+ */
+fun Modifier.fillMaxHeightAtMost(fraction: Float): Modifier = layout { measurable, constraints ->
     val placeable = if (constraints.hasBoundedHeight) {
         val max = (constraints.maxHeight * fraction).roundToInt().coerceAtLeast(constraints.minHeight)
         measurable.measure(constraints.copy(maxHeight = max))

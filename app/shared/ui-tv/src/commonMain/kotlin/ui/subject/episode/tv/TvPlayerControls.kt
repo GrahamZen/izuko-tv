@@ -557,9 +557,10 @@ internal fun TvPlayerControlsOverlay(
                         },
                 ) {
                     // L2 浮出面板 (聚焦胶囊按钮时出现, 条目吸底, 从下往上导航).
-                    // PeoplePreviewHost: 角色/制作人员面板点击卡片弹居中人物预览
-                    // (与详情页同一弹窗), 开着期间抑制控制层自动隐藏
+                    // PeoplePreviewHost: 角色/制作人员面板点击卡片弹居中人物预览 (播放器里不进整页, 进了就离开播放器),
+                    // 开着期间抑制控制层自动隐藏
                     PeoplePreviewHost(
+                        previewInCenteredDialogs = true,
                         onPreviewOpenChanged = { open ->
                             overlay.onPopupExpandedChanged(open)
                             // 预览关掉后焦点还给刚点开的那张卡片: 弹窗节点被移除时 Compose 会清掉
