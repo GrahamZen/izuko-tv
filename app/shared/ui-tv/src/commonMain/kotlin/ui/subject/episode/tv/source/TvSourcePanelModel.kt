@@ -560,6 +560,7 @@ data class TvSourceStrings(
     val reasonTitleMismatch: String,
     val reasonCacheNotReady: String,
     val reasonExcludedAlliance: String,
+    val reasonPublishedBeforeAiring: String,
     val downloads: String,
     val downloadsOpen: String,
     val downloadCaching: String,
@@ -606,6 +607,7 @@ data class TvSourceStrings(
             MediaExclusionReason.SubjectNameMismatch -> reasonTitleMismatch
             MediaExclusionReason.CacheNotReady -> reasonCacheNotReady
             MediaExclusionReason.ExcludedAlliance -> reasonExcludedAlliance
+            MediaExclusionReason.PublishedBeforeAiring -> reasonPublishedBeforeAiring
         }
     }
 }

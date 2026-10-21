@@ -306,6 +306,10 @@ class MediaSelectorFilterSortAlgorithm {
             return include() // 本地缓存总是要显示
         }
 
+        if (episodeMatch != null && isPublishedLongBeforeAiring(media.publishedTime, context.episodeInfo?.airDate)) {
+            return exclude(MediaExclusionReason.PublishedBeforeAiring)
+        }
+
         // 用户排除的字幕组: 放在其他规则前, 原因就写这一条 (用户自己设的, 一看就懂).
         // 繁简写法都认: 有的数据源给的字幕组名是繁体 (「愛戀字幕社」), 用户多半只写一种
         if (excludedAlliances.isNotEmpty()) {
