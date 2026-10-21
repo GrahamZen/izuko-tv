@@ -833,6 +833,7 @@ private fun TvPlayerTopInfo(
                             when (reason) {
                                 MediaExclusionReason.SubjectNameMismatch -> "条目名不匹配"
                                 MediaExclusionReason.FromSeriesSeason -> "其他季度"
+                                MediaExclusionReason.PublishedBeforeAiring -> "早于本集开播"
                                 else -> "已被过滤"
                             },
                             color = TV_PLAYER_INEXACT_MATCH_COLOR,
