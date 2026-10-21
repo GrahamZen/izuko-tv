@@ -33,6 +33,12 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeHeroSource
 import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_CAROUSEL_DOT
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_CAROUSEL_DOTS_BOTTOM
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_CAROUSEL_DOT_GAP
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_CAROUSEL_DOT_INACTIVE_ALPHA
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_CAROUSEL_DOT_SELECTED
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_CAROUSEL_TEXT_BOTTOM
 import me.him188.ani.app.ui.foundation.tv.wall.TvPadHeroLayer
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.exploration_schedule
@@ -120,11 +126,11 @@ internal fun TvPadCarouselButtons(
 @Composable
 private fun TvPadCarouselDots(count: Int, selected: Int, modifier: Modifier = Modifier) {
     val color = MaterialTheme.colorScheme.onSurface
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(TV_PAD_CAROUSEL_DOT_GAP), verticalAlignment = Alignment.CenterVertically) {
         repeat(count) { index ->
             Box(
                 Modifier
-                    .size(width = if (index == selected) 16.dp else 6.dp, height = 6.dp)
+                    .size(width = if (index == selected) TV_PAD_CAROUSEL_DOT_SELECTED else TV_PAD_CAROUSEL_DOT, height = TV_PAD_CAROUSEL_DOT)
                     .clip(CircleShape)
                     .background(color.copy(alpha = if (index == selected) 1f else TV_PAD_CAROUSEL_DOT_INACTIVE_ALPHA)),
             )
@@ -132,10 +138,4 @@ private fun TvPadCarouselDots(count: Int, selected: Int, modifier: Modifier = Mo
     }
 }
 
-private const val TV_PAD_CAROUSEL_SECONDARY_BUTTON_ALPHA = 0.16f
-private const val TV_PAD_CAROUSEL_DOT_INACTIVE_ALPHA = 0.4f
-
-/** 圆点、按钮、文字块的下沿离轮播区底边多远: 自下而上圆点 → 按钮 → 文字, 文字块往上长, 按钮的位置不随文字长短变. */
-private val TV_PAD_CAROUSEL_DOTS_BOTTOM = 18.dp
-internal val TV_PAD_CAROUSEL_BUTTONS_BOTTOM = 40.dp
-private val TV_PAD_CAROUSEL_TEXT_BOTTOM = 96.dp
+internal const val TV_PAD_CAROUSEL_SECONDARY_BUTTON_ALPHA = 0.16f

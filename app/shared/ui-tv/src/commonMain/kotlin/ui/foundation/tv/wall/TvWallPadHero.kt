@@ -222,9 +222,7 @@ private fun TvPadHeroText(text: TvNativeHeroText, pageWidth: Dp, summaryMaxLines
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        val summary = remember(text.summary) {
-            text.summary.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.joinToString(" ")
-        }
+        val summary = remember(text.summary) { tvPadHeroSummary(text.summary) }
         if (summary.isNotEmpty()) {
             Text(
                 summary,
@@ -285,13 +283,6 @@ private fun Modifier.tvPadHeroFeather(): Modifier = this
         )
     }
 
-/** 海报墙 hero 态的文字块下沿离这块底边 (聚焦行的组标题 / 行顶) 多远. */
-internal val TV_PAD_HERO_TEXT_BOTTOM = 20.dp
-
-/** 简介行数: 轮播 (下面有按钮) 三行; 海报墙 hero 态没有按钮, 多放两行, 文字块照样往上长到轮播文字的高度附近. */
-private const val TV_PAD_HERO_SUMMARY_LINES = 3
-internal const val TV_PAD_HERO_WALL_SUMMARY_LINES = 5
-
 /** 模糊底: 先只解一张长边这么多像素的小图, 再叠一层模糊去掉放大后的块感. */
 private const val TV_PAD_HERO_BLUR_DECODE_LONG_EDGE_PX = 160
 private val TV_PAD_HERO_BLUR_RADIUS = 24.dp
@@ -299,29 +290,14 @@ private val TV_PAD_HERO_BLUR_RADIUS = 24.dp
 /** 模糊底上整层压的一层墙色, 让文字在任何画面上都读得清. */
 private const val TV_PAD_HERO_BLUR_DIM_ALPHA = 0.35f
 
-/** 从这块高度的这个位置起往下渐变到墙的底色. */
-private const val TV_PAD_HERO_FLOOR_START = 0.45f
-
 private const val TV_PAD_HERO_TOP_SCRIM_FRACTION = 0.18f
 private const val TV_PAD_HERO_TOP_SCRIM_ALPHA = 0.35f
 
-/** 标题与简介的宽度占页面宽度的比例. */
-private const val TV_PAD_HERO_TITLE_WIDTH_FRACTION = 0.46f
-private const val TV_PAD_HERO_SUMMARY_WIDTH_FRACTION = 0.40f
-
 private const val TV_PAD_HERO_SECONDARY_ALPHA = 0.75f
 private val TV_PAD_HERO_LINE_GAP = 8.dp
-
-/** 标题 logo 的高度上限比电视版放宽几倍 (见 [TvPadHeroTitle]). */
-private const val TV_PAD_HERO_LOGO_TALL_SCALE = 2f
 
 /** 换一部的过渡: 背景图在旧图上淡入; 文字同电视版 hero 文字块 (旧字淡出, 新字晚一拍滑一小段淡入). */
 private const val TV_PAD_HERO_CROSSFADE_MILLIS = 600
 private const val TV_PAD_HERO_TEXT_OUT_MILLIS = 120
 private const val TV_PAD_HERO_TEXT_IN_MILLIS = 240
 private val TV_PAD_HERO_TEXT_SLIDE = 14.dp
-
-/** 横版图左缘羽化的起止 (占图宽), 下缘从这个高度起淡到透明. */
-private const val TV_PAD_HERO_LEFT_FADE_START = 0.02f
-private const val TV_PAD_HERO_LEFT_FADE_END = 0.35f
-private const val TV_PAD_HERO_BOTTOM_FADE_START = 0.6f

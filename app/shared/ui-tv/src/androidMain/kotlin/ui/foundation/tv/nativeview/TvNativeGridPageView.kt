@@ -16,6 +16,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Rect
 import android.os.SystemClock
+import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
@@ -26,6 +27,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.github.panpf.sketch.Sketch
 import kotlinx.coroutines.CoroutineScope
 import me.him188.ani.app.ui.foundation.focus.TV_TRANSIT_PARK_KEY_GRACE_MILLIS
+import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_ASPECT_RATIO
 import me.him188.ani.app.ui.foundation.tv.TV_TAB_CONTENT_SLIDE_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TvBackdropTreatment
 import me.him188.ani.app.ui.foundation.tv.TvWallConfirm
@@ -33,6 +35,10 @@ import me.him188.ani.app.ui.foundation.tv.TvWallTouchTap
 import me.him188.ani.app.ui.foundation.tv.tvWallConfirm
 import me.him188.ani.app.ui.foundation.tv.tvWallTapConfirmsWhileFocusing
 import me.him188.ani.app.ui.foundation.tv.tvWallTouchTap
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_HERO_SUMMARY_WIDTH_FRACTION
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_HERO_TEXT_BOTTOM
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_HERO_TITLE_WIDTH_FRACTION
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_HERO_WALL_SUMMARY_LINES
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -160,15 +166,21 @@ class TvNativeGridPageView(
     private var heroBlankTap: TvNativeHeroBlankTap? = null
 
     /**
-     * 此刻按触屏的规矩走 (同 iPad 的 Compose 海报墙): 触屏设备上最近一次输入是手指 (系统的触摸模式, 按方向键就退出). 手指点卡片按
+     * 此刻按触屏的规矩走 (同 iPad 的 Compose 海报墙): 触屏设备上最近一次输入是手指 (见 [lastInputTouch]). 手指点卡片按
      * tvWallTouchTap 判 (按下不动焦点), 卡片墙上不画聚焦效果 (hero 态里照画).
      */
-    private val touchMode: Boolean get() = touchInput && isInTouchMode
+    private val touchMode: Boolean get() = touchInput && lastInputTouch
 
-    private val touchModeWatcher = ViewTreeObserver.OnTouchModeChangeListener { applyTouchLook() }
+    /** 本页最近一次收到的输入是手指 (同 TvNativeRowWallView.lastInputTouch). */
+    internal var lastInputTouch: Boolean = true
+        set(value) {
+            if (field == value) return
+            field = value
+            applyTouchLook()
+        }
 
     /**
-     * 按触屏的规矩走时网格的卡片墙上不画聚焦效果、焦点不带着滚动 (见 [touchMode]; 一组一行的内容自己管). 进出 hero 态、换网格与触摸模式变化时
+     * 按触屏的规矩走时网格的卡片墙上不画聚焦效果、焦点不带着滚动 (见 [touchMode]; 一组一行的内容自己管). 进出 hero 态、换网格与换输入方式时
      * 对一次.
      */
     private fun applyTouchLook() {
@@ -227,6 +239,7 @@ class TvNativeGridPageView(
     }
 
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        if (ev.actionMasked == MotionEvent.ACTION_DOWN && ev.isFromSource(InputDevice.SOURCE_TOUCHSCREEN)) lastInputTouch = true
         heroBlankTap?.onTouch(ev)
         return super.dispatchTouchEvent(ev)
     }
@@ -401,11 +414,38 @@ class TvNativeGridPageView(
         this.style = style
         this.metrics = metrics
         heroText.style = heroTextStyle
-        heroText.titleWidthPx = metrics.titleWidthPx
-        heroText.summaryWidthPx = metrics.summaryWidthPx
+        applyHeroTextWidths()
         if (changed) {
             grids.forEach { it.metrics = gridMetrics() }
             requestLayout()
+        }
+    }
+
+    /**
+     * 平板版 hero 的摆法 (宿主在触屏设备上给; 几何见 TvPadHeroGeometry): hero 区铺到聚焦行行顶为止,
+     * 背景图高度铺满它、贴右上角, 文字贴它左下往上长 (简介压成一段、最多 [TV_PAD_HERO_WALL_SUMMARY_LINES] 行), 宽度按页面宽的比例.
+     */
+    var padHero: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            heroText.padLayout = value
+            heroText.summaryCapLines = if (value) TV_PAD_HERO_WALL_SUMMARY_LINES else 0
+            applyHeroTextWidths()
+            requestLayout()
+        }
+
+    /** 平板版: hero 区高 —— 页顶到 hero 态聚焦行的行顶. */
+    private val padRegionPx: Int get() = metrics.gridTopPx + metrics.grid.heroLinePx
+
+    private fun applyHeroTextWidths() {
+        val m = metrics
+        if (padHero) {
+            heroText.titleWidthPx = (m.pageWidthPx * TV_PAD_HERO_TITLE_WIDTH_FRACTION).roundToInt()
+            heroText.summaryWidthPx = (m.pageWidthPx * TV_PAD_HERO_SUMMARY_WIDTH_FRACTION).roundToInt()
+        } else {
+            heroText.titleWidthPx = m.titleWidthPx
+            heroText.summaryWidthPx = m.summaryWidthPx
         }
     }
 
@@ -861,6 +901,7 @@ class TvNativeGridPageView(
      * 到了照常落地.
      */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN && tvNativeIsWallInputKey(event.keyCode)) lastInputTouch = false
         TvNativeFocusCues.onKey(this, event)
         val code = event.keyCode
         val direction = code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN ||
@@ -889,7 +930,6 @@ class TvNativeGridPageView(
         super.onAttachedToWindow()
         viewTreeObserver.addOnGlobalFocusChangeListener(focusWatcher)
         viewTreeObserver.addOnGlobalLayoutListener(layoutWatcher)
-        viewTreeObserver.addOnTouchModeChangeListener(touchModeWatcher)
         applyTouchLook()
         TvNativeFocusCues.attachPage(this)
     }
@@ -1077,8 +1117,16 @@ class TvNativeGridPageView(
         val m = metrics
         fun exactly(px: Int) = MeasureSpec.makeMeasureSpec(px.coerceAtLeast(0), MeasureSpec.EXACTLY)
         wallBackdrop?.measure(exactly(m.bleedLeftPx + m.pageWidthPx), exactly(m.pageHeightPx))
-        backdrop.measure(exactly(m.backdropWidthPx), exactly(m.backdropHeightPx))
-        heroBox.measure(exactly(m.heroWidthPx), exactly(m.heroHeightPx))
+        if (padHero) {
+            // 平板版: 图高铺满 hero 区 (16:9), 文字块从 hero 区顶上的那条线排到文字下沿, 贴底排 (见 TvNativeHeroTextView.padLayout)
+            val region = padRegionPx
+            backdrop.measure(exactly((region * TV_BACKDROP_ASPECT_RATIO).roundToInt()), exactly(region))
+            val textBottom = region - (TV_PAD_HERO_TEXT_BOTTOM.value * resources.displayMetrics.density).roundToInt()
+            heroBox.measure(exactly((m.pageWidthPx * TV_PAD_HERO_TITLE_WIDTH_FRACTION).roundToInt()), exactly(textBottom - m.heroTopPx))
+        } else {
+            backdrop.measure(exactly(m.backdropWidthPx), exactly(m.backdropHeightPx))
+            heroBox.measure(exactly(m.heroWidthPx), exactly(m.heroHeightPx))
+        }
         val g = m.grid
         val gridHeight = m.pageHeightPx - m.gridTopPx + g.topBleedPx + g.bottomBleedPx
         gridBox.measure(exactly(m.bleedLeftPx + m.pageWidthPx), exactly(gridHeight))
@@ -1102,7 +1150,6 @@ class TvNativeGridPageView(
     override fun onDetachedFromWindow() {
         viewTreeObserver.removeOnGlobalFocusChangeListener(focusWatcher)
         viewTreeObserver.removeOnGlobalLayoutListener(layoutWatcher)
-        viewTreeObserver.removeOnTouchModeChangeListener(touchModeWatcher)
         TvNativeFocusCues.detachPage(this)
         super.onDetachedFromWindow()
         scrollTracker.stop()
