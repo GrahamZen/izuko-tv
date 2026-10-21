@@ -101,6 +101,30 @@ class MediaSelectorSeasonGuardsTest {
         assertTrue(candidate.describe() != "excluded FromSeriesSeason", candidate.describe())
     }
 
+    /**
+     * Bangumi 上第二季叫「赛博朋克：边缘行者 2」, 与第一季只标「相同世界观」, 系列信息里没有第一季;
+     * 站点上第一季的页面就叫系列名「赛博朋克：边缘行者」, 页上的第 01 集按 ep 对上了第二季第 1 集.
+     */
+    @Test
+    fun `bare series page is an earlier season when the subject name ends with a season number`() = runSimpleMediaSelectorTestSuite {
+        initSubject("赛博朋克：边缘行者 2")
+        val bare = addPage("赛博朋克：边缘行者", 1..10)
+        val labelledFirst = addPage("赛博朋克：边缘行者 第一季", 1..10, source = "web2")
+        val own = addPage("赛博朋克：边缘行者 第二季", 1..10, source = "web3")
+
+        assertPage(bare, 1 to "excluded FromSeriesSeason")
+        assertPage(labelledFirst, 1 to "excluded FromSeriesSeason")
+        assertPage(own, 1 to "included FUZZY SORT")
+    }
+
+    @Test
+    fun `bare series page stays for a first season`() = runSimpleMediaSelectorTestSuite {
+        initSubject("赛博朋克：边缘行者")
+        val bare = addPage("赛博朋克：边缘行者", 1..10)
+
+        assertPage(bare, 1 to "included EXACT SORT")
+    }
+
     @Test
     fun `BT collections are not judged by their season label`() = runSimpleMediaSelectorTestSuite {
         initSpyFamilySeason2()
