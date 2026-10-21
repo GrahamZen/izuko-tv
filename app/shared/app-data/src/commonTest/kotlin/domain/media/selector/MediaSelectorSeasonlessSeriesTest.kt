@@ -79,7 +79,7 @@ class MediaSelectorSeasonlessSeriesTest {
         },
     ) {
         assertMedias {
-            single().assert(included = false, exclusionReason = MediaExclusionReason.SubjectNameMismatch)
+            single().assert(included = false, exclusionReason = MediaExclusionReason.FromSeriesSeason)
         }
     }
 
@@ -101,7 +101,7 @@ class MediaSelectorSeasonlessSeriesTest {
         },
     ) {
         assertMedias {
-            single().assert(included = false, exclusionReason = MediaExclusionReason.SubjectNameMismatch)
+            single().assert(included = false, exclusionReason = MediaExclusionReason.FromSeriesSeason)
         }
     }
 
