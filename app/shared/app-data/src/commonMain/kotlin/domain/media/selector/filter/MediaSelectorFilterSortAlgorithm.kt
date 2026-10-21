@@ -356,7 +356,7 @@ class MediaSelectorFilterSortAlgorithm {
             if (subjectNames.anyEquals(normalizedMediaSubjectName)) {
                 // contextSubjectNames 与条目名称相同, 肯定不能排除它
             } else if (!matchedAsSeasonlessSeries) {
-                if (media.kind == MediaSourceKind.WEB && SeasonNumberConflict.of(context)?.isOtherSeason(mediaSubjectName) == true) {
+                if (media.kind == MediaSourceKind.WEB && SeasonNumberConflict.of(context)?.let { it.isOtherSeason(mediaSubjectName) || it.isSeasonlessEarlierSeason(mediaSubjectName) } == true) {
                     return exclude(MediaExclusionReason.FromSeriesSeason)
                 }
                 // 以系列内序号认领的资源就是本条目的这一集, 条目名是系列名而非本季的名字也不改变这一点.
