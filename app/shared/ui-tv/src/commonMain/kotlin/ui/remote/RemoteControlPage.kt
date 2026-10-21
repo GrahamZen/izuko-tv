@@ -2936,7 +2936,8 @@ private val SCRIPT = """
       groups.forEach(function (g) { h += groupHtml(g, s); });
       return h;
     }
-    // 没点某个源时: 按类型分成可各自收起的几段 —— 本地缓存 / 在线源 / BT 源 (BT 一搜几百条, 在线源不该要翻过它们才找得到).
+    // 没点某个源时: 按类型分成可各自收起的几段 —— 本地缓存 / 网盘 / 在线源 / BT 源 (BT 一搜几百条, 在线源不该要翻过它们才找得到).
+    // 网盘与电视选源面板一样单独一段, 排在在线源前面
     // 默认全展开, 可手动收起; 点了某个源的胶囊 / 播放卡上的数据源胶囊时展开对应那段; 开合记在 secOpen, 轮询重画照着画
     SECTIONS.forEach(function (k) {
       var gs = groups.filter(function (g) { return (g.kind || 'web') === k[0]; });
@@ -2982,8 +2983,8 @@ private val SCRIPT = """
         }).join(' ') + '</div>'
       : '';
   }
-  var SECTIONS = [['cache', T('本地缓存')], ['web', T('在线源')], ['bt', T('BT 源')]];
-  var secOpen = { cache: true, web: true, bt: true };
+  var SECTIONS = [['cache', T('本地缓存')], ['drive', T('网盘')], ['web', T('在线源')], ['bt', T('BT 源')]];
+  var secOpen = { cache: true, drive: true, web: true, bt: true };
   // 某个源 (id) 在哪一段; 展开那一段, 下次重画照着画
   window.openSourceSection = function (id) {
     var g = lastState && lastState.groups.filter(function (x) { return x.id === id; })[0];
