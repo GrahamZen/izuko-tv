@@ -223,9 +223,11 @@ class TorrentMediaResolver(
                 }?.key?.let { return it }
             }
 
+            selectBySeasonEpisode(videos, getPath, episodeSort, episodeEp)?.let { return it }
+
             // 解析失败, 尽可能匹配一个
             episodeSort.toString().let { number ->
-                videos.firstOrNull { it.getPath().contains(number, ignoreCase = true) }
+                videos.firstOrNull { containsEpisodeNumber(it.getPath(), number) }
                     ?.let { return it }
             }
 

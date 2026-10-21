@@ -20,8 +20,10 @@ import me.him188.ani.test.permuted
 import me.him188.ani.test.runDynamicTests
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class SelectVideoFileAnitorrentEntryTest {
     private val json = Json { ignoreUnknownKeys = true }
@@ -477,5 +479,38 @@ class SelectVideoFileAnitorrentEntryTest {
             "Example Anime Series 2020 S00E04-[1080p][BDRIP][x265.OPUS].mkv",
             selected,
         )
+    }
+
+    @Test
+    fun `every episode of an SxxEyy season pack selects its own file`() {
+        val titles = listOf(
+            "Last.Chance.for.a.Slow.Dance", "Give.Me.Another.Day", "021", "Someone.That.I.Used.To.Know",
+            "Fades.Pass.the.Distance", "Everything.Hate", "To.the.Depths.With.You", "Serce",
+            "Strictly.Reserved.For.You", "Then.Everyone.Went.Home",
+        )
+        val files = titles.mapIndexed { index, title ->
+            val ep = (index + 1).toString().padStart(2, '0')
+            "Cyberpunk.Edgerunners.S02.1080p.NF.WEB-DL.DUAL.DDP5.1.H.264-VARYG/" +
+                    "Cyberpunk.Edgerunners.S02E$ep.$title.1080p.NF.WEB-DL.DUAL.DDP5.1.H.264-VARYG.mkv"
+        }
+        for ((index, file) in files.withIndex()) {
+            val selected = TorrentMediaResolver.selectVideoFileEntry(
+                files,
+                { this },
+                episodeTitles = listOf("no such title"),
+                episodeSort = EpisodeSort(index + 1),
+                episodeEp = EpisodeSort(index + 1),
+            )
+            assertEquals(file, selected, "episode ${index + 1}")
+        }
+    }
+
+    @Test
+    fun `episode numbers count with extra leading zeros but not inside other numbers`() {
+        assertTrue(containsEpisodeNumber("Show - 001 [1080p].mkv", "01"))
+        assertTrue(containsEpisodeNumber("Show - 01.mkv", "1"))
+        assertFalse(containsEpisodeNumber("Show - 05 [1080p].mkv", "08"))
+        assertFalse(containsEpisodeNumber("Show - 10.mkv", "1"))
+        assertFalse(containsEpisodeNumber("Show - 01.mp4", "04"))
     }
 }
