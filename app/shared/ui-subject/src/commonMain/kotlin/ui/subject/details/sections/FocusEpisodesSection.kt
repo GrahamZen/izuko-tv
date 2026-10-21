@@ -583,6 +583,10 @@ fun FocusEpisodeCarousel(
                             }
                         }
                     },
+                    canHorizontalNav = { delta ->
+                        val index = episodes.indexOfFirst { it.episodeId == target.episodeId }
+                        index >= 0 && index + delta in episodes.indices
+                    },
                     background = stillBackground,
                     // 时长与播出日期落在底行右端 (按钮的对面).
                     //

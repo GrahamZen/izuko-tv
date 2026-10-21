@@ -10,8 +10,6 @@
 package me.him188.ani.app.ui.subject.details.layout
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.BringIntoViewSpec
-import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,7 +25,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
@@ -39,7 +36,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -50,17 +46,10 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.BlendMode
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.intl.Locale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -85,6 +74,8 @@ import me.him188.ani.app.ui.foundation.tv.rememberTvTitleLogoLanguage
 import me.him188.ani.app.ui.foundation.widgets.AniCenteredPanelDialog
 import me.him188.ani.app.ui.foundation.widgets.AniFocusActionButton
 import me.him188.ani.app.ui.foundation.widgets.AniFocusRingSurface
+import me.him188.ani.app.ui.foundation.widgets.ProvideScrollFadeFocusMargin
+import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFade
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.subject_details_tv_entry_dialog_description
 import me.him188.ani.app.ui.lang.subject_details_tv_entry_dialog_title
@@ -180,9 +171,6 @@ internal fun TvSubjectFeedbackDialog(
         }
     }
 
-    // 详情页整页关掉了框架的 bring-into-view (按焦点下标自己滚), 弹窗跟着继承; 这里的网格要框架把焦点格滚进视野, 上面让出渐隐那一截
-    val density = LocalDensity.current
-    val defaultBringIntoView = remember(density) { TopMarginBringIntoViewSpec(with(density) { GRID_TOP_FADE.toPx() }) }
     AniCenteredPanelDialog(
         onDismissRequest = ::back,
         title = {
@@ -223,7 +211,8 @@ internal fun TvSubjectFeedbackDialog(
             }
         },
     ) {
-        CompositionLocalProvider(LocalBringIntoViewSpec provides defaultBringIntoView) {
+        // 详情页整页关掉了框架的 bring-into-view (按焦点下标自己滚), 弹窗跟着继承; 这里的网格要框架把焦点格滚进视野, 上下让出渐隐那一截
+        ProvideScrollFadeFocusMargin {
             Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 val pick = pending
                 when (val s = submit) {
@@ -426,7 +415,7 @@ private fun LogoPicker(candidates: TmdbTitleLogoCandidates, onPick: (TmdbTitleLo
         val gridState = rememberLazyGridState(initialFirstVisibleItemIndex = selectedIndex)
         LazyVerticalGrid(
             GridCells.Fixed(LOGO_GRID_COLUMNS),
-            Modifier.fadeTopWhenScrolled(gridState),
+            Modifier.aniVerticalScrollFade(gridState),
             state = gridState,
             contentPadding = PaddingValues(LOGO_GRID_PADDING),
             horizontalArrangement = Arrangement.spacedBy(LOGO_GRID_SPACING),
@@ -447,41 +436,6 @@ private fun LogoPicker(candidates: TmdbTitleLogoCandidates, onPick: (TmdbTitleLo
                     LogoNotListedCard(tmdbLogosPageUrl(candidates), candidates.hidden)
                 }
             }
-        }
-    }
-}
-
-/**
- * 网格往上翻过时 (上面还有内容), 滚到顶边的那一截 ([GRID_TOP_FADE]) 渐隐成透明, 不是被标题区下缘一刀切掉; 停在最上面时不渐隐.
- * 进度读在绘制里, 滚动不重组.
- */
-private fun Modifier.fadeTopWhenScrolled(state: LazyGridState): Modifier = this
-    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-    .drawWithContent {
-        drawContent()
-        if (state.canScrollBackward) {
-            val fade = GRID_TOP_FADE.toPx()
-            drawRect(
-                Brush.verticalGradient(listOf(Color.Transparent, Color.Black), startY = 0f, endY = fade),
-                size = Size(size.width, fade),
-                blendMode = BlendMode.DstIn,
-            )
-        }
-    }
-
-/**
- * 焦点格滚进视野时上边多留 [topMarginPx] (渐隐那一截, 见 [fadeTopWhenScrolled]), 焦点所在的那一行不落在半透明里; 其余同默认 (整格看得见就不滚).
- */
-private class TopMarginBringIntoViewSpec(private val topMarginPx: Float) : BringIntoViewSpec {
-    override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
-        val start = offset - topMarginPx
-        val end = offset + size
-        return when {
-            start >= 0f && end <= containerSize -> 0f
-            // 比视野还高: 顶边对齐, 不来回抖
-            end - start > containerSize -> start
-            start < 0f -> start
-            else -> end - containerSize
         }
     }
 }
@@ -602,7 +556,7 @@ private fun EntryPicker(candidates: SubjectEntryCandidates, onPick: (SubjectEntr
     val gridState = rememberLazyGridState(initialFirstVisibleItemIndex = selectedIndex)
     LazyVerticalGrid(
         GridCells.Fixed(ENTRY_GRID_COLUMNS),
-        Modifier.fadeTopWhenScrolled(gridState),
+        Modifier.aniVerticalScrollFade(gridState),
         state = gridState,
         contentPadding = PaddingValues(4.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -740,9 +694,6 @@ private val LOGO_GRID_SPACING = 12.dp
 /** logo 网格一屏露出几行 (第二行露一半). */
 private const val LOGO_GRID_VISIBLE_ROWS = 1.5f
 private val CONFIRM_PREVIEW_WIDTH = 280.dp
-/** 网格顶边渐隐的那一截 (见 [fadeTopWhenScrolled]). */
-private val GRID_TOP_FADE = 24.dp
-
 
 /** 卡里的图按这个宽取 (w500 档, 一格两三百像素宽够用). */
 private const val LOGO_IMAGE_WIDTH_PX = 500

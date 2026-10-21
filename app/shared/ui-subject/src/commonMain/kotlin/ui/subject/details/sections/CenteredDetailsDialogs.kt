@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -56,7 +57,9 @@ import me.him188.ani.app.tools.formatDateTime
 import me.him188.ani.app.ui.comment.UIComment
 import me.him188.ani.app.ui.foundation.avatar.AvatarImage
 import me.him188.ani.app.ui.foundation.dialogs.DialogWindowDimAmount
+import me.him188.ani.app.ui.foundation.dialogs.dialogWindowBlurBehind
 import me.him188.ani.app.ui.foundation.ifThen
+import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.ProvideRingOnlyFocus
 import me.him188.ani.app.ui.foundation.tv.TvImageZoomState
 import me.him188.ani.app.ui.foundation.tv.TvZoomedImageOverlay
@@ -66,12 +69,20 @@ import me.him188.ani.app.ui.foundation.focus.TvFocusKey
 import me.him188.ani.app.ui.foundation.focus.rememberTvFocusScope
 import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
 import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
+import me.him188.ani.app.ui.foundation.widgets.ANI_GLASS_BLUR_RADIUS
+import me.him188.ani.app.ui.foundation.widgets.ANI_GLASS_PANEL_SHAPE
+import me.him188.ani.app.ui.foundation.widgets.ANI_GLASS_WINDOW_DIM
 import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_CONTENT_PADDING
-import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_SHAPE
 import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_TITLE_GAP
 import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_WINDOW_DIM
+import me.him188.ani.app.ui.foundation.widgets.ProvideAniGlassPanel
 import me.him188.ani.app.ui.foundation.widgets.ProvidePopupControlStyle
-import me.him188.ani.app.ui.foundation.widgets.centeredPanelColor
+import me.him188.ani.app.ui.foundation.widgets.ProvideScrollFadeFocusMargin
+import me.him188.ani.app.ui.foundation.widgets.aniGlassEdge
+import me.him188.ani.app.ui.foundation.widgets.aniGlassPanelColor
+import me.him188.ani.app.ui.foundation.widgets.aniPanelItemColor
+import me.him188.ani.app.ui.foundation.widgets.aniPanelTitleStyle
+import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFade
 import me.him188.ani.app.ui.rating.FiveRatingStars
 
 /**
@@ -110,8 +121,9 @@ internal fun <T : Any> ViewAllGridDialog(
         // 首格随分页数据迟到时, 请求悬挂到锚点附着事件再送达, 不再逐帧轮询.
         val focus = rememberTvFocusScope()
         focus.InitialFocus(ViewAllGridFirstItemFocus)
-        // 底色/窗外压暗与 AniCenteredPanelDialog 同一套: 盖在播放器上时画面要透得出来
-        DialogWindowDimAmount(CENTERED_PANEL_WINDOW_DIM)
+        // 玻璃面板、背后模糊与窗外压暗与 AniCenteredPanelDialog 同一套: 盖在播放器上时画面要透得出来
+        val blurred = dialogWindowBlurBehind(ANI_GLASS_BLUR_RADIUS)
+        DialogWindowDimAmount(if (blurred) ANI_GLASS_WINDOW_DIM else CENTERED_PANEL_WINDOW_DIM)
         Surface(
             // 独立窗口收不到播放页的根按键路由, 播放器内嵌详情页开的弹窗要自己接播放/暂停键
             Modifier.tvOverlayWindowKeys(onDismissRequest)
@@ -121,58 +133,68 @@ internal fun <T : Any> ViewAllGridDialog(
                 .ifThen(imageZoom != null) { tvImageZoomKeys(imageZoom!!) }
                 .fillMaxWidth(TV_DETAILS_DIALOG_WIDTH_FRACTION)
                 .fillMaxHeight(TV_DETAILS_DIALOG_HEIGHT_FRACTION),
-            shape = CENTERED_PANEL_SHAPE,
-            color = centeredPanelColor,
+            shape = ANI_GLASS_PANEL_SHAPE,
+            color = aniGlassPanelColor(blurred),
+            border = aniGlassEdge(),
             // 半透明底色查不到 "on" 色, 不显式给会退回 LocalContentColor 的默认纯黑
             contentColor = MaterialTheme.colorScheme.onSurface,
         ) {
-            Box(Modifier.fillMaxSize()) {
-                Column(
-                    Modifier.padding(CENTERED_PANEL_CONTENT_PADDING),
-                    verticalArrangement = Arrangement.spacedBy(CENTERED_PANEL_TITLE_GAP),
-                ) {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
+            // 玻璃面板里的项目换成玻璃底 (卡片、胶囊); 按钮约定只给标题行 (见下)
+            ProvideAniGlassPanel {
+                Box(Modifier.fillMaxSize()) {
+                    Column(
+                        Modifier.padding(CENTERED_PANEL_CONTENT_PADDING),
+                        verticalArrangement = Arrangement.spacedBy(CENTERED_PANEL_TITLE_GAP),
                     ) {
-                        Text(
-                            title,
-                            Modifier.weight(1f),
-                            color = MaterialTheme.colorScheme.onSurface,
-                            style = MaterialTheme.typography.titleLarge,
-                        )
-                        // 标题行的按钮 (如评论的「写评价」) 画成弹窗动作按钮, 见 ProvidePopupControlStyle
-                        ProvidePopupControlStyle {
-                            headerAction()
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                title,
+                                Modifier.weight(1f),
+                                color = MaterialTheme.colorScheme.onSurface,
+                                style = aniPanelTitleStyle,
+                            )
+                            // 标题行的按钮 (如评论的「写评价」) 画成弹窗动作按钮, 见 ProvidePopupControlStyle
+                            ProvidePopupControlStyle {
+                                headerAction()
+                            }
                         }
-                    }
-                    // **不要自己动滚动位置**: 试过用 initialFirstVisibleItemIndex 把目标那一条顶到最上面,
-                    // 真机上是"第三条先跑到顶上, 立刻又闪回中间" (用户 2026-09-15) —— 分页刚到的那几条
-                    // 不够铺满一屏, LazyGrid 测量时会自己回滚把内容填满视口, 把顶上去的那条拉回来.
-                    // 详情页预览的那几条 ([TV_REVIEW_PREVIEW_COUNT]) 本来就都在首屏里, 焦点直接落上去,
-                    // 默认 BringIntoViewSpec 算出的滚动量就是 0, 一帧都不动. 真在屏外时它也只做最小滚动.
-                    LazyVerticalGrid(
-                        if (columns != null) GridCells.Fixed(columns) else GridCells.Adaptive(minSize = cellMinWidth),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        items(
-                            items.itemCount,
-                            key = items.itemKey(),
-                            contentType = items.itemContentType(),
-                        ) { index ->
-                            items[index]?.let { item ->
-                                itemContent(
-                                    item,
-                                    Modifier.ifThen(index == initialFocusIndex) {
-                                        tvFocusAnchor(focus, ViewAllGridFirstItemFocus)
-                                    },
-                                )
+                        // **不要自己动滚动位置**: 试过用 initialFirstVisibleItemIndex 把目标那一条顶到最上面,
+                        // 真机上是"第三条先跑到顶上, 立刻又闪回中间" (用户 2026-09-15) —— 分页刚到的那几条
+                        // 不够铺满一屏, LazyGrid 测量时会自己回滚把内容填满视口, 把顶上去的那条拉回来.
+                        // 详情页预览的那几条 ([TV_REVIEW_PREVIEW_COUNT]) 本来就都在首屏里, 焦点直接落上去,
+                        // 默认 BringIntoViewSpec 算出的滚动量就是 0, 一帧都不动. 真在屏外时它也只做最小滚动.
+                        // 滚不完的卡片在上下边缘渐隐 (不是被面板内边距一刀切掉); 遥控器上焦点行滚进来时避开渐隐那一截
+                        val gridState = rememberLazyGridState()
+                        ProvideScrollFadeFocusMargin {
+                            LazyVerticalGrid(
+                                if (columns != null) GridCells.Fixed(columns) else GridCells.Adaptive(minSize = cellMinWidth),
+                                Modifier.aniVerticalScrollFade(gridState),
+                                state = gridState,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                items(
+                                    items.itemCount,
+                                    key = items.itemKey(),
+                                    contentType = items.itemContentType(),
+                                ) { index ->
+                                    items[index]?.let { item ->
+                                        itemContent(
+                                            item,
+                                            Modifier.ifThen(index == initialFocusIndex) {
+                                                tvFocusAnchor(focus, ViewAllGridFirstItemFocus)
+                                            },
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
+                    imageZoom?.let { TvZoomedImageOverlay(it) }
                 }
-                imageZoom?.let { TvZoomedImageOverlay(it) }
             }
         }
     }
@@ -209,8 +231,9 @@ internal fun FocusHighlightCard(
                 clickable(interactionSource = interactionSource, indication = null, onClick = onClick!!)
             },
         shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = TV_CARD_CONTAINER_ALPHA),
-        border = if (focused) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+        // 玻璃面板里 (查看全部等弹窗) 是淡白的玻璃底, 页面上照旧; 触屏上不画聚焦描边
+        color = aniPanelItemColor(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = TV_CARD_CONTAINER_ALPHA)),
+        border = if (focused && !LocalTvTouchInputEnabled.current) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
     ) {
         Column(Modifier.padding(FOCUS_HIGHLIGHT_CARD_PADDING)) {
             CompositionLocalProvider(LocalIndication provides NoIndication) {
@@ -268,12 +291,13 @@ private fun CommentGridCard(
             onClick = { expanded = !expanded },
             modifier = modifier,
             shape = RoundedCornerShape(12.dp),
-            color = if (focused) {
+            // 玻璃面板里常态是淡白的玻璃底; 触屏上没有聚焦效果
+            color = if (focused && !LocalTvTouchInputEnabled.current) {
                 MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = TV_CARD_CONTAINER_FOCUSED_ALPHA)
             } else {
-                MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = TV_CARD_CONTAINER_ALPHA)
+                aniPanelItemColor(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = TV_CARD_CONTAINER_ALPHA))
             },
-            border = if (focused) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+            border = if (focused && !LocalTvTouchInputEnabled.current) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
             interactionSource = interactionSource,
         ) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {

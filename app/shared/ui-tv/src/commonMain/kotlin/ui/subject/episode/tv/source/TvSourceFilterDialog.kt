@@ -9,8 +9,6 @@
 
 package me.him188.ani.app.ui.subject.episode.tv.source
 
-import androidx.compose.foundation.gestures.BringIntoViewSpec
-import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -19,7 +17,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.key
@@ -33,6 +30,8 @@ import me.him188.ani.app.ui.foundation.focus.tvWindowInitialFocus
 import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
 import me.him188.ani.app.ui.foundation.widgets.AniCenteredPanelDialog
 import me.him188.ani.app.ui.foundation.widgets.AniFocusChip
+import me.him188.ani.app.ui.foundation.widgets.ProvideScrollFadeFocusMargin
+import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFade
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.media_selector_bt_filter
 import org.jetbrains.compose.resources.stringResource
@@ -61,12 +60,13 @@ internal fun TvSourceFilterDialog(state: TvSourcePanelState, onDismiss: () -> Un
     }
     AniCenteredPanelDialog(
         onDismissRequest = close,
-        title = { Text(stringResource(Lang.media_selector_bt_filter), style = MaterialTheme.typography.titleLarge) },
+        title = { Text(stringResource(Lang.media_selector_bt_filter)) },
         heightFraction = null,
         maxWidth = TV_SOURCE_FILTER_MAX_WIDTH,
     ) {
-        // 焦点走出视野就滚过去: 所在页面可能关掉了默认的跟随 (按下标自己滚), 弹窗继承它, 这里装回默认
-        CompositionLocalProvider(LocalBringIntoViewSpec provides remember { object : BringIntoViewSpec {} }) {
+        // 焦点走出视野就滚过去: 所在页面可能关掉了默认的跟随 (按下标自己滚), 弹窗继承它, 这里装回默认的 (上下多留渐隐那一截)
+        val scrollState = rememberScrollState()
+        ProvideScrollFadeFocusMargin {
             Column(
                 Modifier
                     // 播放器里: 播放 / 暂停键照常管播放, 长按返回收干净
@@ -81,7 +81,8 @@ internal fun TvSourceFilterDialog(state: TvSourcePanelState, onDismiss: () -> Un
                         val placeable = measurable.measure(constraints.copy(maxHeight = maxHeight))
                         layout(placeable.width, placeable.height) { placeable.place(0, 0) }
                     }
-                    .verticalScroll(rememberScrollState()),
+                    .aniVerticalScrollFade(scrollState)
+                    .verticalScroll(scrollState),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 for ((header, options) in filterGroups(rows)) {

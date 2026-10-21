@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import me.him188.ani.app.data.models.danmaku.DanmakuRegexFilter
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
 import me.him188.ani.app.ui.foundation.tv.AniOutlinedTextField
+import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFade
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.subject_episode_close
 import me.him188.ani.app.ui.lang.subject_episode_regex_filter_add
@@ -107,6 +108,7 @@ fun DanmakuRegexFilterContent(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .aniVerticalScrollFade(scrollState)
             .verticalScroll(scrollState)
             .padding(horizontal = if (isPortrait) 12.dp else 16.dp)
             .padding(top = if (isPortrait) 8.dp else 16.dp, bottom = 16.dp),

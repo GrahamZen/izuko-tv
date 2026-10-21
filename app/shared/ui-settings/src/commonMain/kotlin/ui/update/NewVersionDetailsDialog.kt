@@ -51,6 +51,7 @@ import me.him188.ani.app.ui.foundation.tv.tvPageScrollKeys
 import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
 import me.him188.ani.app.ui.foundation.widgets.AniCenteredPanelDialog
 import me.him188.ani.app.ui.foundation.widgets.AniTextButton
+import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFade
 import me.him188.ani.app.ui.richtext.RichText
 import me.him188.ani.app.ui.richtext.UIRichElement
 import me.him188.ani.app.ui.lang.Lang
@@ -196,7 +197,7 @@ private fun ChangelogBody(
                     .padding(12.dp)
             },
     ) {
-        Column(Modifier.verticalScroll(scrollState)) {
+        Column(Modifier.aniVerticalScrollFade(scrollState).verticalScroll(scrollState)) {
             // 链接一律交给系统浏览器: 与弹窗底部那颗「查看详情」同一个去处.
             // 遥控器上点不到 (纯文本不吃焦点), 但至少不再是一串方括号加网址
             val onClickUrl: (String) -> Unit = { runCatching { uriHandler.openUri(it) } }

@@ -103,6 +103,7 @@ import me.him188.ani.app.ui.foundation.tv.tvImageZoomKeys
 import me.him188.ani.app.ui.foundation.tv.tvPageScrollKeys
 import me.him188.ani.app.ui.richtext.CommentAsyncImage
 import me.him188.ani.app.ui.foundation.widgets.AniFocusActionButton
+import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFade
 import me.him188.ani.app.ui.foundation.widgets.centeredPanelColor
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.comment_add_emoji
@@ -438,7 +439,7 @@ internal fun TvCommentReplyDialog(
                     // 回应行钉在框底 (不随正文滚): 正文可能很长, 跟在末尾就得翻到底才看得见,
                     // 而它是"这条评论收到了什么反响"的概览, 该和作者行一样一直在
                     Column(Modifier.fillMaxSize()) {
-                        Column(Modifier.weight(1f, fill = false).verticalScroll(scrollState)) {
+                        Column(Modifier.weight(1f, fill = false).aniVerticalScrollFade(scrollState).verticalScroll(scrollState)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
                                     buildAnnotatedString {

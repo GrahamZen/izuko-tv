@@ -58,6 +58,8 @@ import me.him188.ani.app.ui.foundation.focus.TvFocusKey
 import me.him188.ani.app.ui.foundation.focus.rememberTvFocusScope
 import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
 import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
+import me.him188.ani.app.ui.foundation.widgets.ProvideScrollFadeFocusMargin
+import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFade
 import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.tv.TvInWindowPanel
 import me.him188.ani.app.ui.foundation.widgets.AniFocusSelectableSurface
@@ -181,40 +183,44 @@ internal fun TvStickerPicker(
                         }
                     }
                     Spacer(Modifier.width(12.dp))
-                    LazyVerticalGrid(
-                        columns = GridCells.Adaptive(TV_STICKER_CELL_SIZE),
-                        state = gridState,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            // 网格四周同样不留出口 (理由同上). 只拦"那个方向确实没有格子"的情形,
-                            // 其余照常交给网格自己的空间搜索 —— 它会把目标滚进视口
-                            .onPreviewKeyEvent { event ->
-                                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                                val columns = gridState.layoutInfo.visibleItemsInfo
-                                    .maxOfOrNull { it.column + 1 }
-                                    ?.coerceAtLeast(1) ?: return@onPreviewKeyEvent false
-                                val index = focusedCellIndex
-                                val lastIndex = pack.tokens.lastIndex
-                                when (event.key) {
-                                    Key.DirectionUp -> index < columns // 首行
-                                    Key.DirectionDown -> index / columns == lastIndex / columns // 末行
-                                    // 行末按右: 不拦的话空间搜索会绕到别处 (同 TvSchedulePage 的日期行)
-                                    Key.DirectionRight -> index % columns == columns - 1 || index == lastIndex
-                                    else -> false // 左键回包列表, 交给空间搜索
+                    // 滚不完的格子上下渐隐; 遥控器上焦点格滚进来时避开渐隐那一截
+                    ProvideScrollFadeFocusMargin {
+                        LazyVerticalGrid(
+                            columns = GridCells.Adaptive(TV_STICKER_CELL_SIZE),
+                            state = gridState,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .aniVerticalScrollFade(gridState)
+                                // 网格四周同样不留出口 (理由同上). 只拦"那个方向确实没有格子"的情形,
+                                // 其余照常交给网格自己的空间搜索 —— 它会把目标滚进视口
+                                .onPreviewKeyEvent { event ->
+                                    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                                    val columns = gridState.layoutInfo.visibleItemsInfo
+                                        .maxOfOrNull { it.column + 1 }
+                                        ?.coerceAtLeast(1) ?: return@onPreviewKeyEvent false
+                                    val index = focusedCellIndex
+                                    val lastIndex = pack.tokens.lastIndex
+                                    when (event.key) {
+                                        Key.DirectionUp -> index < columns // 首行
+                                        Key.DirectionDown -> index / columns == lastIndex / columns // 末行
+                                        // 行末按右: 不拦的话空间搜索会绕到别处 (同 TvSchedulePage 的日期行)
+                                        Key.DirectionRight -> index % columns == columns - 1 || index == lastIndex
+                                        else -> false // 左键回包列表, 交给空间搜索
+                                    }
                                 }
+                                .focusRestorer(),
+                        ) {
+                            itemsIndexed(pack.tokens, key = { _, token -> token }) { index, token ->
+                                TvStickerCell(
+                                    token = token,
+                                    onClick = { onPick(token) },
+                                    modifier = Modifier
+                                        .onFocusChanged { if (it.isFocused) focusedCellIndex = index }
+                                        .ifThen(index == 0) {
+                                            tvFocusAnchor(focus, TvStickerPickerFocus.FirstCell)
+                                        },
+                                )
                             }
-                            .focusRestorer(),
-                    ) {
-                        itemsIndexed(pack.tokens, key = { _, token -> token }) { index, token ->
-                            TvStickerCell(
-                                token = token,
-                                onClick = { onPick(token) },
-                                modifier = Modifier
-                                    .onFocusChanged { if (it.isFocused) focusedCellIndex = index }
-                                    .ifThen(index == 0) {
-                                        tvFocusAnchor(focus, TvStickerPickerFocus.FirstCell)
-                                    },
-                            )
                         }
                     }
                 }

@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.PaddingValues
@@ -29,17 +28,22 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import me.him188.ani.app.ui.foundation.dialogs.DialogWindowDimAmount
+import me.him188.ani.app.ui.foundation.dialogs.dialogWindowBlurBehind
+import kotlin.math.roundToInt
 import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.LocalTvPlayPauseHandler
+import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 
 /**
- * 半透明居中大面板弹窗: 按窗口比例定尺寸, 下层内容 (视频画面 / 页面) 经系统遮罩隐约透出.
+ * 居中面板弹窗, 「轻透玻璃」的样子 (见 AniGlass.kt): 背后整屏模糊 (设备支持时), 轻透的底色, 一圈上亮下暗的细高光边.
+ * 宽按窗口比例, 高随内容 (最高 [heightFraction] 屏高); 下层内容 (视频画面 / 页面) 隐约透出.
  *
  * 用于大屏上替代贴边侧栏与底部抽屉 —— 贴边面板离视线中心远, 焦点跳到屏幕边缘的过程也难以
  * 看清. 是否改用这个形态由
@@ -53,7 +57,7 @@ fun AniCenteredPanelDialog(
     onDismissRequest: () -> Unit,
     title: (@Composable () -> Unit)? = null,
     widthFraction: Float = CENTERED_PANEL_WIDTH_FRACTION,
-    /** 高占窗口比; **null = 按内容收高** (说明 + 一排按钮这类小弹窗, 撑满屏高只会让按钮吊在空白下面). */
+    /** 最高占窗口比, 内容矮时跟着内容收高; null = 只按内容收高, 不设上限. */
     heightFraction: Float? = CENTERED_PANEL_HEIGHT_FRACTION,
     /**
      * 非 null 时高度由宽度按此宽高比算, 忽略 [heightFraction] ——
@@ -74,68 +78,109 @@ fun AniCenteredPanelDialog(
      * 遮罩之上永远是深底, 不能跟随主题的 onSurface (浅色主题下会变成深字压深底).
      */
     background: (@Composable BoxScope.() -> Unit)? = null,
+    /**
+     * 非 null 时触屏上 (平板 / iPad) 两侧加左右切换的箭头、横滑也切 (如相邻集的详情), 见 [AniPanelSideNavHost].
+     * 遥控器上不画: 左右键已经由内容自己切 (如 AniScrollableTextDialog 的 onHorizontalNav), 箭头纯属占地方.
+     */
+    sideNav: AniPanelSideNav? = null,
     content: @Composable () -> Unit,
 ) {
     Dialog(
         onDismissRequest = onDismissRequest,
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
+        // 背后整屏模糊 (玻璃); 设备不支持时返回 false, 面板底色随之退回接近实底 (见 aniGlassPanelColor)
+        val blurred = dialogWindowBlurBehind(ANI_GLASS_BLUR_RADIUS)
         // 面板占掉大半个屏幕, 窗口默认那档 0.6 的压暗会把四周压得几乎全黑 (电视上尤其明显).
-        // 0.35 接近 M3 给模态遮罩的 32%, 面板边界照样分得清, 下层页面/视频还透得出来
-        DialogWindowDimAmount(CENTERED_PANEL_WINDOW_DIM)
-        Surface(
-            // maxWidth 必须**在外层**: widthIn 会先服从传进来的约束, 而 fillMaxWidth 给的是
-            // min = max = 比例宽度, 放在它后面等于没写 (实测宽度仍是整整那个比例)
-            Modifier
-                // 盖在播放画面上时 (播放器的二级页/一起看/详情弹窗) 遥控器播放暂停键照常可用:
-                // Dialog 是独立窗口, 按键到不了播放页的根路由, 得自己接一道. 播放页之外为空操作
-                .tvOverlayWindowKeys(onDismissRequest)
-                .then(
-                    if (maxWidth != Dp.Unspecified) {
-                        Modifier.widthIn(max = maxWidth).fillMaxWidth()
-                    } else {
-                        Modifier.fillMaxWidth(widthFraction)
-                    },
-                )
-                .then(
-                    when {
-                        aspectRatio != null -> Modifier.aspectRatio(aspectRatio)
-                        heightFraction != null -> Modifier.fillMaxHeight(heightFraction)
-                        else -> Modifier
-                    },
-                ),
-            shape = CENTERED_PANEL_SHAPE,
-            color = if (background != null) Color.Transparent else centeredPanelColor,
-            // 必须显式给: Surface 默认用 contentColorFor(color) 推内容色, 而这里的底色带了 alpha,
-            // 在配色表里查不到对应的 "on" 色 -> 退回 LocalContentColor, 而它的**默认值是纯黑**
-            // (material3 的 compositionLocalOf { Color.Black }). 弹窗宿主往往不在任何 Surface 里
-            // (如 EditableRatingDialogsHost), 于是深色主题下标题/正文全是黑字压深底.
-            contentColor = if (background != null) Color.White else MaterialTheme.colorScheme.onSurface,
-        ) {
-            // 面板里的对话框按钮画成动作按钮, 见 ProvidePopupControlStyle
-            ProvidePopupControlStyle {
-                Box {
-                    if (background != null) {
-                        background()
-                        // 遮罩: 背景图的亮度/花色不可控, 压到足够暗才能保证任意图上正文都读得清
-                        Box(
-                            Modifier.matchParentSize()
-                                .background(Color.Black.copy(alpha = CENTERED_PANEL_SCRIM_ALPHA)),
-                        )
-                    }
-                    // 内容色由上面 Surface 的 contentColor 供给 (背景图时为白, 否则 onSurface)
-                    Column(Modifier.padding(CENTERED_PANEL_CONTENT_PADDING)) {
-                        title?.let {
-                            ProvideTextStyle(MaterialTheme.typography.titleLarge) {
-                                Row(Modifier.fillMaxWidth().padding(bottom = CENTERED_PANEL_TITLE_GAP)) { it() }
-                            }
+        // 0.35 接近 M3 给模态遮罩的 32%, 面板边界照样分得清, 下层页面/视频还透得出来; 背后模糊了就再淡一些
+        DialogWindowDimAmount(if (blurred) ANI_GLASS_WINDOW_DIM else CENTERED_PANEL_WINDOW_DIM)
+        if (sideNav == null || !LocalTvTouchInputEnabled.current) {
+            CenteredPanel(onDismissRequest, title, widthFraction, heightFraction, aspectRatio, maxWidth, background, blurred, content)
+        } else {
+            AniPanelSideNavHost(sideNav, onDismissRequest) {
+                CenteredPanel(onDismissRequest, title, widthFraction, heightFraction, aspectRatio, maxWidth, background, blurred, content)
+            }
+        }
+    }
+}
+
+/** [AniCenteredPanelDialog] 的面板本身. */
+@Composable
+private fun CenteredPanel(
+    onDismissRequest: () -> Unit,
+    title: (@Composable () -> Unit)?,
+    widthFraction: Float,
+    heightFraction: Float?,
+    aspectRatio: Float?,
+    maxWidth: Dp,
+    background: (@Composable BoxScope.() -> Unit)?,
+    blurred: Boolean,
+    content: @Composable () -> Unit,
+) {
+    Surface(
+        // maxWidth 必须**在外层**: widthIn 会先服从传进来的约束, 而 fillMaxWidth 给的是
+        // min = max = 比例宽度, 放在它后面等于没写 (实测宽度仍是整整那个比例)
+        Modifier
+            // 盖在播放画面上时 (播放器的二级页/一起看/详情弹窗) 遥控器播放暂停键照常可用:
+            // Dialog 是独立窗口, 按键到不了播放页的根路由, 得自己接一道. 播放页之外为空操作
+            .tvOverlayWindowKeys(onDismissRequest)
+            .then(
+                if (maxWidth != Dp.Unspecified) {
+                    Modifier.widthIn(max = maxWidth).fillMaxWidth()
+                } else {
+                    Modifier.fillMaxWidth(widthFraction)
+                },
+            )
+            .then(
+                when {
+                    aspectRatio != null -> Modifier.aspectRatio(aspectRatio)
+                    heightFraction != null -> Modifier.fillMaxHeightAtMost(heightFraction)
+                    else -> Modifier
+                },
+            ),
+        shape = ANI_GLASS_PANEL_SHAPE,
+        color = if (background != null) Color.Transparent else aniGlassPanelColor(blurred),
+        border = aniGlassEdge(),
+        // 必须显式给: Surface 默认用 contentColorFor(color) 推内容色, 而这里的底色带了 alpha,
+        // 在配色表里查不到对应的 "on" 色 -> 退回 LocalContentColor, 而它的**默认值是纯黑**
+        // (material3 的 compositionLocalOf { Color.Black }). 弹窗宿主往往不在任何 Surface 里
+        // (如 EditableRatingDialogsHost), 于是深色主题下标题/正文全是黑字压深底.
+        contentColor = if (background != null) Color.White else MaterialTheme.colorScheme.onSurface,
+    ) {
+        // 面板里的项目换成玻璃底、对话框按钮画成动作按钮, 见 ProvideAniGlassPanelContent
+        ProvideAniGlassPanelContent {
+            Box {
+                if (background != null) {
+                    background()
+                    // 遮罩: 背景图的亮度/花色不可控, 压到足够暗才能保证任意图上正文都读得清
+                    Box(
+                        Modifier.matchParentSize()
+                            .background(Color.Black.copy(alpha = CENTERED_PANEL_SCRIM_ALPHA)),
+                    )
+                }
+                // 内容色由上面 Surface 的 contentColor 供给 (背景图时为白, 否则 onSurface)
+                Column(Modifier.padding(CENTERED_PANEL_CONTENT_PADDING)) {
+                    title?.let {
+                        ProvideTextStyle(aniPanelTitleStyle) {
+                            Row(Modifier.fillMaxWidth().padding(bottom = CENTERED_PANEL_TITLE_GAP)) { it() }
                         }
-                        content()
                     }
+                    content()
                 }
             }
         }
     }
+}
+
+/** 高最多占给的高的 [fraction], 内容矮时跟着内容 (不撑满); 内容用 fillMaxSize 的照样撑到这个上限. */
+private fun Modifier.fillMaxHeightAtMost(fraction: Float): Modifier = layout { measurable, constraints ->
+    val placeable = if (constraints.hasBoundedHeight) {
+        val max = (constraints.maxHeight * fraction).roundToInt().coerceAtLeast(constraints.minHeight)
+        measurable.measure(constraints.copy(maxHeight = max))
+    } else {
+        measurable.measure(constraints)
+    }
+    layout(placeable.width, placeable.height) { placeable.place(0, 0) }
 }
 
 /**

@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -38,6 +39,7 @@ import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
 import me.him188.ani.app.ui.foundation.widgets.AniButton
 import me.him188.ani.app.ui.foundation.widgets.dismissDialogButton
 import me.him188.ani.app.ui.foundation.widgets.aniDialogContainerColor
+import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFade
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.episode_danmaku_match_change
 import me.him188.ani.app.ui.lang.episode_danmaku_match_loading_danmaku
@@ -221,7 +223,8 @@ fun SubjectPickerDialog(
         onDismissRequest = onDismissRequest,
         title = { Text(selectSubjectText) },
         text = {
-            LazyColumn {
+            val listState = rememberLazyListState()
+            LazyColumn(Modifier.aniVerticalScrollFade(listState), state = listState) {
                 items(subjects, key = { "MatchingDanmakuDialog-" + it.id }, contentType = { 1 }) { subject ->
                     ListItem(
                         headlineContent = { Text(subject.name) },
@@ -250,7 +253,8 @@ fun EpisodePickerDialog(
         onDismissRequest = onDismissRequest,
         title = { Text(selectEpisodeText) },
         text = {
-            LazyColumn {
+            val listState = rememberLazyListState()
+            LazyColumn(Modifier.aniVerticalScrollFade(listState), state = listState) {
                 items(episodes, key = { "MatchingDanmakuDialog-" + it.id }, contentType = { 1 }) { episode ->
                     ListItem(
                         headlineContent = {

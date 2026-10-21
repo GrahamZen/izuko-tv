@@ -162,13 +162,18 @@ private fun TvPositionedMenu(
             tonalElevation = 0.dp,
             shadowElevation = 0.dp,
         ) {
-            Column(
-                modifier
-                    .padding(vertical = 8.dp)
-                    .width(IntrinsicSize.Max)
-                    .verticalScroll(rememberScrollState()),
-                content = content,
-            )
+            // 选项多到要滚时上下渐隐 (不在内边距那条线上一刀切掉); 焦点项滚进来时避开渐隐那一截
+            val scroll = rememberScrollState()
+            ProvideScrollFadeFocusMargin(MENU_SCROLL_FADE) {
+                Column(
+                    modifier
+                        .padding(vertical = 8.dp)
+                        .width(IntrinsicSize.Max)
+                        .aniVerticalScrollFade(scroll, MENU_SCROLL_FADE)
+                        .verticalScroll(scroll),
+                    content = content,
+                )
+            }
         }
     }
 }
@@ -341,6 +346,9 @@ private const val DISABLED_CONTENT_ALPHA = 0.38f
 
 /** 菜单底色的不透明度, 见 [AniDropdownMenu]. */
 private const val MENU_CONTAINER_ALPHA = 0.95f
+
+/** 菜单滚动时上下渐隐的那一条 (菜单项矮, 比弹窗里的 [ANI_SCROLL_FADE] 窄). */
+private val MENU_SCROLL_FADE = 20.dp
 
 /** 定位菜单 ([TvPositionedMenu]) 的开合过渡, 同 M3 菜单: 展开时缩放 120ms (从 0.8 倍起)、淡入 30ms, 收起时淡出 75ms. */
 private const val MENU_IN_MILLIS = 120
