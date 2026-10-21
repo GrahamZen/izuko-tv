@@ -105,8 +105,6 @@ class TvNativeGridPageTouchRulesTest {
             page.setCards(0, testCards(30))
         }
         host.waitUntil("卡片排出来") { (page.grid?.childCount ?: 0) > 0 }
-        host.instrumentation.setInTouchMode(true)
-        host.waitUntil("进入触摸模式") { page.isInTouchMode }
     }
 
     @AfterTest
@@ -194,14 +192,14 @@ class TvNativeGridPageTouchRulesTest {
         }
     }
 
-    /** 先按电视的规矩把焦点送到第 [index] 张, 再切回触摸模式. */
+    /** 先按电视的规矩把焦点送到第 [index] 张, 再切回手指的规矩 (见 lastInputTouch). */
     private fun focusWithKeysThenTouch(index: Int) {
-        host.instrumentation.setInTouchMode(false)
-        host.waitUntil("离开触摸模式") { !page.isInTouchMode }
-        host.onMain { page.grid!!.focusItem(index) }
+        host.onMain {
+            page.lastInputTouch = false
+            page.grid!!.focusItem(index)
+        }
         host.waitUntil("第 $index 张拿到焦点") { cardAt(index).isFocused }
-        host.instrumentation.setInTouchMode(true)
-        host.waitUntil("进入触摸模式") { page.isInTouchMode }
+        host.onMain { page.lastInputTouch = true }
     }
 
     @Test

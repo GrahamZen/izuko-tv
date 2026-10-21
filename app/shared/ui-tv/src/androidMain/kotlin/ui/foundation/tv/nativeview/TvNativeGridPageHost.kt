@@ -49,7 +49,6 @@ import androidx.paging.compose.LazyPagingItems
 import me.him188.ani.app.data.models.preference.TvBackdropBlurLevel
 import me.him188.ani.app.data.models.preference.TvPosterConfirmAction
 import me.him188.ani.app.platform.DevSwitches
-import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
 import me.him188.ani.app.ui.foundation.LocalSketch
 import me.him188.ani.app.ui.foundation.focus.NativeSendFocusEffect
 import me.him188.ani.app.ui.foundation.focus.TvGridFocusState
@@ -66,6 +65,7 @@ import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
 import me.him188.ani.app.ui.foundation.tv.tvHeroContentColor
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallBackground
 import me.him188.ani.app.ui.foundation.tv.wall.TvWallGridPage
+import me.him188.ani.app.ui.foundation.tv.wall.tvPadBackdropTreatment
 
 /*
  * 网格页 (追番 / 搜索) 原生海报墙在 Compose 这一侧的接线, 两页共用: 建视图、换数据、把页面的网格送焦请求 (TvGridFocusState) 转给原生、
@@ -130,8 +130,12 @@ internal actual fun <T : Any> TvNativeGridPageHostContent(
     val scope = rememberCoroutineScope()
     val composeRoot = LocalView.current
     val density = LocalDensity.current
-    // hero 态在整页底下铺模糊背景, 按确定对焦变清晰再进详情页 (设置里的开关, 见 TvNativeGridPageView.heroBlur); 没有 hero 态的新番时间表不管它
-    val heroBlur = heroEnabled && LocalThemeSettings.current.tvWallBackdropBlur != TvBackdropBlurLevel.None
+    val touchInput = LocalTvTouchInputEnabled.current
+    // 触屏上 (平板) hero 态用平板版画法 (同 iPad 的 Compose 海报墙, 见 TvPadHeroGeometry); 调试开关 tvHeroOnTouch 改回电视的对照
+    val padHero = heroEnabled && touchInput && !DevSwitches.tvHeroOnTouch.value
+    // hero 态在整页底下铺模糊背景, 按确定对焦变清晰再进详情页 (设置里的开关, 见 TvNativeGridPageView.heroBlur; 平板版画法一直铺);
+    // 没有 hero 态的新番时间表不管它
+    val heroBlur = heroEnabled && (padHero || LocalThemeSettings.current.tvWallBackdropBlur != TvBackdropBlurLevel.None)
     // 新番时间表的模糊背景恒铺, 海报墙选了不模糊时按中 (见 ThemeSettings.tvScheduleBlurLevel); 开着 hero 模糊时两者同一档
     val blurSpec = tvBackdropBlurSpec(LocalThemeSettings.current.tvScheduleBlurLevel)
     // 铺着模糊背景时卡片的字也照 vibrancy 画 (深色主题, 见 TvNativeWallStyle.labelVibrancy)
@@ -149,7 +153,6 @@ internal actual fun <T : Any> TvNativeGridPageHostContent(
     // 卡片区在滚动 / 方向键按住: 背景图的剧照升档等它们都停了才去取原图 (见 TvNativeBackdropView.navigating)
     val scrollActivity = LocalTvScrollActivity.current
     val navKeys = LocalTvNavKeyTracker.current
-    val touchInput = LocalTvTouchInputEnabled.current
     val currentCallbacks by rememberUpdatedState(callbacks)
     val currentItemAt by rememberUpdatedState(itemAt)
     val currentItemCount by rememberUpdatedState(itemCount)
@@ -254,7 +257,8 @@ internal actual fun <T : Any> TvNativeGridPageHostContent(
                 view.backdropNavigating = { scrollActivity?.isScrolling == true || navKeys?.held == true }
                 view.dark = dark
                 view.fadeColor = fadeColor.toArgb()
-                view.treatment = treatment
+                view.treatment = if (padHero) tvPadBackdropTreatment(fadeColor) else treatment
+                view.padHero = padHero
                 view.heroBlur = heroBlur
                 view.wallBackdrop?.let { wb ->
                     wallBackdrop?.let {

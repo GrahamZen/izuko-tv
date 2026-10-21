@@ -103,12 +103,13 @@ class TvNativeExploreTouchRulesTest {
             host.root.addView(view, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT))
         }
         host.waitUntil("页面排好") { view.isLaidOut }
-        host.instrumentation.setInTouchMode(false)
-        host.waitUntil("离开触摸模式") { !view.isInTouchMode }
-        host.onMain { view.focusHeroButton(0) }
+        // 进页落点按电视的规矩送到 hero 按钮上, 之后按手指的规矩走 (见 lastInputTouch)
+        host.onMain {
+            view.lastInputTouch = false
+            view.focusHeroButton(0)
+        }
         host.instrumentation.waitForIdleSync()
-        host.instrumentation.setInTouchMode(true)
-        host.waitUntil("进入触摸模式") { view.isInTouchMode }
+        host.onMain { view.lastInputTouch = true }
     }
 
     @AfterTest
@@ -200,14 +201,14 @@ class TvNativeExploreTouchRulesTest {
         Triple(location[0] + view.width * 0.6f, location[1] + view.height * 0.85f, location[1] + view.height * 0.45f)
     }
 
-    /** 先按电视的规矩把焦点送到 [rowKey] 行第 [index] 张, 再切回触摸模式. */
+    /** 先按电视的规矩把焦点送到 [rowKey] 行第 [index] 张, 再切回手指的规矩 (见 lastInputTouch). */
     private fun focusWithKeysThenTouch(rowKey: String, index: Int) {
-        host.instrumentation.setInTouchMode(false)
-        host.waitUntil("离开触摸模式") { !view.isInTouchMode }
-        host.onMain { view.focusCard(rowKey, index) }
+        host.onMain {
+            view.lastInputTouch = false
+            view.focusCard(rowKey, index)
+        }
         host.waitUntil("$rowKey 第 $index 张拿到焦点") { cardAt(rowKey, index).isFocused }
-        host.instrumentation.setInTouchMode(true)
-        host.waitUntil("进入触摸模式") { view.isInTouchMode }
+        host.onMain { view.lastInputTouch = true }
     }
 
     @Test
@@ -283,12 +284,22 @@ class TvNativeExploreTouchRulesTest {
     }
 
     @Test
-    fun `leaving touch mode brings the focus look back on the wall`() {
+    fun `a direction key brings the focus look back on the wall`() {
         focusWithKeysThenTouch(REC, 0)
         assertTrue(host.onMain { cardAt(REC, 0).touchLookHidden })
+        host.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+        assertEquals(REC to 1, focusedCard())
+        assertFalse(host.onMain { cardAt(REC, 1).touchLookHidden }, "按方向键就回到电视的规矩")
+    }
+
+    @Test
+    fun `a focus request that drops the window touch mode keeps the touch rules`() {
+        // 页面里的焦点请求 (弹窗关掉后交还焦点等) 会让窗口退出触摸模式: 手指的规矩看本页收到的输入, 不跟着变
         host.instrumentation.setInTouchMode(false)
+        host.waitUntil("窗口离开触摸模式") { !view.isInTouchMode }
+        host.onMain { view.focusCard(HOT, 3) }
         host.instrumentation.waitForIdleSync()
-        assertFalse(host.onMain { cardAt(REC, 0).touchLookHidden }, "按方向键 (离开触摸模式) 就回到电视的规矩")
+        assertTrue(host.onMain { view.isFocused }, "仍按手指的规矩停放")
     }
 
     @Test

@@ -29,7 +29,7 @@ import androidx.compose.runtime.Immutable
 
 /**
  * hero 操作按钮的外观 (原生版 TvHeroButton, 取值同 Compose 版: 按 TV_HERO_BUTTON_SCALE 缩过的内边距 / 图标 / 字号, 圆角 8dp).
- * 未聚焦: 主按钮 [filledColor] / 次按钮 [unfilledColor] 底板 + 一圈 [outlineWidthPx] 细描边, 字与图标 [contentColor];
+ * 未聚焦: 主按钮 [filledColor] / 次按钮 [unfilledColor] 底板 + 一圈 [outlineWidthPx] 细描边, 字与图标 [contentColor] (主按钮给了 [filledContentColor] 就用它);
  * 聚焦: 底板 [focusedColor] (叠一层 [focusedContentColor] 10% 的聚焦态层, 同 M3 Surface 的聚焦指示), 字与图标 [focusedContentColor], 不描边.
  */
 @Immutable
@@ -47,6 +47,7 @@ data class TvNativeHeroButtonStyle(
     val focusedColor: Int,
     val contentColor: Int,
     val focusedContentColor: Int,
+    val filledContentColor: Int? = null,
 )
 
 /**
@@ -97,6 +98,8 @@ class TvNativeHeroButton(
         label.text = text
         contentDescription = text
         icon.setImageBitmap(iconBitmap)
+        // 没给图标 (平板版画法的按钮只有字): 不留图标那一格
+        icon.visibility = if (iconBitmap == null) GONE else VISIBLE
     }
 
     private fun applyStyle() {
@@ -134,7 +137,11 @@ class TvNativeHeroButton(
         } else {
             plate.setStroke(s.outlineWidthPx.toInt().coerceAtLeast(1), s.outlineColor)
         }
-        val content = if (focused) s.focusedContentColor else s.contentColor
+        val content = when {
+            focused -> s.focusedContentColor
+            filled && s.filledContentColor != null -> s.filledContentColor
+            else -> s.contentColor
+        }
         label.setTextColor(content)
         icon.colorFilter = PorterDuffColorFilter(content, PorterDuff.Mode.SRC_IN)
     }
@@ -145,16 +152,33 @@ private const val TV_NATIVE_FOCUS_STATE_LAYER_ALPHA = 0.1f
 
 /**
  * 轮播指示器: 横排小圆点, 当前项为 [selectedWidthPx] 宽的胶囊, 其余 [dotPx] 见方的圆点, 间距 [gapPx];
- * 当前项 [color], 其余 [color] 乘 [inactiveAlpha]. 在自身宽度内水平居中, 竖直居中. 不可聚焦, 少于 2 项不画.
+ * 当前项 [color], 其余 [color] 乘 [inactiveAlpha]. 在自身宽度内水平居中 ([alignStart]: 靠左), 竖直居中. 不可聚焦, 少于 2 项不画.
+ * 尺寸可换 ([setGeometry], 平板版的小圆点).
  */
 @SuppressLint("ViewConstructor")
 class TvNativeCarouselDotsView(
     context: Context,
-    private val dotPx: Float,
-    private val selectedWidthPx: Float,
-    private val gapPx: Float,
-    private val inactiveAlpha: Float,
+    private var dotPx: Float,
+    private var selectedWidthPx: Float,
+    private var gapPx: Float,
+    private var inactiveAlpha: Float,
 ) : View(context) {
+    /** 靠左排 (平板版画法), 否则在自身宽度内居中. */
+    var alignStart: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            invalidate()
+        }
+
+    fun setGeometry(dotPx: Float, selectedWidthPx: Float, gapPx: Float, inactiveAlpha: Float) {
+        this.dotPx = dotPx
+        this.selectedWidthPx = selectedWidthPx
+        this.gapPx = gapPx
+        this.inactiveAlpha = inactiveAlpha
+        invalidate()
+    }
+
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val rect = RectF()
 
@@ -188,7 +212,7 @@ class TvNativeCarouselDotsView(
         val n = count
         if (n <= 1) return
         val total = selectedWidthPx + (n - 1) * dotPx + (n - 1) * gapPx
-        var x = (width - total) / 2f
+        var x = if (alignStart) 0f else (width - total) / 2f
         val top = (height - dotPx) / 2f
         val radius = dotPx / 2f
         for (i in 0 until n) {

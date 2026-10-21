@@ -96,6 +96,7 @@ import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvMenuTarget
 import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativeHeroButtonStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativeHeroTextStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativeIcon
+import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativePadHeroButtonStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativeWallStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.toTvNativeTextStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.tvBackdropBlurSpec
@@ -118,6 +119,7 @@ import me.him188.ani.app.ui.foundation.tv.tvPosterWallHeaderStyle
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallSecondaryLabelAlpha
 import me.him188.ani.app.ui.foundation.tv.tvTitle
 import me.him188.ani.app.ui.foundation.tv.tvUseOriginalTitle
+import me.him188.ani.app.ui.foundation.tv.wall.tvPadBackdropTreatment
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.exploration_continue_watching
 import me.him188.ani.app.ui.lang.exploration_rec_more
@@ -179,12 +181,18 @@ internal actual fun TvExplorationNativeWall(
     // 「海报上按确定」只有先看简介这一档有 hero 态 (见 TvPosterConfirmAction); 模糊背景也只对它有用
     val heroEnabled = LocalThemeSettings.current.tvPosterConfirm == TvPosterConfirmAction.Hero
     val wallBlur = LocalThemeSettings.current.tvWallBackdropBlur
-    val heroBlur = heroEnabled && wallBlur != TvBackdropBlurLevel.None
-    val blurSpec = tvBackdropBlurSpec(wallBlur)
+    val touchInput = LocalTvTouchInputEnabled.current
+    // 触屏上 (平板) 热门轮播与 hero 态用平板版画法 (同 iPad 的 Compose 海报墙, 见 TvPadHeroGeometry); 调试开关 tvHeroOnTouch 改回电视的对照.
+    // 平板版画法一直铺模糊底 (轮播区与 hero 态), 不看设置里关没关
+    val padHero = touchInput && !DevSwitches.tvHeroOnTouch.value
+    val heroBlur = padHero || heroEnabled && wallBlur != TvBackdropBlurLevel.None
+    val blurSpec = tvBackdropBlurSpec(if (wallBlur == TvBackdropBlurLevel.None) TvBackdropBlurLevel.Strong else wallBlur)
     // 铺着模糊背景时卡片的字照 vibrancy 画 (深色主题, 见 TvNativeWallStyle.labelVibrancy)
     val style = rememberTvNativeWallStyle(cardWidth, metrics.columns, labelVibrancy = heroBlur)
     val textStyle = rememberTvNativeHeroTextStyle(titleMaxLines = 1, lineSpacing = 10.dp)
-    val buttonStyle = rememberTvNativeHeroButtonStyle()
+    val tvButtonStyle = rememberTvNativeHeroButtonStyle()
+    val padButtonStyle = rememberTvNativePadHeroButtonStyle()
+    val buttonStyle = if (padHero) padButtonStyle else tvButtonStyle
     val headerStyle = tvPosterWallHeaderStyle().toTvNativeTextStyle(density, LocalContentColor.current)
     val headerIdleAlpha = tvPosterWallSecondaryLabelAlpha()
     val visualEffects = LocalThemeSettings.current.visualEffects
@@ -198,7 +206,6 @@ internal actual fun TvExplorationNativeWall(
     // 卡片区在滚动 / 方向键按住: 背景图的剧照升档等它们都停了才去取原图 (见 TvNativeBackdropView.navigating)
     val scrollActivity = LocalTvScrollActivity.current
     val navKeys = LocalTvNavKeyTracker.current
-    val touchInput = LocalTvTouchInputEnabled.current
     val dotColor = MaterialTheme.colorScheme.onSurface.toArgb()
     val playIcon = rememberTvNativeIcon(Icons.Rounded.PlayArrow, 18.dp)
     val scheduleIcon = rememberTvNativeIcon(Icons.Rounded.CalendarMonth, 18.dp)
@@ -256,7 +263,12 @@ internal actual fun TvExplorationNativeWall(
                 view.dark = dark
                 view.headerIdleAlpha = headerIdleAlpha
                 view.fadeColor = fadeColor.toArgb()
-                view.treatmentFor = { mode -> tvPageBackdropTreatment(mode, topScrim = false, fadeColor = fadeColor, geometry = geometry) }
+                view.treatmentFor = if (padHero) {
+                    { _ -> tvPadBackdropTreatment(fadeColor) }
+                } else {
+                    { mode -> tvPageBackdropTreatment(mode, topScrim = false, fadeColor = fadeColor, geometry = geometry) }
+                }
+                view.padHero = padHero
                 view.heroEnabled = heroEnabled
                 view.touchInput = touchInput
                 view.heroBlur = heroBlur
@@ -271,7 +283,8 @@ internal actual fun TvExplorationNativeWall(
                     wb.crossfade = visualEffects.transitions
                 }
                 view.update(style, metrics, textStyle, buttonStyle)
-                view.setButtons(watchNow, playIcon, schedule, scheduleIcon)
+                // 平板版画法的按钮只有字 (同 iPad)
+                view.setButtons(watchNow, playIcon.takeUnless { padHero }, schedule, scheduleIcon.takeUnless { padHero })
                 view.setItems(items)
                 view.setCarousel(carouselCount, selected, dotColor)
             },
