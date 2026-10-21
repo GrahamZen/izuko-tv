@@ -19,6 +19,7 @@ import me.him188.ani.app.domain.media.selector.MaybeExcludedMedia
 import me.him188.ani.app.domain.media.selector.MediaExclusionReason
 import me.him188.ani.app.domain.media.selector.UnsafeOriginalMediaAccess
 import me.him188.ani.app.domain.media.selector.blocksSelection
+import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveRegistry
 import me.him188.ani.app.domain.mediasource.clouddrive.DriveVideoBitrates
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.media_selector_item_cache_not_ready
@@ -32,6 +33,7 @@ import me.him188.ani.app.ui.lang.media_selector_item_unsupported_playback
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.source.MediaSourceKind
 import org.jetbrains.compose.resources.getString
+import org.koin.mp.KoinPlatform
 import kotlin.reflect.KClass
 
 /**
@@ -93,13 +95,14 @@ internal object RemoteCandidates {
                 addJsonObject {
                     put("id", sourceId)
                     put("name", sourceName(sourceId, list.first().original))
-                    // 网页按类型把候选分成可各自收起的几段 (本地缓存 / 在线 / BT), BT 一搜几百条, 不该挡在在线源前面
+                    // 网页按类型把候选分成可各自收起的几段 (本地缓存 / 网盘 / 在线 / BT), BT 一搜几百条, 不该挡在在线源前面.
+                    // 网盘的资源也是在线类型, 按播放地址是不是网盘的认出来, 同电视选源面板单独一段
                     put(
                         "kind",
                         when (list.first().original.kind) {
                             MediaSourceKind.LocalCache -> "cache"
                             MediaSourceKind.BitTorrent -> "bt"
-                            else -> "web"
+                            else -> if (isCloudDriveMedia(list.first().original)) "drive" else "web"
                         },
                     )
                     put("total", list.size)
@@ -177,6 +180,10 @@ internal object RemoteCandidates {
         if ("4K" in v || "2160" in v) return 2160
         return v.filter { it.isDigit() }.take(4).toIntOrNull() ?: 0
     }
+
+    /** 网盘里的文件 (播放地址是网盘的占位地址, 见 [CloudDriveRegistry.driveOf]); 没有网盘注册表时 (测试) 都不算. */
+    private fun isCloudDriveMedia(media: Media): Boolean =
+        runCatching { KoinPlatform.getKoin().get<CloudDriveRegistry>() }.getOrNull()?.driveOf(media.download.uri) != null
 
     /** 排除原因的文字, 与电视上选源面板的一致 (见 TvSourceStrings.exclusion). */
     private fun loadReasonTexts(): Map<KClass<out MediaExclusionReason>, String> = runBlocking {
