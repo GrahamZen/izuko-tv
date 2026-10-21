@@ -78,6 +78,7 @@ import me.him188.ani.utils.io.exists
 import me.him188.ani.utils.io.inSystem
 import me.him188.ani.utils.io.length
 import me.him188.ani.utils.io.resolve
+import me.him188.ani.utils.io.syncFileContents
 import me.him188.ani.utils.io.writeText
 import me.him188.ani.utils.ktor.ScopedHttpClient
 import me.him188.ani.utils.ktor.rawCookieHeader
@@ -1163,13 +1164,12 @@ open class KtorHttpDownloader(
      * 第一次就退出, 不空转.
      */
     private suspend fun syncWhileWritten(output: Path) {
-        val absolutePath = output.inSystem.absolutePath
         var lastSyncedSize = 0L
         while (true) {
             delay(MERGE_SYNC_POLL_INTERVAL)
             val size = output.inSystem.let { if (it.exists()) it.length() else 0L }
             if (size - lastSyncedSize < SYNC_EVERY_BYTES_MERGE) continue
-            if (!syncFileContents(absolutePath)) return // 平台不支持, 别再轮询
+            if (!syncFileContents(output.inSystem)) return // 平台做不到, 别再轮询
             lastSyncedSize = size
         }
     }

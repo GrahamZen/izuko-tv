@@ -117,4 +117,9 @@ class TorrentSessionProxy(
             delegate.closeIfNotInUse()
         }
     }
+
+    // 同步等丢完: 调用方接着要读剩余空间、关会话
+    override fun discardFilesExcept(filesInUse: Array<String>?): Int {
+        return runBlocking { delegate.discardFilesExcept(filesInUse.orEmpty().toSet()) }
+    }
 }

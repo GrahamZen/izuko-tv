@@ -625,6 +625,7 @@
     <string name="settings_storage_play_cache_without_searching">有缓存时直接播，不搜索数据源</string>
     <string name="settings_storage_play_cache_without_searching_description">这一集有下载完的缓存时直接播放，不去搜索其他数据源；缓存播不了时再开始搜索，打开选源面板照常搜索</string>
     <string name="cache_deleted_when_done">已删除「%1$s」的 %2$d 集缓存</string>
+    <string name="cache_paused_low_space">存储空间只剩 %1$s，已暂停 %2$d 个缓存下载。删掉一些缓存腾出空间后再继续</string>
     <string name="cache_deleted_when_done_playing">已删除「%1$s」的 %2$d 集缓存，正在播放的这一集退出播放后删除</string>
     <string name="cache_deleted_when_done_after_playback">「%1$s」的缓存将在退出播放后删除</string>
     <string name="subject_details_nav_home">主页</string>

@@ -28,6 +28,10 @@ dependencyResolutionManagement {
     repositoriesMode = RepositoriesMode.FAIL_ON_PROJECT_REPOS
     @Suppress("UnstableApiUsage")
     repositories {
+        // 重编的 anitorrent 原生库, 见 torrent/anitorrent/native/README.md
+        maven(file("torrent/anitorrent/native/repo")) {
+            content { includeVersionByRegex("""org\.openani\.anitorrent""", ".*", """.*-izuko\d+""") }
+        }
         // mavenLocal 的位置不能动: 本地 mediamp / anitorrent 调试构建依赖它排在这里.
         mavenCentral()
         google()

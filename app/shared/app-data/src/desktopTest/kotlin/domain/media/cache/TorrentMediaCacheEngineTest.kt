@@ -161,6 +161,7 @@ class TorrentMediaCacheEngineTest : AbstractTorrentMediaCacheEngineTest() {
             origin = testMedia,
             initialMetadata = metadata(),
             fileHandle = TorrentMediaCacheEngine.FileHandle(flowOf(null)),
+            relativeDir = RELATIVE_DIR,
         )
         cache.closeAndDeleteFiles()
 
@@ -217,6 +218,7 @@ class TorrentMediaCacheEngineTest : AbstractTorrentMediaCacheEngineTest() {
             fileHandle = TorrentMediaCacheEngine.FileHandle(
                 flowOf(TorrentMediaCacheEngine.FileHandle.State(FakeTorrentSession, entry, handle)),
             ),
+            relativeDir = RELATIVE_DIR,
         )
         cache.closeAndDeleteFiles()
 
@@ -236,11 +238,77 @@ class TorrentMediaCacheEngineTest : AbstractTorrentMediaCacheEngineTest() {
         override val entry: TorrentFileEntry,
         private val onCloseAndDelete: () -> Unit,
     ) : TorrentFileHandle {
+        var closed = false
+        var discardedWith: Set<String>? = null
+
         override fun resume(priority: FilePriority) = error("unexpected resume()")
         override fun pause() = error("unexpected pause()")
         override fun setPrefetchRange(byteRange: LongRange?) = error("unexpected setPrefetchRange()")
-        override suspend fun close() {}
+        override suspend fun close() {
+            closed = true
+        }
+
         override suspend fun closeAndDelete() = onCloseAndDelete()
+        override suspend fun closeAndDiscard(filesInUse: Set<String>) {
+            discardedWith = filesInUse
+        }
+    }
+
+    /** 种子目录 [RELATIVE_DIR] 里第 [EPISODE_ID] 集 ([PATH_IN_TORRENT]) 连同已插入的其他记录, 删掉这一集 */
+    private suspend fun deleteEpisodeOfPack(): FakeTorrentFileHandle {
+        torrentInfoDatabase.upsert(TorrentCacheInfoEntity(testMedia.mediaId, byteArrayOf(0), relativeDir = RELATIVE_DIR))
+        torrentInfoDatabase.upsertEpisode(
+            TorrentCacheEpisodeEntity(testMedia.mediaId, EPISODE_ID, pathInTorrent = PATH_IN_TORRENT),
+        )
+        val entry = FakeTorrentFileEntry(File(testRootDir, "$RELATIVE_DIR/$PATH_IN_TORRENT").toKtPath().inSystem)
+        val handle = FakeTorrentFileHandle(entry) { error("the whole torrent would be reclaimed") }
+        cacheEngine.TorrentMediaCache(
+            origin = testMedia,
+            initialMetadata = metadata(),
+            fileHandle = TorrentMediaCacheEngine.FileHandle(
+                flowOf(TorrentMediaCacheEngine.FileHandle.State(FakeTorrentSession, entry, handle)),
+            ),
+            relativeDir = RELATIVE_DIR,
+        ).closeAndDeleteFiles()
+        return handle
+    }
+
+    @Test
+    fun `deleting one episode of a pack only discards its own file while another record remains`() = runTest {
+        createEngine(createTestAnitorrentEngine(backgroundScope.coroutineContext))
+        // 另一集已下完: 恢复成本地文件, 不开句柄, 只有记录说明它还在用这个种子
+        torrentInfoDatabase.upsertEpisode(
+            TorrentCacheEpisodeEntity(testMedia.mediaId, "2", completed = true, pathInTorrent = "b.mkv"),
+        )
+        assertEquals(setOf("b.mkv"), deleteEpisodeOfPack().discardedWith)
+    }
+
+    @Test
+    fun `deleting an episode passes the file another record also uses`() = runTest {
+        createEngine(createTestAnitorrentEngine(backgroundScope.coroutineContext))
+        torrentInfoDatabase.upsertEpisode(
+            TorrentCacheEpisodeEntity(testMedia.mediaId, "2", completed = true, pathInTorrent = PATH_IN_TORRENT),
+        )
+        assertEquals(setOf(PATH_IN_TORRENT), deleteEpisodeOfPack().discardedWith)
+    }
+
+    @Test
+    fun `another resource in the same torrent directory keeps its files`() = runTest {
+        createEngine(createTestAnitorrentEngine(backgroundScope.coroutineContext))
+        torrentInfoDatabase.upsert(TorrentCacheInfoEntity("other-media", byteArrayOf(0), relativeDir = RELATIVE_DIR))
+        torrentInfoDatabase.upsertEpisode(
+            TorrentCacheEpisodeEntity("other-media", "5", completed = true, pathInTorrent = "c.mkv"),
+        )
+        assertEquals(setOf("c.mkv"), deleteEpisodeOfPack().discardedWith)
+    }
+
+    @Test
+    fun `nothing is discarded while another record has not chosen its file`() = runTest {
+        createEngine(createTestAnitorrentEngine(backgroundScope.coroutineContext))
+        torrentInfoDatabase.upsertEpisode(TorrentCacheEpisodeEntity(testMedia.mediaId, "2"))
+        val handle = deleteEpisodeOfPack()
+        assertTrue(handle.closed)
+        assertNull(handle.discardedWith)
     }
 
     /**
