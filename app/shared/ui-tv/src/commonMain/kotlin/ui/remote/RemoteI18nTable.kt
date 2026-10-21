@@ -146,6 +146,7 @@ private fun part1() = listOf(
     RemoteText("。电视上没有打开 Izuko，挑到 BT 资源的话要打开后才会开始下载", ". Izuko isn't open on the TV — if a BT source gets picked, downloading starts only once you open it", "。電視上沒有打開 Izuko，挑到 BT 資源的話要打開後才會開始下載", "。電視上沒有開啟 Izuko，挑到 BT 資源的話要開啟後才會開始下載"),
     RemoteText("读取超时，正在重试", "Timed out. Retrying…", "讀取超時，正在重試", "讀取逾時，正在重試"),
     RemoteText("下载中 {0}%·暂无来源", "Downloading {0}% · no sources", "下載中 {0}%·暫無來源", "下載中 {0}%·暫無來源"),
+    RemoteText("排队中 {0}%", "Queued {0}%", "排隊中 {0}%", "排隊中 {0}%"),
     RemoteText("取消自动缓存", "Cancel auto-caching", "取消自動緩存", "取消自動快取"),
     RemoteText("取消自动缓存？", "Cancel auto-caching?", "取消自動緩存？", "取消自動快取？"),
     RemoteText("取消自动缓存？已经开始的 {0} 集会一并删除。", "Cancel auto-caching? The {0} episodes already started will be deleted too.", "取消自動緩存？已經開始的 {0} 集會一併刪除。", "取消自動快取？已經開始的 {0} 集會一併刪除。"),

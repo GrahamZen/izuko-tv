@@ -62,4 +62,10 @@ class TorrentFileHandleProxy(
             delegate.closeAndDelete()
         }
     }
+
+    override fun closeAndDiscard(filesInUse: Array<String>?) {
+        runBlocking {
+            delegate.closeAndDiscard(filesInUse.orEmpty().toSet())
+        }
+    }
 }

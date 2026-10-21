@@ -134,6 +134,7 @@ import me.him188.ani.app.domain.media.cache.storage.HttpMediaCacheStorage
 import me.him188.ani.app.domain.media.cache.storage.MediaSaveDirProvider
 import me.him188.ani.app.domain.media.cache.storage.TorrentMediaCacheStorage
 import me.him188.ani.app.domain.media.download.DownloadOperations
+import me.him188.ani.app.domain.media.download.DownloadSpaceGuard
 import me.him188.ani.app.domain.media.download.MediaDownloadManager
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
 import me.him188.ani.app.domain.media.fetch.MediaSourceManagerImpl
@@ -765,6 +766,11 @@ private fun KoinApplication.otherModules(
                 backgroundScope = coroutineScope.childScope(),
                 playbackActivity = get(),
             )
+        }
+        // 缓存目录快满时暂停全部下载, 见 DownloadSpaceGuard
+        single(createdAtStart = true) {
+            val saveDirs = get<MediaSaveDirProvider>()
+            DownloadSpaceGuard(get(), saveDir = { Path(saveDirs.saveDir).inSystem }, scope = coroutineScope).also { it.start() }
         }
     } else {
         single<MediaDownloadManager> {
