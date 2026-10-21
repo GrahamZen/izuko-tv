@@ -1025,6 +1025,7 @@ class TvSourcePanelModelTest {
         reasonTitleMismatch = "reasonTitleMismatch",
         reasonCacheNotReady = "reasonCacheNotReady",
         reasonExcludedAlliance = "reasonExcludedAlliance",
+        reasonPublishedBeforeAiring = "reasonPublishedBeforeAiring",
         details = MediaDetailsStrings("e", "c", "ep", "ed", "ced", "unknown", "yue", "chs", "cht", "jp", "en"),
         timeZone = TimeZone.UTC,
     )

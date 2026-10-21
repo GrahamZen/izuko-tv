@@ -128,6 +128,11 @@ sealed class MediaExclusionReason {
     data object FromSeriesSeason : MediaExclusionReason()
 
     /**
+     * 资源发布得比这一集开播早得多, 不可能是这一集 (多半是同名的前几季或老番), 见 isPublishedLongBeforeAiring
+     */
+    data object PublishedBeforeAiring : MediaExclusionReason()
+
+    /**
      * 资源标题不匹配 (不包含 [SubjectInfo.allNames])
      */
     data object SubjectNameMismatch : MediaExclusionReason()
