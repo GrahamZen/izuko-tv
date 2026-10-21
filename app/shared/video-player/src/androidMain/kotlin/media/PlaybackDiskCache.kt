@@ -27,13 +27,14 @@ import kotlinx.coroutines.withContext
 import me.him188.ani.app.platform.PlaybackRequestHints
 import me.him188.ani.app.videoplayer.cache.PlaybackDiskCacheStorage
 import me.him188.ani.app.videoplayer.cache.PlaybackDiskCacheUsage
+import me.him188.ani.utils.io.inSystem
+import me.him188.ani.utils.io.syncFileContents
+import me.him188.ani.utils.io.toKtPath
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 import org.openani.mediamp.source.UriMediaData
 import java.io.File
-import java.io.IOException
-import java.io.RandomAccessFile
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import kotlin.math.abs
@@ -176,16 +177,8 @@ object PlaybackDiskCache {
         }
     }
 
-    /**
-     * 把 [file] 已写的内容落盘, 返回是否成功. fsync 按文件生效, 不必是写它的那个文件描述符, 所以只读打开:
-     * 文件已经被挤出缓存 (删了) 时打开失败, 什么也不做, 也不会把它重新建出来.
-     */
-    internal fun syncFile(file: File): Boolean = try {
-        RandomAccessFile(file, "r").use { it.fd.sync() }
-        true
-    } catch (e: IOException) {
-        false
-    }
+    /** 把 [file] 已写的内容落盘, 返回是否成功; 文件已经被挤出缓存 (删了) 时什么也不做, 见 [syncFileContents]. */
+    internal fun syncFile(file: File): Boolean = syncFileContents(file.toKtPath().inSystem)
 
     private val syncExecutor: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "PlaybackDiskCache-sync").apply { isDaemon = true }
