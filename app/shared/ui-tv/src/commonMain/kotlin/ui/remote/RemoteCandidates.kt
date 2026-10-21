@@ -23,6 +23,7 @@ import me.him188.ani.app.domain.mediasource.clouddrive.DriveVideoBitrates
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.media_selector_item_cache_not_ready
 import me.him188.ani.app.ui.lang.media_selector_item_excluded_alliance
+import me.him188.ani.app.ui.lang.media_selector_item_published_before_airing
 import me.him188.ani.app.ui.lang.media_selector_item_no_subtitle
 import me.him188.ani.app.ui.lang.media_selector_item_season_mismatch
 import me.him188.ani.app.ui.lang.media_selector_item_single_episode_resource
@@ -138,6 +139,8 @@ internal object RemoteCandidates {
         // 网盘文件的平均码率 (大小 ÷ 时长), 别的资源没有
         put("bitrate", DriveVideoBitrates.label(media.mediaId))
         put("cached", media.kind == MediaSourceKind.LocalCache)
+        // 发布时间 (毫秒): 种子发布、网盘文件上传的时间, 在线源多半不知道 (不给). 「早于本集开播」按它排除
+        put("published", media.publishedTime.takeIf { it > 0 })
         // 播放页左滑「打开链接」: 数据源上的原始链接 (网页源是站点上这一集的播放页, 直链源是视频地址本身;
         // 缓存沿用来源资源的). 只给 http(s): 链接来自数据源配置, 别的协议 (javascript: 之类) 进了 href 就是在控制台页面里跑脚本
         put("url", media.originalUrl.takeIf { it.isHttpUrl() })
@@ -188,6 +191,7 @@ internal object RemoteCandidates {
             MediaExclusionReason.FromSeriesSeason::class to getString(Lang.media_selector_item_season_mismatch),
             MediaExclusionReason.SubjectNameMismatch::class to getString(Lang.media_selector_item_subject_title_mismatch),
             MediaExclusionReason.CacheNotReady::class to getString(Lang.media_selector_item_cache_not_ready),
+            MediaExclusionReason.PublishedBeforeAiring::class to getString(Lang.media_selector_item_published_before_airing),
         )
     }
 
