@@ -52,6 +52,7 @@ class RemoteProgressTextsTest {
         "正在写入安装包：{0}",
         "正在同步到存储…",
         "GitHub 连不上，正在查镜像 {0}/{1}",
+        "排队中 {0}%",
     )
 
     @Test

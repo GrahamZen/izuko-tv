@@ -288,6 +288,9 @@ internal object RemoteCacheList {
             if (r.state != MediaCacheState.IN_PROGRESS || r.merging) continue
             speedOf(r.cache.cacheId, bytes, now)?.let { speeds[r.cache.cacheId] = it }
         }
+        // 合集里还有集在进字节的种子: 同一个种子里缓存的几集按集数顺序一集集下, 别的集没进字节是在排队, 不是没有来源
+        val movingPacks = rows.filter { it.isPack && it.cache.cacheId in speeds && !it.isStalled() }
+            .mapTo(HashSet()) { it.cache.origin.mediaId }
         // 合集: 同一个种子眼下还有几集在缓存里 —— 删掉其中一集不腾空间, 要等它们都删了才整个回收 (见 TorrentMediaCacheEngine)
         val packCounts = rows.filter { it.isPack }.groupingBy { it.cache.origin.mediaId }.eachCount()
         val playing = TvRemoteControl.playingCacheProvider?.invoke()
@@ -342,7 +345,7 @@ internal object RemoteCacheList {
                     put("meta", tr("已完成 {0} / {1} 集", done, g.size) + if (size > 0) " · ${size.bytes}" else "")
                     putJsonArray("items") {
                         for (r in g.sortedBy { it.metadata.episodeSort }) addJsonObject {
-                            val (st, text) = statusOf(r)
+                            val (st, text) = statusOf(r, movingPacks)
                             put("cid", r.cache.cacheId)
                             put("label", episodeLabel(r.metadata))
                             put("st", st)
@@ -366,7 +369,8 @@ internal object RemoteCacheList {
     }
 
     /** 网页上的状态: 类别 (决定颜色与按钮) 与文案, 文案同电视缓存页. */
-    private fun statusOf(r: Row): Pair<String, String> = if (r.offlineText != null) {
+    /** [movingPacks]: 还有集在进字节的合集 (按 origin.mediaId) */
+    private fun statusOf(r: Row, movingPacks: Set<String>): Pair<String, String> = if (r.offlineText != null) {
         "loading" to r.offlineText
     } else when (r.state) {
         null -> "loading" to tr("读取中")
@@ -380,9 +384,12 @@ internal object RemoteCacheList {
         }
         MediaCacheState.IN_PROGRESS -> when {
             r.merging -> "merging" to tr("合并中")
-            // 连着几次一个字节都没进: 多半是种子没人做种, 说一句, 免得以为是卡住了
-            (samples[r.cache.cacheId]?.zeroStreak ?: 0) >= NO_SOURCE_STRIKES ->
+            // 连着几次一个字节都没进: 同一个合集里别的集在下就是在排队, 否则多半是种子没人做种; 说一句, 免得以为是卡住了
+            r.isStalled() -> if (r.isPack && r.cache.origin.mediaId in movingPacks) {
+                "run" to tr("排队中 {0}%", r.percentText)
+            } else {
                 "run" to tr("下载中 {0}%·暂无来源", r.percentText)
+            }
 
             else -> "run" to tr("下载中 {0}%", r.percentText)
         }
@@ -400,6 +407,9 @@ internal object RemoteCacheList {
         append(m.episodeSort.toString())
         if (m.episodeName.isNotBlank()) append("  ").append(m.episodeName)
     }
+
+    /** 连着 [NO_SOURCE_STRIKES] 次采样一个字节都没进 */
+    private fun Row.isStalled(): Boolean = (samples[cache.cacheId]?.zeroStreak ?: 0) >= NO_SOURCE_STRIKES
 
     /** 按上次读到的样本算这条缓存的下载速度 (字节/秒); 头一回读到或隔得太久返回 null, 等下一次. */
     private fun speedOf(cacheId: String, bytes: Long, now: Long): Long? {

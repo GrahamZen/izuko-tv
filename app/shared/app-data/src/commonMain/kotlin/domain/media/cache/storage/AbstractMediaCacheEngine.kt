@@ -138,11 +138,14 @@ abstract class AbstractDataStoreMediaCacheStorage(
         logger.info { "Cache restored: ${origin.mediaId}, result=${cache}" }
 
         reportRecovered(cache)
-        cache.resume()
+        resumeRestored(cache)
 
         logger.info { "Cache resumed: $cache" }
         return cache
     }
+
+    /** 恢复出来的记录接着下载. */
+    protected open suspend fun resumeRestored(cache: MediaCache) = cache.resume()
 
     override val listFlow: MutableStateFlow<List<MediaCache>> = MutableStateFlow(emptyList())
 
