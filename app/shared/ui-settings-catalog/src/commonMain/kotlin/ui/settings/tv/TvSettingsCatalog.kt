@@ -132,8 +132,8 @@ sealed interface TvSettingsOverlay {
 
 sealed class TvSettingItem(
     val id: String,
-    val keys: List<TvSettingKey<*>>,
-    val visible: (TvSettingsValues) -> Boolean,
+    keys: List<TvSettingKey<*>>,
+    visible: (TvSettingsValues) -> Boolean,
     /** 焦点在这一行时说明栏画的二维码 (手机扫了去做这一项: 打开网页、下载日志、登录网盘). */
     val qr: ((TvSettingsValues) -> TvQr?)? = null,
     /**
@@ -142,6 +142,14 @@ sealed class TvSettingItem(
      */
     val whileFocused: (suspend (TvSettingsEnv) -> Unit)? = null,
 ) {
+    /** 用到的值 (都读到了才算数); [TvSettingsItemsBuilder.showWhen] 会补上它的条件要读的. */
+    var keys: List<TvSettingKey<*>> = keys
+        internal set
+
+    /** 显示条件; [TvSettingsItemsBuilder.showWhen] 会叠上它的. */
+    var visible: (TvSettingsValues) -> Boolean = visible
+        internal set
+
     /** 组标题 (不可聚焦). */
     class Header(id: String, val title: TvText, visible: (TvSettingsValues) -> Boolean) : TvSettingItem(id, emptyList(), visible)
 
@@ -390,6 +398,24 @@ class TvSettingsItemsBuilder(private val prefix: String) {
 
     fun header(title: StringResource, visible: (TvSettingsValues) -> Boolean = { true }) {
         items += TvSettingItem.Header(nextId(), tvText(title), visible)
+    }
+
+    /**
+     * [block] 里加的项只在 [keys] 都读到、[condition] 成立时显示 (叠在它们各自的显示条件上). 如只有电视播放器读的项,
+     * 触屏版设置页 (那里的播放页是共享版的) 不列.
+     */
+    fun showWhen(
+        keys: List<TvSettingKey<*>>,
+        condition: (TvSettingsValues) -> Boolean,
+        block: TvSettingsItemsBuilder.() -> Unit,
+    ) {
+        val start = items.size
+        block()
+        for (item in items.subList(start, items.size)) {
+            val own = item.visible
+            item.keys = (item.keys + keys).distinct()
+            item.visible = { values -> keys.all { values.has(it) } && condition(values) && own(values) }
+        }
     }
 
     fun <S : Any> toggle(

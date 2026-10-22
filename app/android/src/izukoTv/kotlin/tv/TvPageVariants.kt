@@ -263,8 +263,8 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
                 modifier = modifier, pageContent = pageContent,
             )
         },
-        // 调试开关 upstreamPlayer: 不换, 播放页用上游的共享版 (iOS 上那一版), 在平板上对照
-        LocalEpisodeScreenVariant provides if (DevSwitches.upstreamPlayer.value) null else EpisodeScreenVariant {
+        // 触屏 (平板模式) 播放页用共享的那一版 (同 iPad, 见 ProvideTouchPlayerUiBehavior); 调试开关 tvPlayerOnTouch 换回电视播放器对照
+        LocalEpisodeScreenVariant provides if (touchInput && !DevSwitches.tvPlayerOnTouch.value) null else EpisodeScreenVariant {
                 vm, page, danmakuHostState, danmakuEditorState,
                 setShowEditCommentSheet, pauseOnPlaying, modifier,
             ->

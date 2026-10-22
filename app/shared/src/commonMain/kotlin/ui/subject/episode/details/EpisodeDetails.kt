@@ -153,6 +153,8 @@ import me.him188.ani.app.ui.subject.details.SubjectDetailsScreen
 import me.him188.ani.app.ui.subject.details.state.SubjectDetailsStateLoader
 import me.him188.ani.app.ui.subject.details.state.createTestSubjectDetailsLoader
 import me.him188.ani.app.ui.subject.episode.EpisodePageLoadError
+import me.him188.ani.app.ui.subject.episode.MediaSelectorFullSearchRow
+import me.him188.ani.app.ui.subject.episode.MediaSelectorShownEffect
 import me.him188.ani.app.ui.subject.episode.details.components.DanmakuMatchInfoGrid
 import me.him188.ani.app.ui.subject.episode.details.components.DanmakuSourceCard
 import me.him188.ani.app.ui.subject.episode.details.components.FavoriteIconButton
@@ -551,6 +553,7 @@ fun EpisodeDetails(
     )
 
     if (showMediaSelector) {
+        MediaSelectorShownEffect(onMediaSelectorShown, onMediaSelectorHidden)
         val sourceResults = mediaSourceResultListPresentation()
         val showBt = sourceResults.btSources.isNotEmpty()
         val closeSelector = { showMediaSelector = false }
@@ -622,6 +625,7 @@ fun EpisodeDetails(
                     when (mediaSelectorMode) {
                         MediaSelectorMode.AUTO -> {
                             topBar()
+                            MediaSelectorFullSearchRow(fullSearch, onFullSearchChange)
                             AutoMatchPage(
                                 mediaSelectorState,
                                 onClickItem = {
@@ -648,6 +652,7 @@ fun EpisodeDetails(
                         // 侧边栏宽度下 BT 页是紧凑列表. 窗口够高时切模式只换侧边栏的内容, 不换容器.
                         MediaSelectorMode.BT -> {
                             topBar()
+                            MediaSelectorFullSearchRow(fullSearch, onFullSearchChange)
                             BtResourcesPage(
                                 mediaSelectorState,
                                 sourceResults,

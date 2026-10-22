@@ -174,10 +174,10 @@ object DevSwitches {
         description = "要先打开「海报墙用 Compose 版」; 触屏上默认是平板版画法 (模糊底铺满、横版图羽化、文字在左下)",
     )
 
-    /** 电视包的播放页换成上游的共享版 (iOS 上用的那一版, 见 InstallTvTouchPageVariants), 在安卓平板上对照用. */
-    val upstreamPlayer = toggle(
-        "upstreamPlayer",
-        "播放器用上游版 (iOS 那套)",
-        description = "播放页换成手机 / 平板的共享版播放器; 下次进播放页生效",
+    /** 触屏 (平板模式) 上播放页换回电视播放器 (触屏上默认是共享版播放器, 同 iPad), 对照用. */
+    val tvPlayerOnTouch = toggle(
+        "tvPlayerOnTouch",
+        "触屏上播放器用电视版",
+        description = "平板模式下播放页默认是共享版播放器 (同 iPad); 打开后换回电视播放器, 下次进播放页生效",
     )
 }
