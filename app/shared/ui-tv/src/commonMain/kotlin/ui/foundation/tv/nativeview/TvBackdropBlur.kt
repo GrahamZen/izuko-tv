@@ -35,6 +35,10 @@ internal fun tvBackdropBlurSpec(level: TvBackdropBlurLevel): TvBackdropBlurSpec 
     TvBackdropBlurLevel.Strong -> TvBackdropBlurSpec(longEdgePx = 160, radiusPx = 10)
 }
 
+/** 详情页整屏模糊底那一档 (设置里详情页的模糊程度): 详情页按它解, 平板的海报墙按它预取 (见 tvPrefetchBlurredBackdrop). */
+@Composable
+internal fun tvDetailsBackdropBlurSpec(): TvBackdropBlurSpec = tvBackdropBlurSpec(LocalThemeSettings.current.tvDetailsBackdropBlur)
+
 /**
  * 有 hero 态的海报墙页 (探索 / 追番 / 搜索) 的 hero 态铺不铺整页模糊背景: 「海报上按确定」是先看简介 (只有这一档有 hero 态, 见 TvPosterConfirmAction)
  * 且海报墙的模糊没选不铺. 铺着时 hero 标题的 logo 压在模糊背景上 (见 TvNativeHeroTextView.logoBackdrop).

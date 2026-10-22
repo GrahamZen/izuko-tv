@@ -62,7 +62,7 @@ import me.him188.ani.app.ui.subject.collection.CollectionPageVariant
 import me.him188.ani.app.ui.subject.collection.LocalCollectionPageVariant
 import me.him188.ani.app.ui.subject.collection.TvCollectionPage
 import me.him188.ani.app.ui.subject.details.LocalSubjectDetailsPageVariant
-import me.him188.ani.app.ui.subject.details.layout.TvSubjectDetailsPageVariant
+import me.him188.ani.app.ui.subject.details.layout.TvPadSubjectDetailsPageVariant
 import me.him188.ani.app.ui.tv.TvAniUiBehavior
 import me.him188.ani.app.ui.tv.withTouchNavigation
 
@@ -88,7 +88,11 @@ fun InstallTvTouchPageVariants(aniNavigator: AniNavigator, content: @Composable 
     val navKeys = rememberTvNavKeyTracker()
     // 放大转场的导航规则要在详情页组合之前知道目标背景 URL: 注册进程内热表的取法 (见 TvHeroZoomHandoff.willZoom)
     val tmdbForZoom = remember { GlobalKoin.get<TmdbImageService>() }
-    LaunchedEffect(tmdbForZoom) { TvHeroZoomHandoff.detailsUrlProvider = { id -> tmdbForZoom.peekBackdropUrl(id) } }
+    LaunchedEffect(tmdbForZoom) {
+        TvHeroZoomHandoff.detailsUrlProvider = { id -> tmdbForZoom.peekBackdropUrl(id) }
+        // 触屏的详情页没有首屏大图 (见 TvPadSubjectDetailsPageVariant): 不放大
+        TvHeroZoomHandoff.detailsHasHero = false
+    }
     // 各页把自己的强制刷新 / 换一批 / 调整本页注册进来, 给动作面板用
     val pageRefresh = remember { TvPageActionHost() }
     val pageShuffle = remember { TvPageActionHost() }
@@ -140,7 +144,7 @@ fun InstallTvTouchPageVariants(aniNavigator: AniNavigator, content: @Composable 
                 TvPosterWallTheme { TvCollectionPage(state, modifier) }
             }
         },
-        LocalSubjectDetailsPageVariant provides TvSubjectDetailsPageVariant,
+        LocalSubjectDetailsPageVariant provides TvPadSubjectDetailsPageVariant,
         // 登录页不挂手机控制台码 (没有 Web 控制台), 登录页自己给输入框
         LocalTvLoginSidePanel provides null,
         // 设置页: 触屏版 (分类与设置项同电视版); 电视独有的项 (控制台、首次引导等) 这里没有
