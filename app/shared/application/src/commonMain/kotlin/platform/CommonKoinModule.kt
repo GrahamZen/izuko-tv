@@ -33,6 +33,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 import me.him188.ani.app.data.models.feedback.FeedbackDevice
+import me.him188.ani.app.data.models.preference.LowRamDevice
 import me.him188.ani.app.data.models.preference.PikPakConfig
 import me.him188.ani.app.data.network.AniEpisodeCommentService
 import me.him188.ani.app.data.network.AniSubjectSearchService
@@ -311,6 +312,7 @@ private fun KoinApplication.otherModules(
     }
     single<FeedbackRecordRepository> { FeedbackRecordRepository(get<SettingsRepository>().feedbackRecords) }
     single<FeedbackDevice> { FeedbackDevice(getContext().feedbackDeviceId(), getContext().feedbackEnvironment()) }
+    single<LowRamDevice> { LowRamDevice(getContext().isLowRamDevice()) }
     single<SubjectFeedbackService> {
         SubjectFeedbackService(
             listCache = get<SettingsRepository>().feedbackEndpointCache,
