@@ -282,9 +282,10 @@ import me.him188.ani.app.ui.foundation.widgets.AniFocusActionButton
 import me.him188.ani.app.ui.foundation.widgets.AniFocusChip
 import me.him188.ani.app.ui.foundation.widgets.AniScrollableTextDialog
 import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_CONTENT_PADDING
-import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_SHAPE
+import me.him188.ani.app.ui.foundation.widgets.AniGlassPopupSurface
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
-import me.him188.ani.app.ui.foundation.widgets.centeredPanelColor
+import me.him188.ani.app.ui.foundation.widgets.ProvideScrollFadeFocusMargin
+import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFade
 import me.him188.ani.app.ui.foundation.widgets.showLoadError
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.subject_details_air_date_format
@@ -2796,7 +2797,7 @@ private val TV_TAGS_WALL_GAP = 4.dp
  * 放不下时纵向移动焦点自动滚动 (菜单内恢复默认 BringIntoView), 可导航到所有标签.
  * Popup 独立于页面滚动容器, 页面不会跟着动. 返回键/点击外部关闭.
  *
- * 外观同其他弹窗与菜单 (半透明面板色、统一圆角), 标签是弹窗里的胶囊 ([AniFocusChip]) —— 与搜索页筛选弹窗
+ * 外观同玻璃弹窗 ([AniGlassPopupSurface]; 滚不完的那一边渐隐), 标签是弹窗里的胶囊 ([AniFocusChip]) —— 与搜索页筛选弹窗
  * 里的标签长得一样; 页面上标签墙那种玻璃小标签是给背景图上用的.
  *
  * 需组合在锚点 (标签墙) 所在的 Box 内.
@@ -2842,18 +2843,17 @@ private fun TvTagsMenu(
         CompositionLocalProvider(LocalBringIntoViewSpec provides defaultBringIntoView) {
             val initialIndex = initialFocusIndex.coerceIn(tags.indices)
             val initialModifier = Modifier.tvWindowInitialFocus()
-            Surface(
+            AniGlassPopupSurface(
                 // Popup 是独立窗口, 按键到不了播放页的根路由 (播放器内嵌详情页也开得出这个菜单)
                 Modifier.tvOverlayWindowKeys(onDismissRequest).width(560.dp).heightIn(max = 400.dp),
-                shape = CENTERED_PANEL_SHAPE,
-                color = centeredPanelColor,
-                // 半透明底在配色表里查不到 "on" 色, 必须显式给 (见 centeredPanelColor)
-                contentColor = MaterialTheme.colorScheme.onSurface,
             ) {
+                val scrollState = rememberScrollState()
+                ProvideScrollFadeFocusMargin {
                 FlowRow(
                     Modifier
                         .padding(CENTERED_PANEL_CONTENT_PADDING)
-                        .verticalScroll(rememberScrollState()),
+                        .aniVerticalScrollFade(scrollState)
+                        .verticalScroll(scrollState),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
@@ -2872,6 +2872,7 @@ private fun TvTagsMenu(
                                 },
                         )
                     }
+                }
                 }
             }
         }

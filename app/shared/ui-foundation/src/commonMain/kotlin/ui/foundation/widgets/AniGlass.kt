@@ -12,9 +12,11 @@ package me.him188.ani.app.ui.foundation.widgets
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -112,6 +114,24 @@ val aniPanelTitleStyle: TextStyle
 /** 面板标题下面那一行说明 (如所属条目名): 正文小一档, 颜色淡一档由调用方给 (onSurfaceVariant). */
 val aniPanelSubtitleStyle: TextStyle
     @Composable get() = MaterialTheme.typography.bodyMedium
+
+/**
+ * 锚在按钮上弹出的菜单 (Popup, 如详情页的选集网格、标签) 的玻璃面板: 形状、高光边、内容约定同玻璃弹窗.
+ * 弹出窗口不模糊背后, 底色取没模糊的那一档 (见 [aniGlassPanelColor]).
+ */
+@Composable
+fun AniGlassPopupSurface(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    Surface(
+        modifier,
+        shape = ANI_GLASS_PANEL_SHAPE,
+        color = aniGlassPanelColor(blurred = false),
+        // 半透明底在配色表里查不到 "on" 色, 必须显式给
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        border = aniGlassEdge(),
+    ) {
+        ProvideAniGlassPanelContent(content)
+    }
+}
 
 /** 玻璃按钮 (没聚焦时) 的底: 一层淡白, 叠在玻璃面板或剧照上都是「更亮一点的玻璃」. */
 @Composable
