@@ -11,6 +11,7 @@ package me.him188.ani.app.ui.settings.tv
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import me.him188.ani.app.data.models.preference.BackgroundBehavior
 import me.him188.ani.app.data.models.preference.DISPLAY_MODE_FOLLOW_CONTENT
 import me.him188.ani.app.data.models.preference.DarkMode
 import me.him188.ani.app.data.models.preference.HlsAdFilteringMode
@@ -75,6 +76,13 @@ import me.him188.ani.app.ui.lang.settings_player
 import me.him188.ani.app.ui.lang.settings_player_audio_time_stretch
 import me.him188.ani.app.ui.lang.settings_player_audio_time_stretch_description
 import me.him188.ani.app.ui.lang.settings_player_auto_mark_done
+import me.him188.ani.app.ui.lang.settings_player_background_behavior
+import me.him188.ani.app.ui.lang.settings_player_background_behavior_auto_pip
+import me.him188.ani.app.ui.lang.settings_player_background_behavior_background_playback
+import me.him188.ani.app.ui.lang.settings_player_background_behavior_description
+import me.him188.ani.app.ui.lang.settings_player_background_behavior_pause
+import me.him188.ani.app.ui.lang.settings_player_frame_preview
+import me.him188.ani.app.ui.lang.settings_player_frame_preview_description
 import me.him188.ani.app.ui.lang.settings_player_auto_play_next
 import me.him188.ani.app.ui.lang.settings_player_auto_skip_op_ed
 import me.him188.ani.app.ui.lang.settings_player_auto_skip_op_ed_description
@@ -695,30 +703,53 @@ private fun TvSettingsItemsBuilder.playerItems() {
         write = { copy(pauseVideoOnEditDanmaku = it) },
     )
     toggle(player, Lang.settings_player_auto_mark_done, read = { it.autoMarkDone }, write = { copy(autoMarkDone = it) })
-    toggle(
-        player, Lang.settings_player_hide_selector_on_select,
-        read = { it.hideSelectorOnSelect },
-        write = { copy(hideSelectorOnSelect = it) },
-    )
+    // 共享版播放器 (触屏) 选完源一律关掉选源面板, 不看这一项
+    tvPlayerOnly {
+        toggle(
+            player, Lang.settings_player_hide_selector_on_select,
+            read = { it.hideSelectorOnSelect },
+            write = { copy(hideSelectorOnSelect = it) },
+        )
+    }
     toggle(player, Lang.settings_player_auto_play_next, read = { it.autoPlayNext }, write = { copy(autoPlayNext = it) })
-    // 最左一档 = 不显示, 往右依次 2~8dp; 写的时候顺手把旧开关置真 (从此这一项说了算)
-    choice(
-        player, Lang.settings_player_idle_progress_bar, Lang.settings_player_idle_progress_bar_description,
-        options = { listOf(0) + VideoScaffoldConfig.IDLE_PROGRESS_BAR_HEIGHT_RANGE.toList() },
-        label = { if (it <= 0) tvText(Lang.settings_player_idle_progress_bar_off) else tvText("$it dp") },
-        read = { it.effectiveIdleProgressBarHeightDp },
-        write = { copy(showIdleProgressBar = true, idleProgressBarHeightDp = it) },
-    )
-    choice(
-        player, Lang.settings_player_up_next_tip, Lang.settings_player_up_next_tip_description,
-        options = {
-            val range = VideoScaffoldConfig.UP_NEXT_TIP_LEAD_SECONDS_RANGE
-            (range.first..range.last step VideoScaffoldConfig.UP_NEXT_TIP_LEAD_SECONDS_STEP).toList()
-        },
-        label = { if (it <= 0) tvText(Lang.settings_player_up_next_tip_off) else tvText(Lang.settings_player_up_next_tip_seconds, it) },
-        read = { it.upNextTipLeadSeconds },
-        write = { copy(upNextTipLeadSeconds = it) },
-    )
+    // 离开应用时进系统小窗接着播, 还是暂停 (共享版播放器的小窗策略); 「后台只听声音」那一档没实现, 不列
+    touchPlayerOnly {
+        choice(
+            player, Lang.settings_player_background_behavior, Lang.settings_player_background_behavior_description,
+            options = { listOf(BackgroundBehavior.AUTO_PICTURE_IN_PICTURE, BackgroundBehavior.PAUSE) },
+            label = {
+                tvText(
+                    when (it) {
+                        BackgroundBehavior.AUTO_PICTURE_IN_PICTURE -> Lang.settings_player_background_behavior_auto_pip
+                        BackgroundBehavior.PAUSE -> Lang.settings_player_background_behavior_pause
+                        BackgroundBehavior.BACKGROUND_PLAYBACK -> Lang.settings_player_background_behavior_background_playback
+                    },
+                )
+            },
+            read = { it.backgroundBehavior },
+            write = { copy(backgroundBehavior = it) },
+        )
+    }
+    tvPlayerOnly {
+        // 最左一档 = 不显示, 往右依次 2~8dp; 写的时候顺手把旧开关置真 (从此这一项说了算)
+        choice(
+            player, Lang.settings_player_idle_progress_bar, Lang.settings_player_idle_progress_bar_description,
+            options = { listOf(0) + VideoScaffoldConfig.IDLE_PROGRESS_BAR_HEIGHT_RANGE.toList() },
+            label = { if (it <= 0) tvText(Lang.settings_player_idle_progress_bar_off) else tvText("$it dp") },
+            read = { it.effectiveIdleProgressBarHeightDp },
+            write = { copy(showIdleProgressBar = true, idleProgressBarHeightDp = it) },
+        )
+        choice(
+            player, Lang.settings_player_up_next_tip, Lang.settings_player_up_next_tip_description,
+            options = {
+                val range = VideoScaffoldConfig.UP_NEXT_TIP_LEAD_SECONDS_RANGE
+                (range.first..range.last step VideoScaffoldConfig.UP_NEXT_TIP_LEAD_SECONDS_STEP).toList()
+            },
+            label = { if (it <= 0) tvText(Lang.settings_player_up_next_tip_off) else tvText(Lang.settings_player_up_next_tip_seconds, it) },
+            read = { it.upNextTipLeadSeconds },
+            write = { copy(upNextTipLeadSeconds = it) },
+        )
+    }
     choice(
         player, Lang.settings_player_auto_skip_op_ed, Lang.settings_player_auto_skip_op_ed_description,
         options = { SkipOpEdMode.entries },
@@ -796,39 +827,49 @@ private fun TvSettingsItemsBuilder.playerItems() {
         read = { it.effectiveHlsAdFilteringMode },
         write = { copy(hlsAdFilteringMode = it) },
     )
-    // 拖动预览画面: 不开 / 全屏 / 小画面. 存的是「显示画面预览」开关加画在哪 (SeekPreviewDisplay), 两个合成一项
-    choice(
-        player, Lang.settings_player_seek_preview_display, Lang.settings_player_seek_preview_display_description,
-        options = { SeekPreviewChoice.entries },
-        label = {
-            tvText(
+    tvPlayerOnly {
+        // 拖动预览画面: 不开 / 全屏 / 小画面. 存的是「显示画面预览」开关加画在哪 (SeekPreviewDisplay), 两个合成一项
+        choice(
+            player, Lang.settings_player_seek_preview_display, Lang.settings_player_seek_preview_display_description,
+            options = { SeekPreviewChoice.entries },
+            label = {
+                tvText(
+                    when (it) {
+                        SeekPreviewChoice.OFF -> Lang.settings_player_seek_preview_display_off
+                        SeekPreviewChoice.FULL_SCREEN -> Lang.settings_player_seek_preview_display_full_screen
+                        SeekPreviewChoice.WINDOW -> Lang.settings_player_seek_preview_display_window
+                    },
+                )
+            },
+            read = {
+                when {
+                    !it.enableFramePreview -> SeekPreviewChoice.OFF
+                    it.seekPreviewDisplay == SeekPreviewDisplay.FULL_SCREEN -> SeekPreviewChoice.FULL_SCREEN
+                    else -> SeekPreviewChoice.WINDOW
+                }
+            },
+            write = {
                 when (it) {
-                    SeekPreviewChoice.OFF -> Lang.settings_player_seek_preview_display_off
-                    SeekPreviewChoice.FULL_SCREEN -> Lang.settings_player_seek_preview_display_full_screen
-                    SeekPreviewChoice.WINDOW -> Lang.settings_player_seek_preview_display_window
-                },
-            )
-        },
-        read = {
-            when {
-                !it.enableFramePreview -> SeekPreviewChoice.OFF
-                it.seekPreviewDisplay == SeekPreviewDisplay.FULL_SCREEN -> SeekPreviewChoice.FULL_SCREEN
-                else -> SeekPreviewChoice.WINDOW
-            }
-        },
-        write = {
-            when (it) {
-                SeekPreviewChoice.OFF -> copy(enableFramePreview = false)
-                SeekPreviewChoice.FULL_SCREEN -> copy(enableFramePreview = true, seekPreviewDisplay = SeekPreviewDisplay.FULL_SCREEN)
-                SeekPreviewChoice.WINDOW -> copy(enableFramePreview = true, seekPreviewDisplay = SeekPreviewDisplay.WINDOW)
-            }
-        },
-    )
-    toggle(
-        player, Lang.settings_player_pause_on_scrub, Lang.settings_player_pause_on_scrub_description,
-        read = { it.pauseVideoOnScrub },
-        write = { copy(pauseVideoOnScrub = it) },
-    )
+                    SeekPreviewChoice.OFF -> copy(enableFramePreview = false)
+                    SeekPreviewChoice.FULL_SCREEN -> copy(enableFramePreview = true, seekPreviewDisplay = SeekPreviewDisplay.FULL_SCREEN)
+                    SeekPreviewChoice.WINDOW -> copy(enableFramePreview = true, seekPreviewDisplay = SeekPreviewDisplay.WINDOW)
+                }
+            },
+        )
+        toggle(
+            player, Lang.settings_player_pause_on_scrub, Lang.settings_player_pause_on_scrub_description,
+            read = { it.pauseVideoOnScrub },
+            write = { copy(pauseVideoOnScrub = it) },
+        )
+    }
+    // 共享版播放器的拖动预览只有开 / 关 (画在进度条上方)
+    touchPlayerOnly {
+        toggle(
+            player, Lang.settings_player_frame_preview, Lang.settings_player_frame_preview_description,
+            read = { it.enableFramePreview },
+            write = { copy(enableFramePreview = it) },
+        )
+    }
     // 进播放器时的倍速: 第一档 = 记住上次 (在播放器里调过的倍速跨剧集、重启保持), 往后是固定的起始倍速 (单位 0.01x)
     choice(
         player, Lang.settings_player_start_playback_speed, Lang.settings_player_start_playback_speed_description,
@@ -888,6 +929,16 @@ private fun TvSettingsItemsBuilder.playerItems() {
 
     danmakuRuleItems()
 }
+
+/**
+ * 只有电视播放器读的项. 触屏版设置页 (平板模式与 iPad, 那里的播放页是共享版的, 见 ProvideTouchPlayerUiBehavior) 不列.
+ */
+private fun TvSettingsItemsBuilder.tvPlayerOnly(block: TvSettingsItemsBuilder.() -> Unit) =
+    showWhen(listOf(TvSettingKeys.touchPage), { it[TvSettingKeys.touchPage] != true }, block)
+
+/** 只有共享版播放器读的项, 只在触屏版设置页列 (见 [tvPlayerOnly]). */
+private fun TvSettingsItemsBuilder.touchPlayerOnly(block: TvSettingsItemsBuilder.() -> Unit) =
+    showWhen(listOf(TvSettingKeys.touchPage), { it[TvSettingKeys.touchPage] == true }, block)
 
 // ---- 档位与选项名 ----
 

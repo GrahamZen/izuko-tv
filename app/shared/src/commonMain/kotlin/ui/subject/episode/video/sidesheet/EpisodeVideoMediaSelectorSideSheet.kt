@@ -44,6 +44,7 @@ import me.him188.ani.app.ui.mediaselect.bt.BtResourcesPage
 import me.him188.ani.app.ui.mediaselect.common.MediaSelectorModeChip
 import me.him188.ani.app.ui.mediaselect.manual.ManualBrowsePage
 import me.him188.ani.app.ui.mediaselect.manual.ManualBrowseState
+import me.him188.ani.app.ui.subject.episode.MediaSelectorFullSearchRow
 import me.him188.ani.app.ui.subject.episode.TAG_MEDIA_SELECTOR_SHEET
 import me.him188.ani.app.ui.subject.episode.video.components.EpisodeVideoSideSheets
 import me.him188.ani.app.ui.subject.episode.video.settings.SideSheetHeader
@@ -141,6 +142,7 @@ fun EpisodeVideoSideSheets.MediaSelectorSheet(
         Modifier.testTag(TAG_MEDIA_SELECTOR_SHEET),
         closeButton = closeButton,
     ) {
+        MediaSelectorFullSearchRow(fullSearch, onFullSearchChange)
         if (mode == MediaSelectorMode.BT) {
             BtResourcesPage(
                 mediaSelectorState,

@@ -118,7 +118,6 @@ import me.him188.ani.app.ui.foundation.LocalPlatform
 import me.him188.ani.app.ui.foundation.LocalSubjectAppearanceSettings
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
 import me.him188.ani.app.ui.foundation.WindowDropHandlerEffect
-import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
 import me.him188.ani.app.ui.foundation.effects.DarkStatusBarAppearance
 import me.him188.ani.app.ui.foundation.effects.OnLifecycleEvent
 import me.him188.ani.app.ui.foundation.effects.OverrideCaptionButtonAppearance
@@ -167,6 +166,7 @@ import me.him188.ani.app.ui.subject.episode.comments.EpisodeCommentColumn
 import me.him188.ani.app.ui.subject.episode.comments.EpisodeEditCommentSheet
 import me.him188.ani.app.ui.subject.episode.details.EpisodeDetails
 import me.him188.ani.app.ui.subject.episode.notif.VideoNotifEffect
+import me.him188.ani.app.ui.subject.episode.video.EpisodeSkipOpEdTip
 import me.him188.ani.app.ui.subject.episode.video.components.EpisodeVideoSideSheetPage
 import me.him188.ani.app.ui.subject.episode.video.components.EpisodeVideoSideSheets
 import me.him188.ani.app.ui.subject.episode.video.components.FloatingFullscreenSwitchButton
@@ -681,6 +681,10 @@ private fun EpisodeScreenSidebar(
                                     vm.mediaSelectorMode = page.initialMediaSelectorMode
                                 }
                             },
+                            onMediaSelectorShown = { vm.onMediaSelectorShown() },
+                            onMediaSelectorHidden = { vm.onMediaSelectorHidden() },
+                            fullSearch = vm.fullMediaSearch.collectAsStateWithLifecycle().value,
+                            onFullSearchChange = { vm.setFullMediaSearch(it) },
                         )
                     }
                 }
@@ -1200,17 +1204,7 @@ private fun EpisodeVideo(
             vm.player.features[VideoAspectRatio]?.let { VideoAspectRatioControllerState(it, scope = scope) }
         },
         videoEnhancement = vm.videoEnhancement,
-        leftBottomTips = {
-            AniAnimatedVisibility(
-                visible = vm.playerSkipOpEdState.showSkipTips,
-            ) {
-                PlayerControllerDefaults.LeftBottomTips(
-                    onClick = {
-                        vm.playerSkipOpEdState.cancelSkipOpEd()
-                    },
-                )
-            }
-        },
+        leftBottomTips = { EpisodeSkipOpEdTip(vm.playerSkipOpEdState) },
         fullscreenSwitchButton = {
             EpisodeVideoDefaults.FloatingFullscreenSwitchButton(
                 vm.videoScaffoldConfig.fullscreenSwitchMode,
@@ -1261,6 +1255,7 @@ private fun EpisodeVideo(
                                 }
                             }
                             val mode = vm.mediaSelectorMode ?: page.initialMediaSelectorMode
+                            MediaSelectorShownEffect(vm::onMediaSelectorShown, vm::onMediaSelectorHidden)
                             // 侧边栏太矮时, 手动查找 / BT 资源 (下拉切换、救援按钮或 preferKind = BT 直接落 BT 页) 关掉侧边栏, 改开容器.
                             // 加载中 (page.mediaSelectorState 是含假资源的占位 state) 不弹容器, 停留在侧边栏; 加载完成后 key 变化再弹.
                             LaunchedEffect(mode, page.isLoading, sheetHeight) {
@@ -1281,6 +1276,8 @@ private fun EpisodeVideo(
                                 onFetchRequestChange = { vm.updateFetchRequest(it) },
                                 manualBrowseState = vm.manualBrowseState,
                                 hideOnSelect = vm.videoScaffoldConfig.hideSelectorOnSelect,
+                                fullSearch = vm.fullMediaSearch.collectAsStateWithLifecycle().value,
+                                onFullSearchChange = { vm.setFullMediaSearch(it) },
                             )
                         }
                     },
@@ -1342,6 +1339,7 @@ private fun FullscreenMediaSelectorContainer(
         if (page.isLoading) vm.fullscreenSelectorVisible = false
     }
     if (!vm.fullscreenSelectorVisible || page.isLoading) return
+    MediaSelectorShownEffect(vm::onMediaSelectorShown, vm::onMediaSelectorHidden)
     val mode = vm.mediaSelectorMode ?: page.initialMediaSelectorMode
     val backToSheet = { sheetMode: MediaSelectorMode ->
         vm.fullscreenSelectorVisible = false

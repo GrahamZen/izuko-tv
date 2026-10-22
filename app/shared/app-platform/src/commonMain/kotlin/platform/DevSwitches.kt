@@ -208,11 +208,4 @@ object DevSwitches {
         "海报墙用 Compose 版 (iOS 那套)",
         description = "探索 / 追番 / 搜索 / 新番时间表的海报墙, 详情页的关联作品与演职人员行; 切换后回到页面重进生效",
     )
-
-    /** 电视包的播放页换成上游的共享版 (iOS 上用的那一版, 见 InstallTvTouchPageVariants), 在安卓平板上对照用. */
-    val upstreamPlayer = toggle(
-        "upstreamPlayer",
-        "播放器用上游版 (iOS 那套)",
-        description = "播放页换成手机 / 平板的共享版播放器; 下次进播放页生效",
-    )
 }

@@ -138,6 +138,7 @@ import me.him188.ani.app.ui.subject.person.CharacterDetailsScreen
 import me.him188.ani.app.ui.subject.person.CharacterDetailsViewModel
 import me.him188.ani.app.ui.subject.person.PersonDetailsScreen
 import me.him188.ani.app.ui.subject.person.PersonDetailsViewModel
+import me.him188.ani.app.ui.subject.episode.ProvideTouchPlayerUiBehavior
 import me.him188.ani.app.ui.subject.episode.RetainedPlaybackSessionHolder
 import me.him188.ani.app.ui.lang.playback_session_sound_hint
 import me.him188.ani.app.ui.subject.episode.rememberRetainedPlaybackNoticeTexts
@@ -603,7 +604,7 @@ private fun AniAppContentImpl(
                     } else {
                         viewModel<EpisodeViewModel>(key = route.toString(), initializer = initializer)
                     }
-                    EpisodeScreen(vm, Modifier.fillMaxSize(), windowInsets)
+                    ProvideTouchPlayerUiBehavior { EpisodeScreen(vm, Modifier.fillMaxSize(), windowInsets) }
                 }
                 entry<NavRoutes.Settings> { route ->
                     SettingsScreen(
