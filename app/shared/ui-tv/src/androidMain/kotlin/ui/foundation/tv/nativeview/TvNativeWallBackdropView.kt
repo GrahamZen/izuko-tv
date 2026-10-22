@@ -137,6 +137,15 @@ class TvNativeWallBackdropView(
             target?.let { addSlot(it, direct = false) }
         }
 
+    /**
+     * 详情页那一档 (见 tvDetailsBackdropBlurSpec): 给了就在当前这张解好后预取它 (见 tvPrefetchBlurredBackdrop), 进这部的详情页第一帧就是自己那张.
+     * 宿主只在平板版 hero 上给; 电视上 null (hero 换得勤, 盒子上解图贵).
+     */
+    internal var detailsBlur: TvBackdropBlurSpec? = null
+
+    /** 详情页那一档的预取 (见 [detailsBlur]); 换了地址 / 离开窗口时取消. */
+    private var detailsPrefetchJob: Job? = null
+
     /** 卡片的封面框: 竖版封面的模糊版取同一档缩略图 (下载缓存命中). */
     var coverWidthPx: Int = 0
     var coverHeightPx: Int = 0
@@ -254,6 +263,7 @@ class TvNativeWallBackdropView(
         if (old?.url != target?.url || old?.subjectId != target?.subjectId) retractZoom()
         if (old?.url != target?.url || target?.sharp != true) clearSharp()
         if (old?.url != target?.url) {
+            detailsPrefetchJob?.cancel()
             if (replace) {
                 swapPending = false
                 for (s in slots.toList()) removeSlot(s)
@@ -450,6 +460,9 @@ class TvNativeWallBackdropView(
             }
             // 先压好再露面 (淡入从透明度 0 起, 没压过的图不会闪一下); 清晰层起步压的那份跟着这张走
             measure(bitmap)
+            // 进这部的详情页时, 详情页那一档 (默认没这么糊) 解好之前先垫这张 (见 TvBlurredBackdropMemo)
+            TvBlurredBackdropMemo.put(target.url, TvBlurredBackdropEntry(bitmap.asImageBitmap(), spec, worstForLightText, worstForDarkText))
+            prefetchDetails(target.url)
             applyMask()
             sharpMaskAlpha = -1
             applySharpMask()
@@ -642,6 +655,15 @@ class TvNativeWallBackdropView(
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
         retractZoom()
+        detailsPrefetchJob?.cancel()
+    }
+
+    /** 当前这张 ([url]) 解好了: 详情页那一档也预取 (见 [detailsBlur]), 还停在这张上才解. */
+    private fun prefetchDetails(url: String) {
+        val spec = detailsBlur ?: return
+        if (url != target?.url) return
+        detailsPrefetchJob?.cancel()
+        detailsPrefetchJob = scope.launch { tvPrefetchBlurredBackdrop(sketch, context, url, width, height, spec) }
     }
 
     // ------------------------------------------------------------------

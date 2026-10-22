@@ -566,6 +566,13 @@
     <string name="settings_media_excluded_alliance_none">不排除</string>
     <string name="media_selector_full_search">完整搜尋</string>
     <string name="media_selector_full_search_description">開播後也接著把全部數據源搜完</string>
+    <string name="pad_subject_details_more_tags">更多標籤</string>
+    <string name="pad_subject_details_all_episodes">全部選集</string>
+    <string name="pad_all_episodes_tab_all">全部</string>
+    <string name="pad_all_episodes_tab_specials">特別篇</string>
+    <string name="pad_all_episodes_hint">點選播放 · 長按查看詳情</string>
+    <string name="pad_all_episodes_view_stills">劇照卡</string>
+    <string name="pad_all_episodes_view_numbers">只顯示集數</string>
     <string name="settings_media_full_search_mode">完整搜尋</string>
     <string name="settings_media_full_search_mode_description">開始播放後還沒查完的資料來源怎麼處理（開播前所有資料來源都同時查）。開啟選源面板時：開播後暫停，開啟選源面板時繼續查完；僅手動：開播後暫停，只在選源面板裡按「完整搜尋」才繼續，記憶體小的裝置預設這一檔；始終：一直查完全部資料來源</string>
     <string name="settings_media_full_search_mode_always">始終</string>

@@ -756,6 +756,13 @@
     <string name="settings_media_excluded_alliance_none">None</string>
     <string name="media_selector_full_search">Full search</string>
     <string name="media_selector_full_search_description">Keep searching every source after the video starts</string>
+    <string name="pad_subject_details_more_tags">More tags</string>
+    <string name="pad_subject_details_all_episodes">All episodes</string>
+    <string name="pad_all_episodes_tab_all">All</string>
+    <string name="pad_all_episodes_tab_specials">Specials</string>
+    <string name="pad_all_episodes_hint">Tap to play · Long-press for details</string>
+    <string name="pad_all_episodes_view_stills">Thumbnails</string>
+    <string name="pad_all_episodes_view_numbers">Episode numbers only</string>
     <string name="settings_media_full_search_mode">Full search</string>
     <string name="settings_media_full_search_mode_description">What happens to sources still searching once the video starts playing (before that, all sources search together). When the source panel opens: paused after playback starts, and searched to the end when you open the source panel. Manual only: paused after playback starts, and only continued when you press Full search in the source panel; devices with little memory use this by default. Always: every source is always searched to the end</string>
     <string name="settings_media_full_search_mode_always">Always</string>

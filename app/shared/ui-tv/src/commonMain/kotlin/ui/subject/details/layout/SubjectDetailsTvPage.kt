@@ -241,7 +241,6 @@ import me.him188.ani.app.ui.foundation.tv.TV_HERO_ZOOM_REVEAL_T
 import me.him188.ani.app.ui.foundation.tv.TV_HERO_ZOOM_TAIL_T
 import me.him188.ani.app.ui.foundation.tv.TV_ICON_GLYPH_SIZE
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_HEADER_GAP
-import me.him188.ani.app.ui.foundation.tv.TV_TMDB_TEXT_WAIT
 import me.him188.ani.app.ui.foundation.tv.TvBackdropFade
 import me.him188.ani.app.ui.foundation.tv.TvBackdropTreatment
 import me.him188.ani.app.ui.foundation.tv.TvCapsuleButton
@@ -273,7 +272,6 @@ import me.him188.ani.app.ui.foundation.tv.tvHeroContentColor
 import me.him188.ani.app.ui.foundation.tv.tvHeroShrinkEasing
 import me.him188.ani.app.ui.foundation.tv.tvHeroSwapDim
 import me.him188.ani.app.ui.foundation.tv.tvImageZoomKeys
-import me.him188.ani.app.ui.foundation.tv.tvPrefersTmdbText
 import me.him188.ani.app.ui.foundation.tv.tvTitle
 import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
 import me.him188.ani.app.ui.foundation.tv.tvUseOriginalTitle
@@ -794,33 +792,9 @@ fun SubjectDetailsTvPage(
     val episodeOverviews by state.tmdbEpisodeOverviewsFlow.collectAsStateWithLifecycle(emptyMap())
     // TMDB 集名 (episodeId -> 集名), 只有非中文界面有, 见 tvEpisodeName
     val episodeNames by state.tmdbEpisodeNamesFlow.collectAsStateWithLifecycle(emptyMap())
-    // 整段替换 Bangumi 简介的 TMDB 简介 (非中文界面是界面语言的; 中文界面仅当 Bangumi 简介整段无中文); null = 用原文
-    val tmdbSummaryOverride by state.tmdbSummaryOverrideFlow.collectAsStateWithLifecycle(null)
     // 非中文界面的 TMDB 标题与简介写进共享表: 本页各处标题 (见 SubjectInfo.tvTitle)、回到海报墙后的卡片都用它
     SyncTvTmdbSubjectText(state)
-    // Ani 服务器简介为空时的 bgm.tv 兜底 (null = 结果未出, "" = bgm 也没有, 非空 = bgm 简介)
-    val bangumiSummaryFallback by state.bangumiSummaryFallbackFlow.collectAsStateWithLifecycle(null)
-    // 简介优先级: Ani 服务器 > bgm.tv (仅替代不合并) > TMDB 中文.
-    // Ani 有简介时维持原逻辑 (全外文则被 TMDB 中文替换); Ani 为空时等 bgm.tv 结果 (未出结果先按
-    // 空显示, 避免先闪 TMDB 再换成 bgm), bgm.tv 也没有才用 TMDB 中文兜底.
-    // 非中文界面: TMDB 那段还没出结果时简介先空着 (最多等 TV_TMDB_TEXT_WAIT), 免得先闪 Bangumi 的再换成 TMDB 的
-    val tmdbSubjectText by state.tmdbSubjectTextFlow.collectAsStateWithLifecycle(null)
-    var tmdbWaitOver by remember(state) { mutableStateOf(false) }
-    LaunchedEffect(state) {
-        delay(TV_TMDB_TEXT_WAIT)
-        tmdbWaitOver = true
-    }
-    val tmdbPending = tvPrefersTmdbText() && tmdbSubjectText == null && !tmdbWaitOver
-    val displaySummary = if (tmdbPending) {
-        ""
-    } else if (info.summary.isNotBlank() || (tvPrefersTmdbText() && tmdbSummaryOverride != null)) {
-        // 非中文界面: 有讲本条目的 TMDB 简介就用它, 不等 bgm.tv 兜底 (见 SubjectDetailsStateFactory 的 summaryOverride)
-        tmdbSummaryOverride ?: info.summary
-    } else when (bangumiSummaryFallback) {
-        null -> ""
-        "" -> tmdbSummaryOverride.orEmpty()
-        else -> bangumiSummaryFallback.orEmpty()
-    }
+    val displaySummary = rememberTvDetailsDisplaySummary(state, info)
     val scrollState = rememberScrollState()
     // 分页驱动器: 滚动量是"当前页起点 + 页内露出"的派生值, 整页只有它一个写者 (见 TvDetailsPager).
     // 换页照 Prime Video 淡入淡出 + 短距离滑动.
@@ -1987,7 +1961,7 @@ fun SubjectDetailsTvPage(
  * (由 [onExitToHero] 处理), 作为一键回主页的逃生通道.
  */
 @Composable
-private fun TvDetailsSideRail(
+internal fun TvDetailsSideRail(
     onExitToHero: () -> Unit,
     /** 非 null 时栏顶多一个「返回」(触屏上用). */
     onBack: (() -> Unit)?,
@@ -2380,13 +2354,13 @@ private const val TV_EPISODE_DESC_MAX_LINES = 3
  * 精确到日的日期和别名 —— 为这点内容占掉半页不值当.
  */
 @Composable
-private fun subjectAliasesText(info: SubjectInfo): String? =
+internal fun subjectAliasesText(info: SubjectInfo): String? =
     info.aliases.takeIf { it.isNotEmpty() }
         ?.let { stringResource(Lang.subject_details_aliases) + "\n" + it.joinToString(" / ") }
 
 /** 简介全文弹窗底行的一行元信息: 精确到日的放送日期 + 正片话数 (见 [subjectAliasesText]). */
 @Composable
-private fun subjectMetaLine(info: SubjectInfo, mainEpisodeCount: Int?): String? {
+internal fun subjectMetaLine(info: SubjectInfo, mainEpisodeCount: Int?): String? {
     val parts = buildList {
         if (info.airDate.isValid) {
             add(
@@ -2944,7 +2918,7 @@ private fun TvCompactStatsRow(
  * 点击/聚焦指示随圆角裁切.
  */
 @Composable
-private fun TvTagChip(
+internal fun TvTagChip(
     text: String,
     modifier: Modifier = Modifier,
 ) {
@@ -5651,7 +5625,7 @@ private const val TV_EMBEDDED_STATS_TEXT_SCALE = 1f
  * 番名下面那行的另一个名字: 番名是原名时是中文名, 否则 (中文名或 TMDB 标题, 见 [tvTitle]) 是原名; 两个一样或另一个没有时为 null.
  */
 @Composable
-private fun SubjectInfo.tvSecondaryName(): String? {
+internal fun SubjectInfo.tvSecondaryName(): String? {
     val title = tvTitle()
     val other = if (title == name) nameCn else name
     return other.takeIf { it.isNotBlank() && it != title }

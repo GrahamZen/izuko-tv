@@ -100,6 +100,7 @@ import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativePadHeroButt
 import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativeWallStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.toTvNativeTextStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.tvBackdropBlurSpec
+import me.him188.ani.app.ui.foundation.tv.nativeview.tvDetailsBackdropBlurSpec
 import me.him188.ani.app.ui.foundation.tv.nativeview.tvNativeWriteSnapshot
 import me.him188.ani.app.ui.foundation.tv.nativeview.withNsfw
 import me.him188.ani.app.ui.foundation.tv.nativeview.withNsfwCards
@@ -187,6 +188,8 @@ internal actual fun TvExplorationNativeWall(
     val padHero = touchInput && !DevSwitches.tvHeroOnTouch.value
     val heroBlur = padHero || heroEnabled && wallBlur != TvBackdropBlurLevel.None
     val blurSpec = tvBackdropBlurSpec(if (wallBlur == TvBackdropBlurLevel.None) TvBackdropBlurLevel.Strong else wallBlur)
+    // 平板版: 停在一部上时把详情页那一档也解好 (见 TvNativeWallBackdropView.detailsBlur)
+    val detailsBlurSpec = tvDetailsBackdropBlurSpec().takeIf { padHero }
     // 铺着模糊背景时卡片的字照 vibrancy 画 (深色主题, 见 TvNativeWallStyle.labelVibrancy)
     val style = rememberTvNativeWallStyle(cardWidth, metrics.columns, labelVibrancy = heroBlur)
     val textStyle = rememberTvNativeHeroTextStyle(titleMaxLines = 1, lineSpacing = 10.dp)
@@ -278,6 +281,7 @@ internal actual fun TvExplorationNativeWall(
                     wb.textColor = heroBlurText.toArgb()
                     wb.brightMaskAlpha = if (dark) TV_HERO_BLUR_BRIGHT_DIM_ALPHA else Float.NaN
                     wb.blur = blurSpec
+                    wb.detailsBlur = detailsBlurSpec
                     wb.coverWidthPx = style.coverWidthPx
                     wb.coverHeightPx = style.coverHeightPx
                     wb.crossfade = visualEffects.transitions
