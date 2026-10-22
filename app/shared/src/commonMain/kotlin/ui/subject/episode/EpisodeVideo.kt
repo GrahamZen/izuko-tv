@@ -361,7 +361,7 @@ internal fun EpisodeVideoImpl(
             video = {
                 if (LocalIsPreviewing.current) {
                     Text(previewModeText)
-                } else {
+                } else if (!LocalPlayerPageLeaving.current()) {
                     VideoPlayer(
                         playerState,
                         Modifier
