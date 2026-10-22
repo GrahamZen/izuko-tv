@@ -466,6 +466,9 @@
     <string name="tv_source_episodes_whole_season">整季</string>
     <string name="tv_source_searching">正在查詢 %1$d/%2$d 個資料來源</string>
     <string name="tv_source_searched">已查詢 %1$d 個資料來源</string>
+    <string name="tv_source_search_paused">已暫停 · 已查 %1$d/%2$d</string>
+    <string name="tv_source_full_search_paused">已暫停</string>
+    <string name="tv_source_search_paused_for_stutter">播放時搜尋讓畫面卡頓，「完整搜尋」已改為「僅手動」，可在設定中改回</string>
     <string name="tv_source_bt">BT 與快取</string>
     <string name="tv_source_manual">手動查找</string>
     <string name="tv_source_failed">查詢失敗</string>
@@ -560,8 +563,11 @@
     <string name="settings_media_excluded_alliance_description">支持使用正則表達式，使用逗號分隔。匹配到的字幕組的資源不會被自動選中，在選源列表裡歸到被排除的資源中，仍可手動選擇；已經快取的不受影響\n\n示例: 字幕組A, 字幕組B</string>
     <string name="settings_media_excluded_alliance_none">不排除</string>
     <string name="media_selector_full_search">完整搜尋</string>
-    <string name="settings_media_always_full_search">始終完整搜尋</string>
-    <string name="settings_media_always_full_search_description">關閉時，影片開始播放後會暫停還沒搜完的資料源，減少卡頓；開啟選源面板或開「完整搜尋」時繼續。開啟後始終搜完全部資料源</string>
+    <string name="settings_media_full_search_mode">完整搜尋</string>
+    <string name="settings_media_full_search_mode_description">開始播放後還沒查完的資料來源怎麼處理（開播前所有資料來源都同時查）。開啟選源面板時：開播後暫停，開啟選源面板時繼續查完；僅手動：開播後暫停，只在選源面板裡按「完整搜尋」才繼續，記憶體小的裝置預設這一檔；始終：一直查完全部資料來源</string>
+    <string name="settings_media_full_search_mode_always">始終</string>
+    <string name="settings_media_full_search_mode_on_panel">開啟選源面板時</string>
+    <string name="settings_media_full_search_mode_manual">僅手動</string>
     <string name="settings_media_source_subscription_updating">更新中 %1$d/%2$d</string>
     <string name="settings_media_source_test_progress">已完成 %1$d/%2$d · 失敗 %3$d</string>
     <!-- 网盘 (设置 - 数据源), 网盘名与扫码用的 App 名来自网盘的协议 -->

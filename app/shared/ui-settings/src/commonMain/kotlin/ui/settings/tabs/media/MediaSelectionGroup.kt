@@ -24,9 +24,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.util.fastAll
+import me.him188.ani.app.data.models.preference.FullSearchMode
+import me.him188.ani.app.data.models.preference.LowRamDevice
 import me.him188.ani.app.data.models.preference.MediaPreference
 import me.him188.ani.app.data.models.preference.MediaSelectorSettings
 import me.him188.ani.app.data.models.preference.VideoResolverSettings
+import me.him188.ani.app.data.models.preference.effectiveFullSearchMode
+import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.ui.foundation.LocalPlatform
 import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
 import me.him188.ani.app.ui.lang.Lang
@@ -42,8 +46,11 @@ import me.him188.ani.app.ui.lang.settings_media_auto_cache_all
 import me.him188.ani.app.ui.lang.settings_media_auto_cache_none
 import me.him188.ani.app.ui.lang.settings_media_auto_cache_partial
 import me.him188.ani.app.ui.lang.settings_media_auto_cache_space
-import me.him188.ani.app.ui.lang.settings_media_always_full_search
-import me.him188.ani.app.ui.lang.settings_media_always_full_search_description
+import me.him188.ani.app.ui.lang.settings_media_full_search_mode
+import me.him188.ani.app.ui.lang.settings_media_full_search_mode_always
+import me.him188.ani.app.ui.lang.settings_media_full_search_mode_description
+import me.him188.ani.app.ui.lang.settings_media_full_search_mode_manual
+import me.him188.ani.app.ui.lang.settings_media_full_search_mode_on_panel
 import me.him188.ani.app.ui.lang.settings_media_auto_enable_last
 import me.him188.ani.app.ui.lang.settings_media_auto_enable_last_description
 import me.him188.ani.app.ui.lang.settings_media_cache_ttl_15min
@@ -547,15 +554,29 @@ internal fun SettingsScope.MediaSelectionGroup(
 
             HorizontalDividerItem()
 
-            SwitchItem(
-                checked = mediaSelectorSettings.alwaysFullSearch,
-                onCheckedChange = {
-                    state.mediaSelectorSettingsState.update(
-                        mediaSelectorSettings.copy(alwaysFullSearch = it),
+            // 完整搜索: 没选过的按设备定 (系统标成低内存的设备只手动)
+            val lowRamDevice = remember { GlobalKoin.getOrNull<LowRamDevice>()?.value == true }
+            DropdownItem(
+                selected = { mediaSelectorSettings.effectiveFullSearchMode(lowRamDevice) },
+                values = { FullSearchMode.entries },
+                itemText = {
+                    Text(
+                        stringResource(
+                            when (it) {
+                                FullSearchMode.Always -> Lang.settings_media_full_search_mode_always
+                                FullSearchMode.OnPanel -> Lang.settings_media_full_search_mode_on_panel
+                                FullSearchMode.Manual -> Lang.settings_media_full_search_mode_manual
+                            },
+                        ),
                     )
                 },
-                title = { Text(stringResource(Lang.settings_media_always_full_search)) },
-                description = { Text(stringResource(Lang.settings_media_always_full_search_description)) },
+                onSelect = {
+                    state.mediaSelectorSettingsState.update(
+                        mediaSelectorSettings.copy(fullSearchMode = it),
+                    )
+                },
+                title = { Text(stringResource(Lang.settings_media_full_search_mode)) },
+                description = { Text(stringResource(Lang.settings_media_full_search_mode_description)) },
             )
         }
     }

@@ -63,10 +63,13 @@ import me.him188.ani.app.data.models.episode.nameOrNameCn
 import me.him188.ani.app.data.models.episode.renderEpisodeEp
 import me.him188.ani.app.data.models.player.playProgressByEpisodeId
 import me.him188.ani.app.data.models.preference.EpisodeCommentSort
+import me.him188.ani.app.data.models.preference.FullSearchMode
+import me.him188.ani.app.data.models.preference.LowRamDevice
 import me.him188.ani.app.data.models.preference.SkipOpEdMode
 import me.him188.ani.app.data.models.preference.SubjectSearchKeywords
 import me.him188.ani.app.data.models.preference.VideoEnhancementDefaultMode
 import me.him188.ani.app.data.models.preference.VideoScaffoldConfig
+import me.him188.ani.app.data.models.preference.effectiveFullSearchMode
 import me.him188.ani.app.data.models.preference.parseMpvOptions
 import me.him188.ani.app.data.models.subject.SubjectInfo
 import me.him188.ani.app.data.models.subject.SubjectProgressInfo
@@ -427,7 +430,7 @@ open class EpisodeViewModel(
         override ?: config.playbackSpeed
     }.distinctUntilChanged()
 
-    /** 选源面板开着: 开着期间搜索一直查完, 不因开播而暂停 (见 [PauseMediaFetchWhilePlayingExtension]). */
+    /** 选源面板开着: 「打开选源面板时」那档开着期间搜索一直查完, 不因开播而暂停 (见 [PauseMediaFetchWhilePlayingExtension]). */
     private val mediaSelectorShown = MutableStateFlow(false)
 
     /** 打开过选源面板的那个查询会话: 之后暂停只停还没开始查的 (见 [pauseSearchingWhilePlaying]). 切集换了会话就不算. */
@@ -437,17 +440,22 @@ open class EpisodeViewModel(
     /** 用户开了「完整搜索」: 本播放页之后搜索一直查完, 开播、关选源面板都不再暂停. */
     private val _fullMediaSearch = MutableStateFlow(false)
 
-    /** 设置里的「始终完整搜索」: 开着时从不暂停. */
-    private val alwaysFullMediaSearch = settingsRepository.mediaSelectorSettings.flow
-        .map { it.alwaysFullSearch }
-        .stateIn(backgroundScope, SharingStarted.Eagerly, false)
+    private val lowRamDevice = koin.getOrNull<LowRamDevice>()?.value == true
 
-    /** 选源面板里「完整搜索」开关的值; 设置里开了「始终完整搜索」时为 `null` (不显示开关). */
-    val fullMediaSearch: StateFlow<Boolean?> = combine(alwaysFullMediaSearch, _fullMediaSearch) { always, full ->
-        if (always) null else full
+    /** 设置里的「完整搜索」三档 (见 [FullSearchMode]; 没选过的按设备定). */
+    private val fullSearchSetting = settingsRepository.mediaSelectorSettings.flow
+        .map { it.effectiveFullSearchMode(lowRamDevice) }
+        .stateIn(backgroundScope, SharingStarted.Eagerly, if (lowRamDevice) FullSearchMode.Manual else FullSearchMode.OnPanel)
+
+    /** 选源面板里「完整搜索」开关的值; 设置里是「始终」时为 `null` (不显示开关). */
+    val fullMediaSearch: StateFlow<Boolean?> = combine(fullSearchSetting, _fullMediaSearch) { mode, full ->
+        if (mode == FullSearchMode.Always) null else full
     }.stateIn(backgroundScope, SharingStarted.Eagerly, false)
 
-    private fun searchesToCompletion() = _fullMediaSearch.value || alwaysFullMediaSearch.value
+    private fun searchesToCompletion() = _fullMediaSearch.value || fullSearchSetting.value == FullSearchMode.Always
+
+    /** 选源面板开着就放开搜索 (「打开选源面板时」那档); 「只手动」时开着面板也照常暂停. */
+    private fun selectorKeepsSearching() = mediaSelectorShown.value && fullSearchSetting.value != FullSearchMode.Manual
 
     @OptIn(UnsafeEpisodeSessionApi::class)
     protected val fetchPlayState = EpisodeFetchSelectPlayState(
@@ -469,10 +477,10 @@ open class EpisodeViewModel(
             PlaybackFailureReportExtension,
             SourceProfileExtension,
             // 有下载完的缓存时直接播, 不搜索 (设置 - 存储); 排在自动选源前面, 暂停赶在数据源开查之前
-            PlayCacheWithoutSearchingExtension.Factory(canHold = { !mediaSelectorShown.value }),
+            PlayCacheWithoutSearchingExtension.Factory(canHold = { !selectorKeepsSearching() }),
             AutoSelectExtension,
             PauseMediaFetchWhilePlayingExtension.Factory(
-                canPause = { !mediaSelectorShown.value && !searchesToCompletion() },
+                canPause = { !selectorKeepsSearching() && !searchesToCompletion() },
                 selectorOpened = { it === selectorOpenedFetchSession },
             ),
             SaveMediaPreferenceExtension,
@@ -1305,10 +1313,11 @@ open class EpisodeViewModel(
 
     /**
      * 选源面板打开: 开播后被暂停的数据源放开重新查, 面板里才看得到它们的结果; 开着期间不再暂停.
-     * 不清搜索缓存.
+     * 设置里是「只手动」时不放开 (面板里写着已暂停, 按「完整搜索」才继续). 不清搜索缓存.
      */
     fun onMediaSelectorShown() {
         mediaSelectorShown.value = true
+        if (fullSearchSetting.value == FullSearchMode.Manual) return
         withMediaFetchSession {
             selectorOpenedFetchSession = it
             it.resumePausedSources()
@@ -1325,6 +1334,22 @@ open class EpisodeViewModel(
         withMediaFetchSession { session ->
             session.pauseSearchingWhilePlaying(session === selectorOpenedFetchSession, keep = { it.kind == MediaSourceKind.LocalCache })
         }
+    }
+
+    /**
+     * 播放时检测到搜索导致画面卡顿 (电视的播放哨兵判的): 设置里「完整搜索」没选过、眼下是「打开选源面板时」的, 改成「只手动」,
+     * 并当场暂停还在查的数据源 (本地缓存除外). 用户自己选过档、或这一页开了「完整搜索」的不动. 返回 true = 改了, 调用方提示用户.
+     */
+    suspend fun onSearchCausedStutter(): Boolean {
+        if (_fullMediaSearch.value) return false
+        val settings = settingsRepository.mediaSelectorSettings
+        val current = settings.flow.first()
+        if (current.fullSearchMode != null || current.effectiveFullSearchMode(lowRamDevice) != FullSearchMode.OnPanel) return false
+        settings.update { copy(fullSearchMode = FullSearchMode.Manual) }
+        withMediaFetchSession { session ->
+            session.pauseSearchingWhilePlaying(selectorOpened = false, keep = { it.kind == MediaSourceKind.LocalCache })
+        }
+        return true
     }
 
     /**
