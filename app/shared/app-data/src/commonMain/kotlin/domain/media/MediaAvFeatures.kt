@@ -68,8 +68,11 @@ data class MediaAvFeatures(
             return if (dynamicRange == null && audio == null) NONE else MediaAvFeatures(dynamicRange, audio)
         }
 
-        /** [media] 的特性: 标题里认出的, 加上读文件头读到的 (见 [ProbedMediaAvFeatures]). */
-        fun of(media: Media): MediaAvFeatures = fromTitle(media.originalTitle) + (ProbedMediaAvFeatures.of(media.mediaId) ?: NONE)
+        /**
+         * [media] 的特性: 标题里认出的 (网盘资源只认文件名, 见 [ProbedMediaAvFeatures.recordDriveFile]), 加上网盘读到的 (见 [ProbedMediaAvFeatures]).
+         */
+        fun of(media: Media): MediaAvFeatures =
+            fromTitle(ProbedMediaAvFeatures.fileNameOf(media.mediaId) ?: media.originalTitle) + (ProbedMediaAvFeatures.of(media.mediaId) ?: NONE)
 
         private fun word(pattern: String) = Regex("""(?<![A-Za-z0-9])(?:$pattern)(?![A-Za-z0-9])""", RegexOption.IGNORE_CASE)
 
@@ -98,6 +101,7 @@ data class MediaAvFeatures(
 object ProbedMediaAvFeatures {
     private val lock = SynchronizedObject()
     private val features = LinkedHashMap<String, MediaAvFeatures>()
+    private val fileNames = LinkedHashMap<String, String>()
     private val version = MutableStateFlow(0L)
 
     /** 记下的内容变了就加一. */
@@ -116,6 +120,22 @@ object ProbedMediaAvFeatures {
     }
 
     fun of(mediaId: String): MediaAvFeatures? = synchronized(lock) { features[mediaId] }
+
+    /**
+     * 记下网盘资源 [mediaId] 的文件名与列目录 (自己网盘或分享) 给的特性 [listed]. 认标题里的特性时这条资源只看文件名:
+     * 网盘资源的标题前面拼着分享名与文件夹名, 整包的分享名常把包里几个版本都写上 (「4K SDR HDR DV」), 连它一起认会把包里每个文件都标上.
+     */
+    fun recordDriveFile(mediaId: String, fileName: String, listed: MediaAvFeatures) {
+        synchronized(lock) {
+            fileNames.remove(mediaId)
+            fileNames[mediaId] = fileName
+            while (fileNames.size > MAX_ENTRIES) fileNames.remove(fileNames.keys.first())
+        }
+        record(mediaId, listed)
+    }
+
+    /** 网盘资源 [mediaId] 的文件名 (见 [recordDriveFile]); 不是网盘资源或没记过为 null. */
+    fun fileNameOf(mediaId: String): String? = synchronized(lock) { fileNames[mediaId] }
 
     /** 最多记多少条, 旧的先丢. */
     private const val MAX_ENTRIES = 5000
