@@ -361,7 +361,7 @@ class BangumiWebLogin(
         private val FORMHASH = Regex("""name="formhash"\s+value="([^"]+)"""")
 
         /** 出错页上的那句话 (`<p class="text">验证码错误，请返回重试。</p>`). */
-        private val MESSAGE = Regex("""<p class="text"[^>]*>(.*?)</p>""", RegexOption.DOT_MATCHES_ALL)
+        private val MESSAGE = Regex("""<p class="text"[^>]*>([\s\S]*?)</p>""")
 
         private val TOKEN = Regex("[A-Za-z0-9]+")
 

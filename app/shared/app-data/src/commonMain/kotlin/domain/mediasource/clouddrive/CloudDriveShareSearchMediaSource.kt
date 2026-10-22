@@ -280,7 +280,7 @@ internal class DriveShareSearchEngine(
         for ((index, keyword) in keywords.withIndex()) {
             // 网页站 (苹果 CMS 模板) 默认要求两次搜索隔 3 秒, 挨着搜只会拿到「系统提示」页
             if (index > 0 && config.detailLinkSelector.isNotBlank()) delay(PAGE_SEARCH_INTERVAL)
-            for (share in searchSite(keyword, otherWork)) found.putIfAbsent(share.shareId, share)
+            for (share in searchSite(keyword, otherWork)) found.getOrPut(share.shareId) { share }
             if (found.isNotEmpty()) break
         }
         val season = names.firstNotNullOfOrNull { DriveNameParser.parseSubjectSeason(it) } ?: 1
@@ -427,7 +427,7 @@ internal class DriveShareSearchEngine(
         /** 固定分享里一次最多打开几个对上的文件夹. */
         private const val MAX_FIXED_FOLDERS = 6
 
-        private val TITLE_TAG = Regex("""<title>(.*?)</title>""", RegexOption.DOT_MATCHES_ALL)
+        private val TITLE_TAG = Regex("""<title>([\s\S]*?)</title>""")
 
         /** 合集文件夹名前面的序号与画质标记 (`A 4k 番名`). */
         private val FOLDER_LEADING_TAGS = Regex("""^(?:\s*(?:[A-Za-z0-9]|[248]k|\d{3,4}p)\s+)+""", RegexOption.IGNORE_CASE)
