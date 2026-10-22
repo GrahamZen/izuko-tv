@@ -90,7 +90,7 @@ internal class DriveSeriesParts(
                 for (piece in piecesOf(name.substring(best))) {
                     val normalized = TitleForms.compact(piece)
                     // 同系列别的作品的名字里也有的不算这一部的 (「千年血战篇」)
-                    if (siblingNormalized.none { normalized in it }) own.putIfAbsent(normalized, piece)
+                    if (siblingNormalized.none { normalized in it }) own.getOrPut(normalized) { piece }
                 }
             }
             if (series.isEmpty() || own.isEmpty() && others.isEmpty()) return null

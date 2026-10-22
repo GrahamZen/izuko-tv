@@ -22,6 +22,8 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentLength
 import io.ktor.utils.io.readAvailable
 import kotlinx.atomicfu.atomic
+import kotlinx.atomicfu.locks.SynchronizedObject
+import kotlinx.atomicfu.locks.synchronized
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
@@ -291,19 +293,20 @@ class DefaultFileDownloader(
     override val stage: StateFlow<FileDownloadStage?> get() = _stage
 
     private val outcomes = LinkedHashMap<String, SourceOutcome>()
+    private val outcomesLock = SynchronizedObject()
 
     /**
      * 最近一次 [download] 里各来源的结果, 按来源出现的顺序. 下载失败时往外抛的只是最后一个错误, 要说清每条线路怎么了
      * (以及挑线路时各自多快) 就看这里.
      */
-    val lastOutcomes: List<SourceOutcome> get() = synchronized(outcomes) { outcomes.values.toList() }
+    val lastOutcomes: List<SourceOutcome> get() = synchronized(outcomesLock) { outcomes.values.toList() }
 
     private fun record(
         url: String,
         bytesPerSecond: Long? = null,
         error: Throwable? = null,
         downloadBytesPerSecond: Long? = null,
-    ) = synchronized(outcomes) {
+    ) = synchronized(outcomesLock) {
         val old = outcomes[url]
         outcomes[url] = SourceOutcome(
             url,
@@ -326,7 +329,7 @@ class DefaultFileDownloader(
 
         _progress.value = 0f
         _stage.value = null
-        synchronized(outcomes) {
+        synchronized(outcomesLock) {
             outcomes.clear()
             packages.flatMap { it.sources }.forEach { outcomes[it] = SourceOutcome(it, null, null) }
         }
