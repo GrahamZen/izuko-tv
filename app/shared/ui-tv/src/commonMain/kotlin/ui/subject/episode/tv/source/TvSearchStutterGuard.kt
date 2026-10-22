@@ -1,0 +1,54 @@
+/*
+ * Copyright (C) 2024-2026 OpenAni and contributors.
+ *
+ * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
+ * Use of this source code is governed by the GNU AGPLv3 license, which can be found at the following link.
+ *
+ * https://github.com/open-ani/ani/blob/main/LICENSE
+ */
+
+package me.him188.ani.app.ui.subject.episode.tv.source
+
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import me.him188.ani.app.ui.foundation.widgets.LocalToaster
+import me.him188.ani.app.ui.lang.Lang
+import me.him188.ani.app.ui.lang.tv_source_search_paused_for_stutter
+import me.him188.ani.app.ui.subject.episode.EpisodeViewModel
+import org.jetbrains.compose.resources.stringResource
+
+/**
+ * 播放哨兵 (TvPlaybackSentinel) 判出「搜索导致画面卡顿」时报到这里 (见 PerfPlaybackAnalysis.searchBlamed), 播放页的 [TvSearchStutterGuard] 收.
+ * 同一集只报一次: 改过设置、暂停过搜索之后再卡就不是搜索的事了.
+ */
+internal object TvSearchStutter {
+    private val _events = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val events: SharedFlow<Unit> get() = _events
+
+    @Volatile
+    private var reportedEpisode: String? = null
+
+    /** 在哨兵线程上调. [episode] 是哨兵记的这一集 (null = 不知道是哪一集, 照样报). */
+    fun report(episode: String?) {
+        if (episode != null && episode == reportedEpisode) return
+        reportedEpisode = episode
+        _events.tryEmit(Unit)
+    }
+}
+
+/**
+ * 播放页上挂一个: 播放时搜索导致画面卡顿, 设置「完整搜索」没选过的改成「只手动」并当场暂停搜索 (见 [EpisodeViewModel.onSearchCausedStutter]),
+ * 改了就提示一句 (可在设置里改回).
+ */
+@Composable
+fun TvSearchStutterGuard(vm: EpisodeViewModel) {
+    val toaster = LocalToaster.current
+    val message = stringResource(Lang.tv_source_search_paused_for_stutter)
+    LaunchedEffect(vm) {
+        TvSearchStutter.events.collect {
+            if (vm.onSearchCausedStutter()) toaster.toast(message)
+        }
+    }
+}
