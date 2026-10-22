@@ -173,6 +173,7 @@ class LibassExoPlayerMediampPlayer private constructor(
         exoPlayer.addAnalyticsListener(AudioOutputDiagnostics(context.applicationContext, backgroundScope))
         exoPlayer.addAnalyticsListener(PlaybackPerfProbe(exoPlayer, backgroundScope))
         exoPlayer.addAnalyticsListener(PlaybackActivityReporter())
+        exoPlayer.addAnalyticsListener(decoderRebuild)
         decoderParking.start(context)
     }
 
@@ -181,6 +182,8 @@ class LibassExoPlayerMediampPlayer private constructor(
         hasVisibleOutput = { findAndroidVideoSurface()?.holder?.surface?.isValid == true },
         restartFromKeyframe = { seekTo(exoPlayer.currentPosition) },
     )
+
+    private val decoderRebuild = SeekPreviewDecoderRebuild(exoPlayer)
 
     internal val assHandler: AssHandler get() = pipeline.assHandler
 
@@ -230,6 +233,7 @@ class LibassExoPlayerMediampPlayer private constructor(
             seekPlayback = { seekTo(it) },
             setOutputSurface = ::setPreviewOutputSurface,
             restoreOutput = ::restoreVideoOutput,
+            decoderRebuild = decoderRebuild.takeIf { !onFullScreen && it.applies },
         ) { ended ->
             if (seekPreview === ended) {
                 seekPreview = null
