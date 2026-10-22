@@ -14,6 +14,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.os.SystemClock
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import androidx.core.view.ViewCompat
 import androidx.leanback.widget.BaseGridView
@@ -273,6 +274,12 @@ class TvNativeGridView(
 
     /** 手指刚把网格拖起来 (页面据此按触屏的规矩把焦点停放、退出 hero 态). */
     var onTouchDragStart: (() -> Unit)? = null
+
+    override fun onInterceptTouchEvent(e: MotionEvent): Boolean {
+        // 网格还在滚时按下去先停住, 这一下交给卡片, 不当成拖动 (见 stopScrollOnTouchDown)
+        if (touchFree) stopScrollOnTouchDown(e)
+        return super.onInterceptTouchEvent(e)
+    }
 
     /**
      * leanback 的焦点滚动方式: 平时对齐 (焦点那张停到停位); 手指拖动途中与按触屏的规矩走的卡片墙上按需挪 —— 对齐的话 leanback 每次排版

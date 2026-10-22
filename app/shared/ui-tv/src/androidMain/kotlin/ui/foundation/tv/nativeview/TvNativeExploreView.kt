@@ -304,6 +304,24 @@ class TvNativeExploreView(
         applyFrame()
     }
 
+    /**
+     * 触屏上从第一排的 hero 态退出: 同电视在首行按上回轮播 ([onHeroButtonFocused]) —— 那一排当场让出, 聚焦卡还看得见时就换到轮播
+     * (背景图缩放过去、交叉淡入, 文字按换条目的节奏换), 列表滚回顶 ([scrollToTop]; 手指拖动引起的不滚, 由手指带着). 焦点照触屏的规矩停放 (见 touchPark).
+     */
+    override fun exitHeroToTop(scrollToTop: Boolean): Boolean {
+        val key = focusedRowKey ?: return false
+        val first = list.items.indexOfFirst { it is TvNativeExploreItem.Row }
+        if (first < 0 || list.indexOfKey(key) != first) return false
+        focusedRowKey = null
+        setCardAreaFocus(false)
+        timeline.setActive(false, animated = true)
+        TvNativeFocusCues.setSpotlight(this, on = false, animated = true)
+        listener?.onHeroActiveChanged(false)
+        if (scrollToTop) list.scrollToStop(0, TvScrollSpring.Far, animatedScroll)
+        applyFrame()
+        return true
+    }
+
     override fun settleTouchAtTop(nearTop: Boolean): Boolean {
         if (!nearTop) return false
         focusHeroButton(lastHeroButton)
@@ -457,8 +475,8 @@ class TvNativeExploreView(
                 // hero 态里按上回轮播时 (尺寸缩放过去) 底边跟着淡入
                 wall.alpha = if (carouselGone) 0f else carouselA * splitGate
                 if (padHero) {
-                    // 平板版: 跟着列表一起滚 (轮播区就是列表顶上那一段), 从轮播区的这个高度起渐变到卡片墙的底色, 到轮播区底边全遮
-                    wall.translationY = -scrolled * (1f - md)
+                    // 平板版: 同电视跟着轮播的图走 (比列表多上移一截, 见 carouselShift), 从轮播区的这个高度起渐变到卡片墙的底色, 到轮播区底边全遮
+                    wall.translationY = -shift * (1f - md)
                     val region = padCarouselRegionPx.toFloat()
                     wall.setFloor(region * TV_PAD_HERO_FLOOR_START, region * (1f - TV_PAD_HERO_FLOOR_START), wallColor, opacity = 1f - md)
                 } else {
@@ -475,12 +493,12 @@ class TvNativeExploreView(
         }
         // 铺着模糊背景: 进详情页从整屏背景起, 背景图不登记成放大转场的来源; 轮播那一部没有清晰图 (只有竖版封面) 时照旧从背景图放大
         backdrop.zoomSource = !heroBlur || (!showsCard && wall?.currentTarget?.sharp != true)
-        // 平板版: 图高铺满轮播区 / hero 区 (两块高不同, 缩放过去), 跟着列表一起滚
-        val cardScale = if (padHero) padCardRegionPx.toFloat() / padCarouselRegionPx else m.cardBackdropScale
+        // 平板版: 图高铺满轮播区 / hero 区 (两块高不同, 缩放过去). 往下翻时同电视: 图比文字与列表多上移一截 (见 carouselShift), 两者错开
+        val cardScale = if (padHero) padCardBackdropPx.toFloat() / padCarouselRegionPx else m.cardBackdropScale
         val scale = 1f + (cardScale - 1f) * md
         backdrop.scaleX = scale
         backdrop.scaleY = scale
-        backdrop.translationY = (if (padHero) -scrolled else -shift) * (1f - md)
+        backdrop.translationY = -shift * (1f - md)
         if (md != lastTreatmentMode) {
             lastTreatmentMode = md
             backdrop.treatment = treatmentFor?.invoke(md)

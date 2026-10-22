@@ -27,6 +27,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -334,6 +335,18 @@ class TvNativeExploreTouchRulesTest {
         assertEquals(listOf(true, false), listener.heroActive, "一拖就退回卡片墙")
         assertTrue(host.onMain { view.isFocused }, "焦点停放")
         assertTrue(scrolled() - before > 0, "列表跟着手指往后滚, 没滚回卡片墙的停位")
+    }
+
+    @Test
+    fun `back in first row hero returns to the carousel at the top`() {
+        tapCard(REC, 1)
+        assertEquals(listOf(true), listener.heroActive)
+        // 页面按返回退出 hero 态
+        host.onMain { view.setHeroActive(false) }
+        host.waitUntil("列表滚回顶") { view.scrolledPx == 0 }
+        assertEquals(listOf(true, false), listener.heroActive, "退出 hero 态")
+        assertNull(host.onMain { view.focusedRowKey }, "第一排当场让出, 换回轮播 (同电视在首行按上)")
+        assertTrue(host.onMain { view.isFocused }, "焦点停放")
     }
 
     @Test

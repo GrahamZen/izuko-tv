@@ -216,8 +216,11 @@ open class TvNativeRowWallView private constructor(
     /** 子类跟着 [padHero] 换顶部区域的摆法 (探索页的按钮与圆点). */
     protected open fun onPadHeroChanged(enabled: Boolean) {}
 
-    /** 平板版: 聚焦卡的 hero 区高 —— 页顶到聚焦行的组标题. */
+    /** 平板版: 聚焦卡的 hero 区高 —— 页顶到聚焦行的组标题 (文字块排在它里面). */
     protected val padCardRegionPx: Int get() = metrics.listTopPx + metrics.heroHeaderTopPx
+
+    /** 平板版: 聚焦卡时背景图的高 —— 页顶到聚焦行的卡片顶, 组标题压在图下缘的渐隐里 (同电视与网格页的 hero). */
+    protected val padCardBackdropPx: Int get() = padCardRegionPx + metrics.headerPx
 
     /** 平板版: 标题宽 (文字块宽). */
     protected val padTitleWidthPx: Int get() = (metrics.pageWidthPx * TV_PAD_HERO_TITLE_WIDTH_FRACTION).roundToInt()
@@ -226,7 +229,7 @@ open class TvNativeRowWallView private constructor(
     protected val padCardTextBottomPx: Int get() = padCardRegionPx - dpPx(TV_PAD_HERO_TEXT_BOTTOM)
 
     /** 平板版背景图的高 (宽按 16:9); 子类 (探索页) 按轮播区量, 聚焦卡时缩放. */
-    protected open fun padBackdropHeightPx(): Int = padCardRegionPx
+    protected open fun padBackdropHeightPx(): Int = padCardBackdropPx
 
     /** 平板版文字块的下沿 (块的位置; 子类按两路内容各自的下沿平移). */
     protected open fun padTextBoxBottomPx(): Int = padCardTextBottomPx
@@ -363,11 +366,34 @@ open class TvNativeRowWallView private constructor(
             it.requestHeroActive(false)
             return
         }
+        if (exitHeroToTop(scrollToTop = !touchParkingByDrag)) {
+            applyTouchLook()
+            return
+        }
         timeline.setActive(false, animated = true)
         applyTouchLook()
         TvNativeFocusCues.setSpotlight(this, false, animated = true)
         rowListener?.onHeroActiveChanged(false)
         shiftToStop(-1, TvScrollSpring.Far)
+    }
+
+    /**
+     * 按触屏的规矩退出 hero 态时, 聚焦的是紧挨着顶部区域的第一排: 子类 (探索页) 照电视在首行按上那样回到顶部区域 (轮播) 并返回 true,
+     * 换过去有过渡; [scrollToTop] = 列表滚回顶 (手指拖动引起的退出不滚, 列表跟着手指). 默认 false: 原地退回卡片墙 (见 [exitHeroInPlace]).
+     */
+    protected open fun exitHeroToTop(scrollToTop: Boolean): Boolean = false
+
+    /** 正在因手指拖动 (列表或行) 停放焦点 (见 [touchParkByDrag]). */
+    private var touchParkingByDrag = false
+
+    /** 手指一拖引起的停放 ([touchPark]): hero 态里退出时列表不滚, 由手指带着. */
+    private fun touchParkByDrag() {
+        touchParkingByDrag = true
+        try {
+            touchPark()
+        } finally {
+            touchParkingByDrag = false
+        }
     }
 
     /**
@@ -616,14 +642,14 @@ open class TvNativeRowWallView private constructor(
         list.cardListener = { rowKey -> RowListener(rowKey) }
         list.onBindCard = { rowKey, index -> rowListener?.onBindCard(rowKey, pageIndex(rowKey, index)) }
         list.onItemsMoved = { onListMoved() }
-        list.onRowDragStart = { if (touchMode) touchPark() }
+        list.onRowDragStart = { if (touchMode) touchParkByDrag() }
         list.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
                 scrollTracker.onStateChanged(this@TvNativeRowWallView, newState)
                 if (newState == RecyclerView.SCROLL_STATE_DRAGGING) {
                     touchDragged = true
                     // 按触屏的规矩走: 手指一拖, 焦点停放 (hero 态里原地退回卡片墙), 列表跟着手指走
-                    if (touchMode) touchPark()
+                    if (touchMode) touchParkByDrag()
                 }
                 if (newState == RecyclerView.SCROLL_STATE_IDLE) {
                     finishFarJump()
