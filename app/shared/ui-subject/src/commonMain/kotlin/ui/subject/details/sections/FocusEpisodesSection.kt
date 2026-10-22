@@ -65,8 +65,12 @@ import me.him188.ani.app.ui.foundation.widgets.AniFocusIconButton
 import me.him188.ani.app.ui.foundation.widgets.AniFocusSelectableSurface
 import me.him188.ani.app.ui.foundation.widgets.AniScrollableTextDialog
 import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_CONTENT_PADDING
-import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_SHAPE
-import me.him188.ani.app.ui.foundation.widgets.centeredPanelColor
+import me.him188.ani.app.ui.foundation.widgets.AniGlassPopupSurface
+import me.him188.ani.app.ui.foundation.widgets.LocalAniGlassPanel
+import me.him188.ani.app.ui.foundation.widgets.ProvideScrollFadeFocusMargin
+import me.him188.ani.app.ui.foundation.widgets.aniGlassItemColor
+import me.him188.ani.app.ui.foundation.widgets.aniPanelTitleStyle
+import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFade
 import me.him188.ani.app.ui.lang.subject_details_no_summary
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -1702,7 +1706,7 @@ private fun formatAirDate(date: PackedDate): String? {
  *
  * 用裸 [Popup] 而非 material3 DropdownMenu: 后者的内容列带 width(IntrinsicSize.Max),
  * 内在尺寸测量会穿透到 LazyVerticalGrid (SubcomposeLayout 不支持内在测量, 直接崩溃).
- * 外观照其他弹窗与菜单 (半透明面板色、统一圆角与内边距、标题 titleLarge).
+ * 外观同玻璃弹窗 ([AniGlassPopupSurface]: 圆角、高光边、方块淡白底, 标题 [aniPanelTitleStyle]); 网格滚不完的那一边渐隐.
  *
  * 需组合在锚点 (入口圆钮) 所在的 Box 内, 菜单弹出位置跟随锚点.
  */
@@ -1776,14 +1780,10 @@ fun FocusEpisodeGridDropdown(
         // 这里恢复接口默认行为 (最小滚动保持聚焦格可见).
         val defaultBringIntoView = remember { object : BringIntoViewSpec {} }
         CompositionLocalProvider(LocalBringIntoViewSpec provides defaultBringIntoView) {
-        Surface(
+        AniGlassPopupSurface(
             // Popup 是独立窗口, 按键到不了播放页的根路由 —— 播放器选集条长按开的这个网格
             // 盖在画面上, 遥控器播放暂停键仍该管用. 播放页之外为空操作
             Modifier.tvOverlayWindowKeys(onDismissRequest).width(560.dp).heightIn(max = 480.dp),
-            shape = CENTERED_PANEL_SHAPE,
-            color = centeredPanelColor,
-            // 半透明底在配色表里查不到 "on" 色, 必须显式给 (见 centeredPanelColor)
-            contentColor = MaterialTheme.colorScheme.onSurface,
         ) {
             Column(
                 Modifier.padding(CENTERED_PANEL_CONTENT_PADDING),
@@ -1796,7 +1796,7 @@ fun FocusEpisodeGridDropdown(
                 Text(
                     stringResource(Lang.subject_details_episodes),
                     Modifier.weight(1f),
-                    style = MaterialTheme.typography.titleLarge,
+                    style = aniPanelTitleStyle,
                 )
                 if (onCacheClick != null) {
                     AniFocusIconButton(onCacheClick) {
@@ -1814,9 +1814,10 @@ fun FocusEpisodeGridDropdown(
                 episodeRuntimes = episodeRuntimes,
                 episodeNames = episodeNames,
             )
+            ProvideScrollFadeFocusMargin {
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(56.dp),
-                modifier = Modifier.weight(1f, fill = false),
+                modifier = Modifier.weight(1f, fill = false).aniVerticalScrollFade(gridState),
                 state = gridState,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -1848,6 +1849,7 @@ fun FocusEpisodeGridDropdown(
                         onLongClick = onEpisodeLongClick?.let { longClick -> { longClick(item) } },
                     )
                 }
+            }
             }
             }
         }
@@ -2021,7 +2023,8 @@ private fun FocusEpisodeGridHeaderLine(
 
 /**
  * [FocusEpisodeGridDropdown] 里的数字方块. 三态同弹窗里的其他选项 ([AniFocusSelectableSurface]): 聚焦主题色实底,
- * 当前集是选中色; 看过的与未开播的比面板低一档 (未开播的字再置灰), 其余比面板高一档.
+ * 当前集是选中色; 其余是玻璃面板里项目的淡白底 ([aniGlassItemColor]), 看过的与未开播的淡一半 (未开播的字再置灰).
+ * 不在玻璃面板里时 (没有 [LocalAniGlassPanel]) 看过的与未开播的比面板低一档, 其余高一档.
  * [onLongClick] 非 null 时支持长按确认键 (按住 OK) 触发: 检测方式同 [FocusEpisodeCard],
  * 但按住计数一到阈值就立即触发 (不等松开) —— 跳转类操作即时反馈更顺手.
  */
@@ -2061,10 +2064,10 @@ private fun FocusEpisodeSortCell(
         shape = RoundedCornerShape(8.dp),
         // scale 放链最外层: 调用方 modifier 里可能带描边/底色, 按住缩小时一起缩
         modifier = Modifier.scale(pressScale).then(modifier).height(48.dp).then(longPressModifier),
-        unselectedColor = if (dimmed) {
-            MaterialTheme.colorScheme.surfaceContainer
-        } else {
-            MaterialTheme.colorScheme.surfaceContainerHighest
+        unselectedColor = when {
+            LocalAniGlassPanel.current -> aniGlassItemColor().let { if (dimmed) it.copy(alpha = it.alpha / 2) else it }
+            dimmed -> MaterialTheme.colorScheme.surfaceContainer
+            else -> MaterialTheme.colorScheme.surfaceContainerHighest
         },
     ) { focused ->
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
