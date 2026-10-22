@@ -71,6 +71,8 @@ class SeekPreview internal constructor(
     private val setOutputSurface: (Surface?) -> Unit,
     /** 视频输出接回全屏. */
     private val restoreOutput: () -> Unit,
+    /** 换输出时要重建解码器 (见 [SeekPreviewDecoderRebuild]); 不用重建、或画在全屏上时为 null. */
+    private val decoderRebuild: SeekPreviewDecoderRebuild?,
     private val onEnd: (SeekPreview) -> Unit,
 ) {
     /** 开始预览时的播放位置: 取消预览时跳回这里. */
@@ -113,6 +115,9 @@ class SeekPreview internal constructor(
 
     /** 画预览的小画面, 见 [attachFrameSurface]. */
     private var frameSurface: Surface? = null
+
+    /** 接上小画面时重建过解码器 ([decoderRebuild]): 结束时要跳一次, 重建的解码器才有关键帧可解 (见 [cancel]). */
+    private var decoderRebuilt = false
 
     /** 画预览的那一面上画出过帧 (换一个小画面重新算): 一帧都还没有时没有旧画面要标. 全屏上一开始就是开始时那一帧. */
     private var frameOnSurface = onFullScreen
@@ -177,7 +182,7 @@ class SeekPreview internal constructor(
         exoPlayer.setSeekParameters(SeekParameters.EXACT)
         exoPlayer.addListener(listener)
         exoPlayer.setVideoFrameMetadataListener(frameMetadataListener)
-        logger.info { "Seek preview started at $originMillis ms" }
+        logger.info { "Seek preview started at $originMillis ms" + if (decoderRebuild != null) ", rebuilding the decoder on output switches" else "" }
     }
 
     /** 主播放器精确跳到 [positionMillis]. 离片尾太近的跳到片尾前一点: 跳到末尾会播完, 触发自动连播. */
@@ -256,6 +261,10 @@ class SeekPreview internal constructor(
         if (isEnded || onFullScreen) return
         frameSurface = surface
         frameOnSurface = false
+        if (surface != null && decoderRebuild != null) {
+            decoderRebuild.rebuildOnNextOutput()
+            decoderRebuilt = true
+        }
         setOutputSurface(surface)
         SeekPreviewDecoderFault.markOutputSwitched()
         SeekPreviewCrashMarker.onPreviewFrame()
@@ -332,10 +341,11 @@ class SeekPreview internal constructor(
      * 取消: 结束预览并跳回 [originMillis]. 先跳再把输出接回全屏: 跳转会清空解码器, 预览位置已经解出、还没画的帧就不会画到全屏上,
      * 全屏一直停在开始那一帧, 直到原处的画面重新解出来 (画在全屏上时则是停在最后预览的那一帧, 直到原处的画面解出来).
      * 跳回去要重新缓冲一下, 这期间 [holdingFrame] 仍为 true.
+     * 换输出时重建解码器的 ([decoderRebuild]) 先接回全屏再跳, 没跳过也跳: 重建的解码器从下一个关键帧解起, 要靠这一跳从原处的关键帧解.
      * 已经结束的 (比如换了媒体) 什么也不做.
      */
     fun cancel() {
-        if (!isEnded) finish(if (hasSeeked) FinishMode.Cancel else FinishMode.End)
+        if (!isEnded) finish(if (hasSeeked || decoderRebuilt) FinishMode.Cancel else FinishMode.End)
     }
 
     private enum class FinishMode { End, EndAtTarget, Cancel }
@@ -355,8 +365,14 @@ class SeekPreview internal constructor(
         gate.open()
         when (mode) {
             FinishMode.Cancel -> {
-                seekPlayback(originMillis)
-                restoreFullScreenOutput()
+                if (decoderRebuilt) {
+                    // 先跳的话, 跳回去后旧解码器可能先吃掉原处的关键帧, 重建的解码器只能等下一个
+                    restoreFullScreenOutput()
+                    seekPlayback(originMillis)
+                } else {
+                    seekPlayback(originMillis)
+                    restoreFullScreenOutput()
+                }
                 logger.info { "Seek preview canceled at $targetMillis ms, back to $originMillis ms" }
             }
 
@@ -390,6 +406,7 @@ class SeekPreview internal constructor(
     /** 小画面上画的: 视频输出接回全屏. 画在全屏上的输出没换过, 什么也不做. */
     private fun restoreFullScreenOutput() {
         if (onFullScreen) return
+        decoderRebuild?.rebuildOnNextOutput()
         restoreOutput()
         SeekPreviewDecoderFault.markOutputSwitched()
         SeekPreviewCrashMarker.onFullScreen()

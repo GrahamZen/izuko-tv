@@ -62,7 +62,8 @@ internal object UndecodableVideoProfiles {
  * 解码器初始化报错, 错误里带着 `format_supported=NO_EXCEEDS_CAPABILITIES`, 之后与其他设备放不了的格式一样提示并自动换源.
  * 声明了支持的解码器 (少数芯片能解 10-bit H.264) 照常用. 判断能不能选这条轨 (supportsFormat) 不经过这里, 选轨不变.
  *
- * 另外按 [VideoDecoderParking.MSG_PARK] 停用解码器: 画面不在眼前、内存紧时释放, 画面回来再建.
+ * 另外按 [VideoDecoderParking.MSG_PARK] 停用解码器: 画面不在眼前、内存紧时释放, 画面回来再建;
+ * 按 [SeekPreviewDecoderRebuild.MSG_REBUILD_ON_NEXT_OUTPUT] 在下一次换输出面时重建解码器.
  */
 @OptIn(UnstableApi::class)
 internal class UndecodableProfileGuardingVideoRenderer(
@@ -109,9 +110,27 @@ internal class UndecodableProfileGuardingVideoRenderer(
     private var decoderParked = false
     private var hasDisplaySurface = false
 
+    // 拖动预览换输出时重建解码器 (见 SeekPreviewDecoderRebuild). 只在播放线程上读写
+    private var rebuildOnNextOutput = false
+
     override fun handleMessage(messageType: Int, message: Any?) {
         when (messageType) {
-            MSG_SET_VIDEO_OUTPUT -> hasDisplaySurface = message is Surface && message.isValid
+            MSG_SET_VIDEO_OUTPUT -> {
+                hasDisplaySurface = message is Surface && message.isValid
+                if (rebuildOnNextOutput) {
+                    rebuildOnNextOutput = false
+                    if (hasDisplaySurface && message !== surface && codec != null) {
+                        rebuildCodecFor(message)
+                        return
+                    }
+                }
+            }
+
+            SeekPreviewDecoderRebuild.MSG_REBUILD_ON_NEXT_OUTPUT -> {
+                rebuildOnNextOutput = message == true
+                return
+            }
+
             VideoDecoderParking.MSG_PARK -> {
                 decoderParked = message == true
                 // 已经没有真的输出面 (解码器挂在占位输出面上) 就现在释放; 停用期间没有真的输出面不再建解码器
@@ -120,6 +139,16 @@ internal class UndecodableProfileGuardingVideoRenderer(
             }
         }
         super.handleMessage(messageType, message)
+    }
+
+    /** 释放解码器、换上输出面 [output] 后对着它重建 (同 media3 对 setOutputSurface 有问题的解码器的做法). */
+    private fun rebuildCodecFor(output: Any?) {
+        val name = codecInfo?.name
+        val startedAt = System.nanoTime()
+        releaseCodec()
+        super.handleMessage(MSG_SET_VIDEO_OUTPUT, output)
+        maybeInitCodecOrBypass()
+        logger.info { "[SeekPreview] Rebuilt video decoder $name for the new output in ${(System.nanoTime() - startedAt) / 1_000_000}ms" }
     }
 
     override fun shouldUsePlaceholderSurface(codecInfo: MediaCodecInfo): Boolean =
