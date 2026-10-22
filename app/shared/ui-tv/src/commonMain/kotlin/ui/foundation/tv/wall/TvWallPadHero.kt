@@ -70,7 +70,8 @@ import kotlin.math.roundToInt
  * 一块平板版 hero: [source] 是这一部 (null = 空着). 文字左缘在 [textStart], 下缘离这块的底边 [textBottom], 标题宽按 [pageWidth] 的比例,
  * 简介最多 [summaryMaxLines] 行.
  * [ownBlur] = 自己铺模糊底与往下渐变的墙色; 整页底下已经铺着同一部的模糊背景 (hero 态用模糊背景) 时传 false, 只画羽化的横版图.
- * [backdropAlpha] / [textAlpha] 在绘制阶段读. [overlay] 画在最上面 (轮播的圆点).
+ * [backdropAlpha] / [textAlpha] 在绘制阶段读. [backdropShift] = 图 (连同模糊底) 比整块多出来的纵向位移 (px, 绘制阶段读): 轮播往下翻时图比文字多上移一截,
+ * 两者错开 (同电视). [overlay] 画在最上面 (轮播的圆点).
  */
 @Composable
 internal fun TvPadHeroLayer(
@@ -83,6 +84,7 @@ internal fun TvPadHeroLayer(
     ownBlur: Boolean = true,
     backdropAlpha: () -> Float = { 1f },
     textAlpha: () -> Float = { 1f },
+    backdropShift: () -> Float = { 0f },
     overlay: @Composable BoxScope.() -> Unit = {},
 ) {
     val animated = LocalThemeSettings.current.visualEffects.transitions
@@ -90,7 +92,10 @@ internal fun TvPadHeroLayer(
     Box(modifier) {
         AnimatedContent(
             source,
-            Modifier.fillMaxSize().graphicsLayer { alpha = backdropAlpha() },
+            Modifier.fillMaxSize().graphicsLayer {
+                alpha = backdropAlpha()
+                translationY = backdropShift()
+            },
             transitionSpec = {
                 // 新的一部在旧的上面淡入 (旧的一直不透明, 中间不会变暗)
                 fadeIn(tween(TV_PAD_HERO_CROSSFADE_MILLIS, easing = LinearEasing)) togetherWith ExitTransition.KeepUntilTransitionsFinished
