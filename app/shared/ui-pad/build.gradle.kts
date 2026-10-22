@@ -24,6 +24,7 @@ kotlin {
     sourceSets.commonMain.dependencies {
         api(projects.app.shared.uiExploration)
         implementation(projects.app.shared.uiSubject)
+        implementation(projects.app.shared.uiSettingsCatalog) // 设置页用触屏版 TouchSettingsPage
         implementation(libs.compose.components.resources)
     }
 }

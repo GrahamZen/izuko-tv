@@ -21,11 +21,15 @@ import me.him188.ani.app.ui.pad.collection.PadCollectionPage
 import me.him188.ani.app.ui.pad.exploration.PadExplorationPage
 import me.him188.ani.app.ui.pad.schedule.PadSchedulePage
 import me.him188.ani.app.ui.pad.search.PadSearchPage
+import me.him188.ani.app.ui.settings.LocalSettingsScreenVariant
+import me.him188.ani.app.ui.settings.SettingsScreenVariant
+import me.him188.ani.app.ui.settings.tv.TouchSettingsPage
+import me.him188.ani.app.ui.settings.tv.TvSettingsPlatform
 import me.him188.ani.app.ui.subject.collection.CollectionPageVariant
 import me.him188.ani.app.ui.subject.collection.LocalCollectionPageVariant
 
 /**
- * 把平板触屏页面 (探索 / 追番 / 搜索 / 新番时间表) 装进各共享页的变体插槽. iOS 与 Android phone 变体的入口各调一次,
+ * 把平板触屏页面 (探索 / 追番 / 搜索 / 新番时间表 / 设置) 装进各共享页的变体插槽. iOS 与 Android phone 变体的入口各调一次,
  * 两边是同一套页面; 别的页面照旧用共享的默认布局.
  */
 @Composable
@@ -35,6 +39,7 @@ fun InstallPadPageVariants(content: @Composable () -> Unit) {
         LocalCollectionPageVariant provides PadCollectionPageVariant,
         LocalSearchPageVariant provides PadSearchPageVariant,
         LocalSchedulePageVariant provides PadSchedulePageVariant,
+        LocalSettingsScreenVariant provides PadSettingsScreenVariant,
         content = content,
     )
 }
@@ -53,4 +58,9 @@ private val PadSearchPageVariant = SearchPageVariant { state, onIntent, suggesti
 
 private val PadSchedulePageVariant = SchedulePageVariant { presentation, onRetry, modifier ->
     PadSchedulePage(presentation, onRetry, modifier)
+}
+
+/** 设置页: 触屏版 (分类与设置项同电视版); 电视独有的项 (控制台、首次引导等) 平板上没有. */
+private val PadSettingsScreenVariant = SettingsScreenVariant { vm, initialTab, legacy, licenses, modifier ->
+    TouchSettingsPage(vm, initialTab, legacy, licenses, TvSettingsPlatform.None, modifier)
 }
