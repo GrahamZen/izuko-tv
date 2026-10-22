@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.domain.mediasource.clouddrive
 
+import me.him188.ani.app.domain.media.ProbedMediaAvFeatures
 import me.him188.ani.datasources.api.DefaultMedia
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.MediaProperties
@@ -148,6 +149,7 @@ internal fun DriveShareMatch.toShareMedia(
     val details = RawTitleParser.getDefault().parse((listOf(share.siteTitle) + folders + file.fileName).joinToString(" "))
     val mediaId = "$mediaSourceId.${share.shareId}.${file.fid}"
     DriveVideoBitrates.record(mediaId, file)
+    ProbedMediaAvFeatures.recordDriveFile(mediaId, file.fileName, file.avFeatures)
     DriveMediaFolders.record(mediaId, DriveMediaFolders.Folder("${share.shareId}/${file.parentFid}", folders.lastOrNull()))
     return DefaultMedia(
         mediaId = mediaId,
