@@ -61,7 +61,7 @@ object TvViewAllGalleries : ViewAllGalleries {
             )
             TvNativeMonogramGallery(
                 items = monograms,
-                style = style,
+                style = style.forTouchGallery(touch),
                 columns = VIEW_ALL_GALLERY_COLUMNS,
                 rowSpacing = VIEW_ALL_GALLERY_ROW_SPACING,
                 sideInset = VIEW_ALL_GALLERY_SIDE_INSET,
