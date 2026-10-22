@@ -96,6 +96,8 @@ import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeBackdropTarget
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeHeroText
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeWallBackdropTarget
 import me.him188.ani.app.ui.foundation.tv.nativeview.tvBackdropMaskAlpha
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvBlurredBackdropEntry
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvBlurredBackdropMemo
 import me.him188.ani.app.ui.foundation.tv.nativeview.tvFetchBlurredBackdrop
 import me.him188.ani.app.ui.foundation.tv.nativeview.tvRelativeLuminance
 import me.him188.ani.app.ui.foundation.tv.rememberTvTitleLogoBox
@@ -332,6 +334,8 @@ private fun TvWallBlurImage(url: String, size: IntSize, spec: TvBackdropBlurSpec
         if (image?.spec == spec) return@LaunchedEffect
         val fetched = tvFetchBlurredBackdrop(sketch, context, url, size.width, size.height, spec) ?: return@LaunchedEffect
         image = TvWallBlurred(fetched.bitmap, spec, fetched.worstForLightText, fetched.worstForDarkText)
+        // 进这部的详情页时, 详情页那一档 (默认没这么糊) 解好之前先垫这张 (见 TvBlurredBackdropMemo)
+        TvBlurredBackdropMemo.put(url, TvBlurredBackdropEntry(fetched.bitmap, spec, fetched.worstForLightText, fetched.worstForDarkText))
     }
     val shown = image ?: return
     val maskAlpha = remember(shown, maskColor, textColor) { shown.maskAlpha(maskColor, textColor) }

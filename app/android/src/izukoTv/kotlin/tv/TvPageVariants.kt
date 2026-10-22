@@ -110,6 +110,7 @@ import me.him188.ani.app.ui.subject.collection.CollectionPageVariant
 import me.him188.ani.app.ui.subject.collection.LocalCollectionPageVariant
 import me.him188.ani.app.ui.subject.collection.TvCollectionPage
 import me.him188.ani.app.ui.subject.details.LocalSubjectDetailsPageVariant
+import me.him188.ani.app.ui.subject.details.layout.TvPadSubjectDetailsPageVariant
 import me.him188.ani.app.ui.subject.details.layout.TvSubjectDetailsPageVariant
 import me.him188.ani.app.ui.subject.episode.EpisodeScreenVariant
 import me.him188.ani.app.ui.subject.episode.LocalEpisodeScreenVariant
@@ -190,6 +191,8 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
     val touchInput = remember(appContext) {
         appContext.packageManager.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN) && !TvInterfaceModeGate.isTvMode(appContext)
     }
+    // 触屏的详情页没有首屏大图 (见 TvPadSubjectDetailsPageVariant): 不放大
+    LaunchedEffect(touchInput) { TvHeroZoomHandoff.detailsHasHero = !touchInput }
     // 引导还没做过就先进引导页 (网络检测 + 手机遥控 + 登录), 见 TvOnboardingGate
     val onboardingPending = remember(appContext) { TvOnboardingGate.isPending(appContext) }
     val onboarding = remember(onboardingPending) { TvOnboardingVariantImpl(onboardingPending) }
@@ -303,7 +306,7 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
             }
         },
         // 这个变体有两个方法 (页面 + 首屏占位), 不能用 SAM lambda 写法
-        LocalSubjectDetailsPageVariant provides TvSubjectDetailsPageVariant,
+        LocalSubjectDetailsPageVariant provides if (touchInput) TvPadSubjectDetailsPageVariant else TvSubjectDetailsPageVariant,
         LocalTvOnboardingVariant provides onboarding,
         // 登录页右侧的手机控制台码 (扫码在手机上登录); 平板模式不挂, 登录页自己给输入框 (见 BangumiDirectLoginForm)
         LocalTvLoginSidePanel provides (if (touchInput) null else ({ TvRemoteLoginCard() })),

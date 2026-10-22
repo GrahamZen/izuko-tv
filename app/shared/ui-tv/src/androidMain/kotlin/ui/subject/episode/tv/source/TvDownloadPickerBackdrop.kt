@@ -28,8 +28,8 @@ import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.ui.foundation.LocalSketch
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvBackdropBlurSpec
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvBlurredBackdropEntry
 import me.him188.ani.app.ui.foundation.tv.nativeview.tvBackdropBlurSpec
-import me.him188.ani.app.ui.subject.details.layout.BlurredBackdrop
 import me.him188.ani.app.ui.subject.details.layout.loadTvBlurredBackdrop
 
 /**
@@ -52,7 +52,7 @@ internal object TvDownloadPickerBackdrop {
     data class Key(val subjectId: Int, val size: IntSize, val spec: TvBackdropBlurSpec)
 
     /** 准备好的那一部. [image] 为 null = 这部没有可用的横版图. */
-    class Ready(val key: Key, val image: BlurredBackdrop?)
+    class Ready(val key: Key, val image: TvBlurredBackdropEntry?)
 
     var ready: Ready? by mutableStateOf(null)
         private set
