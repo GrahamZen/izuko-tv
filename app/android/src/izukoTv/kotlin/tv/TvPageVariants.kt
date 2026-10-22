@@ -71,7 +71,9 @@ import me.him188.ani.app.data.models.preference.TvLongPressAction
 import me.him188.ani.app.data.models.preference.TvScheduleLayout
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tvKeyLongPressInterceptor
+import me.him188.ani.app.ui.foundation.widgets.ActionToastHost
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
+import me.him188.ani.app.ui.foundation.widgets.rememberActionToastState
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.playback_session_none
 import me.him188.ani.app.ui.main.LocalTvAdjustWindows
@@ -510,7 +512,10 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
                     // 触屏设备上动作面板的入口 (侧边栏条目读它), 与两个长按走同一道"本页可认领"判据.
                     // 电视上不包这一层, content 原样组合
                     val openActionPanel = remember { { if (currentDestinationClaimable()) showQuickMenu = true } }
-                    CompositionLocalProvider(LocalTvOpenActionPanel provides openActionPanel) { content() }
+                    // 带点按动作的 toast (后台播放的提示) 画在应用里、点得到; 其余照旧系统 Toast (见 ActionToastState)
+                    val actionToasts = rememberActionToastState(plain = LocalToaster.current)
+                    CompositionLocalProvider(LocalTvOpenActionPanel provides openActionPanel, LocalToaster provides actionToasts) { content() }
+                    ActionToastHost(actionToasts)
                 } else {
                     content()
                 }
