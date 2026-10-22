@@ -66,7 +66,7 @@ sealed interface TvNativeMonogram {
  */
 @Immutable
 data class TvNativeMonogramStyle(
-    /** 圆的直径 = 格宽. */
+    /** 圆的直径 (格宽见 [cellWidthPx]). */
     val sizePx: Int,
     val spacingPx: Int,
     /** 圆下缘到姓名 / 姓名到副标题. */
@@ -97,12 +97,14 @@ data class TvNativeMonogramStyle(
     val crossfade: Boolean,
     /** 圆下缘的小标签 ([TvNativeMonogram.Person.badge]); null = 这一组不画 (详情页的行). */
     val badge: TvNativeMonogramBadgeStyle? = null,
+    /** 格宽: 两行字按它排, 圆在格里水平居中. 平时同圆的直径; 平板的「查看全部」画廊圆比格窄 (见 forTouchGallery). */
+    val cellWidthPx: Int = sizePx,
 ) {
     /** 一格的高: 圆 + 间距 + 两行字. */
     val cellHeightPx: Int get() = sizePx + textGapPx + name.lineHeightPx + lineGapPx + subtitle.lineHeightPx
 
     /** 相邻两格左缘的距离. */
-    val stepPx: Int get() = sizePx + spacingPx
+    val stepPx: Int get() = cellWidthPx + spacingPx
 }
 
 /**
@@ -180,14 +182,14 @@ class TvNativeMonogramCardView(context: Context, private val style: TvNativeMono
     }
 
     init {
-        layoutParams = ViewGroup.LayoutParams(style.sizePx, style.cellHeightPx)
+        layoutParams = ViewGroup.LayoutParams(style.cellWidthPx, style.cellHeightPx)
         // 触摸模式下也可聚焦 (同海报卡)
         isFocusableInTouchMode = true
         if (Build.VERSION.SDK_INT >= 26) defaultFocusHighlightEnabled = false
         clipChildren = false
         clipToPadding = false
-        addView(circle, LayoutParams(style.sizePx, style.sizePx))
-        addView(ring, LayoutParams(style.sizePx, style.sizePx))
+        addView(circle, LayoutParams(style.sizePx, style.sizePx, Gravity.TOP or Gravity.CENTER_HORIZONTAL))
+        addView(ring, LayoutParams(style.sizePx, style.sizePx, Gravity.TOP or Gravity.CENTER_HORIZONTAL))
         label.orientation = LinearLayout.VERTICAL
         label.addView(name, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, style.name.lineHeightPx))
         label.addView(
@@ -198,7 +200,7 @@ class TvNativeMonogramCardView(context: Context, private val style: TvNativeMono
         )
         addView(
             label,
-            LayoutParams(style.sizePx, style.cellHeightPx - style.sizePx - style.textGapPx).apply {
+            LayoutParams(style.cellWidthPx, style.cellHeightPx - style.sizePx - style.textGapPx).apply {
                 topMargin = style.sizePx + style.textGapPx
             },
         )
@@ -315,7 +317,7 @@ class TvNativeMonogramCardView(context: Context, private val style: TvNativeMono
             cornerRadius = style.placeholderBarCornerPx
             setColor(style.placeholderColor)
         }
-        val side = ((style.sizePx - widthPx) / 2).coerceAtLeast(0)
+        val side = ((style.cellWidthPx - widthPx) / 2).coerceAtLeast(0)
         return InsetDrawable(bar, side, style.placeholderBarInsetPx, side, style.placeholderBarInsetPx)
     }
 
