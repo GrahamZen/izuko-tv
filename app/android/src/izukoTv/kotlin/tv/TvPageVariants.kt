@@ -37,7 +37,6 @@ import me.him188.ani.app.navigation.NavRoutes
 import me.him188.ani.app.data.network.TmdbImageService
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.platform.AppTerminator
-import me.him188.ani.app.platform.DevSwitches
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.tv.TvActionPanelRequests
 import me.him188.ani.app.ui.subject.details.layout.TvViewAllCommentsList
@@ -265,8 +264,8 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
                 modifier = modifier, pageContent = pageContent,
             )
         },
-        // 调试开关 upstreamPlayer: 不换, 播放页用上游的共享版 (iOS 上那一版), 在平板上对照
-        LocalEpisodeScreenVariant provides if (DevSwitches.upstreamPlayer.value) null else EpisodeScreenVariant {
+        // 触屏 (平板模式) 播放页用共享的那一版 (同 iPad, 见 ProvideTouchPlayerUiBehavior)
+        LocalEpisodeScreenVariant provides if (touchInput) null else EpisodeScreenVariant {
                 vm, page, danmakuHostState, danmakuEditorState,
                 setShowEditCommentSheet, pauseOnPlaying, modifier,
             ->

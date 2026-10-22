@@ -584,10 +584,9 @@ internal fun EpisodeVideoImpl(
                                 onClick = { sheetsController.navigateTo(EpisodeVideoSideSheetPage.EPISODE_SELECTOR) },
                             )
 
-                            if (LocalPlatform.current.isDesktop()) {
-                                playerState.audioTracks?.let {
-                                    PlayerControllerDefaults.AudioSwitcher(it)
-                                }
+                            // 不止一条音轨时才出来 (见 AudioSwitcher), 平板与 iPad 上同样要能切
+                            playerState.audioTracks?.let {
+                                PlayerControllerDefaults.AudioSwitcher(it)
                             }
 
                             playerState.subtitleTracks?.let {
