@@ -593,6 +593,9 @@ data class TvSourceStrings(
     val playbackBuffering: String,
     /** 表头最右边齿轮的名字 (只画图标, 名字给无障碍与详情用). */
     val settings: String,
+    /** 有数据源被暂停时 (见设置「完整搜索」) 表头状态卡片「已暂停 · 已查 %1$d/%2$d」与「完整搜索」右端的「已暂停」. */
+    val searchPaused: String,
+    val fullSearchPaused: String,
     val details: MediaDetailsStrings,
     val timeZone: TimeZone,
 ) {
@@ -756,7 +759,12 @@ fun buildTvSourcePanel(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvS
                     style = TvSourceRowStyle.Rail,
                     title = strings.fullSearch,
                     icon = TvSourceRowIcon.Search,
-                    trailing = if (full) strings.on else strings.off,
+                    // 没开、又有被暂停的源: 写「已暂停」, 按它继续查完
+                    trailing = when {
+                        full -> strings.on
+                        input.sources.pausedSourceCount > 0 -> strings.fullSearchPaused
+                        else -> strings.off
+                    },
                     accent = if (full) TvSourceAccent.Attention else TvSourceAccent.None,
                     action = TvSourceAction.SetFullSearch(!full),
                 ),
@@ -897,10 +905,11 @@ fun buildTvSourcePanel(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvS
         )
     }
 
-    val status = if (input.sources.anyLoading) {
-        strings.searching.format(input.sources.finishedSourceCount, input.sources.enabledSourceCount)
-    } else {
-        strings.searched.format(input.sources.enabledSourceCount)
+    val status = when {
+        input.sources.anyLoading -> strings.searching.format(input.sources.finishedSourceCount, input.sources.enabledSourceCount)
+        // 开播后暂停的 (设置「完整搜索」不是始终): 别写成「已查询」, 看着像全查完了
+        input.sources.pausedSourceCount > 0 -> strings.searchPaused.format(input.sources.finishedSourceCount, input.sources.enabledSourceCount)
+        else -> strings.searched.format(input.sources.enabledSourceCount)
     }
     return TvSourcePanelContent(
         status = status,
@@ -1756,6 +1765,10 @@ private fun sourceStatus(source: MediaSourceResultPresentation, count: Int, stri
     source.isWorking -> ""
     else -> count.toString()
 }
+
+/** 启用的源里被暂停的个数 (开播后暂停、还没放开的; 本地缓存不算). */
+private val MediaSourceResultListPresentation.pausedSourceCount: Int
+    get() = list.count { !it.isDisabled && it.kind != MediaSourceKind.LocalCache && it.isPaused }
 
 private fun failedPane(failed: List<MediaSourceResultPresentation>, strings: TvSourceStrings): TvSourceRight = TvSourceRight(
     key = TvSourceRailKeys.FAILED,

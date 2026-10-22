@@ -89,6 +89,9 @@ internal object PerfPlaybackAnalysis {
     private const val LOW_FRAME_RATIO = 0.85
     private const val CPU_BUSY_RATIO = 0.75
     private const val SELECTOR_HEAVY_MS = 100.0
+
+    /** 一秒里 GC 合计这么久算重 (见 [searchBlamed]); 弱机上几乎每秒都有一点 GC, 有就算会把什么都归到搜索上. */
+    private const val GC_HEAVY_MS = 200.0
     private const val BUFFER_LOW_MS = 1000L
     private const val NS_PER_SECOND = 1_000_000_000L
     private const val SETTLE_NS = 1_000_000_000L
@@ -288,6 +291,28 @@ internal object PerfPlaybackAnalysis {
             return tr("{0} 秒只出了 {1} 帧（片源 {2} fps）", DETECT_SECONDS, rendered, fmt1(fps))
         }
         return null
+    }
+
+    /**
+     * 刚判出的卡顿 ([detect] 返回了原因, 或主线程卡住了 [mainStalled]) 是不是搜索导致的: 最近 [DETECT_SECONDS] 秒里卡的那几秒
+     * (主线程卡住时算这几秒全部) 一半以上数据源还在查, 而且一半以上 CPU 接近吃满、选源器筛选重、整机内存紧或 GC 重.
+     * 同 [frameFindings] 归因里「多半是搜索抢了 CPU」那条, 加上低内存机上常见的内存紧 / GC.
+     */
+    fun searchBlamed(tl: PerfTimelineData, nowNs: Long, mainStalled: Boolean = false): Boolean {
+        val events = tl.events.sortedBy { it.tNs }
+        val current = ((nowNs - tl.startNs) / NS_PER_SECOND).toInt()
+        if (current < 1) return false
+        val seconds = buildSeconds(tl, events, emptyList(), tl.startNs, current - 1)
+        val window = seconds.takeLast(DETECT_SECONDS)
+        val blamed = if (mainStalled) window else stutterSeconds(window, videoFps(events, seconds))
+        if (blamed.isEmpty()) return false
+        val half = blamed.size / 2.0
+        if (blamed.count { it.searching > 0 } < half) return false
+        val cores = Runtime.getRuntime().availableProcessors()
+        val pressured = blamed.count { s ->
+            s.cores >= cores * CPU_BUSY_RATIO || s.selectorMs >= SELECTOR_HEAVY_MS || s.memTight || s.gcMs >= GC_HEAVY_MS
+        }
+        return pressured >= half
     }
 
     // ------------------------------------------------------------------ 逐秒

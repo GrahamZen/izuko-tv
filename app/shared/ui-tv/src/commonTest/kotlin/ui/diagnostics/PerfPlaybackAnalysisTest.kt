@@ -14,6 +14,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -190,6 +191,31 @@ class PerfPlaybackAnalysisTest {
         playSecond(8, rendered = 24)
         val reason = assertNotNull(PerfPlaybackAnalysis.detect(timeline.snapshot(), 9 * second))
         assertTrue(reason.contains("画面却停了"), reason)
+    }
+
+    @Test
+    fun `search is blamed when the picture stutters while sources search and memory is tight`() {
+        startup(searchEndSec = 20.0)
+        for (i in 3..9) playSecond(i, rendered = 12, memAvailMb = 200)
+        assertNotNull(PerfPlaybackAnalysis.detect(timeline.snapshot(), 10 * second))
+        assertTrue(PerfPlaybackAnalysis.searchBlamed(timeline.snapshot(), 10 * second))
+    }
+
+    @Test
+    fun `search is not blamed once searching has ended`() {
+        startup(searchEndSec = 3.2)
+        for (i in 3..9) playSecond(i, rendered = 12, memAvailMb = 200)
+        assertNotNull(PerfPlaybackAnalysis.detect(timeline.snapshot(), 10 * second))
+        assertFalse(PerfPlaybackAnalysis.searchBlamed(timeline.snapshot(), 10 * second))
+    }
+
+    @Test
+    fun `search is not blamed when nothing is under pressure`() {
+        startup(searchEndSec = 20.0)
+        for (i in 3..9) playSecond(i, rendered = 12)
+        assertFalse(PerfPlaybackAnalysis.searchBlamed(timeline.snapshot(), 10 * second))
+        // 主线程卡住时也一样要有压力
+        assertFalse(PerfPlaybackAnalysis.searchBlamed(timeline.snapshot(), 10 * second, mainStalled = true))
     }
 
     @Test

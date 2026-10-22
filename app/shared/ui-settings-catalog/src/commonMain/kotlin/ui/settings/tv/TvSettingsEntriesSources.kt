@@ -21,6 +21,9 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.datetime.TimeZone
 import me.him188.ani.app.data.models.preference.CloudDriveAccount
+import me.him188.ani.app.data.models.preference.FullSearchMode
+import me.him188.ani.app.data.models.preference.LowRamDevice
+import me.him188.ani.app.data.models.preference.effectiveFullSearchMode
 import me.him188.ani.app.data.models.preference.VideoResolverSettings
 import me.him188.ani.app.data.repository.media.MediaSourceSubscriptionRepository
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
@@ -38,11 +41,14 @@ import me.him188.ani.app.ui.lang.media_subtitle_language_english
 import me.him188.ani.app.ui.lang.media_subtitle_language_japanese
 import me.him188.ani.app.ui.lang.settings_account_logout
 import me.him188.ani.app.ui.lang.settings_media_advanced_settings
-import me.him188.ani.app.ui.lang.settings_media_always_full_search
-import me.him188.ani.app.ui.lang.settings_media_always_full_search_description
 import me.him188.ani.app.ui.lang.settings_media_any
 import me.him188.ani.app.ui.lang.settings_media_auto_enable_last
 import me.him188.ani.app.ui.lang.settings_media_auto_enable_last_description
+import me.him188.ani.app.ui.lang.settings_media_full_search_mode
+import me.him188.ani.app.ui.lang.settings_media_full_search_mode_always
+import me.him188.ani.app.ui.lang.settings_media_full_search_mode_description
+import me.him188.ani.app.ui.lang.settings_media_full_search_mode_manual
+import me.him188.ani.app.ui.lang.settings_media_full_search_mode_on_panel
 import me.him188.ani.app.ui.lang.settings_media_cache_ttl_15min
 import me.him188.ani.app.ui.lang.settings_media_cache_ttl_1d
 import me.him188.ani.app.ui.lang.settings_media_cache_ttl_1h
@@ -531,10 +537,21 @@ internal fun TvSettingsItemsBuilder.mediaSelectorItems() {
         read = { it.autoEnableLastSelected },
         write = { copy(autoEnableLastSelected = it) },
     )
-    toggle(
-        selector, Lang.settings_media_always_full_search, Lang.settings_media_always_full_search_description,
-        read = { it.alwaysFullSearch },
-        write = { copy(alwaysFullSearch = it) },
+    // 完整搜索: 始终 / 打开选源面板时 / 只手动; 没选过的按设备定 (系统标成低内存的设备只手动)
+    choice(
+        selector, Lang.settings_media_full_search_mode, Lang.settings_media_full_search_mode_description,
+        options = { FullSearchMode.entries },
+        label = {
+            tvText(
+                when (it) {
+                    FullSearchMode.Always -> Lang.settings_media_full_search_mode_always
+                    FullSearchMode.OnPanel -> Lang.settings_media_full_search_mode_on_panel
+                    FullSearchMode.Manual -> Lang.settings_media_full_search_mode_manual
+                },
+            )
+        },
+        read = { it.effectiveFullSearchMode(GlobalKoin.getOrNull<LowRamDevice>()?.value == true) },
+        write = { copy(fullSearchMode = it) },
     )
 }
 

@@ -654,6 +654,9 @@
     <string name="tv_source_episodes_whole_season">Full season</string>
     <string name="tv_source_searching">Searching %1$d/%2$d sources</string>
     <string name="tv_source_searched">Searched %1$d sources</string>
+    <string name="tv_source_search_paused">Paused · %1$d/%2$d searched</string>
+    <string name="tv_source_full_search_paused">Paused</string>
+    <string name="tv_source_search_paused_for_stutter">Searching made playback stutter, so Full search is now Manual only. You can change it back in Settings</string>
     <string name="tv_source_bt">BT and cache</string>
     <string name="tv_source_manual">Browse manually</string>
     <string name="tv_source_failed">Failed sources</string>
@@ -748,8 +751,11 @@
     <string name="settings_media_excluded_alliance_description">Regular expressions are supported, separated by commas. Media from matching subtitle groups are never selected automatically: they are listed under excluded media and can still be picked manually. Cached episodes are not affected\n\nExample: Group A, Group B</string>
     <string name="settings_media_excluded_alliance_none">None</string>
     <string name="media_selector_full_search">Full search</string>
-    <string name="settings_media_always_full_search">Always search all sources</string>
-    <string name="settings_media_always_full_search_description">When off, sources still searching are paused once the video starts playing, to reduce stutter; they continue when you open the source panel or turn on Full search. When on, every source is always searched to the end.</string>
+    <string name="settings_media_full_search_mode">Full search</string>
+    <string name="settings_media_full_search_mode_description">What happens to sources still searching once the video starts playing (before that, all sources search together). When the source panel opens: paused after playback starts, and searched to the end when you open the source panel. Manual only: paused after playback starts, and only continued when you press Full search in the source panel; devices with little memory use this by default. Always: every source is always searched to the end</string>
+    <string name="settings_media_full_search_mode_always">Always</string>
+    <string name="settings_media_full_search_mode_on_panel">When the source panel opens</string>
+    <string name="settings_media_full_search_mode_manual">Manual only</string>
     <string name="settings_media_source_subscription_updating">Updating %1$d/%2$d</string>
     <string name="settings_media_source_test_progress">Done %1$d/%2$d · Failed %3$d</string>
     <!-- 网盘 (设置 - 数据源), 网盘名与扫码用的 App 名来自网盘的协议 -->
