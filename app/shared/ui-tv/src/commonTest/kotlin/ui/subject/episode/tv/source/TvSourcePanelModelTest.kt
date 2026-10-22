@@ -194,6 +194,26 @@ class TvSourcePanelModelTest {
     }
 
     @Test
+    fun `paused sources show as paused in the status and on the full search command`() {
+        val paused = MediaSourceResultListPresentation(
+            listOf(
+                sourceResult("web-a", MediaSourceKind.WEB),
+                sourceResult("web-b", MediaSourceKind.WEB, MediaSourceFetchState.Paused(1)),
+                sourceResult("dmhy", MediaSourceKind.BitTorrent, MediaSourceFetchState.Paused(1)),
+            ),
+        )
+        fun fullSearch(content: TvSourcePanelContent) = content.rail.single { it.id == TvSourceRailKeys.ACTION_FULL_SEARCH }.trailing
+        val content = buildTvSourcePanel(input(sources = paused), TvSourceNav(), strings)
+        // 暂停的不算查完: 写已暂停、已查 1/3, 不写成「已查询」
+        assertEquals("searchPaused 1/3", content.status)
+        assertEquals("fullSearchPaused", fullSearch(content))
+        // 开了完整搜索写「开」; 没有暂停的写「关」
+        assertEquals("on", fullSearch(buildTvSourcePanel(input(sources = paused).copy(fullSearch = true), TvSourceNav(), strings)))
+        assertEquals("off", fullSearch(buildTvSourcePanel(input(), TvSourceNav(), strings)))
+        assertEquals("searched 5", buildTvSourcePanel(input(), TvSourceNav(), strings).status)
+    }
+
+    @Test
     fun `a paused source without results shows a pause icon in place and is not folded as empty`() {
         val sources = MediaSourceResultListPresentation(
             listOf(
@@ -1083,6 +1103,8 @@ class TvSourcePanelModelTest {
         playbackFailed = "playbackFailed",
         playbackBuffering = "playbackBuffering",
         settings = "settings",
+        searchPaused = "searchPaused %1\$d/%2\$d",
+        fullSearchPaused = "fullSearchPaused",
         resumeSource = "resumeSource",
         pausedHint = "pausedHint",
         manualSource = "manualSource %1\$s",

@@ -136,6 +136,7 @@ import me.him188.ani.app.ui.subject.episode.sourceSearchProgress
 import me.him188.ani.app.ui.subject.episode.tv.source.PrewarmTvSourcePanelStrings
 import me.him188.ani.app.ui.subject.episode.tv.source.PrewarmTvSourcePanelView
 import me.him188.ani.app.ui.subject.episode.tv.source.TvPlayerSourcePanel
+import me.him188.ani.app.ui.subject.episode.tv.source.TvSearchStutterGuard
 import me.him188.ani.app.ui.subject.episode.tv.source.TvSourcePanelController
 import me.him188.ani.app.ui.subject.episode.video.SkipOpEdKind
 import me.him188.ani.app.ui.subject.episode.video.SkipOpEdTip
@@ -1916,6 +1917,7 @@ fun TvEpisodeScreenContent(
                 // 选源面板: 从上沿垂下来, 下面露出画面与字幕. 退场时吞掉按键 (焦点交还图标行之前那一两帧)
                 PrewarmTvSourcePanelStrings()
                 PrewarmTvSourcePanelView(canPrewarmNow = { overlay.layer == TvPlayerLayer.HIDDEN })
+                TvSearchStutterGuard(vm)
                 AniAnimatedVisibility(
                     visible = overlay.layer == TvPlayerLayer.SOURCES,
                     modifier = Modifier.matchParentSize(),
