@@ -13,6 +13,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.runtime.Composable
 import me.him188.ani.app.navigation.AniNavigator
 import me.him188.ani.app.ui.foundation.AniUiBehavior
+import me.him188.ani.app.ui.pad.InstallPadPageVariants
 
 /*
  * 形态适配接缝 (phone 变体): 每个 formFactor flavor 各提供一份同名实现,
@@ -22,9 +23,10 @@ import me.him188.ani.app.ui.foundation.AniUiBehavior
 /** 指针设备 (触屏/鼠标) 的界面行为. */
 internal val formFactorUiBehavior: AniUiBehavior get() = AniUiBehavior.Default
 
-/** 无需安装任何界面变体, 原样组合 ([aniNavigator] 只有 TV 形态用得到). */
+/** 装上平板触屏页面 (与 iOS 同一套, 见 ui-pad); [aniNavigator] 只有 TV 形态用得到. */
 @Composable
-internal fun InstallFormFactorUi(aniNavigator: AniNavigator, content: @Composable () -> Unit) = content()
+internal fun InstallFormFactorUi(aniNavigator: AniNavigator, content: @Composable () -> Unit) =
+    InstallPadPageVariants(content)
 
 /** 应用状态读出来之前什么都不画, 露出窗口底色. */
 @Composable

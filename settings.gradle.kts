@@ -112,6 +112,7 @@ includeProject(":app:shared:ui-onboarding")
 includeProject(":app:shared:ui-mediaselect")
 includeProject(":app:shared:ui-tv") // Android TV (遥控器) 专属界面, 只含 android target
 includeProject(":app:shared:ui-settings-catalog") // 设置清单: 设置项写成的数据, 各端的设置页按它画 (现在是电视版)
+includeProject(":app:shared:ui-pad") // 平板触屏界面 (照电视版海报墙), phone 变体与 iOS 共用
 includeProject(":app:shared:ui-episode")
 includeProject(":app:shared:ui-exprovider")
 includeProject(":app:shared:video-player:video-player-api", "app/shared/video-player/api")
