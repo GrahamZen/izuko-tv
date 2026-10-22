@@ -19,6 +19,7 @@ import me.him188.ani.app.data.models.preference.DebugSettings
 import me.him188.ani.app.data.models.preference.EndpointSelection
 import me.him188.ani.app.data.models.preference.MediaCacheSettings
 import me.him188.ani.app.data.models.preference.MediaPreference
+import me.him188.ani.app.data.models.preference.LowRamDevice
 import me.him188.ani.app.data.models.preference.MediaSelectorSettings
 import me.him188.ani.app.data.models.preference.PikPakConfig
 import me.him188.ani.app.data.models.preference.ProxySettings
@@ -50,6 +51,10 @@ import me.him188.ani.app.ui.settings.account.AccountSettingsState
 import me.him188.ani.app.ui.settings.tabs.about.OpenSourceLibraryInfo
 import me.him188.ani.app.ui.settings.tabs.about.OpenSourceLicenseInfo
 import me.him188.ani.app.ui.settings.tabs.media.PikPakDriveUsagePresentation
+import org.koin.core.context.startKoin
+import org.koin.core.context.stopKoin
+import org.koin.dsl.module
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -60,6 +65,9 @@ import kotlin.test.assertTrue
  * @see buildTvSettingsPage
  */
 class TvSettingsModelTest {
+    @AfterTest
+    fun stopKoinAfterTest() = stopKoin()
+
     private data class Fake(
         val enabled: Boolean = false,
         val level: Int = 2,
@@ -305,6 +313,8 @@ class TvSettingsModelTest {
 
     @Test
     fun `real catalog builds every category with unique ids and checked options`() {
+        // 「完整搜索」那一项按设备内存小不小定默认档, 内存小不小由 Koin 给 (LowRamDevice)
+        startKoin { modules(module { single { LowRamDevice(false) } }) }
         val values = TvSettingsValues(
             mapOf(
                 TvSettingKeys.ui to UISettings.Default,

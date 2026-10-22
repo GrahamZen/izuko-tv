@@ -23,6 +23,7 @@ import android.system.Os
 import android.system.OsConstants
 import me.him188.ani.app.platform.perf.PerfTimeline
 import me.him188.ani.app.ui.remote.tr
+import me.him188.ani.app.ui.subject.episode.tv.source.TvSearchStutter
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 import java.io.File
@@ -127,6 +128,9 @@ internal object TvPlaybackSentinel : PerfTimeline.Sink {
                 if (waitedMs >= STALL_MARK_MS && stallTop == null) stallTop = safe("stack") { mainStackTop() }
                 if (waitedMs >= STALL_TRIGGER_MS && !stallTriggered) {
                     stallTriggered = true
+                    if (safe("searchBlamed") { PerfPlaybackAnalysis.searchBlamed(timeline.snapshot(now - DETECT_WINDOW_NS, now), now, mainStalled = true) } == true) {
+                        TvSearchStutter.report(episode)
+                    }
                     trigger(tr("主线程卡住了 1 秒以上"), now)
                 }
             }
@@ -259,8 +263,11 @@ internal object TvPlaybackSentinel : PerfTimeline.Sink {
     }
 
     private fun detect(now: Long) {
+        val snapshot = timeline.snapshot(now - DETECT_WINDOW_NS, now)
+        val reason = PerfPlaybackAnalysis.detect(snapshot, now) ?: return
+        // 搜索导致的: 让播放页改「只手动」、暂停搜索 (见 TvSearchStutter). 跟自动录制各管各的, 录过这一集照样判
+        if (PerfPlaybackAnalysis.searchBlamed(snapshot, now)) TvSearchStutter.report(episode)
         if (!TvPerfDiagnostics.autoCaptureAllowed(episode)) return
-        val reason = PerfPlaybackAnalysis.detect(timeline.snapshot(now - DETECT_WINDOW_NS, now), now) ?: return
         trigger(reason, now)
     }
 

@@ -180,6 +180,8 @@ import me.him188.ani.app.ui.lang.tv_source_retry
 import me.him188.ani.app.ui.lang.tv_source_retry_hint
 import me.him188.ani.app.ui.lang.tv_source_searched
 import me.him188.ani.app.ui.lang.tv_source_searching
+import me.him188.ani.app.ui.lang.tv_source_full_search_paused
+import me.him188.ani.app.ui.lang.tv_source_search_paused
 import me.him188.ani.app.ui.lang.tv_source_settings
 import me.him188.ani.app.ui.lang.tv_source_show_excluded
 import me.him188.ani.app.ui.lang.tv_source_show_others
@@ -586,6 +588,8 @@ private val TV_SOURCE_STRING_RESOURCES: List<StringResource> = listOf(
     Lang.tv_source_playback_failed,
     Lang.tv_source_playback_buffering,
     Lang.tv_source_settings,
+    Lang.tv_source_search_paused,
+    Lang.tv_source_full_search_paused,
 )
 
 /** 面板的全部文案 (见 [TvSourceStrings]). */
@@ -711,6 +715,8 @@ fun rememberTvSourceStrings(): TvSourceStrings {
             playbackFailed = next(),
             playbackBuffering = next(),
             settings = next(),
+            searchPaused = next(),
+            fullSearchPaused = next(),
             details = details,
             timeZone = TimeZone.currentSystemDefault(),
         )
