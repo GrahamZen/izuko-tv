@@ -40,6 +40,7 @@ kotlin {
     }
     sourceSets.iosMain.dependencies {
         implementation(libs.mediamp.ffmpeg)
+        implementation(projects.app.shared.uiPad)
     }
 }
 
