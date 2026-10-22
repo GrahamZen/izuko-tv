@@ -53,7 +53,7 @@ import org.jetbrains.compose.resources.stringResource
 
 /**
  * 轮播区的画面与文字 (压在卡片列表底下): [source] 是轮播这一部; 文字块下面留出按钮那一排 (按钮另起一层, 见 [TvPadCarouselButtons]).
- * 换一部的过渡固定一种 (同自动翻页), 手势不拖着画面走.
+ * 换一部的过渡固定一种 (同自动翻页), 手势不拖着画面走. [backdropShift] 见 [TvPadHeroLayer].
  */
 @Composable
 internal fun TvPadCarouselLayer(
@@ -63,6 +63,7 @@ internal fun TvPadCarouselLayer(
     textStart: Dp,
     pageWidth: Dp,
     modifier: Modifier = Modifier,
+    backdropShift: () -> Float = { 0f },
 ) {
     TvPadHeroLayer(
         source,
@@ -70,6 +71,7 @@ internal fun TvPadCarouselLayer(
         textBottom = TV_PAD_CAROUSEL_TEXT_BOTTOM,
         pageWidth = pageWidth,
         modifier = modifier,
+        backdropShift = backdropShift,
     ) {
         if (count > 1) {
             TvPadCarouselDots(

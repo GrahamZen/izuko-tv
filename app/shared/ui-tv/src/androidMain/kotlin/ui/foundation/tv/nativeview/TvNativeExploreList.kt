@@ -160,6 +160,11 @@ class TvNativeExploreList(
         return super.dispatchTouchEvent(ev)
     }
 
+    override fun onInterceptTouchEvent(e: MotionEvent): Boolean {
+        if (freeTouchScroll) stopScrollOnTouchDown(e)
+        return super.onInterceptTouchEvent(e)
+    }
+
     /** 手指拖完松手时的竖向速度 (见 [fling]); 页面停稳就近停时取走 ([takeTouchFlingVelocity]). */
     private var touchFlingVelocity = 0
 
@@ -446,6 +451,7 @@ class TvNativeExploreList(
                     fadeDistancePx = m.fadeDistancePx,
                     anchored = fixedAnchor,
                 ).also { row ->
+                    row.tapStopsScroll = { freeTouchScroll }
                     row.addOnScrollListener(
                         object : OnScrollListener() {
                             override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {

@@ -282,6 +282,25 @@ class TvNativeGridPageTouchRulesTest {
     }
 
     @Test
+    fun `in hero a tap below a single row exits hero`() {
+        // 只有一排卡 (同用户报的那种分类): 卡片下面没有别的行, 外包框只有这一排那么高
+        host.onMain { page.setCards(0, testCards(6)) }
+        host.waitUntil("一排卡排出来") { (page.grid?.childCount ?: 0) in 1..6 }
+        tapCard(2)
+        assertEquals(listOf(true), heroChanges)
+        val (x, y) = host.onMain {
+            val card = cardAt(2)
+            val rect = card.coverRectInWindow()
+            val window = IntArray(2)
+            card.rootView.getLocationOnScreen(window)
+            window[0] + rect.exactCenterX() to window[1] + rect.bottom + 200f
+        }
+        tapAt(x, y)
+        assertEquals(listOf(true, false), heroChanges, "点那一排下面的空白处退回卡片墙")
+        assertEquals(emptyList(), clicks, "没打开卡片")
+    }
+
+    @Test
     fun `the wall draws no focus look in touch mode until hero`() {
         host.onMain { page.grid!!.focusItem(0) }
         host.waitUntil("第 0 张拿到焦点") { cardAt(0).isFocused }

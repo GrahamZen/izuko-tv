@@ -330,7 +330,7 @@ internal fun TvExplorationComposeWall(
     // 触屏: hero 态里手指一拖列表就退回卡片墙, 卡片跟着手指走 (见 exitHeroInPlace)
     LaunchedEffect(surface) {
         surface.listState.interactionSource.interactions.collect { interaction ->
-            if (interaction is DragInteraction.Start && surface.touchMode) surface.exitHeroInPlace()
+            if (interaction is DragInteraction.Start && surface.touchMode) surface.exitHeroInPlace(byDrag = true)
         }
     }
     // 点开: 途中按返回取消, 进了详情页回到本页倒放
@@ -486,26 +486,35 @@ internal fun TvExplorationComposeWall(
                 modifier = Modifier
                     .tvWallPlace(x = 0, y = 0, width = -1, height = padCarouselHeightPx)
                     .graphicsLayer {
-                        // 跟着列表一起滚 (轮播区就是列表顶上那一段)
+                        // 跟着列表一起滚 (轮播区就是列表顶上那一段); 与聚焦卡互换时随 mode 淡入淡出
                         translationY = -surface.scrolledPx * (1f - mode.value)
-                        alpha = if (showsCard) 0f else surface.carouselAlpha()
+                        alpha = surface.carouselAlpha() * (1f - mode.value)
                     },
+                // 同电视: 往下翻时图比文字与列表多上移一截 (见 carouselShift), 两者错开
+                backdropShift = { -(surface.carouselShift() - surface.scrolledPx) * (1f - mode.value) },
             )
         }
-        // 平板版画法的 hero 态: 同轮播一套画法, 铺到聚焦行的组标题为止, 跟着 hero 时间线显隐 (底下铺着整页模糊背景时不另铺模糊底)
-        if (padCarousel && showsCard) {
+        // 平板版画法的 hero 态: 同轮播一套画法, 图铺到聚焦行的卡片顶 (组标题压在图下缘的渐隐里, 同网格页), 文字排在组标题之上;
+        // 跟着 hero 时间线显隐 (底下铺着整页模糊背景时不另铺模糊底). 回轮播时 (换过去的那段, 见 mode) 随 mode 淡出, 轮播在它底下淡入
+        val padCardLeaving by remember(mode) { derivedStateOf { mode.value > 0f } }
+        if (padCarousel && (showsCard || padCardLeaving)) {
             TvPadHeroLayer(
                 surface.card,
                 textStart = with(density) { (metrics.bleedLeftPx + metrics.heroStartPx).toDp() },
-                textBottom = TV_PAD_HERO_TEXT_BOTTOM,
+                textBottom = TV_PAD_HERO_TEXT_BOTTOM + with(density) { metrics.headerPx.toDp() },
                 pageWidth = with(density) { metrics.pageWidthPx.toDp() },
-                modifier = Modifier.tvWallPlace(x = 0, y = 0, width = -1, height = metrics.listTopPx + metrics.heroHeaderTopPx),
+                modifier = Modifier.tvWallPlace(
+                    x = 0,
+                    y = 0,
+                    width = -1,
+                    height = metrics.listTopPx + metrics.heroHeaderTopPx + metrics.headerPx,
+                ),
                 // 没有按钮, 多放几行简介
                 summaryMaxLines = TV_PAD_HERO_WALL_SUMMARY_LINES,
                 ownBlur = !heroBlur,
                 // 点开时跟着卡片淡没, 露出底下变清晰的那张
-                backdropAlpha = { timeline.content * (1f - wallOpen.fade.value) },
-                textAlpha = { timeline.text * (1f - wallOpen.fade.value) },
+                backdropAlpha = { timeline.content * (1f - wallOpen.fade.value) * (if (showsCard) 1f else mode.value) },
+                textAlpha = { timeline.text * (1f - wallOpen.fade.value) * (if (showsCard) 1f else mode.value) },
             )
         }
 
@@ -1252,17 +1261,39 @@ private class TvExploreComposeSurface(
     fun consumeStayInPlace(): Boolean = stayInPlace.also { stayInPlace = false }
 
     /**
-     * 触屏上退出 hero 态 (点卡片以外的地方、拖列表、按返回): hero 背景与文字照常淡出, 列表停在原地 (不滚回正中); 按触屏的规矩走时焦点停回
-     * 入口节点 (见 [parkFocus]).
+     * 触屏上退出 hero 态 (点卡片以外的地方、拖列表 ([byDrag])、按返回): hero 背景与文字照常淡出, 列表停在原地 (不滚回正中); 按触屏的规矩走时
+     * 焦点停回入口节点 (见 [parkFocus]). 聚焦的是第一排时照电视回轮播 (见 [exitHeroToTop]).
      */
-    fun exitHeroInPlace() {
+    fun exitHeroInPlace(byDrag: Boolean = false) {
         if (!timeline.active) return
         if (touchMode) {
+            if (exitHeroToTop(scrollToTop = !byDrag)) return
             parkFocus()
         } else {
             stayInPlace = true
             setHeroActive(false, animated = true)
         }
+    }
+
+    /**
+     * 触屏上从第一排的 hero 态退出: 同电视在首行按上回轮播 ([onHeroButtonFocused]) —— 那一排当场让出, 聚焦卡还看得见时就换到轮播
+     * (两层交叉淡入, 见 mode), 列表滚回顶 ([scrollToTop]; 手指拖动引起的不滚, 由手指带着). 焦点停回入口节点 (同 [parkFocus]).
+     */
+    private fun exitHeroToTop(scrollToTop: Boolean): Boolean {
+        val key = focusedRowKey ?: return false
+        val first = items.indexOfFirst { it is TvNativeExploreItem.Row }
+        if (first < 0 || items[first].key != key) return false
+        pending = null
+        deferred = null
+        heldFocus = null
+        parkJob?.cancel()
+        scope.launch { runCatching { state.focusRequester.requestFocus() } }
+        // 退出时的停位由这里定 (滚回顶或由手指带), 不按卡片墙的停位滚
+        stayInPlace = true
+        setHeroActive(false, animated = true)
+        reportParked()
+        if (scrollToTop) scrollTo(0, TvScrollSpring.Far)
+        return true
     }
 
     private fun setHeroActive(active: Boolean, animated: Boolean) {
