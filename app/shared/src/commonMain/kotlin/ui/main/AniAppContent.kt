@@ -109,6 +109,7 @@ import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.widgets.BackNavigationIconButton
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.TopAppBarActionButton
+import me.him188.ani.app.ui.foundation.widgets.toastWithAction
 import me.him188.ani.app.ui.foundation.focus.rememberTvEntryScrollGuard
 import me.him188.ani.app.ui.foundation.focus.tvEntryScrollGuard
 import me.him188.ani.app.ui.foundation.focus.TvFocusRestoreGate
@@ -223,7 +224,10 @@ fun AniAppContent(aniNavigator: AniNavigator) {
             playbackSessionHolder.notices.collect {
                 val sound = noticeSound.value
                 val text = noticeTexts.textOf(it) + if (sound != NoticeSoundKind.None) soundHint else ""
-                toaster.toast(text)
+                // 触屏上这条点得到 (见 toastWithAction): 点了回到这个会话的播放页, 同侧边栏「正在播放」(force: 回到已经在播的这一集)
+                toaster.toastWithAction(text) {
+                    playbackSessionHolder.session?.let { aniNavigator.navigateEpisodeDetails(it.subjectId, it.episodeId, force = true) }
+                }
                 playNoticeSound(sound)
             }
         }

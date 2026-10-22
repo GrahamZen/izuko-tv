@@ -13,6 +13,7 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -29,6 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
@@ -139,6 +141,8 @@ class ToastViewModel : AbstractViewModel() {
 @Composable
 fun Toast(
     showing: () -> Boolean,
+    /** 非 null 时整条可点 (见 ActionToastHost). */
+    onClick: (() -> Unit)? = null,
     content: @Composable () -> Unit
 ) = BoxWithConstraints(Modifier.fillMaxSize()) box@{
     val px640dp = with(LocalDensity.current) { 640.dp.roundToPx() }
@@ -148,6 +152,7 @@ fun Toast(
     val maxToastWidth = max(minToastWidth, min(constraints.maxWidth, px640dp))
 
     val currentContent by rememberUpdatedState(content)
+    val currentOnClick by rememberUpdatedState(onClick)
 
     AniAnimatedVisibility(
         visible = showing(),
@@ -169,7 +174,8 @@ fun Toast(
         },
     ) {
         Surface(
-            modifier = Modifier.padding(horizontal = 60.dp),
+            modifier = Modifier.padding(horizontal = 60.dp).clip(RoundedCornerShape(15.dp))
+                .then(currentOnClick?.let { Modifier.clickable(onClick = it) } ?: Modifier),
             shape = RoundedCornerShape(15.dp),
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             shadowElevation = 4.dp,
