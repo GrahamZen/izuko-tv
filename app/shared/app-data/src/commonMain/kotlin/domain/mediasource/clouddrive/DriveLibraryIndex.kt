@@ -137,7 +137,7 @@ internal class DriveLibraryIndex(
             if (depth == 1 && results.all { it.isFailure }) throw results.first().exceptionOrNull()!!
             failed += results.count { it.isFailure }
             val children = results.flatMap { it.getOrNull().orEmpty() }
-            for (child in children) entries.putIfAbsent(child.fid, child)
+            for (child in children) entries.getOrPut(child.fid) { child }
             level = children.filter { it.dir }.map { it.fid }
         }
         logger.info {
