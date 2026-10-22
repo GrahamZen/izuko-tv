@@ -15,7 +15,6 @@ import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.InteractionSource
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,10 +42,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -56,14 +53,11 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.itemContentType
 import androidx.paging.compose.itemKey
-import me.him188.ani.app.tools.formatDateTime
 import me.him188.ani.app.ui.comment.UIComment
-import me.him188.ani.app.ui.foundation.avatar.AvatarImage
 import me.him188.ani.app.ui.foundation.dialogs.DialogWindowDimAmount
 import me.him188.ani.app.ui.foundation.dialogs.dialogWindowBlurBehind
 import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
-import me.him188.ani.app.ui.foundation.tv.ProvideRingOnlyFocus
 import me.him188.ani.app.ui.foundation.tv.TvImageZoomState
 import me.him188.ani.app.ui.foundation.tv.TvZoomedImageOverlay
 import me.him188.ani.app.ui.foundation.tv.tvImageZoomKeys
@@ -91,7 +85,6 @@ import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFade
 import me.him188.ani.app.ui.foundation.widgets.fillMaxHeightAtMost
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.subject_episode_close
-import me.him188.ani.app.ui.rating.FiveRatingStars
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -331,9 +324,7 @@ private data object NoIndication : IndicationNodeFactory {
 }
 
 /**
- * 评论列表的 TV 大弹窗 (条目评价 / 人物评论共用): 标题 (+可选"写评价"动作) + 评论卡片网格.
- * 卡片为紧凑纯文本形态 (头像 + 昵称 + 日期 + 评分星 + 正文摘要), 点击展开/收起全文;
- * 富文本图片/贴纸在 TV 上略过 (与播放器评论面板一致).
+ * 评论列表的 TV / 平板大弹窗 (条目评价 / 人物评论共用): 标题 (+可选"写评价"动作), 下面是两列瀑布流的评论 ([CommentsList]).
  */
 @Composable
 internal fun CommentsGridDialog(
@@ -345,80 +336,8 @@ internal fun CommentsGridDialog(
     /** 打开时落在第几条 (从详情页的某张评论卡进来时是那一条). */
     initialFocusIndex: Int = 0,
 ) {
-    ViewAllGridDialog(
-        title = title,
-        items = comments,
-        onDismissRequest = onDismissRequest,
-        cellMinWidth = COMMENT_GRID_CARD_MIN_WIDTH,
-        headerAction = headerAction,
-        initialFocusIndex = initialFocusIndex,
-    ) { comment, modifier ->
-        CommentGridCard(comment, showRating = showRating, modifier = modifier)
-    }
-}
-
-/** 单条评论卡: 聚焦高亮, 确认键展开/收起全文. */
-@Composable
-private fun CommentGridCard(
-    comment: UIComment,
-    showRating: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    var expanded by remember { mutableStateOf(false) }
-    val interactionSource = remember { MutableInteractionSource() }
-    val focused by interactionSource.collectIsFocusedAsState()
-    ProvideRingOnlyFocus {
-        Surface(
-            onClick = { expanded = !expanded },
-            modifier = modifier,
-            shape = RoundedCornerShape(12.dp),
-            // 玻璃面板里常态是淡白的玻璃底; 触屏上没有聚焦效果
-            color = if (focused && !LocalTvTouchInputEnabled.current) {
-                MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = TV_CARD_CONTAINER_FOCUSED_ALPHA)
-            } else {
-                aniPanelItemColor(MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = TV_CARD_CONTAINER_ALPHA))
-            },
-            border = if (focused && !LocalTvTouchInputEnabled.current) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
-            interactionSource = interactionSource,
-        ) {
-            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    AvatarImage(
-                        comment.author?.avatarUrl,
-                        Modifier.size(24.dp).clip(CircleShape),
-                    )
-                    Text(
-                        comment.author?.nickname ?: comment.author?.id?.toString() ?: "",
-                        Modifier.weight(1f, fill = false),
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        formatDateTime(comment.createdAt, showTime = false),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                    )
-                    if (showRating) {
-                        comment.rating?.takeIf { it > 0 }?.let { rating ->
-                            FiveRatingStars(rating, starSize = 12.dp)
-                        }
-                    }
-                }
-                Text(
-                    remember(comment) { comment.content.toPlainText() },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = if (expanded) Int.MAX_VALUE else TV_COMMENT_COLLAPSED_MAX_LINES,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
+    ViewAllPanelDialog(title, onDismissRequest, headerAction = headerAction) { initialFocus ->
+        CommentsList(comments, showRating, initialFocusIndex, initialFocus, Modifier.weight(1f, fill = false))
     }
 }
 
@@ -432,17 +351,3 @@ internal val FOCUS_HIGHLIGHT_CARD_PADDING = 10.dp
 /** TV 卡片容器不透明度 (未聚焦/聚焦档): 半透明隐约透出下层背景, 不压住 backdrop. */
 internal const val TV_CARD_CONTAINER_ALPHA = 0.45f
 internal const val TV_CARD_CONTAINER_FOCUSED_ALPHA = 0.75f
-
-/**
- * 评论卡最小宽度 (自适应分列).
- *
- * 取 360dp 是为了在 TV 的弹窗里**分成两列**: 弹窗宽 0.85 屏 = 816dp, 去掉 24dp 内边距剩 768dp,
- * `(768 + 12) / (360 + 12) = 2` 列, 每列 378dp. 420dp 时只有一列 —— 一屏整好放得下 2 张卡,
- * 详情页预览的第 3 张 (见 TV_REVIEW_PREVIEW_COUNT) 只露半截, 从它进来时焦点落上去会触发
- * "最小滚动把它补全", 观感是开窗之后自己滚一下 (用户 2026-09-15: "第三个评价会在下面然后跑到中间").
- * 两列之后三张卡分占两行, 全在首屏里, 滚动量恒为 0 —— 不靠压掉动画去遮掩, 而是不让它需要滚.
- */
-private val COMMENT_GRID_CARD_MIN_WIDTH = 360.dp
-
-/** 评论卡折叠态正文最大行数 (确认键展开全文). */
-private const val TV_COMMENT_COLLAPSED_MAX_LINES = 5
