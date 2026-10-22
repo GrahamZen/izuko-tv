@@ -160,6 +160,8 @@ dependencies {
     // TV (遥控器) 专属界面与主屏频道 API: 只进 tv 变体, phone 包里一个类都没有
     "tvImplementation"(projects.app.shared.uiTv)
     "tvImplementation"(libs.androidx.tvprovider)
+    // 平板触屏界面 (照电视版海报墙): phone 变体与 iOS 共用同一套页面
+    "phoneImplementation"(projects.app.shared.uiPad)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
