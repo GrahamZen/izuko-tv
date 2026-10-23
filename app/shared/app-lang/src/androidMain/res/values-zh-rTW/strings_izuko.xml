@@ -1036,4 +1036,10 @@
     <string name="touch_login_mirror_credentials">要先開啟「%1$s」，不然令牌驗證發不出去。開啟後，令牌、收藏和觀看進度都會經過第三方鏡像，對方能看到並使用你的帳號。</string>
     <string name="touch_login_mirror_credentials_enable">我了解風險，開啟</string>
     <string name="media_selector_item_published_before_airing">早於本集開播</string>
+    <string name="all_episodes_tab_all">全部</string>
+    <string name="all_episodes_tab_specials">特別篇</string>
+    <string name="all_episodes_hint_touch">點選播放 · 長按查看詳情</string>
+    <string name="all_episodes_hint_remote">按確定播放 · 長按確定查看詳情</string>
+    <string name="all_episodes_view_stills">劇照卡</string>
+    <string name="all_episodes_view_numbers">只顯示集數</string>
 </resources>
