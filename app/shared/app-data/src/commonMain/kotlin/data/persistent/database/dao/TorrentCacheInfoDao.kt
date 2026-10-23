@@ -55,9 +55,8 @@ data class TorrentCacheInfoEntity(
      * 已发布版本按资源记录的完成状态. 只在该资源的某条剧集记录还没有 [TorrentCacheEpisodeEntity] 时读取,
      * 见 `TorrentMediaCacheEngine`; 新记录不再写入.
      */
-    // 这四列要 @ColumnInfo(defaultValue): fork 的 21 -> 22 (MIGRATION_21_22) 把 torrent_cache
-    // 重建成了"种子级"表, 已发布版本的库里没有它们; 24 -> 25 要把它们加回来给上游的回退逻辑读,
-    // 而 Room 的 AutoMigration 不允许加没有默认值的 NOT NULL 列.
+    // 这四列的 @ColumnInfo(defaultValue) 是已发布的库结构的一部分 (Room 打开库时按建表语句核对),
+    // 去掉要升库版本并重建这张表.
     @ColumnInfo(defaultValue = "0")
     val completed: Boolean = false,
     /**
