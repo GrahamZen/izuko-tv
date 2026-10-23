@@ -24,7 +24,6 @@ import me.him188.ani.app.ui.mediafetch.MediaPreferenceItemState
 import me.him188.ani.app.ui.mediafetch.MediaSelectorState
 import me.him188.ani.app.ui.mediafetch.MediaSourceResultListPresentation
 import me.him188.ani.app.ui.mediafetch.MediaSourceResultPresentation
-import me.him188.ani.app.ui.mediaselect.MediaSelectorMode
 import me.him188.ani.app.ui.mediaselect.bt.BtListPresentation
 import me.him188.ani.app.ui.mediaselect.bt.BtRow
 import me.him188.ani.app.ui.mediaselect.bt.BtRowExclusion
@@ -160,7 +159,6 @@ class TvSourcePanelModelTest {
         selected: DefaultMedia? = null,
         bt: BtListPresentation = bt(listOf(BtRow(btDmhy, null, false), BtRow(btMikan, null, false), BtRow(btOther, null, false))),
         manual: ManualBrowsePresentation? = null,
-        initialMode: MediaSelectorMode = MediaSelectorMode.AUTO,
         sources: MediaSourceResultListPresentation = this.sources,
         webSources: List<WebSource> = this.webSources,
         nowMillis: Long = 0,
@@ -172,7 +170,6 @@ class TvSourcePanelModelTest {
         fullSearch = false,
         canEditKeywords = true,
         canCache = true,
-        initialMode = initialMode,
         nowMillis = nowMillis,
     )
 
@@ -188,8 +185,9 @@ class TvSourcePanelModelTest {
         )
         // 组的胶囊数有结果的源; 组里的源排成源那一栏, 各自数线路
         assertEquals("2", content.rail.first { it.id == TvSourceRailKeys.GROUP_ONLINE }.trailing)
-        assertEquals(listOf("web:web-a", "web:web-b"), content.sources.map { it.id })
-        assertEquals("2", content.sources.first { it.id == "web:web-a" }.trailing)
+        val online = buildTvSourcePanel(input(), TvSourceNav(railKey = TvSourceRailKeys.GROUP_ONLINE), strings)
+        assertEquals(listOf("web:web-a", "web:web-b"), online.sources.map { it.id })
+        assertEquals("2", online.sources.first { it.id == "web:web-a" }.trailing)
         assertEquals("1", content.rail.first { it.id == TvSourceRailKeys.FAILED }.trailing)
     }
 
@@ -225,7 +223,7 @@ class TvSourcePanelModelTest {
         // 选择器把暂停又没结果的、查完 0 条的都藏掉, 只给有结果的
         val content = buildTvSourcePanel(
             input(sources = sources, webSources = listOf(webSource("web-a", listOf(WebSourceChannel("线路1", webA1))))),
-            TvSourceNav(),
+            TvSourceNav(railKey = TvSourceRailKeys.GROUP_ONLINE),
             strings,
         )
         assertEquals(listOf("web:web-a", "web:web-b", TvSourceRailKeys.EMPTY_SOURCES), content.sources.map { it.id })
@@ -378,7 +376,7 @@ class TvSourcePanelModelTest {
     }
 
     @Test
-    fun `source landing in a group prefers the choice then last visited then playing then results`() {
+    fun `source landing in a group prefers the choice then last visited then results even in the playing group`() {
         val input = input().copy(
             sourceTypes = mapOf(
                 "web-z" to TvSourceType("rule", "Rule", 0),
@@ -393,9 +391,19 @@ class TvSourcePanelModelTest {
         // 没结果的排在前面也跳过
         assertEquals("web:web-a", land(TvSourceNav(railKey = group)))
         assertEquals("web:web-b", land(TvSourceNav(railKey = group, groupSources = mapOf(group to "web:web-b"))))
-        // 上次停的比正在播的优先 (回到上次到过的地方); 没停过才落正在播的
+        // 在播的组也不先落正在播的源 (回在播的那一条按表头的「正在播放」): 上次停的 → 源那一栏第一行
         assertEquals("web:web-a", land(TvSourceNav(railKey = group, groupSources = mapOf(group to "web:web-a")), selected = webB1))
-        assertEquals("web:web-b", land(TvSourceNav(railKey = group), selected = webB1))
+        assertEquals("web:web-a", land(TvSourceNav(railKey = group), selected = webB1))
+        // 第一行还在查 (没结果, 但不折): 也落它, 不跳过
+        val loadingFirst = input.copy(
+            sources = MediaSourceResultListPresentation(
+                sources.list + sourceResult("web-z", MediaSourceKind.WEB, MediaSourceFetchState.Working),
+            ),
+            selector = input.selector.copy(webSources = input.selector.webSources + webSource("web-z", emptyList()).copy(isLoading = true)),
+        )
+        val loadingContent = buildTvSourcePanel(loadingFirst, TvSourceNav(railKey = group), strings)
+        assertEquals("web:web-z", loadingContent.sources.first().id)
+        assertEquals("web:web-z", loadingContent.sourceKey)
         assertEquals("web:web-z", land(TvSourceNav(railKey = group, sourceKey = "web:web-z"), selected = webB1))
         // 落到一个源 (落回上次停的源、详情换到别的源): 落它所在的组与它
         val content = buildTvSourcePanel(input, TvSourceNav(railKey = "web:web-b"), strings)
@@ -449,7 +457,8 @@ class TvSourcePanelModelTest {
         assertEquals(TvSourceRailKeys.GROUP_ONLINE, content.railKey)
         assertEquals("web:web-a", content.sourceKey)
         val playing = content.right.rows.single { it.selected }
-        assertEquals(content.right.focusId, playing.id)
+        // 进列表落第一行, 不先落在播那一行 (回在播的那一条按表头的「正在播放」)
+        assertNull(content.right.focusId)
         assertEquals("线路2", playing.title)
         // 只有资源那一行画正在播放的图标; 源与组不换图标 (在播的看表头的「正在播放」)
         assertEquals(TvSourceRowIcon.Playing, playing.icon)
@@ -495,18 +504,16 @@ class TvSourcePanelModelTest {
         val bt = bt(listOf(BtRow(btDmhy, null, isSelected = true), BtRow(btOther, null, false)))
         val content = buildTvSourcePanel(input(selected = btDmhy, bt = bt), TvSourceNav(), strings)
         assertEquals(TvSourceRailKeys.BT, content.railKey)
-        assertEquals(content.right.rows.first { it.selected }.id, content.right.focusId)
+        assertNull(content.right.focusId)
         assertTrue(content.right.wide)
     }
 
     @Test
-    fun `without a playing resource lands on the first group with results or BT in BT mode`() {
-        val auto = buildTvSourcePanel(input(), TvSourceNav(), strings)
-        assertEquals(TvSourceRailKeys.GROUP_ONLINE, auto.railKey)
-        assertEquals("web:web-a", auto.sourceKey)
-        assertNull(auto.right.focusId)
-        val btMode = buildTvSourcePanel(input(initialMode = MediaSelectorMode.BT), TvSourceNav(), strings)
-        assertEquals(TvSourceRailKeys.BT, btMode.railKey)
+    fun `without a playing resource lands on the first rail item whether or not it has results`() {
+        // 胶囊行第一项是 BT (表头的「筛选」不算): 不按有没有结果往后跳
+        assertEquals(TvSourceRailKeys.BT, buildTvSourcePanel(input(), TvSourceNav(), strings).railKey)
+        val noBt = input(bt = bt(emptyList()), sources = MediaSourceResultListPresentation(sources.webSources))
+        assertEquals(TvSourceRailKeys.GROUP_ONLINE, buildTvSourcePanel(noBt, TvSourceNav(), strings).railKey)
     }
 
     @Test
@@ -598,11 +605,10 @@ class TvSourcePanelModelTest {
                 "web-a" to TvSourceType("rule", "Rule", 2),
             ),
         )
-        // 打开面板不落在它上面
-        val content = buildTvSourcePanel(input, TvSourceNav(), strings)
-        assertTrue(content.sourceKey != TvSourceRailKeys.web("drive"), content.sourceKey)
         val group = buildTvSourcePanel(input, TvSourceNav(railKey = TvSourceRailKeys.GROUP_DRIVE), strings)
         assertEquals(listOf(TvSourceRailKeys.web("drive"), TvSourceRailKeys.web("web-b")), group.sources.map { it.id })
+        // 进这一组落源那一栏第一行, 没登录的也不跳过 (右边是登录那一行)
+        assertEquals(TvSourceRailKeys.web("drive"), group.sourceKey)
         val row = group.sources.first()
         assertEquals("driveNotLoggedIn", row.trailing)
         assertFalse(row.dimmed)
@@ -885,7 +891,7 @@ class TvSourcePanelModelTest {
     @Test
     fun `details sequence from the rail lists the web sources`() {
         val input = input()
-        val content = buildTvSourcePanel(input, TvSourceNav(), strings)
+        val content = buildTvSourcePanel(input, TvSourceNav(railKey = TvSourceRailKeys.GROUP_ONLINE), strings)
         val sequence = buildTvSourceDetailsSequence(input, strings, content, inRail = true)
         assertEquals(listOf("web:web-a", "web:web-b"), sequence.entries.map { it.rowId })
         assertTrue(sequence.entries.all { it.railKey == null })
