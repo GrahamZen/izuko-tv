@@ -41,8 +41,8 @@ import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFade
  *   上下各让出 [verticalPx] (滚不完时内容在这一截里渐隐, 由 Compose 那侧画). 上下各多排一屏 (setExtraLayoutSpace), 连按时下一行已经排好,
  *   每一下都是同一种滚法. 按需挪 (FOCUS_SCROLL_ITEM) 不行: 只排看得见的行, 连按到底边那行时下一行还没排出来, 走 leanback 自带的
  *   「平滑滚到选中项」(按居中对齐), 与按需挪的停位不是一回事, 一会儿不滚一会儿滚一大截, 分页插数据重排时还往回闪 (Shield 实测一秒两下必现).
- * - 方向键网格自己走 (见 [tvGalleryGridTarget]): 焦点不出网格 (弹窗里没有别的去处, 放出去会被系统按屏幕位置送到垫在下面的页面上).
- *   长按连发限速同横滑行 / 纵向列表.
+ * - 方向键网格自己走 (见 [tvGalleryGridTarget]): 焦点不出网格 (弹窗里没有别的去处, 放出去会被系统按屏幕位置送到垫在下面的页面上);
+ *   上面有按钮的给 [releaseUpAtTop], 第一行按上交给外面. 长按连发限速同横滑行 / 纵向列表.
  * - 网格本身不可聚焦, 焦点只落在格上; 有格却一张都还没排出来时被送焦, 网格先接住, 排完交给选中的那格 (同 [TvNativeStripView]).
  * - 触屏 ([touchTaps]): 格子在触摸模式下不可聚焦, 点一下就是点击 (不先聚焦、不画聚焦放大), 长按派发 [onTouchLongPress]; 拖动照常滚.
  *   触屏用按需挪: 对齐策略下每次排版 (拖到底时分页插数据) 都把选中那格滚回停位, 手指拖下去的网格会跳回原处 (同海报墙触屏拖动时的切换).
@@ -79,6 +79,12 @@ class TvNativeGalleryGridView(
 
     /** 触屏长按第几格; null = 长按不做事. */
     var onTouchLongPress: ((index: Int) -> Unit)? = null
+
+    /**
+     * 第一行新按下的上键不吃, 交给外面的 Compose 按位置找 (网格上面有按钮的弹窗, 如全部选集的标题行); 按住一路走到顶时余下的连发照样吞掉,
+     * 不冲出去. false = 吞掉 (画廊: 上面没有别的去处).
+     */
+    var releaseUpAtTop: Boolean = false
 
     init {
         clipChildren = false
@@ -197,7 +203,8 @@ class TvNativeGalleryGridView(
             if (now - lastRepeatMove < limit) return true
             lastRepeatMove = now
         }
-        val target = tvGalleryGridTarget(index, adapter?.itemCount ?: 0, columns, code) ?: return true
+        val target = tvGalleryGridTarget(index, adapter?.itemCount ?: 0, columns, code)
+            ?: return !(releaseUpAtTop && code == KeyEvent.KEYCODE_DPAD_UP && event.repeatCount == 0)
         val view = findViewHolderForAdapterPosition(target)?.itemView
         // 没排出来 (连按超前): 平滑滚过去, 到位时 leanback 把焦点给它 (网格有焦点)
         if (view == null || !view.requestFocus()) setSelectedPositionSmooth(target)
