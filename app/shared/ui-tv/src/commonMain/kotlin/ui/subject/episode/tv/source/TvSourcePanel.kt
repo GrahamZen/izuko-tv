@@ -286,6 +286,7 @@ fun TvSourcePanel(
                 view.listener = object : TvSourcePanelListener {
                     override fun onRailFocused(key: String) = currentState.onRailFocused(key)
                     override fun onSourceFocused(groupKey: String, sourceKey: String) = currentState.onSourceFocused(groupKey, sourceKey)
+                    override fun onSelectionHeld(railKey: String, sourceKey: String?) = currentState.onSelectionHeld(railKey, sourceKey)
                     override fun onRightFocusChanged(inRight: Boolean) = currentState.onRightFocusChanged(inRight)
                     override fun onAction(action: TvSourceAction) = currentState.perform(action)
                     override fun onBackInRight(): Boolean = currentState.backInRight()
