@@ -1107,9 +1107,9 @@ private const val TV_NATIVE_STILL_RETRY_BACKOFF_MILLIS = 500L
  * 按住确认键时卡与框的缩放: 照 Compose 版 animateFloatAsState 的默认弹簧 (刚度 1500, 临界阻尼, 0.94 ↔ 1 这段约 70ms 落进可见阈值),
  * 用同一条临界阻尼曲线在 [TV_NATIVE_EPISODE_PRESS_MILLIS] 内走完.
  */
-private const val TV_NATIVE_EPISODE_PRESS_MILLIS = 100L
+internal const val TV_NATIVE_EPISODE_PRESS_MILLIS = 100L
 
-private val TV_NATIVE_EPISODE_PRESS_INTERPOLATOR: Interpolator = run {
+internal val TV_NATIVE_EPISODE_PRESS_INTERPOLATOR: Interpolator = run {
     // ω · 时长 = √1500 × 0.1s
     val a = 3.873f
     val end = 1f - (1f + a) * exp(-a)
