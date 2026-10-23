@@ -656,6 +656,8 @@
     <string name="tv_source_searched">Searched %1$d sources</string>
     <string name="tv_source_search_paused">Paused · %1$d/%2$d searched</string>
     <string name="tv_source_full_search_paused">Paused</string>
+    <string name="tv_source_resume_source">Continue searching this source</string>
+    <string name="tv_source_paused_hint">Paused when playback started to keep it smooth. Not finished yet</string>
     <string name="tv_source_search_paused_for_stutter">Searching made playback stutter, so Full search is now Manual only. You can change it back in Settings</string>
     <string name="tv_source_bt">BT and cache</string>
     <string name="tv_source_manual">Browse manually</string>

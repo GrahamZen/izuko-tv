@@ -155,6 +155,9 @@ enum class TvSourceRowIcon {
 
     /** 「直链」那一组. */
     Link,
+
+    /** 被暂停、还没查完的源 (胶囊与源那一栏右端, 见 [TvSourceRow.trailingIcon]). */
+    Pause,
 }
 
 /** 右端字的强调: [Error] 红 (失败 / 排除原因), [Attention] 主要文字色 (要验证 / 正在播放), 其余次要色. */
@@ -193,6 +196,8 @@ data class TvSourceRow(
     val details: TvSourceDetails? = null,
     /** 资源的特性标签 (HDR、杜比视界、全景声…, 见 [tvSourceBadgesOf]); 画在靠右的信息前面. */
     val badges: List<TvSourceBadge> = emptyList(),
+    /** 右端画的图标, 颜色同右端的字; 只在没有右端的字、也不在转圈时画 (被暂停的源画 [TvSourceRowIcon.Pause]). */
+    val trailingIcon: TvSourceRowIcon? = null,
 ) {
     val focusable: Boolean get() = style != TvSourceRowStyle.Status
 }
@@ -596,6 +601,9 @@ data class TvSourceStrings(
     /** 有数据源被暂停时 (见设置「完整搜索」) 表头状态卡片「已暂停 · 已查 %1$d/%2$d」与「完整搜索」右端的「已暂停」. */
     val searchPaused: String,
     val fullSearchPaused: String,
+    /** 选中被暂停、还没结果的源时右边那一行: 「继续查这个源」与说明「开播后为了不卡画面暂停了…」. */
+    val resumeSource: String,
+    val pausedHint: String,
     val details: MediaDetailsStrings,
     val timeZone: TimeZone,
 ) {
@@ -824,9 +832,12 @@ fun buildTvSourcePanel(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvS
             ?: g.sources.first()
     }
     val sourceKey = source?.let { TvSourceRailKeys.web(it.instanceId) }
-    // 源那一栏: 有结果的 (与还在查、要处理的) 按设置里的顺序在前, 查完没结果的折成最后一行, 展开了跟在它后面
+    // 源那一栏: 有结果的 (与还在查、要处理的) 按设置里的顺序在前, 查完没结果的折成最后一行, 展开了跟在它后面.
+    // 收着时选中的那个 (焦点多半就在它上面, 如刚按了「继续查」) 查完没结果也留在原处, 换到别的源后再折 —— 不在焦点底下抽走一行.
+    // 展开着的不用: 没结果的都看得见, 选中的照旧排在下面那段 (挪上去的话, 在下面那段里上下走一次它就跳一次)
+    val keepSelected = source?.instanceId?.takeUnless { nav.showEmptySources }
     val sources = if (group != null && group.sources.size > 1) {
-        val (empty, rest) = group.sources.partition { input.isEmptySource(it, strings) }
+        val (empty, rest) = group.sources.partition { input.isEmptySource(it, strings) && it.instanceId != keepSelected }
         fun row(source: WebSource) = webRailRow(source, playing = playingWebSource?.instanceId == source.instanceId, input, strings)
         buildList {
             rest.forEach { add(row(it)) }
@@ -941,10 +952,18 @@ private fun failedSourcesOf(input: TvSourcePanelInput): List<MediaSourceResultPr
 private fun TvSourcePanelInput.driveLoginOf(instanceId: String): CloudDriveAuthException? =
     sources.list.firstOrNull { it.instanceId == instanceId }?.state?.cloudDriveLoginRequired
 
-/** [source] 查完没有结果 (对不上的结果也没有; 还在查、要验证、限流、没登录网盘的不算): 源那一栏把它折到最后. */
+/** [instanceId] 这个数据源被暂停了 (开播后暂停、还没放开, 见设置「完整搜索」). */
+private fun TvSourcePanelInput.isPausedSource(instanceId: String): Boolean =
+    sources.list.firstOrNull { it.instanceId == instanceId }?.isPaused == true
+
+/** [source] 被暂停、还没有结果: 源那一栏与胶囊画暂停图标, 不当成「没有结果」. */
+private fun TvSourcePanelInput.isPausedWithoutResults(source: WebSource): Boolean =
+    source.channels.isEmpty() && isPausedSource(source.instanceId)
+
+/** [source] 查完没有结果 (对不上的结果也没有; 还在查、被暂停、要验证、限流、没登录网盘的不算): 源那一栏把它折到最后. */
 private fun TvSourcePanelInput.isEmptySource(source: WebSource, strings: TvSourceStrings): Boolean =
     source.channels.isEmpty() && !source.isLoading && !source.isRateLimited && !source.isCaptchaRequired && !source.isResolvingCaptcha &&
-        driveLoginOf(source.instanceId) == null && webOthersOf(source, this, strings).isEmpty()
+        driveLoginOf(source.instanceId) == null && !isPausedSource(source.instanceId) && webOthersOf(source, this, strings).isEmpty()
 
 /** 胶囊行上的一组在线源 (见 [tvSourceGroupKey]): [sources] 按数据源设置里的顺序. */
 private class TvWebGroup(val key: String, val title: String, val icon: TvSourceRowIcon, val sources: List<WebSource>) {
@@ -958,7 +977,7 @@ private class TvWebGroup(val key: String, val title: String, val icon: TvSourceR
  */
 private fun webGroupsOf(input: TvSourcePanelInput, strings: TvSourceStrings): List<TvWebGroup> {
     val byKey = LinkedHashMap<String, MutableList<WebSource>>()
-    allWebSources(input, strings)
+    allWebSources(input)
         .filterNot { it.isError && input.driveLoginOf(it.instanceId) == null }
         .sortedBy { input.sourceTypes[it.instanceId]?.order ?: Int.MAX_VALUE }
         .forEach { source -> byKey.getOrPut(tvSourceGroupKey(input.sourceTypes[source.instanceId])) { ArrayList() }.add(source) }
@@ -977,6 +996,8 @@ private fun webGroupsOf(input: TvSourcePanelInput, strings: TvSourceStrings): Li
 private fun groupRailRow(group: TvWebGroup, playing: Boolean, input: TvSourcePanelInput, strings: TvSourceStrings): TvSourceRow {
     val withResults = group.sources.count { it.channels.isNotEmpty() }
     val loading = withResults == 0 && group.sources.any { it.isLoading }
+    // 一条结果都没有、又有源被暂停: 画暂停, 不写「0」(查完没有与还没查完分得开)
+    val paused = withResults == 0 && !loading && group.sources.any { input.isPausedSource(it.instanceId) }
     val files = group.sources.flatMap { webFilesOf(it, input, strings)?.matched.orEmpty() }
     return TvSourceRow(
         id = group.key,
@@ -985,9 +1006,10 @@ private fun groupRailRow(group: TvWebGroup, playing: Boolean, input: TvSourcePan
         icon = group.icon,
         selected = playing,
         playing = playing,
-        trailing = if (loading) "" else countWithBest(withResults, files),
+        trailing = if (loading || paused) "" else countWithBest(withResults, files),
         loading = loading,
         badges = tvSourceBestPictureBadges(files),
+        trailingIcon = if (paused) TvSourceRowIcon.Pause else null,
     )
 }
 
@@ -1051,12 +1073,16 @@ private fun webRailRow(source: WebSource, playing: Boolean, input: TvSourcePanel
     val nowMillis = input.nowMillis
     val loadingEmpty = source.isLoading && source.channels.isEmpty()
     val driveLogin = input.driveLoginOf(source.instanceId)
+    val others = webOthersOf(source, input, strings)
+    // 被暂停、还没结果 (连对不上的也没有): 画暂停图标, 不调暗, 不当成没有结果
+    val paused = input.isPausedWithoutResults(source) && others.isEmpty()
     var badges = emptyList<TvSourceBadge>()
     val (trailing, accent) = when {
         driveLogin != null -> strings.driveNotLoggedIn to TvSourceAccent.Attention
         source.isCaptchaRequired -> strings.captchaRequired to TvSourceAccent.Attention
+        paused -> "" to TvSourceAccent.None
         source.channels.isEmpty() && !source.isLoading && !source.isRateLimited ->
-            webOthersOf(source, input, strings).size.takeIf { it > 0 }?.let { strings.railOthers.format(it) to TvSourceAccent.None }
+            others.size.takeIf { it > 0 }?.let { strings.railOthers.format(it) to TvSourceAccent.None }
                 ?: (MISSING_VALUE to TvSourceAccent.None)
         source.isRateLimitExpired(nowMillis) -> strings.rateLimitedExpired to TvSourceAccent.None
         source.isRateLimited -> strings.rateLimited.format(rateLimitSeconds(source.rateLimitedUntilMillis, nowMillis)) to TvSourceAccent.None
@@ -1078,13 +1104,14 @@ private fun webRailRow(source: WebSource, playing: Boolean, input: TvSourcePanel
         playing = playing,
         trailing = trailing,
         accent = accent,
-        // 查完没有对得上的结果: 调暗 (要验证、限流、没登录的还等着用户处理, 不算)
-        dimmed = source.channels.isEmpty() && !source.isLoading && !source.isRateLimited && !source.isCaptchaRequired && driveLogin == null,
+        // 查完没有对得上的结果: 调暗 (要验证、限流、没登录的还等着用户处理, 被暂停的还没查完, 不算)
+        dimmed = source.channels.isEmpty() && !source.isLoading && !source.isRateLimited && !source.isCaptchaRequired && driveLogin == null && !paused,
         loading = loadingEmpty || source.isResolvingCaptcha,
         // 没登录网盘的胶囊: 确定直接弹扫码登录
         action = driveLogin?.driveId?.let { TvSourceAction.LoginDrive(it) },
         details = webSourceDetails(source, input, strings),
         badges = badges,
+        trailingIcon = if (paused) TvSourceRowIcon.Pause else null,
     )
 }
 
@@ -1158,6 +1185,8 @@ private fun webPane(
     val selected = input.selector.selected
     val nowMillis = input.nowMillis
     val driveLogin = input.driveLoginOf(source.instanceId)
+    // 被暂停、还没结果: 不说「没有找到资源」, 给一行「继续查这个源」(只放开这一个)
+    val paused = input.isPausedWithoutResults(source)
     val rows = buildList {
         when {
             driveLogin != null -> {
@@ -1202,6 +1231,17 @@ private fun webPane(
             source.isRateLimited -> add(
                 status("rate-limited", strings.rateLimitedHint.format(rateLimitSeconds(source.rateLimitedUntilMillis, nowMillis))),
             )
+
+            paused -> add(
+                TvSourceRow(
+                    id = "paused",
+                    style = TvSourceRowStyle.Line,
+                    title = strings.resumeSource,
+                    meta = strings.pausedHint,
+                    icon = TvSourceRowIcon.Search,
+                    action = TvSourceAction.RestartSource(source.instanceId),
+                ),
+            )
         }
         val files = webFilesOf(source, input, strings)
         if (files != null) {
@@ -1210,7 +1250,7 @@ private fun webPane(
             for (media in preferred) add(webFileRow(source, media, other = null, input, strings))
             for (media in below) add(webFileRow(source, media, TvWebOther(media, strings.reasonBelowPreference, excluded = false), input, strings))
             for (other in files.others) add(webFileRow(source, other.media, other, input, strings))
-            if (files.matched.isEmpty() && files.others.isEmpty() && !source.isCaptchaRequired && !source.isRateLimited) {
+            if (files.matched.isEmpty() && files.others.isEmpty() && !source.isCaptchaRequired && !source.isRateLimited && !paused) {
                 add(status("empty", if (source.isLoading) strings.loading else strings.noResult))
             }
             return@buildList
@@ -1235,7 +1275,7 @@ private fun webPane(
             )
         }
         val others = webOthersOf(source, input, strings)
-        if (source.channels.isEmpty() && !source.isCaptchaRequired && !source.isRateLimited) {
+        if (source.channels.isEmpty() && !source.isCaptchaRequired && !source.isRateLimited && !(paused && others.isEmpty())) {
             add(
                 status(
                     "empty",
@@ -1374,9 +1414,10 @@ internal fun webOthersOf(source: WebSource, input: TvSourcePanelInput, strings: 
 
 /**
  * 要列的在线源: 选择器给的 (至少有一条对得上的线路, 或还在查 / 要验证 / 限流) + 选择器藏起来的查完了的 (0 条, 或结果全都对不上 ——
- * 以「其余 N」列出, 右边直接列那些结果; 源那一栏按设置里的顺序把查过的源都列上). 开播后暂停时还没结果的只在有对不上的结果时列.
+ * 以「其余 N」列出, 右边直接列那些结果; 源那一栏按设置里的顺序把查过的源都列上) + 开播后被暂停、还没结果的 (源那一栏画暂停图标,
+ * 右边可以只放开它, 见 [webRailRow] / [webPane]).
  */
-private fun allWebSources(input: TvSourcePanelInput, strings: TvSourceStrings): List<WebSource> {
+private fun allWebSources(input: TvSourcePanelInput): List<WebSource> {
     val shown = input.selector.webSources
     val hidden = input.sources.list.asSequence()
         .filter { it.kind == MediaSourceKind.WEB && (it.state is MediaSourceFetchState.Succeed || it.isPaused) }
@@ -1391,7 +1432,7 @@ private fun allWebSources(input: TvSourcePanelInput, strings: TvSourceStrings): 
                 isLoading = false,
                 isError = false,
                 isPreferred = false,
-            ).takeIf { !result.isPaused || webOthersOf(it, input, strings).isNotEmpty() }
+            )
         }
         .toList()
     return shown + hidden
