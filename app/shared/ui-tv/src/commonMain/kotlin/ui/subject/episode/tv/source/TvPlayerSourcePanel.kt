@@ -156,7 +156,6 @@ internal fun TvPlayerSourcePanel(
             sourceResults = vm.pageState.filterNotNull().map { it.mediaSourceResultListPresentation }.distinctUntilChanged(),
             manual = vm.manualBrowseState,
             fullSearch = vm.fullMediaSearch,
-            initialMode = page.initialMediaSelectorMode,
             canEditKeywords = true,
             canCache = true,
             host = host,

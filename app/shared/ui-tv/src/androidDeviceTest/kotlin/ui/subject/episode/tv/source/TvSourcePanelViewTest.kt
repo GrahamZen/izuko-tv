@@ -263,6 +263,23 @@ class TvSourcePanelViewTest {
     }
 
     @Test
+    fun `landing on the pill the content already shows holds it so a later default does not switch it`() {
+        // 没在播时落到落点规则给的那一颗: 内容本来就是它, 不用换, 但要让宿主记下 (别的组先出了结果也不换)
+        show(flatContent())
+        waitFocus(GROUP_B)
+        host.waitUntil("记下胶囊 $GROUP_B (现在 ${listener.held})") { listener.held.lastOrNull() == GROUP_B to null }
+        assertTrue(listener.held.all { it == GROUP_B to null }, "只记落上的这一颗: ${listener.held}")
+        assertTrue(listener.railFocused.isEmpty(), "内容本来就是它, 不用换")
+    }
+
+    @Test
+    fun `landing on the source the content already shows holds it with its group`() {
+        showOnColumn(groupContent(sourceKey = "web:a2"))
+        host.waitUntil("记下源 web:a2 (现在 ${listener.held})") { listener.held.lastOrNull() == GROUP_A to "web:a2" }
+        assertTrue(listener.sourceFocused.isEmpty(), "落在选中的源上, 不用换")
+    }
+
+    @Test
     fun `confirm on the now playing pill jumps to the playing row`() {
         show(playingContent())
         waitFocus(TvSourceRailKeys.NOW_PLAYING)
@@ -677,18 +694,45 @@ class TvSourcePanelViewTest {
     }
 
     @Test
-    fun `down past the last entry crosses to the next source with entries and up comes back`() {
-        showAt(groupContent(enterable = setOf("web:a1", "web:a3")), "line:1")
+    fun `down past the last entry crosses to the next source and up comes back`() {
+        showAt(groupContent(), "line:1")
         host.press(KeyEvent.KEYCODE_DPAD_DOWN)
-        // 跳过没有条目的 web:a2, 焦点留在条目里
-        assertEquals(listOf(GROUP_A to "web:a3"), listener.sourceFocused)
-        show(groupContent(sourceKey = "web:a3", rightRows = listOf(line("x:0", selected = false), line("x:1", selected = true))), entry = false)
+        // 下一个源有能选的行: 焦点留在条目里, 落它的第一行
+        assertEquals(listOf(GROUP_A to "web:a2"), listener.sourceFocused)
+        show(groupContent(sourceKey = "web:a2", rightRows = listOf(line("x:0", selected = false), line("x:1", selected = true))), entry = false)
         waitFocus("x:0")
         host.press(KeyEvent.KEYCODE_DPAD_UP)
         assertEquals(GROUP_A to "web:a1", listener.sourceFocused.last())
         // 回来时那一行没了: 落第一行
         show(groupContent(rightRows = listOf(line("line:0", selected = false), line("line:2", selected = true))), entry = false)
         waitFocus("line:0")
+    }
+
+    @Test
+    fun `down past the last entry lands on the next source in the column when it has nothing to select and up comes back`() {
+        // web:a2 还在查 (没有能选的行): 不跳过它, 落到源那一栏的它
+        showAt(groupContent(enterable = setOf("web:a1", "web:a3")), "line:1")
+        host.press(KeyEvent.KEYCODE_DPAD_DOWN)
+        waitFocus("web:a2")
+        // 紧接着按上: 回到出发的那一行
+        host.press(KeyEvent.KEYCODE_DPAD_UP)
+        waitFocus("line:1")
+    }
+
+    @Test
+    fun `crossing down stops at the empty sources row`() {
+        val toggle = TvSourceRow(
+            id = TvSourceRailKeys.EMPTY_SOURCES,
+            style = TvSourceRowStyle.Rail,
+            title = "没有结果的 2 个",
+            dimmed = true,
+            action = TvSourceAction.ToggleEmptySources,
+        )
+        showAt(groupContent(sources = listOf(source("web:a1"), source("web:a2"), toggle), sourceKey = "web:a2"), "line:1")
+        host.press(KeyEvent.KEYCODE_DPAD_DOWN)
+        // 「没有结果的 N 个」不是源: 到头了, 不动
+        assertEquals("line:1", focusedId())
+        assertTrue(listener.sourceFocused.isEmpty())
     }
 
     @Test
@@ -703,6 +747,16 @@ class TvSourcePanelViewTest {
         assertEquals(listOf(GROUP_A to "web:a2"), listener.sourceFocused)
         show(groupContent(sourceKey = "web:a2", rightRows = listOf(line("y:0", selected = true), line("y:1", selected = false))), entry = false)
         waitFocus("y:1")
+    }
+
+    @Test
+    fun `down from a pill lands on the small pills on top of the list first`() {
+        // 小胶囊就在胶囊行下面: 就近先落它, 不越过去落列表 (也不落在播的那一行)
+        showOnRail(btContent(focusId = "bt:1"))
+        host.press(KeyEvent.KEYCODE_DPAD_DOWN)
+        waitFocus("pill:episode")
+        host.press(KeyEvent.KEYCODE_DPAD_DOWN)
+        waitFocus("bt:0")
     }
 
     @Test
@@ -781,7 +835,12 @@ class TvSourcePanelViewTest {
         assertEquals(listOf(TvSourceRailKeys.BT), listener.railFocused)
         show(btContent(focusId = "bt:2"), entry = false)
         host.press(KeyEvent.KEYCODE_DPAD_DOWN)
-        waitFocus("bt:2")
+        // 从胶囊往下先落顶上的小胶囊, 再往下进列表
+        waitFocus("pill:episode")
+        host.press(KeyEvent.KEYCODE_DPAD_DOWN)
+        waitFocus("bt:0")
+        host.press(KeyEvent.KEYCODE_DPAD_DOWN)
+        waitFocus("bt:1")
         // 组 b 进去过: 回到那时停的那一行
         host.press(KeyEvent.KEYCODE_DPAD_LEFT)
         assertEquals(listOf(TvSourceRailKeys.BT, GROUP_B), listener.railFocused)
@@ -789,10 +848,10 @@ class TvSourcePanelViewTest {
         waitFocus("line:1")
         host.press(KeyEvent.KEYCODE_DPAD_UP)
         waitFocus("line:0")
-        // BT 也进去过了: 回到 bt:2
+        // BT 也进去过了: 回到 bt:1
         host.press(KeyEvent.KEYCODE_DPAD_RIGHT)
         show(btContent(focusId = "bt:0"), entry = false)
-        waitFocus("bt:2")
+        waitFocus("bt:1")
         host.press(KeyEvent.KEYCODE_DPAD_LEFT)
         show(flatContent(), entry = false)
         waitFocus("line:0")
@@ -903,7 +962,10 @@ class TvSourcePanelViewTest {
         waitFocus(TvSourceRailKeys.BT)
         show(bt, entry = false)
         host.press(KeyEvent.KEYCODE_DPAD_DOWN)
-        waitFocus("bt:1")
+        // 从胶囊往下先落顶上的小胶囊
+        waitFocus("pill:episode")
+        host.press(KeyEvent.KEYCODE_DPAD_UP)
+        waitFocus(TvSourceRailKeys.BT)
         // 往右回组 a: 上次是从胶囊上离开的, 停在胶囊上
         host.press(KeyEvent.KEYCODE_DPAD_RIGHT)
         waitFocus(GROUP_A)
@@ -1020,6 +1082,24 @@ class TvSourcePanelViewTest {
         host.press(KeyEvent.KEYCODE_DPAD_DOWN)
         waitFocus("line:1")
         host.waitUntil("进去了: 展开") { columnAlpha() == 1f && listAlpha() == 1f }
+    }
+
+    @Test
+    fun `the source column fades back in when its group comes back before the other group is committed`() {
+        fun columnAlpha() = (rowView("web:a1")?.parent as? View)?.alpha
+        // 换组先藏再淡入只在开着动效时有
+        host.onMain { view.applyStyle(testPanelStyle().copy(animated = true)) }
+        showOnRail(groupContent())
+        host.waitUntil("胶囊上: 源那一栏出来 (透明度 ${columnAlpha()})") { columnAlpha() == 1f }
+        // 落点规则先换到组 b (也有源那一栏), 紧接着又回组 a: 组 b 那一版还没提交就被组 a 顶掉, 它的提交回调不会来
+        val other = groupContent(sources = listOf(source("web:b1"), source("web:b2"))).let { b ->
+            b.copy(railKey = GROUP_B, sourceGroups = b.sources.associate { it.id to GROUP_B })
+        }
+        host.onMain {
+            view.submit(other)
+            view.submit(groupContent())
+        }
+        host.waitUntil("源那一栏又出来 (透明度 ${columnAlpha()})") { columnAlpha() == 1f }
     }
 
     @Test
@@ -1245,6 +1325,25 @@ class TvSourcePanelViewTest {
     @Test
     fun `focus moves from a fallback pill to the rows once they arrive`() {
         val pill = TvSourceRow(id = "mpill:back", style = TvSourceRowStyle.Pill, title = "返回结果")
+        val loading = listOf(TvSourceRow(id = "status:loading", style = TvSourceRowStyle.Status, title = "正在加载剧集…"))
+        fun manual(key: String, rows: List<TvSourceRow>) = TvSourcePanelContent(
+            status = "已查询 3 个数据源",
+            rail = railRows,
+            railKey = TvSourceRailKeys.BT,
+            right = TvSourceRight(key = key, pills = listOf(pill), rows = rows),
+        )
+        val page = TvSourceRailKeys.BT + "/page"
+        // 在列表里换到一屏还在加载的: 先停在小胶囊上兜着, 行到了落第一行
+        showAt(manual(TvSourceRailKeys.BT, listOf(line("r:0", selected = false))), "r:0")
+        show(manual(page, loading), entry = false)
+        waitFocus("mpill:back")
+        show(manual(page, listOf(line("ep:0", selected = false), line("ep:1", selected = false))), entry = false)
+        waitFocus("ep:0")
+    }
+
+    @Test
+    fun `down from a pill onto a small pill stays there when the rows arrive`() {
+        val pill = TvSourceRow(id = "mpill:back", style = TvSourceRowStyle.Pill, title = "返回结果")
         fun manual(rows: List<TvSourceRow>) = TvSourcePanelContent(
             status = "已查询 3 个数据源",
             rail = railRows,
@@ -1254,8 +1353,10 @@ class TvSourcePanelViewTest {
         showOnRail(manual(listOf(TvSourceRow(id = "status:loading", style = TvSourceRowStyle.Status, title = "正在加载剧集…"))))
         host.press(KeyEvent.KEYCODE_DPAD_DOWN)
         waitFocus("mpill:back")
+        // 从胶囊往下落小胶囊是就近落的, 不是兜底: 行到了不把焦点拽走
         show(manual(listOf(line("ep:0", selected = false), line("ep:1", selected = false))), entry = false)
-        waitFocus("ep:0")
+        host.waitUntil("行排出来") { rowView("ep:0") != null }
+        assertEquals("mpill:back", focusedId())
     }
 
     /** 表头有「筛选」与重新搜索, 胶囊行是 BT 与组 a. */
@@ -1304,6 +1405,12 @@ class TvSourcePanelViewTest {
 
         override fun onSourceFocused(groupKey: String, sourceKey: String) {
             sourceFocused += groupKey to sourceKey
+        }
+
+        val held = mutableListOf<Pair<String, String?>>()
+
+        override fun onSelectionHeld(railKey: String, sourceKey: String?) {
+            held += railKey to sourceKey
         }
 
         override fun onRightFocusChanged(inRight: Boolean) {
