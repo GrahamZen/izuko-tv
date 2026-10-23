@@ -214,6 +214,57 @@ class TvSourcePanelModelTest {
     }
 
     @Test
+    fun `a paused source without results shows a pause icon in place and is not folded as empty`() {
+        val sources = MediaSourceResultListPresentation(
+            listOf(
+                sourceResult("web-a", MediaSourceKind.WEB),
+                sourceResult("web-b", MediaSourceKind.WEB, MediaSourceFetchState.Paused(1)),
+                sourceResult("web-z", MediaSourceKind.WEB),
+            ),
+        )
+        // 选择器把暂停又没结果的、查完 0 条的都藏掉, 只给有结果的
+        val content = buildTvSourcePanel(
+            input(sources = sources, webSources = listOf(webSource("web-a", listOf(WebSourceChannel("线路1", webA1))))),
+            TvSourceNav(),
+            strings,
+        )
+        assertEquals(listOf("web:web-a", "web:web-b", TvSourceRailKeys.EMPTY_SOURCES), content.sources.map { it.id })
+        val paused = content.sources.single { it.id == "web:web-b" }
+        assertEquals(TvSourceRowIcon.Pause, paused.trailingIcon)
+        assertEquals("", paused.trailing)
+        assertFalse(paused.dimmed)
+        assertNull(content.sources.single { it.id == "web:web-a" }.trailingIcon)
+        // 组里有结果: 胶囊照旧写条数
+        val group = content.rail.single { it.id == TvSourceRailKeys.GROUP_ONLINE }
+        assertEquals("1", group.trailing)
+        assertNull(group.trailingIcon)
+    }
+
+    @Test
+    fun `a group with only paused sources shows a pause icon and the source offers to resume it`() {
+        val sources = MediaSourceResultListPresentation(
+            listOf(
+                sourceResult("web-a", MediaSourceKind.WEB, MediaSourceFetchState.Paused(1)),
+                sourceResult("web-b", MediaSourceKind.WEB, MediaSourceFetchState.Paused(1)),
+            ),
+        )
+        val content = buildTvSourcePanel(
+            input(sources = sources, webSources = emptyList()),
+            TvSourceNav(railKey = TvSourceRailKeys.GROUP_ONLINE),
+            strings,
+        )
+        val group = content.rail.single { it.id == TvSourceRailKeys.GROUP_ONLINE }
+        assertEquals(TvSourceRowIcon.Pause, group.trailingIcon)
+        assertEquals("", group.trailing)
+        assertEquals(listOf("web:web-a", "web:web-b"), content.sources.map { it.id })
+        // 右边不说没有找到资源, 给一行只放开这一个源
+        val resume = content.right.rows.single()
+        assertEquals("resumeSource", resume.title)
+        assertEquals("pausedHint", resume.meta)
+        assertEquals(TvSourceAction.RestartSource("web-a"), resume.action)
+    }
+
+    @Test
     fun `web sources group by type in a fixed order`() {
         val ids = listOf("rss", "rule", "drive", "selector", "share", "jelly", "api", "json")
         val input = input(
@@ -246,6 +297,33 @@ class TvSourcePanelModelTest {
         assertEquals(listOf("web:rule", "web:selector", "web:json"), ids(TvSourceRailKeys.GROUP_ONLINE))
         assertEquals(listOf("web:rss", "web:api"), ids(TvSourceRailKeys.GROUP_DIRECT))
         assertEquals(TvSourceRailKeys.GROUP_DRIVE, content.sourceGroups["web:share"])
+    }
+
+    @Test
+    fun `the selected source stays in place when it ends without results and folds once another is selected`() {
+        val input = input().copy(
+            sourceTypes = mapOf(
+                "web-b" to TvSourceType("rule", "Rule", 0),
+                "web-a" to TvSourceType("rule", "Rule", 1),
+                "web-z" to TvSourceType("rule", "Rule", 2),
+            ),
+            sources = MediaSourceResultListPresentation(sources.list + sourceResult("web-z", MediaSourceKind.WEB)),
+        )
+        // 选中的 web-z 查完 0 条 (焦点多半在它上面): 留在原处调暗, 不折, 不在焦点底下抽走
+        val selected = buildTvSourcePanel(input, TvSourceNav(railKey = TvSourceRailKeys.GROUP_ONLINE, sourceKey = "web:web-z"), strings)
+        assertEquals(listOf("web:web-b", "web:web-a", "web:web-z"), selected.sources.map { it.id })
+        assertEquals("web:web-z", selected.sourceKey)
+        assertTrue(selected.sources.last().dimmed)
+        // 换到别的源: 它折进最后一行
+        val moved = buildTvSourcePanel(input, TvSourceNav(railKey = TvSourceRailKeys.GROUP_ONLINE, sourceKey = "web:web-a"), strings)
+        assertEquals(listOf("web:web-b", "web:web-a", TvSourceRailKeys.EMPTY_SOURCES), moved.sources.map { it.id })
+        // 展开着时选中没结果的: 照旧排在下面那段, 不挪上去 (在那段里上下走时不来回跳)
+        val expanded = buildTvSourcePanel(
+            input,
+            TvSourceNav(railKey = TvSourceRailKeys.GROUP_ONLINE, sourceKey = "web:web-z", showEmptySources = true),
+            strings,
+        )
+        assertEquals(listOf("web:web-b", "web:web-a", TvSourceRailKeys.EMPTY_SOURCES, "web:web-z"), expanded.sources.map { it.id })
     }
 
     @Test
@@ -1027,6 +1105,8 @@ class TvSourcePanelModelTest {
         settings = "settings",
         searchPaused = "searchPaused %1\$d/%2\$d",
         fullSearchPaused = "fullSearchPaused",
+        resumeSource = "resumeSource",
+        pausedHint = "pausedHint",
         manualSource = "manualSource %1\$s",
         manualKeyword = "manualKeyword %1\$s",
         manualSearching = "manualSearching",
