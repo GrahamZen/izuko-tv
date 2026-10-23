@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.domain.session.auth
 
+import io.ktor.client.plugins.expectSuccess
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.forms.submitForm
 import io.ktor.client.request.get
@@ -21,6 +22,9 @@ import io.ktor.http.isSuccess
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import me.him188.ani.app.data.repository.RepositoryAuthorizationException
 import me.him188.ani.app.data.repository.RepositoryException
 import me.him188.ani.app.domain.session.AccessTokenPair
@@ -185,6 +189,7 @@ class BangumiOAuthClient(
                 append("redirect_uri", callbackUrl)
             },
             what = "refresh",
+            rejectedGrantIsLoggedOut = true,
         )
 
     /**
@@ -213,14 +218,22 @@ class BangumiOAuthClient(
         return profile.username
     }
 
-    private suspend fun request(form: Parameters, what: String): OAuthResult {
+    /**
+     * @param rejectedGrantIsLoggedOut bgm 回 `invalid_grant` 时抛 [RepositoryAuthorizationException]: 续期用的 refreshToken
+     * 过期或被撤销就是这个 (HTTP 400), 会话该退出登录 (见 SessionManager); 凭据配错 (`invalid_client`) 等其余失败不算.
+     */
+    private suspend fun request(form: Parameters, what: String, rejectedGrantIsLoggedOut: Boolean = false): OAuthResult {
         val resp = try {
             client.use {
-                val response = submitForm(BangumiOAuthConstants.TOKEN_URL, form)
+                // 状态码自己看: 默认的成功校验会先把 4xx 抛成 ClientRequestException, 读不到下面要分辨的失败体
+                val response = submitForm(BangumiOAuthConstants.TOKEN_URL, form) { expectSuccess = false }
                 val text = response.bodyAsText()
                 if (!response.status.isSuccess()) {
                     // 失败体是 `{"error":"invalid_grant","error_description":"..."}`, 带上它 ——
                     // 授权码过期 (10 分钟) 与 secret 配错在界面上长得一样, 只有这行能分开
+                    if (rejectedGrantIsLoggedOut && oauthErrorOf(text) == "invalid_grant") {
+                        throw RepositoryAuthorizationException("bangumi oauth $what rejected: ${response.status}, body=$text")
+                    }
                     error("bangumi oauth $what failed: ${response.status}, body=$text")
                 }
                 json.decodeFromString(BangumiTokenResponse.serializer(), text)
@@ -233,6 +246,10 @@ class BangumiOAuthClient(
         }
         return resp.toOAuthResult(clock)
     }
+
+    /** OAuth 失败体 (`{"error":"invalid_grant",…}`) 的 `error`; 不是这种 JSON 时 null. */
+    private fun oauthErrorOf(body: String): String? =
+        runCatching { json.parseToJsonElement(body).jsonObject["error"]?.jsonPrimitive?.contentOrNull }.getOrNull()
 }
 
 @Serializable

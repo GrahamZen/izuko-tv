@@ -156,7 +156,8 @@ class SessionManager(
                 } catch (e: Exception) {
                     val re = RepositoryException.wrapOrThrowCancellation(e)
                     if (re is RepositoryAuthorizationException) {
-                        logger.warn { "SessionManager: refresh token rejected, clearing session" }
+                        // 带上 bgm 的失败体 (error_description): 过期、已被用掉、不是这个应用发的, 都是 invalid_grant
+                        logger.warn { "SessionManager: refresh token rejected, clearing session: ${re.message}" }
                         clearSession()
                         return
                     }
