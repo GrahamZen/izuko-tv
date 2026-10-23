@@ -337,7 +337,7 @@ internal fun CommentsGridDialog(
     initialFocusIndex: Int = 0,
 ) {
     ViewAllPanelDialog(title, onDismissRequest, headerAction = headerAction) { initialFocus ->
-        CommentsList(comments, showRating, initialFocusIndex, initialFocus, Modifier.weight(1f, fill = false))
+        LocalViewAllCommentsList.current.Comments(comments, showRating, initialFocusIndex, initialFocus, Modifier.weight(1f, fill = false))
     }
 }
 
