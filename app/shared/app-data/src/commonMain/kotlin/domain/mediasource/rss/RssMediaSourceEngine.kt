@@ -25,6 +25,7 @@ import me.him188.ani.app.data.repository.RepositoryServiceUnavailableException
 import me.him188.ani.app.domain.mediasource.MediaListFilters
 import me.him188.ani.app.domain.mediasource.MediaSourceEngineHelpers
 import me.him188.ani.app.domain.mediasource.asCandidate
+import me.him188.ani.app.domain.mediasource.directapi.Transform
 import me.him188.ani.app.domain.rss.RssChannel
 import me.him188.ani.app.domain.rss.RssItem
 import me.him188.ani.app.domain.rss.RssParser
@@ -81,7 +82,7 @@ abstract class RssMediaSourceEngine {
         mediaSourceId: String,
     ): Result {
         val encodedUrl = MediaSourceEngineHelpers.encodeUrlSegment(
-            escapeKeywordFor(searchConfig.searchUrl, query.subjectName),
+            escapeKeywordFor(searchConfig.searchUrl, searchConfig.searchKeywordOf(query.subjectName)),
         )
 
         val finalUrl = Url(
@@ -188,6 +189,8 @@ data class RssSearchConfig(
     val titleToLink: RssTitleToLink? = null,
     /** 条目名之外, 也用回退关键词 (系列名、港台译名, 见 [me.him188.ani.datasources.api.source.MediaFetchRequest.fallbackSearchKeywords]) 搜. */
     val searchFallbackKeywords: Boolean = false,
+    /** 关键词填进 [searchUrl] 之前依次做的变换, 避开站点搜索语法的坑, 见 [searchKeywordOf]. */
+    val searchKeywordTransforms: List<Transform> = emptyList(),
 ) {
     companion object {
         val Empty = RssSearchConfig()
