@@ -34,7 +34,6 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
@@ -124,7 +123,6 @@ import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.showLoadError
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.subject_details_characters
-import me.him188.ani.app.ui.lang.subject_details_episodes
 import me.him188.ani.app.ui.lang.subject_details_staff
 import me.him188.ani.app.ui.lang.subject_details_load_retrying
 import me.him188.ani.app.ui.lang.subject_details_rating_summary
@@ -135,7 +133,6 @@ import me.him188.ani.app.ui.lang.subject_details_stat_collected
 import me.him188.ani.app.ui.lang.subject_details_stat_watching
 import me.him188.ani.app.ui.lang.subject_details_stat_wish
 import me.him188.ani.app.ui.lang.subject_details_tv_feedback
-import me.him188.ani.app.ui.lang.subject_episode_cache
 import me.him188.ani.app.ui.rating.FiveRatingStars
 import me.him188.ani.app.ui.rating.renderScore
 import me.him188.ani.app.ui.subject.AiringLabel
@@ -300,8 +297,7 @@ fun SubjectDetailsPadPage(
         }
     }
     if (showAllEpisodes) {
-        TvPadAllEpisodesDialog(
-            subjectName = info.tvTitle(),
+        TvAllEpisodesDialog(
             mainEpisodes = mainEpisodes,
             specialEpisodes = specialEpisodes,
             currentEpisodeId = currentEpisodeId,
