@@ -41,6 +41,8 @@ class PauseMediaFetchWhilePlayingExtension(
     private val context: PlayerExtensionContext,
     private val canPause: () -> Boolean,
     private val selectorOpened: (MediaFetchSession) -> Boolean,
+    /** 不暂停的数据源 (用户在选源面板里单独放开的, 见 [UserResumedSources]). */
+    private val keep: (MediaFetchSession, MediaSourceFetchResult) -> Boolean = { _, _ -> false },
 ) : PlayerExtension("PauseMediaFetchWhilePlaying") {
     override fun onStart(episodeSession: EpisodeSession, backgroundTaskScope: ExtensionBackgroundTaskScope) {
         backgroundTaskScope.launch("PauseMediaFetchWhilePlaying") {
@@ -49,7 +51,7 @@ class PauseMediaFetchWhilePlayingExtension(
                 context.player.playbackStarts().collect {
                     if (!canPause()) return@collect
                     val session = bundle.mediaFetchSession
-                    val paused = session.pauseSearchingWhilePlaying(selectorOpened(session), keep = ::keepsSearching)
+                    val paused = session.pauseSearchingWhilePlaying(selectorOpened(session), keep = { keepsSearching(it) || keep(session, it) })
                     if (paused > 0) {
                         logger.info { "Playback started, paused $paused media sources that were still searching" }
                     }
@@ -64,9 +66,10 @@ class PauseMediaFetchWhilePlayingExtension(
     class Factory(
         private val canPause: () -> Boolean = { true },
         private val selectorOpened: (MediaFetchSession) -> Boolean = { false },
+        private val keep: (MediaFetchSession, MediaSourceFetchResult) -> Boolean = { _, _ -> false },
     ) : EpisodePlayerExtensionFactory<PauseMediaFetchWhilePlayingExtension> {
         override fun create(context: PlayerExtensionContext, koin: Koin): PauseMediaFetchWhilePlayingExtension {
-            return PauseMediaFetchWhilePlayingExtension(context, canPause, selectorOpened)
+            return PauseMediaFetchWhilePlayingExtension(context, canPause, selectorOpened, keep)
         }
     }
 
