@@ -167,6 +167,12 @@ interface TvSourcePanelListener {
     /** 源那一栏选中的换成 [groupKey] 这一组的 [sourceKey] (右边的内容跟着换). */
     fun onSourceFocused(groupKey: String, sourceKey: String)
 
+    /**
+     * 焦点停到胶囊 [railKey] / 源那一栏的 [sourceKey] 上, 而内容本来就是它 (打开时按落点规则落上来的, 不用换): 宿主把它记成选中的 ——
+     * 不记的话别的组先出了结果、落点规则换了答案, 下面换成别的组, 焦点还停在这颗.
+     */
+    fun onSelectionHeld(railKey: String, sourceKey: String?) {}
+
     /** 焦点进出下面的内容 (列表与它顶上的小胶囊; 进去时宿主钉住行序, 见 applyFrozenOrder). */
     fun onRightFocusChanged(inRight: Boolean)
 
@@ -264,6 +270,9 @@ class TvSourcePanelView(
     private var pendingEntry = false
     private var pendingEnterContent = false
     private var pendingEnterRight = false
+
+    /** 这次进内容是从胶囊上按下来的 ([enterFromRail]): 列表顶上有小胶囊时先落它 (见 [focusRightTarget]). */
+    private var enterFromAbove = false
     private var pendingRightFocus = false
 
     private var press: Press? = null
@@ -312,6 +321,9 @@ class TvSourcePanelView(
 
     /** 源那一栏换了一组、还没排出来: 排好后淡入 (见 [revealColumn]). */
     private var columnEntering = false
+
+    /** 源那一栏换组时先藏了 (透明度 0), 还没淡入 (同 [branchHidden]: 换过去又换回来时回来的那一版据此照样淡入). */
+    private var columnHidden = false
 
     /** 这一屏按内容定的宽度 (见 [updateBranchWidth]); 0 = 占满宽度. [branchWidthKey] = 量的是哪一屏. */
     private var branchFitWidthPx = 0
@@ -637,6 +649,7 @@ class TvSourcePanelView(
             if (key != null && style.animated) {
                 columnAnimator?.cancel()
                 column.alpha = 0f
+                columnHidden = true
             }
             panel.requestLayout()
             updateBranchCollapse(regionOf(findFocus()))
@@ -654,6 +667,8 @@ class TvSourcePanelView(
                 // 焦点不在这一栏 (在条目里 / 胶囊上): 这一栏对到选中的源
                 column.setSelectedPosition(index)
             }
+            // 换组又换回来 (A → B → A): 中间那次提交被差异计算丢掉了, 这一组还是原来的 key, 照样要淡入
+            if (columnHidden && key != null) columnEntering = true
             // 持焦的源没了 (挪进了「查询失败」): 落到选中的那个源
             if (regionOf(findFocus()) == Region.NONE && lastRegion == Region.COLUMN) focusColumn(selectedSourceKey())
             panel.requestLayout()
@@ -913,7 +928,7 @@ class TvSourcePanelView(
         railCommitPending = false
         val key = focusedRailKey ?: return
         railAdapter.activeId = key
-        requestRail(key)
+        if (!requestRail(key)) listener?.onSelectionHeld(key, null)
     }
 
     /**
@@ -933,7 +948,7 @@ class TvSourcePanelView(
         sourceCommitPending = false
         val key = focusedSourceKey ?: return
         columnAdapter.activeId = key
-        requestSource(key)
+        if (!requestSource(key)) columnKey?.let { listener?.onSelectionHeld(it, key) }
     }
 
     /** 请宿主把右边换成这一组的源 [key] (同 [requestRail], 跟最后要过的比). */
@@ -1023,7 +1038,10 @@ class TvSourcePanelView(
         }
         if (pendingEnterRight) {
             if (!rightMatchesSelection(content) || rightKey != incomingRightKey) return
-            if (focusRightTarget(content) != FocusResult.Pending) pendingEnterRight = false
+            if (focusRightTarget(content, fromAbove = enterFromAbove) != FocusResult.Pending) {
+                pendingEnterRight = false
+                enterFromAbove = false
+            }
             return
         }
         if (pendingEntry && isAttachedToWindow) {
@@ -1161,10 +1179,11 @@ class TvSourcePanelView(
     }
 
     /**
-     * 进内容的落点: 这一屏上次停的 → 内容给的落点 (正在播放 / 当前值) → 第一条能聚焦的行 → 第一个小胶囊.
+     * 进内容的落点: 这一屏上次停的 → 从胶囊上按下来的 ([fromAbove]) 先落顶上的小胶囊 (就在胶囊行下面) → 内容给的落点 (选项列表的当前值)
+     * → 第一条能聚焦的行 → 第一个小胶囊.
      * [FocusResult.Pending] = 落点那一行还没排出来 (已选中, 排到时 leanback 给焦点; 调用方等布局完成再试).
      */
-    private fun focusRightTarget(content: TvSourcePanelContent): FocusResult {
+    private fun focusRightTarget(content: TvSourcePanelContent, fromAbove: Boolean = false): FocusResult {
         val right = content.right
         val rows = listAdapter.currentList
         pendingLandRow?.let { id ->
@@ -1192,6 +1211,7 @@ class TvSourcePanelView(
         if (remembered != null && remembered.startsWith(PILL_PREFIX)) {
             if (pills.focusPill(remembered.removePrefix(PILL_PREFIX))) return FocusResult.Focused
         }
+        if (fromAbove && remembered == null && pills.focusPill(null)) return FocusResult.Focused
         val index = sequenceOf(remembered, right.focusId)
             .filterNotNull()
             .map { id -> rows.indexOfFirst { it.id == id && it.focusable } }
@@ -1481,6 +1501,7 @@ class TvSourcePanelView(
         pendingEntry = false
         pendingEnterContent = false
         pendingEnterRight = false
+        enterFromAbove = false
         pendingGroupLanding = false
         pendingColumnFocus = null
         pendingPillFocus = null
@@ -1596,8 +1617,9 @@ class TvSourcePanelView(
     }
 
     /**
-     * 有源那一栏时条目上下走到头: 跨到这一栏里相邻的、有条目的源 (没条目的跳过, 见 [TvSourcePanelContent.enterableSources]), 焦点留在条目里 ——
-     * 往下落新一屏的第一行, 往上落最后一行 ([crossing]). 记下出发的那一行, 紧接着按反方向回到它. 那个方向没有了返回 false.
+     * 有源那一栏时条目上下走到头: 跨到这一栏里相邻的那个源, 不跳过 —— 它有能选的行 (对不上的结果、继续查也算, 见
+     * [TvSourcePanelContent.enterableSources]) 就留在条目里, 往下落新一屏的第一行, 往上落最后一行 ([crossing]); 没有 (还在查、限流)
+     * 落到源那一栏的它. 「没有结果的 N 个」不是源, 到它就是到头. 记下出发的那一行, 紧接着按反方向回到它. 那个方向没有了返回 false.
      */
     private fun crossSource(direction: Int): Boolean {
         val content = content ?: return false
@@ -1605,16 +1627,19 @@ class TvSourcePanelView(
         val from = content.sourceKey ?: return false
         if (rightKey != from) return false
         val rows = columnAdapter.currentList
-        var i = rows.indexOfFirst { it.id == from }
+        val i = rows.indexOfFirst { it.id == from }
         if (i < 0) return false
-        do {
-            i += direction
-        } while (i in rows.indices && rows[i].id !in content.enterableSources)
-        val target = rows.getOrNull(i) ?: return false
+        val target = rows.getOrNull(i + direction)?.takeIf { it.id != TvSourceRailKeys.EMPTY_SOURCES } ?: return false
         val focused = (findFocus() as? TvSourceRowView)?.row?.id
-        crossing = direction
-        followSource(target.id)
-        returnPoint = ReturnPoint(reverseOf(direction, horizontal = false), Region.LIST, TvSourceFocusPosition(railKey, from, focused))
+        val back = TvSourceFocusPosition(railKey, from, focused)
+        if (target.id in content.enterableSources) {
+            crossing = direction
+            followSource(target.id)
+            returnPoint = ReturnPoint(reverseOf(direction, horizontal = false), Region.LIST, back)
+        } else {
+            focusColumn(target.id)
+            returnPoint = ReturnPoint(reverseOf(direction, horizontal = false), Region.COLUMN, back)
+        }
         return true
     }
 
@@ -1635,8 +1660,8 @@ class TvSourcePanelView(
         val changed = selectPosition(p.railKey, p.sourceKey)
         pendingLandRow = p.rowId.orEmpty()
         crossing = 0
-        // 换了一屏: 新的一屏到了由 submit 那边落 (pendingRightFocus); 没换就当场落
-        if (!changed) pendingEnterRight = true
+        // 换了一屏: 焦点在条目里的, 新的一屏到了由 submit 那边落 (pendingRightFocus); 没换、或焦点在源那一栏 (跨过去落在了那个源上), 等这一屏到了进去
+        if (!changed || back.arrival == Region.COLUMN) pendingEnterRight = true
         resolvePending()
     }
 
@@ -1704,10 +1729,12 @@ class TvSourcePanelView(
             return
         }
         pendingEnterContent = true
+        enterFromAbove = true
         resolvePending()
     }
 
     private fun enterRight() {
+        enterFromAbove = false
         commitRail()
         commitSource()
         val content = content ?: return
@@ -1878,6 +1905,7 @@ class TvSourcePanelView(
             if (collapseColumn) {
                 column.alpha = 0f
             } else if (!columnEntering) {
+                columnHidden = false
                 columnAnimator = fadeIn(arrayOf(column))
             }
         }
@@ -1898,6 +1926,7 @@ class TvSourcePanelView(
         if (!columnEntering) return
         if (columnAdapter.itemCount > 0 && column.childCount == 0) return
         columnEntering = false
+        columnHidden = false
         columnAnimator?.cancel()
         // 焦点在表头上 (收着): 排好了也不出来, 下到胶囊行再淡入 (见 updateBranchCollapse)
         if (columnCollapsed) return

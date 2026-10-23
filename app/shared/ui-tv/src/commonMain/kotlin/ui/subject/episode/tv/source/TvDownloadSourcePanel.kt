@@ -40,7 +40,6 @@ import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.tv_source_excluded_toast
 import me.him188.ani.app.ui.lang.tv_source_manual_pick_failed
-import me.him188.ani.app.ui.mediaselect.MediaSelectorMode
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import org.jetbrains.compose.resources.stringResource
@@ -102,7 +101,6 @@ fun TvDownloadSourcePanel(args: TvDownloadMediaPickerArgs) {
             sourceResults = args.sourceResults,
             manual = args.manualBrowse,
             fullSearch = flowOf(null),
-            initialMode = if (args.hasBt) MediaSelectorMode.BT else MediaSelectorMode.AUTO,
             canEditKeywords = true,
             canCache = false,
             host = host,

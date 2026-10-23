@@ -33,7 +33,6 @@ import me.him188.ani.app.domain.media.fetch.MediaSourceManager
 import me.him188.ani.app.domain.mediasource.clouddrive.cloudDriveLoginRequired
 import me.him188.ani.app.ui.mediafetch.MediaSelectorState
 import me.him188.ani.app.ui.mediafetch.MediaSourceResultListPresentation
-import me.him188.ani.app.ui.mediaselect.MediaSelectorMode
 import me.him188.ani.app.ui.mediaselect.manual.ManualBrowseState
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.utils.coroutines.throttleLatest
@@ -89,7 +88,6 @@ class TvSourcePanelState(
     sourceResults: Flow<MediaSourceResultListPresentation>,
     private val manual: ManualBrowseState?,
     fullSearch: Flow<Boolean?>,
-    initialMode: MediaSelectorMode,
     private val canEditKeywords: Boolean,
     private val canCache: Boolean,
     private val host: TvSourcePanelHost,
@@ -137,7 +135,6 @@ class TvSourcePanelState(
                 fullSearch = full,
                 canEditKeywords = canEditKeywords,
                 canCache = canCache,
-                initialMode = initialMode,
                 nowMillis = currentTimeMillis(),
                 canOpenDownloads = canOpenDownloads,
                 canOpenSettings = canOpenSettings,
@@ -193,6 +190,21 @@ class TvSourcePanelState(
             if (it.railKey == key) it else it.copy(railKey = key, sourceKey = null, drill = null, frozenOrder = null, showExcluded = false)
         }
         if (key == TvSourceRailKeys.MANUAL) manual?.searchIfNeeded()
+    }
+
+    /**
+     * 焦点停到了内容本来就是的胶囊 [railKey] / 源 [sourceKey] 上 (见 [TvSourcePanelListener.onSelectionHeld]): 记成选中的, 落点规则之后换了答案
+     * 也不换. 只停在胶囊上、记着的是这一组里的某个源 (详情弹窗换过去的) 时不改, 不然源那一栏选中的会换掉.
+     */
+    fun onSelectionHeld(railKey: String, sourceKey: String?) {
+        val groups = content.value?.sourceGroups.orEmpty()
+        nav.update {
+            when {
+                sourceKey != null -> if (it.railKey == railKey && it.sourceKey == sourceKey) it else it.copy(railKey = railKey, sourceKey = sourceKey)
+                it.railKey == railKey || it.railKey?.let { key -> groups[key] } == railKey -> it
+                else -> it.copy(railKey = railKey)
+            }
+        }
     }
 
     /** 源那一栏换到 [groupKey] 这一组的 [sourceKey], 并记成这一组上次停的源. */
