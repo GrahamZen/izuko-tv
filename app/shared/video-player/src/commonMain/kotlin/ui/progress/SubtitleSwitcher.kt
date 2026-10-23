@@ -98,9 +98,7 @@ fun PlayerControllerDefaults.SubtitleSwitcher(
     onSelect: (SubtitleTrack?) -> Unit = { playerState.select(it) },
     onExpandedChanged: (expanded: Boolean) -> Unit = {},
 ) {
-    val state = remember(playerState) {
-        SubtitleTrackState(playerState.selected, playerState.candidates) { playerState.select(it) }
-    }
+    val state = rememberSubtitleTrackState(playerState)
     SubtitleSwitcher(state, onSelect, modifier, onExpandedChanged)
 }
 
