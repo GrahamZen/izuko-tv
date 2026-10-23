@@ -28,19 +28,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.itemsIndexed
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -53,7 +47,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.togetherWith
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -61,16 +54,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import me.him188.ani.app.ui.foundation.tv.tvPrefersTmdbText
 import me.him188.ani.app.ui.foundation.widgets.AniFocusActionButton
-import me.him188.ani.app.ui.foundation.widgets.AniFocusIconButton
-import me.him188.ani.app.ui.foundation.widgets.AniFocusSelectableSurface
 import me.him188.ani.app.ui.foundation.widgets.AniScrollableTextDialog
-import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_CONTENT_PADDING
-import me.him188.ani.app.ui.foundation.widgets.AniGlassPopupSurface
-import me.him188.ani.app.ui.foundation.widgets.LocalAniGlassPanel
-import me.him188.ani.app.ui.foundation.widgets.ProvideScrollFadeFocusMargin
-import me.him188.ani.app.ui.foundation.widgets.aniGlassItemColor
-import me.him188.ani.app.ui.foundation.widgets.aniPanelTitleStyle
-import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFade
 import me.him188.ani.app.ui.lang.subject_details_no_summary
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -110,16 +94,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntRect
-import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupPositionProvider
-import androidx.compose.ui.window.PopupProperties
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.PlayArrow
 import kotlinx.coroutines.launch
@@ -131,14 +108,12 @@ import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.app.ui.foundation.rememberTvLongPressKeyState
 import me.him188.ani.app.ui.foundation.tvLongPressKey
-import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
 import me.him188.ani.app.ui.foundation.focus.TvScrollAnimator
 import me.him188.ani.app.ui.foundation.focus.rememberTvFocusScope
 import me.him188.ani.app.ui.foundation.focus.tvAnchorBringIntoViewSpec
 import me.him188.ani.app.ui.foundation.focus.tvFocusMoveRateLimit
 import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
 import me.him188.ani.app.ui.foundation.focus.tvRowEndKeys
-import me.him188.ani.app.ui.foundation.focus.tvWindowInitialFocus
 import me.him188.ani.app.ui.foundation.tv.ReportTvScrollActivity
 import me.him188.ani.app.ui.foundation.tv.TvFocusRing
 import me.him188.ani.app.ui.foundation.tv.rememberTvCardsScrollingProvider
@@ -155,8 +130,6 @@ import me.him188.ani.app.ui.foundation.tv.tvAmbientMarquee
 import me.him188.ani.app.ui.foundation.tv.TV_INSTANT_CONTENT_SWAP
 import me.him188.ani.app.ui.foundation.theme.glassContainerColor
 import me.him188.ani.app.ui.lang.Lang
-import me.him188.ani.app.ui.lang.subject_details_episodes
-import me.him188.ani.app.ui.lang.subject_episode_cache
 import me.him188.ani.app.ui.lang.subject_episode_duration_minutes
 import me.him188.ani.app.ui.lang.subject_episode_mark_watched
 import me.him188.ani.app.ui.lang.subject_episode_unwatch
@@ -1643,46 +1616,14 @@ fun FocusEpisodeMetaColumn(
     }
 }
 
-/**
- * [FocusEpisodeGridDropdown] 里聚焦集的元数据: 时长与播出日期**并作一行**
- * ("24 分钟 · 2024-01-15"), 字号与左边的标题一致.
- *
- * 不用 [FocusEpisodeMetaColumn] 那种上下两行: 那一行左边只有一行标题, 右边一旦是两行就由它
- * 决定行高 —— 而时长来自 TMDB, 异步到达且不是每集都有, 于是在"有时长"与"没时长"的集之间移动
- * 焦点时整行会在一行与两行之间跳. 菜单是从锚点**向上**弹的 (见上面的 positionProvider),
- * 高度一变整个面板就跟着上下抖.
- *
- * 播放器选集条那边不受影响, 不必跟着改: 它左侧是固定三行的简介, 行高由简介决定,
- * 右边两行还是一行都撑不动它.
- */
-@Composable
-private fun FocusEpisodeMetaLine(
-    runtimeMinutes: Int?,
-    airDate: PackedDate,
-    modifier: Modifier = Modifier,
-) {
-    val text = episodeMetaText(runtimeMinutes, airDate) ?: return
-    Text(
-        text,
-        modifier,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        style = MaterialTheme.typography.bodyMedium,
-        maxLines = 1,
-        softWrap = false,
-    )
-}
-
 /** 时长与播出日期之间的分隔. */
 private const val EPISODE_META_SEPARATOR = " · "
 
 /**
- * 单集的元信息一行: `"24 分钟 · 2024-01-15"`; 两项都没有时返回 null (调用方整块不显示).
- *
- * 两个消费端 ([FocusEpisodeMetaLine] 与长按卡片的「本集详情」弹窗) 共用同一份拼法:
- * 同一条信息在同一个界面里出现两次, 分隔符或顺序不一样就是穿帮.
+ * 单集的元信息一行: `"24 分钟 · 2024-01-15"`; 两项都没有时返回 null (调用方整块不显示). 「本集详情」弹窗底行用 (长按选集卡、全部选集里长按).
  */
 @Composable
-internal fun episodeMetaText(runtimeMinutes: Int?, airDate: PackedDate): String? {
+fun episodeMetaText(runtimeMinutes: Int?, airDate: PackedDate): String? {
     val text = listOfNotNull(
         runtimeMinutes?.let { stringResource(Lang.subject_episode_duration_minutes, it) },
         formatAirDate(airDate),
@@ -1695,166 +1636,6 @@ private fun formatAirDate(date: PackedDate): String? {
     val month = date.month.toString().padStart(2, '0')
     val day = date.day.toString().padStart(2, '0')
     return "${date.year}-$month-$day"
-}
-
-/**
- * TV 选集快速跳转子菜单: 从 Hero "选集"圆钮上方弹出 (信息带贴屏幕底部), 内容为数字方块网格
- * (沿用旧版选集对话框 [me.him188.ani.app.ui.subject.episode.list.EpisodeListDialog] 的形态).
- * 轮播是主体, 这里是辅助入口 —— 上千集 (如 ONE PIECE) 时逐格横向导航不现实,
- * 网格配合 D-pad 纵向移动一排跳十几集. 上千集必须懒加载, 用 LazyVerticalGrid
- * 而非旧版的 FlowRow. 打开时自动滚动到当前集并聚焦.
- *
- * 用裸 [Popup] 而非 material3 DropdownMenu: 后者的内容列带 width(IntrinsicSize.Max),
- * 内在尺寸测量会穿透到 LazyVerticalGrid (SubcomposeLayout 不支持内在测量, 直接崩溃).
- * 外观同玻璃弹窗 ([AniGlassPopupSurface]: 圆角、高光边、方块淡白底, 标题 [aniPanelTitleStyle]); 网格滚不完的那一边渐隐.
- *
- * 需组合在锚点 (入口圆钮) 所在的 Box 内, 菜单弹出位置跟随锚点.
- */
-@Composable
-fun FocusEpisodeGridDropdown(
-    expanded: Boolean,
-    episodes: List<EpisodeListItem>,
-    currentEpisodeId: Int?,
-    onEpisodeClick: (EpisodeListItem) -> Unit,
-    /** 返回键/点击外部关闭菜单 (不跳转轮播, 调用方把焦点还给入口圆钮). */
-    onDismissRequest: () -> Unit,
-    /**
-     * 特别篇 (SP/OVA/OAD 等非正片, 即 `EpisodeListUiState.otherEpisodes`): 网格里排在正片
-     * 之后, 中间隔一整行分隔线 —— 数字方块是快速跳转用的, 分组比混排好定位.
-     * [FocusEpisodeCarousel] 那边特别篇放哪由设置定 (见 `arrangeSpecials`), 设置为隐藏时调用方这里传空.
-     */
-    specialEpisodes: List<EpisodeListItem> = emptyList(),
-    /** episodeId -> 分集时长 (分钟, TMDB), 显示在聚焦集标题右侧; 缺失则不显示. */
-    episodeRuntimes: Map<Int, Int> = emptyMap(),
-    /** episodeId -> TMDB 集名 (见 [tvEpisodeName]), 聚焦集标题用. */
-    episodeNames: Map<Int, String> = emptyMap(),
-    /** 非 null 时标题行右侧显示缓存入口 (跳转本条目缓存页), 对应旧版选集对话框右上角的下载按钮. */
-    onCacheClick: (() -> Unit)? = null,
-    /** 非 null 时方格支持长按确认键 (按住 OK): 由调用方关闭菜单并让轮播跳到该集. */
-    onEpisodeLongClick: ((EpisodeListItem) -> Unit)? = null,
-) {
-    if (!expanded) return
-    // 从入口圆钮上方弹出 (信息带贴屏幕底部, 向下没有空间; 观感对齐收藏按钮的菜单):
-    // 菜单底缘在按钮顶缘上方 8dp, 左缘对齐按钮左缘, 越界时收回窗口内
-    val density = LocalDensity.current
-    val positionProvider = remember(density) {
-        object : PopupPositionProvider {
-            override fun calculatePosition(
-                anchorBounds: IntRect,
-                windowSize: IntSize,
-                layoutDirection: LayoutDirection,
-                popupContentSize: IntSize,
-            ): IntOffset {
-                val gap = with(density) { 8.dp.roundToPx() }
-                val x = anchorBounds.left
-                    .coerceAtMost(windowSize.width - popupContentSize.width)
-                    .coerceAtLeast(0)
-                val y = (anchorBounds.top - gap - popupContentSize.height).coerceAtLeast(0)
-                return IntOffset(x, y)
-            }
-        }
-    }
-    Popup(
-        popupPositionProvider = positionProvider,
-        onDismissRequest = onDismissRequest,
-        properties = PopupProperties(focusable = true),
-    ) {
-        // 方块里只有集数, 聚焦集的标题展示在网格上方这一行 (整个内容随关闭离开组合, 状态自动重置)
-        var focusedEpisodeId by remember { mutableStateOf<Int?>(null) }
-        val gridState = rememberLazyGridState()
-        // 打开时滚到当前集: 当前集必是正片, 下标直接在 episodes 里算 (特别篇排在其后,
-        // 不影响正片下标). 上方的聚焦集信息行则要能显示特别篇, 用合并后的列表查.
-        val currentIndex = remember(episodes, currentEpisodeId) {
-            if (currentEpisodeId == null) -1 else episodes.indexOfFirst { it.episodeId == currentEpisodeId }
-        }
-        val allEpisodes = remember(episodes, specialEpisodes) {
-            if (specialEpisodes.isEmpty()) episodes else episodes + specialEpisodes
-        }
-        LaunchedEffect(currentIndex) {
-            if (currentIndex >= 0) {
-                gridState.scrollToItem(currentIndex)
-            }
-        }
-        // 详情页页面级禁用了 BringIntoView (区块吸附需要), Popup 内容继承了该设置,
-        // 会导致网格不跟随焦点滚动 (焦点走出视口后卡在最后一批已组合的格子上).
-        // 这里恢复接口默认行为 (最小滚动保持聚焦格可见).
-        val defaultBringIntoView = remember { object : BringIntoViewSpec {} }
-        CompositionLocalProvider(LocalBringIntoViewSpec provides defaultBringIntoView) {
-        AniGlassPopupSurface(
-            // Popup 是独立窗口, 按键到不了播放页的根路由 —— 播放器选集条长按开的这个网格
-            // 盖在画面上, 遥控器播放暂停键仍该管用. 播放页之外为空操作
-            Modifier.tvOverlayWindowKeys(onDismissRequest).width(560.dp).heightIn(max = 480.dp),
-        ) {
-            Column(
-                Modifier.padding(CENTERED_PANEL_CONTENT_PADDING),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    stringResource(Lang.subject_details_episodes),
-                    Modifier.weight(1f),
-                    style = aniPanelTitleStyle,
-                )
-                if (onCacheClick != null) {
-                    AniFocusIconButton(onCacheClick) {
-                        Icon(
-                            rememberVectorPainter(Icons.Rounded.Download),
-                            contentDescription = stringResource(Lang.subject_episode_cache),
-                        )
-                    }
-                }
-            }
-            FocusEpisodeGridHeaderLine(
-                allEpisodes = allEpisodes,
-                currentEpisodeId = currentEpisodeId,
-                focusedEpisodeId = { focusedEpisodeId },
-                episodeRuntimes = episodeRuntimes,
-                episodeNames = episodeNames,
-            )
-            ProvideScrollFadeFocusMargin {
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(56.dp),
-                modifier = Modifier.weight(1f, fill = false).aniVerticalScrollFade(gridState),
-                state = gridState,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                itemsIndexed(episodes, key = { _, item -> item.episodeId }) { index, item ->
-                    FocusEpisodeSortCell(
-                        item,
-                        isPlaying = item.episodeId == currentEpisodeId,
-                        onClick = { onEpisodeClick(item) },
-                        modifier = (if (index == currentIndex) Modifier.tvWindowInitialFocus() else Modifier)
-                            .onFocusChanged { if (it.isFocused) focusedEpisodeId = item.episodeId },
-                        onLongClick = onEpisodeLongClick?.let { longClick -> { longClick(item) } },
-                    )
-                }
-                // 正片与特别篇之间隔一整行分隔线 (对应旧版选集对话框里那条 HorizontalDivider).
-                // 独占一行不可聚焦, D-pad 从正片末行下移直接落到特别篇首格.
-                if (specialEpisodes.isNotEmpty() && episodes.isNotEmpty()) {
-                    item(span = { GridItemSpan(maxLineSpan) }) {
-                        HorizontalDivider(Modifier.padding(vertical = 4.dp))
-                    }
-                }
-                items(specialEpisodes, key = { it.episodeId }) { item ->
-                    FocusEpisodeSortCell(
-                        item,
-                        isPlaying = item.episodeId == currentEpisodeId,
-                        onClick = { onEpisodeClick(item) },
-                        modifier = Modifier
-                            .onFocusChanged { if (it.isFocused) focusedEpisodeId = item.episodeId },
-                        onLongClick = onEpisodeLongClick?.let { longClick -> { longClick(item) } },
-                    )
-                }
-            }
-            }
-            }
-        }
-        }
-    }
 }
 
 /**
@@ -1977,106 +1758,6 @@ private fun FocusEpisodeInfoRow(
                     )
                 }
             }
-        }
-    }
-}
-
-/**
- * 选集网格弹窗顶部的"聚焦集"信息行: 集号+标题 (太长时跑马灯, 不溢出则静止) + 右侧时长/日期.
- *
- * 单独成组件: [focusedEpisodeId] 每次格间移动都变, 唯一的组合期读者就是本行 —— 读收在
- * 这里, 格间移动只重组这一行; 读在 Popup 内容作用域的话, 每按一格 ~56 个数字方块全量
- * 重建 (2026-07-31 实测 epGridCell 每 15s 段 104 次, 是详情页最大的重组消费者).
- *
- * 恒为单行: 左标题与右侧元数据同字号、同 maxLines = 1, 行高与"有没有时长/日期"无关.
- * 菜单从锚点向上弹, 内容高度一变整个面板就上下抖 (见 [FocusEpisodeMetaLine]).
- */
-@Composable
-private fun FocusEpisodeGridHeaderLine(
-    allEpisodes: List<EpisodeListItem>,
-    currentEpisodeId: Int?,
-    focusedEpisodeId: () -> Int?,
-    episodeRuntimes: Map<Int, Int>,
-    episodeNames: Map<Int, String>,
-) {
-    val displayed = allEpisodes.firstOrNull { it.episodeId == (focusedEpisodeId() ?: currentEpisodeId) }
-        ?: allEpisodes.firstOrNull()
-        ?: return
-    Row(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(24.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            "${displayed.sort}. ${displayed.tvEpisodeName(episodeNames)}",
-            Modifier.weight(1f).tvAmbientMarquee(iterations = Int.MAX_VALUE),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodyMedium,
-            maxLines = 1,
-        )
-        FocusEpisodeMetaLine(
-            runtimeMinutes = episodeRuntimes[displayed.episodeId],
-            airDate = displayed.airDate,
-        )
-    }
-}
-
-/**
- * [FocusEpisodeGridDropdown] 里的数字方块. 三态同弹窗里的其他选项 ([AniFocusSelectableSurface]): 聚焦主题色实底,
- * 当前集是选中色; 其余是玻璃面板里项目的淡白底 ([aniGlassItemColor]), 看过的与未开播的淡一半 (未开播的字再置灰).
- * 不在玻璃面板里时 (没有 [LocalAniGlassPanel]) 看过的与未开播的比面板低一档, 其余高一档.
- * [onLongClick] 非 null 时支持长按确认键 (按住 OK) 触发: 检测方式同 [FocusEpisodeCard],
- * 但按住计数一到阈值就立即触发 (不等松开) —— 跳转类操作即时反馈更顺手.
- */
-@Composable
-private fun FocusEpisodeSortCell(
-    item: EpisodeListItem,
-    isPlaying: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    onLongClick: (() -> Unit)? = null,
-) {
-    val longPressState = rememberTvLongPressKeyState()
-    val longPressModifier = if (onLongClick == null) {
-        Modifier
-    } else {
-        Modifier.tvLongPressKey(
-            onLongPress = onLongClick,
-            onShortPress = onClick,
-            state = longPressState,
-        )
-    }
-    val isWatched = item.isDoneOrDropped
-    val dimmed = isWatched || !item.isBroadcast
-    // 未开播 / 看过的字色; 聚焦与当前集用底座给的内容色
-    val sortColor = when {
-        !item.isBroadcast -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-        isWatched -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-        else -> Color.Unspecified
-    }
-    // 按住确认键的视觉反馈: 按住期间方块轻微缩小; 达到长按阈值后恢复原状 —
-    // "缩下去又弹回来" = 长按已经触发
-    val pressing = onLongClick != null && longPressState.pressing
-    val pressScale by animateFloatAsState(if (pressing) 0.88f else 1f)
-    AniFocusSelectableSurface(
-        onClick = onClick,
-        selected = isPlaying,
-        shape = RoundedCornerShape(8.dp),
-        // scale 放链最外层: 调用方 modifier 里可能带描边/底色, 按住缩小时一起缩
-        modifier = Modifier.scale(pressScale).then(modifier).height(48.dp).then(longPressModifier),
-        unselectedColor = when {
-            LocalAniGlassPanel.current -> aniGlassItemColor().let { if (dimmed) it.copy(alpha = it.alpha / 2) else it }
-            dimmed -> MaterialTheme.colorScheme.surfaceContainer
-            else -> MaterialTheme.colorScheme.surfaceContainerHighest
-        },
-    ) { focused ->
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(
-                item.sort.toString(),
-                color = if (focused || isPlaying) Color.Unspecified else sortColor,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 1,
-            )
         }
     }
 }
