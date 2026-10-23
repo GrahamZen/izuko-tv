@@ -87,7 +87,8 @@ internal class MediaAutoSelector(private val mediaSelector: MediaSelector) {
         var resumedPreferred: MediaSourceFetchState? = null
         try {
             combine(
-                mediaSelector.autoSelectSnapshots(sourceSnapshots(session)), stage, mediaSelector.selected,
+                mediaSelector.autoSelectSnapshots(sourceSnapshots(session)).let { if (config.selectCache) it.awaitCacheReadiness(logger) else it },
+                stage, mediaSelector.selected,
             ) { snapshot, phase, currentSelection ->
                 if (currentSelection != expectedSelection) Decision.Exhausted
                 else decide(snapshot, config, phase, resumedPreferred)
