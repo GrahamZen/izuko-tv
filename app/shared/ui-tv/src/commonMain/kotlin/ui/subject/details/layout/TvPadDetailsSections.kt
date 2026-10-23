@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Column
@@ -33,9 +32,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyGridState
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -45,7 +41,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
-import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.GridView
@@ -64,7 +59,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -95,27 +89,16 @@ import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
 import me.him188.ani.app.ui.foundation.theme.glassContainerColor
 import me.him188.ani.app.ui.foundation.tv.FillTvTmdbTextsFromCache
 import me.him188.ani.app.ui.foundation.tv.rememberTvTmdbTitles
-import me.him188.ani.app.ui.foundation.tv.tvPrefersTmdbText
 import me.him188.ani.app.ui.foundation.tv.tvUseOriginalTitle
 import me.him188.ani.app.ui.foundation.widgets.AniCenteredPanelDialog
-import me.him188.ani.app.ui.foundation.widgets.AniFocusActionButton
-import me.him188.ani.app.ui.foundation.widgets.AniScrollableTextDialog
 import me.him188.ani.app.ui.foundation.widgets.aniGlassButtonColor
 import me.him188.ani.app.ui.foundation.widgets.aniGlassEdge
 import me.him188.ani.app.ui.foundation.widgets.aniPanelSubtitleStyle
 import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFade
 import me.him188.ani.app.ui.lang.Lang
-import me.him188.ani.app.ui.lang.pad_all_episodes_hint
-import me.him188.ani.app.ui.lang.pad_all_episodes_tab_all
-import me.him188.ani.app.ui.lang.pad_all_episodes_tab_specials
-import me.him188.ani.app.ui.lang.pad_all_episodes_view_numbers
-import me.him188.ani.app.ui.lang.pad_all_episodes_view_stills
-import me.him188.ani.app.ui.lang.subject_details_main_episodes
 import me.him188.ani.app.ui.lang.subject_episode_close
-import me.him188.ani.app.ui.lang.subject_episode_now_playing
 import me.him188.ani.app.ui.lang.subject_details_characters
 import me.him188.ani.app.ui.lang.subject_details_episodes
-import me.him188.ani.app.ui.lang.subject_details_no_summary
 import me.him188.ani.app.ui.lang.subject_details_related_subjects
 import me.him188.ani.app.ui.lang.subject_details_staff
 import me.him188.ani.app.ui.lang.subject_details_tags
@@ -123,9 +106,6 @@ import me.him188.ani.app.ui.lang.subject_details_tab_comments
 import me.him188.ani.app.ui.lang.subject_details_view_all
 import me.him188.ani.app.ui.lang.pad_subject_details_all_episodes
 import me.him188.ani.app.ui.lang.subject_episode_cache
-import me.him188.ani.app.ui.lang.subject_episode_duration_minutes
-import me.him188.ani.app.ui.lang.subject_episode_mark_watched
-import me.him188.ani.app.ui.lang.subject_episode_unwatch
 import me.him188.ani.app.ui.rating.FiveRatingStars
 import me.him188.ani.app.ui.richtext.UIRichElement
 import me.him188.ani.app.ui.subject.details.components.COVER_WIDTH_TO_HEIGHT_RATIO
@@ -142,16 +122,14 @@ import me.him188.ani.app.ui.subject.details.sections.EPISODE_STILL_SCRIM_ALPHA
 import me.him188.ani.app.ui.subject.details.sections.EPISODE_STILL_SCRIM_START
 import me.him188.ani.app.ui.subject.details.sections.StaffViewAllDialog
 import me.him188.ani.app.ui.subject.details.sections.episodeStillImageUrl
+import me.him188.ani.app.ui.subject.details.sections.episodeMetaText
 import me.him188.ani.app.ui.subject.details.sections.focusEpisodeCardColors
-import me.him188.ani.app.ui.subject.details.sections.mergedEpisodeDesc
 import me.him188.ani.app.ui.subject.details.sections.tvEpisodeName
 import me.him188.ani.app.ui.subject.episode.list.EpisodeListItem
 import me.him188.ani.app.ui.subject.person.PeoplePreviewTarget
 import me.him188.ani.app.ui.subject.person.rememberPeopleClickHandler
-import me.him188.ani.datasources.api.PackedDate
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.first
 import org.jetbrains.compose.resources.stringResource
 
 /*
@@ -282,7 +260,7 @@ internal fun TvPadEpisodesSection(
                             onLongClick = { detailsTarget = item },
                             modifier = Modifier.fillMaxWidth().aspectRatio(TV_PAD_EPISODE_WIDTH / TV_PAD_EPISODE_HEIGHT),
                         )
-                        tvPadEpisodeMeta(runtimes[item.episodeId], item.airDate)?.let {
+                        episodeMetaText(runtimes[item.episodeId], item.airDate)?.let {
                             Text(
                                 it,
                                 style = MaterialTheme.typography.labelMedium,
@@ -297,7 +275,7 @@ internal fun TvPadEpisodesSection(
     }
     val scope = rememberCoroutineScope()
     detailsTarget?.let { target ->
-        TvPadEpisodeDetailsDialog(
+        TvEpisodeDetailsDialog(
             target,
             episodes = episodes,
             onNavigate = { next ->
@@ -331,9 +309,6 @@ internal fun TvPadEpisodeCard(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
-    /** 右上角的小标签 (全部选集弹窗里的「正在播放」「特别篇」); null = 不画. */
-    chipLabel: String? = null,
-    chipIcon: ImageVector? = null,
 ) {
     val watched = item.isDoneOrDropped
     val colors = focusEpisodeCardColors(isPlaying = isCurrent, isWatched = watched, monochrome = false, glass = true)
@@ -408,384 +383,6 @@ internal fun TvPadEpisodeCard(
             ) {
                 Box(Modifier.fillMaxWidth(p.coerceIn(0f, 1f)).fillMaxHeight().background(colors.progress))
             }
-        }
-        if (chipLabel != null) {
-            // 压在剧照上: 半透明黑底白字, 同剧照上的集号
-            Row(
-                Modifier.align(Alignment.TopEnd)
-                    .padding(TV_PAD_EPISODE_CHIP_MARGIN)
-                    .clip(RoundedCornerShape(TV_PAD_EPISODE_CHIP_CORNER))
-                    .background(Color.Black.copy(alpha = TV_PAD_EPISODE_CHIP_ALPHA))
-                    .padding(horizontal = 8.dp, vertical = 3.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                chipIcon?.let { Icon(it, contentDescription = null, Modifier.size(14.dp), tint = Color.White) }
-                Text(chipLabel, style = MaterialTheme.typography.labelSmall, color = Color.White, maxLines = 1)
-            }
-        }
-    }
-}
-
-/** 卡片下面那一行: `"24 分钟 · 2024-01-15"` (同遥控器版本集详情弹窗的拼法); 两项都没有时为 null. */
-@Composable
-private fun tvPadEpisodeMeta(runtimeMinutes: Int?, airDate: PackedDate): String? {
-    val date = if (airDate == PackedDate.Invalid) {
-        null
-    } else {
-        "${airDate.year}-${airDate.month.toString().padStart(2, '0')}-${airDate.day.toString().padStart(2, '0')}"
-    }
-    val text = listOfNotNull(
-        runtimeMinutes?.let { stringResource(Lang.subject_episode_duration_minutes, it) },
-        date,
-    ).joinToString(" · ")
-    return text.ifEmpty { null }
-}
-
-/**
- * 长按选集卡打开的本集详情: 剧照做满幅背景, 完整简介可滚, 底部唯一的按钮按当前状态是「标记看过」或「取消看过」(同遥控器版).
- * 两侧箭头 / 左右滑 / 左右键原地换成 [episodes] 里相邻那一集 ([onNavigate]), 到头那一侧不动.
- */
-@Composable
-private fun TvPadEpisodeDetailsDialog(
-    target: EpisodeListItem,
-    episodes: List<EpisodeListItem>,
-    onNavigate: (EpisodeListItem) -> Unit,
-    stillUrl: String?,
-    runtime: Int?,
-    overview: String?,
-    names: Map<Int, String>,
-    onSetCollectionType: (UnifiedCollectionType) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val watched = target.isDoneOrDropped
-    val index = episodes.indexOfFirst { it.episodeId == target.episodeId }
-    val background: (@Composable BoxScope.() -> Unit)? = if (stillUrl == null) {
-        null
-    } else {
-        {
-            AsyncImage(
-                episodeStillImageUrl(stillUrl),
-                contentDescription = null,
-                Modifier.matchParentSize(),
-                contentScale = ContentScale.Crop,
-                decodeAtOriginalSize = true,
-            )
-        }
-    }
-    AniScrollableTextDialog(
-        title = "${target.sort}. ${target.tvEpisodeName(names)}",
-        text = mergedEpisodeDesc(overview, target.desc, tmdbOnly = tvPrefersTmdbText())
-            .ifBlank { stringResource(Lang.subject_details_no_summary) },
-        onDismissRequest = onDismiss,
-        onHorizontalNav = { delta -> episodes.getOrNull(index + delta)?.takeIf { index >= 0 }?.let(onNavigate) },
-        canHorizontalNav = { delta -> index >= 0 && index + delta in episodes.indices },
-        background = background,
-        meta = tvPadEpisodeMeta(runtime, target.airDate),
-        aspectRatio = TV_PAD_EPISODE_WIDTH / TV_PAD_EPISODE_HEIGHT,
-        action = { modifier ->
-            AniFocusActionButton(
-                onClick = {
-                    onSetCollectionType(if (watched) UnifiedCollectionType.NOT_COLLECTED else UnifiedCollectionType.DONE)
-                    onDismiss()
-                },
-                modifier = modifier,
-            ) {
-                Text(
-                    stringResource(if (watched) Lang.subject_episode_unwatch else Lang.subject_episode_mark_watched),
-                    style = MaterialTheme.typography.labelLarge,
-                )
-            }
-        },
-    )
-}
-
-/**
- * 全部选集: 居中玻璃面板. 标题「选集」+ 条目名, 右上角「下载」与关闭; 有特别篇时一排分段标签「全部 / 正片 / 特别篇」(带集数),
- * 同一行右端写正在播放第几集, 最右是「剧照卡 / 只显示集号」的切换 (长番剧照卡要滑很久; 选过的记到进程结束, 换一部再开还是那种);
- * 下面是一行四张的剧照卡网格 (正在播放的那张与特别篇右上角压小标签), 或一格一个集号的密排网格; 打开 / 切换时滚到正在播放那一集
- * (它上面露一行), 滚不完的那边渐隐; 底下一行操作提示. 点格子播放, 长按开本集详情 (同选集行). 触屏用, 不画聚焦描边.
- */
-@Composable
-internal fun TvPadAllEpisodesDialog(
-    subjectName: String,
-    mainEpisodes: List<EpisodeListItem>,
-    specialEpisodes: List<EpisodeListItem>,
-    currentEpisodeId: Int?,
-    stills: Map<Int, String>,
-    playProgress: Map<Int, Float>,
-    runtimes: Map<Int, Int>,
-    overviews: Map<Int, String>,
-    names: Map<Int, String>,
-    onPlay: (EpisodeListItem) -> Unit,
-    onSetCollectionType: (EpisodeListItem, UnifiedCollectionType) -> Unit,
-    onClickCache: (() -> Unit)?,
-    onDismiss: () -> Unit,
-) {
-    var detailsTarget by remember { mutableStateOf<EpisodeListItem?>(null) }
-    var tab by rememberSaveable { mutableStateOf(TvPadEpisodeTab.All) }
-    val numberMode = tvPadAllEpisodesNumberMode
-    val all = remember(mainEpisodes, specialEpisodes) { mainEpisodes + specialEpisodes }
-    val shown = when (tab) {
-        TvPadEpisodeTab.All -> all
-        TvPadEpisodeTab.Main -> mainEpisodes
-        TvPadEpisodeTab.Specials -> specialEpisodes
-    }
-    val specialIds = remember(specialEpisodes) { specialEpisodes.mapTo(HashSet()) { it.episodeId } }
-    val current = all.firstOrNull { it.episodeId == currentEpisodeId }
-    val nowPlaying = stringResource(Lang.subject_episode_now_playing)
-    val specialLabel = stringResource(Lang.pad_all_episodes_tab_specials)
-    AniCenteredPanelDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(stringResource(Lang.subject_details_episodes))
-                    Text(
-                        subjectName,
-                        style = aniPanelSubtitleStyle,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                if (onClickCache != null) {
-                    TvPadGlassButton(
-                        onClick = {
-                            onDismiss()
-                            onClickCache()
-                        },
-                    ) {
-                        Row(
-                            Modifier.padding(horizontal = 16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            Icon(Icons.Rounded.Download, contentDescription = null, Modifier.size(18.dp))
-                            Text(stringResource(Lang.subject_episode_cache), style = MaterialTheme.typography.labelLarge)
-                        }
-                    }
-                }
-                TvPadGlassButton(onClick = onDismiss, Modifier.width(TV_PAD_GLASS_BUTTON_HEIGHT)) {
-                    Icon(Icons.Rounded.Close, stringResource(Lang.subject_episode_close), Modifier.size(20.dp))
-                }
-            }
-        },
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                if (specialEpisodes.isNotEmpty()) {
-                    TvPadEpisodeTabs(
-                        selected = tab,
-                        counts = mapOf(
-                            TvPadEpisodeTab.All to all.size,
-                            TvPadEpisodeTab.Main to mainEpisodes.size,
-                            TvPadEpisodeTab.Specials to specialEpisodes.size,
-                        ),
-                        onSelect = { tab = it },
-                    )
-                }
-                Spacer(Modifier.weight(1f))
-                current?.let {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Icon(Icons.Rounded.GraphicEq, contentDescription = null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
-                        Text(
-                            "$nowPlaying ${it.sort}",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                        )
-                    }
-                }
-                TvPadEpisodeViewToggle(numbers = numberMode, onChange = { tvPadAllEpisodesNumberMode = it })
-            }
-            // 换了样子 / 分段就是另一份网格: 滚动位置重来, 滚到正在播放那一集 (它上面露一行)
-            val gridState = remember(numberMode, tab) { LazyGridState() }
-            LaunchedEffect(gridState) {
-                val index = shown.indexOfFirst { it.episodeId == currentEpisodeId }
-                if (index <= 0) return@LaunchedEffect
-                val span = snapshotFlow { gridState.layoutInfo.maxSpan }.first { it > 0 }
-                gridState.scrollToItem(((index / span) - 1).coerceAtLeast(0) * span)
-            }
-            LazyVerticalGrid(
-                if (numberMode) GridCells.Adaptive(TV_PAD_EPISODE_NUMBER_MIN_WIDTH) else GridCells.Fixed(TV_PAD_ALL_EPISODES_COLUMNS),
-                Modifier.weight(1f, fill = false).aniVerticalScrollFade(gridState),
-                state = gridState,
-                horizontalArrangement = Arrangement.spacedBy(if (numberMode) TV_PAD_EPISODE_NUMBER_GAP else 16.dp),
-                verticalArrangement = Arrangement.spacedBy(if (numberMode) TV_PAD_EPISODE_NUMBER_GAP else 16.dp),
-            ) {
-                items(shown, key = { it.episodeId }) { item ->
-                    val isCurrent = item.episodeId == currentEpisodeId
-                    if (numberMode) {
-                        TvPadEpisodeNumberCell(
-                            item,
-                            isCurrent = isCurrent,
-                            progress = playProgress[item.episodeId],
-                            onClick = {
-                                onDismiss()
-                                onPlay(item)
-                            },
-                            onLongClick = { detailsTarget = item },
-                        )
-                        return@items
-                    }
-                    TvPadEpisodeCard(
-                        item,
-                        stillUrl = stills[item.episodeId],
-                        isCurrent = isCurrent,
-                        progress = playProgress[item.episodeId],
-                        names = names,
-                        onClick = {
-                            onDismiss()
-                            onPlay(item)
-                        },
-                        onLongClick = { detailsTarget = item },
-                        modifier = Modifier.fillMaxWidth().aspectRatio(TV_PAD_EPISODE_WIDTH / TV_PAD_EPISODE_HEIGHT),
-                        chipLabel = when {
-                            isCurrent -> nowPlaying
-                            item.episodeId in specialIds -> specialLabel
-                            else -> null
-                        },
-                        chipIcon = if (isCurrent) Icons.Rounded.GraphicEq else null,
-                    )
-                }
-            }
-            Text(
-                stringResource(Lang.pad_all_episodes_hint),
-                Modifier.align(Alignment.End),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-            )
-        }
-    }
-    detailsTarget?.let { target ->
-        TvPadEpisodeDetailsDialog(
-            target,
-            // 正片与特别篇连着翻, 同网格里的先后
-            episodes = all,
-            onNavigate = { detailsTarget = it },
-            stillUrl = stills[target.episodeId],
-            runtime = runtimes[target.episodeId],
-            overview = overviews[target.episodeId],
-            names = names,
-            onSetCollectionType = { type -> onSetCollectionType(target, type) },
-            onDismiss = { detailsTarget = null },
-        )
-    }
-}
-
-/** 全部选集弹窗的分段: 全部 / 正片 / 特别篇. */
-private enum class TvPadEpisodeTab { All, Main, Specials }
-
-/** 全部选集弹窗用「只显示集号」的样子 (见 [TvPadEpisodeViewToggle]); 记到进程结束, 换一部再开还是上次那种. */
-private var tvPadAllEpisodesNumberMode by mutableStateOf(false)
-
-/** 「剧照卡 / 只显示集号」的切换: 同分段标签的样子 (淡底胶囊里两段, 选中的垫亮一档的胶囊), 每段一个图标. */
-@Composable
-private fun TvPadEpisodeViewToggle(numbers: Boolean, onChange: (Boolean) -> Unit) {
-    Row(
-        Modifier.clip(CircleShape)
-            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = TV_PAD_TABS_TRACK_ALPHA))
-            .padding(TV_PAD_TABS_INSET),
-    ) {
-        listOf(
-            Triple(false, Icons.Rounded.GridView, Lang.pad_all_episodes_view_stills),
-            Triple(true, Icons.Rounded.Apps, Lang.pad_all_episodes_view_numbers),
-        ).forEach { (value, icon, label) ->
-            val isSelected = value == numbers
-            Box(
-                Modifier.clip(CircleShape)
-                    .background(if (isSelected) MaterialTheme.colorScheme.surfaceBright else Color.Transparent)
-                    .clickable { onChange(value) }
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
-            ) {
-                Icon(
-                    icon,
-                    contentDescription = stringResource(label),
-                    Modifier.size(20.dp),
-                    tint = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
-}
-
-/**
- * 只显示集号时的一格: 集号居中 (正在播放的前面画声浪图标), 底色与字色同剧照卡 (正在播放 / 看过 / 没看); 进度画成格子本身
- * 从左边起铺一层深色 (看了多少铺多宽, 看完的整格铺满), 不另画进度条 —— 密排时每格一条细线连成一片, 太吵.
- * 点了播放, 长按开本集详情.
- */
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun TvPadEpisodeNumberCell(
-    item: EpisodeListItem,
-    isCurrent: Boolean,
-    progress: Float?,
-    onClick: () -> Unit,
-    onLongClick: () -> Unit,
-) {
-    val watched = item.isDoneOrDropped
-    val colors = focusEpisodeCardColors(isPlaying = isCurrent, isWatched = watched, monochrome = false, glass = true)
-    val shownProgress = (if (watched) 1f else progress ?: 0f).coerceIn(0f, 1f)
-    Box(
-        Modifier.fillMaxWidth()
-            .height(TV_PAD_EPISODE_NUMBER_HEIGHT)
-            .clip(RoundedCornerShape(TV_PAD_EPISODE_NUMBER_CORNER))
-            .background(colors.container)
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (shownProgress > 0f) {
-            Box(
-                Modifier.align(Alignment.CenterStart)
-                    .fillMaxWidth(shownProgress)
-                    .fillMaxHeight()
-                    .background(Color.Black.copy(alpha = TV_PAD_EPISODE_NUMBER_PROGRESS_ALPHA)),
-            )
-        }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            if (isCurrent) Icon(Icons.Rounded.GraphicEq, contentDescription = null, Modifier.size(14.dp), tint = colors.sort)
-            Text(item.sort.toString(), style = MaterialTheme.typography.titleSmall, color = colors.sort, maxLines = 1)
-        }
-    }
-}
-
-/** 分段标签: 一条淡底胶囊里排着「全部 12」「正片 11」「特别篇 1」, 选中的那段垫一块亮一档的胶囊. */
-@Composable
-private fun TvPadEpisodeTabs(
-    selected: TvPadEpisodeTab,
-    counts: Map<TvPadEpisodeTab, Int>,
-    onSelect: (TvPadEpisodeTab) -> Unit,
-) {
-    Row(
-        Modifier.clip(CircleShape)
-            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = TV_PAD_TABS_TRACK_ALPHA))
-            .padding(TV_PAD_TABS_INSET),
-    ) {
-        TvPadEpisodeTab.entries.forEach { tab ->
-            val label = stringResource(
-                when (tab) {
-                    TvPadEpisodeTab.All -> Lang.pad_all_episodes_tab_all
-                    TvPadEpisodeTab.Main -> Lang.subject_details_main_episodes
-                    TvPadEpisodeTab.Specials -> Lang.pad_all_episodes_tab_specials
-                },
-            )
-            val isSelected = tab == selected
-            Text(
-                "$label ${counts[tab] ?: 0}",
-                Modifier.clip(CircleShape)
-                    .background(if (isSelected) MaterialTheme.colorScheme.surfaceBright else Color.Transparent)
-                    .clickable { onSelect(tab) }
-                    .padding(horizontal = 18.dp, vertical = 8.dp),
-                style = MaterialTheme.typography.labelLarge,
-                color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-            )
         }
     }
 }
@@ -1335,19 +932,7 @@ private val TV_PAD_EPISODE_GAP = 16.dp
 private const val TV_PAD_EPISODES_PER_ROW = 4
 private val TV_PAD_EPISODE_MIN_WIDTH = 220.dp
 
-/** 全部选集弹窗: 一行几张; 分段标签的淡底不透明度与内缩; 标题行玻璃按钮的高 (关闭钮是同大的圆). */
-private const val TV_PAD_ALL_EPISODES_COLUMNS = 4
-
-/** 只显示集号时一格至少多宽 (按弹窗宽度排几列)、多高, 圆角, 格间距. */
-private val TV_PAD_EPISODE_NUMBER_MIN_WIDTH = 72.dp
-private val TV_PAD_EPISODE_NUMBER_HEIGHT = 52.dp
-private val TV_PAD_EPISODE_NUMBER_CORNER = 12.dp
-private val TV_PAD_EPISODE_NUMBER_GAP = 10.dp
-
-/** 只显示集号时进度那层深色 (黑) 的不透明度: 浅色深色主题下都看得出比没看的那段深一档, 又不盖住集号. */
-private const val TV_PAD_EPISODE_NUMBER_PROGRESS_ALPHA = 0.16f
-private const val TV_PAD_TABS_TRACK_ALPHA = 0.08f
-private val TV_PAD_TABS_INSET = 4.dp
+/** 弹窗标题行玻璃按钮的高 (关闭钮是同大的圆). */
 private val TV_PAD_GLASS_BUTTON_HEIGHT = 44.dp
 
 /** 简介弹窗里全文与标签两段之间的间距; 标签之间 (横竖) 与「标签」二字下面的间距. */
@@ -1356,11 +941,6 @@ private val TV_PAD_SUMMARY_DIALOG_TAG_GAP = 8.dp
 
 /** 两个以上连着的空行 (中间可夹空白字符). */
 private val TV_PAD_SUMMARY_EXTRA_BLANK_LINES = Regex("\n\\s*\n(\\s*\n)+")
-
-/** 剧照卡右上角小标签 (「正在播放」「特别篇」) 离卡边的距离、圆角、底色不透明度. */
-private val TV_PAD_EPISODE_CHIP_MARGIN = 8.dp
-private val TV_PAD_EPISODE_CHIP_CORNER = 8.dp
-private const val TV_PAD_EPISODE_CHIP_ALPHA = 0.45f
 
 /** 人物卡: 每格最窄多宽、头像边长与圆角、格间距、涟漪比卡宽出多少. */
 private val TV_PAD_PERSON_MIN_WIDTH = 200.dp

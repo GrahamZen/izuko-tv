@@ -64,9 +64,6 @@ import me.him188.ani.app.ui.foundation.focus.rememberTvFocusScope
 import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
 import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.tvPrefersTmdbText
-import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeEpisodeCard
-import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeEpisodeGrid
-import me.him188.ani.app.ui.foundation.tv.tvUseOriginalTitle
 import me.him188.ani.app.ui.foundation.widgets.AniCenteredPanelDialog
 import me.him188.ani.app.ui.foundation.widgets.AniFocusActionButton
 import me.him188.ani.app.ui.foundation.widgets.AniScrollableTextDialog
@@ -102,8 +99,8 @@ import org.jetbrains.compose.resources.stringResource
 /**
  * 全部选集 (电视、平板、iPad 同一个): 居中玻璃面板. 标题行左边「选集」(不写条目名: 就是从这一部的详情页开的), 右边一排同高的控件:
  * 有特别篇时的分段「全部 / 正片 / 特别篇」(带集数)、「剧照卡 / 只显示集号」的切换 (长番剧照卡要翻很久; 选过的记到进程结束,
- * 换一部再开还是那种)、「下载」, 触屏再加关闭 (遥控器按返回关). 下面是原生网格 ([TvNativeEpisodeGrid], 长番按住连翻也顺):
- * 剧照卡 (同详情页的选集行, 正在播放那张换主色底、集号前画声浪) 或一格一个集号的密排格; 打开 / 切换时正在播放那一集滚到中间,
+ * 换一部再开还是那种)、「下载」, 触屏再加关闭 (遥控器按返回关). 下面是选集网格 ([TvAllEpisodesGrid]: 安卓上是原生的, 长番按住连翻也顺;
+ * iOS 上是 Compose 版): 剧照卡 (正在播放那张换主色底、集号前画声浪) 或一格一个集号的密排格; 打开 / 切换时正在播放那一集滚进来,
  * 滚不完的那边渐隐; 最底下一行左边写正在播放第几集, 右边是操作提示.
  * 点 (确定) 播放, 长按 (按住确定) 开本集详情, 详情里左右换集. 切换也是点 (确定) 了才换.
  *
@@ -211,17 +208,15 @@ internal fun TvAllEpisodesDialog(
                     }
                 }
             }
-            // 原生网格 (长番按住往下连翻也顺): 剧照卡同详情页的选集行, 集号格自己画, 见 TvNativeEpisodeGrid
-            val useOriginalTitle = tvUseOriginalTitle()
-            val prefersTmdb = tvPrefersTmdbText()
-            val cards = remember(shown, stills, names, playProgress, currentEpisodeId, useOriginalTitle, prefersTmdb) {
-                shown.map { it.toNativeCard(stills, names, playProgress, currentEpisodeId, prefersTmdb, useOriginalTitle) }
-            }
-            TvNativeEpisodeGrid(
-                cards = cards,
+            TvAllEpisodesGrid(
+                episodes = shown,
                 numbers = numberMode,
                 selectedIndex = gridTargetIndex,
-                touchTaps = touch,
+                currentEpisodeId = currentEpisodeId,
+                stills = stills,
+                names = names,
+                playProgress = playProgress,
+                touch = touch,
                 onFocused = { index -> shown.getOrNull(index)?.let { lastFocusedId = it.episodeId } },
                 onClick = { index ->
                     shown.getOrNull(index)?.let {
@@ -507,27 +502,6 @@ private val TV_ALL_EPISODES_BACK_KEYS = setOf(Key.Back, Key.Escape)
 
 /** 本集详情面板的宽高比 (同 TMDB 剧照 16:9, 剧照铺满不裁). */
 private const val TV_EPISODE_STILL_RATIO = 16f / 9f
-
-/** 一集换成原生网格的一格 (同详情页选集行的那张卡: 剧照用卡片档的 URL, 看过的满条). */
-private fun EpisodeListItem.toNativeCard(
-    stills: Map<Int, String>,
-    names: Map<Int, String>,
-    playProgress: Map<Int, Float>,
-    currentEpisodeId: Int?,
-    prefersTmdb: Boolean,
-    useOriginalTitle: Boolean,
-): TvNativeEpisodeCard {
-    val watched = isDoneOrDropped
-    return TvNativeEpisodeCard(
-        id = episodeId,
-        sort = sort.toString(),
-        name = tvEpisodeName(names, prefersTmdb, useOriginalTitle),
-        stillUrl = stills[episodeId]?.let(::episodeStillImageUrl),
-        playing = episodeId == currentEpisodeId,
-        watched = watched,
-        progress = if (watched) 1f else playProgress[episodeId],
-    )
-}
 
 /** 分段控件的淡底与内缩. */
 private const val TV_ALL_EPISODES_TABS_TRACK_ALPHA = 0.08f
