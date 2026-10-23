@@ -163,9 +163,11 @@ class MediaDownloadManager(
      * 用途: 选源菜单要把这些缓存显示成"不可用"而不是直接藏掉 (藏掉的话用户看不出"我明明缓存过").
      * 判据统一用 [MediaCache.canPlay] —— BT 缓存边下边播, 恒为 true; web (m3u8) 缓存只有下完才为 true.
      *
-     * **按剧集收窄**: 这里的 id 拼法是 `storageId:origin.mediaId`, 不含剧集 —— 合集资源 (一个种子
-     * 覆盖多集) 会让不同集的缓存共用同一个 origin.mediaId. 若跨集聚合, 某一集没下完就会把另一集
-     * 已下完的那份也标成不可用. 选源菜单本来就只关心当前这一集, 收窄即可.
+     * **按剧集收窄**: 合集资源 (一个种子覆盖多集) 会让不同集的缓存共用同一个 origin.mediaId. 若跨集聚合,
+     * 某一集没下完就会把另一集已下完的那份也标成不可用. 选源菜单本来就只关心当前这一集, 收窄即可.
+     * id 拼法是 `storageId:origin.mediaId:episodeId`, 与存储列出的缓存候选一样 (它们带着这一集的
+     * [me.him188.ani.datasources.api.CachedMedia.cacheEpisodeId], 见 MediaCacheStorage 的 `forRecord`); 拼得不一样,
+     * 筛选就认不出哪条没下完, 没下完的 web 缓存会被自动选中、起播时 FileNotFoundException.
      *
      * 之所以必须"实时": 选源菜单的资源列表是一次性快照 (见 MediaSourceMediaFetcher 的
      * runningFold + distinctBy), 下载完成后重新 fetch 也会因 mediaId 相同而被丢弃 —— 只能靠这条流
@@ -188,8 +190,8 @@ class MediaDownloadManager(
                     combine(
                         caches.map { cache ->
                             cache.canPlay.map { canPlay ->
-                                // 拼法必须与 CachedMedia.mediaId 一致
-                                "${storage.mediaSourceId}:${cache.origin.mediaId}" to canPlay
+                                // 拼法必须与 CachedMedia.mediaId 一致 (见上)
+                                "${storage.mediaSourceId}:${cache.origin.mediaId}:${cache.metadata.episodeId}" to canPlay
                             }
                         },
                     ) { it.toList() }
