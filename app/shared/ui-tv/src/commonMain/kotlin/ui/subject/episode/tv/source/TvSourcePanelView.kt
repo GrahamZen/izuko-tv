@@ -432,7 +432,7 @@ class TvSourcePanelView(
         }
         header.onPillClicked = { row -> row.action?.let { listener?.onAction(it) } }
         listAdapter.onRowClicked = { row, long ->
-            (if (long) longActionOf(row, inRail = false) ?: row.action else row.action)?.let { listener?.onAction(it) }
+            (if (long) longActionOf(row, inRail = false) ?: row.action else row.action)?.let { performListAction(it) }
         }
         pills.onPillClicked = { row -> row.action?.let { listener?.onAction(it) } }
         rail.addOnLayoutCompletedListener {
@@ -1753,10 +1753,21 @@ class TvSourcePanelView(
                     Region.RAIL -> if (row.action != null) listener?.onAction(row.action) else enterFromRail()
                     Region.HEADER -> if (row.id == TvSourceRailKeys.NOW_PLAYING) jumpToPlaying() else row.action?.let { listener?.onAction(it) }
                     Region.COLUMN -> if (row.action != null) listener?.onAction(row.action) else enterRight()
-                    else -> row.action?.let { listener?.onAction(it) }
+                    else -> row.action?.let { performListAction(it) }
                 }
             }
         }
+    }
+
+    /**
+     * 右边列表里按了一行 (确定键或触屏). 「继续查这个数据源」「重试」那一行马上换成查询中、再换成结果: 先把焦点送回源那一栏的
+     * 这个源再交给宿主, 不然焦点跟着那一行没了, 兜底落到别处 (看着是别的一项亮了一下).
+     */
+    private fun performListAction(action: TvSourceAction) {
+        if (action is TvSourceAction.RestartSource) {
+            content?.sourceKey?.takeIf { it == TvSourceRailKeys.web(action.instanceId) }?.let { focusRow(null, it, inRail = true) }
+        }
+        listener?.onAction(action)
     }
 
     /**
@@ -2198,6 +2209,9 @@ internal class TvSourceRowView(context: Context, private val sketch: Sketch, var
     private val badges = TvSourceBadgeView(context)
     private val trailing = TvNativeTextView(context)
     private val spinner = ProgressBar(context, null, android.R.attr.progressBarStyleSmall)
+
+    /** 右端的图标 ([TvSourceRow.trailingIcon]): 与转圈同一个位置、同样大小, 颜色同右端的字. */
+    private val trailingIcon = ImageView(context)
     private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.style = Paint.Style.STROKE }
     private val bgRect = RectF()
@@ -2219,12 +2233,14 @@ internal class TvSourceRowView(context: Context, private val sketch: Sketch, var
         meta.gravity = Gravity.END
         trailing.maxLines = 1
         trailing.gravity = Gravity.END
+        trailingIcon.scaleType = ImageView.ScaleType.FIT_CENTER
         addView(icon)
         addView(title)
         addView(meta)
         addView(badges)
         addView(trailing)
         addView(spinner)
+        addView(trailingIcon)
     }
 
     fun bind(row: TvSourceRow, style: TvSourcePanelStyle) {
@@ -2266,6 +2282,9 @@ internal class TvSourceRowView(context: Context, private val sketch: Sketch, var
         trailing.text = row.trailing
         trailing.visibility = if (row.trailing.isEmpty() || row.loading) GONE else VISIBLE
         spinner.visibility = if (row.loading) VISIBLE else GONE
+        val trailingBitmap = row.trailingIcon?.takeIf { row.trailing.isEmpty() && !row.loading }?.let { style.icons[it] }
+        trailingIcon.setImageBitmap(trailingBitmap)
+        trailingIcon.visibility = if (trailingBitmap != null) VISIBLE else GONE
 
         applyIconVisibility(row)
         if (row.icon == TvSourceRowIcon.Source && row.iconUrl != null) {
@@ -2376,6 +2395,7 @@ internal class TvSourceRowView(context: Context, private val sketch: Sketch, var
         badges.warningColor = tvNativeLerpColor(s.error, s.focusedError, p)
         badges.alpha = dim
         spinner.indeterminateTintList = ColorStateList.valueOf(secondary)
+        trailingIcon.colorFilter = PorterDuffColorFilter(secondary, PorterDuff.Mode.SRC_IN)
         // 描边只标「下面 / 右边显示的是它」与筛选的当前值; 正在播放的靠图标与右端的字 (见 TvSourceRow.playing)
         val chosen = (row.selected && !row.playing) || active
         val rest = if (chosen) s.activeBg else s.idleBg
@@ -2408,6 +2428,7 @@ internal class TvSourceRowView(context: Context, private val sketch: Sketch, var
         icon.measure(iconSpec, iconSpec)
         val spinnerSpec = MeasureSpec.makeMeasureSpec(s.spinnerSizePx, MeasureSpec.EXACTLY)
         spinner.measure(spinnerSpec, spinnerSpec)
+        trailingIcon.measure(spinnerSpec, spinnerSpec)
         val widthMode = MeasureSpec.getMode(widthMeasureSpec)
         val width = if (row?.style == TvSourceRowStyle.Rail && widthMode != MeasureSpec.EXACTLY) {
             // 按内容: 名字与右端字都排得下的宽度
@@ -2420,7 +2441,7 @@ internal class TvSourceRowView(context: Context, private val sketch: Sketch, var
             if (trailing.visibility != GONE) {
                 trailing.measure(unspecified, unspecified)
                 natural += trailing.measuredWidth + s.trailingGapPx
-            } else if (spinner.visibility != GONE) {
+            } else if (spinner.visibility != GONE || trailingIcon.visibility != GONE) {
                 natural += s.spinnerSizePx + s.trailingGapPx
             }
             if (widthMode == MeasureSpec.AT_MOST) min(natural, MeasureSpec.getSize(widthMeasureSpec)) else natural
@@ -2431,7 +2452,7 @@ internal class TvSourceRowView(context: Context, private val sketch: Sketch, var
         if (trailing.visibility != GONE) {
             trailing.measure(MeasureSpec.makeMeasureSpec(width / 2, MeasureSpec.AT_MOST), unspecified)
             trailingWidth = trailing.measuredWidth + s.trailingGapPx
-        } else if (spinner.visibility != GONE) {
+        } else if (spinner.visibility != GONE || trailingIcon.visibility != GONE) {
             trailingWidth = s.spinnerSizePx + s.trailingGapPx
         }
         var textWidth = (width - s.rowPaddingHPx * 2 - iconSlot - trailingWidth).coerceAtLeast(0)
@@ -2495,6 +2516,10 @@ internal class TvSourceRowView(context: Context, private val sketch: Sketch, var
         } else if (spinner.visibility != GONE) {
             val sy = (h - s.spinnerSizePx) / 2
             spinner.layout(right - s.spinnerSizePx, sy, right, sy + s.spinnerSizePx)
+            right -= s.spinnerSizePx + s.trailingGapPx
+        } else if (trailingIcon.visibility != GONE) {
+            val iy = (h - s.spinnerSizePx) / 2
+            trailingIcon.layout(right - s.spinnerSizePx, iy, right, iy + s.spinnerSizePx)
             right -= s.spinnerSizePx + s.trailingGapPx
         }
         if (meta.visibility != GONE) {
@@ -2779,6 +2804,7 @@ private fun measureBranchContentWidth(right: TvSourceRight, style: TvSourcePanel
         val trailing = when {
             row.loading -> style.spinnerSizePx + style.trailingGapPx
             row.trailing.isNotEmpty() -> width(style.trailing, row.trailing) + style.trailingGapPx
+            row.trailingIcon != null -> style.spinnerSizePx + style.trailingGapPx
             else -> 0
         }
         val meta = if (showsMeta(row)) {

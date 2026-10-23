@@ -144,6 +144,7 @@ import me.him188.ani.app.domain.player.extension.SeekPreviewDecoderFaultExtensio
 import me.him188.ani.app.domain.player.extension.SourceProfileExtension
 import me.him188.ani.app.domain.player.extension.SwitchMediaOnPlayerErrorExtension
 import me.him188.ani.app.domain.player.extension.SwitchNextEpisodeExtension
+import me.him188.ani.app.domain.player.extension.UserResumedSources
 import me.him188.ani.app.domain.settings.GetDanmakuRegexFilterListFlowUseCase
 import me.him188.ani.app.domain.settings.GetMediaSelectorSettingsUseCase
 import me.him188.ani.app.domain.usecase.GlobalKoin
@@ -437,6 +438,9 @@ open class EpisodeViewModel(
     @Volatile
     private var selectorOpenedFetchSession: MediaFetchSession? = null
 
+    /** 用户在选源面板里单独放开 (继续查、重试) 的数据源: 之后暂停搜索时不停它们 (见 [UserResumedSources]). */
+    private val userResumedSources = UserResumedSources()
+
     /** 用户开了「完整搜索」: 本播放页之后搜索一直查完, 开播、关选源面板都不再暂停. */
     private val _fullMediaSearch = MutableStateFlow(false)
 
@@ -482,6 +486,7 @@ open class EpisodeViewModel(
             PauseMediaFetchWhilePlayingExtension.Factory(
                 canPause = { !selectorKeepsSearching() && !searchesToCompletion() },
                 selectorOpened = { it === selectorOpenedFetchSession },
+                keep = userResumedSources::contains,
             ),
             SaveMediaPreferenceExtension,
             ObserveWebMediaSourcePreferenceExtension,
@@ -1332,7 +1337,10 @@ open class EpisodeViewModel(
         mediaSelectorShown.value = false
         if (searchesToCompletion() || !player.state.value.isPlaying) return
         withMediaFetchSession { session ->
-            session.pauseSearchingWhilePlaying(session === selectorOpenedFetchSession, keep = { it.kind == MediaSourceKind.LocalCache })
+            session.pauseSearchingWhilePlaying(
+                session === selectorOpenedFetchSession,
+                keep = { it.kind == MediaSourceKind.LocalCache || userResumedSources.contains(session, it) },
+            )
         }
     }
 
@@ -1347,7 +1355,10 @@ open class EpisodeViewModel(
         if (current.fullSearchMode != null || current.effectiveFullSearchMode(lowRamDevice) != FullSearchMode.OnPanel) return false
         settings.update { copy(fullSearchMode = FullSearchMode.Manual) }
         withMediaFetchSession { session ->
-            session.pauseSearchingWhilePlaying(selectorOpened = false, keep = { it.kind == MediaSourceKind.LocalCache })
+            session.pauseSearchingWhilePlaying(
+                selectorOpened = false,
+                keep = { it.kind == MediaSourceKind.LocalCache || userResumedSources.contains(session, it) },
+            )
         }
         return true
     }
@@ -1385,10 +1396,10 @@ open class EpisodeViewModel(
 
     fun restartSource(instanceId: String) {
         launchInBackground {
-            val result = currentMediaFetchSession()
-                ?.mediaSourceResults
-                ?.find { it.instanceId == instanceId }
-                ?: return@launchInBackground
+            val session = currentMediaFetchSession() ?: return@launchInBackground
+            val result = session.mediaSourceResults.find { it.instanceId == instanceId } ?: return@launchInBackground
+            // 用户点的 (继续查 / 重试): 之后暂停搜索时也让它查完
+            userResumedSources.add(session, instanceId)
             // 手动刷新单个源: 只清除该源的搜索缓存, 让它真正重新搜索, 不影响其他源的缓存
             selectorEpisodeCacheRepository.clearByRequestedSubjectAndSource(subjectId, result.mediaSourceId)
             result.restart()
