@@ -1083,4 +1083,10 @@
     <string name="touch_login_mirror_credentials">Turn on “%1$s” first, or the token can’t be checked. Once it’s on, your token, collections and watch progress all go through a third-party mirror, which can see and use your account.</string>
     <string name="touch_login_mirror_credentials_enable">I understand the risk, turn it on</string>
     <string name="media_selector_item_published_before_airing">Published before this episode aired</string>
+    <string name="all_episodes_tab_all">All</string>
+    <string name="all_episodes_tab_specials">Specials</string>
+    <string name="all_episodes_hint_touch">Tap to play · Long-press for details</string>
+    <string name="all_episodes_hint_remote">OK to play · Hold OK for details</string>
+    <string name="all_episodes_view_stills">Thumbnails</string>
+    <string name="all_episodes_view_numbers">Episode numbers only</string>
 </resources>
