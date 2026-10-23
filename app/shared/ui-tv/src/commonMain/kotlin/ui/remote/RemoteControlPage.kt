@@ -3053,13 +3053,16 @@ private val SCRIPT = """
         .catch(fail);
       return;
     }
-    if (e.target.id === 'play-upnext') {
+    // 按钮里有图标 (svg / path): 手指点在图标上时 target 是图标, 按按钮找
+    var btn = e.target.closest('button');
+    var id = btn ? btn.id : '';
+    if (id === 'play-upnext') {
       post('api/player/upnext', {})
         .then(function (r) { toast(r.message); setTimeout(function () { poll(true); }, 1500); })
         .catch(fail);
       return;
     }
-    if (e.target.id !== 'open-player') return;
+    if (id !== 'open-player') return;
     post('api/player/open', {}).then(function (r) { toast(r.message); setTimeout(function () { poll(true); }, 1500); }).catch(fail);
   });
   document.getElementById('player-chips').addEventListener('click', function (e) {
