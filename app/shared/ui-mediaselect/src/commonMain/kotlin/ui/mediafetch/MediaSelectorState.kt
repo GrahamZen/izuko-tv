@@ -291,6 +291,7 @@ class MediaSelectorState(
         ) { sources, mediaList, resolvingCaptchaInstanceIds ->
             Triple(sources, mediaList, resolvingCaptchaInstanceIds)
         }.flatMapLatest { (sources, allMediaList, resolvingCaptchaInstanceIds) ->
+            val candidateIds = candidateMediaIds(allMediaList)
             val showWebSources = sources.map { source ->
 
                 // 属于这个数据源的 medias
@@ -311,6 +312,7 @@ class MediaSelectorState(
                     myMediaList,
                     delayToOvercomeCacheIssue = isFirstCollect,
                     resolvingCaptchaInstanceIds = resolvingCaptchaInstanceIds,
+                    candidateIds = candidateIds,
                 ).also {
                     isFirstCollect = false
                 }
@@ -332,11 +334,13 @@ class MediaSelectorState(
         myMediaList: Sequence<Media>,
         delayToOvercomeCacheIssue: Boolean,
         resolvingCaptchaInstanceIds: Set<String>,
+        candidateIds: Set<String>,
     ) = source.state.combine(preferredWebMediaSource) { a, b -> a to b }.map { (state, preferred) ->
         // 每条线路一个芯片: 同一线路的多个资源取排序靠前的一个.
         val channels = myMediaList.distinctBy { it.properties.alliance }.map { media ->
             WebSourceChannel(media.properties.alliance, original = media)
         }.toList()
+        val behind = source.candidatesBehind(state, channels.isEmpty(), candidateIds)
         val captchaRequest = (state as? MediaSourceFetchState.CaptchaRequired)?.request
         val rateLimitedUntil = (state as? MediaSourceFetchState.RateLimited)?.retryAt
 
@@ -346,7 +350,7 @@ class MediaSelectorState(
                 null
             }
 
-            channels.isEmpty() && state is MediaSourceFetchState.Succeed -> {
+            channels.isEmpty() && state is MediaSourceFetchState.Succeed && !behind -> {
                 // MediaSelector 的 filteredCandidates 有 cache, 而 MediaSourceFetchResult.state 没有.
                 // 当 state 为 Succeed 后, 我们可能仍然看到的是旧的 filteredCandidates, 导致 channels 为 empty.
                 // 这里延迟一下可以非常轻易地解决问题.
@@ -363,7 +367,7 @@ class MediaSelectorState(
                     iconUrl = source.sourceInfo.iconUrl ?: "",
                     name = source.sourceInfo.displayName,
                     channels = channels,
-                    isLoading = state.isWorking,
+                    isLoading = state.isWorking || behind,
                     isError = state.isFailedOrAbandoned,
                     isPreferred = source.mediaSourceId == preferred,
                     captchaRequest = captchaRequest,
