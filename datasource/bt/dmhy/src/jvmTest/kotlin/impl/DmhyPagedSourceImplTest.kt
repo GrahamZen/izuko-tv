@@ -107,6 +107,17 @@ class DmhyPagedSourceImplTest {
     }
 
     @Test
+    fun `dashes the site rejects are sent as spaces`() = runTest {
+        val cjk = FakeDmhy(totalPages = 1)
+        search("死神 千年血战篇-祸进谭-", cjk).results.toList()
+        assertEquals("死神 千年血战篇 祸进谭", cjk.requests.first().parameters["keyword"])
+
+        val english = FakeDmhy(totalPages = 1)
+        search("BLEACH: Thousand-Year Blood War - The Calamity", english).results.toList()
+        assertEquals("BLEACH Thousand-Year Blood War The Calamity", english.requests.first().parameters["keyword"])
+    }
+
+    @Test
     fun `stops at empty page`() = runTest {
         val dmhy = FakeDmhy(totalPages = 2)
         val results = search("keyword", dmhy).results.toList()
