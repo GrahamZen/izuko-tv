@@ -36,7 +36,6 @@ import me.him188.ani.app.ui.media.renderSubtitleLanguage
 import me.him188.ani.app.ui.mediafetch.MediaSelectorState
 import me.him188.ani.app.ui.mediafetch.MediaSourceResultListPresentation
 import me.him188.ani.app.ui.mediafetch.MediaSourceResultPresentation
-import me.him188.ani.app.ui.mediaselect.MediaSelectorMode
 import me.him188.ani.app.ui.mediaselect.bt.BtListPresentation
 import me.him188.ani.app.ui.mediaselect.bt.BtRow
 import me.him188.ani.app.ui.mediaselect.bt.BtRowExclusion
@@ -357,7 +356,6 @@ data class TvSourcePanelInput(
     val fullSearch: Boolean?,
     val canEditKeywords: Boolean,
     val canCache: Boolean,
-    val initialMode: MediaSelectorMode,
     val nowMillis: Long,
     val canOpenDownloads: Boolean = false,
     val canOpenSettings: Boolean = false,
@@ -446,7 +444,7 @@ data class TvSourceRight(
     val pills: List<TvSourceRow> = emptyList(),
     val rows: List<TvSourceRow> = emptyList(),
     val columns: Int = 1,
-    /** 进列表时的落点 (正在播放的那一条 / 当前值); null = 第一条可聚焦的. */
+    /** 进列表时的落点 (选项列表的当前值); null = 第一条可聚焦的. 资源列表 (在线源、BT、下载) 不给: 在播的那一条按表头的「正在播放」回. */
     val focusId: String? = null,
     /** 标题普遍很长 (BT 资源、下载、一个文件一行的在线源): 列表占满宽度 (有源那一栏时占满它右边); 其余按内容定宽. */
     val wide: Boolean = false,
@@ -803,8 +801,7 @@ fun buildTvSourcePanel(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvS
         }
     }.let { if (filterable) it.withFilterRow(filterRailRow(input, strings)) else it }
 
-    // 落点: 用户选过的 (还在) → 正在播放的资源所在的组 → 初始模式是 BT 时 BT → 第一个有结果的组 (BT 虽在最前面, 不用它的人不该一打开就落在它上面)
-    // → 第一个有能查的源的组 → 第一项. 表头的命令 (「筛选」与几个操作) 不当落点
+    // 落点: 用户选过的 (还在) → 正在播放的资源所在的组 → 第一项 (不按有没有结果跳: 跳过的那几颗用户会翻回去看为什么). 表头的命令 (「筛选」与几个操作) 不当落点
     val playingGroup = playingWebSource?.takeIf { !it.isError }?.let { playing -> groups.firstOrNull { it.contains(playing) } }
     val playingKey = when {
         playingGroup != null -> playingGroup.key
@@ -817,18 +814,15 @@ fun buildTvSourcePanel(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvS
     val navRailKey = navSource?.let { source -> groups.first { it.contains(source) }.key } ?: nav.railKey
     val railKey = navRailKey?.takeIf { key -> !isCommandKey(key) && rail.any { it.id == key } }
         ?: playingKey
-        ?: TvSourceRailKeys.BT.takeIf { input.initialMode == MediaSelectorMode.BT && hasBt }
-        ?: groups.firstOrNull { group -> group.sources.any { it.channels.isNotEmpty() } }?.key
-        ?: groups.firstOrNull { group -> group.sources.any { input.driveLoginOf(it.instanceId) == null } }?.key
         ?: rail.firstOrNull { !isCommandKey(it.id) }?.id
 
-    // 组里的源: 指定的 → 这一组上次停的 (回到上次到过的地方) → 正在播的 → 第一个有结果的 → 第一个
+    // 组里的源: 指定的 → 这一组上次停的 (回到上次到过的地方) → 源那一栏的第一行 (没折进「没有结果」的第一个; 还在查、被暂停的也不跳过,
+    // 跳过一个用户会翻回去看为什么) → 第一个. 在播的组也一样: 要回在播的那一条按表头的「正在播放」(落到那个源与那一行)
     val group = groups.firstOrNull { it.key == railKey }
     val source = group?.let { g ->
         g.find(navSource?.let { TvSourceRailKeys.web(it.instanceId) } ?: nav.sourceKey)
             ?: g.find(nav.groupSources[g.key])
-            ?: playingWebSource?.let { playing -> g.sources.firstOrNull { it.instanceId == playing.instanceId } }
-            ?: g.sources.firstOrNull { it.channels.isNotEmpty() }
+            ?: g.sources.firstOrNull { !input.isEmptySource(it, strings) }
             ?: g.sources.first()
     }
     val sourceKey = source?.let { TvSourceRailKeys.web(it.instanceId) }
@@ -1307,7 +1301,6 @@ private fun webPane(
     return TvSourceRight(
         key = key,
         rows = rows,
-        focusId = rows.firstOrNull { it.selected }?.id,
         // 一个文件一行的源标题是文件名 (常带文件夹路径), 同 BT 占满宽度
         wide = webFilesOf(source, input, strings) != null,
     )
@@ -1598,7 +1591,6 @@ private fun btPane(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvSourc
         key = TvSourceRailKeys.BT,
         pills = pills,
         rows = rows,
-        focusId = rows.firstOrNull { it.selected }?.id,
         wide = true,
     )
 }
@@ -1620,7 +1612,6 @@ private fun downloadsPane(input: TvSourcePanelInput, strings: TvSourceStrings): 
     return TvSourceRight(
         key = TvSourceRailKeys.DOWNLOADS,
         rows = rows,
-        focusId = rows.firstOrNull { it.selected }?.id,
         wide = true,
     )
 }
