@@ -27,7 +27,7 @@ import me.him188.ani.datasources.api.paging.PageBasedPagedSource
 import me.him188.ani.datasources.api.paging.Paged
 import me.him188.ani.datasources.api.paging.SizedSource
 import me.him188.ani.datasources.api.paging.map
-import me.him188.ani.datasources.api.paging.merge
+import me.him188.ani.datasources.api.paging.mergeKeywordSearches
 import me.him188.ani.datasources.api.source.ConnectionStatus
 import me.him188.ani.datasources.api.source.FactoryId
 import me.him188.ani.datasources.api.source.HttpMediaSource
@@ -172,7 +172,7 @@ class RssMediaSource(
         val names = if (searchConfig.searchFallbackKeywords) (query.subjectNames + query.fallbackSearchKeywords).distinct() else query.subjectNames
         return names
             .map { name ->
-                startSearch(
+                name to startSearch(
                     RssSearchQuery(
                         subjectName = name,
                         episodeSort = query.episodeSort,
@@ -184,7 +184,7 @@ class RssMediaSource(
                 ).map {
                     MediaMatch(it, MatchKind.FUZZY)
                 }
-            }.merge()
+            }.let { mergeKeywordSearches(mediaSourceId, it) }
     }
 }
 

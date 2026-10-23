@@ -95,5 +95,11 @@ class DmhyPagedSourceImpl(
 /**
  * 動漫花園会丢弃含 ASCII 冒号的词 (例如 `Re:ゼロ`, `ID:INVADED`). 关键词只剩这种词时, 站点按无关键词处理, 返回全站资源.
  * 冒号换成空格后按两个词搜索, 结果与使用全角冒号相同.
+ * 两边不都是字母数字的「-」(单独成词的「 - 」、贴在中日文后面放在结尾的「-」) 会让站点搜索报错 (500), 也换成空格;
+ * 词中间的 (`Thousand-Year`) 不动.
  */
-private fun toDmhyKeyword(keywords: String): String = keywords.replace(':', ' ').trim()
+private fun toDmhyKeyword(keywords: String): String =
+    keywords.replace(':', ' ').replace(LOOSE_DASH, " ").replace(WHITESPACE, " ").trim()
+
+private val LOOSE_DASH = Regex("""(?<![A-Za-z0-9])-|-(?![A-Za-z0-9])""")
+private val WHITESPACE = Regex("""\s+""")

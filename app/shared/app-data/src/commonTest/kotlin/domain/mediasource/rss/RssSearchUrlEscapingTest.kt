@@ -13,6 +13,8 @@ import io.ktor.http.Url
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import me.him188.ani.app.domain.mediasource.MediaSourceEngineHelpers
+import me.him188.ani.app.domain.mediasource.directapi.Transform
+import me.him188.ani.app.domain.mediasource.directapi.TransformOp
 import me.him188.ani.datasources.api.EpisodeSort
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -124,6 +126,24 @@ class RssSearchUrlEscapingTest {
                 assertEquals(expected, actual, "template=$template name=$name")
             }
         }
+    }
+
+    /**
+     * 源配置了关键词变换时, 地址里是改写后的关键词 (见 [searchKeywordOf]).
+     */
+    @Test
+    fun `configured keyword transforms reach the search URL`() = runTest {
+        val engine = CapturingEngine()
+        engine.search(
+            searchConfig = RssSearchConfig(
+                searchUrl = "https://example.com/search?q={keyword}",
+                searchKeywordTransforms = listOf(Transform(TransformOp.RegexReplace, value = " - ", replacement = " ")),
+            ),
+            query = query("BLEACH: Thousand-Year Blood War - The Calamity"),
+            page = 0,
+            mediaSourceId = "test",
+        )
+        assertEquals("BLEACH: Thousand-Year Blood War The Calamity", requireNotNull(engine.captured).parameters["q"])
     }
 
     /**
