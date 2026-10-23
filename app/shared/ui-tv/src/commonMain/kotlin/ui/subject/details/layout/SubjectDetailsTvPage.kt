@@ -222,6 +222,7 @@ import me.him188.ani.app.ui.foundation.theme.GLASS_CONTAINER_ALPHA
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.theme.glassContainerColor
 import me.him188.ani.app.ui.foundation.tv.FillTvTmdbTextsFromCache
+import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.SyncTvTmdbSubjectText
 import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_BOTTOM_FADE_START
 import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_LEFT_FADE_END
@@ -323,7 +324,6 @@ import me.him188.ani.app.ui.subject.details.components.renderSubjectRelation
 import me.him188.ani.app.ui.subject.details.sections.DETAILS_TEXT_CONTENT_PADDING
 import me.him188.ani.app.ui.subject.details.sections.DETAILS_TEXT_END_RESERVE
 import me.him188.ani.app.ui.subject.details.sections.FocusEpisodeCarousel
-import me.him188.ani.app.ui.subject.details.sections.FocusEpisodeGridDropdown
 import me.him188.ani.app.ui.subject.details.sections.ReviewsSummarySection
 import me.him188.ani.app.ui.subject.details.sections.SectionHeader
 import me.him188.ani.app.ui.subject.details.sections.SubjectRatingSummary
@@ -1157,12 +1157,12 @@ fun SubjectDetailsTvPage(
         }
     }
 
-    // 选集快速跳转网格 (辅助入口, 轮播仍是主体): 上千集时逐格横向导航不现实
+    // 全部选集弹窗 (辅助入口, 轮播仍是主体): 上千集时逐格横向导航不现实
     var showEpisodeGrid by rememberSaveable { mutableStateOf(false) }
     // 长按角色/制作人员卡片放大看图: 状态在页面级 (大图是全屏层, 画在区块里会被滚动列裁掉).
     // 不用 rememberSaveable —— 开着期间一切按键都被吞掉, 走不到跳页那一步
     val imageZoom = rememberTvImageZoomState()
-    // 网格菜单关闭后轮播要跳到的集 (菜单里最后聚焦的那格)
+    // 轮播要跳到并聚焦的集 (播放按钮长按)
     var revealEpisodeId by remember { mutableStateOf<Int?>(null) }
 
     // 区块没组合时按的那一下下键 (见 sectionsReady): 选集页组合出来后把焦点送过去. 走锚点调度 (等目标附着再送), 不是直接 requestFocus
@@ -1437,7 +1437,7 @@ fun SubjectDetailsTvPage(
                 },
                 // 播放按钮底部进度条: 取"继续观看"目标集的进度
                 playProgress = subjectProgressState.episodeIdToPlay?.let { playProgress[it] },
-                // 播放按钮长按: 跳到当前集的选集卡片 (复用网格菜单的 reveal 机制 ——
+                // 播放按钮长按: 跳到当前集的选集卡片 (轮播的 reveal 机制 ——
                 // 轮播滚到该集并聚焦, 页面随焦点吸附到选集页, 按住的残余确认键由卡片吞掉)
                 onLongPressPlay = {
                     (subjectProgressState.episodeIdToPlay ?: currentEpisodeId)
@@ -1450,8 +1450,9 @@ fun SubjectDetailsTvPage(
                 hasBackdrop = videoBackground || heroBackdropUrl != null || !backdropResolved,
                 onCoverImageSuccess = onCoverImageSuccess,
                 displaySummary = displaySummary,
-                // 收藏钮右侧的"选集"圆钮 + 锚定其下的快速跳转网格菜单
+                // 收藏钮右侧的"选集"圆钮, 按了开全部选集弹窗 (同平板)
                 episodeGridCapsule = {
+                    val touch = LocalTvTouchInputEnabled.current
                     Box {
                         TvCapsuleButton(
                             onClick = { showEpisodeGrid = true },
@@ -1460,30 +1461,28 @@ fun SubjectDetailsTvPage(
                             modifier = Modifier
                                 .tvFocusAnchor(anchors, TvDetailsFocusAnchor.EPISODE_GRID_ENTRY),
                         )
-                        FocusEpisodeGridDropdown(
-                            expanded = showEpisodeGrid,
-                            // 网格是数字方块快速跳转, 保持正片/特别篇分组 (对应旧版选集对话框)
-                            episodes = mainEpisodes,
-                            specialEpisodes = specialEpisodes,
-                            currentEpisodeId = currentEpisodeId,
-                            episodeRuntimes = episodeRuntimes,
-                            episodeNames = episodeNames,
-                            onEpisodeClick = {
-                                showEpisodeGrid = false
-                                onPlay(it.episodeId)
-                            },
-                            // 返回键正常关闭: 焦点还给入口圆钮, 不跳转
-                            onDismissRequest = {
-                                showEpisodeGrid = false
-                                anchors.request(TvDetailsFocusAnchor.EPISODE_GRID_ENTRY)
-                            },
-                            // 长按 (按住 OK) 某集方格: 轮播跳到该集, 焦点落到卡片上并触发选集区吸附滚动
-                            onEpisodeLongClick = { item ->
-                                showEpisodeGrid = false
-                                revealEpisodeId = item.episodeId
-                            },
-                            onCacheClick = onClickCache,
-                        )
+                        if (showEpisodeGrid) {
+                            TvAllEpisodesDialog(
+                                mainEpisodes = mainEpisodes,
+                                specialEpisodes = specialEpisodes,
+                                currentEpisodeId = currentEpisodeId,
+                                stills = tmdbEpisodeStills,
+                                playProgress = playProgress,
+                                runtimes = episodeRuntimes,
+                                overviews = episodeOverviews,
+                                names = episodeNames,
+                                onPlay = { onPlay(it.episodeId) },
+                                onSetCollectionType = { item, type ->
+                                    onEpisodeCollectionUpdate(SetEpisodeCollectionTypeRequest(state.subjectId, item.episodeId, type))
+                                },
+                                onClickCache = onClickCache,
+                                // 关闭 (返回键、播放、去下载页之前): 焦点还给入口圆钮; 触屏上没有焦点, 不送
+                                onDismiss = {
+                                    showEpisodeGrid = false
+                                    if (!touch) anchors.request(TvDetailsFocusAnchor.EPISODE_GRID_ENTRY)
+                                },
+                            )
+                        }
                     }
                 },
                 // 占满首屏, 信息带贴底
@@ -3197,7 +3196,7 @@ private enum class TvDetailsFocusAnchor : TvFocusKey {
     /** 选集页简介块 (无分集时返回键分层的兜底目标). */
     EPISODES_SUMMARY,
 
-    /** 选集快速跳转网格的入口圆钮 (网格菜单关闭后焦点归还). */
+    /** 全部选集弹窗的入口圆钮 (弹窗关闭后焦点归还). */
     EPISODE_GRID_ENTRY,
 
     /** 角色区块 (跨页返回恢复; 请求器与 [TvDetailsSectionNav] 的区块进入落点共用). */
