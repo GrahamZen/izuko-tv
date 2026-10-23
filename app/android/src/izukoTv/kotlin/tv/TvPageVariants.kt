@@ -44,7 +44,9 @@ import me.him188.ani.app.data.network.TmdbImageService
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.platform.AppTerminator
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
+import me.him188.ani.app.ui.subject.details.layout.TvViewAllCommentsList
 import me.him188.ani.app.ui.subject.details.layout.TvViewAllGalleries
+import me.him188.ani.app.ui.subject.details.sections.LocalViewAllCommentsList
 import me.him188.ani.app.ui.subject.details.sections.LocalViewAllGalleries
 import me.him188.ani.app.ui.subject.person.LocalPeoplePreviewRows
 import me.him188.ani.app.ui.subject.person.TvPeoplePreviewRows
@@ -324,6 +326,8 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         LocalPeoplePreviewRows provides TvPeoplePreviewRows,
         // 「查看全部」弹窗的人物 / 作品画廊同样用原生网格
         LocalViewAllGalleries provides TvViewAllGalleries,
+        // 「查看全部」评论列表也用原生 (长按连翻不卡)
+        LocalViewAllCommentsList provides TvViewAllCommentsList,
         // 缓存页的选源: 与播放器同一块选源面板
         LocalTvDownloadMediaPickerVariant provides TvDownloadMediaPickerVariant { TvDownloadSourcePanel(it) },
         // 设置页: 原生三栏 (要打字的设置在手机 Web 控制台里)
