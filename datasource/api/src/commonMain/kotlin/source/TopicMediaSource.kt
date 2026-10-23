@@ -14,7 +14,7 @@ import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.MediaProperties
 import me.him188.ani.datasources.api.paging.SizedSource
 import me.him188.ani.datasources.api.paging.map
-import me.him188.ani.datasources.api.paging.merge
+import me.him188.ani.datasources.api.paging.mergeKeywordSearches
 import me.him188.ani.datasources.api.topic.Alliance
 import me.him188.ani.datasources.api.topic.Resolution
 import me.him188.ani.datasources.api.topic.Topic
@@ -33,7 +33,7 @@ abstract class TopicMediaSource : HttpMediaSource() {
     final override suspend fun fetch(query: MediaFetchRequest): SizedSource<MediaMatch> {
         return query.subjectNames
             .map { name ->
-                startSearch(
+                name to startSearch(
                     DownloadSearchQuery(
                         keywords = name,
                         category = TopicCategory.ANIME,
@@ -42,7 +42,7 @@ abstract class TopicMediaSource : HttpMediaSource() {
                 ).map {
                     MediaMatch(it.toOnlineMedia(mediaSourceId), MatchKind.FUZZY)
                 }
-            }.merge()
+            }.let { mergeKeywordSearches(mediaSourceId, it) }
     }
 }
 
