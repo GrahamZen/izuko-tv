@@ -27,6 +27,7 @@ import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
@@ -181,6 +182,8 @@ import me.him188.ani.app.ui.lang.tv_source_retry_hint
 import me.him188.ani.app.ui.lang.tv_source_searched
 import me.him188.ani.app.ui.lang.tv_source_searching
 import me.him188.ani.app.ui.lang.tv_source_full_search_paused
+import me.him188.ani.app.ui.lang.tv_source_paused_hint
+import me.him188.ani.app.ui.lang.tv_source_resume_source
 import me.him188.ani.app.ui.lang.tv_source_search_paused
 import me.him188.ani.app.ui.lang.tv_source_settings
 import me.him188.ani.app.ui.lang.tv_source_show_excluded
@@ -387,6 +390,7 @@ fun rememberTvSourcePanelStyle(): TvSourcePanelStyle {
                 TvSourceRowIcon.Drive -> Icons.Rounded.FolderOpen
                 TvSourceRowIcon.Link -> Icons.Rounded.Link
                 TvSourceRowIcon.Settings -> Icons.Rounded.Settings
+                TvSourceRowIcon.Pause -> Icons.Rounded.Pause
             },
             TV_SOURCE_ICON_SIZE,
         )
@@ -590,6 +594,8 @@ private val TV_SOURCE_STRING_RESOURCES: List<StringResource> = listOf(
     Lang.tv_source_settings,
     Lang.tv_source_search_paused,
     Lang.tv_source_full_search_paused,
+    Lang.tv_source_resume_source,
+    Lang.tv_source_paused_hint,
 )
 
 /** 面板的全部文案 (见 [TvSourceStrings]). */
@@ -717,6 +723,8 @@ fun rememberTvSourceStrings(): TvSourceStrings {
             settings = next(),
             searchPaused = next(),
             fullSearchPaused = next(),
+            resumeSource = next(),
+            pausedHint = next(),
             details = details,
             timeZone = TimeZone.currentSystemDefault(),
         )

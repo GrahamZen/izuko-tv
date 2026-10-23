@@ -467,6 +467,8 @@
     <string name="tv_source_searched">已查詢 %1$d 個數據源</string>
     <string name="tv_source_search_paused">已暫停 · 已查 %1$d/%2$d</string>
     <string name="tv_source_full_search_paused">已暫停</string>
+    <string name="tv_source_resume_source">繼續查這個數據源</string>
+    <string name="tv_source_paused_hint">開播後為免畫面卡頓暫停了，還沒查完</string>
     <string name="tv_source_search_paused_for_stutter">播放時搜索令畫面卡頓，「完整搜索」已改成「只限手動」，可在設定裡改回</string>
     <string name="tv_source_bt">BT 與快取</string>
     <string name="tv_source_manual">手動查找</string>
