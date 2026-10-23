@@ -244,6 +244,49 @@ class MediaAutoSelectorTest {
     }
 
     @Test
+    fun `cache waits until its playability is known`() = runFetchMediaSelectorTestSuite {
+        initSelection(preferKind = WEB)
+        val (_, session, sources) = configureFetchSession {
+            object {
+                val cached by localCache()
+                val web1 by web()
+            }
+        }
+        // 生产者先发 null: 各缓存的 canPlay 还没报过
+        val context = preferenceApi.mediaSelectorContext.value
+        preferenceApi.mediaSelectorContext.value = context.copy(unplayableCacheMediaIds = null)
+        val selection = launchSelection(session)
+        val unfinished = media(kind = LocalCache, subjectName = "Example Series")
+        sources.cached.complete(unfinished)
+        sources.web1.complete(media(kind = WEB, subjectName = "Example Series"))
+        testScope().runCurrent()
+        assertFalse(selection.isCompleted, "还不知道缓存能不能播时不选它")
+
+        preferenceApi.mediaSelectorContext.value = context.copy(unplayableCacheMediaIds = setOf(unfinished.mediaId))
+        testScope().runCurrent()
+        assertEquals(sources.web1.instance.mediaSourceId, selection.await()?.mediaSourceId)
+    }
+
+    @Test
+    fun `cache is selected when its playability never arrives`() = runFetchMediaSelectorTestSuite {
+        initSelection()
+        val (_, session, sources) = configureFetchSession {
+            object {
+                val cached by localCache()
+            }
+        }
+        preferenceApi.mediaSelectorContext.value = preferenceApi.mediaSelectorContext.value.copy(unplayableCacheMediaIds = null)
+        val selection = launchSelection(session)
+        sources.cached.complete(media(kind = LocalCache, subjectName = "Example Series"))
+        testScope().runCurrent()
+        assertFalse(selection.isCompleted)
+
+        testScope().advanceTimeBy(CACHE_READINESS_TIMEOUT)
+        testScope().runCurrent()
+        assertEquals(sources.cached.instance.mediaSourceId, selection.await()?.mediaSourceId)
+    }
+
+    @Test
     fun `no results ends normally without selection`() = runFetchMediaSelectorTestSuite {
         initSelection()
         val (_, session, sources) = configureFetchSession {
