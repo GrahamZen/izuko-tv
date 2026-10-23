@@ -171,6 +171,9 @@ class MediaSelectorFilterSortAlgorithm {
         }
 
         fun anyEquals(normalizedName: String): Boolean = firstEqualOrNull(normalizedName) != null
+
+        /** 定资源是不是精确匹配时多认的写法, 见 [ExactSubjectNames] */
+        val exact by lazy { ExactSubjectNames(names) }
     }
 
     @Suppress("PrivatePropertyName")
@@ -455,7 +458,7 @@ class MediaSelectorFilterSortAlgorithm {
          */
         matchedAsSeasonlessSeries: Boolean,
     ) = MatchMetadata(
-        subjectMatchKind = if (splitSeasonMatch?.exact == true || matchedAsSeasonlessSeries || contextSubjectNames.anyEquals(normalizedMediaSubjectName)) {
+        subjectMatchKind = if (splitSeasonMatch?.exact == true || matchedAsSeasonlessSeries || contextSubjectNames.anyEquals(normalizedMediaSubjectName) || contextSubjectNames.exact.matches(mediaSubjectName)) {
             MatchMetadata.SubjectMatchKind.EXACT
         } else {
             MatchMetadata.SubjectMatchKind.FUZZY
