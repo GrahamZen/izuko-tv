@@ -13,7 +13,9 @@ import android.graphics.Rect
 import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.View
+import android.view.ViewGroup
 import android.widget.FrameLayout
+import androidx.recyclerview.widget.RecyclerView
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlin.math.abs
@@ -27,6 +29,7 @@ import kotlin.test.assertTrue
 /**
  * 行式海报墙 ([TvNativeRowWallView]) 照追番页「追更」那样用 (没有顶部区域) 时的导航: 上下落到屏上同一列 (行短了落最后一张)、
  * 首行按上交给页面、行首按左 / 行尾按右出页面、卡片墙上确定进 hero 态 (hero 态里确定交给页面, 首行整片下推到 hero 线)、长按交给页面、远跳回首卡与途中的确认、
+ * 行内回首卡半路被停掉、
  * 聚焦那一行被数据拿掉时交给下一行、从页面外进来回到上次那张 / 按屏上高度就近接住.
  *
  * 列表: [有新集] 10 张 [今天] 3 张 [本周] 12 张 [已追平] 12 张. 1080p, 一屏完整放得下 6 张.
@@ -333,6 +336,48 @@ class TvNativeRowWallNavigationTest {
         assertFalse(host.onMain { view.landFarJump() })
     }
 
+    /** 换成一行 40 张, 停在第 30 张 (首卡早滚出去了, 返回键回本行首卡要远跳); 之后的滚动带动画. 返回那一行. */
+    private fun restOnLongRow(): TvNativeRowView {
+        host.onMain {
+            view.setItems(listOf(TvNativeExploreItem.Header("h-long", "继续观看"), TvNativeExploreItem.Row(LONG, testCards(40, "长"))))
+            view.focusCard(LONG, 30)
+        }
+        waitCard(LONG, 30)
+        host.onMain { view.animatedScroll = true }
+        return host.onMain { view.firstRow()!! }
+    }
+
+    @Test
+    fun `back to the row start stopped half way still lands on the first card`() {
+        val row = restOnLongRow()
+        // 返回键回本行首卡: 焦点停放在墙上, 那一行平滑滚回去
+        host.onMain { view.focusCard(LONG, 0, far = true) }
+        host.waitUntil("那一行滚回行首") { row.scrollState != RecyclerView.SCROLL_STATE_IDLE }
+        // 半路被停掉 (换数据 / 整行滚出屏): leanback 的选中位置已经是首卡, 行停在半路. 照样落到首卡, 之后的按键照常走
+        host.onMain { row.stopScroll() }
+        waitCard(LONG, 0)
+        press(KeyEvent.KEYCODE_DPAD_RIGHT)
+        waitCard(LONG, 1)
+    }
+
+    @Test
+    fun `back to the row start while the row waits for a layout still scrolls back to the first card`() {
+        val row = restOnLongRow()
+        host.onMain {
+            // 停放焦点时失焦的卡请求了布局: 这一刻 leanback 的平滑选中不滚, 只改选中位置
+            row.requestLayout()
+            view.focusCard(LONG, 0, far = true)
+        }
+        host.waitUntil("那一行滚回行首") { row.scrollState != RecyclerView.SCROLL_STATE_IDLE }
+        waitCard(LONG, 0)
+    }
+
+    private fun View.firstRow(): TvNativeRowView? = when (this) {
+        is TvNativeRowView -> this
+        is ViewGroup -> (0 until childCount).firstNotNullOfOrNull { getChildAt(it).firstRow() }
+        else -> null
+    }
+
     @Test
     fun `a row taken out by new data hands focus to the row that moves up`() {
         press(KeyEvent.KEYCODE_DPAD_DOWN)
@@ -359,5 +404,6 @@ class TvNativeRowWallNavigationTest {
         const val TODAY = "row-today"
         const val WEEK = "row-week"
         const val CAUGHT = "row-caught"
+        const val LONG = "row-long"
     }
 }
