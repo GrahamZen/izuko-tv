@@ -10,12 +10,17 @@
 package me.him188.ani.app.domain.mediasource.clouddrive
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import me.him188.ani.app.data.models.preference.CloudDriveAccount
 import me.him188.ani.app.data.models.preference.CloudDriveAddedShares
+import me.him188.ani.app.domain.media.continuation.DriveShareLineage
+import me.him188.ani.app.domain.media.continuation.LineageResolution
+import me.him188.ani.app.domain.media.continuation.PlaybackLineage
+import me.him188.ani.app.domain.mediasource.instance.createTestMediaSourceInstance
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.source.MatchKind
 import me.him188.ani.datasources.api.source.MediaFetchRequest
@@ -206,10 +211,12 @@ class CloudDriveAddedShareTest {
     }
 
     @Test
-    fun `the folder of a played episode is listed first for the next episode`() = runTest {
+    fun `the lineage folder is listed first for the next episode`() = runTest {
         val shares = FakeShares(mutableMapOf("s1" to season), titles = mapOf("s1" to "芙莉莲 全集"))
         val listings = mutableListOf<String>()
+        var lineage: PlaybackLineage? = null
         val test = testRegistry(
+            playbackLineages = { lineage },
             accounts = accountsOf(CloudDriveAccount(cookie = "sid=p1", shareSaveFolderId = "save1")),
             client = {
                 mockClient { request ->
@@ -233,15 +240,16 @@ class CloudDriveAddedShareTest {
         withContext(Dispatchers.Default) {
             suspend fun fetch(episode: Int) = source.fetch(request(episode = episode)).results.toList().map { it.media }
 
-            // 第一集: 整个分享列一遍; 只是查到还不记, 播了才记
+            // 第一集: 没有线索, 整个分享列一遍; 线索按查到时的位置记
             val first = fetch(1)
             assertEquals(listOf("added.s1.e1", "added.s1.e2", "added.s1.e3"), first.map { it.mediaId })
-            assertEquals(emptyMap(), test.accounts.account.rememberedShares)
-            val drive = assertNotNull(test.registry.awaitService(TestDrive.ID))
-            drive.resolveSharePlayback(assertNotNull(drive.placeholders.parseShareFile(first.first().download.uri)))
-            assertEquals("root", test.accounts.account.rememberedShares["added:400602"]?.folderId)
+            val continuation = DriveEpisodeContinuation(test.registry, flowOf(listOf(createTestMediaSourceInstance(source))))
+            lineage = assertIs<DriveShareLineage>(continuation.lineageOf(first.first()))
+            assertEquals("root", (lineage as DriveShareLineage).share.folderId)
+            val resolved = assertIs<LineageResolution.Found>(continuation.resolve(lineage!!, request(episode = 2)))
+            assertEquals("added.s1.e2", resolved.media.mediaId)
 
-            // 第二集在记下的文件夹里: 只列那一个文件夹
+            // 第二集在线索的文件夹里: 只列那一个文件夹
             listings.clear()
             assertEquals(listOf("added.s1.e1", "added.s1.e2", "added.s1.e3"), fetch(2).map { it.mediaId })
             assertEquals(listOf("root"), listings)

@@ -27,7 +27,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import me.him188.ani.app.data.models.preference.DriveRememberedShare
 import me.him188.ani.app.domain.media.fetch.SelfLimitedMediaSource
 import me.him188.ani.app.domain.mediasource.TextTemplate
 import me.him188.ani.app.domain.mediasource.codec.DefaultMediaSourceCodec
@@ -39,6 +38,7 @@ import me.him188.ani.app.domain.mediasource.directapi.selectByPath
 import me.him188.ani.app.domain.mediasource.directapi.stringByPath
 import me.him188.ani.app.domain.foundation.overrideUserAgent
 import me.him188.ani.app.domain.foundation.sourceRequestUserAgent
+import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.paging.SinglePagePagedSource
 import me.him188.ani.datasources.api.paging.SizedSource
 import me.him188.ani.datasources.api.source.ConnectionStatus
@@ -152,10 +152,10 @@ internal class DriveShareSearchEngine(
     private val shares: DriveShareBrowser,
     internal val links: DriveShareLinks,
     private val numbering: TmdbEpisodeNumbering = TmdbEpisodeNumbering.None,
-    /** 搜到的分享、合集里的文件夹、自动记下的分享文件夹是同系列别的作品的不要 (见 [OtherWorkGuard]) */
+    /** 搜到的分享、合集里的文件夹、播放线索里的分享文件夹是同系列别的作品的不要 (见 [OtherWorkGuard]) */
     private val otherWorks: OtherWorks = OtherWorks.None,
-    /** 列记下的分享文件夹 ([matchRemembered]): 每次现列, 分享取消了、新集上传了马上就知道. 搜索用 [shares]. */
-    rememberedShares: DriveShareBrowser = shares,
+    /** 列播放线索里的分享文件夹 ([matchFolder]): 每次现列, 分享取消了、新集上传了马上就知道. 搜索用 [shares]. */
+    folderShares: DriveShareBrowser = shares,
     /** 列出的分享文件夹另存一份在这里, 应用重启后不用重列 (见 [indexOf]). */
     private val indexStore: DriveShareIndexStore = DriveShareIndexStore.None,
     /** 墙上时间 (毫秒): 存下来的索引跨重启比新旧. */
@@ -165,7 +165,7 @@ internal class DriveShareSearchEngine(
 ) {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
     private val reader = DriveShareReader(shares, numbering)
-    private val rememberedReader = DriveShareReader(rememberedShares, numbering)
+    private val folderReader = DriveShareReader(folderShares, numbering)
 
     private val fixedShares: List<DriveShareLink> = config.shares.flatMap { links.parse(it) }.distinctBy { it.shareId }
 
@@ -337,33 +337,32 @@ internal class DriveShareSearchEngine(
     }
 
     /**
-     * 自动记下的分享文件夹里对得上的剧集 (认季的规则与名字同搜到时). 分享失效 (取消、违规) 时返回 null;
-     * 别的错误 (网络) 当这次没有, 由调用方照常去搜.
+     * 播放线索里的分享文件夹 [location] 对得上的剧集 (认季的规则与名字同搜到时). 分享失效 (取消、违规)、
+     * 或文件夹是同系列别的作品 (自动选错过一次被记下) 时返回 null, 线索就此作废; 别的错误 (网络) 当这次没有.
      */
-    suspend fun matchRemembered(request: MediaFetchRequest, remembered: DriveRememberedShare): List<DriveShareMatch>? {
-        // 自动选错过一次的会被记下 (系列里别的作品): 当作失效, 由调用方忘掉它、照常搜
-        val path = (listOf(remembered.siteTitle) + remembered.path).joinToString("/")
+    suspend fun matchFolder(request: MediaFetchRequest, location: DriveShareLocation): List<DriveShareMatch>? {
+        val path = (listOf(location.siteTitle) + location.path).joinToString("/")
         val otherWork = otherWorks.of(request)
         if (otherWork?.isOtherWork(path) == true) {
-            logger.info { "Remembered share ${remembered.shareId} ($path) is another work, forgetting it" }
+            logger.info { "Lineage share ${location.shareId} ($path) is another work" }
             return null
         }
-        val share = FoundShare(remembered.shareId, remembered.passcode, remembered.siteTitle)
+        val share = FoundShare(location.shareId, location.passcode, location.siteTitle)
         val videos = try {
-            rememberedReader.readFolder(
-                remembered.shareId, remembered.passcode, remembered.folderId, remembered.path, reader.otherSeasonFolders(request),
+            folderReader.readFolder(
+                location.shareId, location.passcode, location.folderId, location.path, reader.otherSeasonFolders(request),
             )
         } catch (e: CancellationException) {
             throw e
         } catch (e: CloudDriveShareUnavailableException) {
-            logger.info { "Remembered share ${remembered.shareId} unavailable: ${e.message}" }
+            logger.info { "Lineage share ${location.shareId} unavailable: ${e.message}" }
             return null
         } catch (e: Throwable) {
-            logger.warn(e) { "Failed to read remembered share ${remembered.shareId}" }
+            logger.warn(e) { "Failed to read lineage share ${location.shareId}" }
             return emptyList()
         }
         val matches = reader.match(request, share, videos)
-        if (!remembered.partSearch) return matches
+        if (!location.partSearch) return matches
         // 补搜来的: 同补搜时一样, 认不出是这一部的不要 (认不出时系列关系图没了, 这次不用它)
         val parts = otherWork?.parts ?: return emptyList()
         val tmdbEpisodes = numbering.of(request)
@@ -539,6 +538,8 @@ class CloudDriveShareSearchMediaSource(
     private val client: ScopedHttpClient,
     private val registry: CloudDriveRegistry,
 ) : MediaSource, SelfLimitedMediaSource {
+    internal val driveId: String get() = arguments.drive
+
     companion object {
         val FactoryId = FactoryId("cloud-drive-share-search")
 
@@ -563,7 +564,7 @@ class CloudDriveShareSearchMediaSource(
                     DriveShareSearchEngine(
                         arguments.config, drive.shareSearchBrowser, drive.shareLinks, drive.episodeNumbering,
                         otherWorks = drive.otherWorks,
-                        rememberedShares = drive.shareBrowser,
+                        folderShares = drive.shareBrowser,
                         indexStore = registry.shareIndexStore,
                         fetch = ::fetchBytes,
                     ),
@@ -589,8 +590,8 @@ class CloudDriveShareSearchMediaSource(
     }
 
     /**
-     * 播过的那一集所在的分享文件夹会记给这个源与条目 (见 [CloudDriveService.rememberedShareOf]): 之后先只列它,
-     * 有要的这一集就不再去查别处 (追番时第二集起只列一个文件夹); 没有 (新的一集还没更新) 时照常查.
+     * 条目的播放线索是这个源给出的分享文件夹时 (见 [me.him188.ani.app.domain.media.continuation.DriveShareLineage]) 先只列它,
+     * 有要的这一集就不再去查别处 (追番时第二集起只列一个文件夹); 没有 (新的一集还没更新、线索失效) 时照常查.
      */
     override suspend fun fetch(query: MediaFetchRequest): SizedSource<MediaMatch> {
         val (drive, engine) = engine() ?: run {
@@ -601,32 +602,32 @@ class CloudDriveShareSearchMediaSource(
         if (!drive.account.first().isLoggedIn) throw CloudDriveAuthException(driveId = drive.driveId)
         val subjectName = CloudDriveMediaSource.subjectNameOf(query)
         val subjectId = query.subjectId.toIntOrNull()
-        val remembered = subjectId?.let { rememberedMatches(drive, engine, query, it) }.orEmpty()
-        val searched = if (remembered.any { it.isEpisodeOf(query) }) {
-            logger.info { "${arguments.name}: episode ${query.episodeSort} of subject ${query.subjectId} is in the remembered share, skipping search" }
+        val onLineage = subjectId?.let { drive.lineageShareOf(it, mediaSourceId) }?.let { engine.matchFolder(query, it) }.orEmpty()
+        val searched = if (onLineage.any { it.isEpisodeOf(query) }) {
+            logger.info { "${arguments.name}: episode ${query.episodeSort} of subject ${query.subjectId} is in the lineage share, skipping search" }
             emptyList()
         } else {
             engine.search(query)
         }
-        if (subjectId != null) drive.noteShareMatches(mediaSourceId, subjectId, remembered + searched)
+        drive.noteShareMatches(onLineage + searched)
         val seen = HashSet<String>()
-        val medias = (remembered + searched)
+        val medias = (onLineage + searched)
             .filter { seen.add("${it.share.shareId}/${it.file.fid}") }
             .map { MediaMatch(it.toShareMedia(drive.placeholders, mediaSourceId, arguments.name, subjectName), MatchKind.FUZZY) }
         return SinglePagePagedSource { medias.asFlow() }
     }
 
-    private suspend fun rememberedMatches(
-        drive: CloudDriveService,
-        engine: DriveShareSearchEngine,
-        query: MediaFetchRequest,
-        subjectId: Int,
-    ): List<DriveShareMatch>? {
-        val remembered = drive.rememberedShareOf(mediaSourceId, subjectId) ?: return null
-        val matches = engine.matchRemembered(query, remembered)
-        // 分享失效了: 忘掉, 照常查
-        if (matches == null) drive.forgetRememberedShare(mediaSourceId, subjectId)
-        return matches
+    /**
+     * 播放线索里的分享文件夹 [location] 对得上的剧集做成资源 (切集时候选里没有、直接去取, 见 [DriveEpisodeContinuation]).
+     * 线索作废时为 null (见 [DriveShareSearchEngine.matchFolder]); 网盘没配置或没登录时为空.
+     */
+    internal suspend fun lineageMatches(request: MediaFetchRequest, location: DriveShareLocation): List<Media>? {
+        val (drive, engine) = engine() ?: return emptyList()
+        if (!drive.account.first().isLoggedIn) return emptyList()
+        val matches = engine.matchFolder(request, location) ?: return null
+        drive.noteShareMatches(matches)
+        val subjectName = CloudDriveMediaSource.subjectNameOf(request)
+        return matches.map { it.toShareMedia(drive.placeholders, mediaSourceId, arguments.name, subjectName) }
     }
 
     private suspend fun fetchBytes(url: String): ByteArray? = try {

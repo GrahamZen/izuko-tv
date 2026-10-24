@@ -14,6 +14,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.data.models.episode.EpisodeInfo
 import me.him188.ani.app.domain.episode.EpisodeSession
+import me.him188.ani.app.domain.episode.MediaFetchSelectBundle
+import me.him188.ani.app.domain.media.continuation.PlaybackLineageSelection
 import me.him188.ani.app.domain.media.fetch.MediaFetchSession
 import me.him188.ani.app.domain.media.fetch.awaitCompletedResults
 import me.him188.ani.app.domain.media.selector.MaybeExcludedMedia
@@ -29,8 +31,8 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * 自动选择数据源. 切集时按「本地缓存 → 浏览记忆回放 → 自动选择」的顺序在同一协程内串行决定,
- * 回放未命中才启动自动选择, 因此两者不会互相覆盖.
+ * 自动选择数据源. 切集时按「播放线索 → 本地缓存 → 浏览记忆回放 → 自动选择」的顺序在同一协程内串行决定,
+ * 前一步没选上才走下一步, 因此不会互相覆盖. 播放线索见 [PlaybackLineageSelection].
  *
  * 本任务挂在 session 的 sessionScope 下, 未捕获的异常会包成 ExtensionException 并终止任务, 之后本集及每次 bundle 重建都失去自动选择;
  * 所以缓存检查与回放都自行捕获非取消异常, 失败只是退回自动选择.
@@ -44,6 +46,7 @@ class AutoSelectExtension(
 ) : PlayerExtension("AutoSelect") {
     private val mediaSelectorAutoSelectUseCase: MediaSelectorAutoSelectUseCase by koin.inject()
     private val replayBrowseMemory: ReplayBrowseMemoryUseCase by koin.inject()
+    private val lineageSelection: PlaybackLineageSelection by koin.inject()
 
     override fun onStart(
         episodeSession: EpisodeSession,
@@ -57,6 +60,7 @@ class AutoSelectExtension(
                 // fetchSelect 由 infoBundleFlow 派生, 拿到非空 bundle 时 replayCache 已有对应的 infoBundle.
                 // infoBundleFlow 首值 null, 网络错误后也会回到 null; 用 replayCache 而不是 filterNotNull().first(), 否则会连自动选择一起挂住.
                 val episodeInfo = episodeSession.infoBundleFlow.replayCache.lastOrNull()?.episodeInfo
+                if (episodeInfo != null && continueLineageOrFalse(episodeInfo, fetchSelect)) return@collectLatest
                 val replayed = episodeInfo != null
                         && !hasLocalCacheForEpisode(fetchSelect.mediaFetchSession, fetchSelect.mediaSelector)
                         && replayBrowseMemoryOrFalse(episodeInfo, fetchSelect.mediaSelector)
@@ -64,6 +68,17 @@ class AutoSelectExtension(
                     mediaSelectorAutoSelectUseCase(fetchSelect.mediaFetchSession, fetchSelect.mediaSelector)
                 }
             }
+        }
+    }
+
+    private suspend fun continueLineageOrFalse(episodeInfo: EpisodeInfo, fetchSelect: MediaFetchSelectBundle): Boolean {
+        return try {
+            lineageSelection.select(context.subjectId, episodeInfo, fetchSelect.mediaFetchSession, fetchSelect.mediaSelector)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.warn(e) { "Continuing the playback lineage failed, selecting as usual" }
+            false
         }
     }
 
