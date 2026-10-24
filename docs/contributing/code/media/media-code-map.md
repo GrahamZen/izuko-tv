@@ -95,7 +95,8 @@
 4. `MediaSourceMediaFetcher` 并发调用每个启用实例的 `instance.source.fetch(...)`，
    合并进 `cumulativeResults`。
 5. `DefaultMediaSelector` 对查询到的 `Media` 过滤（先按当前剧集）、排序、选择。
-6. `AutoSelectExtension` 在同一协程里先做本地缓存检查与浏览记忆回放：等本会话的本地缓存源完成，
+6. `AutoSelectExtension` 在同一协程里先顺着播放线索找（`PlaybackLineageSelection`，见[选源](media-selector.md#播放线索)），
+   找到就不往下走；再做本地缓存检查与浏览记忆回放：等本会话的本地缓存源完成，
    本集已有可用缓存则跳过回放；否则调用 `ReplayBrowseMemoryUseCase`，按 `ManualBrowseMemoryRepository`
    里该条目的记忆 `browseSubject` 记住的条目、在记住的线路里按位置找目标集，`createMedia` 后 `select`，
    并更新记忆。命中则不进入第 7 步。
@@ -120,7 +121,8 @@
    同一个媒体每多卡一次翻倍（最多 60 秒）；在等这些门槛时它报出要攒多少，电视播放页的 `TvThrottledBufferHint` 据此说明原因。
 9. 播放器时钟开始走时，`PauseMediaFetchWhilePlayingExtension` 暂停仍在查询的数据源
    （`MediaFetchSession.pauseSearching` / `MediaSourceFetchResult.pause`，状态 `MediaSourceFetchState.Paused`），
-   `ObserveWebMediaSourcePreferenceExtension` 把正在播的 Web 源记为本条目的记忆源。
+   `ObserveWebMediaSourcePreferenceExtension` 把正在播的 Web 源记为本条目的记忆源，
+   `PlaybackLineageExtension` 按规则记下或保留本条目的播放线索。
    `EpisodeViewModel` 管选源面板开关（`onMediaSelectorShown` / `onMediaSelectorHidden`）与「完整搜索」
    （`setFullMediaSearch`，手机控制中心经 `TvRemoteControl` 的 `api/player/full-search`）；
    播放失败换源（`PlayerLoadErrorHandler.handleError`）也会放开暂停的数据源。
@@ -224,6 +226,13 @@
       在自动选择前调用。
     - `domain/media/selector/BrowseEpisodeIndex.kt`：线路里按位置换算剧集下标（回放与下载弹窗共用），
       以及手动查找打开线路时的默认预选。
+- 播放线索（`app/shared/app-data/src/commonMain/kotlin/`）：
+    - `domain/media/continuation/PlaybackLineage.kt`：线索类型；`EpisodeContinuation.kt`：每类资源的接口与汇总；
+      `PlaybackLineageSelection.kt`：切集时的第一步。
+    - `data/repository/media/PlaybackLineageRepository.kt`：按条目存线索。
+    - `domain/player/extension/PlaybackLineageExtension.kt`：开播时记下或保留线索。
+    - `domain/mediasource/clouddrive/DriveEpisodeContinuation.kt`：网盘的实现（分享文件夹、自己网盘的文件夹）；
+      `domain/media/continuation/SourceContinuations.kt`：BT 与其余在线类的实现。
 
 ## 播放时使用的 Resolver
 

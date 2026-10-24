@@ -21,7 +21,8 @@ import kotlinx.io.IOException
 import me.him188.ani.app.data.models.preference.CloudDriveAccount
 import me.him188.ani.app.data.models.preference.CloudDriveAccounts
 import me.him188.ani.app.data.models.preference.CloudDrivePlaybackMode
-import me.him188.ani.app.data.models.preference.DriveRememberedFolder
+import me.him188.ani.app.domain.media.continuation.DriveFolderLineage
+import me.him188.ani.app.domain.media.continuation.PlaybackLineage
 import me.him188.ani.app.platform.PlaybackRequestHints
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.source.MatchKind
@@ -46,10 +47,11 @@ class CloudDriveServiceTest {
     private fun service(
         account: CloudDriveAccount = TestDrive.loggedIn,
         protocol: CloudDriveProtocol = this.protocol,
+        playbackLineages: suspend (subjectId: Int) -> PlaybackLineage? = { null },
         handler: suspend MockRequestHandleScope.(HttpRequestData) -> HttpResponseData,
     ): Pair<CloudDriveService, MemorySettings<CloudDriveAccounts>> {
         val settings = accountsOf(account)
-        return testDriveService(settings, protocol, handler) to settings
+        return testDriveService(settings, protocol, playbackLineages, handler) to settings
     }
 
     private val downloadF1 = downloadJson(listOf("f1"))
@@ -567,10 +569,11 @@ class CloudDriveServiceTest {
     }
 
     @Test
-    fun `media source remembers the folder of a played episode and lists it instead of searching`() = runTest {
+    fun `media source lists the lineage folder instead of searching`() = runTest {
         var searches = 0
         var folderGone = false
-        val (service, settings) = service { request ->
+        var lineage: PlaybackLineage? = null
+        val (service, _) = service(playbackLineages = { lineage }) { request ->
             when (request.url.encodedPath) {
                 "/api/files/search" -> {
                     searches++
@@ -610,29 +613,28 @@ class CloudDriveServiceTest {
         val source = CloudDriveMediaSource(service, CloudDriveArguments(protocol = protocol))
         suspend fun fetch(episode: Int) = source.fetch(request(episode)).results.toList().map { it.media.mediaId }
 
-        // 第一集: 照常搜; 只是搜到还不记, 播了才记
+        // 第一集: 没有线索, 照常搜; 线索按搜到时的文件夹记
         assertEquals(listOf("testdrive-drive.f1", "testdrive-drive.f2"), fetch(1))
         assertEquals(2, searches)
-        assertEquals(emptyMap(), settings.account.rememberedFolders)
-        service.resolvePlayback("f1")
-        assertEquals(
-            DriveRememberedFolder("d1", listOf("Smoking.Behind.the.Supermarket.With.You.S01")),
-            settings.account.rememberedFolders[571784],
-        )
+        val folder = DriveFolderLocation("d1", listOf("Smoking.Behind.the.Supermarket.With.You.S01"))
+        assertEquals(folder, service.folderLocationOf("f1"))
+        lineage = DriveFolderLineage(source.mediaSourceId, service.driveId, folder)
 
-        // 第二集在记下的文件夹里: 不再搜
+        // 第二集在线索的文件夹里: 不再搜
         assertEquals(listOf("testdrive-drive.f1", "testdrive-drive.f2"), fetch(2))
         assertEquals(2, searches)
+        // 切集时候选里没有: 直接列线索的文件夹
+        assertEquals(listOf("testdrive-drive.f1", "testdrive-drive.f2"), source.lineageMatches(request(2), folder)?.map { it.mediaId })
 
         // 第三集文件夹里没有: 照常搜
         fetch(3)
         assertEquals(4, searches)
 
-        // 文件夹没了: 忘掉, 照常搜
+        // 文件夹打不开: 照常搜, 线索留着 (打不开也可能只是网络)
         folderGone = true
         fetch(2)
         assertEquals(6, searches)
-        assertEquals(emptyMap(), settings.account.rememberedFolders)
+        assertEquals(emptyList(), source.lineageMatches(request(2), folder))
     }
 
     @Test

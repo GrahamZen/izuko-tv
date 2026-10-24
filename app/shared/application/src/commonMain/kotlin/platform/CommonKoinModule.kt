@@ -69,6 +69,7 @@ import me.him188.ani.app.data.repository.episode.EpisodeSubjectRepository
 import me.him188.ani.app.data.repository.episode.EpisodeCollectionSyncer
 import me.him188.ani.app.data.repository.feedback.FeedbackRecordRepository
 import me.him188.ani.app.data.repository.media.MediaSourceSaves
+import me.him188.ani.app.data.repository.media.PlaybackLineageRepository
 import me.him188.ani.app.data.repository.media.MediaSourceSubscriptionRepository
 import me.him188.ani.app.domain.feedback.FeedbackTickets
 import me.him188.ani.app.domain.foundation.CloudflareServiceTransport
@@ -791,6 +792,7 @@ private fun KoinApplication.otherModules(
             parentCoroutineContext = coroutineScope.childScopeContext(),
             seriesGraph = get<SeriesGraphTableRepository>(),
             shareIndexStore = DriveShareIndexFileStore(getContext().files.cacheDir.resolve("drive-share-indexes.json"), coroutineScope.childScopeContext()),
+            playbackLineages = { get<PlaybackLineageRepository>().lineageOf(it) },
         )
     }
     single<MediaSourceManager> {

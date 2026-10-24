@@ -10,7 +10,6 @@
 package me.him188.ani.app.domain.mediasource.clouddrive
 
 import kotlinx.coroutines.test.runTest
-import me.him188.ani.app.data.models.preference.DriveRememberedShare
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import kotlin.test.Test
@@ -205,14 +204,14 @@ class CloudDriveShareSearchTest {
     }
 
     @Test
-    fun `a remembered share folder of another work is forgotten`() = runTest {
+    fun `a lineage share folder of another work is dropped`() = runTest {
         val shares = shares(mapOf("seed" to mapOf("f" to listOf(video("seed01", "01.mp4")))))
         val guard = OtherWorkGuard(ownNames = listOf("机动战士高达"), otherWorkNames = listOf("机动战士高达seed"), firstWorkAirYear = 1979)
         val engine = DriveShareSearchEngine(config, shares, links, otherWorks = OtherWorks { guard }) { null }
-        val seed = DriveRememberedShare("seed", "", "机动战士高达SEED DESTINY HD重制 (2013)", "f", listOf("【动漫】机动战士高达SEED DESTINY HD重制 (2013)"))
+        val seed = DriveShareLocation("seed", "", "机动战士高达SEED DESTINY HD重制 (2013)", "f", listOf("【动漫】机动战士高达SEED DESTINY HD重制 (2013)"))
 
-        // null = 当作失效: 调用方忘掉它、照常搜; 也不去打开它
-        assertEquals(null, engine.matchRemembered(request("机动战士高达"), seed))
+        // null = 线索作废: 不再顺着它找; 也不去打开它
+        assertEquals(null, engine.matchFolder(request("机动战士高达"), seed))
         assertEquals(emptyList(), shares.openedIds)
     }
 
