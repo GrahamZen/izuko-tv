@@ -224,17 +224,17 @@ class CloudDriveAddedShareService internal constructor(
     /**
      * [request] 这个条目添加过的分享里, 对得上的全部剧集. 打不开的分享跳过 (记日志).
      *
-     * 播过的那一集所在的分享文件夹会记给数据源 [mediaSourceId] 与条目 (同分享搜索, 见 [CloudDriveService.rememberedShareOf]):
-     * 之后先只列它, 有要的这一集就不再把各个分享整个列一遍 (加的是大合集时每集从头列很慢); 没有 (新的一集还没更新) 时照常全列.
+     * 条目的播放线索是数据源 [mediaSourceId] 给出的分享文件夹时 (同分享搜索, 见 [CloudDriveService.lineageShareOf]) 先只列它,
+     * 有要的这一集就不再把各个分享整个列一遍 (加的是大合集时每集从头列很慢); 没有 (新的一集还没更新) 时照常全列.
      */
     internal suspend fun matches(request: MediaFetchRequest, mediaSourceId: String): List<DriveShareMatch> {
         val subjectId = request.subjectId.toIntOrNull() ?: return emptyList()
         val shares = sharesOf(subjectId)
         if (shares.isEmpty()) return emptyList()
-        val remembered = rememberedMatches(subjectId, request, shares, mediaSourceId)
-        val matches = if (remembered != null && remembered.any { it.isEpisodeOf(request) }) {
-            logger.info { "Added $driveId share: episode ${request.episodeSort} of subject $subjectId is in the remembered folder, skipping full listing" }
-            remembered
+        val onLineage = drive.lineageShareOf(subjectId, mediaSourceId)?.let { folderMatches(subjectId, request, shares, it) }
+        val matches = if (onLineage != null && onLineage.any { it.isEpisodeOf(request) }) {
+            logger.info { "Added $driveId share: episode ${request.episodeSort} of subject $subjectId is in the lineage folder, skipping full listing" }
+            onLineage
         } else {
             val semaphore = Semaphore(SHARE_CONCURRENCY)
             coroutineScope {
@@ -243,41 +243,50 @@ class CloudDriveAddedShareService internal constructor(
                 }.awaitAll().flatten()
             }
         }
-        // 播放时据此记下所在的文件夹 (见 CloudDriveService.resolveSharePlayback)
-        drive.noteShareMatches(mediaSourceId, subjectId, matches)
+        // 开播时据此记下播放线索 (见 CloudDriveService.shareLocationOf)
+        drive.noteShareMatches(matches)
         return matches
     }
 
     /**
-     * 记下的分享文件夹里对得上的剧集. 没记过、记的分享已不在这个条目下、文件夹打不开 (分享失效的同时忘掉) 时为 null;
-     * 当前这一集有手动指定的文件而它不在这个文件夹里时也为 null —— 手动指定的盖过自动认出的, 要全列才找得到它.
+     * 播放线索里的分享文件夹 [location] 对得上的剧集 (切集时候选里没有、直接去取, 见 [DriveEpisodeContinuation]).
+     * 分享已不在这个条目下或失效时为 null (线索作废).
      */
-    private suspend fun rememberedMatches(
+    internal suspend fun lineageMatches(request: MediaFetchRequest, location: DriveShareLocation): List<DriveShareMatch>? {
+        val subjectId = request.subjectId.toIntOrNull() ?: return null
+        val matches = folderMatches(subjectId, request, sharesOf(subjectId), location) ?: return null
+        drive.noteShareMatches(matches)
+        return matches
+    }
+
+    /**
+     * 分享文件夹 [location] 里对得上的剧集. 分享已不在这个条目下、或失效时为 null; 打不开 (网络) 时为空;
+     * 当前这一集有手动指定的文件而它不在这个文件夹里时也为空 —— 手动指定的盖过自动认出的, 要全列才找得到它.
+     */
+    private suspend fun folderMatches(
         subjectId: Int,
         request: MediaFetchRequest,
         shares: List<DriveAddedShare>,
-        mediaSourceId: String,
+        location: DriveShareLocation,
     ): List<DriveShareMatch>? {
-        val remembered = drive.rememberedShareOf(mediaSourceId, subjectId) ?: return null
-        val share = shares.firstOrNull { it.shareId == remembered.shareId } ?: return null
+        val share = shares.firstOrNull { it.shareId == location.shareId } ?: return null
         val entries = try {
-            reader.readFolder(share.shareId, share.passcode, remembered.folderId, remembered.path)
+            reader.readFolder(share.shareId, share.passcode, location.folderId, location.path)
         } catch (e: CancellationException) {
             throw e
         } catch (e: CloudDriveShareUnavailableException) {
-            logger.info { "Remembered folder of added $driveId share ${share.shareId} unavailable: ${e.message}" }
-            drive.forgetRememberedShare(mediaSourceId, subjectId)
+            logger.info { "Lineage folder of added $driveId share ${share.shareId} unavailable: ${e.message}" }
             return null
         } catch (e: Throwable) {
-            logger.warn(e) { "Failed to read the remembered folder of added $driveId share ${share.shareId}" }
-            return null
+            logger.warn(e) { "Failed to read the lineage folder of added $driveId share ${share.shareId}" }
+            return emptyList()
         }
         val found = FoundShare(share.shareId, share.passcode, share.title)
         val listed = entries.associateBy { it.file.fid }
         val pickedElsewhere = share.picks.any { (fid, episode) ->
             fid !in listed && EpisodeSort(episode).let { it == request.episodeSort || (request.episodeEp != null && it == request.episodeEp) }
         }
-        if (pickedElsewhere) return null
+        if (pickedElsewhere) return emptyList()
         val picked = share.picks.mapNotNull { (fid, episode) ->
             val entry = listed[fid] ?: return@mapNotNull null
             DriveShareMatch(found, entry.file, entry.folders, EpisodeSort(episode))
@@ -387,7 +396,7 @@ class CloudDriveAddedShareService internal constructor(
  */
 class CloudDriveAddedShareMediaSource(
     override val mediaSourceId: String,
-    private val driveId: String,
+    internal val driveId: String,
     private val registry: CloudDriveRegistry,
 ) : MediaSource, SelfLimitedMediaSource {
     override val kind: MediaSourceKind get() = MediaSourceKind.WEB
@@ -404,6 +413,14 @@ class CloudDriveAddedShareMediaSource(
         val medias = service.matches(query, mediaSourceId)
             .map { MediaMatch(it.toShareMedia(service.drive.placeholders, mediaSourceId, DISPLAY_NAME, subjectName), MatchKind.EXACT) }
         return SinglePagePagedSource { medias.asFlow() }
+    }
+
+    /** 播放线索里的分享文件夹 [location] 对得上的剧集做成资源, 见 [CloudDriveAddedShareService.lineageMatches]. */
+    internal suspend fun lineageMatches(request: MediaFetchRequest, location: DriveShareLocation): List<Media>? {
+        val service = registry.awaitAddedShareService(driveId) ?: return emptyList()
+        val subjectName = CloudDriveMediaSource.subjectNameOf(request)
+        return service.lineageMatches(request, location)
+            ?.map { it.toShareMedia(service.drive.placeholders, mediaSourceId, DISPLAY_NAME, subjectName) }
     }
 
     class Factory(

@@ -81,7 +81,7 @@ object CloudDriveMediaSourceCodec : DefaultMediaSourceCodec<CloudDriveArguments>
  * 除了按条目名搜到的, 还给出用户在 Web 控制台手动指定的文件与文件夹 ([CloudDriveService.picksOf]): 单独指定的文件优先,
  * 其次是指定文件夹里认出的, 再其次是自动匹配的; 同一个文件只给一次. 手动指定的算精确匹配.
  *
- * 播过的那一集所在的文件夹会记给条目 (见 [CloudDriveService.matchRememberedFolder]): 之后先列它, 里面有要的这一集就不再全盘搜索
+ * 条目的播放线索是这个网盘里的文件夹时 (见 [me.him188.ani.app.domain.media.continuation.DriveFolderLineage]) 先列它, 里面有要的这一集就不再全盘搜索
  * (追番时第二集起只列一次文件夹); 没有 (新的一集还没放进去、文件挪走了) 时照常搜.
  */
 class CloudDriveMediaSource(
@@ -89,6 +89,7 @@ class CloudDriveMediaSource(
     private val arguments: CloudDriveArguments,
 ) : MediaSource, SelfLimitedMediaSource {
     override val mediaSourceId: String get() = service.protocol.driveMediaSourceId
+    internal val driveId: String get() = service.driveId
     override val kind: MediaSourceKind get() = MediaSourceKind.WEB
     override val location: MediaSourceLocation get() = MediaSourceLocation.Online
     override val info: MediaSourceInfo = infoOf(arguments)
@@ -113,9 +114,9 @@ class CloudDriveMediaSource(
         val subjectName = subjectNameOf(query)
         val subjectId = query.subjectId.toIntOrNull()
         val picked = pickedMatches(query)
-        val remembered = subjectId?.let { service.matchRememberedFolder(query, it) }.orEmpty()
-        val auto = if (remembered.any { it.episode == query.episodeSort || it.episode == query.episodeEp }) {
-            logger.info { "Cloud drive ${service.driveId}: episode ${query.episodeSort} of subject ${query.subjectId} is in the remembered folder, skipping search" }
+        val onLineage = subjectId?.let { service.lineageFolderOf(it) }?.let { service.matchFolder(query, it) }.orEmpty()
+        val auto = if (onLineage.any { it.episode == query.episodeSort || it.episode == query.episodeEp }) {
+            logger.info { "Cloud drive ${service.driveId}: episode ${query.episodeSort} of subject ${query.subjectId} is in the lineage folder, skipping search" }
             emptyList()
         } else if (!service.protocol.supportsSearch) {
             emptyList()
@@ -127,22 +128,33 @@ class CloudDriveMediaSource(
             } catch (e: CloudDriveAuthException) {
                 throw e
             } catch (e: Throwable) {
-                // 搜索失败时手动指定的与记下的文件夹里的照样给; 都没有才算这个源失败
-                if (picked.isEmpty() && remembered.isEmpty()) throw e
-                logger.warn(e) { "Cloud drive ${service.driveId} search failed, returning picked and remembered files only" }
+                // 搜索失败时手动指定的与线索文件夹里的照样给; 都没有才算这个源失败
+                if (picked.isEmpty() && onLineage.isEmpty()) throw e
+                logger.warn(e) { "Cloud drive ${service.driveId} search failed, returning picked and lineage files only" }
                 emptyList()
             }
         }
-        if (subjectId != null) service.noteMatches(subjectId, remembered + auto)
+        service.noteMatches(onLineage + auto)
         val seen = HashSet<String>()
         val exact = picked.filter { seen.add(it.file.fid) }
-        val fuzzy = (remembered + auto).filter { seen.add(it.file.fid) }
+        val fuzzy = (onLineage + auto).filter { seen.add(it.file.fid) }
         // WebDAV 列目录不给画面高度与时长, 读文件头补上: 等这一集的; 条目级会话 (见 servesWholeSubject) 切集不再查, 其余各集在后台读
         val (current, others) = (exact + fuzzy).partition { it.episode == query.episodeSort || it.episode == query.episodeEp }
         val probed = service.videoInfoOf(current.map { it.file }, others.takeIf { query.servesWholeSubject }.orEmpty().map { it.file })
         val medias = exact.map { MediaMatch(it.toMedia(subjectName, probed), MatchKind.EXACT) } +
                 fuzzy.map { MediaMatch(it.toMedia(subjectName, probed), MatchKind.FUZZY) }
         return SinglePagePagedSource { medias.asFlow() }
+    }
+
+    /**
+     * 播放线索里的文件夹 [folder] 认出的文件做成资源 (切集时候选里没有、直接去取, 见 [DriveEpisodeContinuation]).
+     * 线索作废时为 null (见 [CloudDriveService.matchFolder]).
+     */
+    internal suspend fun lineageMatches(request: MediaFetchRequest, folder: DriveFolderLocation): List<Media>? {
+        val matches = service.matchFolder(request, folder) ?: return null
+        service.noteMatches(matches)
+        val subjectName = subjectNameOf(request)
+        return matches.map { it.toMedia(subjectName, emptyMap()) }
     }
 
     /** 用户手动指定的: 单独指定的文件在前 (盖过文件夹里认出的集号), 再是指定文件夹里认出的. */

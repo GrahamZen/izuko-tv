@@ -52,6 +52,11 @@ import me.him188.ani.app.domain.media.cache.GetMediaCacheUseCaseImpl
 import me.him188.ani.app.domain.media.download.AddDownloadUseCase
 import me.him188.ani.app.domain.media.download.AddDownloadUseCaseImpl
 import me.him188.ani.app.domain.media.download.DownloadRequestSessionFactory
+import me.him188.ani.app.domain.media.continuation.EpisodeContinuation
+import me.him188.ani.app.domain.media.continuation.EpisodeContinuations
+import me.him188.ani.app.domain.media.continuation.PlaybackLineageSelection
+import me.him188.ani.app.domain.media.continuation.TorrentContinuation
+import me.him188.ani.app.domain.media.continuation.WebSourceContinuation
 import me.him188.ani.app.domain.media.selector.GetPreferredMediaSourceSortingUseCase
 import me.him188.ani.app.domain.media.selector.GetPreferredMediaSourceSortingUseCaseImpl
 import me.him188.ani.app.domain.media.selector.MediaSelectorAutoSelectUseCase
@@ -61,6 +66,7 @@ import me.him188.ani.app.domain.media.selector.MediaSelectorEventSavePreferenceU
 import me.him188.ani.app.domain.media.selector.MediaSelectorFactory
 import me.him188.ani.app.domain.media.selector.ReplayBrowseMemoryUseCase
 import me.him188.ani.app.domain.media.selector.ReplayBrowseMemoryUseCaseImpl
+import me.him188.ani.app.domain.mediasource.clouddrive.DriveEpisodeContinuation
 import me.him188.ani.app.domain.mediasource.GetMediaSelectorSourceTiersUseCase
 import me.him188.ani.app.domain.mediasource.GetMediaSelectorSourceTiersUseCaseImpl
 import me.him188.ani.app.domain.mediasource.GetPreferredWebMediaSourceUseCase
@@ -132,6 +138,15 @@ fun KoinApplication.useCaseModules() = module {
     single<ReplayBrowseMemoryUseCase> {
         ReplayBrowseMemoryUseCaseImpl(get(), get<MediaSourceManager>().allInstances)
     }
+    // 播放线索: 切集时先顺着上一集的资源找 (各类资源的实现在这里登记)
+    single<EpisodeContinuation> {
+        val instances = get<MediaSourceManager>().allInstances
+        // 按顺序认领资源: 网盘的资源也是在线类, 要排在在线源前面
+        EpisodeContinuations(
+            listOf(DriveEpisodeContinuation(get(), instances), TorrentContinuation(instances), WebSourceContinuation(instances)),
+        )
+    }
+    single<PlaybackLineageSelection> { PlaybackLineageSelection(get(), get()) }
 }
 
 val GlobalKoin get() = KoinPlatform.getKoin()
