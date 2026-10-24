@@ -187,4 +187,4 @@ private val TV_PROGRESS_SYNC_TYPES = listOf(UnifiedCollectionType.DOING, Unified
 private const val TV_PROGRESS_DOING_LIMIT = 500
 private const val TV_PROGRESS_WISH_LIMIT = 2000
 
-private const val TV_PROGRESS_TICK_MILLIS = 60_000L
+internal const val TV_PROGRESS_TICK_MILLIS = 60_000L
