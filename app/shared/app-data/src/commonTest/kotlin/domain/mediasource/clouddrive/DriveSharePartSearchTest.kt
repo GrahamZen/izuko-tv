@@ -274,12 +274,16 @@ class DriveSharePartSearchTest {
                 "c" to listOf(video("c2", "02.mp4"), video("c15", "15.mp4")),
             ),
             "other" to mapOf(TestDrive.SHARE_ROOT to listOf(video("o1", "01.mp4"))),
+            "full" to mapOf(TestDrive.SHARE_ROOT to (1..13).map { video("f$it", "${it.toString().padStart(2, '0')}.mp4") }),
         ),
         defaultTitle = { "打乱的标题" },
     )
 
-    /** 整个条目名搜不到, 搜「诀别谭」给三部合在一起的分享与别的部的分享. */
-    private fun engine(urls: MutableList<String>, primaryFinds: Boolean = false) =
+    /**
+     * 整个条目名搜不到, 搜「诀别谭」给三部合在一起的分享与别的部的分享. [primaryShare] 不为 null 时条目名搜得到这个分享
+     * (`mix`: 只有诀别谭的几集; `full`: 诀别谭全 13 集).
+     */
+    private fun engine(urls: MutableList<String>, primaryShare: String? = null) =
         DriveShareSearchEngine(config, shares, links, otherWorks = OtherWorks { OtherWorkGuard.of(it, table) }) { url ->
             val keyword = url.substringAfter("wd=").decodeURLQueryComponent()
             urls += keyword
@@ -287,7 +291,7 @@ class DriveSharePartSearchTest {
                 keyword == "诀别谭" -> """{"list":[
                     {"vod_name":"死神 千年血战篇  诀别谭+相克谭+死神全集 4K","vod_down_url":"https://share.drive.test/s/mix"},
                     {"vod_name":"死神 千年血战篇 -祸进谭-","vod_down_url":"https://share.drive.test/s/other"}]}"""
-                primaryFinds -> """{"list":[{"vod_name":"死神 千年血战篇-诀别谭-","vod_down_url":"https://share.drive.test/s/mix"}]}"""
+                primaryShare != null -> """{"list":[{"vod_name":"死神 千年血战篇-诀别谭-","vod_down_url":"https://share.drive.test/s/$primaryShare"}]}"""
                 else -> """{"list":[]}"""
             }.encodeToByteArray()
         }
@@ -305,12 +309,22 @@ class DriveSharePartSearchTest {
     }
 
     @Test
-    fun `no subtitle search when the subject name already finds episodes`() = runTest {
+    fun `no subtitle search when the subject name finds every episode`() = runTest {
         val urls = mutableListOf<String>()
-        val matched = engine(urls, primaryFinds = true).search(separation)
-        assertTrue(matched.isNotEmpty())
+        val matched = engine(urls, primaryShare = "full").search(separation)
+        assertEquals(13, matched.size)
         assertTrue(matched.none { it.partSearch })
         assertTrue("诀别谭" !in urls)
+    }
+
+    @Test
+    fun `the subtitle is searched too when the subject name misses episodes`() = runTest {
+        // 条目名搜到的分享只有几集: 再按副标题补搜, 补搜到的同一个文件不重复
+        val urls = mutableListOf<String>()
+        val matched = engine(urls, primaryShare = "mix").search(separation)
+        assertEquals("诀别谭", urls.last())
+        assertEquals(matched.size, matched.distinctBy { it.share.shareId to it.file.fid }.size)
+        assertTrue(matched.none { it.partSearch })
     }
 
     @Test

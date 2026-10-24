@@ -79,6 +79,21 @@ class DriveNameParserTest {
         assertEpisode("[Crunchyroll][2160P][10bit].mkv", null)
         assertEpisode("[24年10月][1080P].mp4", null)
         assertEpisode("[01-12][1080P].mkv", null)
+        // 两季之间的特别篇 [24.9] 不是第 24 集
+        assertEpisode("[VCB-Studio] Tensei Shitara Slime Datta Ken 2nd Season [24.9][Ma10p_1080p][x265_flac].mkv", null)
+    }
+
+    @Test
+    fun `decorations in names become spaces without dropping words`() {
+        assertEquals("浪客剑心 明治剑客浪漫谭 京都动乱", DriveNameParser.withoutDecorations("浪客剑心 －明治剑客浪漫谭－ 京都动乱"))
+        assertEquals("死神 千年血战篇 祸进谭", DriveNameParser.withoutDecorations("死神 千年血战篇-祸进谭"))
+        assertEquals("86 不存在的战区 第2部分", DriveNameParser.withoutDecorations("86 -不存在的战区- 第2部分"))
+        assertEquals("IDOLiSH7 偶像星愿 Second BEAT", DriveNameParser.withoutDecorations("IDOLiSH7-偶像星愿- Second BEAT"))
+        assertEquals("我推的孩子", DriveNameParser.withoutDecorations("【我推的孩子】"))
+        // 英文里的标点照旧
+        for (name in listOf("Re:Zero kara Hajimeru Isekai Seikatsu", "Fate/strange Fake", "Kaguya-sama wa Kokurasetai", "葬送的芙莉莲")) {
+            assertEquals(name, DriveNameParser.withoutDecorations(name))
+        }
     }
 
     @Test

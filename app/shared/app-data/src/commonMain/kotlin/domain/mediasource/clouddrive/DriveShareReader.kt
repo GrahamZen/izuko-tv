@@ -68,9 +68,13 @@ internal class DriveShareReader(
         return collectVideos(shareId, passcode, folderId, path, skipFolders)
     }
 
+    /** [request] 这个条目在网盘上按第几季找, 见 [DriveSubjectSeason]. [otherWork] 带着系列关系图推出的季. */
+    suspend fun subjectSeason(request: MediaFetchRequest, otherWork: OtherWorkGuard?): DriveSubjectSeason? =
+        DriveSubjectSeason.of(request, numbering.of(request), otherWork?.seriesSeason)
+
     /** 按季分好的一层里, [request] 这个条目不会出现在里面的文件夹, 见 [DriveSubjectMatcher.otherSeasonFolders]. */
-    suspend fun otherSeasonFolders(request: MediaFetchRequest): (List<String>) -> Set<String> =
-        DriveSubjectMatcher.otherSeasonFolders(request, numbering.of(request))
+    suspend fun otherSeasonFolders(request: MediaFetchRequest, otherWork: OtherWorkGuard?): (List<String>) -> Set<String> =
+        DriveSubjectMatcher.otherSeasonFolders(subjectSeason(request, otherWork), numbering.of(request))
 
     /**
      * 从 [videos] 里挑出 [request] 这个条目的剧集 (规则同自己网盘的数据源, 见 [DriveSubjectMatcher]).

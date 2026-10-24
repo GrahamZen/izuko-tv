@@ -242,6 +242,147 @@ class DriveSubjectMatcherTest {
         assertTrue(matched.none { it.file.fid == "g1" })
     }
 
+    /** 条目名搜索用的关键词 (第一个名字的主标题). */
+    private fun keywordOf(name: String) = DriveSubjectMatcher.keywordsOf(listOf(name)).first()
+
+    /** 「赛博朋克：边缘行者 2」的分享: 第一季原盘与第二季并排, 原盘文件名不写 S (`01E06-E07`); 另有不写季的 4K 版本文件夹. */
+    @Test
+    fun `a subject TMDB puts in season 2 drops season 1 folders and keeps season 2 ones`() = runTest {
+        val name = "赛博朋克：边缘行者 2"
+        val browser = FakeBrowser(
+            searchResults = mapOf(keywordOf(name) to listOf(dir("root", "赛博朋克：边缘行者 2"))),
+            folders = mapOf(
+                "root" to listOf(dir("s1", "S01"), dir("s2", "S02"), dir("s24k", "S02.4K")),
+                "s1" to listOf(dir("remux", "2022.S01.1080p.Bluray.REMUX.AVC.DTS-HDMA5.1")),
+                "remux" to listOf(video("old", "01E06-E07.2022.1080p.Bluray.REMUX.AVC.DTS-HDMA5.1.mkv")),
+                "s2" to listOf(video("new", "S02E06.2026.1080p.NF.WEB-DL.DV.H265.DDP5.1.mkv")),
+                "s24k" to listOf(video("uhd", "06.mkv")),
+            ),
+        )
+        val episodes = (1..10).map { MediaFetchRequest.Episode("e$it", EpisodeSort(it)) }
+        val numbering = TmdbEpisodeNumbering { request -> request.episodes.associate { (2 to it.sort.number!!.toInt()) to it.sort } }
+
+        val matched = DriveSubjectMatcher(browser, numbering).match(request(name, episodes = episodes))
+        assertEquals(listOf("new", "uhd"), matched.map { it.file.fid })
+        assertEquals(listOf(EpisodeSort(6), EpisodeSort(6)), matched.map { it.episode })
+        assertTrue("s1" !in browser.listed, "按季分好的一层不列第一季")
+    }
+
+    @Test
+    fun `a folder season is looked up in the TMDB map like a file season`() = runTest {
+        // 【我推的孩子】第二季: TMDB 记成 S1E12 起; 按 TMDB 整理的「Season 1」文件夹里只写集号的 12 是第二季第 1 集, 03 是第一季
+        val name = "【我推的孩子】 第二季"
+        val browser = FakeBrowser(
+            searchResults = mapOf(keywordOf(name) to listOf(dir("root", "【我推的孩子】 (2023)"))),
+            folders = mapOf("root" to listOf(dir("s1", "Season 1")), "s1" to listOf(video("e3", "03.mkv"), video("e12", "12.mkv"))),
+        )
+        val episodes = (1..13).map { MediaFetchRequest.Episode("e$it", EpisodeSort(11 + it), EpisodeSort(it)) }
+        val numbering = TmdbEpisodeNumbering { request -> request.episodes.associate { (1 to it.sort.number!!.toInt()) to it.sort } }
+
+        val matched = DriveSubjectMatcher(browser, numbering).match(request(name, episodes = episodes))
+        assertEquals(listOf("12.mkv@12"), matched.map { it.summary() })
+    }
+
+    @Test
+    fun `a later season from the series graph keeps folders that name it`() = runTest {
+        // 京都动乱: TMDB 记成 S1E25 起, 系列关系图里是浪客剑心 (2023) 的下一季. 写「第二季」、从 01 编的文件夹是这一部,
+        // 「第一季」文件夹里的 [01] 不是; 「附第1季」那个文件夹里接着编号的 [25] 按表认
+        val name = "浪客剑心 明治剑客浪漫谭 京都动乱"
+        val browser = FakeBrowser(
+            searchResults = mapOf(keywordOf(name) to listOf(dir("root", "浪客剑心 明治剑客浪漫谭 京都动乱第二季 更46"))),
+            folders = mapOf(
+                "root" to listOf(
+                    dir("s1", "[内嵌简日]第一季[24集全]"),
+                    dir("s2", "L浪客剑心 明治剑客浪漫谭 第二季"),
+                    dir("kd", "[附第1季]（浪客剑心 明治剑客浪漫谭 京都动乱；第二季）"),
+                ),
+                "s1" to listOf(video("old", "[orion origin] Rurouni Kenshin [01] [1080p].mp4")),
+                "s2" to listOf(video("new", "01.mp4")),
+                "kd" to listOf(video("abs", "[orion origin] Rurouni Kenshin - Kyoto Douran [25] [1080p].mp4")),
+            ),
+        )
+        val episodes = (1..23).map { MediaFetchRequest.Episode("e$it", EpisodeSort(24 + it), EpisodeSort(it)) }
+        val numbering = TmdbEpisodeNumbering { request -> request.episodes.associate { (1 to it.sort.number!!.toInt()) to it.sort } }
+        val guard = OtherWorkGuard(ownNames = emptyList(), otherWorkNames = emptyList(), firstWorkAirYear = null, seriesSeason = 2)
+
+        val matched = DriveSubjectMatcher(browser, numbering, OtherWorks { guard }).match(request(name, episodes = episodes))
+        assertEquals(listOf("new@01", "abs@25"), matched.map { "${it.file.fid}@${it.episode}" })
+        // 没有系列关系图时推不出是第二季: 照旧当第一季
+        val fallback = DriveSubjectMatcher(browser, numbering).match(request(name, episodes = episodes))
+        assertEquals(listOf("old", "abs"), fallback.map { it.file.fid })
+    }
+
+    @Test
+    fun `a sequel TMDB lists as its own show reads S1 folders by what the path names`() = runTest {
+        // 堀与宫村 -piece-: TMDB 单列成一部 (S1E1 起), 系列关系图里是第二季. 按系列整理的「堀与宫村 S1」是前传,
+        // 「S2」与根下点名了 piece 的才是这一部; 文件名点名了 piece 的 `S01` 分享是这一部自己的第一季
+        val name = "堀与宫村 -piece-"
+        val browser = FakeBrowser(
+            searchResults = mapOf(keywordOf(name) to listOf(dir("k", "K 堀与宫村 piece（附第1季）"), dir("p", "堀与宫村 -piece- (2023) S01"))),
+            folders = mapOf(
+                "k" to listOf(dir("s1", "堀与宫村 S1"), dir("s2", "堀与宫村 S2 更新中"), video("k9", "09.mp4")),
+                "s1" to listOf(video("old", "[SweetSub] Horimiya - 01 [BDRip][1080P].mp4")),
+                "s2" to listOf(video("new", "01.mp4")),
+                "p" to listOf(video("tmdb", "[SweetSub&LoliHouse] Horimiya Piece - 01 [WebRip 1080p].mkv")),
+            ),
+        )
+        val episodes = (1..13).map { MediaFetchRequest.Episode("e$it", EpisodeSort(it)) }
+        val numbering = TmdbEpisodeNumbering { request -> request.episodes.associate { (1 to it.sort.number!!.toInt()) to it.sort } }
+        // 「piece」太泛, 不拿来补搜 (没有 parts); 认路径用条目全名
+        val guard = OtherWorkGuard(ownNames = emptyList(), otherWorkNames = emptyList(), firstWorkAirYear = null, seriesSeason = 2)
+
+        val matched = DriveSubjectMatcher(browser, numbering, OtherWorks { guard }).match(request(name, episodes = episodes))
+        assertEquals(listOf("k9@09", "new@01", "tmdb@01"), matched.map { "${it.file.fid}@${it.episode}" }.sorted())
+    }
+
+    @Test
+    fun `unmarked files stay when the season is only inferred`() = runTest {
+        // 进击的巨人 最终季 Part.2: 名字里的「最终季」不是季号, TMDB 是 S4E17 起; 网盘按本段从 01 编、不写季
+        val name = "进击的巨人 最终季 Part.2"
+        val browser = FakeBrowser(
+            searchResults = mapOf(keywordOf(name) to listOf(dir("root", "进击的巨人 最终季 Part.2 (2022)"))),
+            folders = mapOf(
+                "root" to listOf(dir("p2", "2022进击的巨人最终季Part.2"), dir("s3", "进击的巨人 第三季")),
+                "p2" to listOf(video("new", "01.mp4")),
+                "s3" to listOf(video("old", "01.mp4")),
+            ),
+        )
+        val episodes = (1..12).map { MediaFetchRequest.Episode("e$it", EpisodeSort(75 + it), EpisodeSort(it)) }
+        val numbering = TmdbEpisodeNumbering { request -> request.episodes.associate { (4 to 16 + it.ep!!.number!!.toInt()) to it.sort } }
+
+        val matched = DriveSubjectMatcher(browser, numbering).match(request(name, episodes = episodes))
+        assertEquals(listOf("new"), matched.map { it.file.fid })
+    }
+
+    @Test
+    fun `a part numbered as its own show continues by the series sort`() = runTest {
+        // 死神 千年血战篇-祸进谭-: TMDB 记成 S2E41 起, 这个分享把千年血战篇当单独一部写成 S01E41; 路径点名了祸进谭、集号又正是接续集号
+        val name = "死神 千年血战篇-祸进谭-"
+        val browser = FakeBrowser(
+            searchResults = mapOf(keywordOf(name) to listOf(dir("root", "死神 千年血战篇 -祸进谭- 更48集"))),
+            folders = mapOf(
+                "root" to listOf(dir("s", "S死神")),
+                "s" to listOf(video("e41", "S01E41.mkv"), video("e5", "S01E05.mkv")),
+            ),
+        )
+        val episodes = (1..8).map { MediaFetchRequest.Episode("e$it", EpisodeSort(40 + it), EpisodeSort(it)) }
+        val numbering = TmdbEpisodeNumbering { request -> request.episodes.associate { (2 to it.sort.number!!.toInt()) to it.sort } }
+        val parts = DriveSharePartSearch(
+            keywords = listOf("祸进谭"),
+            seriesNames = listOf(DriveNameParser.normalize("死神 千年血战篇")),
+            ownParts = listOf(DriveNameParser.normalize("祸进谭")),
+            otherParts = listOf("诀别谭", "相克谭").map(DriveNameParser::normalize),
+            rootNames = listOf(DriveNameParser.normalize("死神")),
+        )
+        val guard = OtherWorkGuard(ownNames = emptyList(), otherWorkNames = emptyList(), firstWorkAirYear = null, parts = parts)
+
+        val matched = DriveSubjectMatcher(browser, numbering, OtherWorks { guard }).match(request(name, episodes = episodes))
+        assertEquals(listOf("S01E41.mkv@41"), matched.map { it.summary() })
+        // 路径没点名这一部时照旧按表: 不是这个条目
+        val unnamed = DriveSubjectMatcher(browser, numbering).match(request(name, episodes = episodes))
+        assertEquals(emptyList(), unnamed.map { it.summary() })
+    }
+
     @Test
     fun `drops loosely matched search results`() = runTest {
         val browser = FakeBrowser(

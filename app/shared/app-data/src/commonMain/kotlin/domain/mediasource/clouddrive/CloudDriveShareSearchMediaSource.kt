@@ -38,6 +38,7 @@ import me.him188.ani.app.domain.mediasource.directapi.selectByPath
 import me.him188.ani.app.domain.mediasource.directapi.stringByPath
 import me.him188.ani.app.domain.foundation.overrideUserAgent
 import me.him188.ani.app.domain.foundation.sourceRequestUserAgent
+import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.paging.SinglePagePagedSource
 import me.him188.ani.datasources.api.paging.SizedSource
@@ -97,7 +98,7 @@ data class DriveShareSearchConfig(
      * 打开剧名对得上的详情页, 取出页面里全部分享链接. 这时 [format]、[itemsPath]、[titlePath]、[linkPaths] 不用.
      */
     val detailLinkSelector: String = "",
-    /** 最多用前几个条目名去搜. */
+    /** 最多用前几个条目名去搜 (名字带装饰符号、原样搜不到时去掉符号再搜的那一次不算). */
     val maxKeywords: Int = 3,
     /** 每次查询最多打开几个分享. */
     val maxShares: Int = 4,
@@ -208,7 +209,7 @@ internal class DriveShareSearchEngine(
             hits.any { (other, outer) -> other.shareId == link.shareId && outer !== folder && folder.path.size > outer.path.size && folder.path.take(outer.path.size) == outer.path }
         }.take(MAX_FIXED_FOLDERS)
         logger.info { "Fixed shares: ${selected.size} folders for ${keywords.first()}: ${selected.map { it.second.path.joinToString("/") }}" }
-        val skipFolders = reader.otherSeasonFolders(request)
+        val skipFolders = reader.otherSeasonFolders(request, otherWork)
         return coroutineScope {
             selected.map { (link, folder) ->
                 async {
@@ -275,31 +276,44 @@ internal class DriveShareSearchEngine(
         val keywords = DriveSubjectMatcher.keywordsOf(names).take(config.maxKeywords.coerceAtLeast(1))
         if (keywords.isEmpty() || config.searchUrl.isBlank()) return emptyList()
 
-        // 名字都是同一部番, 前一个名字找到了就不再换名字搜: 这类站连着搜几次就会回 5xx
+        // 名字都是同一部番, 前一个名字找到了就不再换名字搜: 这类站连着搜几次就会回 5xx.
+        // 站点按标题原样找: 名字带装饰符号 (`浪客剑心 －明治剑客浪漫谭－ 京都动乱`) 原样搜不到时, 先去掉符号再搜一次同一个名字
         val found = LinkedHashMap<String, FoundShare>()
-        for ((index, keyword) in keywords.withIndex()) {
-            // 网页站 (苹果 CMS 模板) 默认要求两次搜索隔 3 秒, 挨着搜只会拿到「系统提示」页
-            if (index > 0 && config.detailLinkSelector.isNotBlank()) delay(PAGE_SEARCH_INTERVAL)
-            for (share in searchSite(keyword, otherWork)) found.putIfAbsent(share.shareId, share)
-            if (found.isNotEmpty()) break
+        var searches = 0
+        search@ for (keyword in keywords) {
+            for (attempt in listOf(keyword, DriveNameParser.withoutDecorations(keyword)).distinct()) {
+                // 网页站 (苹果 CMS 模板) 默认要求两次搜索隔 3 秒, 挨着搜只会拿到「系统提示」页
+                if (searches++ > 0 && config.detailLinkSelector.isNotBlank()) delay(PAGE_SEARCH_INTERVAL)
+                for (share in searchSite(attempt, otherWork)) found.putIfAbsent(share.shareId, share)
+                if (found.isNotEmpty()) break@search
+            }
         }
-        val season = names.firstNotNullOfOrNull { DriveNameParser.parseSubjectSeason(it) } ?: 1
+        val season = reader.subjectSeason(request, otherWork)?.number ?: 1
         val selected = bySeason(found.values, season).take(config.maxShares.coerceAtLeast(1))
         logger.info { "Share search: ${selected.size} of ${found.size} shares for ${keywords.first()}" }
 
-        val skipFolders = reader.otherSeasonFolders(request)
+        val skipFolders = reader.otherSeasonFolders(request, otherWork)
         val semaphore = Semaphore(SHARE_CONCURRENCY)
         val matches = coroutineScope {
             selected.map { share ->
                 async { semaphore.withPermit { matchShare(request, share, skipFolders, otherWork) } }
             }.awaitAll().flatten()
         }
+        // 按条目名认上的没覆盖每一集时再按副标题补搜: 只有副标题搜得到的分享常更全 (「京都动乱第二季 更46」)
         val parts = otherWork?.parts
-        return if (matches.isEmpty() && parts != null) searchParts(request, parts, skipFolders, otherWork) else matches
+        if (parts == null || coversAllEpisodes(matches, request)) return matches
+        val seen = matches.mapTo(HashSet()) { it.share.shareId to it.file.fid }
+        return matches + searchParts(request, parts, skipFolders, otherWork).filter { (it.share.shareId to it.file.fid) !in seen }
+    }
+
+    /** [matches] 覆盖了条目的每一集正片 (sort 或 ep 对得上). */
+    private fun coversAllEpisodes(matches: List<DriveShareMatch>, request: MediaFetchRequest): Boolean {
+        val episodes = matches.mapTo(HashSet()) { it.episode }
+        return request.episodes.filter { it.sort is EpisodeSort.Normal }.all { it.sort in episodes || it.ep in episodes }
     }
 
     /**
-     * 按条目名一集都没对上时, 「系列名 + 副标题」的条目再按副标题搜 (见 [DriveSharePartSearch]):
+     * 按条目名认上的没覆盖条目的每一集时, 「系列名 + 副标题」的条目再按副标题搜 (见 [DriveSharePartSearch]):
      * 分享标题与里面的文件都要认得出是这一部.
      */
     private suspend fun searchParts(
@@ -318,7 +332,7 @@ internal class DriveShareSearchEngine(
             logger.info { "Part search: no shares for ${parts.keywords}" }
             return emptyList()
         }
-        val season = DriveSubjectMatcher.subjectNamesOf(request).firstNotNullOfOrNull { DriveNameParser.parseSubjectSeason(it) } ?: 1
+        val season = reader.subjectSeason(request, otherWork)?.number ?: 1
         val selected = bySeason(found.values, season).take(config.maxShares.coerceAtLeast(1))
         val semaphore = Semaphore(SHARE_CONCURRENCY)
         val matches = coroutineScope {
@@ -350,7 +364,7 @@ internal class DriveShareSearchEngine(
         val share = FoundShare(location.shareId, location.passcode, location.siteTitle)
         val videos = try {
             folderReader.readFolder(
-                location.shareId, location.passcode, location.folderId, location.path, reader.otherSeasonFolders(request),
+                location.shareId, location.passcode, location.folderId, location.path, reader.otherSeasonFolders(request, otherWork),
             )
         } catch (e: CancellationException) {
             throw e
@@ -361,7 +375,7 @@ internal class DriveShareSearchEngine(
             logger.warn(e) { "Failed to read lineage share ${location.shareId}" }
             return emptyList()
         }
-        val matches = reader.match(request, share, videos)
+        val matches = reader.match(request, share, videos, otherWork)
         if (!location.partSearch) return matches
         // 补搜来的: 同补搜时一样, 认不出是这一部的不要 (认不出时系列关系图没了, 这次不用它)
         val parts = otherWork?.parts ?: return emptyList()
