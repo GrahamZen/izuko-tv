@@ -141,6 +141,13 @@ internal object DriveNameParser {
     fun normalize(name: String): String =
         name.toSimplifiedChinese().lowercase().filter { it.isLetterOrDigit() }
 
+    /**
+     * 名字里装饰用的符号换成空格, 字一个不删: 全角与长破折号 (`浪客剑心 －明治剑客浪漫谭－ 京都动乱`)、紧挨着中日文的半角连字符
+     * (`死神 千年血战篇-祸进谭`)、`【】『』「」`. 分享站按标题原样找, 标题里很少照抄这些符号.
+     * 英文里的 `:` `/` `-` 不动 (`Re:Zero`、`Fate/strange Fake`、`Kaguya-sama`): 标题里常原样写着.
+     */
+    fun withoutDecorations(name: String): String = DECORATION.replace(name, " ").replace(SPACES, " ").trim()
+
     private fun parseExplicitSeason(name: String, roman: Boolean = true): Int? {
         CHINESE_SEASON.find(name)?.let { match -> parseNumber(match.groupValues[1])?.let { return it } }
         ENGLISH_SEASON.find(name)?.let { return it.groupValues[1].toInt() }
@@ -278,13 +285,15 @@ internal object DriveNameParser {
     private val TRIM_CHARS = charArrayOf(' ', '-', '_', '.', '·', '!', '！', '?', '？')
 
     private val COPY_SUFFIX = Regex("""\s*[(（]\d{1,2}[)）]$""")
+    private val DECORATION = Regex("""[－—–]|(?<=[一-鿿ぁ-ヿ\s])-|-(?=[一-鿿ぁ-ヿ])|[【】『』「」]""")
+    private val SPACES = Regex("""\s+""")
     private val BRACKETED = Regex("""\[[^\]]*]|【[^】]*】|\([^)]*\)|（[^）]*）""")
     private val STANDALONE_NUMBER = Regex("""(?<![0-9A-Za-z])(\d{1,3})(?:[vV]\d)?(?![0-9A-Za-z])""")
 
     /**
-     * 括号开头两三位数字, 后面紧跟着标题: 不能是字母数字 (`[1080p]` `[10bit]`), 不能是日期或季 (`[24年10月]`),
-     * 也不能是范围 (`[01-12]`); 数字后面得还有字 (光一个 `[12]` 的由前面几条认).
+     * 括号开头两三位数字, 后面紧跟着标题: 不能是字母数字 (`[1080p]` `[10bit]`)、小数 (`[24.9]` 是两季之间的特别篇, 不是第 24 集),
+     * 不能是日期或季 (`[24年10月]`), 也不能是范围 (`[01-12]`); 数字后面得还有字 (光一个 `[12]` 的由前面几条认).
      */
     private val BRACKET_LEADING_NUMBER =
-        Regex("""[\[【]\s*(\d{2,3})(?![0-9A-Za-z])(?!\s*[年月日季期部\-~～])(?=\s*[^\]】\s])""")
+        Regex("""[\[【]\s*(\d{2,3})(?![0-9A-Za-z])(?!\.\d)(?!\s*[年月日季期部\-~～])(?=\s*[^\]】\s])""")
 }
