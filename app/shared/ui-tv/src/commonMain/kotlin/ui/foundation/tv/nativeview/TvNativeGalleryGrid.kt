@@ -24,7 +24,10 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.offset
+import androidx.compose.ui.unit.dp
 import androidx.core.view.ViewCompat
 import androidx.leanback.widget.BaseGridView
 import androidx.leanback.widget.VerticalGridView
@@ -32,13 +35,14 @@ import androidx.recyclerview.widget.RecyclerView
 import me.him188.ani.app.ui.foundation.LocalSketch
 import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
+import me.him188.ani.app.ui.foundation.tv.tvGridBleed
 import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFade
 
 /**
  * 「查看全部」弹窗里的原生画廊网格 (人物圆头像 / 作品海报, 外观的定义在 ui-subject 的 ViewAllGalleries.kt): leanback VerticalGridView,
  * 定列数, 格子定宽定高.
  * - 焦点滚动对齐 (同海报墙 TvNativeGridView): 聚焦那一行的中线对准视口中线, 两头贴边 (开头几行不滚, 末行底边停在下让出线);
- *   上下各让出 [verticalPx] (滚不完时内容在这一截里渐隐, 由 Compose 那侧画). 上下各多排一屏 (setExtraLayoutSpace), 连按时下一行已经排好,
+ *   顶上让出 [topPx]、底下让出 [bottomPx] (滚不完时内容在上下渐隐, 由 Compose 那侧画). 上下各多排一屏 (setExtraLayoutSpace), 连按时下一行已经排好,
  *   每一下都是同一种滚法. 按需挪 (FOCUS_SCROLL_ITEM) 不行: 只排看得见的行, 连按到底边那行时下一行还没排出来, 走 leanback 自带的
  *   「平滑滚到选中项」(按居中对齐), 与按需挪的停位不是一回事, 一会儿不滚一会儿滚一大截, 分页插数据重排时还往回闪 (Shield 实测一秒两下必现).
  * - 方向键网格自己走 (见 [tvGalleryGridTarget]): 焦点不出网格 (弹窗里没有别的去处, 放出去会被系统按屏幕位置送到垫在下面的页面上);
@@ -54,7 +58,8 @@ class TvNativeGalleryGridView(
     columnSpacingPx: Int,
     rowSpacingPx: Int,
     sidePx: Int,
-    verticalPx: Int,
+    topPx: Int,
+    bottomPx: Int,
 ) : VerticalGridView(context) {
     private val scroll = TvNativeSpringScroll()
     private var lastRepeatMove = 0L
@@ -94,8 +99,8 @@ class TvNativeGalleryGridView(
         setNumColumns(columns)
         horizontalSpacing = columnSpacingPx
         verticalSpacing = rowSpacingPx
-        setPadding(sidePx, verticalPx, sidePx, verticalPx)
-        // 聚焦那一行的中线对准视口中线, 两头贴边 (视口中线 = 视图中线: 上下让出一样多)
+        setPadding(sidePx, topPx, sidePx, bottomPx)
+        // 聚焦那一行的中线对准视口中线, 两头贴边 (上下让出得不一样多时视口中线比视图中线偏一点, 差的是让出量差的一半, 看不出)
         windowAlignment = BaseGridView.WINDOW_ALIGN_BOTH_EDGE
         windowAlignmentOffsetPercent = 50f
         itemAlignmentOffsetPercent = 50f
@@ -245,6 +250,10 @@ private val TV_GALLERY_DIRECTION_KEYS = setOf(
  * @param onLongPress 长按 (遥控器按住确定键 / 触屏长按); null = 没有.
  * @param onBind 第几格被绑定 (分页的访问提示).
  * @param touchTaps 触屏: 点一下就是点击 (见 [TvNativeGalleryGridView.touchTaps]).
+ * @param edgeBleed 原生视图左右各往外伸多少 (网格内侧的留白跟着加, 格子位置不变): 首末列聚焦时的放大与投影画进这一截,
+ *   不被装它的 AndroidView 按自己的边界裁掉. 外面要真有这么宽的空地 (如弹窗内容区的内边距).
+ * @param topBleed 原生视图往上伸多少 (顶上的留白跟着加, 格子位置不变): 首行聚焦的投影画进这一截; 往下滚了以后这一截整个擦掉,
+ *   内容只在 [topInset] 里渐隐. 外面要真有这么高的空地 (如弹窗标题行与内容之间的间距).
  * @param modifier 打开时的落点挂在这上面 (焦点送进网格时落在选中的那格, 首次是第一格).
  */
 @Composable
@@ -254,8 +263,11 @@ fun TvNativeMonogramGallery(
     columns: Int,
     rowSpacing: Dp,
     sideInset: Dp,
-    verticalInset: Dp,
+    topInset: Dp,
+    bottomInset: Dp,
     touchTaps: Boolean,
+    edgeBleed: Dp = 0.dp,
+    topBleed: Dp = 0.dp,
     onClick: (index: Int) -> Unit,
     onLongPress: ((index: Int) -> Unit)?,
     onBind: (index: Int) -> Unit,
@@ -273,7 +285,10 @@ fun TvNativeMonogramGallery(
         columnSpacingPx = style.spacingPx,
         rowSpacing = rowSpacing,
         sideInset = sideInset,
-        verticalInset = verticalInset,
+        topInset = topInset,
+        bottomInset = bottomInset,
+        edgeBleed = edgeBleed,
+        topBleed = topBleed,
         adapter = { TvNativeMonogramAdapter(style, sketch) },
         update = { grid ->
             val cells = grid.adapter as TvNativeMonogramAdapter
@@ -309,8 +324,11 @@ fun TvNativePosterGallery(
     columnSpacing: Dp,
     rowSpacing: Dp,
     sideInset: Dp,
-    verticalInset: Dp,
+    topInset: Dp,
+    bottomInset: Dp,
     touchTaps: Boolean,
+    edgeBleed: Dp = 0.dp,
+    topBleed: Dp = 0.dp,
     onClick: (index: Int) -> Unit,
     onBind: (index: Int) -> Unit,
     modifier: Modifier = Modifier,
@@ -330,7 +348,10 @@ fun TvNativePosterGallery(
         columnSpacingPx = columnSpacingPx,
         rowSpacing = rowSpacing,
         sideInset = sideInset,
-        verticalInset = verticalInset,
+        topInset = topInset,
+        bottomInset = bottomInset,
+        edgeBleed = edgeBleed,
+        topBleed = topBleed,
         adapter = { TvNativeCardAdapter(style, sketch) },
         update = { grid ->
             val cells = grid.adapter as TvNativeCardAdapter
@@ -351,7 +372,7 @@ fun TvNativePosterGallery(
 
 /**
  * 装 [TvNativeGalleryGridView] 的 AndroidView: 宽铺满, 高 = 内容高 (行数 × 格高 + 行距 + 上下让出), 父布局给的上限之内; 超出就在网格里滚,
- * 滚不完的那边在上下 [verticalInset] 里渐隐 (同 Compose 的 aniVerticalScrollFade; 能不能滚由网格的滚动回调写进状态, 绘制阶段读).
+ * 滚不完的那边渐隐 (同 Compose 的 aniVerticalScrollFade; 能不能滚由网格的滚动回调写进状态, 绘制阶段读). 往外伸的那几截见 [TvNativeMonogramGallery].
  */
 @Composable
 private fun TvNativeGalleryHost(
@@ -361,7 +382,10 @@ private fun TvNativeGalleryHost(
     columnSpacingPx: Int,
     rowSpacing: Dp,
     sideInset: Dp,
-    verticalInset: Dp,
+    topInset: Dp,
+    bottomInset: Dp,
+    edgeBleed: Dp,
+    topBleed: Dp,
     adapter: () -> RecyclerView.Adapter<*>,
     update: (TvNativeGalleryGridView) -> Unit,
     modifier: Modifier,
@@ -371,13 +395,14 @@ private fun TvNativeGalleryHost(
     var canScrollDown by remember { mutableStateOf(false) }
     val density = LocalDensity.current
     val rowSpacingPx = with(density) { rowSpacing.roundToPx() }
-    val sidePx = with(density) { sideInset.roundToPx() }
-    val verticalPx = with(density) { verticalInset.roundToPx() }
+    val sidePx = with(density) { (sideInset + edgeBleed).roundToPx() }
+    val topPx = with(density) { (topInset + topBleed).roundToPx() }
+    val bottomPx = with(density) { bottomInset.roundToPx() }
     val rows = (count + columns - 1) / columns
-    val contentHeightPx = rows * cellHeightPx + (rows - 1).coerceAtLeast(0) * rowSpacingPx + verticalPx * 2
+    val contentHeightPx = rows * cellHeightPx + (rows - 1).coerceAtLeast(0) * rowSpacingPx + topPx + bottomPx
     TvNativeHost(
         factory = { context ->
-            TvNativeGalleryGridView(context, columns, columnSpacingPx, rowSpacingPx, sidePx, verticalPx).also { grid ->
+            TvNativeGalleryGridView(context, columns, columnSpacingPx, rowSpacingPx, sidePx, topPx, bottomPx).also { grid ->
                 grid.adapter = adapter()
                 grid.onScrollChanged = {
                     canScrollUp = grid.hasMoreAbove()
@@ -387,8 +412,21 @@ private fun TvNativeGalleryHost(
         },
         update = update,
         modifier = modifier
+            .tvGridBleed(start = edgeBleed, end = edgeBleed)
+            .tvNativeBleedTop(topBleed)
             .height(with(density) { contentHeightPx.toDp() })
-            .aniVerticalScrollFade({ canScrollUp }, { canScrollDown }, fade = verticalInset),
+            // 顶上: 伸出去的那截滚动时整个擦掉, 渐隐在 topInset 那一截里; 底下: bottomInset 那一截里渐隐
+            .aniVerticalScrollFade({ canScrollUp }, { canScrollDown }, fade = bottomInset, topFade = topInset, topClear = topBleed),
         rebuildKey = rebuildKey,
     )
+}
+
+/**
+ * 往上伸 [top] (原生网格的投影与渐隐画进上面那段空地, 见 [TvNativeMonogramGallery] 的 topBleed): 量的时候多要 [top] 高, 报给外面的不算,
+ * 往上挪同样多. 高度照旧随内容 (父布局给的上下限各加 [top]), 所以不用会把高度撑满的 tvGridBleed.
+ */
+internal fun Modifier.tvNativeBleedTop(top: Dp): Modifier = if (top <= 0.dp) this else layout { measurable, constraints ->
+    val t = top.roundToPx()
+    val placeable = measurable.measure(constraints.offset(vertical = t))
+    layout(placeable.width, (placeable.height - t).coerceAtLeast(0)) { placeable.place(0, -t) }
 }

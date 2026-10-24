@@ -44,11 +44,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.recyclerview.widget.RecyclerView
 import me.him188.ani.app.ui.foundation.LocalSketch
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.widgets.ANI_SCROLL_FADE
+import me.him188.ani.app.ui.foundation.widgets.ANI_SCROLL_FADE_UNDER_TITLE
+import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_TITLE_GAP
 import me.him188.ani.app.ui.foundation.widgets.aniFocusContainerColor
 import me.him188.ani.app.ui.foundation.widgets.aniFocusContentColor
 import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFade
@@ -67,6 +70,8 @@ import me.him188.ani.app.ui.subject.details.sections.focusEpisodeCardColors
  * @param cards 要排的集 (剧照卡与集号格用同一份数据).
  * @param selectedIndex 焦点在网格外时选中第几格: 网格把它滚进来, 焦点送进网格时落在它上面. 焦点在网格里时不动.
  * @param touchTaps 触屏: 格子不可聚焦, 点一下就是点击, 长按开详情.
+ * @param topBleed 原生视图往上伸多少, 首行的聚焦框画得进这一截, 往下滚了以后整个擦掉 (见 TvNativeMonogramGallery 的同名参数);
+ *   默认是居中弹窗里标题行与内容之间的间距 (全部选集弹窗里网格就在标题行下面).
  * @param modifier 挂在装网格的那一层上 (按宽排列数; 送焦的锚点也挂这里: 焦点送进来时落在 [selectedIndex]).
  */
 @Composable
@@ -79,6 +84,7 @@ fun TvNativeEpisodeGrid(
     onClick: (index: Int) -> Unit,
     onLongPress: (index: Int) -> Unit,
     modifier: Modifier = Modifier,
+    topBleed: Dp = CENTERED_PANEL_TITLE_GAP,
 ) {
     BoxWithConstraints(modifier) {
         val density = LocalDensity.current
@@ -87,7 +93,9 @@ fun TvNativeEpisodeGrid(
         val gap = if (numbers) TV_NATIVE_EPISODE_GRID_NUMBER_GAP else TV_NATIVE_EPISODE_GRID_STILL_GAP
         val minWidth = if (numbers) TV_NATIVE_EPISODE_GRID_NUMBER_MIN_WIDTH else TV_NATIVE_EPISODE_GRID_STILL_MIN_WIDTH
         val sidePx = with(density) { TV_NATIVE_EPISODE_GRID_SIDE_INSET.roundToPx() }
-        val verticalPx = with(density) { ANI_SCROLL_FADE.roundToPx() }
+        // 顶上留标题行下面那条渐隐 (加上往上伸的那截), 底下留一截渐隐; 首末行的聚焦框画在这两截里
+        val topPx = with(density) { (ANI_SCROLL_FADE_UNDER_TITLE + topBleed).roundToPx() }
+        val bottomPx = with(density) { ANI_SCROLL_FADE.roundToPx() }
         val gapPx = with(density) { gap.roundToPx() }
         val widthPx = constraints.maxWidth
         val columns = tvNativeGridColumns(widthPx - sidePx * 2, with(density) { minWidth.roundToPx() }, gapPx)
@@ -106,10 +114,10 @@ fun TvNativeEpisodeGrid(
         val currentOnClick by rememberUpdatedState(onClick)
         val currentOnLongPress by rememberUpdatedState(onLongPress)
         val rows = (cards.size + columns - 1) / columns
-        val contentHeightPx = rows * cellHeightPx + (rows - 1).coerceAtLeast(0) * gapPx + verticalPx * 2
+        val contentHeightPx = rows * cellHeightPx + (rows - 1).coerceAtLeast(0) * gapPx + topPx + bottomPx
         TvNativeHost(
             factory = { context ->
-                TvNativeGalleryGridView(context, columns, gapPx, gapPx, sidePx, verticalPx).also { grid ->
+                TvNativeGalleryGridView(context, columns, gapPx, gapPx, sidePx, topPx, bottomPx).also { grid ->
                     grid.touchTaps = touchTaps
                     // 第一行按上回到标题行的按钮 (由 Compose 按位置找)
                     grid.releaseUpAtTop = true
@@ -168,8 +176,12 @@ fun TvNativeEpisodeGrid(
                 }
             },
             modifier = Modifier
+                .tvNativeBleedTop(topBleed)
                 .height(with(density) { contentHeightPx.toDp() })
-                .aniVerticalScrollFade({ canScrollUp }, { canScrollDown }, fade = ANI_SCROLL_FADE),
+                .aniVerticalScrollFade(
+                    { canScrollUp }, { canScrollDown },
+                    fade = ANI_SCROLL_FADE, topFade = ANI_SCROLL_FADE_UNDER_TITLE, topClear = topBleed,
+                ),
             // 列数、格子尺寸与配色、格子种类在建网格时定死: 变了就整个重建
             rebuildKey = listOf(numbers, columns, cardStyle, numberStyle),
         )

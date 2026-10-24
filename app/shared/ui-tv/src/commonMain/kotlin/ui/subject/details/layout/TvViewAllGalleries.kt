@@ -10,11 +10,16 @@
 package me.him188.ani.app.ui.subject.details.layout
 
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.Dp
 import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
+import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_CONTENT_PADDING
+import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_TITLE_GAP
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeCard
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeMonogram
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeMonogramGallery
@@ -22,9 +27,10 @@ import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativePosterGallery
 import me.him188.ani.app.ui.subject.details.sections.VIEW_ALL_GALLERY_COLUMNS
 import me.him188.ani.app.ui.subject.details.sections.VIEW_ALL_GALLERY_COLUMN_SPACING
 import me.him188.ani.app.ui.subject.details.sections.VIEW_ALL_GALLERY_ROW_SPACING
+import me.him188.ani.app.ui.subject.details.sections.VIEW_ALL_GALLERY_BOTTOM_INSET
 import me.him188.ani.app.ui.subject.details.sections.VIEW_ALL_GALLERY_SIDE_INSET
 import me.him188.ani.app.ui.subject.details.sections.VIEW_ALL_GALLERY_TEXT_GAP
-import me.him188.ani.app.ui.subject.details.sections.VIEW_ALL_GALLERY_VERTICAL_INSET
+import me.him188.ani.app.ui.subject.details.sections.VIEW_ALL_GALLERY_TOP_INSET
 import me.him188.ani.app.ui.subject.details.sections.ViewAllGalleries
 import me.him188.ani.app.ui.subject.details.sections.monogramInitials
 import me.him188.ani.app.ui.subject.details.sections.viewAllGalleryCellWidth
@@ -65,8 +71,11 @@ object TvViewAllGalleries : ViewAllGalleries {
                 columns = VIEW_ALL_GALLERY_COLUMNS,
                 rowSpacing = VIEW_ALL_GALLERY_ROW_SPACING,
                 sideInset = VIEW_ALL_GALLERY_SIDE_INSET,
-                verticalInset = VIEW_ALL_GALLERY_VERTICAL_INSET,
+                topInset = VIEW_ALL_GALLERY_TOP_INSET,
+                bottomInset = VIEW_ALL_GALLERY_BOTTOM_INSET,
                 touchTaps = touch,
+                edgeBleed = galleryEdgeBleed,
+                topBleed = CENTERED_PANEL_TITLE_GAP,
                 onClick = onClick,
                 onLongPress = onLongPress,
                 onBind = onBind,
@@ -95,8 +104,11 @@ object TvViewAllGalleries : ViewAllGalleries {
                 columnSpacing = VIEW_ALL_GALLERY_COLUMN_SPACING,
                 rowSpacing = VIEW_ALL_GALLERY_ROW_SPACING,
                 sideInset = VIEW_ALL_GALLERY_SIDE_INSET,
-                verticalInset = VIEW_ALL_GALLERY_VERTICAL_INSET,
+                topInset = VIEW_ALL_GALLERY_TOP_INSET,
+                bottomInset = VIEW_ALL_GALLERY_BOTTOM_INSET,
                 touchTaps = touch,
+                edgeBleed = galleryEdgeBleed,
+                topBleed = CENTERED_PANEL_TITLE_GAP,
                 onClick = onClick,
                 onBind = onBind,
                 modifier = initialFocus,
@@ -104,3 +116,10 @@ object TvViewAllGalleries : ViewAllGalleries {
         }
     }
 }
+
+/**
+ * 画廊放在「查看全部」弹窗的内容区里 (ViewAllPanelDialog), 左右各有 [CENTERED_PANEL_CONTENT_PADDING] 的空地: 原生网格伸进这一截,
+ * 首末列聚焦时的放大与投影画得开, 不在内容区的边上被切掉. 上面同理伸进标题行下面那段间距 ([CENTERED_PANEL_TITLE_GAP]).
+ */
+private val galleryEdgeBleed: Dp
+    @Composable get() = CENTERED_PANEL_CONTENT_PADDING.calculateStartPadding(LocalLayoutDirection.current)

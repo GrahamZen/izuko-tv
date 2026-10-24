@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
  * **向上 ([top])**: 离场的行越过网格顶边继续上移 (由条目自己按位置淡出或压暗), 而不是在网格顶边被 90 度硬切.
  *
  * **向左 ([start])**: 首列卡聚焦放大时向左伸出几 dp, 网格自己 clipToBounds, 不出血就被左边界切掉 (见 [TV_GRID_START_BLEED]).
+ * **向右 ([end])**: 同理给末列 (如弹窗里的原生画廊, 装它的 AndroidView 按自己的边界裁).
  *
  * 做法: 布局上仍按原尺寸参与排版, 只在测量时多要出血量、放置时反向挪同样的距离. 网格的 contentPadding 也要在对应一侧
  * 加上出血量 —— 停位按条目 offset 算 (TvScrollAnimator, offset 0 = 内边距之后), 于是停位与出血前完全一样; 按宽度算列数的
@@ -30,20 +31,21 @@ import androidx.compose.ui.unit.dp
  * spring; 否则目标没组合, 送焦会先 `scrollToItem` 瞬移、滚动器也退回自带的快动画, 看着就是"闪现". 底部补白要把这一截加回去,
  * 否则末行滚不到位.
  */
-fun Modifier.tvGridBleed(top: Dp = 0.dp, start: Dp = 0.dp, bottom: Dp = 0.dp): Modifier = layout { measurable, constraints ->
+fun Modifier.tvGridBleed(top: Dp = 0.dp, start: Dp = 0.dp, bottom: Dp = 0.dp, end: Dp = 0.dp): Modifier = layout { measurable, constraints ->
     val b = if (constraints.hasBoundedHeight) top.roundToPx() else 0
     val e = if (constraints.hasBoundedHeight) bottom.roundToPx() else 0
     val s = if (constraints.hasBoundedWidth) start.roundToPx() else 0
+    val n = if (constraints.hasBoundedWidth) end.roundToPx() else 0
     val placeable = measurable.measure(
         constraints.copy(
-            minWidth = if (s > 0) constraints.maxWidth + s else constraints.minWidth,
-            maxWidth = if (s > 0) constraints.maxWidth + s else constraints.maxWidth,
+            minWidth = if (s + n > 0) constraints.maxWidth + s + n else constraints.minWidth,
+            maxWidth = if (s + n > 0) constraints.maxWidth + s + n else constraints.maxWidth,
             minHeight = if (b + e > 0) constraints.maxHeight + b + e else constraints.minHeight,
             maxHeight = if (b + e > 0) constraints.maxHeight + b + e else constraints.maxHeight,
         ),
     )
     // placeRelative: 从右往左的布局里 start 在右边, 出血跟着翻到右侧
-    layout(placeable.width - s, placeable.height - b - e) { placeable.placeRelative(-s, -b) }
+    layout(placeable.width - s - n, placeable.height - b - e) { placeable.placeRelative(-s, -b) }
 }
 
 /**

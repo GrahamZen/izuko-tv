@@ -37,25 +37,37 @@ import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
  * 用在弹窗里会滚的列表上 —— 不然多出来的卡片在面板内边距那条线上一刀切断, 看着像被一道边框截住.
  *
  * 能不能往上 / 往下滚在绘制阶段读 ([canScrollUp] / [canScrollDown]), 滚动只重画不重组.
+ *
+ * @param topFade 顶边那条渐隐的高, 默认同底边 ([fade]).
+ * @param topClear 顶边往下这么高整个擦掉, 渐隐从它下面开始 (往上滚的时候才有). 给往上伸进别处空地的内容用: 平时首行的投影画得进那截空地,
+ *   滚动时内容到不了那里.
  */
 fun Modifier.aniVerticalScrollFade(
     canScrollUp: () -> Boolean,
     canScrollDown: () -> Boolean,
     fade: Dp = ANI_SCROLL_FADE,
+    topFade: Dp = fade,
+    topClear: Dp = 0.dp,
 ): Modifier = this
     // 离屏合成: 下面用 DstOut 把边缘那一条的内容「擦淡」, 只擦这一层, 不连带擦到后面的面板
     .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
     .drawWithContent {
         drawContent()
         val f = fade.toPx().coerceAtMost(size.height / 2)
-        if (f <= 0f) return@drawWithContent
+        val topClearPx = topClear.toPx().coerceIn(0f, size.height / 2)
+        val topF = topFade.toPx().coerceAtMost(size.height / 2 - topClearPx)
         if (canScrollUp()) {
-            drawRect(
-                Brush.verticalGradient(listOf(Color.Black, Color.Transparent), startY = 0f, endY = f),
-                size = Size(size.width, f),
-                blendMode = BlendMode.DstOut,
-            )
+            if (topClearPx > 0f) drawRect(Color.Black, size = Size(size.width, topClearPx), blendMode = BlendMode.DstOut)
+            if (topF > 0f) {
+                drawRect(
+                    Brush.verticalGradient(listOf(Color.Black, Color.Transparent), startY = topClearPx, endY = topClearPx + topF),
+                    topLeft = Offset(0f, topClearPx),
+                    size = Size(size.width, topF),
+                    blendMode = BlendMode.DstOut,
+                )
+            }
         }
+        if (f <= 0f) return@drawWithContent
         if (canScrollDown()) {
             drawRect(
                 Brush.verticalGradient(listOf(Color.Transparent, Color.Black), startY = size.height - f, endY = size.height),
@@ -67,8 +79,8 @@ fun Modifier.aniVerticalScrollFade(
     }
 
 /** 见 [aniVerticalScrollFade]. */
-fun Modifier.aniVerticalScrollFade(state: LazyGridState, fade: Dp = ANI_SCROLL_FADE): Modifier =
-    aniVerticalScrollFade({ state.canScrollBackward }, { state.canScrollForward }, fade)
+fun Modifier.aniVerticalScrollFade(state: LazyGridState, fade: Dp = ANI_SCROLL_FADE, topFade: Dp = fade): Modifier =
+    aniVerticalScrollFade({ state.canScrollBackward }, { state.canScrollForward }, fade, topFade)
 
 /** 见 [aniVerticalScrollFade]. */
 fun Modifier.aniVerticalScrollFade(state: LazyListState, fade: Dp = ANI_SCROLL_FADE): Modifier =
@@ -112,3 +124,9 @@ private class FadeMarginBringIntoViewSpec(private val marginPx: Float) : BringIn
 
 /** 渐隐那一条的高. */
 val ANI_SCROLL_FADE: Dp = 32.dp
+
+/**
+ * 弹窗标题行下面那条渐隐的高: 内容在离标题行一段距离处淡掉, 碰不到标题. 这一截在没滚的时候是空的, 所以比 [ANI_SCROLL_FADE] 窄,
+ * 标题行下面不空一大块.
+ */
+val ANI_SCROLL_FADE_UNDER_TITLE: Dp = 20.dp

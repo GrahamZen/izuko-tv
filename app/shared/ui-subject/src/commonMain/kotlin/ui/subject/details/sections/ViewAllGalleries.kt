@@ -64,6 +64,7 @@ import me.him188.ani.app.ui.foundation.tv.tvCardTextInset
 import me.him188.ani.app.ui.foundation.tv.tvFocusableCard
 import me.him188.ani.app.ui.foundation.tvLongPressKey
 import me.him188.ani.app.ui.foundation.widgets.ANI_SCROLL_FADE
+import me.him188.ani.app.ui.foundation.widgets.ANI_SCROLL_FADE_UNDER_TITLE
 import me.him188.ani.app.ui.foundation.widgets.ProvideScrollFadeFocusMargin
 import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFade
 import me.him188.ani.app.ui.subject.details.components.COVER_WIDTH_TO_HEIGHT_RATIO
@@ -126,8 +127,14 @@ val VIEW_ALL_GALLERY_ROW_SPACING = 24.dp
 /** 网格左右各让出多少: 聚焦放大 (圆 1.115 倍、海报 1.12 倍) 伸出格外的那一截与描环画在这里面, 不被弹窗内容区的边裁掉. */
 val VIEW_ALL_GALLERY_SIDE_INSET = 12.dp
 
-/** 网格上下各让出多少: 滚不完时内容在这一截里渐隐 (同 aniVerticalScrollFade), 不滚时首行 / 末行的放大也画在这里面. */
-val VIEW_ALL_GALLERY_VERTICAL_INSET = ANI_SCROLL_FADE
+/**
+ * 网格顶上让出多少: 往下滚了以后内容在这一截里渐隐 (标题行下面那条, 见 [ANI_SCROLL_FADE_UNDER_TITLE]), 不滚时首行的放大也画在这里面;
+ * 原生版还往标题行下面那段间距里伸, 首行的投影画得开 (见 TvViewAllGalleries).
+ */
+val VIEW_ALL_GALLERY_TOP_INSET = ANI_SCROLL_FADE_UNDER_TITLE
+
+/** 网格底下让出多少: 滚不完时内容在这一截里渐隐 (同 aniVerticalScrollFade), 不滚时末行的放大与投影也画在这里面. */
+val VIEW_ALL_GALLERY_BOTTOM_INSET = ANI_SCROLL_FADE
 
 /** 圆下缘到名字: 比详情页的行宽一点, 给压在圆下缘的标签让出位置. */
 val VIEW_ALL_GALLERY_TEXT_GAP = 8.dp
@@ -212,9 +219,14 @@ private fun GalleryGrid(
         ProvideScrollFadeFocusMargin {
             LazyVerticalGrid(
                 GridCells.Fixed(VIEW_ALL_GALLERY_COLUMNS),
-                Modifier.aniVerticalScrollFade(state),
+                Modifier.aniVerticalScrollFade(state, topFade = VIEW_ALL_GALLERY_TOP_INSET),
                 state = state,
-                contentPadding = PaddingValues(horizontal = VIEW_ALL_GALLERY_SIDE_INSET, vertical = VIEW_ALL_GALLERY_VERTICAL_INSET),
+                contentPadding = PaddingValues(
+                    start = VIEW_ALL_GALLERY_SIDE_INSET,
+                    top = VIEW_ALL_GALLERY_TOP_INSET,
+                    end = VIEW_ALL_GALLERY_SIDE_INSET,
+                    bottom = VIEW_ALL_GALLERY_BOTTOM_INSET,
+                ),
                 horizontalArrangement = Arrangement.spacedBy(VIEW_ALL_GALLERY_COLUMN_SPACING),
                 verticalArrangement = Arrangement.spacedBy(VIEW_ALL_GALLERY_ROW_SPACING),
             ) {
