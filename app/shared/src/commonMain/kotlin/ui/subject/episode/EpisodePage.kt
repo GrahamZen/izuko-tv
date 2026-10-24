@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.subject.episode
 
+import me.him188.ani.app.domain.episode.ipadDiag
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -1557,6 +1558,7 @@ private fun PictureInPicturePolicyEffect(
     ) {
         val autoEnter = shouldAutoEnterPictureInPicture(backgroundBehavior, playWhenReady = playerState.playWhenReady)
         vm.setAutoPictureInPictureArmed(armOwner, autoEnter)
+        ipadDiag("player page pip policy: autoEnter=$autoEnter controller=${pictureInPictureController::class.simpleName}")
         pictureInPictureController.updatePolicy(
             autoEnterEnabled = autoEnter,
             aspectWidth = mediaProperties?.videoWidth,

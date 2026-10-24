@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.main
 
+import me.him188.ani.app.ui.foundation.IpadDiag
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -858,6 +859,7 @@ private fun TvActionPanelDialog(
                         // 而"我现在就要看"始终是主体那一下, 没有因此变成两次按键.
                         onTrailingClick = {
                             if (session != null) {
+                                IpadDiag.log("action panel: close session")
                                 playback.close()
                                 // 焦点只在**换组件**那一路会掉: 关掉之后要是连「接下来播放」都没有,
                                 // 整块变成占位卡 (另一个 composable, 节点重建, 而 Compose 不会
@@ -866,7 +868,8 @@ private fun TvActionPanelDialog(
                                 // 否则会把焦点从这颗按钮抢到卡片主体上.
                                 if (TvUpNextStore.target == null) reclaimCardFocus = true
                             } else {
-                                playback.startInBackground(cardSubjectId, cardEpisodeId, context)
+                                val started = playback.startInBackground(cardSubjectId, cardEpisodeId, context)
+                                IpadDiag.log("action panel: start in background $cardSubjectId/$cardEpisodeId -> $started (${playback::class.simpleName})")
                             }
                         },
                         onFocusLabel = { label, danger ->

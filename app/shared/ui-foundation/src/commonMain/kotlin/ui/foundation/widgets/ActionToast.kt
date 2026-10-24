@@ -30,6 +30,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import me.him188.ani.app.ui.foundation.IpadDiag
 
 /** 能带点按动作的 [Toaster] (见 [toastWithAction]). */
 interface ActionToaster : Toaster {
@@ -71,6 +72,7 @@ class ActionToastState internal constructor(
     }
 
     private fun show(text: String, onClick: (() -> Unit)?) {
+        IpadDiag.log("toast show action=${onClick != null} plainHost=${plain != null} text=$text")
         this.text = text
         this.onClick = onClick
         showing = true
@@ -83,6 +85,7 @@ class ActionToastState internal constructor(
 
     internal fun click() {
         val action = onClick ?: return
+        IpadDiag.log("toast click text=$text")
         hideJob?.cancel()
         showing = false
         action()

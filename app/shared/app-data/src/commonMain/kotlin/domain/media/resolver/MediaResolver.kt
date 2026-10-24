@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.domain.media.resolver
 
+import me.him188.ani.app.domain.episode.ipadDiag
 import androidx.compose.runtime.Composable
 import me.him188.ani.app.data.models.episode.EpisodeInfo
 import me.him188.ani.app.domain.media.player.data.MediaDataProvider
@@ -141,7 +142,9 @@ private class ChainedMediaResolver(
     }
 
     override suspend fun resolve(media: Media, episode: EpisodeMetadata): MediaDataProvider<*> {
-        return resolvers.firstOrNull { it.supports(media) }?.resolve(media, episode)
+        val resolver = resolvers.firstOrNull { it.supports(media) }
+        ipadDiag("resolve with ${resolver?.let { it::class.simpleName }} (of ${resolvers.size}): ${media.download::class.simpleName}")
+        return resolver?.resolve(media, episode)
             ?.also { SourceProfiles.noteResolved(media, it) }
             ?: throw UnsupportedMediaException(media)
     }

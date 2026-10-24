@@ -11,6 +11,7 @@
 
 package me.him188.ani.app.domain.mediasource.web.captcha
 
+import me.him188.ani.app.domain.episode.ipadDiag
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.UIKitView
@@ -62,6 +63,10 @@ private class WkWebViewCaptchaBrowser(userAgent: String?) : CaptchaBrowser {
     // 数据源大多不指定 UA: 给 WKWebView 定一个已知的, 过盾拿到的 cf_clearance 才能配着同一个 UA 给 HTTP 请求用
     // (WKWebView 的默认 UA 读不出来, 留空的话 HTTP 侧照旧用自己的 UA, 带着这个 cookie 也一直被挡)
     override val userAgent: String = userAgent ?: IOS_BROWSER_USER_AGENT
+
+    init {
+        ipadDiag("captcha browser UA: ${if (userAgent == null) "default (Mac Safari)" else "from source"}")
+    }
 
     private val webView = WKWebView(
         frame = CGRectMake(0.0, 0.0, 1000.0, 1000.0),

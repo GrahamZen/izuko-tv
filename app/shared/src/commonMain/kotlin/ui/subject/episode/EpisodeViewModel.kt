@@ -9,6 +9,8 @@
 
 package me.him188.ani.app.ui.subject.episode
 
+import me.him188.ani.app.domain.episode.ipadDiag
+import me.him188.ani.app.domain.episode.observeIpadPlayerDiag
 import androidx.annotation.UiThread
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.runtime.Stable
@@ -432,6 +434,7 @@ open class EpisodeViewModel(
      */
     fun setAutoPictureInPictureArmed(owner: Any, armed: Boolean) {
         if (armed) autoPictureInPictureOwners += owner else autoPictureInPictureOwners -= owner
+        ipadDiag("auto PiP armed=$armed by ${owner.hashCode()}, ${autoPictureInPictureOwners.size} owners")
     }
 
     /** `null` 表示本次播放尚未调整过倍速, 此时跟随配置. */
@@ -1498,6 +1501,8 @@ open class EpisodeViewModel(
     }
 
     init {
+        // iPad 测试包的播放诊断 (只在 CI 测试分支, 见 IpadPlayerDiag)
+        launchInBackground { observeIpadPlayerDiag(fetchPlayState, player) }
         // 正在播的这一集与缓冲余量: 缓存下载据此给播放让路 (见 PlaybackActivity). 播放页销毁时撤掉
         launchInBackground {
             try {

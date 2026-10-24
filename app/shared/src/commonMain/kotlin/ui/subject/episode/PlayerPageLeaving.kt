@@ -9,6 +9,9 @@
 
 package me.him188.ani.app.ui.subject.episode
 
+import me.him188.ani.app.domain.episode.ipadDiag
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.animation.EnterExitState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -26,5 +29,8 @@ val LocalPlayerPageLeaving = compositionLocalOf<() -> Boolean> { { false } }
 @Composable
 fun ProvidePlayerPageLeaving(content: @Composable () -> Unit) {
     val transition = LocalNavAnimatedContentScope.current.transition
+    LaunchedEffect(transition) {
+        snapshotFlow { "${transition.currentState} -> ${transition.targetState}" }.collect { ipadDiag("player page transition: $it") }
+    }
     CompositionLocalProvider(LocalPlayerPageLeaving provides { transition.targetState == EnterExitState.PostExit }, content = content)
 }

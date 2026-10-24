@@ -21,6 +21,8 @@ import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.media.player.data.MediaDataProvider
 import me.him188.ani.app.domain.player.toLogText
 import me.him188.ani.app.platform.Context
+import me.him188.ani.app.domain.episode.ipadDiag
+import me.him188.ani.app.domain.episode.ipadDiagUrl
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.matcher.MediaSourceWebVideoMatcherLoader
 import me.him188.ani.datasources.api.matcher.WebVideo
@@ -102,6 +104,7 @@ class IosWebMediaResolver(
 
         var video: WebVideo? = null
         reportResolveAttempt(timeoutMillis)
+        ipadDiag("sniff ${media.mediaSourceId}: page ${ipadDiagUrl(media.download.uri)}, timeout ${timeoutMillis}ms, ${allMatchers.size} matchers")
         withContext(Dispatchers.Default) {
             withContext(Dispatchers.Main) { extractor }.getVideoResourceUrl(
                 context = this@IosWebMediaResolver.iosContext,
@@ -119,9 +122,13 @@ class IosWebMediaResolver(
                     null -> WebViewVideoExtractor.Instruction.Continue
                 }
             }
-        } ?: throw MediaResolutionException(ResolutionFailures.NO_MATCHING_RESOURCE)
+        } ?: run {
+            ipadDiag("sniff ${media.mediaSourceId}: nothing matched")
+            throw MediaResolutionException(ResolutionFailures.NO_MATCHING_RESOURCE)
+        }
 
         val matchedVideo = video ?: error("getVideoResourceUrl completed but no video found")
+        ipadDiag("sniff ${media.mediaSourceId}: matched ${ipadDiagUrl(matchedVideo.m3u8Url)} headers=${matchedVideo.headers.keys}")
 
         return HttpStreamingMediaDataProvider(
             matchedVideo.m3u8Url,
@@ -187,6 +194,7 @@ class IosWebViewVideoExtractor(
                         try {
                             val body = didReceiveScriptMessage.body.toString()
                             logger.info { "JS -> Native: $body" }
+                            ipadDiag("sniff js report: ${ipadDiagUrl(body)}")
                             currentHandler?.handleInterceptedUrl(body)
                         } catch (e: Throwable) {
                             logger.warn(e) { "Error in script message handler" }

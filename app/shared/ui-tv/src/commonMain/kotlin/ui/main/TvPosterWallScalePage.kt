@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.main
 
+import me.him188.ani.app.ui.foundation.IpadDiag
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
@@ -212,8 +213,12 @@ fun TvPosterWallScalePage(
             focusRequester = sliderFocus,
             scrimPainter = { tone.drawBackground(this) },
             stops = stops,
-            onSetPercent = { percent = it },
+            onSetPercent = {
+                if (it != percent) IpadDiag.log("wall scale touch: $it%")
+                percent = it
+            },
             onDone = {
+                IpadDiag.log("wall scale done: $percent%")
                 commit()
                 onNavigateBack()
             },

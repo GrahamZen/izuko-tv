@@ -48,6 +48,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
+import me.him188.ani.app.domain.episode.ipadDiag
 import me.him188.ani.app.pip.rememberPictureInPictureController
 import me.him188.ani.app.pip.shouldAutoEnterPictureInPicture
 import me.him188.ani.app.ui.foundation.LocalPlatform
@@ -109,6 +110,10 @@ fun rememberTouchMiniPlayer(holder: RetainedPlaybackSessionHolder?, onPlayerPage
 @Composable
 fun TouchMiniPlayerHost(miniPlayer: TouchMiniPlayer, onExpand: () -> Unit, modifier: Modifier = Modifier) {
     val vm = miniPlayer.vm ?: return
+    DisposableEffect(vm) {
+        ipadDiag("mini player shown")
+        onDispose { ipadDiag("mini player hidden") }
+    }
     var controlsVisible by remember { mutableStateOf(false) }
     // 控件开着时每点一次按钮就加一, 收起的倒计时重新开始
     var interactions by remember { mutableIntStateOf(0) }
@@ -131,8 +136,14 @@ fun TouchMiniPlayerHost(miniPlayer: TouchMiniPlayer, onExpand: () -> Unit, modif
                 vm,
                 visible = controlsVisible,
                 onInteract = { interactions++ },
-                onExpand = onExpand,
-                onClose = miniPlayer::dismiss,
+                onExpand = {
+                    ipadDiag("mini player expand")
+                    onExpand()
+                },
+                onClose = {
+                    ipadDiag("mini player close")
+                    miniPlayer.dismiss()
+                },
             )
         },
     )
@@ -150,12 +161,16 @@ private fun MiniPlayerSystemPictureInPicture(vm: EpisodeViewModel, onExpand: () 
     val controller = rememberPictureInPictureController(vm.player)
     val currentOnExpand by rememberUpdatedState(onExpand)
     LaunchedEffect(controller) {
-        controller.restoreRequests.collect { currentOnExpand() }
+        controller.restoreRequests.collect {
+            ipadDiag("mini player: pip restore -> expand")
+            currentOnExpand()
+        }
     }
     val state by vm.player.state.collectAsStateWithLifecycle()
     val autoEnter = shouldAutoEnterPictureInPicture(vm.videoScaffoldConfig.backgroundBehavior, playWhenReady = state.playWhenReady)
     val armOwner = remember { Any() }
     LaunchedEffect(controller, autoEnter) {
+        ipadDiag("mini player pip policy: autoEnter=$autoEnter controller=${controller::class.simpleName}")
         vm.setAutoPictureInPictureArmed(armOwner, autoEnter)
         controller.updatePolicy(autoEnterEnabled = autoEnter, aspectWidth = null, aspectHeight = null)
     }

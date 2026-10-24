@@ -9,6 +9,8 @@
 
 package me.him188.ani.app.pip
 
+import me.him188.ani.app.domain.episode.ipadDiag
+import platform.Foundation.NSError
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
@@ -48,7 +50,7 @@ import platform.darwin.dispatch_get_main_queue
 @Composable
 actual fun rememberPictureInPictureController(player: MediampPlayer): PictureInPictureController {
     // AVKit 在不支持 PiP 的设备上初始化控制器会返回 nil.
-    if (!remember { AVPictureInPictureController.isPictureInPictureSupported() }) {
+    if (!remember { AVPictureInPictureController.isPictureInPictureSupported().also { ipadDiag("pip supported=$it") } }) {
         return NoOpPictureInPictureController
     }
 
@@ -60,6 +62,7 @@ actual fun rememberPictureInPictureController(player: MediampPlayer): PictureInP
         if (layer != null && avPlayer != null) {
             IosPictureInPictureController(layer, avPlayer)
         } else {
+            ipadDiag("pip: no controller yet (layer=${layer != null} avkit=${avPlayer != null})")
             NoOpPictureInPictureController
         }
     }
@@ -108,6 +111,7 @@ private class IosPictureInPictureController(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     init {
+        ipadDiag("pip controller created")
         // isPictureInPicturePossible 的 KVO 变更通知在部分 iOS 版本上不可靠: 初值投递后
         // 可能不再投递 (系统层 possible 已翻 true, 自动小窗都好使, 但 KVO 不再回调),
         // 而控制栏按钮的 enabled 依赖这个 flow — 随播放器状态重读真实值兜底.
@@ -130,6 +134,7 @@ private class IosPictureInPictureController(
         null,
         null,
         usingBlock = {
+            ipadDiag("app became active: pip active=${pipController.isPictureInPictureActive()}")
             if (pipController.isPictureInPictureActive()) {
                 stop.onStopRequestedByApp()
                 pipController.stopPictureInPicture()
@@ -138,17 +143,21 @@ private class IosPictureInPictureController(
     )
 
     private fun refreshPossible() {
-        _isPictureInPicturePossible.value = pipController.isPictureInPicturePossible()
+        val possible = pipController.isPictureInPicturePossible()
+        if (possible != _isPictureInPicturePossible.value) ipadDiag("pip possible=$possible")
+        _isPictureInPicturePossible.value = possible
     }
 
     override fun updatePolicy(autoEnterEnabled: Boolean, aspectWidth: Int?, aspectHeight: Int?) {
         // 宽高比由 AVKit 按 layer 内容自动处理, 无需声明 (与 Android 的 PictureInPictureParams 不同)
+        ipadDiag("pip policy: autoEnter=$autoEnterEnabled")
         pipController.canStartPictureInPictureAutomaticallyFromInline = autoEnterEnabled
         refreshPossible()
     }
 
     override fun enterPictureInPicture() {
         refreshPossible()
+        ipadDiag("pip enter: possible=${pipController.isPictureInPicturePossible()} active=${pipController.isPictureInPictureActive()}")
         if (pipController.isPictureInPicturePossible() && !pipController.isPictureInPictureActive()) {
             pipController.startPictureInPicture()
         }
@@ -185,7 +194,16 @@ private class Delegate(
     override fun pictureInPictureControllerDidStartPictureInPicture(
         pictureInPictureController: AVPictureInPictureController,
     ) {
+        ipadDiag("pip started")
         onIsInChanged(true)
+    }
+
+    override fun pictureInPictureController(
+        pictureInPictureController: AVPictureInPictureController,
+        failedToStartPictureInPictureWithError: NSError,
+    ) {
+        ipadDiag("pip failed to start: ${failedToStartPictureInPictureWithError.domain} ${failedToStartPictureInPictureWithError.code} ${failedToStartPictureInPictureWithError.localizedDescription}")
+        onIsInChanged(false)
     }
 
     override fun pictureInPictureControllerWillStopPictureInPicture(
@@ -197,6 +215,7 @@ private class Delegate(
     override fun pictureInPictureControllerDidStopPictureInPicture(
         pictureInPictureController: AVPictureInPictureController,
     ) {
+        ipadDiag("pip stopped")
         onIsInChanged(false)
         stop.onDidStop()
     }

@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.main
 
+import me.him188.ani.app.domain.episode.ipadDiag
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.tween
@@ -230,7 +231,9 @@ fun AniAppContent(aniNavigator: AniNavigator) {
                 val sound = noticeSound.value
                 val text = noticeTexts.textOf(it) + if (sound != NoticeSoundKind.None) soundHint else ""
                 // 触屏上这条点得到 (见 toastWithAction): 点了回到这个会话的播放页, 同侧边栏「正在播放」(force: 回到已经在播的这一集)
+                ipadDiag("background notice: $it")
                 toaster.toastWithAction(text) {
+                    ipadDiag("background notice tapped, session=${playbackSessionHolder.session}")
                     playbackSessionHolder.session?.let { aniNavigator.navigateEpisodeDetails(it.subjectId, it.episodeId, force = true) }
                 }
                 playNoticeSound(sound)

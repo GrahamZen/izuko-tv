@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.pip
 
+import me.him188.ani.app.domain.episode.ipadDiag
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -40,6 +41,7 @@ internal class IosPictureInPictureStop(private val player: MediampPlayer) {
 
     fun onRestoreTapped() {
         restoreTapped = true
+        ipadDiag("pip restore tapped")
     }
 
     /** 应用自己要收起小窗 (回前台、页面要求退出). */
@@ -49,6 +51,7 @@ internal class IosPictureInPictureStop(private val player: MediampPlayer) {
 
     fun onWillStop() {
         playingBeforeStop = player.state.value.playWhenReady
+        ipadDiag("pip will stop: playing=$playingBeforeStop byApp=$stoppedByApp restore=$restoreTapped")
     }
 
     fun onDidStop() {
@@ -56,16 +59,18 @@ internal class IosPictureInPictureStop(private val player: MediampPlayer) {
         val backToApp = restore || stoppedByApp
         restoreTapped = false
         stoppedByApp = false
+        ipadDiag("pip did stop: restore=$restore backToApp=$backToApp playingBefore=$playingBeforeStop playingNow=${player.state.value.playWhenReady}")
         if (restore) _requests.tryEmit(Unit)
         if (backToApp && playingBeforeStop) keepPlaying()
     }
 
     private fun keepPlaying() {
         scope.launch {
-            withTimeoutOrNull(KEEP_PLAYING_WINDOW) {
+            val resumed = withTimeoutOrNull(KEEP_PLAYING_WINDOW) {
                 player.state.first { !it.playWhenReady }
                 player.play()
             }
+            ipadDiag(if (resumed != null) "pip: paused right after stop, resumed" else "pip: still playing after stop")
         }
     }
 

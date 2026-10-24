@@ -12,6 +12,7 @@
 package me.him188.ani.app.videoplayer.ui
 
 import kotlinx.coroutines.flow.MutableStateFlow
+import me.him188.ani.app.ui.foundation.IpadDiag
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.openani.mediamp.MediampPlayer
@@ -45,12 +46,15 @@ object IosVideoLayerRegistry {
         removeIf { it.key.get() === player }
         layers[WeakReference(player)] = WeakReference(layer)
         _version.value += 1
+        IpadDiag.log("video layer registered: ${layers.size} entries")
     }
 
     /** 拆掉 [layer] 所在的视图时调用; 播放器已经登记到别的 layer 上 (交接时新视图先建) 就不动那一条. */
     fun unregister(player: MediampPlayer, layer: AVPlayerLayer) {
+        val before = layers.size
         removeIf { it.key.get() === player && it.value.get() === layer }
         _version.value += 1
+        IpadDiag.log("video layer unregistered: removed=${before - layers.size}, ${layers.size} left")
     }
 
     private inline fun removeIf(predicate: (Map.Entry<WeakReference<MediampPlayer>, WeakReference<AVPlayerLayer>>) -> Boolean) {

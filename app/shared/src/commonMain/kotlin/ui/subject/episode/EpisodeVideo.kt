@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.subject.episode
 
+import me.him188.ani.app.domain.episode.ipadDiag
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
@@ -362,6 +363,10 @@ internal fun EpisodeVideoImpl(
                 if (LocalIsPreviewing.current) {
                     Text(previewModeText)
                 } else if (!LocalPlayerPageLeaving.current()) {
+                    DisposableEffect(Unit) {
+                        ipadDiag("video view composed")
+                        onDispose { ipadDiag("video view removed") }
+                    }
                     VideoPlayer(
                         playerState,
                         Modifier
@@ -575,7 +580,10 @@ internal fun EpisodeVideoImpl(
                             }.collectAsStateWithLifecycle(false)
                             PlayerControllerDefaults.PictureInPictureIcon(
                                 enabled = (pipPossible || onIos) && mediaLoaded,
-                                onClick = { pictureInPictureController.enterPictureInPicture() },
+                                onClick = {
+                                    ipadDiag("pip button tapped: possible=$pipPossible")
+                                    pictureInPictureController.enterPictureInPicture()
+                                },
                             )
                         }
 

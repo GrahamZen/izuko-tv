@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.domain.media.fetch
 
+import me.him188.ani.app.domain.episode.ipadDiag
 import io.ktor.client.plugins.ServerResponseException
 import kotlinx.atomicfu.locks.SynchronizedObject
 import kotlinx.atomicfu.locks.synchronized
@@ -514,6 +515,11 @@ class MediaSourceMediaFetcher(
         override val request: Flow<MediaFetchRequest> = latestRequest.take(1) // 否则会一直显示加载
 
         override val mediaSourceResults: List<MediaSourceFetchResult> = mediaSources
+            .also { all ->
+                if (!config.enableBTFetcher) {
+                    ipadDiag("BT sources skipped on this platform: ${all.filter { it.source.kind == MediaSourceKind.BitTorrent }.map { it.source.info.displayName }}")
+                }
+            }
             .filter {
                 if (config.enableBTFetcher) true else it.source.kind != MediaSourceKind.BitTorrent
             }
