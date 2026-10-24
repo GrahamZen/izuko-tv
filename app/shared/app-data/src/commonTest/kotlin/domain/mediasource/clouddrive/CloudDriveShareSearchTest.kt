@@ -103,6 +103,28 @@ class CloudDriveShareSearchTest {
     }
 
     @Test
+    fun `a name with decorations is searched again without them before the next name`() = runTest {
+        // 站点按标题原样找: 带全角破折号的名字搜不到, 去掉破折号的同一个名字搜得到; 搜到了就不再换下一个名字
+        val shares = shares(mapOf("share1" to share1))
+        val urls = mutableListOf<String>()
+        val engine = DriveShareSearchEngine(config.copy(maxKeywords = 2), shares, links) { url ->
+            urls += url
+            // 只有「葬送」开头、不带全角破折号的关键词搜得到
+            (if ("wd=%E8%91%AC%E9%80%81" in url && "%EF%BC%8D" !in url) siteResponse else """{"list":[]}""").encodeToByteArray()
+        }
+        val matched = engine.search(request("葬送的芙莉莲 －勇者一行－", "Frieren"))
+        assertEquals(listOf("s1e01", "s1e02"), matched.map { it.file.fid })
+        assertEquals(2, urls.size)
+        assertTrue("%EF%BC%8D" !in urls[1] && "Frieren" !in urls[1])
+
+        // 去掉符号也搜不到时照常轮到下一个名字: 重搜的那次不占名字的名额
+        urls.clear()
+        engine.search(request("别的番 －副标题－", "Frieren"))
+        assertEquals(3, urls.size)
+        assertTrue("Frieren" in urls[2])
+    }
+
+    @Test
     fun `unavailable share is skipped`() = runTest {
         val response = """{"list":[{"vod_name":"葬送的芙莉莲第二季","vod_down_url":"https://share.drive.test/s/dead https://share.drive.test/s/share1"}]}"""
         val shares = shares(mapOf("share1" to share1), unavailable = setOf("dead"))

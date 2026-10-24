@@ -16,7 +16,7 @@ import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 
 /**
- * 「系列名 + 副标题」的条目 (「死神 千年血战篇-诀别谭-」「辉夜大小姐想让我告白-初吻不会结束-」) 在分享站上按条目名一集都没对上时的补搜.
+ * 「系列名 + 副标题」的条目 (「死神 千年血战篇-诀别谭-」「辉夜大小姐想让我告白-初吻不会结束-」) 在分享站上按条目名认上的没覆盖每一集时的补搜.
  * 分享站按整段字符串找标题, 分享又常换个写法 (「死神 千年血战篇  诀别谭+相克谭+死神全集」「辉夜大小姐想让我告白：究极浪漫」),
  * 整个条目名搜不到; 只搜副标题 (条目名去掉系列名剩下的那段) 搜到的几乎都是这一部. 系列名取自系列关系图: 同系列别的作品的名字与条目名
  * 共同的开头, 在两边都是分隔符的地方断开 (「死神 千年血战篇」之于「死神 千年血战篇-诀别谭-」).
@@ -62,20 +62,10 @@ internal class DriveSharePartSearch(
      * 从 01 编起的分不清是哪一部 (`死神 千年血战篇/01.mp4` 可能是任何一部), 不要.
      */
     fun keeps(match: DriveShareMatch, request: MediaFetchRequest, tmdbEpisodes: Map<Pair<Int, Int>, EpisodeSort>?): Boolean {
-        var bucketed = false
-        val segments = listOf(match.file.fileName) + match.folders.asReversed() + match.share.siteTitle
-        for ((index, segment) in segments.withIndex()) {
-            val normalized = DriveNameParser.normalize(segment)
-            val own = ownParts.any { it in normalized }
-            val other = otherParts.any { it in normalized }
-            val isFolder = index in 1 until segments.lastIndex
-            if (own && other) break
-            if (other) return false
-            if (own) {
-                if (bucketed) break
-                return true
-            }
-            if (isFolder && separatesNumbering(segment)) bucketed = true
+        when (namingOf(listOf(match.file.fileName) + match.folders.asReversed() + match.share.siteTitle)) {
+            Naming.OWN -> return true
+            Naming.OTHER -> return false
+            Naming.UNKNOWN -> {}
         }
         val parsed = DriveNameParser.parseFile(match.file.fileName)
         val fileEpisode = (parsed.episode as? EpisodeSort.Normal)?.number?.takeIf { it % 1f == 0f }?.toInt()
@@ -94,6 +84,34 @@ internal class DriveSharePartSearch(
         } == true
         val ownEps = request.episodes.mapNotNullTo(HashSet()) { it.ep }
         return seriesNamed && request.episodes.any { it.sort == match.episode } && match.episode !in ownEps
+    }
+
+    /**
+     * 文件 [fileName] 的路径点名的是这一部 (规则同 [keeps] 的名字那一步; [folders] 从外到里, 第一个可以是分享标题).
+     * 网盘上把这一部当成单独一部、从它起编季的 (「…祸进谭… / S死神 / S01E41.mkv」, TMDB 记成 S2E41) 按它认, 见 [DriveSubjectMatcher.matchEpisodes].
+     */
+    fun namesOwnPart(fileName: String, folders: List<String>): Boolean =
+        namingOf(listOf(fileName) + folders.asReversed()) == Naming.OWN
+
+    private enum class Naming { OWN, OTHER, UNKNOWN }
+
+    /**
+     * 从文件往上 ([segments]: 文件名、各层文件夹, 最后一个是最外层) 第一个点名了某一部的名字: 只点名这一部为 [Naming.OWN],
+     * 只点名别的部为 [Naming.OTHER]; 同时点名几部、点名这一部的那一层与文件之间隔着写了集号范围或季的文件夹、或都没点名时为 [Naming.UNKNOWN].
+     */
+    private fun namingOf(segments: List<String>): Naming {
+        var bucketed = false
+        for ((index, segment) in segments.withIndex()) {
+            val normalized = DriveNameParser.normalize(segment)
+            val own = ownParts.any { it in normalized }
+            val other = otherParts.any { it in normalized }
+            val isFolder = index in 1 until segments.lastIndex
+            if (own && other) return Naming.UNKNOWN
+            if (other) return Naming.OTHER
+            if (own) return if (bucketed) Naming.UNKNOWN else Naming.OWN
+            if (isFolder && separatesNumbering(segment)) bucketed = true
+        }
+        return Naming.UNKNOWN
     }
 
     /** 文件夹 [folder] 写了集号范围或季 (这一部自己那一季除外): 里面是另一套编号. */
@@ -117,7 +135,7 @@ internal class DriveSharePartSearch(
         private const val MAX_SERIES_NODES = 200
 
         /** 文件夹名里的集号范围 (`1-40`、`27~40`). */
-        private val EPISODE_RANGE = Regex("""(?<![0-9])\d{1,4}\s*[-~～至到]\s*\d{1,4}(?![0-9])""")
+        internal val EPISODE_RANGE = Regex("""(?<![0-9])\d{1,4}\s*[-~～至到]\s*\d{1,4}(?![0-9])""")
 
         /**
          * 条目 [subjectId] 的补搜; 不是「系列名 + 副标题」的写法、或系列关系图里没有它时为 null.
