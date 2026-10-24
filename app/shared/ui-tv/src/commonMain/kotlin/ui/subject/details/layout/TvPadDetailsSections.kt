@@ -532,7 +532,7 @@ internal fun TvPadStaffSection(
 }
 
 /**
- * 一行人物卡: 列数按宽度算 ([tvPadColumns], 每格至少 [TV_PAD_PERSON_MIN_WIDTH]), 只放前那么多张; 格子等宽, 人少时后面空着.
+ * 一行人物卡: 最多 [TV_PAD_PERSONS_PER_ROW] 张, 窄到每格不足 [TV_PAD_PERSON_MIN_WIDTH] 时减 ([tvPadColumns]), 只放前那么多张; 格子等宽, 人少时后面空着.
  * 整格点击出涟漪 (涟漪比卡宽出 [TV_PAD_PERSON_PRESS_INSET], 行往左挪同样多, 卡的左缘仍与标题对齐).
  */
 @Composable
@@ -548,7 +548,7 @@ private fun TvPadPeopleSection(
 ) {
     BoxWithConstraints(modifier.fillMaxWidth()) {
         val rowWidth = maxWidth - (horizontalPadding - TV_PAD_PERSON_PRESS_INSET) * 2
-        val columns = tvPadColumns(rowWidth, TV_PAD_PERSON_MIN_WIDTH, TV_PAD_PERSON_GAP)
+        val columns = tvPadColumns(rowWidth, TV_PAD_PERSON_MIN_WIDTH, TV_PAD_PERSON_GAP, TV_PAD_PERSONS_PER_ROW)
         val shown = minOf(count, columns)
         val remaining = (totalCount ?: count) - shown
         Column(verticalArrangement = Arrangement.spacedBy(TV_PAD_SECTION_CONTENT_GAP)) {
@@ -582,9 +582,9 @@ private fun TvPadPeopleSection(
     }
 }
 
-/** [width] 里每格至少 [minCell]、格间 [gap] 时放得下几格 (至少一格). */
-private fun tvPadColumns(width: Dp, minCell: Dp, gap: Dp): Int =
-    ((width + gap) / (minCell + gap)).toInt().coerceAtLeast(1)
+/** [width] 里每格至少 [minCell]、格间 [gap] 时放得下几格 (至少一格, 至多 [maxColumns] 格). */
+private fun tvPadColumns(width: Dp, minCell: Dp, gap: Dp, maxColumns: Int = Int.MAX_VALUE): Int =
+    ((width + gap) / (minCell + gap)).toInt().coerceIn(1, maxColumns)
 
 /** 角色卡: 「角色 · 声优」. */
 @Composable
@@ -824,7 +824,7 @@ internal fun TvPadEpisodesSkeleton(horizontalPadding: Dp, modifier: Modifier = M
 internal fun TvPadPeopleSkeleton(title: String, horizontalPadding: Dp, modifier: Modifier = Modifier) {
     BoxWithConstraints(modifier.fillMaxWidth()) {
         val rowWidth = maxWidth - (horizontalPadding - TV_PAD_PERSON_PRESS_INSET) * 2
-        val columns = tvPadColumns(rowWidth, TV_PAD_PERSON_MIN_WIDTH, TV_PAD_PERSON_GAP)
+        val columns = tvPadColumns(rowWidth, TV_PAD_PERSON_MIN_WIDTH, TV_PAD_PERSON_GAP, TV_PAD_PERSONS_PER_ROW)
         Column(verticalArrangement = Arrangement.spacedBy(TV_PAD_SECTION_CONTENT_GAP)) {
             TvPadSectionHeader(title, Modifier.padding(horizontal = horizontalPadding))
             Row(
@@ -942,8 +942,9 @@ private val TV_PAD_SUMMARY_DIALOG_TAG_GAP = 8.dp
 /** 两个以上连着的空行 (中间可夹空白字符). */
 private val TV_PAD_SUMMARY_EXTRA_BLANK_LINES = Regex("\n\\s*\n(\\s*\n)+")
 
-/** 人物卡: 每格最窄多宽、头像边长与圆角、格间距、涟漪比卡宽出多少. */
-private val TV_PAD_PERSON_MIN_WIDTH = 200.dp
+/** 人物卡: 一行最多几张、每格最窄多宽 (窄到放不下这么多张才减)、头像边长与圆角、格间距、涟漪比卡宽出多少. */
+private const val TV_PAD_PERSONS_PER_ROW = 5
+private val TV_PAD_PERSON_MIN_WIDTH = 160.dp
 private val TV_PAD_PERSON_AVATAR = 72.dp
 private val TV_PAD_PERSON_AVATAR_CORNER = 10.dp
 private val TV_PAD_PERSON_GAP = 12.dp

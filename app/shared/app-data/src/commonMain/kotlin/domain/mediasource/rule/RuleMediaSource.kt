@@ -571,7 +571,11 @@ class RuleMediaSource(
                     logger.warn(e) { "RuleMediaSource '$mediaSourceId': play failed for $pageUrl" }
                     RulePlayResult.Failed
                 }
-                logger.info { "RuleMediaSource '$mediaSourceId': play $pageUrl -> $result" }
+                // 请求头只记名字: 规则可以把会话 Cookie 写进播放头
+                logger.info {
+                    "RuleMediaSource '$mediaSourceId': play $pageUrl -> " +
+                        if (result is RulePlayResult.Direct) "Direct(${result.url}, headers=${result.headers.keys})" else "$result"
+                }
                 SourceProfiles.noteWebView(mediaSourceId, webView = result !is RulePlayResult.Direct)
                 return (result as? RulePlayResult.Direct)?.let { WebVideo(it.url, it.headers) }
             }

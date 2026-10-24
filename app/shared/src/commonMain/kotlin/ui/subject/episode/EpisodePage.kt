@@ -675,7 +675,7 @@ private fun EpisodeScreenSidebar(
                                 page.loadError?.let { vm.retryLoad(it) }
                             },
                             danmakuListState = vm.danmakuListState.collectAsStateWithLifecycle().value,
-                            hideSelectorOnSelect = vm.videoScaffoldConfig.hideSelectorOnSelect,
+                            hideSelectorOnSelect = vm.videoScaffoldConfig.hideSelectorOnSelectForCurrentUi(),
                             onBeforeOpenMediaSelector = {
                                 if (vm.mediaSelectorMode == null && !page.isLoading) {
                                     vm.mediaSelectorMode = page.initialMediaSelectorMode
@@ -841,7 +841,7 @@ private fun EpisodeScreenPhoneDetails(
                             vm.mediaSelectorMode = page.initialMediaSelectorMode
                         }
                     },
-                    hideSelectorOnSelect = vm.videoScaffoldConfig.hideSelectorOnSelect,
+                    hideSelectorOnSelect = vm.videoScaffoldConfig.hideSelectorOnSelectForCurrentUi(),
                     onMediaSelectorShown = { vm.onMediaSelectorShown() },
                     onMediaSelectorHidden = { vm.onMediaSelectorHidden() },
                     fullSearch = vm.fullMediaSearch.collectAsStateWithLifecycle().value,
@@ -1275,7 +1275,7 @@ private fun EpisodeVideo(
                                 fetchRequest = page.fetchRequest,
                                 onFetchRequestChange = { vm.updateFetchRequest(it) },
                                 manualBrowseState = vm.manualBrowseState,
-                                hideOnSelect = vm.videoScaffoldConfig.hideSelectorOnSelect,
+                                hideOnSelect = vm.videoScaffoldConfig.hideSelectorOnSelectForCurrentUi(),
                                 fullSearch = vm.fullMediaSearch.collectAsStateWithLifecycle().value,
                                 onFullSearchChange = { vm.setFullMediaSearch(it) },
                             )
@@ -1546,6 +1546,7 @@ private fun PictureInPicturePolicyEffect(
     val backgroundBehavior = vm.videoScaffoldConfig.backgroundBehavior
     val playerState by vm.player.state.collectAsStateWithLifecycle()
     val mediaProperties by vm.player.mediaProperties.collectAsStateWithLifecycle(null)
+    val armOwner = remember { Any() }
 
     LaunchedEffect(
         pictureInPictureController,
@@ -1554,11 +1555,10 @@ private fun PictureInPicturePolicyEffect(
         mediaProperties?.videoWidth,
         mediaProperties?.videoHeight,
     ) {
+        val autoEnter = shouldAutoEnterPictureInPicture(backgroundBehavior, playWhenReady = playerState.playWhenReady)
+        vm.setAutoPictureInPictureArmed(armOwner, autoEnter)
         pictureInPictureController.updatePolicy(
-            autoEnterEnabled = shouldAutoEnterPictureInPicture(
-                backgroundBehavior,
-                playWhenReady = playerState.playWhenReady,
-            ),
+            autoEnterEnabled = autoEnter,
             aspectWidth = mediaProperties?.videoWidth,
             aspectHeight = mediaProperties?.videoHeight,
         )
@@ -1566,6 +1566,7 @@ private fun PictureInPicturePolicyEffect(
 
     DisposableEffect(pictureInPictureController) {
         onDispose {
+            vm.setAutoPictureInPictureArmed(armOwner, false)
             pictureInPictureController.updatePolicy(
                 autoEnterEnabled = false,
                 aspectWidth = null,

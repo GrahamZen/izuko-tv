@@ -10,7 +10,6 @@
 package me.him188.ani.app.ui.foundation.widgets
 
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
@@ -34,7 +33,7 @@ fun dismissDialogButton(
     modifier: Modifier = Modifier,
 ): (@Composable () -> Unit)? =
     if (LocalAniUiBehavior.current.showDismissButtons) {
-        { TextButton(onClick, modifier) { Text(text) } }
+        { AniTextButton(onClick, modifier) { Text(text) } }
     } else {
         null
     }
@@ -48,6 +47,6 @@ fun dismissDialogButton(
 @Composable
 fun DismissDialogButton(text: String, onClick: () -> Unit) {
     if (LocalAniUiBehavior.current.showDismissButtons) {
-        TextButton(onClick) { Text(text) }
+        AniTextButton(onClick) { Text(text) }
     }
 }

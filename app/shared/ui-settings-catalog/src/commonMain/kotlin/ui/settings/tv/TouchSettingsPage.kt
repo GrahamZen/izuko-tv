@@ -23,7 +23,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -146,7 +148,11 @@ fun TouchSettingsPage(
         )
     }
 
-    val content by state.content.collectAsStateWithLifecycle()
+    // 换到一类时它的文案要现读 (iOS 上读得慢), 读齐之前整页是 null: 先接着画上一页, 不然左栏右栏一起没了, 看着整页闪一下
+    val built by state.content.collectAsStateWithLifecycle()
+    val lastBuilt = remember { mutableStateOf<TvSettingsContent?>(null) }
+    SideEffect { built?.let { lastBuilt.value = it } }
+    val content = built ?: lastBuilt.value
     val overlay by state.overlay.collectAsStateWithLifecycle()
     Box(modifier.fillMaxSize().background(AniThemeDefaults.pageContentBackgroundColor)) {
         content?.let {

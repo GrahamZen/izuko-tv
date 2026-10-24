@@ -784,6 +784,8 @@
     <string name="collection_tv_tab_order_subtitle">上面這排就是追番頁頂部的標籤。這裏排成什麼樣，進去就是什麼樣。</string>
     <string name="collection_tv_tab_order_hint">確認鍵 拿起  ·  返回鍵 退出</string>
     <string name="collection_tv_tab_order_hint_grabbed">左 / 右 移動  ·  確認鍵 放下  ·  返回鍵 復原</string>
+    <string name="collection_tv_tab_order_hint_touch">點一個標籤拿起來</string>
+    <string name="collection_tv_tab_order_hint_grabbed_touch">點要放的位置  ·  再點它一下放下</string>
     <string name="collection_tv_tab_order_reset">還原預設順序</string>
     <string name="collection_tv_progress_tab">追更</string>
     <string name="collection_tv_progress_group_new">有新集</string>
@@ -807,6 +809,8 @@
     <string name="tv_wall_scale_hint_adjust">上 / 下  調整大小</string>
     <string name="tv_wall_scale_hint_try">右 / 確認  進入頁面試試</string>
     <string name="tv_wall_scale_hint_back">返回  退出</string>
+    <string name="tv_wall_scale_hint_drag">點或上下拖動滑桿調整大小</string>
+    <string name="tv_adjust_done">完成</string>
     <string name="tv_wall_scale_hint_preview">這是預覽：確認鍵能展開介紹，但不會進入詳情頁</string>
     <string name="tv_wall_scale_sample_title_short">番劇名稱</string>
     <string name="tv_wall_scale_sample_title_medium">名字長一點的番劇</string>

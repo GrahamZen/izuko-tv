@@ -35,3 +35,5 @@ internal actual fun tvPreloadTitleLogo(sketch: Sketch, context: PlatformContext,
 }
 
 internal actual val tvCollectionProgressAvailable: Boolean = true
+
+internal actual val tvWebConsoleAvailable: Boolean = true

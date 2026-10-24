@@ -221,7 +221,9 @@ import me.him188.ani.app.ui.foundation.tv.tvPlayKeyShortPress
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallBackground
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallEndMargin
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallHeroBackground
+import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.tvTouchTap
+import me.him188.ani.app.ui.foundation.tv.tvWebConsoleAvailable
 import me.him188.ani.app.ui.foundation.tvLongPressKey
 import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
 import me.him188.ani.app.ui.foundation.widgets.AniFocusActionButton
@@ -668,6 +670,8 @@ fun TvSearchPage(
             modifier = Modifier.fillMaxHeight(),
             enterRequester = searchRailEnter,
             scrimColorProvider = railScrimColor,
+            // 触屏没有返回键: 左上角给一颗返回 (同详情页)
+            onBack = if (LocalTvTouchInputEnabled.current) ({ navigator.popBackStack() }) else null,
         )
     }
 }
@@ -973,18 +977,20 @@ internal fun TvSearchInputPane(
                 }
             }
         }
-        // 面板在右侧那一栏里整体垂直居中, 不与顶部的搜索框争第一视觉焦点 (搜索才是主操作)
-        Box(
-            Modifier.width(TV_SEARCH_REMOTE_PANEL_WIDTH).fillMaxHeight(),
-            contentAlignment = Alignment.Center,
-        ) {
-            TvSearchRemotePanel(
-                url = remoteInputUrl,
-                phoneConnected = remotePhoneConnected,
-                knownHost = remoteKnownHost,
-                hostChanged = remoteHostChanged,
-                onReset = onResetRemoteAddress,
-            )
+        // 面板在右侧那一栏里整体垂直居中, 不与顶部的搜索框争第一视觉焦点 (搜索才是主操作). 没有 Web 控制台时整栏不要
+        if (tvWebConsoleAvailable) {
+            Box(
+                Modifier.width(TV_SEARCH_REMOTE_PANEL_WIDTH).fillMaxHeight(),
+                contentAlignment = Alignment.Center,
+            ) {
+                TvSearchRemotePanel(
+                    url = remoteInputUrl,
+                    phoneConnected = remotePhoneConnected,
+                    knownHost = remoteKnownHost,
+                    hostChanged = remoteHostChanged,
+                    onReset = onResetRemoteAddress,
+                )
+            }
         }
     }
 }

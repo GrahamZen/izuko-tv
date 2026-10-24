@@ -74,6 +74,7 @@ import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
 import me.him188.ani.app.ui.foundation.icons.EditSquare
 import me.him188.ani.app.ui.foundation.theme.adjustHsv
 import me.him188.ani.app.ui.foundation.tv.AniOutlinedTextField
+import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
 import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
 import me.him188.ani.app.ui.foundation.widgets.AniCenteredPanelDialog
@@ -175,8 +176,8 @@ fun RatingEditorDialog(
     val focusManager = LocalFocusManager.current
 
     // 遥控器形态: 换成居中大弹窗 (可用方向键调分/写评价), 而不是手机那套 AlertDialog ——
-    // 星星只能点、按钮挤在角上, 遥控器上既选不动分也看不清焦点
-    if (LocalAniUiBehavior.current.panelsAsCenteredDialogs) {
+    // 星星只能点、按钮挤在角上, 遥控器上既选不动分也看不清焦点. 触屏上的电视界面 (平板、iPad) 照手机那套
+    if (LocalAniUiBehavior.current.panelsAsCenteredDialogs && !LocalTvTouchInputEnabled.current) {
         TvRatingEditorDialog(
             state = state,
             title = editRatingText,

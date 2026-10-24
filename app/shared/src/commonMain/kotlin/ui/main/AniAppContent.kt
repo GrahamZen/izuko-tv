@@ -142,6 +142,8 @@ import me.him188.ani.app.ui.subject.person.PersonDetailsViewModel
 import me.him188.ani.app.ui.subject.episode.ProvidePlayerPageLeaving
 import me.him188.ani.app.ui.subject.episode.ProvideTouchPlayerUiBehavior
 import me.him188.ani.app.ui.subject.episode.RetainedPlaybackSessionHolder
+import me.him188.ani.app.ui.subject.episode.TouchMiniPlayerHost
+import me.him188.ani.app.ui.subject.episode.rememberTouchMiniPlayer
 import me.him188.ani.app.ui.lang.playback_session_sound_hint
 import me.him188.ani.app.ui.subject.episode.rememberRetainedPlaybackNoticeTexts
 import me.him188.ani.app.ui.user.SelfInfoStateProducer
@@ -184,6 +186,8 @@ fun AniAppContent(aniNavigator: AniNavigator) {
         if (!retainPlaybackSession) sessionHolder.close()
     }
     val playbackSessionHolder = sessionHolder.takeIf { retainPlaybackSession }
+    // 触屏上离开播放页后视频缩成小窗接着放 (见 TouchMiniPlayer)
+    val miniPlayer = rememberTouchMiniPlayer(playbackSessionHolder, backStack.lastOrNull() is NavRoutes.EpisodeDetail)
     if (playbackSessionHolder != null) {
         // 播放页是否在前台: 由导航状态驱动, 而不是播放页自己的生命周期事件 —— 返回栈条目被 pop 时
         // ON_STOP 与界面销毁的先后不保证, 漏一次就成了"画面没了声音还在".
@@ -192,7 +196,7 @@ fun AniAppContent(aniNavigator: AniNavigator) {
         // 用 SideEffect 而不是 LaunchedEffect: 组合成功后同步落地, 早于回到播放页时那次
         // 自动恢复播放 (ON_START), 否则 holder 会以为还在后台, 刚恢复就又被按下去
         SideEffect {
-            playbackSessionHolder.setPlayerPageVisible(onPlayerPage)
+            playbackSessionHolder.setPlayerPageVisible(onPlayerPage || miniPlayer.isShown)
         }
         // 应用整个退到后台 (按 HOME 去别的应用) 时也不能提示: Android 上这些提示是系统 Toast
         // 加一声满音量按键音, 会空降在别人的应用/桌面上. Activity 停止只暂停帧时钟, 组合与
@@ -251,6 +255,9 @@ fun AniAppContent(aniNavigator: AniNavigator) {
                 )
                 // 盖在导航之上的一层 (TV: 详情页返回缩回列表页 hero, 见 TvHeroZoomHandoff.Shrink)
                 LocalSubjectDetailsPageVariant.current?.Overlay()
+                TouchMiniPlayerHost(miniPlayer, onExpand = {
+                    playbackSessionHolder?.session?.let { aniNavigator.navigateEpisodeDetails(it.subjectId, it.episodeId, force = true) }
+                })
                 PikPakNotEnoughSpaceDialogHost(aniAppViewModel.pikPakNotEnoughSpace)
             }
         }
@@ -398,6 +405,8 @@ private fun AniAppContentImpl(
                 // 下发"本页是不是栈顶": 页面靠它在返回时补焦点落点. **不能用页面自己的 lifecycle** ——
                 // Nav3 里被盖住的条目一直是 RESUMED, 见 LocalPageIsForeground 的文档
                 rememberPageForegroundNavEntryDecorator(backStack),
+                // 触屏上没有电视版的页面照上游写法 (见 TouchUpstreamPageNavEntryDecorator)
+                rememberTouchUpstreamPageNavEntryDecorator(backStack),
             ),
             // TV 详情页返回缩回列表页 hero (TvHeroZoomHandoff.Shrink): 两页都不做转场 —— 缩回那一层画在导航之上, 两页都不画,
             // 详情页立刻移出组合 (那一帧落在缩回起步前的静止图上). 三条都判: 进页转场中途出栈时 Nav3 不一定按 pop 算

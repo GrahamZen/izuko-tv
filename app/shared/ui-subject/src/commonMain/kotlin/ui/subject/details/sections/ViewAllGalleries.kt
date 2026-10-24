@@ -137,6 +137,16 @@ val VIEW_ALL_GALLERY_BADGE_HEIGHT = 18.dp
 val VIEW_ALL_GALLERY_BADGE_PADDING = 8.dp
 val VIEW_ALL_GALLERY_BADGE_OVERHANG = 3.dp
 
+/**
+ * 触屏 (平板 / iPad) 上人物画廊照稿缩小圆: 直径是相邻两格间距 (格宽 + 格间距) 的这么多 (稿里一排 6 个时圆 118、间距 212),
+ * 名字与副标题仍按格宽排, 圆在格里居中. 遥控器上圆 = 格宽: 聚焦放大的那一圈要这么大才看得清. 两套实现共用 (见 [viewAllGalleryTouchCircle]).
+ */
+const val VIEW_ALL_GALLERY_TOUCH_CIRCLE_TO_STEP = 118f / 212f
+
+/** 触屏上人物画廊圆的直径: 格宽 [cellWidth] 时 (见 [VIEW_ALL_GALLERY_TOUCH_CIRCLE_TO_STEP]), 不超过格宽. */
+fun viewAllGalleryTouchCircle(cellWidth: Dp): Dp =
+    ((cellWidth + VIEW_ALL_GALLERY_COLUMN_SPACING) * VIEW_ALL_GALLERY_TOUCH_CIRCLE_TO_STEP).coerceAtMost(cellWidth)
+
 /** 一格的宽 (圆的直径 / 海报卡宽): 网格宽 [width] 去掉两侧让出与格间距, 均分 [VIEW_ALL_GALLERY_COLUMNS] 份. */
 fun viewAllGalleryCellWidth(width: Dp): Dp =
     ((width - VIEW_ALL_GALLERY_SIDE_INSET * 2 - VIEW_ALL_GALLERY_COLUMN_SPACING * (VIEW_ALL_GALLERY_COLUMNS - 1)) / VIEW_ALL_GALLERY_COLUMNS)
@@ -238,7 +248,10 @@ private fun GalleryMonogramCell(
     modifier: Modifier = Modifier,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val showFocus = focused && !LocalTvTouchInputEnabled.current
+    val touch = LocalTvTouchInputEnabled.current
+    val showFocus = focused && !touch
+    // 触屏照稿缩小圆, 字仍按格宽排
+    val circle = if (touch) viewAllGalleryTouchCircle(size) else size
     val progress by animateFloatAsState(
         targetValue = if (showFocus) 1f else 0f,
         animationSpec = spring(dampingRatio = 0.8f, stiffness = TV_SCROLL_STIFFNESS),
@@ -264,7 +277,7 @@ private fun GalleryMonogramCell(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         val scale = 1f + (TV_MONOGRAM_FOCUS_SCALE - 1f) * progress
-        Box(Modifier.size(size)) {
+        Box(Modifier.size(circle)) {
             Box(
                 Modifier
                     .matchParentSize()
@@ -295,14 +308,14 @@ private fun GalleryMonogramCell(
                     badge,
                     Modifier
                         .align(Alignment.BottomCenter)
-                        .graphicsLayer { translationY = (size / 2 * (scale - 1f) + VIEW_ALL_GALLERY_BADGE_OVERHANG).toPx() },
+                        .graphicsLayer { translationY = (circle / 2 * (scale - 1f) + VIEW_ALL_GALLERY_BADGE_OVERHANG).toPx() },
                 )
             }
         }
         Column(
             Modifier
                 .padding(top = VIEW_ALL_GALLERY_TEXT_GAP)
-                .graphicsLayer { translationY = (size / 2 * (scale - 1f)).toPx() },
+                .graphicsLayer { translationY = (circle / 2 * (scale - 1f)).toPx() },
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(TV_MONOGRAM_LINE_GAP),
         ) {

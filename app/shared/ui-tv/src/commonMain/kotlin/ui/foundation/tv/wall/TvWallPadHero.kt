@@ -38,8 +38,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
@@ -167,14 +169,19 @@ private fun TvPadHeroBackdrop(source: TvNativeHeroSource, ownBlur: Boolean) {
                     downsampleLongEdgePx = TV_PAD_HERO_BLUR_DECODE_LONG_EDGE_PX,
                 )
             }
+            // 渐变往下多盖出 [TV_PAD_HERO_FLOOR_OVERHANG] (过了下缘就是墙色): 模糊图与渐变的下缘落在同一条小数坐标上时, 缩放途中边缘那一行
+            // 两层都只盖了一部分, 模糊图会从渐变底下透出来亮一下. 多出来那截是墙色画在墙色上, 看不出来
             Box(
-                Modifier.fillMaxSize().background(
-                    Brush.verticalGradient(
+                Modifier.fillMaxSize().drawBehind {
+                    val brush = Brush.verticalGradient(
                         0f to wallColor.copy(alpha = TV_PAD_HERO_BLUR_DIM_ALPHA),
                         TV_PAD_HERO_FLOOR_START to wallColor.copy(alpha = TV_PAD_HERO_BLUR_DIM_ALPHA),
                         1f to wallColor,
-                    ),
-                ),
+                        startY = 0f,
+                        endY = size.height,
+                    )
+                    drawRect(brush, size = Size(size.width, size.height + TV_PAD_HERO_FLOOR_OVERHANG.toPx()))
+                },
             )
         }
         // 右上角清晰的横版图 (继续观看的条目是下一集剧照, 模糊底照旧是整部那张), 左缘与下缘羽化进模糊底
@@ -309,6 +316,9 @@ private val TV_PAD_HERO_BLUR_RADIUS = 24.dp
 
 /** 模糊底上整层压的一层墙色, 让文字在任何画面上都读得清. */
 private const val TV_PAD_HERO_BLUR_DIM_ALPHA = 0.35f
+
+/** 往墙色渐变的那层比模糊底多盖出的一截 (见 TvPadHeroBackdrop): 盖住模糊底下缘那一行半透的像素. */
+private val TV_PAD_HERO_FLOOR_OVERHANG = 2.dp
 
 private const val TV_PAD_HERO_TOP_SCRIM_FRACTION = 0.18f
 private const val TV_PAD_HERO_TOP_SCRIM_ALPHA = 0.35f
