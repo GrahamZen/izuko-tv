@@ -81,7 +81,6 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextMeasurer
@@ -456,7 +455,7 @@ private fun rememberTvPadBackdropUrl(state: SubjectDetailsState, info: SubjectIn
  * - 上: 标题 / 另一个名字 / 季度与连载, 右上角是评分 (条形图在上、分数 + 星级排名在下, 点开评分弹窗; 见 [TvPadTitleRow]);
  * - 中: 简介 (剩下的高度放几行算几行, 末尾「展开」)、两行标签 (放不下的收进「更多标签」); 点简介或「更多标签」开同一个弹窗
  *   (全文 + 全部标签, 见 [TvPadSummaryDialog]);
- * - 下: 左边播放 / 收藏 / Bangumi / 反馈, 右端收藏统计 (窗口竖着时不画); 这一行贴着封面的底.
+ * - 下: 左边播放 / 收藏 / Bangumi / 反馈, 右端收藏统计 (放不下时不画, 见 [TvPadActionsRow]); 这一行贴着封面的底.
  * 全部选集与缓存在选集区的标题行 (见 TvPadEpisodesSection).
  */
 @Composable
@@ -526,26 +525,24 @@ private fun TvPadDetailsHeader(
             summary = { room, width -> TvPadSummary(displaySummary, room, width, onClick = { showSummaryDialog = true }) },
             tags = { TvPadTags(info.tags, onClickTag, onClickMore = { showSummaryDialog = true }) },
             bottom = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    // 播放键的文字 (继续观看第几话) 与收藏状态要等条目数据: 之前占着位置不画, 到了淡进来 (不先显示「未知」或别的收藏状态)
-                    val actionsAlpha by animateFloatAsState(if (uiState.isPlaceholder) 0f else 1f, tween(TV_PAD_ACTIONS_FADE_MILLIS))
-                    TvPadActions(
-                        state = state,
-                        info = info,
-                        uiState = uiState,
-                        selfInfo = selfInfo,
-                        onPlay = onPlay,
-                        onClickLogin = onClickLogin,
-                        onClickOpenExternal = onClickOpenExternal,
-                        modifier = Modifier.weight(1f).graphicsLayer { alpha = actionsAlpha },
-                    )
-                    // 自己改了收藏类型后统计跟着变 (uiState); 还没加载出来时先用条目信息里的.
-                    // 窗口竖着时这一行放不下按钮, 统计不画
-                    val windowSize = LocalWindowInfo.current.containerSize
-                    if (windowSize.width >= windowSize.height) {
-                        TvPadStats(if (uiState.isPlaceholder) info.collectionStats else uiState.collectionStats)
-                    }
-                }
+                // 播放键的文字 (继续观看第几话) 与收藏状态要等条目数据: 之前占着位置不画, 到了淡进来 (不先显示「未知」或别的收藏状态)
+                val actionsAlpha by animateFloatAsState(if (uiState.isPlaceholder) 0f else 1f, tween(TV_PAD_ACTIONS_FADE_MILLIS))
+                TvPadActionsRow(
+                    actions = {
+                        TvPadActions(
+                            state = state,
+                            info = info,
+                            uiState = uiState,
+                            selfInfo = selfInfo,
+                            onPlay = onPlay,
+                            onClickLogin = onClickLogin,
+                            onClickOpenExternal = onClickOpenExternal,
+                            modifier = Modifier.graphicsLayer { alpha = actionsAlpha },
+                        )
+                    },
+                    // 自己改了收藏类型后统计跟着变 (uiState); 还没加载出来时先用条目信息里的
+                    stats = { TvPadStats(if (uiState.isPlaceholder) info.collectionStats else uiState.collectionStats) },
+                )
             },
         )
     }
@@ -719,6 +716,35 @@ private fun TvPadRatingHistogram(info: SubjectInfo, height: Dp) {
         labelStyle = labelStyle,
     )
 }
+
+/**
+ * 头部最下一行: [actions] 靠左, [stats] 靠右. 两样按各自不折行的宽度量, 中间至少隔 [TV_PAD_STATS_MIN_GAP];
+ * 一行放不下 (窗口竖着、界面缩放调大、按钮文字长) 时不画 [stats], 按钮拿整行, 不被挤得折行.
+ */
+@Composable
+private fun TvPadActionsRow(
+    actions: @Composable () -> Unit,
+    stats: @Composable () -> Unit,
+) {
+    Layout(contents = listOf({ Box { actions() } }, { Box { stats() } })) { (actionsSlot, statsSlot), constraints ->
+        val actionsMeasurable = actionsSlot.first()
+        val statsPlaceable = statsSlot.first().measure(Constraints())
+        val width = constraints.maxWidth
+        val gap = TV_PAD_STATS_MIN_GAP.roundToPx()
+        val showStats = tvPadStatsFit(width, actionsMeasurable.maxIntrinsicWidth(constraints.maxHeight), statsPlaceable.width, gap)
+        val actionsMax = if (showStats) width - gap - statsPlaceable.width else width
+        val actionsPlaceable = actionsMeasurable.measure(constraints.copy(minWidth = 0, maxWidth = actionsMax.coerceAtLeast(0)))
+        val height = maxOf(actionsPlaceable.height, if (showStats) statsPlaceable.height else 0)
+        layout(width, height) {
+            actionsPlaceable.place(0, (height - actionsPlaceable.height) / 2)
+            if (showStats) statsPlaceable.place(width - statsPlaceable.width, (height - statsPlaceable.height) / 2)
+        }
+    }
+}
+
+/** [TvPadActionsRow] 里收藏统计放不放得下: 宽 [available] 里排得开不折行的按钮 ([actionsWidth])、间距 [minGap] 与统计 ([statsWidth]). */
+internal fun tvPadStatsFit(available: Int, actionsWidth: Int, statsWidth: Int, minGap: Int): Boolean =
+    actionsWidth + minGap + statsWidth <= available
 
 /** 收藏统计: 一行小字「60,300 收藏  7,259 在看  5,677 想看」, 摆在操作那一行的右端. */
 @Composable
@@ -1101,6 +1127,9 @@ private val TV_PAD_HEADER_BOTTOM_GAP = 18.dp
 /** 头部右列比封面高时可以伸进下面的区块间距, 但离选集至少留这么多 (见 TvPadHeaderLayout). */
 private val TV_PAD_HEADER_OVERFLOW_KEEP = 12.dp
 private val TV_PAD_STATS_GAP = 16.dp
+
+/** 操作按钮与右端收藏统计之间至少隔多远 (见 [TvPadActionsRow]). */
+private val TV_PAD_STATS_MIN_GAP = 24.dp
 
 /** 评分那一列按下时涟漪比内容宽出的那一圈; 星星的大小; 大分数与右边星级之间的间距; 条形图与下面分数那一组之间的间距. */
 private val TV_PAD_RATING_PRESS_INSET = 8.dp

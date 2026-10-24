@@ -70,6 +70,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -532,7 +533,8 @@ internal fun TvPadStaffSection(
 }
 
 /**
- * 一行人物卡: 最多 [TV_PAD_PERSONS_PER_ROW] 张, 窄到每格不足 [TV_PAD_PERSON_MIN_WIDTH] 时减 ([tvPadColumns]), 只放前那么多张; 格子等宽, 人少时后面空着.
+ * 一行人物卡: 最多 [TV_PAD_PERSONS_PER_ROW] 张, 窄到名字放不下 [TV_PAD_PERSON_NAME_MIN_CHARS] 个字时减 (见 [tvPadPersonMinWidth]),
+ * 只放前那么多张; 格子等宽, 人少时后面空着.
  * 整格点击出涟漪 (涟漪比卡宽出 [TV_PAD_PERSON_PRESS_INSET], 行往左挪同样多, 卡的左缘仍与标题对齐).
  */
 @Composable
@@ -546,9 +548,10 @@ private fun TvPadPeopleSection(
     horizontalPadding: Dp,
     modifier: Modifier = Modifier,
 ) {
+    val minCell = tvPadPersonMinWidth()
     BoxWithConstraints(modifier.fillMaxWidth()) {
         val rowWidth = maxWidth - (horizontalPadding - TV_PAD_PERSON_PRESS_INSET) * 2
-        val columns = tvPadColumns(rowWidth, TV_PAD_PERSON_MIN_WIDTH, TV_PAD_PERSON_GAP, TV_PAD_PERSONS_PER_ROW)
+        val columns = tvPadColumns(rowWidth, minCell, TV_PAD_PERSON_GAP, TV_PAD_PERSONS_PER_ROW)
         val shown = minOf(count, columns)
         val remaining = (totalCount ?: count) - shown
         Column(verticalArrangement = Arrangement.spacedBy(TV_PAD_SECTION_CONTENT_GAP)) {
@@ -582,6 +585,25 @@ private fun TvPadPeopleSection(
     }
 }
 
+/**
+ * 人物卡一格最窄多宽: 名字那一行 (字号随界面缩放、系统字号) 写得下 [TV_PAD_PERSON_NAME_MIN_CHARS] 个汉字, 加上头像、头像与字的间距、涟漪那一圈.
+ * 按实际字体量, 界面放大时每格跟着变宽、一行少放几张, 名字不至于只剩两三个字.
+ */
+@Composable
+private fun tvPadPersonMinWidth(): Dp {
+    val measurer = rememberTextMeasurer()
+    val style = tvPadPersonNameStyle()
+    val density = LocalDensity.current
+    val nameWidth = remember(measurer, style, density) {
+        with(density) { measurer.measure(TV_PAD_PERSON_NAME_SAMPLE, style, maxLines = 1).size.width.toDp() }
+    }
+    return nameWidth + TV_PAD_PERSON_AVATAR + TV_PAD_PERSON_TEXT_GAP + TV_PAD_PERSON_PRESS_INSET * 2
+}
+
+/** 人物卡名字那一行的字. */
+@Composable
+private fun tvPadPersonNameStyle(): TextStyle = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
+
 /** [width] 里每格至少 [minCell]、格间 [gap] 时放得下几格 (至少一格, 至多 [maxColumns] 格). */
 private fun tvPadColumns(width: Dp, minCell: Dp, gap: Dp, maxColumns: Int = Int.MAX_VALUE): Int =
     ((width + gap) / (minCell + gap)).toInt().coerceIn(1, maxColumns)
@@ -609,7 +631,7 @@ private fun TvPadPersonCard(info: RelatedPersonInfo) {
  */
 @Composable
 private fun TvPadPersonCard(avatarUrl: String?, name: String, relation: String) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(TV_PAD_PERSON_TEXT_GAP)) {
         AvatarImage(
             avatarUrl,
             Modifier.size(TV_PAD_PERSON_AVATAR).clip(RoundedCornerShape(TV_PAD_PERSON_AVATAR_CORNER)),
@@ -618,8 +640,7 @@ private fun TvPadPersonCard(avatarUrl: String?, name: String, relation: String) 
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
                 name,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
+                style = tvPadPersonNameStyle(),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -822,9 +843,10 @@ internal fun TvPadEpisodesSkeleton(horizontalPadding: Dp, modifier: Modifier = M
 /** 角色 / 制作人员区的占位: 标题 + 一行人物卡大小的块 (方头像 + 两行字), 列数同 [TvPadPeopleSection]. */
 @Composable
 internal fun TvPadPeopleSkeleton(title: String, horizontalPadding: Dp, modifier: Modifier = Modifier) {
+    val minCell = tvPadPersonMinWidth()
     BoxWithConstraints(modifier.fillMaxWidth()) {
         val rowWidth = maxWidth - (horizontalPadding - TV_PAD_PERSON_PRESS_INSET) * 2
-        val columns = tvPadColumns(rowWidth, TV_PAD_PERSON_MIN_WIDTH, TV_PAD_PERSON_GAP, TV_PAD_PERSONS_PER_ROW)
+        val columns = tvPadColumns(rowWidth, minCell, TV_PAD_PERSON_GAP, TV_PAD_PERSONS_PER_ROW)
         Column(verticalArrangement = Arrangement.spacedBy(TV_PAD_SECTION_CONTENT_GAP)) {
             TvPadSectionHeader(title, Modifier.padding(horizontal = horizontalPadding))
             Row(
@@ -835,7 +857,7 @@ internal fun TvPadPeopleSkeleton(title: String, horizontalPadding: Dp, modifier:
                     Row(
                         Modifier.weight(1f).padding(TV_PAD_PERSON_PRESS_INSET),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(TV_PAD_PERSON_TEXT_GAP),
                     ) {
                         TvPadSkeletonBlock(Modifier.size(TV_PAD_PERSON_AVATAR), RoundedCornerShape(TV_PAD_PERSON_AVATAR_CORNER))
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -942,11 +964,16 @@ private val TV_PAD_SUMMARY_DIALOG_TAG_GAP = 8.dp
 /** 两个以上连着的空行 (中间可夹空白字符). */
 private val TV_PAD_SUMMARY_EXTRA_BLANK_LINES = Regex("\n\\s*\n(\\s*\n)+")
 
-/** 人物卡: 一行最多几张、每格最窄多宽 (窄到放不下这么多张才减)、头像边长与圆角、格间距、涟漪比卡宽出多少. */
+/**
+ * 人物卡: 一行最多几张、名字至少写得下几个字 (写不下就少放一张, 见 [tvPadPersonMinWidth]) 与量字宽用的样字、头像边长与圆角、头像与字的间距、
+ * 格间距、涟漪比卡宽出多少.
+ */
 private const val TV_PAD_PERSONS_PER_ROW = 5
-private val TV_PAD_PERSON_MIN_WIDTH = 160.dp
+private const val TV_PAD_PERSON_NAME_MIN_CHARS = 5
+private val TV_PAD_PERSON_NAME_SAMPLE = "国".repeat(TV_PAD_PERSON_NAME_MIN_CHARS)
 private val TV_PAD_PERSON_AVATAR = 72.dp
 private val TV_PAD_PERSON_AVATAR_CORNER = 10.dp
+private val TV_PAD_PERSON_TEXT_GAP = 14.dp
 private val TV_PAD_PERSON_GAP = 12.dp
 private val TV_PAD_PERSON_PRESS_INSET = 8.dp
 
