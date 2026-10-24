@@ -135,6 +135,7 @@ import me.him188.ani.app.domain.player.extension.EpisodeExitAnalyticsExtension
 import me.him188.ani.app.domain.player.extension.MarkAsWatchedExtension
 import me.him188.ani.app.domain.player.extension.MediaFetchAnalyticsExtension
 import me.him188.ani.app.domain.player.extension.ObserveWebMediaSourcePreferenceExtension
+import me.him188.ani.app.domain.player.extension.PlaybackLineageExtension
 import me.him188.ani.app.domain.player.extension.PauseMediaFetchWhilePlayingExtension
 import me.him188.ani.app.domain.player.extension.pauseSearchingWhilePlaying
 import me.him188.ani.app.domain.player.extension.PlayCacheWithoutSearchingExtension
@@ -494,6 +495,7 @@ open class EpisodeViewModel(
             ),
             SaveMediaPreferenceExtension,
             ObserveWebMediaSourcePreferenceExtension,
+            PlaybackLineageExtension,
             // 字幕跟界面语言、音轨原声优先, 手动换过的按番记住 (界面语言用 remote_web_lang: 各语言资源里写的语言标记)
             PreferredTracksExtension.Factory(uiLanguage = { getString(Lang.remote_web_lang) }),
         ),

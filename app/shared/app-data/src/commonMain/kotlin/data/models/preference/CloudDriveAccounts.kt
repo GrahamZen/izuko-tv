@@ -75,16 +75,6 @@ data class CloudDriveAccount(
      */
     val pickedSubtitles: Map<String, List<DrivePickedSubtitle>> = emptyMap(),
     /**
-     * 自动记下的「条目在这个文件夹里」(条目 id → 播过的那一集所在的文件夹): 之后先列它, 找到要的那一集就不再全盘搜索.
-     * 与手动指定的 [subjectPicks] 分开存; 同 [subjectPicks] 只在这个账号里有效. 按记下的先后保留最近的若干个.
-     */
-    val rememberedFolders: Map<Int, DriveRememberedFolder> = emptyMap(),
-    /**
-     * 「分享搜索」数据源自动记下的分享文件夹 (`数据源 id:条目 id` → 播过的那一集在分享里所在的文件夹): 之后那个源先只列它,
-     * 有要的那一集就不再去站点搜索、也不再打开别的分享. 按记下的先后保留最近的若干个.
-     */
-    val rememberedShares: Map<String, DriveRememberedShare> = emptyMap(),
-    /**
      * 列目录不给视频信息的网盘 (WebDAV) 读文件头得到的画面高度与时长 (文件 id 的散列 → 信息, 见 `DriveVideoInfoProbe.keyOf`).
      * 按记下的先后保留最近的若干个.
      */
@@ -95,7 +85,7 @@ data class CloudDriveAccount(
     override fun toString(): String {
         return "CloudDriveAccount(cookie.hash=${if (cookie.isNotEmpty()) cookie.hashCode() else ""}, username=$username, " +
                 "nickname=$nickname, tier=$tier, playbackMode=$playbackMode, shareSaveFolderId=$shareSaveFolderId, " +
-                "subjectPicks=${subjectPicks.size}, pickedSubtitles=${pickedSubtitles.size}, rememberedFolders=${rememberedFolders.size}, rememberedShares=${rememberedShares.size}, videoInfo=${videoInfo.size})"
+                "subjectPicks=${subjectPicks.size}, pickedSubtitles=${pickedSubtitles.size}, videoInfo=${videoInfo.size})"
     }
 
     companion object {
@@ -119,14 +109,6 @@ data class DriveSubjectPicks(
 
 @Serializable
 data class DrivePickedFolder(val fid: String, val name: String)
-
-/**
- * 自动记下的条目所在文件夹, 见 [CloudDriveAccount.rememberedFolders].
- *
- * @property path 从搜到的那个文件夹到这个文件夹的名字 (从外到里, 最后一个是它自己): 列它的时候照自动搜索一样按这些名字认季
- */
-@Serializable
-data class DriveRememberedFolder(val fid: String, val path: List<String>)
 
 /**
  * 读视频文件头得到的信息, 见 [CloudDriveAccount.videoInfo].
@@ -165,24 +147,6 @@ internal abstract class LenientEnumSerializer<E : Enum<E>>(private val entries: 
 internal object LenientDynamicRangeSerializer : LenientEnumSerializer<MediaDynamicRange>(MediaDynamicRange.entries)
 
 internal object LenientSurroundAudioSerializer : LenientEnumSerializer<MediaSurroundAudio>(MediaSurroundAudio.entries)
-
-/**
- * 「分享搜索」自动记下的分享文件夹, 见 [CloudDriveAccount.rememberedShares].
- *
- * @property siteTitle 站点上的剧名, 认季用 (同搜到时)
- * @property folderId 分享里的文件夹; 文件直接放在分享根上时是根
- * @property path 分享里从根到这个文件夹的名字: 列它的时候照搜到时一样按这些名字认季
- * @property partSearch 按副标题补搜来的 (「系列名 + 副标题」的条目, 见 `DriveSharePartSearch`): 再列时里面的文件也要认得出是这一部
- */
-@Serializable
-data class DriveRememberedShare(
-    val shareId: String,
-    val passcode: String,
-    val siteTitle: String,
-    val folderId: String,
-    val path: List<String>,
-    val partSearch: Boolean = false,
-)
 
 /**
  * @property episode 第几集 (集号的字符串写法)

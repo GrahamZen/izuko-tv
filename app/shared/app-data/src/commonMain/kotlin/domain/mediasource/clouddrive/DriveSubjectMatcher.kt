@@ -86,7 +86,7 @@ internal fun interface TmdbEpisodeNumbering {
 internal class DriveSubjectMatcher(
     private val browser: DriveBrowser,
     private val numbering: TmdbEpisodeNumbering = TmdbEpisodeNumbering.None,
-    /** 自动搜索 ([match]) 与自动记下的文件夹 ([matchRememberedFolder]) 排除同系列别的作品; 用户指定的文件夹不查 */
+    /** 自动搜索 ([match]) 与播放线索里的文件夹 ([matchFolder]) 排除同系列别的作品; 用户指定的文件夹不查 */
     private val otherWorks: OtherWorks = OtherWorks.None,
 ) {
     class MatchedFile(
@@ -129,13 +129,13 @@ internal class DriveSubjectMatcher(
     }
 
     /**
-     * 自动记下的文件夹 (见 `CloudDriveAccount.rememberedFolders`): 列出 (往下 [MAX_DEPTH] 层) 里面的视频, 照自动搜索的规则认季认集,
-     * [path] 是它从搜到的那个文件夹起的路径. 文件夹打不开 (被删了、改了位置) 时返回 null.
+     * 播放线索里的文件夹 (见 [me.him188.ani.app.domain.media.continuation.DriveFolderLineage]): 列出 (往下 [MAX_DEPTH] 层) 里面的视频,
+     * 照自动搜索的规则认季认集, [path] 是它从搜到的那个文件夹起的路径. 文件夹是同系列别的作品 (自动选错过一次被记下) 时返回 null, 线索就此作废;
+     * 打不开 (网络、被删了) 时返回空.
      */
-    suspend fun matchRememberedFolder(request: MediaFetchRequest, folderId: String, path: List<String>): List<MatchedFile>? {
-        // 自动选错过一次的会被记下 (系列里别的作品): 当作打不开, 由调用方忘掉它
+    suspend fun matchFolder(request: MediaFetchRequest, folderId: String, path: List<String>): List<MatchedFile>? {
         if (otherWorks.of(request)?.isOtherWork(path.joinToString("/")) == true) {
-            logger.info { "Remembered drive folder ${path.joinToString("/")} is another work, forgetting it" }
+            logger.info { "Lineage drive folder ${path.joinToString("/")} is another work" }
             return null
         }
         val tmdbEpisodes = numbering.of(request)
@@ -146,8 +146,8 @@ internal class DriveSubjectMatcher(
         } catch (e: CloudDriveAuthException) {
             throw e
         } catch (e: Throwable) {
-            logger.warn(e) { "Failed to list remembered drive folder $folderId" }
-            return null
+            logger.warn(e) { "Failed to list lineage drive folder $folderId" }
+            return emptyList()
         }
         return matchEpisodes(request, candidates, tmdbEpisodes)
     }

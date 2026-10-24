@@ -11,7 +11,6 @@ package me.him188.ani.app.domain.mediasource.clouddrive
 
 import io.ktor.http.decodeURLQueryComponent
 import kotlinx.coroutines.test.runTest
-import me.him188.ani.app.data.models.preference.DriveRememberedShare
 import me.him188.ani.app.data.network.SeriesGraphTable
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.source.MediaFetchRequest
@@ -315,12 +314,12 @@ class DriveSharePartSearchTest {
     }
 
     @Test
-    fun `a remembered folder from the subtitle search still keeps only this part`() = runTest {
+    fun `a lineage folder from the subtitle search still keeps only this part`() = runTest {
         val engine = engine(mutableListOf())
-        val folder = DriveRememberedShare("mix", "", "死神 千年血战篇  诀别谭+相克谭+死神全集 4K", "c", listOf("死神 千年血战篇"), partSearch = true)
-        assertEquals(listOf("c15"), engine.matchRemembered(separation, folder)?.map { it.file.fid })
+        val folder = DriveShareLocation("mix", "", "死神 千年血战篇  诀别谭+相克谭+死神全集 4K", "c", listOf("死神 千年血战篇"), partSearch = true)
+        assertEquals(listOf("c15"), engine.matchFolder(separation, folder)?.map { it.file.fid })
         // 不是补搜来的照旧全认
-        assertEquals(listOf("c15", "c2"), engine.matchRemembered(separation, folder.copy(partSearch = false))?.map { it.file.fid }?.sorted())
+        assertEquals(listOf("c15", "c2"), engine.matchFolder(separation, folder.copy(partSearch = false))?.map { it.file.fid }?.sorted())
     }
 
     // endregion

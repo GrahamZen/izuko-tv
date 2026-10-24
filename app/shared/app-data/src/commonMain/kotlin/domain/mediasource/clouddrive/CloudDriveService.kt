@@ -28,13 +28,14 @@ import me.him188.ani.app.data.models.preference.CloudDrivePlaybackMode
 import me.him188.ani.app.data.models.preference.DrivePickedFile
 import me.him188.ani.app.data.models.preference.DrivePickedFolder
 import me.him188.ani.app.data.models.preference.DrivePickedSubtitle
-import me.him188.ani.app.data.models.preference.DriveRememberedFolder
-import me.him188.ani.app.data.models.preference.DriveRememberedShare
 import me.him188.ani.app.data.models.preference.DriveSubjectPicks
 import me.him188.ani.app.data.models.preference.DriveVideoInfo
 import me.him188.ani.app.data.repository.user.Settings
 import me.him188.ani.app.domain.media.MediaAvFeatures
 import me.him188.ani.app.domain.media.ProbedMediaAvFeatures
+import me.him188.ani.app.domain.media.continuation.DriveFolderLineage
+import me.him188.ani.app.domain.media.continuation.DriveShareLineage
+import me.him188.ani.app.domain.media.continuation.PlaybackLineage
 import me.him188.ani.app.domain.media.probe.MediaStreamProbe
 import me.him188.ani.app.platform.PlaybackRequestHints
 import me.him188.ani.datasources.api.EpisodeSort
@@ -68,6 +69,8 @@ class CloudDriveService internal constructor(
     internal val episodeNumbering: TmdbEpisodeNumbering = TmdbEpisodeNumbering.None,
     /** 自动按名字找时排除同系列别的作品 (这个网盘的自己网盘搜索与分享搜索共用) */
     internal val otherWorks: OtherWorks = OtherWorks.None,
+    /** 条目的播放线索 (见 [PlaybackLineage]): 三种数据源查询时先列线索里的文件夹 */
+    private val playbackLineages: suspend (subjectId: Int) -> PlaybackLineage? = { null },
 ) {
     @Volatile
     var protocol: CloudDriveProtocol = protocol
@@ -238,111 +241,71 @@ class CloudDriveService internal constructor(
 
     // endregion
 
-    // region 自动记下的条目文件夹 (见 CloudDriveAccount.rememberedFolders)
-
-    /** 最近搜到的文件属于哪个条目、在哪个文件夹 (文件 id → 记录), 播放时据此记下文件夹. 只在内存里. */
-    private val recentMatches = LinkedHashMap<String, RecentMatch>()
-    private val recentMatchesLock = Mutex()
-
-    private class RecentMatch(val subjectId: Int, val folder: DriveRememberedFolder)
+    // region 播放线索 (见 PlaybackLineage)
 
     /**
-     * 记下这次给条目 [subjectId] 认出的文件. 只记在按名字搜到的文件夹里找到的 ([DriveSubjectMatcher.MatchedFile.folders] 不空):
-     * 文件本身被搜到时, 它所在的文件夹可能是放着各种视频的「下载」之类, 记下来之后会把别的番当成这一部.
+     * 最近搜到的文件在哪 (自己网盘: 文件 id → 文件夹; 分享: [DriveShareFileRef.key] → 分享里的文件夹), 开播记播放线索时据此给出位置.
+     * 只在内存里.
      */
-    internal suspend fun noteMatches(subjectId: Int, matches: List<DriveSubjectMatcher.MatchedFile>) {
+    private val recentFolders = LinkedHashMap<String, DriveFolderLocation>()
+    private val recentShareFolders = LinkedHashMap<String, DriveShareLocation>()
+    private val recentLock = Mutex()
+
+    /**
+     * 记下这次认出的自己网盘的文件在哪. 只记在按名字搜到的文件夹里找到的 ([DriveSubjectMatcher.MatchedFile.folders] 不空):
+     * 文件本身被搜到时, 它所在的文件夹可能是放着各种视频的「下载」之类, 顺着它找会把别的番当成这一部.
+     */
+    internal suspend fun noteMatches(matches: List<DriveSubjectMatcher.MatchedFile>) {
         val inFolders = matches.filter { it.folders.isNotEmpty() && it.file.parentFid.isNotEmpty() }
         if (inFolders.isEmpty()) return
-        recentMatchesLock.withLock {
+        recentLock.withLock {
             for (match in inFolders) {
-                recentMatches.remove(match.file.fid)
-                recentMatches[match.file.fid] = RecentMatch(subjectId, DriveRememberedFolder(match.file.parentFid, match.folders))
+                recentFolders.remove(match.file.fid)
+                recentFolders[match.file.fid] = DriveFolderLocation(match.file.parentFid, match.folders)
             }
-            while (recentMatches.size > MAX_RECENT_MATCHES) recentMatches.remove(recentMatches.keys.first())
+            while (recentFolders.size > MAX_RECENT_MATCHES) recentFolders.remove(recentFolders.keys.first())
         }
     }
 
-    /**
-     * 条目 [subjectId] 记下的文件夹里认出的文件; 没记过时为 null. 文件夹打不开 (被删了、挪走了) 时忘掉它, 也返回 null.
-     */
-    internal suspend fun matchRememberedFolder(request: MediaFetchRequest, subjectId: Int): List<DriveSubjectMatcher.MatchedFile>? {
-        val folder = currentAccount().rememberedFolders[subjectId] ?: return null
-        val matches = pickMatcher.matchRememberedFolder(request, folder.fid, folder.path)
-        if (matches == null) updateAccount { it.copy(rememberedFolders = it.rememberedFolders - subjectId) }
-        return matches
-    }
-
-    /** 播了文件 [fileId]: 它是搜到的哪个条目的, 就把它所在的文件夹记给那个条目. */
-    private suspend fun rememberFolderOf(fileId: String) {
-        val match = recentMatchesLock.withLock { recentMatches[fileId] } ?: return
-        updateAccount { current ->
-            val remembered = current.rememberedFolders
-            if (remembered[match.subjectId] == match.folder) return@updateAccount current
-            logger.info { "Remembered $driveId folder ${match.folder.fid} (${match.folder.path.joinToString("/")}) for subject ${match.subjectId}" }
-            // 重新放到末尾 (最近的), 超出上限时去掉最早记下的
-            current.copy(
-                rememberedFolders = (remembered - match.subjectId + (match.subjectId to match.folder)).entries
-                    .toList().takeLast(MAX_REMEMBERED_FOLDERS).associate { it.key to it.value },
-            )
-        }
-    }
-
-    // endregion
-
-    // region 「分享搜索」自动记下的分享文件夹 (见 CloudDriveAccount.rememberedShares)
-
-    /** 最近搜到的分享文件属于哪个源与条目、在分享的哪个文件夹 ([DriveShareFileRef.key] → 记录), 播放时据此记下. 只在内存里. */
-    private val recentShareMatches = LinkedHashMap<String, RecentShareMatch>()
-
-    private class RecentShareMatch(val key: String, val share: DriveRememberedShare)
-
-    private fun rememberedShareKey(mediaSourceId: String, subjectId: Int) = "$mediaSourceId:$subjectId"
-
-    /** 记下数据源 [mediaSourceId] 这次给条目 [subjectId] 认出的分享文件. */
-    internal suspend fun noteShareMatches(mediaSourceId: String, subjectId: Int, matches: List<DriveShareMatch>) {
+    /** 记下这次认出的分享里的文件在哪. */
+    internal suspend fun noteShareMatches(matches: List<DriveShareMatch>) {
         if (matches.isEmpty()) return
-        val key = rememberedShareKey(mediaSourceId, subjectId)
-        recentMatchesLock.withLock {
+        recentLock.withLock {
             for (match in matches) {
                 if (match.file.parentFid.isEmpty()) continue
-                val share = DriveRememberedShare(
+                val location = DriveShareLocation(
                     match.share.shareId, match.share.passcode, match.share.siteTitle, match.file.parentFid, match.folders,
                     partSearch = match.partSearch,
                 )
                 val fileKey = shareKey(match.share.shareId, match.file.fid)
-                recentShareMatches.remove(fileKey)
-                recentShareMatches[fileKey] = RecentShareMatch(key, share)
+                recentShareFolders.remove(fileKey)
+                recentShareFolders[fileKey] = location
             }
-            while (recentShareMatches.size > MAX_RECENT_MATCHES) recentShareMatches.remove(recentShareMatches.keys.first())
+            while (recentShareFolders.size > MAX_RECENT_MATCHES) recentShareFolders.remove(recentShareFolders.keys.first())
         }
     }
 
-    /** 数据源 [mediaSourceId] 给条目 [subjectId] 记下的分享文件夹. */
-    internal suspend fun rememberedShareOf(mediaSourceId: String, subjectId: Int): DriveRememberedShare? =
-        currentAccount().rememberedShares[rememberedShareKey(mediaSourceId, subjectId)]
+    /** 自己网盘的文件 [fileId] 所在的文件夹 (这次运行里搜到过、且在按名字搜到的文件夹里时). */
+    internal suspend fun folderLocationOf(fileId: String): DriveFolderLocation? = recentLock.withLock { recentFolders[fileId] }
 
-    internal suspend fun forgetRememberedShare(mediaSourceId: String, subjectId: Int) {
-        val key = rememberedShareKey(mediaSourceId, subjectId)
-        logger.info { "Forgot remembered $driveId share of $key" }
-        updateAccount { it.copy(rememberedShares = it.rememberedShares - key) }
-    }
+    /**
+     * 分享里的文件 [ref] 所在的文件夹. 这次运行里没搜到过 (重启后播缓存) 时按播放地址里带的文件夹给出, 不知道剧名与路径 (认季只看文件名).
+     */
+    internal suspend fun shareLocationOf(ref: DriveShareFileRef): DriveShareLocation? =
+        recentLock.withLock { recentShareFolders[ref.key] }
+            ?: ref.folderId.takeIf { it.isNotEmpty() }?.let { DriveShareLocation(ref.shareId, ref.passcode, "", it, emptyList()) }
 
-    /** 播了分享里的文件 [ref]: 它是哪个源给哪个条目搜到的, 就把它在分享里所在的文件夹记给那个源与条目. */
-    private suspend fun rememberShareOf(ref: DriveShareFileRef) {
-        val match = recentMatchesLock.withLock { recentShareMatches[ref.key] } ?: return
-        updateAccount { current ->
-            val remembered = current.rememberedShares
-            if (remembered[match.key] == match.share) return@updateAccount current
-            logger.info {
-                "Remembered $driveId share ${match.share.shareId} folder ${match.share.folderId} (${match.share.path.joinToString("/")}) for ${match.key}"
-            }
-            // 重新放到末尾 (最近的), 超出上限时去掉最早记下的
-            current.copy(
-                rememberedShares = (remembered - match.key + (match.key to match.share)).entries
-                    .toList().takeLast(MAX_REMEMBERED_SHARES).associate { it.key to it.value },
-            )
-        }
-    }
+    /** 条目 [subjectId] 的播放线索是这个网盘里的文件夹时给出它. */
+    internal suspend fun lineageFolderOf(subjectId: Int): DriveFolderLocation? =
+        (playbackLineages(subjectId) as? DriveFolderLineage)?.takeIf { it.driveId == driveId }?.folder
+
+    /** 条目 [subjectId] 的播放线索是数据源 [mediaSourceId] 给出的这个网盘的分享文件夹时给出它. */
+    internal suspend fun lineageShareOf(subjectId: Int, mediaSourceId: String): DriveShareLocation? =
+        (playbackLineages(subjectId) as? DriveShareLineage)?.takeIf { it.driveId == driveId && it.mediaSourceId == mediaSourceId }?.share
+
+    /** 播放线索里的文件夹 [folder] 认出的文件; 文件夹是同系列别的作品时为 null (线索失效), 打不开时为空. */
+    internal suspend fun matchFolder(request: MediaFetchRequest, folder: DriveFolderLocation): List<DriveSubjectMatcher.MatchedFile>? =
+        pickMatcher.matchFolder(request, folder.fid, folder.path)
 
     // endregion
 
@@ -672,7 +635,6 @@ class CloudDriveService internal constructor(
             }
             resolvePlayback(saveShareFile(ref, sidecarFiles), subtitles, shareSubtitleKey(ref), cacheKey)
         }
-        rememberShareOf(ref)
         return playback
     }
 
@@ -994,7 +956,7 @@ class CloudDriveService internal constructor(
      * 按当前的播放方式取一个文件的播放地址, 连同视频旁边的外挂字幕. 播放器请求这些地址时必须带上 [CloudDrivePlayback.headers].
      */
     suspend fun resolvePlayback(fileId: String): CloudDrivePlayback =
-        resolvePlayback(fileId, SubtitleLookup.InFolder, fileSubtitleKey(fileId), "$driveId:$fileId").also { rememberFolderOf(fileId) }
+        resolvePlayback(fileId, SubtitleLookup.InFolder, fileSubtitleKey(fileId), "$driveId:$fileId")
 
     /**
      * @param subtitleKey 手动挂字幕的键 (见 [subtitleKeyOf])
@@ -1137,12 +1099,6 @@ class CloudDriveService internal constructor(
         private const val MAX_PICKED_SUBTITLE_VIDEOS = 300
 
         private const val MB = 1024 * 1024
-
-        /** 最多给多少个条目自动记文件夹. */
-        private const val MAX_REMEMBERED_FOLDERS = 300
-
-        /** 「分享搜索」最多记多少个 (数据源, 条目) 的分享文件夹. */
-        private const val MAX_REMEMBERED_SHARES = 300
 
         /** 最多记多少个文件读文件头得到的视频信息. */
         private const val MAX_VIDEO_INFO = 500
