@@ -73,6 +73,7 @@ import me.him188.ani.app.platform.perf.PerfTimeline
 import me.him188.ani.app.ui.foundation.tv.getTvEpisodeMedia
 import me.him188.ani.app.ui.main.TvContinueEpisode
 import me.him188.ani.app.ui.main.tvContinueEpisode
+import me.him188.ani.app.ui.subject.collection.TvContinueWatchingLines
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.EpisodeType
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
@@ -246,8 +247,11 @@ object TvHomeChannels {
             } else {
                 emptyMap()
             }
+            // 简介前面写追更信息, 同探索页继续观看卡片的第二行 (每次现取文案, 跟着界面语言)
+            val progressLines = TvContinueWatchingLines.load()
             list.mapNotNull { info ->
-                info.toWatchNextEntry(historyByEpisode, now, useOriginalTitle, tmdbTitles[info.subjectId])?.let { it to info }
+                info.toWatchNextEntry(historyByEpisode, now, useOriginalTitle, tmdbTitles[info.subjectId], progressLines.of(info, now))
+                    ?.let { it to info }
             }
         }
         // 封面按线路换站 (见类注释), 线路一换这一行跟着重写
@@ -335,12 +339,14 @@ object TvHomeChannels {
      *
      * @param historyByEpisode 播放记录 (含墓碑), 按分集 id.
      * @param tmdbTitle 非中文界面没开「显示原名」时的 TMDB 标题 (见 SubjectInfo.tvTitle); null 时按 [useOriginalTitle] 取 Bangumi 的.
+     * @param progressLine 追更信息 (见 TvContinueWatchingLines), 写在简介前面; null = 只写简介.
      */
     private fun SubjectCollectionInfo.toWatchNextEntry(
         historyByEpisode: Map<Int, EpisodeHistory>,
         now: Instant,
         useOriginalTitle: Boolean,
         tmdbTitle: String?,
+        progressLine: String?,
     ): WatchNextEntry? {
         val subject = subjectInfo
         if (subject.imageLarge.isBlank()) return null
@@ -374,7 +380,8 @@ object TvHomeChannels {
         return WatchNextEntry(
             subjectId = subject.subjectId,
             title = tmdbTitle ?: subject.preferredDisplayName(useOriginalTitle),
-            description = formatDescription(subject.summary),
+            description = listOfNotNull(progressLine, formatDescription(subject.summary).ifEmpty { null })
+                .joinToString(" · ").take(DESCRIPTION_MAX_LENGTH),
             posterUri = subject.imageLarge,
             lastEngagementTimeMillis = engagementMillis,
             episode = episode,
