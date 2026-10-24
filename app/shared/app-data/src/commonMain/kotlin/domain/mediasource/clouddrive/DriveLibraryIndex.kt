@@ -37,7 +37,7 @@ import kotlin.time.TimeSource
  * (同 [DriveSubjectMatcher] 核对搜索结果的规则), 文件夹在前. 之后与服务端搜索的结果一样往下展开、认季认集.
  *
  * 索引在内存里, 建好后 [DriveLibraryConfig.refreshMinutes] 内直接用; 过期后先用旧的回答、后台重建 —— 新放进去的番最多晚这么久才找得到,
- * 已经播过的番记着文件夹 (见 [CloudDriveService.matchRememberedFolder]), 新的一集不受影响. 媒体文件夹或层数改了马上重建.
+ * 已经播过的番记着文件夹 (播放线索, 见 [CloudDriveService.lineageFolderOf]), 新的一集不受影响. 媒体文件夹或层数改了马上重建.
  * 第一次建的时候根文件夹都列不出来 (没登录、地址不对) 就报给调用方; 更深的文件夹列不出来只跳过它.
  *
  * @param listFolder 列一个文件夹的直接子项

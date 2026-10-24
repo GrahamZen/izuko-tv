@@ -46,6 +46,7 @@ import me.him188.ani.app.data.repository.media.MediaSourceInstanceRepository
 import me.him188.ani.app.data.repository.media.MediaSourceInstanceRepositoryImpl
 import me.him188.ani.app.data.repository.media.MediaSourceSaves
 import me.him188.ani.app.data.repository.user.Settings
+import me.him188.ani.app.domain.media.continuation.PlaybackLineage
 import me.him188.ani.app.domain.mediasource.instance.MediaSourceSave
 import me.him188.ani.datasources.api.source.MediaSourceConfig
 import me.him188.ani.datasources.api.source.serializeArguments
@@ -270,8 +271,9 @@ internal fun mockClient(handler: suspend MockRequestHandleScope.(HttpRequestData
 internal fun testDriveService(
     accounts: Settings<CloudDriveAccounts>,
     protocol: CloudDriveProtocol = TestDrive.protocol,
+    playbackLineages: suspend (subjectId: Int) -> PlaybackLineage? = { null },
     handler: suspend MockRequestHandleScope.(HttpRequestData) -> HttpResponseData,
-): CloudDriveService = CloudDriveService(protocol, accounts, mockClient(handler))
+): CloudDriveService = CloudDriveService(protocol, accounts, mockClient(handler), playbackLineages = playbackLineages)
 
 /** 请求的 JSON 体. */
 internal fun HttpRequestData.jsonBody(): JsonObject = Json.parseToJsonElement((body as TextContent).text).jsonObject
@@ -438,6 +440,7 @@ internal fun TestScope.testRegistry(
     addedShares: MemorySettings<CloudDriveAddedShares> = MemorySettings(CloudDriveAddedShares.Default),
     legacy: FakeLegacyPreferences = FakeLegacyPreferences(),
     client: () -> HttpClient = { mockClient { error("unexpected request ${it.url}") } },
+    playbackLineages: suspend (subjectId: Int) -> PlaybackLineage? = { null },
 ): TestRegistry {
     val instances = MediaSourceInstanceRepositoryImpl(MemoryDataStore(MediaSourceSaves(saves)))
     val registry = CloudDriveRegistry(
@@ -448,6 +451,7 @@ internal fun TestScope.testRegistry(
         tmdbSubjectMap = null,
         parentCoroutineContext = backgroundScope.coroutineContext,
         httpClient = client,
+        playbackLineages = playbackLineages,
     )
     return TestRegistry(registry, instances, accounts, addedShares, legacy)
 }
