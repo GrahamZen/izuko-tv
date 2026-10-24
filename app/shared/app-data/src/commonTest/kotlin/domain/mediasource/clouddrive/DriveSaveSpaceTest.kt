@@ -29,6 +29,13 @@ class DriveSaveSpaceTest {
     }
 
     @Test
+    fun `an over quota drive removes enough copies to cover the overage too`() {
+        // 超额 1 000: 放下 1 200 要腾出 2 200 (只删 old 不够)
+        assertEquals(listOf("old", "mid"), pickSavedCopiesToFree(saved, needed = 1_200, free = -1_000).map { it.fid })
+        assertEquals(emptyList(), pickSavedCopiesToFree(saved, needed = 4_000, free = -1_000))
+    }
+
+    @Test
     fun `every copy is removed when the free space is unknown or does not explain the failure`() {
         assertEquals(saved, pickSavedCopiesToFree(saved, needed = 23_000, free = null))
         assertEquals(saved, pickSavedCopiesToFree(saved, needed = 1_000, free = 5_000))
