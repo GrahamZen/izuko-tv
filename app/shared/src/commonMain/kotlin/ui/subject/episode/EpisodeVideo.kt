@@ -564,17 +564,17 @@ internal fun EpisodeVideoImpl(
                         danmakuEditor()
                     },
                     endActions = {
-                        // 仅 Android 显示小窗按钮: Android 小窗是整机窗口采集, 按钮是除系统手势外的
-                        // 重要入口; iOS 小窗的主入口是系统手势 (上滑回桌面自动进入), 且按钮 enabled
-                        // 依赖 isPictureInPicturePossible, 其在部分机型上翻转不及时, 灰态观感差, 故不在 iOS 显示
-                        if (LocalPlatform.current.isAndroid() && pictureInPictureController.isSupported) {
+                        // Android 小窗是整机窗口采集, 按钮是除系统手势外的重要入口. iOS 也给 (iPad 上一边看一边点):
+                        // isPictureInPicturePossible 在部分机型上翻转不及时, iOS 上 enabled 不跟它, 点的时候控制器自己再判
+                        val onIos = LocalPlatform.current.isIos()
+                        if ((LocalPlatform.current.isAndroid() || onIos) && pictureInPictureController.isSupported) {
                             val pipPossible by pictureInPictureController.isPictureInPicturePossible
                                 .collectAsStateWithLifecycle()
                             val mediaLoaded by remember(playerState) {
                                 playerState.state.map { it.isMediaLoaded }
                             }.collectAsStateWithLifecycle(false)
                             PlayerControllerDefaults.PictureInPictureIcon(
-                                enabled = pipPossible && mediaLoaded,
+                                enabled = (pipPossible || onIos) && mediaLoaded,
                                 onClick = { pictureInPictureController.enterPictureInPicture() },
                             )
                         }

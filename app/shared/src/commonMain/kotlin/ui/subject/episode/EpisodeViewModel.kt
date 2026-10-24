@@ -425,6 +425,22 @@ open class EpisodeViewModel(
      */
     var autoPausedOffPage: Boolean = false
 
+    /**
+     * 此刻允许「回桌面自动进系统小窗」: 播放页或触屏小窗的小窗策略登记着 ([setAutoPictureInPictureArmed]). 这时应用退到后台不该按暂停:
+     * 小窗或后台续播交给系统 (iOS 进小窗时也会先报退到后台), 见 `RetainedPlaybackSessionHolder` 第 2 条.
+     */
+    val autoPictureInPictureArmed: Boolean get() = autoPictureInPictureOwners.isNotEmpty()
+
+    private val autoPictureInPictureOwners = mutableSetOf<Any>()
+
+    /**
+     * [owner] (播放页或触屏小窗) 登记或撤销「回桌面自动进系统小窗」. 按登记者记: 离开播放页时小窗先进场登记、播放页后退场撤销,
+     * 各撤各的, 播放页的撤销不会把小窗的登记一起抹掉.
+     */
+    fun setAutoPictureInPictureArmed(owner: Any, armed: Boolean) {
+        if (armed) autoPictureInPictureOwners += owner else autoPictureInPictureOwners -= owner
+    }
+
     /** `null` 表示本次播放尚未调整过倍速, 此时跟随配置. */
     private val playbackSpeedOverride = MutableStateFlow<Float?>(null)
 
