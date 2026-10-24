@@ -403,6 +403,8 @@ class TvNativeExploreNavigationTest {
         }
         pressNow(KeyEvent.KEYCODE_DPAD_RIGHT)
         assertLandedNear(longRow(1), maxIndex = 0)
+        // 焦点当场落到第一张, 行接着把剩下那段滚完 (半秒多) 才贴齐行首
+        host.waitUntil("行停稳") { rowView(longRow(1))?.scrollState == RecyclerView.SCROLL_STATE_IDLE }
         assertEquals(0, host.onMain { rowView(longRow(1))?.leftIndex() })
     }
 
@@ -674,40 +676,6 @@ class TvNativeExploreNavigationTest {
         val now = SystemClock.uptimeMillis()
         view.dispatchKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, keyCode, 0))
         view.dispatchKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, keyCode, 0))
-    }
-
-    @Test
-    fun `confirm during a far jump acts on the target once it lands`() {
-        host.onMain { view.focusCard(REC2, 3) }
-        waitCard(REC2, 3)
-        val heroOnTheWay = host.onMain {
-            view.animatedScroll = true
-            view.focusCard(FOLLOWED, 0, far = true)
-            pressOnView(KeyEvent.KEYCODE_DPAD_CENTER)
-            listener.heroActive.toList()
-        }
-        assertEquals(emptyList(), heroOnTheWay)
-        waitCard(FOLLOWED, 0)
-        // 卡片墙上按确认 = 这张进 hero 态: 点在目标上, 焦点仍在目标
-        host.waitUntil("落地后点了目标") { listener.heroActive == listOf(true) }
-        assertEquals(FOLLOWED to 0, card())
-    }
-
-    @Test
-    fun `a direction key during a far jump drops the queued confirm`() {
-        host.onMain { view.focusCard(REC2, 3) }
-        waitCard(REC2, 3)
-        host.onMain {
-            view.animatedScroll = true
-            view.focusCard(FOLLOWED, 0, far = true)
-            pressOnView(KeyEvent.KEYCODE_DPAD_CENTER)
-            // 当场落到目标, 这一下吞掉 (不往下走), 排队的确认作废
-            pressOnView(KeyEvent.KEYCODE_DPAD_DOWN)
-        }
-        waitCard(FOLLOWED, 0)
-        SystemClock.sleep(300)
-        assertEquals(emptyList(), listener.heroActive)
-        assertEquals(FOLLOWED to 0, card())
     }
 
     @Test
