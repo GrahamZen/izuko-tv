@@ -29,6 +29,7 @@ import me.him188.ani.app.ui.foundation.isAutoRepeat
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import kotlinx.datetime.TimeZone
 import me.him188.ani.app.ui.foundation.navigation.BackHandler
 import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
 import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallScale
@@ -43,7 +44,10 @@ import me.him188.ani.app.ui.foundation.tv.tvWallPreviewSubjectId
 import me.him188.ani.app.ui.foundation.tv.tvWallPreviewTextColors
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.exploration_continue_watching
+import me.him188.ani.app.ui.subject.collection.rememberTvProgressStrings
+import me.him188.ani.app.ui.subject.collection.tvProgressPreviewLines
 import org.jetbrains.compose.resources.stringResource
+import kotlin.time.Clock
 
 /**
  * 「海报墙大小」里探索页的假页面: 与 [TvExplorationPage] 同一个原生海报墙、同一份几何 ([tvExplorationWallLayout]), 数据换成示例 (有字没图):
@@ -64,6 +68,9 @@ internal fun TvExplorationWallPreview(
     val (secondary, onSurface) = tvWallPreviewTextColors()
     val followedTitle = stringResource(Lang.exploration_continue_watching)
     val columns = wallLayout.columns
+    // 继续观看的卡同真页面写追更信息, 几种轮着用
+    val progressStrings = rememberTvProgressStrings()
+    val progressLines = remember(progressStrings) { tvProgressPreviewLines(progressStrings, Clock.System.now(), TimeZone.currentSystemDefault()) }
 
     // 各行的示例卡: 条目号按全页的序号排, 行与行之间不重复 (hero 内容按条目号认)
     val rows: List<Pair<String, Int>> = remember(columns) {
@@ -76,7 +83,7 @@ internal fun TvExplorationWallPreview(
         var next = TV_WALL_PREVIEW_CAROUSEL_SIZE
         rows.associate { (key, count) -> (key to next).also { next += count } }
     }
-    val items: List<TvNativeExploreItem> = remember(rows, rowStart, samples, followedTitle) {
+    val items: List<TvNativeExploreItem> = remember(rows, rowStart, samples, followedTitle, progressLines) {
         buildList {
             add(TvNativeExploreItem.Spacer(TV_WALL_HERO_SPACER_KEY))
             rows.forEachIndexed { rowIndex, (key, count) ->
@@ -88,7 +95,13 @@ internal fun TvExplorationWallPreview(
                         key,
                         List(count) { i ->
                             // 继续观看的卡带一条观看进度, 长短不一
-                            samples.card(start + i, progress = if (followed) TV_WALL_PREVIEW_PROGRESS[i % TV_WALL_PREVIEW_PROGRESS.size] else null)
+                            val card = samples.card(start + i, progress = if (followed) TV_WALL_PREVIEW_PROGRESS[i % TV_WALL_PREVIEW_PROGRESS.size] else null)
+                            if (followed) {
+                                val line = progressLines[i % progressLines.size]
+                                card.copy(subtitle = line.subtitle, count = line.count)
+                            } else {
+                                card
+                            }
                         },
                     ),
                 )
