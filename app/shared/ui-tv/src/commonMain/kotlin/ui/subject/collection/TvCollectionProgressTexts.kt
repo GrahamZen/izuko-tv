@@ -29,10 +29,13 @@ import me.him188.ani.app.ui.lang.collection_tv_progress_header
 import me.him188.ani.app.ui.lang.collection_tv_progress_next
 import me.him188.ani.app.ui.lang.collection_tv_progress_next_unknown
 import me.him188.ani.app.ui.lang.collection_tv_progress_premiere
+import me.him188.ani.app.ui.lang.collection_tv_progress_resume
 import me.him188.ani.app.ui.lang.collection_tv_progress_updates_at
 import me.him188.ani.app.ui.lang.collection_tv_progress_updates_day
 import me.him188.ani.app.ui.lang.collection_tv_progress_wish_started
 import me.him188.ani.datasources.api.EpisodeSort
+import org.jetbrains.compose.resources.StringResource
+import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 import kotlin.time.Instant
 
@@ -41,6 +44,7 @@ import kotlin.time.Instant
  * 写下一集什么时候:
  * 有新集 / 想看的开播了「周五 23:00 更新」, 下一集是最后一集写「周五 23:00 完结」, 已经播完写「全 12 话已完结」(想看的分集还没到写「已开播」);
  * 今天「22:40 · 第 4 话」; 本周 / 已追平「周四 23:56 · 第 7 话」; 即将开播「10-24 21:00 开播」. 没有日期写「下一集日期未定」, 只知道日期的不写时刻.
+ * [resume] 是继续观看卡片上补番的那一行「第 8 / 24 话」(见 [tvProgressCardLine]).
  */
 @Immutable
 internal data class TvProgressStrings(
@@ -60,6 +64,7 @@ internal data class TvProgressStrings(
     val next: String,
     val nextUnknown: String,
     val premiere: String,
+    val resume: String,
 ) {
     fun groupTitle(group: TvProgressGroup): String = when (group) {
         TvProgressGroup.NewEpisodes -> groupNew
@@ -75,23 +80,29 @@ internal data class TvProgressStrings(
 }
 
 @Composable
-internal fun rememberTvProgressStrings(): TvProgressStrings = TvProgressStrings(
-    header = stringResource(Lang.collection_tv_progress_header),
-    groupNew = stringResource(Lang.collection_tv_progress_group_new),
-    groupWish = stringResource(Lang.collection_tv_progress_group_wish),
-    groupToday = stringResource(Lang.collection_tv_progress_group_today),
-    groupWeek = stringResource(Lang.collection_tv_progress_group_week),
-    groupCaughtUp = stringResource(Lang.collection_tv_progress_group_caught_up),
-    groupUpcoming = stringResource(Lang.collection_tv_progress_group_upcoming),
-    updatesDay = stringResource(Lang.collection_tv_progress_updates_day),
-    updatesAt = stringResource(Lang.collection_tv_progress_updates_at),
-    finaleDay = stringResource(Lang.collection_tv_progress_finale_day),
-    finaleAt = stringResource(Lang.collection_tv_progress_finale_at),
-    completed = stringResource(Lang.collection_tv_progress_completed),
-    wishStarted = stringResource(Lang.collection_tv_progress_wish_started),
-    next = stringResource(Lang.collection_tv_progress_next),
-    nextUnknown = stringResource(Lang.collection_tv_progress_next_unknown),
-    premiere = stringResource(Lang.collection_tv_progress_premiere),
+internal fun rememberTvProgressStrings(): TvProgressStrings = tvProgressStringsOf { stringResource(it) }
+
+/** 同 [rememberTvProgressStrings], 给不在 Compose 里的 (系统主屏频道) 用. */
+internal suspend fun loadTvProgressStrings(): TvProgressStrings = tvProgressStringsOf { getString(it) }
+
+private inline fun tvProgressStringsOf(get: (StringResource) -> String): TvProgressStrings = TvProgressStrings(
+    header = get(Lang.collection_tv_progress_header),
+    groupNew = get(Lang.collection_tv_progress_group_new),
+    groupWish = get(Lang.collection_tv_progress_group_wish),
+    groupToday = get(Lang.collection_tv_progress_group_today),
+    groupWeek = get(Lang.collection_tv_progress_group_week),
+    groupCaughtUp = get(Lang.collection_tv_progress_group_caught_up),
+    groupUpcoming = get(Lang.collection_tv_progress_group_upcoming),
+    updatesDay = get(Lang.collection_tv_progress_updates_day),
+    updatesAt = get(Lang.collection_tv_progress_updates_at),
+    finaleDay = get(Lang.collection_tv_progress_finale_day),
+    finaleAt = get(Lang.collection_tv_progress_finale_at),
+    completed = get(Lang.collection_tv_progress_completed),
+    wishStarted = get(Lang.collection_tv_progress_wish_started),
+    next = get(Lang.collection_tv_progress_next),
+    nextUnknown = get(Lang.collection_tv_progress_next_unknown),
+    premiere = get(Lang.collection_tv_progress_premiere),
+    resume = get(Lang.collection_tv_progress_resume),
 )
 
 /**
@@ -146,7 +157,7 @@ internal fun TvProgressEntry.cardSubtitle(
 internal val TvProgressEntry.badgeCount: Int? get() = unwatched.takeIf { it > 0 }
 
 /** 「周四 23:56」; 不知道几点的只写「周四」. */
-private fun EpisodeAirTime.dayAndClock(timeZone: TimeZone, dayLabel: (LocalDate) -> String): String {
+internal fun EpisodeAirTime.dayAndClock(timeZone: TimeZone, dayLabel: (LocalDate) -> String): String {
     val day = dayLabel(date(timeZone))
     return if (exact) "$day ${clock(timeZone)}" else day
 }
@@ -158,7 +169,7 @@ private fun EpisodeAirTime.clock(timeZone: TimeZone): String {
 }
 
 /** 集号不补零 (「8」「12.5」); 小字一行放不下几个字, 不用「08」. */
-private fun EpisodeSort.compact(): String {
+internal fun EpisodeSort.compact(): String {
     val n = number ?: return toString()
     return if (n == n.toInt().toFloat()) n.toInt().toString() else n.toString()
 }
