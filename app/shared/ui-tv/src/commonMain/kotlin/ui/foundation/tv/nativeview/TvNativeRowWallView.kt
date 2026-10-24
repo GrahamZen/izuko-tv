@@ -925,10 +925,19 @@ open class TvNativeRowWallView private constructor(
                 row.jumpToCard(target, metrics.columns.coerceAtLeast(1)) { if (pendingRow == rowKey) resolvePending(scrollIfMissing = false) }
             }
 
-            // 行已排好、那张在屏外 (左右键连按超前): 平滑滚过去, 停下再送
+            // 行已排好、那张在屏外 (左右键连按超前): 平滑滚过去, 停下再送. 停下时还没排出来 (半路被停掉) 就重新来过, 不再干等;
+            // 滚不起来 (见 scrollToCardSmooth) 就一步挪过去
             row.childCount > 0 -> {
                 pendingSmooth = true
-                row.scrollToCardSmooth(target) { if (pendingRow == rowKey) resolvePending(scrollIfMissing = false) }
+                val smooth = row.scrollToCardSmooth(target) {
+                    if (pendingRow == rowKey) {
+                        pendingSmooth = false
+                        resolvePending(scrollIfMissing = false)
+                    }
+                }
+                if (!smooth) {
+                    row.jumpToCard(target, metrics.columns.coerceAtLeast(1)) { if (pendingRow == rowKey) resolvePending(scrollIfMissing = false) }
+                }
             }
 
             // 行刚绑定还没排: 先选中 (第一次布局就排在那里), 布局完成后再送
@@ -952,9 +961,13 @@ open class TvNativeRowWallView private constructor(
     /**
      * 远跳的列表停下了 (纵向到位): 目标卡还没排出来 (行首左边好几张, 如行内回首卡) 就让那一行接着平滑滚过去 —— 这一段仍算远跳, 焦点
      * 仍停放在本视图上: leanback 平滑滚向远处时当场把选中位置换成目标, 出发那张滚出排布范围就被回收, 焦点留在它身上就丢了
-     * (系统从窗口根上重新送焦, 落到别处). 行停下再落地 ([landAfterFarJump]).
+     * (系统从窗口根上重新送焦, 落到别处). 行停下再落地 ([landAfterFarJump]); 滚不起来 (见 [TvNativeStripView.scrollToCardSmooth]) 就当场落地,
+     * 由落地一步挪过去.
+     *
+     * 刚停放焦点时失焦的卡常常请求了布局, 那一刻 leanback 不平滑滚: 行有布局请求挂着就等下一帧布局完 ([deferred] = 已经等过) 再滚
+     * (动画回调在那一帧的布局之前, 再 post 一次排到布局之后).
      */
-    private fun finishFarJump() {
+    private fun finishFarJump(deferred: Boolean = false) {
         val rowKey = farJumpRow ?: return
         // 行在滚着: 列表这时的停下与它无关
         if (farJumpAlongRow) return
@@ -965,9 +978,13 @@ open class TvNativeRowWallView private constructor(
             val left = list.rowLeftIndex[rowKey] ?: row.leftIndex()
             val target = pendingTarget(rowKey, left, count)
             if (row.findViewHolderForAdapterPosition(target) == null) {
+                if (!deferred && row.isLayoutRequested) {
+                    row.postOnAnimation { row.post { if (farJumpRow == rowKey) finishFarJump(deferred = true) } }
+                    return
+                }
                 farJumpAlongRow = true
-                row.scrollToCardSmooth(target) { if (farJumpRow == rowKey) landAfterFarJump() }
-                return
+                if (row.scrollToCardSmooth(target) { if (farJumpRow == rowKey) landAfterFarJump() }) return
+                farJumpAlongRow = false
             }
         }
         landAfterFarJump()
