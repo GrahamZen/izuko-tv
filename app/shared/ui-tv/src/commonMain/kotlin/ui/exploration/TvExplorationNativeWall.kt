@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.paging.compose.LazyPagingItems
+import kotlinx.datetime.TimeZone
 import me.him188.ani.app.data.models.player.EpisodeHistory
 import me.him188.ani.app.data.models.preference.TvPosterConfirmAction
 import me.him188.ani.app.data.models.episode.preferredDisplayName
@@ -134,6 +135,9 @@ import me.him188.ani.app.ui.lang.exploration_tv_watched_latest
 import me.him188.ani.app.ui.lang.playback_history_episode_label
 import me.him188.ani.app.ui.lang.subject_progress_updates_on
 import me.him188.ani.app.ui.subject.AiringLabelState
+import me.him188.ani.app.ui.subject.collection.rememberTvProgressNow
+import me.him188.ani.app.ui.subject.collection.rememberTvProgressStrings
+import me.him188.ani.app.ui.subject.collection.tvProgressCardLine
 import me.him188.ani.app.ui.subject.rememberSubjectStatusStrings
 import me.him188.ani.datasources.api.toLocalDateOrNull
 import org.jetbrains.compose.resources.stringResource
@@ -241,7 +245,8 @@ private val TvExplorationNativeStateSaver = Saver<TvExplorationNativeState, Arra
 
 /**
  * 原生海报墙的列表项 (结构见 TvNativeExploreList.kt): hero 占位 + 继续观看 (标题 + 一行) + 各组推荐 (标题 + 行).
- * 继续观看行按分页快照给 (没到的是占位), 卡上带集数观看进度条 (见 followedCardProgress).
+ * 继续观看行按分页快照给 (没到的是占位), 卡上带集数观看进度条 (见 followedCardProgress), 番名下面写追更信息、有新集的画没看几集的角标
+ * (同追番页「追更」, 见 tvProgressCardLine).
  * 还能接着推荐的组 ([RecommendationGroup.extendable]) 行尾多一张「更多」卡, [extending] 里的组画成加载中.
  */
 @Composable
@@ -264,20 +269,30 @@ internal fun rememberTvExplorationNativeItems(
     val useOriginalTitle = tvUseOriginalTitle()
     // 非中文界面: 查到过 TMDB 标题的番用它 (见 SubjectInfo.tvTitle)
     val tmdbTitles = rememberTvTmdbTitles()
+    // 继续观看各卡的追更信息 (按卡的位置): 每分钟重算, 算出来没变 (List 按内容比) 下面整份列表就不重建
+    val progressStrings = rememberTvProgressStrings()
+    val now = rememberTvProgressNow()
+    val timeZone = remember { TimeZone.currentSystemDefault() }
+    val followedLines = remember(followed, progressStrings, now) {
+        followed?.map { item -> item?.let { tvProgressCardLine(it.subjectCollectionInfo, progressStrings, now, timeZone) } }
+    }
     return remember(
         hasFollowed, followed, recRows, recFlat, playHistories, followedTitle, groupTitles, extending,
-        moreTitle, moreGenericTitle, moreLoadingTitle, nsfw.snapshot, useOriginalTitle, tmdbTitles,
+        moreTitle, moreGenericTitle, moreLoadingTitle, nsfw.snapshot, useOriginalTitle, tmdbTitles, followedLines,
     ) {
         val result = ArrayList<TvNativeExploreItem>()
         result.add(TvNativeExploreItem.Spacer(TV_WALL_HERO_SPACER_KEY))
         if (followed != null) {
-            val followedCards: List<TvNativeCard?> = followed.map { item: FollowedSubjectInfo? ->
+            val followedCards: List<TvNativeCard?> = followed.mapIndexed { index, item: FollowedSubjectInfo? ->
                 item?.subjectInfo?.let { subject ->
+                    val line = followedLines?.getOrNull(index)
                     TvNativeCard(
                         imageUrl = subject.imageLarge,
                         title = tmdbTitles[subject.subjectId] ?: subject.preferredDisplayName(useOriginalTitle),
+                        subtitle = line?.subtitle,
                         progress = followedCardProgress(item, playHistories),
                         subjectId = subject.subjectId,
+                        count = line?.count,
                     )
                 }
             }
@@ -349,8 +364,8 @@ internal fun TvExplorationNativeWall(
     val wallBlur = LocalThemeSettings.current.tvWallBackdropBlur
     val heroBlur = heroEnabled && wallBlur != TvBackdropBlurLevel.None
     val blurSpec = tvBackdropBlurSpec(wallBlur)
-    // 铺着模糊背景时卡片的字照 vibrancy 画 (深色主题, 见 TvNativeWallStyle.labelVibrancy)
-    val style = rememberTvNativeWallStyle(cardWidth, metrics.columns, labelVibrancy = heroBlur)
+    // 铺着模糊背景时卡片的字照 vibrancy 画 (深色主题, 见 TvNativeWallStyle.labelVibrancy); 继续观看的卡画没看几集的角标 (见 tvProgressCardLine)
+    val style = rememberTvNativeWallStyle(cardWidth, metrics.columns, labelVibrancy = heroBlur, countBadge = true)
     val textStyle = rememberTvNativeHeroTextStyle(titleMaxLines = 1, lineSpacing = 10.dp)
     val buttonStyle = rememberTvNativeHeroButtonStyle()
     val headerStyle = tvPosterWallHeaderStyle().toTvNativeTextStyle(density, LocalContentColor.current)

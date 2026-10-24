@@ -36,6 +36,23 @@ class TvCollectionProgressModelTest {
     /** 每周一 23:00 (东京) 播, 第一集 2026-09-07. */
     private val mondayNight = SubjectRecurrence(Instant.parse("2026-09-07T14:00:00Z"), 7.days)
 
+    private val strings = TvProgressStrings(
+        header = "%1\$s · %2\$d 部",
+        groupNew = "有新集", groupWish = "想看的番开播了", groupToday = "今天更新", groupWeek = "本周更新",
+        groupCaughtUp = "已追平", groupUpcoming = "即将开播",
+        updatesDay = "%1\$s更新",
+        updatesAt = "%1\$s %2\$s 更新",
+        finaleDay = "%1\$s完结",
+        finaleAt = "%1\$s %2\$s 完结",
+        completed = "全 %1\$s 话已完结",
+        wishStarted = "已开播",
+        next = "%1\$s · 第 %2\$s 话",
+        nextUnknown = "下一集日期未定",
+        premiere = "%1\$s 开播",
+        resume = "第 %1\$s / %2\$s 话",
+    )
+    private val dayLabel: (LocalDate) -> String = { "${it.month.ordinal + 1}-${it.day}" }
+
     private fun episode(id: Int, sort: Int, airDate: PackedDate, watched: Boolean, type: EpisodeType = EpisodeType.MainStory) =
         EpisodeCollectionInfo(
             EpisodeInfo(episodeId = id, type = type, airDate = airDate, sort = EpisodeSort(sort)),
@@ -231,21 +248,6 @@ class TvCollectionProgressModelTest {
 
     @Test
     fun `card subtitles`() {
-        val strings = TvProgressStrings(
-            header = "%1\$s · %2\$d 部",
-            groupNew = "有新集", groupWish = "想看的番开播了", groupToday = "今天更新", groupWeek = "本周更新",
-            groupCaughtUp = "已追平", groupUpcoming = "即将开播",
-            updatesDay = "%1\$s更新",
-            updatesAt = "%1\$s %2\$s 更新",
-            finaleDay = "%1\$s完结",
-            finaleAt = "%1\$s %2\$s 完结",
-            completed = "全 %1\$s 话已完结",
-            wishStarted = "已开播",
-            next = "%1\$s · 第 %2\$s 话",
-            nextUnknown = "下一集日期未定",
-            premiere = "%1\$s 开播",
-        )
-        val dayLabel: (LocalDate) -> String = { "${it.month.ordinal + 1}-${it.day}" }
         fun entry(info: SubjectCollectionInfo, wish: Boolean = false): TvProgressEntry {
             val s = if (wish) sections(wish = listOf(info)) else sections(doing = listOf(info))
             return s.entry(info.subjectId)
@@ -272,5 +274,36 @@ class TvCollectionProgressModelTest {
         assertEquals("10-22 · 第 6 话", subtitle(weekly(22, UnifiedCollectionType.DOING, LocalDate(2026, 9, 17), 12, watched = 5)))
         assertEquals("10-29 开播", subtitle(weekly(24, UnifiedCollectionType.WISH, LocalDate(2026, 10, 29), 12, watched = 0), wish = true))
         assertEquals("有新集 · 1 部", strings.headerOf(sections(doing = listOf(behind)).first()))
+    }
+
+    @Test
+    fun `continue watching card lines`() {
+        fun line(info: SubjectCollectionInfo) = tvProgressCardLine(info, strings, now, timeZone, dayLabel)
+
+        // 在播的同追更页: 有新集画角标, 追平的不画
+        assertEquals(
+            TvProgressCardLine("10-20更新", 3),
+            line(weekly(30, UnifiedCollectionType.DOING, LocalDate(2026, 8, 25), 12, watched = 5)),
+        )
+        assertEquals(
+            TvProgressCardLine("22:00 · 第 7 话", null),
+            line(weekly(31, UnifiedCollectionType.DOING, LocalDate(2026, 9, 7), 12, watched = 6, recurrence = mondayNight)),
+        )
+        assertEquals(TvProgressCardLine("10-29 开播", null), line(weekly(32, UnifiedCollectionType.DOING, LocalDate(2026, 10, 29), 12, watched = 0)))
+        // 补番: 接下来看的那一话 / 最后一话; 看完了写已完结
+        assertEquals(TvProgressCardLine("第 4 / 12 话", null), line(weekly(33, UnifiedCollectionType.DOING, LocalDate(2026, 1, 5), 12, watched = 3)))
+        assertEquals(TvProgressCardLine("全 12 话已完结", null), line(weekly(34, UnifiedCollectionType.DOING, LocalDate(2026, 1, 5), 12, watched = 12)))
+        // 播完超过两周还没看完的不算追更, 照补番写
+        assertEquals(TvProgressCardLine("第 11 / 12 话", null), line(weekly(35, UnifiedCollectionType.DOING, LocalDate(2026, 7, 13), 12, watched = 10)))
+        // 一个多月后才开播的追更页不收, 这里写开播日期
+        assertEquals(TvProgressCardLine("1-8 开播", null), line(weekly(36, UnifiedCollectionType.DOING, LocalDate(2027, 1, 8), 12, watched = 0)))
+        // 分割季的序号照 bgm 写, 不从 1 起
+        val secondCour = (13..24).map { n ->
+            val date = LocalDate.fromEpochDays(LocalDate(2026, 1, 5).toEpochDays() + (n - 13) * 7)
+            episode(3700 + n, n, PackedDate(date.year, date.month.ordinal + 1, date.day), watched = n <= 14)
+        }
+        assertEquals(TvProgressCardLine("第 15 / 24 话", null), line(createTestSubjectCollection(37, secondCour, UnifiedCollectionType.DOING)))
+        // 没有分集不写
+        assertEquals(TvProgressCardLine(null, null), line(createTestSubjectCollection(38, emptyList(), UnifiedCollectionType.DOING)))
     }
 }
