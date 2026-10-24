@@ -32,6 +32,7 @@ import me.him188.ani.app.data.network.TmdbSubjectMapRepository
 import me.him188.ani.app.data.persistent.DataStoreJson
 import me.him188.ani.app.data.repository.media.MediaSourceInstanceRepository
 import me.him188.ani.app.data.repository.user.Settings
+import me.him188.ani.app.domain.media.continuation.PlaybackLineage
 import me.him188.ani.app.domain.mediasource.instance.MediaSourceSave
 import me.him188.ani.datasources.api.source.MediaSourceConfig
 import me.him188.ani.datasources.api.source.deserializeArgumentsOrNull
@@ -69,6 +70,8 @@ class CloudDriveRegistry(
     private val httpClient: () -> HttpClient = CloudDriveApi::createHttpClient,
     /** 分享搜索列出的分享文件夹存在哪 (见 [DriveShareSearchEngine]), 所有分享搜索源共用. */
     val shareIndexStore: DriveShareIndexStore = DriveShareIndexStore.None,
+    /** 条目的播放线索 (见 [PlaybackLineage]): 三种网盘数据源查询时先列线索里的文件夹 */
+    private val playbackLineages: suspend (subjectId: Int) -> PlaybackLineage? = { null },
 ) {
     private val numbering = tmdbSubjectMap?.let { TmdbEpisodeNumbering.of(it) } ?: TmdbEpisodeNumbering.None
     private val otherWorks = seriesGraph?.let { OtherWorks.of(it) } ?: OtherWorks.None
@@ -114,7 +117,7 @@ class CloudDriveRegistry(
     /** 网盘 [protocol] 的服务, 没有就新建; 已有时换上这份协议 (订阅更新). */
     fun serviceFor(protocol: CloudDriveProtocol): CloudDriveService = synchronized(lock) {
         services[protocol.id]?.also { it.updateProtocol(protocol) }
-            ?: CloudDriveService(protocol, accounts, httpClient(), numbering, otherWorks).also { services[protocol.id] = it }
+            ?: CloudDriveService(protocol, accounts, httpClient(), numbering, otherWorks, playbackLineages).also { services[protocol.id] = it }
     }
 
     /** 已配置的网盘 [driveId]; 没有时为 null. */

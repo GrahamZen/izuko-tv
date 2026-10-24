@@ -32,6 +32,7 @@ import kotlinx.coroutines.withContext
 import me.him188.ani.app.domain.episode.EpisodeSession
 import me.him188.ani.app.domain.episode.MediaFetchSelectBundle
 import me.him188.ani.app.domain.media.DroppedFileMedia
+import me.him188.ani.app.domain.media.continuation.PlaybackLineageSelection
 import me.him188.ani.app.domain.media.download.MediaDownloadManager
 import me.him188.ani.app.domain.media.fetch.MediaFetchSession
 import me.him188.ani.app.domain.media.fetch.isFinal
@@ -67,6 +68,7 @@ class SwitchMediaOnPlayerErrorExtension(
 ) : PlayerExtension("SwitchMediaOnPlayerErrorExtension") {
     private val getVideoScaffoldConfigUseCase: GetVideoScaffoldConfigUseCase by koin.inject()
     private val getMediaSelectorSettingsFlowUseCase: GetMediaSelectorSettingsFlowUseCase by koin.inject()
+    private val lineageSelection: PlaybackLineageSelection by koin.inject()
     private val getSourceTiersUseCase: GetMediaSelectorSourceTiersUseCase by koin.inject()
     private val mediaCacheManager: MediaDownloadManager by koin.inject()
 
@@ -102,6 +104,9 @@ class SwitchMediaOnPlayerErrorExtension(
         val handler = PlayerLoadErrorHandler(
             getPreferKind = { getMediaSelectorSettingsFlowUseCase().first().preferKind },
             getSourceTiers = { getSourceTiersUseCase().first() },
+            switchOnLineage = { session, selector, blacklist, failed ->
+                lineageSelection.switchOnError(context.subjectId, session, selector, blacklist, failed)
+            },
         )
 
         coroutineScope {
@@ -341,6 +346,8 @@ internal class PlayerLoadError(
 internal class PlayerLoadErrorHandler(
     private val getPreferKind: suspend () -> MediaSourceKind?,
     private val getSourceTiers: suspend () -> MediaSelectorSourceTiers,
+    /** 先在播放线索上换 (见 [PlaybackLineageSelection.switchOnError]), 换了返回 true */
+    private val switchOnLineage: suspend (MediaFetchSession, MediaSelector, Set<String>, Media?) -> Boolean = { _, _, _, _ -> false },
 ) {
     /**
      * 不可变集合本身可以安全共享, 但 `x = x.add(...)` 是读-改-写三步, 而拉黑来自三条并发的路
@@ -395,6 +402,7 @@ internal class PlayerLoadErrorHandler(
 
         delay(1.seconds) // 稍等让用户看到播放出错
         if (mediaSelector.selected.value != failedMedia) return
+        if (switchOnLineage(session, mediaSelector, blacklistedMediaIds, failedMedia)) return
 
         // Load data in parallel
         val (preferKind, sourceTiers) = combine(
