@@ -39,6 +39,8 @@ internal class OtherWorkGuard(
     private val firstWorkAirYear: Int?,
     /** 「系列名 + 副标题」的条目按条目名搜不到时的补搜; 不是这种写法时为 null */
     val parts: DriveSharePartSearch? = null,
+    /** 系列关系图推出的本条目是第几季 ([seriesSeasonOf]), 认季用 (见 [DriveSubjectSeason]) */
+    val seriesSeason: Int? = null,
 ) {
     /** [name] (标题或路径) 是不是别的作品的. */
     fun isOtherWork(name: String): Boolean {
@@ -61,7 +63,7 @@ internal class OtherWorkGuard(
     fun rejectsTitle(title: String): Boolean = isOtherWork(title) || isOtherYear(title)
 
     /** 同一个, 只是不补搜 (对照补搜前后用). */
-    internal fun withoutParts(): OtherWorkGuard = OtherWorkGuard(ownNames, otherWorkNames, firstWorkAirYear)
+    internal fun withoutParts(): OtherWorkGuard = OtherWorkGuard(ownNames, otherWorkNames, firstWorkAirYear, seriesSeason = seriesSeason)
 
     companion object {
         /** 1950 到 2049 年, 前后不挨着别的数字 */
@@ -95,7 +97,7 @@ internal class OtherWorkGuard(
             } else {
                 null
             }
-            return OtherWorkGuard(own, others, airYear, DriveSharePartSearch.of(subjectId, table))
+            return OtherWorkGuard(own, others, airYear, DriveSharePartSearch.of(subjectId, table), seriesSeasonOf(subjectId, table))
         }
     }
 }
