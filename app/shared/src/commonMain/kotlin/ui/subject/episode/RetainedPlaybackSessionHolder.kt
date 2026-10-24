@@ -340,8 +340,16 @@ class RetainedPlaybackSessionHolder : ViewModel(), PlaybackSessionEntry, KoinCom
         } else if (currentSession !== session) {
             // 已经被新会话替换掉、界面又刚销毁的那个 (播放页跳播放页的退场动画走完)
             destroy(session)
+        } else {
+            // 只剩它自己且它就是当前会话 —— 这正是要保留下来的那个.
+            // 页面数据出来之前就离开的 (进播放页一两秒内按返回、退回上一个播放页又马上退出), 播放页没组合到
+            // 调 onUIReady 那一步, 自动选源等会话任务都还没启动: 同 startInBackground 替它按下这一下,
+            // 否则留在后台的是半条流水线 —— 只查源不选, 查完就提示要手动选. 已经启动过的再按一次不会重复启动.
+            session.vm?.let { vm ->
+                logger.info { "Keeping session ep${session.info.episodeId} in the background" }
+                vm.onUIReady()
+            }
         }
-        // else: 只剩它自己且它就是当前会话 —— 这正是要保留下来的那个, 不动
     }
 
     private fun makeCurrent(session: Session?) {
