@@ -172,6 +172,7 @@ internal object LenientSurroundAudioSerializer : LenientEnumSerializer<MediaSurr
  * @property siteTitle 站点上的剧名, 认季用 (同搜到时)
  * @property folderId 分享里的文件夹; 文件直接放在分享根上时是根
  * @property path 分享里从根到这个文件夹的名字: 列它的时候照搜到时一样按这些名字认季
+ * @property partSearch 按副标题补搜来的 (「系列名 + 副标题」的条目, 见 `DriveSharePartSearch`): 再列时里面的文件也要认得出是这一部
  */
 @Serializable
 data class DriveRememberedShare(
@@ -180,6 +181,7 @@ data class DriveRememberedShare(
     val siteTitle: String,
     val folderId: String,
     val path: List<String>,
+    val partSearch: Boolean = false,
 )
 
 /**
