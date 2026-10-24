@@ -10,11 +10,15 @@
 package me.him188.ani.app.domain.mediasource.clouddrive
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import me.him188.ani.app.data.models.preference.CloudDriveAccount
-import me.him188.ani.app.data.models.preference.DriveRememberedShare
+import me.him188.ani.app.domain.media.continuation.DriveShareLineage
+import me.him188.ani.app.domain.media.continuation.LineageResolution
+import me.him188.ani.app.domain.media.continuation.PlaybackLineage
+import me.him188.ani.app.domain.mediasource.instance.createTestMediaSourceInstance
 import me.him188.ani.app.platform.PlaybackRequestHints
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.source.MediaFetchRequest
@@ -22,12 +26,14 @@ import me.him188.ani.utils.ktor.asScopedHttpClient
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 /**
- * 「分享搜索」记住播过的那一集所在的分享文件夹: 之后先只列它, 有要的那一集就不再去站点搜索.
+ * 分享里的资源顺着播放线索 ([DriveShareLineage]) 往下找: 记下播的那一集所在的分享文件夹, 之后查询先只列它、切集时直接从它取.
  */
-class CloudDriveShareRememberTest {
+class CloudDriveShareLineageTest {
     private val episode1 = video("f1", "Smoking.S01E01.mp4", parent = "d1", size = 300_000_000, token = "t1")
     private val episode3 = video("f3", "Smoking.S01E03.mp4", parent = "d1", size = 300_000_000, token = "t3")
 
@@ -78,10 +84,12 @@ class CloudDriveShareRememberTest {
     )
 
     @Test
-    fun `remembers the share folder of a played episode and lists it instead of searching`() = runTest {
+    fun `the played share folder becomes the lineage - queried first and resolved directly`() = runTest {
+        var lineage: PlaybackLineage? = null
         val test = testRegistry(
             accounts = accountsOf(CloudDriveAccount(cookie = "sid=p1", shareSaveFolderId = "save1")),
             client = { client },
+            playbackLineages = { lineage },
         )
         val source = CloudDriveShareSearchMediaSource(
             "share-site",
@@ -100,44 +108,49 @@ class CloudDriveShareRememberTest {
             client.asScopedHttpClient(),
             test.registry,
         )
+        val continuation = DriveEpisodeContinuation(test.registry, flowOf(listOf(createTestMediaSourceInstance(source))))
         val service = assertNotNull(test.registry.awaitService(TestDrive.ID))
-        val remembered = { test.accounts.account.rememberedShares }
 
         // 找字幕有超时上限, 模拟的 HTTP 跑在真线程上: 这一段用真实时间
         withContext(Dispatchers.Default) {
             suspend fun fetch(episode: Int) = source.fetch(request(episode)).results.toList().map { it.media }
 
-            // 第一集: 照常搜; 只是搜到还不记, 播了才记
+            // 第一集: 没有线索, 照常搜; 线索按搜到时的位置记 (剧名与路径用来认季)
             val first = fetch(1)
             assertEquals(listOf("share-site.s1.f1", "share-site.s1.f3"), first.map { it.mediaId })
             assertEquals(1, siteSearches)
-            assertEquals(emptyMap(), remembered())
+            lineage = continuation.lineageOf(first.first())
+            assertEquals(
+                DriveShareLineage("share-site", TestDrive.ID, DriveShareLocation("s1", "", "在超市后门吸烟的二人", "d1", listOf("S01"))),
+                lineage,
+            )
+            assertTrue(continuation.continues(lineage!!, first.last()))
             val ref = assertNotNull(service.placeholders.parseShareFile(first.first().download.uri))
-            assertEquals("d1", ref.folderId)
             val playback = service.resolveSharePlayback(ref)
             assertEquals("https://dl.drive.test/saved1", playback.url)
             // 本机数据按分享里的文件存: 转存的副本被删了重新转存, 内容还是同一个
             assertEquals("testdrive-share:s1/f1", playback.headers[PlaybackRequestHints.CACHE_KEY_HEADER])
-            assertEquals(
-                DriveRememberedShare("s1", "", "在超市后门吸烟的二人", "d1", listOf("S01")),
-                remembered()["share-site:571784"],
-            )
 
-            // 第三集在记下的文件夹里: 不去站点搜索, 也只列那一个文件夹
+            // 第三集在线索的文件夹里: 不去站点搜索, 也只列那一个文件夹
             folderListings.clear()
             assertEquals(listOf("share-site.s1.f1", "share-site.s1.f3"), fetch(3).map { it.mediaId })
             assertEquals(1, siteSearches)
             assertEquals(listOf("d1"), folderListings)
 
+            // 切集时候选里没有: 直接从线索的文件夹取
+            val resolved = assertIs<LineageResolution.Found>(continuation.resolve(lineage!!, request(3)))
+            assertEquals("share-site.s1.f3", resolved.media.mediaId)
+            assertEquals(LineageResolution.NotFound, continuation.resolve(lineage!!, request(2)))
+
             // 第二集文件夹里没有: 照常搜
             fetch(2)
             assertEquals(2, siteSearches)
 
-            // 分享被取消: 忘掉, 照常搜
+            // 分享被取消: 线索作废, 查询照常搜
             shareGone = true
+            assertEquals(LineageResolution.Gone, continuation.resolve(lineage!!, request(3)))
             assertEquals(emptyList(), fetch(3))
             assertEquals(3, siteSearches)
-            assertEquals(emptyMap(), remembered())
         }
     }
 
