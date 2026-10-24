@@ -10,6 +10,7 @@
 package me.him188.ani.app.domain.mediasource.rule
 
 import kotlinx.cinterop.ExperimentalForeignApi
+import me.him188.ani.app.domain.episode.ipadDiag
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.convert
 import kotlinx.cinterop.memScoped
@@ -45,6 +46,7 @@ internal actual fun platformAesCbcDecrypt(data: ByteArray, key: ByteArray, iv: B
             out.size.convert(),
             moved.ptr,
         )
+        ipadDiag("aes-cbc: status=$status data=${data.size}B key=${key.size}B iv=${iv.size}B -> ${moved.value}B")
         require(status.toInt() == kCCSuccess.toInt()) { "AES 解密失败 (CCCrypt 返回 $status)" }
         moved.value.toInt()
     }

@@ -9,6 +9,8 @@
 
 package me.him188.ani.app.domain.media.hls
 
+import me.him188.ani.app.domain.episode.ipadDiag
+import me.him188.ani.app.domain.episode.ipadDiagUrl
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.expectSuccess
 import io.ktor.client.request.get
@@ -506,10 +508,19 @@ private class LocalHlsProxySession private constructor(
             } catch (e: Throwable) {
                 // 图床地址的参数里常带签名, 只记主机
                 logger.warn(e) { "Failed to proxy disguised HLS segment #${segment.index} from ${runCatching { Url(segment.remoteUri).host }.getOrDefault("?")}" }
+                ipadDiag("hls segment #${segment.index} download failed: ${e::class.simpleName}: ${e.message?.take(160)}")
                 output.write(errorResponseHeader(502, "Bad Gateway").encodeToByteArray())
                 return
             }
-            serveBytes(rewriteWhole(segment, unwrapDisguisedTs(original), shiftTicks), request.headers["range"], output)
+            val unwrapped = unwrapDisguisedTs(original)
+            val startsWithTs = original.isNotEmpty() && original[0] == 0x47.toByte()
+            if (segment.index < 3 || (unwrapped === original && !startsWithTs)) {
+                ipadDiag(
+                    "hls segment #${segment.index} ${ipadDiagUrl(segment.remoteUri)}: ${original.size}B, " +
+                        if (unwrapped === original) (if (startsWithTs) "already TS" else "no TS sync found, passed as is") else "stripped ${original.size - unwrapped.size}B",
+                )
+            }
+            serveBytes(rewriteWhole(segment, unwrapped, shiftTicks), request.headers["range"], output)
             return
         }
         if (cached != null) {
@@ -538,6 +549,9 @@ private class LocalHlsProxySession private constructor(
                 this@LocalHlsProxySession.headers.forEach { (name, value) -> header(name, value) }
                 request.headers["range"]?.let { header(HttpHeaders.Range, it) }
             }.execute { response ->
+                if (segment.index < 3 || response.status.value !in 200..299) {
+                    ipadDiag("hls proxied segment #${segment.index} ${ipadDiagUrl(segment.remoteUri)}: ${response.status.value}")
+                }
                 val contentLength = response.contentLength()
                 val header = buildString {
                     append("HTTP/1.1 ").append(response.status.value).append(' ').append(response.status.description).append("\r\n")
@@ -594,6 +608,7 @@ private class LocalHlsProxySession private constructor(
             // 连接源站失败等: 若还没开始写响应, 回一个 502, 让播放器按加载失败处理; 已经在写正文则只能断开
             if (!headersWritten) {
                 logger.warn(e) { "Failed to proxy HLS segment ${segment.remoteUri}" }
+                ipadDiag("hls proxied segment #${segment.index} failed: ${e::class.simpleName}: ${e.message?.take(160)}")
                 output.write(errorResponseHeader(502, "Bad Gateway").encodeToByteArray())
             } else {
                 throw e
@@ -654,6 +669,9 @@ private class LocalHlsProxySession private constructor(
             return LocalPlaylist(content.rewriteMasterPlaylistUris(baseUri), isVod = false)
         }
         val isVod = isVodMediaPlaylist(content, baseUri)
+        if (options.unwrapDisguisedSegments) {
+            ipadDiag("hls media playlist ${ipadDiagUrl(baseUri)}: imageLikeSegments=${content.hasImageLikeHlsSegments()} vod=$isVod")
+        }
         if (!options.filterSegments) {
             return LocalPlaylist(rewriteMediaPlaylist(content, baseUri, options.proxiesSegmentsOf(content)).content, isVod)
         }
@@ -1057,6 +1075,9 @@ private class LocalHlsProxySession private constructor(
             // 可能要过滤的播放列表同时代理分片 (可代理时), 与 proxySegments 无关.
             val mayFilter = options.filterSegments && !analysis.isConclusive
             val needsProxy = isMaster || mayFilter || (options.proxiesSegmentsOf(manifest) && manifest.isProxyableMediaPlaylist(baseUri))
+            if (options.unwrapDisguisedSegments) {
+                ipadDiag("hls ${ipadDiagUrl(baseUri)}: master=$isMaster imageLikeSegments=${manifest.hasImageLikeHlsSegments()} forwardHeaders=${options.forwardRequestHeaders} -> proxy=$needsProxy")
+            }
             if (!needsProxy) return null
 
             val session = LocalHlsProxySession(

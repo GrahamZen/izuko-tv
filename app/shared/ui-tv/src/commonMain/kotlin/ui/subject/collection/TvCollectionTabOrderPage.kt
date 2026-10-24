@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.subject.collection
 
+import me.him188.ani.app.ui.foundation.IpadDiag
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -177,6 +178,7 @@ fun TvCollectionTabOrderPage(
         val current = draft
         val to = current.indexOf(target)
         if (to < 0 || item == target) return
+        IpadDiag.log("tab order touch: move ${item.type} to $to")
         draft = current.toMutableList().apply {
             remove(item)
             add(to, item)
@@ -279,7 +281,10 @@ fun TvCollectionTabOrderPage(
                 // 触屏没有返回键: 「完成」离开本页 (这页是盖在追番页上的窗口)
                 if (touch) {
                     Spacer(Modifier.height(12.dp))
-                    AniFocusActionButton(onClick = ::leave) {
+                    AniFocusActionButton(onClick = {
+                        IpadDiag.log("tab order done: ${draft.map { it.type }}")
+                        leave()
+                    }) {
                         Text(stringResource(Lang.tv_adjust_done))
                     }
                 }

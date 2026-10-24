@@ -9,6 +9,8 @@
 
 package me.him188.ani.app.domain.mediasource.clouddrive
 
+import me.him188.ani.app.domain.episode.ipadDiag
+import me.him188.ani.app.domain.episode.ipadDiagUrl
 import io.ktor.client.HttpClient
 import io.ktor.http.HttpHeaders
 import kotlinx.coroutines.CancellationException
@@ -999,6 +1001,10 @@ class CloudDriveService internal constructor(
             CloudDrivePlaybackMode.ORIGINAL -> if (preferTranscoded) transcodedUrlOrNull(fileId) else null
             CloudDrivePlaybackMode.TRANSCODED -> if (protocol.supportsTranscoded) bestTranscodedUrl(api.transcodedVideos(fileId)) else null
         }
+        ipadDiag(
+            "cloud drive $driveId playback: mode=${account.playbackMode} preferTranscoded=$preferTranscoded " +
+                "supportsTranscoded=${protocol.supportsTranscoded} -> ${transcoded?.let { "transcoded ${ipadDiagUrl(it)}" } ?: "original"}",
+        )
         val download = if (transcoded == null) api.download(fileId) else null
         val url = transcoded ?: download!!.url
         val headers = playbackHeaders(currentAccount())

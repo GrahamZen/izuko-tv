@@ -11,6 +11,7 @@ package me.him188.ani.app.domain.mediasource
 
 import kotlinx.atomicfu.locks.SynchronizedObject
 import kotlinx.atomicfu.locks.synchronized
+import me.him188.ani.app.domain.episode.ipadDiag
 import platform.Foundation.NSString
 import platform.Foundation.stringByApplyingTransform
 
@@ -22,13 +23,24 @@ private val convertedLock = SynchronizedObject()
 
 private const val CACHE_SIZE = 4096
 
+private var t2sNullLogged = false
+private var t2sChangedLogged = false
+
 /** Foundation 的 ICU 转写 (与安卓用的是同一个转写规则). */
 internal actual fun String.toSimplifiedChinese(): String {
     // 繁转简只改中日韩字符, 没有的原样返回
     if (none { it.code >= 0x2E80 }) return this
     synchronized(convertedLock) { converted[this] }?.let { return it }
     @Suppress("CAST_NEVER_SUCCEEDS")
-    val result = (this as NSString).stringByApplyingTransform("Traditional-Simplified", reverse = false) ?: this
+    val transformed = (this as NSString).stringByApplyingTransform("Traditional-Simplified", reverse = false)
+    if (transformed == null && !t2sNullLogged) {
+        t2sNullLogged = true
+        ipadDiag("t2s: transform returned null for '${take(12)}'")
+    } else if (transformed != null && transformed != this && !t2sChangedLogged) {
+        t2sChangedLogged = true
+        ipadDiag("t2s works: '${take(12)}' -> '${transformed.take(12)}'")
+    }
+    val result = transformed ?: this
     synchronized(convertedLock) {
         if (converted.size >= CACHE_SIZE) converted.remove(converted.keys.first())
         converted[this] = result

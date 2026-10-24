@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.subject.episode
 
+import me.him188.ani.app.domain.episode.ipadDiag
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.Stable
@@ -563,7 +564,10 @@ class RetainedPlaybackSessionHolder : ViewModel(), PlaybackSessionEntry, KoinCom
                     if (pageVisible && appForeground.value) return@collect
                     // 播放页上允许回桌面自动进系统小窗时, 退到后台不按: 进了小窗或在后台接着放都交给系统,
                     // 同 AutoPauseEffect (iOS 进小窗时也先报退到后台, 这里一按小窗就停了)
-                    if (pageVisible && vm.autoPictureInPictureArmed) return@collect
+                    if (pageVisible && vm.autoPictureInPictureArmed) {
+                        ipadDiag("app background: auto PiP armed, not pausing")
+                        return@collect
+                    }
                     // 记账: 回到播放页 (且应用在前台) 时由上面那一半原样还回去
                     vm.autoPausedOffPage = true
                     // 日志分两句: 后台自己播起来是"没人看着的时候发生的事", 事后只能从日志还原
