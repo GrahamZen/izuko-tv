@@ -675,7 +675,7 @@ private fun EpisodeScreenSidebar(
                                 page.loadError?.let { vm.retryLoad(it) }
                             },
                             danmakuListState = vm.danmakuListState.collectAsStateWithLifecycle().value,
-                            hideSelectorOnSelect = vm.videoScaffoldConfig.hideSelectorOnSelect,
+                            hideSelectorOnSelect = vm.videoScaffoldConfig.hideSelectorOnSelectForCurrentUi(),
                             onBeforeOpenMediaSelector = {
                                 if (vm.mediaSelectorMode == null && !page.isLoading) {
                                     vm.mediaSelectorMode = page.initialMediaSelectorMode
@@ -841,7 +841,7 @@ private fun EpisodeScreenPhoneDetails(
                             vm.mediaSelectorMode = page.initialMediaSelectorMode
                         }
                     },
-                    hideSelectorOnSelect = vm.videoScaffoldConfig.hideSelectorOnSelect,
+                    hideSelectorOnSelect = vm.videoScaffoldConfig.hideSelectorOnSelectForCurrentUi(),
                     onMediaSelectorShown = { vm.onMediaSelectorShown() },
                     onMediaSelectorHidden = { vm.onMediaSelectorHidden() },
                     fullSearch = vm.fullMediaSearch.collectAsStateWithLifecycle().value,
@@ -1275,7 +1275,7 @@ private fun EpisodeVideo(
                                 fetchRequest = page.fetchRequest,
                                 onFetchRequestChange = { vm.updateFetchRequest(it) },
                                 manualBrowseState = vm.manualBrowseState,
-                                hideOnSelect = vm.videoScaffoldConfig.hideSelectorOnSelect,
+                                hideOnSelect = vm.videoScaffoldConfig.hideSelectorOnSelectForCurrentUi(),
                                 fullSearch = vm.fullMediaSearch.collectAsStateWithLifecycle().value,
                                 onFullSearchChange = { vm.setFullMediaSearch(it) },
                             )

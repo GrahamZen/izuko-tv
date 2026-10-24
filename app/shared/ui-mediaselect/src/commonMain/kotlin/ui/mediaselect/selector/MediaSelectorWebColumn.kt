@@ -11,6 +11,7 @@ package me.him188.ani.app.ui.mediaselect.selector
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.CircularProgressIndicator
@@ -37,6 +39,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
@@ -114,7 +117,9 @@ fun MediaSelectorWebSourcesColumn(
     onResolveCaptcha: (WebSource) -> Unit,
     onRequestManualSearch: (() -> Unit)?,
     modifier: Modifier = Modifier,
-    preferredSourceContainerColor: Color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.33f)
+    preferredSourceContainerColor: Color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.33f),
+    /** 点了源的名字 (进这个源的全部条目, 见 SourceResourcesPage); null 时名字不可点. */
+    onOpenSource: ((WebSource) -> Unit)? = null,
 ) {
     val card = @Composable { source: WebSource ->
         WebSourceCard(
@@ -129,7 +134,8 @@ fun MediaSelectorWebSourcesColumn(
             onResolveCaptcha = {
                 onResolveCaptcha(source)
             },
-            Modifier
+            onClickName = onOpenSource?.let { open -> { open(source) } },
+            modifier = Modifier
                 .fillMaxWidth()
                 .ifThen(source.isPreferred) {
                     background(preferredSourceContainerColor)
@@ -183,6 +189,7 @@ private fun WebSourceCard(
     onSelect: (WebSourceChannel) -> Unit,
     onRefresh: () -> Unit,
     onResolveCaptcha: () -> Unit,
+    onClickName: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 
     ) {
@@ -195,7 +202,11 @@ private fun WebSourceCard(
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Row(
-            Modifier.heightIn(min = minHeight),
+            Modifier.heightIn(min = minHeight)
+                .ifThen(onClickName != null) {
+                    clip(RoundedCornerShape(8.dp)).clickable { onClickName?.invoke() }
+                        .testTag(AutoMatchPageTestTags.sourceName(source.instanceId))
+                },
             verticalAlignment = Alignment.CenterVertically,
         ) {
             SourceIcon(
@@ -215,6 +226,14 @@ private fun WebSourceCard(
                     softWrap = true,
                     maxLines = 2,
                     overflow = TextOverflow.Clip,
+                )
+            }
+            if (onClickName != null) {
+                // 名字可点 (进这个源的全部条目): 末尾一个小箭头
+                Icon(
+                    Icons.AutoMirrored.Rounded.KeyboardArrowRight, null,
+                    Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
