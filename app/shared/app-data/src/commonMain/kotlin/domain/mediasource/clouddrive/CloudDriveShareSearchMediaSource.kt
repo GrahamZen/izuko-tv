@@ -151,7 +151,7 @@ internal class DriveShareSearchEngine(
     private val config: DriveShareSearchConfig,
     private val shares: DriveShareBrowser,
     internal val links: DriveShareLinks,
-    numbering: TmdbEpisodeNumbering = TmdbEpisodeNumbering.None,
+    private val numbering: TmdbEpisodeNumbering = TmdbEpisodeNumbering.None,
     /** 搜到的分享、合集里的文件夹、自动记下的分享文件夹是同系列别的作品的不要 (见 [OtherWorkGuard]) */
     private val otherWorks: OtherWorks = OtherWorks.None,
     /** 列记下的分享文件夹 ([matchRemembered]): 每次现列, 分享取消了、新集上传了马上就知道. 搜索用 [shares]. */
@@ -289,11 +289,51 @@ internal class DriveShareSearchEngine(
 
         val skipFolders = reader.otherSeasonFolders(request)
         val semaphore = Semaphore(SHARE_CONCURRENCY)
-        return coroutineScope {
+        val matches = coroutineScope {
             selected.map { share ->
                 async { semaphore.withPermit { matchShare(request, share, skipFolders, otherWork) } }
             }.awaitAll().flatten()
         }
+        val parts = otherWork?.parts
+        return if (matches.isEmpty() && parts != null) searchParts(request, parts, skipFolders, otherWork) else matches
+    }
+
+    /**
+     * 按条目名一集都没对上时, 「系列名 + 副标题」的条目再按副标题搜 (见 [DriveSharePartSearch]):
+     * 分享标题与里面的文件都要认得出是这一部.
+     */
+    private suspend fun searchParts(
+        request: MediaFetchRequest,
+        parts: DriveSharePartSearch,
+        skipFolders: (List<String>) -> Set<String>,
+        otherWork: OtherWorkGuard?,
+    ): List<DriveShareMatch> {
+        val found = LinkedHashMap<String, FoundShare>()
+        for (keyword in parts.keywords) {
+            if (config.detailLinkSelector.isNotBlank()) delay(PAGE_SEARCH_INTERVAL)
+            for (share in searchSite(keyword, titleFilter = parts::acceptsTitle)) found.putIfAbsent(share.shareId, share)
+            if (found.isNotEmpty()) break
+        }
+        if (found.isEmpty()) {
+            logger.info { "Part search: no shares for ${parts.keywords}" }
+            return emptyList()
+        }
+        val season = DriveSubjectMatcher.subjectNamesOf(request).firstNotNullOfOrNull { DriveNameParser.parseSubjectSeason(it) } ?: 1
+        val selected = bySeason(found.values, season).take(config.maxShares.coerceAtLeast(1))
+        val semaphore = Semaphore(SHARE_CONCURRENCY)
+        val matches = coroutineScope {
+            selected.map { share ->
+                async { semaphore.withPermit { matchShare(request, share, skipFolders, otherWork) } }
+            }.awaitAll().flatten()
+        }
+        val tmdbEpisodes = numbering.of(request)
+        val (kept, dropped) = matches.partition { parts.keeps(it, request, tmdbEpisodes) }
+        logger.info {
+            "Part search: ${kept.size} of ${matches.size} files from ${selected.size} of ${found.size} shares for ${parts.keywords}" +
+                    dropped.take(LOGGED_REJECTED).joinToString(prefix = ", not this part: ") { (it.folders.takeLast(1) + it.file.fileName).joinToString("/") }
+                        .takeIf { dropped.isNotEmpty() }.orEmpty()
+        }
+        return kept.map { it.fromPartSearch() }
     }
 
     /**
@@ -303,7 +343,8 @@ internal class DriveShareSearchEngine(
     suspend fun matchRemembered(request: MediaFetchRequest, remembered: DriveRememberedShare): List<DriveShareMatch>? {
         // 自动选错过一次的会被记下 (系列里别的作品): 当作失效, 由调用方忘掉它、照常搜
         val path = (listOf(remembered.siteTitle) + remembered.path).joinToString("/")
-        if (otherWorks.of(request)?.isOtherWork(path) == true) {
+        val otherWork = otherWorks.of(request)
+        if (otherWork?.isOtherWork(path) == true) {
             logger.info { "Remembered share ${remembered.shareId} ($path) is another work, forgetting it" }
             return null
         }
@@ -321,17 +362,29 @@ internal class DriveShareSearchEngine(
             logger.warn(e) { "Failed to read remembered share ${remembered.shareId}" }
             return emptyList()
         }
-        return reader.match(request, share, videos)
+        val matches = reader.match(request, share, videos)
+        if (!remembered.partSearch) return matches
+        // 补搜来的: 同补搜时一样, 认不出是这一部的不要 (认不出时系列关系图没了, 这次不用它)
+        val parts = otherWork?.parts ?: return emptyList()
+        val tmdbEpisodes = numbering.of(request)
+        return matches.filter { parts.keeps(it, request, tmdbEpisodes) }.map { it.fromPartSearch() }
     }
 
-    /** 搜一个关键词, 返回剧名对得上的结果里的全部分享链接. */
-    internal suspend fun searchSite(keyword: String, otherWork: OtherWorkGuard? = null): List<FoundShare> {
+    /**
+     * 搜一个关键词, 返回剧名对得上的结果里的全部分享链接. 给了 [titleFilter] 时剧名按它认 (补搜, 见 [DriveSharePartSearch.acceptsTitle]).
+     */
+    internal suspend fun searchSite(
+        keyword: String,
+        otherWork: OtherWorkGuard? = null,
+        titleFilter: ((String) -> Boolean)? = null,
+    ): List<FoundShare> {
         val url = TextTemplate.expand(config.searchUrl, mapOf("keyword" to keyword)) { true }
         val bytes = fetch(url) ?: return emptyList()
         val normalizedKeyword = DriveNameParser.normalize(keyword)
         val rejected = mutableListOf<String>()
         // 剧名对得上, 而且不是同系列别的作品 (「机动战士高达SEED」不是「机动战士高达」)
         fun accepts(title: String): Boolean {
+            titleFilter?.let { return it(title) }
             if (!titleMatches(title, normalizedKeyword)) return false
             if (otherWork?.rejectsTitle(title) == true) {
                 rejected += title
