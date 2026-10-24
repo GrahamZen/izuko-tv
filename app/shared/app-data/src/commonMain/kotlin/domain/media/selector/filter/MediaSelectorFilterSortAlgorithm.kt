@@ -13,6 +13,7 @@ import me.him188.ani.app.data.models.preference.MediaPreference
 import me.him188.ani.app.data.models.preference.MediaPreference.Companion.ANY_FILTER
 import me.him188.ani.app.data.models.preference.MediaSelectorSettings
 import me.him188.ani.app.data.models.subject.SubjectInfo
+import me.him188.ani.app.domain.media.isFileContainerUnplayableOnThisPlatform
 import me.him188.ani.app.domain.media.selector.MatchMetadata
 import me.him188.ani.app.platform.perf.PerfTimeline
 import me.him188.ani.app.domain.media.selector.MaybeExcludedMedia
@@ -308,6 +309,9 @@ class MediaSelectorFilterSortAlgorithm {
             }
             return include() // 本地缓存总是要显示
         }
+
+        // iOS 上 mkv 这类放不了的文件
+        if (media.isFileContainerUnplayableOnThisPlatform()) return exclude(MediaExclusionReason.UnsupportedByPlatformPlayer)
 
         if (episodeMatch != null && isPublishedLongBeforeAiring(media.publishedTime, context.episodeInfo?.airDate)) {
             return exclude(MediaExclusionReason.PublishedBeforeAiring)

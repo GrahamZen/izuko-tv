@@ -497,6 +497,21 @@ private class LocalHlsProxySession private constructor(
     private suspend fun serveSegment(segment: ProxiedSegment, request: HlsProxyRequest, output: HlsProxyResponseSink) {
         val shiftTicks = segment.alignment?.shiftTicks?.await()
         val cached = segmentCache.getCompleted(segment.remoteUri) ?: segmentCache.awaitInFlight(segment.remoteUri)
+        // 伪装成图片的分片: 取整片去掉前面的图片再给播放器 (见 unwrapDisguisedTs)
+        if (options.unwrapDisguisedSegments && segment.remoteUri.isImageLikeHlsUri()) {
+            val original = cached ?: try {
+                downloadSegment(segment.remoteUri)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                // 图床地址的参数里常带签名, 只记主机
+                logger.warn(e) { "Failed to proxy disguised HLS segment #${segment.index} from ${runCatching { Url(segment.remoteUri).host }.getOrDefault("?")}" }
+                output.write(errorResponseHeader(502, "Bad Gateway").encodeToByteArray())
+                return
+            }
+            serveBytes(rewriteWhole(segment, unwrapDisguisedTs(original), shiftTicks), request.headers["range"], output)
+            return
+        }
         if (cached != null) {
             serveBytes(rewriteWhole(segment, cached, shiftTicks), request.headers["range"], output)
             return
@@ -640,7 +655,7 @@ private class LocalHlsProxySession private constructor(
         }
         val isVod = isVodMediaPlaylist(content, baseUri)
         if (!options.filterSegments) {
-            return LocalPlaylist(rewriteMediaPlaylist(content, baseUri, options.proxySegments).content, isVod)
+            return LocalPlaylist(rewriteMediaPlaylist(content, baseUri, options.proxiesSegmentsOf(content)).content, isVod)
         }
         val mayContainAds = !analysis.isConclusive
         val proxyable = if (mayContainAds) parseProxyableMediaPlaylist(content, baseUri) else null
@@ -655,7 +670,7 @@ private class LocalHlsProxySession private constructor(
                     "removed groups: ${filterResult.removedGroups}, oversized groups: ${filterResult.oversizedGroups}"
         }
         recordHlsFilterProbe(baseUri, content, filterResult)
-        val rewritten = rewriteMediaPlaylist(filterResult.content, baseUri, options.proxySegments || mayContainAds)
+        val rewritten = rewriteMediaPlaylist(filterResult.content, baseUri, options.proxiesSegmentsOf(content) || mayContainAds)
         startPrefetch?.onPlaylistReady(rewritten.segments)
         return LocalPlaylist(rewritten.content, isVod)
     }
@@ -1041,7 +1056,7 @@ private class LocalHlsProxySession private constructor(
             // 要探测时间戳才知道有没有广告, 这里只判断"可能要过滤", 结果由 toLocalPlaylist 给出.
             // 可能要过滤的播放列表同时代理分片 (可代理时), 与 proxySegments 无关.
             val mayFilter = options.filterSegments && !analysis.isConclusive
-            val needsProxy = isMaster || mayFilter || (options.proxySegments && manifest.isProxyableMediaPlaylist(baseUri))
+            val needsProxy = isMaster || mayFilter || (options.proxiesSegmentsOf(manifest) && manifest.isProxyableMediaPlaylist(baseUri))
             if (!needsProxy) return null
 
             val session = LocalHlsProxySession(
