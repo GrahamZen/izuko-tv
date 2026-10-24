@@ -27,6 +27,7 @@ import me.him188.ani.datasources.api.matcher.WebVideo
 import me.him188.ani.datasources.api.matcher.WebVideoMatcher
 import me.him188.ani.datasources.api.matcher.WebVideoMatcherContext
 import me.him188.ani.datasources.api.matcher.WebViewConfig
+import me.him188.ani.datasources.api.matcher.sniffTimeoutMillis
 import me.him188.ani.datasources.api.topic.ResourceLocation
 import me.him188.ani.utils.ktor.UrlHelpers
 import me.him188.ani.utils.logging.info
@@ -75,7 +76,6 @@ class IosWebMediaResolver(
         if (!supports(media)) throw UnsupportedMediaException(media)
 
         val resolverSettings = settingsRepository.videoResolverSettings.flow.first()
-        val extractor = IosWebViewVideoExtractor(resolverSettings.effectiveResourceExtractionTimeoutMillis)
         // Gather all matchers: from the media source + from the classpath
         val matchersFromMediaSource = matcherLoader.loadMatchers(media.mediaSourceId)
 
@@ -83,6 +83,9 @@ class IosWebMediaResolver(
 
         val allMatchers = matchersFromMediaSource
         val context = WebVideoMatcherContext(media)
+        allMatchers.resolveDirectlyOrNull(media, context)?.let { return it }
+        val timeoutMillis = allMatchers.sniffTimeoutMillis(resolverSettings.effectiveResourceExtractionTimeoutMillis)
+        val extractor = IosWebViewVideoExtractor(timeoutMillis)
 
         fun match(url: String): WebVideoMatcher.MatchResult? {
             return allMatchers
@@ -98,6 +101,7 @@ class IosWebMediaResolver(
         logger.info { "Final config: ${config.toLogText()}" }
 
         var video: WebVideo? = null
+        reportResolveAttempt(timeoutMillis)
         withContext(Dispatchers.Default) {
             withContext(Dispatchers.Main) { extractor }.getVideoResourceUrl(
                 context = this@IosWebMediaResolver.iosContext,
@@ -246,6 +250,7 @@ class IosWebViewVideoExtractor(
                     forMainFrameOnly = false,
                 ),
             )
+            addUserScript(iosVideoSniffExtraScript())
         }
 
         webView = WKWebView(

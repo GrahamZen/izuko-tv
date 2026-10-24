@@ -219,6 +219,29 @@ class CloudDriveServiceTest {
     }
 
     @Test
+    fun `original mode tries the transcoded stream when the device cannot play the file`() = runTest {
+        val (service, _) = service { request ->
+            when (request.url.encodedPath) {
+                "/api/files/play" -> reply("""{"code":0,"data":{"streams":[{"quality":"low","available":true,"url":"https://v.drive.test/low","height":270}]}}""")
+                else -> reply(downloadF1)
+            }
+        }
+        assertEquals("https://v.drive.test/low", service.resolvePlayback("f1", preferTranscoded = true).url)
+        assertEquals("https://dl.drive.test/f1", service.resolvePlayback("f1").url)
+    }
+
+    @Test
+    fun `plays the original file when there is no transcoded stream to fall back to`() = runTest {
+        val (service, _) = service { request ->
+            when (request.url.encodedPath) {
+                "/api/files/play" -> reply("""{"code":0,"data":{"streams":[]}}""")
+                else -> reply(downloadF1)
+            }
+        }
+        assertEquals("https://dl.drive.test/f1", service.resolvePlayback("f1", preferTranscoded = true).url)
+    }
+
+    @Test
     fun `qr login saves cookies from every step`() = runTest {
         var polls = 0
         val (service, settings) = service(CloudDriveAccount.Default) { request ->
