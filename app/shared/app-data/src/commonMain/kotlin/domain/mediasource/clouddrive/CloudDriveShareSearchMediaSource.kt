@@ -19,8 +19,12 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
@@ -173,12 +177,18 @@ internal class DriveShareSearchEngine(
     /** 是否配置了要查的地方. */
     val isConfigured: Boolean get() = fixedShares.isNotEmpty() || config.searchUrl.isNotBlank()
 
-    /** 先查固定的分享; 当前这一集在里面找到了就不再搜站点. */
-    suspend fun search(request: MediaFetchRequest): List<DriveShareMatch> {
+    /** 全部搜完再一起给, 见 [searchInBatches]. */
+    suspend fun search(request: MediaFetchRequest): List<DriveShareMatch> = searchInBatches(request).toList().flatten()
+
+    /**
+     * 先查固定的分享, 当前这一集在里面找到了就不再搜站点. 每查完一个分享 (固定分享里的一个文件夹) 就交出它认出的剧集,
+     * 选源面板不用等最慢的那个分享; 补搜来的最后交. 不同分享里的同一个文件不去重.
+     */
+    fun searchInBatches(request: MediaFetchRequest): Flow<List<DriveShareMatch>> = channelFlow {
         val otherWork = otherWorks.of(request)
-        val fixed = if (fixedShares.isEmpty()) emptyList() else searchFixedShares(request, otherWork)
-        if (fixed.any { it.isEpisodeOf(request) } || config.searchUrl.isBlank()) return fixed
-        return fixed + searchSites(request, otherWork)
+        val fixed = if (fixedShares.isEmpty()) emptyList() else searchFixedShares(request, otherWork) { send(it) }
+        if (fixed.any { it.isEpisodeOf(request) } || config.searchUrl.isBlank()) return@channelFlow
+        searchSites(request, otherWork) { send(it) }
     }
 
     // region 固定的分享
@@ -186,7 +196,12 @@ internal class DriveShareSearchEngine(
     private val indexLock = Mutex()
     private val indexes = HashMap<String, DriveShareIndex>()
 
-    private suspend fun searchFixedShares(request: MediaFetchRequest, otherWork: OtherWorkGuard?): List<DriveShareMatch> {
+    /** 固定分享里对得上的文件夹; 每读完一个文件夹就交给 [deliver]. */
+    private suspend fun searchFixedShares(
+        request: MediaFetchRequest,
+        otherWork: OtherWorkGuard?,
+        deliver: suspend (List<DriveShareMatch>) -> Unit,
+    ): List<DriveShareMatch> {
         val keywords = DriveSubjectMatcher.keywordsOf(DriveSubjectMatcher.subjectNamesOf(request))
             .map { DriveNameParser.normalize(it) }
             .filter { it.length >= 2 }
@@ -223,7 +238,7 @@ internal class DriveShareSearchEngine(
                             logger.warn { "Failed to read folder ${folder.path} of share ${link.shareId}: $e" }
                             emptyList()
                         }
-                    }
+                    }.also { deliver(it) }
                 }
             }.awaitAll().flatten()
         }
@@ -271,10 +286,15 @@ internal class DriveShareSearchEngine(
 
     // region 站点搜索
 
-    private suspend fun searchSites(request: MediaFetchRequest, otherWork: OtherWorkGuard?): List<DriveShareMatch> {
+    /** 站点搜到的分享; 每读完一个分享就把认出的剧集交给 [deliver]. */
+    private suspend fun searchSites(
+        request: MediaFetchRequest,
+        otherWork: OtherWorkGuard?,
+        deliver: suspend (List<DriveShareMatch>) -> Unit,
+    ) {
         val names = DriveSubjectMatcher.subjectNamesOf(request)
         val keywords = DriveSubjectMatcher.keywordsOf(names).take(config.maxKeywords.coerceAtLeast(1))
-        if (keywords.isEmpty() || config.searchUrl.isBlank()) return emptyList()
+        if (keywords.isEmpty() || config.searchUrl.isBlank()) return
 
         // 名字都是同一部番, 前一个名字找到了就不再换名字搜: 这类站连着搜几次就会回 5xx.
         // 站点按标题原样找: 名字带装饰符号 (`浪客剑心 －明治剑客浪漫谭－ 京都动乱`) 原样搜不到时, 先去掉符号再搜一次同一个名字
@@ -296,14 +316,14 @@ internal class DriveShareSearchEngine(
         val semaphore = Semaphore(SHARE_CONCURRENCY)
         val matches = coroutineScope {
             selected.map { share ->
-                async { semaphore.withPermit { matchShare(request, share, skipFolders, otherWork) } }
+                async { semaphore.withPermit { matchShare(request, share, skipFolders, otherWork) }.also { deliver(it) } }
             }.awaitAll().flatten()
         }
         // 按条目名认上的没覆盖每一集时再按副标题补搜: 只有副标题搜得到的分享常更全 (「京都动乱第二季 更46」)
         val parts = otherWork?.parts
-        if (parts == null || coversAllEpisodes(matches, request)) return matches
+        if (parts == null || coversAllEpisodes(matches, request)) return
         val seen = matches.mapTo(HashSet()) { it.share.shareId to it.file.fid }
-        return matches + searchParts(request, parts, skipFolders, otherWork).filter { (it.share.shareId to it.file.fid) !in seen }
+        searchParts(request, parts, skipFolders, otherWork) { kept -> deliver(kept.filter { (it.share.shareId to it.file.fid) !in seen }) }
     }
 
     /** [matches] 覆盖了条目的每一集正片 (sort 或 ep 对得上). */
@@ -314,14 +334,15 @@ internal class DriveShareSearchEngine(
 
     /**
      * 按条目名认上的没覆盖条目的每一集时, 「系列名 + 副标题」的条目再按副标题搜 (见 [DriveSharePartSearch]):
-     * 分享标题与里面的文件都要认得出是这一部.
+     * 分享标题与里面的文件都要认得出是这一部. 每读完一个分享就把认得出的交给 [deliver].
      */
     private suspend fun searchParts(
         request: MediaFetchRequest,
         parts: DriveSharePartSearch,
         skipFolders: (List<String>) -> Set<String>,
         otherWork: OtherWorkGuard?,
-    ): List<DriveShareMatch> {
+        deliver: suspend (List<DriveShareMatch>) -> Unit,
+    ) {
         val found = LinkedHashMap<String, FoundShare>()
         for (keyword in parts.keywords) {
             if (config.detailLinkSelector.isNotBlank()) delay(PAGE_SEARCH_INTERVAL)
@@ -330,24 +351,28 @@ internal class DriveShareSearchEngine(
         }
         if (found.isEmpty()) {
             logger.info { "Part search: no shares for ${parts.keywords}" }
-            return emptyList()
+            return
         }
         val season = reader.subjectSeason(request, otherWork)?.number ?: 1
         val selected = bySeason(found.values, season).take(config.maxShares.coerceAtLeast(1))
-        val semaphore = Semaphore(SHARE_CONCURRENCY)
-        val matches = coroutineScope {
-            selected.map { share ->
-                async { semaphore.withPermit { matchShare(request, share, skipFolders, otherWork) } }
-            }.awaitAll().flatten()
-        }
         val tmdbEpisodes = numbering.of(request)
-        val (kept, dropped) = matches.partition { parts.keeps(it, request, tmdbEpisodes) }
+        val semaphore = Semaphore(SHARE_CONCURRENCY)
+        val results = coroutineScope {
+            selected.map { share ->
+                async {
+                    val matches = semaphore.withPermit { matchShare(request, share, skipFolders, otherWork) }
+                    matches.partition { parts.keeps(it, request, tmdbEpisodes) }
+                        .also { (kept, _) -> deliver(kept.map { it.fromPartSearch() }) }
+                }
+            }.awaitAll()
+        }
+        val kept = results.flatMap { it.first }
+        val dropped = results.flatMap { it.second }
         logger.info {
-            "Part search: ${kept.size} of ${matches.size} files from ${selected.size} of ${found.size} shares for ${parts.keywords}" +
+            "Part search: ${kept.size} of ${kept.size + dropped.size} files from ${selected.size} of ${found.size} shares for ${parts.keywords}" +
                     dropped.take(LOGGED_REJECTED).joinToString(prefix = ", not this part: ") { (it.folders.takeLast(1) + it.file.fileName).joinToString("/") }
                         .takeIf { dropped.isNotEmpty() }.orEmpty()
         }
-        return kept.map { it.fromPartSearch() }
     }
 
     /**
@@ -616,19 +641,34 @@ class CloudDriveShareSearchMediaSource(
         if (!drive.account.first().isLoggedIn) throw CloudDriveAuthException(driveId = drive.driveId)
         val subjectName = CloudDriveMediaSource.subjectNameOf(query)
         val subjectId = query.subjectId.toIntOrNull()
-        val onLineage = subjectId?.let { drive.lineageShareOf(it, mediaSourceId) }?.let { engine.matchFolder(query, it) }.orEmpty()
-        val searched = if (onLineage.any { it.isEpisodeOf(query) }) {
-            logger.info { "${arguments.name}: episode ${query.episodeSort} of subject ${query.subjectId} is in the lineage share, skipping search" }
-            emptyList()
-        } else {
-            engine.search(query)
+        // 每认出一个分享的剧集就交给选源 (见 DriveShareSearchEngine.searchInBatches); 自动选源等这个源查完才从里面挑.
+        // 不用 SinglePagePagedSource: 它把整个 flow 收完才给第一页
+        val finishedState = MutableStateFlow(false)
+        val totalSizeState = MutableStateFlow<Int?>(null)
+        return object : SizedSource<MediaMatch> {
+            override val results: Flow<MediaMatch> = channelFlow {
+                val seen = HashSet<String>()
+                suspend fun deliver(matches: List<DriveShareMatch>) {
+                    val fresh = matches.filter { seen.add("${it.share.shareId}/${it.file.fid}") }
+                    if (fresh.isEmpty()) return
+                    drive.noteShareMatches(fresh)
+                    for (match in fresh) {
+                        send(MediaMatch(match.toShareMedia(drive.placeholders, mediaSourceId, arguments.name, subjectName), MatchKind.FUZZY))
+                    }
+                }
+                val onLineage = subjectId?.let { drive.lineageShareOf(it, mediaSourceId) }?.let { engine.matchFolder(query, it) }.orEmpty()
+                deliver(onLineage)
+                if (onLineage.any { it.isEpisodeOf(query) }) {
+                    logger.info { "${arguments.name}: episode ${query.episodeSort} of subject ${query.subjectId} is in the lineage share, skipping search" }
+                } else {
+                    engine.searchInBatches(query).collect { deliver(it) }
+                }
+                totalSizeState.value = seen.size
+                finishedState.value = true
+            }
+            override val finished: Flow<Boolean> get() = finishedState
+            override val totalSize: Flow<Int?> get() = totalSizeState
         }
-        drive.noteShareMatches(onLineage + searched)
-        val seen = HashSet<String>()
-        val medias = (onLineage + searched)
-            .filter { seen.add("${it.share.shareId}/${it.file.fid}") }
-            .map { MediaMatch(it.toShareMedia(drive.placeholders, mediaSourceId, arguments.name, subjectName), MatchKind.FUZZY) }
-        return SinglePagePagedSource { medias.asFlow() }
     }
 
     /**

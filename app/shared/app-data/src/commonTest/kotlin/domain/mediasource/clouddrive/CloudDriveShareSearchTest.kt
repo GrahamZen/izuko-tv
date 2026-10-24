@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.domain.mediasource.clouddrive
 
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.source.MediaFetchRequest
@@ -122,6 +123,15 @@ class CloudDriveShareSearchTest {
         engine.search(request("别的番 －副标题－", "Frieren"))
         assertEquals(3, urls.size)
         assertTrue("Frieren" in urls[2])
+    }
+
+    @Test
+    fun `each share hands over its episodes as soon as it is read`() = runTest {
+        val response = """{"list":[{"vod_name":"葬送的芙莉莲第二季","vod_down_url":"https://share.drive.test/s/share1 https://share.drive.test/s/share2"}]}"""
+        val shares = shares(mapOf("share1" to share1, "share2" to share1))
+        val batches = engine(shares, response = response).searchInBatches(request("葬送的芙莉莲")).toList()
+        assertEquals(listOf(listOf("s1e01", "s1e02"), listOf("s1e01", "s1e02")), batches.filter { it.isNotEmpty() }.map { batch -> batch.map { it.file.fid } })
+        assertEquals(setOf("share1", "share2"), batches.flatten().map { it.share.shareId }.toSet())
     }
 
     @Test
