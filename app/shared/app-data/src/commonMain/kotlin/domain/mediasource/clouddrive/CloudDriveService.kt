@@ -307,6 +307,7 @@ class CloudDriveService internal constructor(
                 if (match.file.parentFid.isEmpty()) continue
                 val share = DriveRememberedShare(
                     match.share.shareId, match.share.passcode, match.share.siteTitle, match.file.parentFid, match.folders,
+                    partSearch = match.partSearch,
                 )
                 val fileKey = shareKey(match.share.shareId, match.file.fid)
                 recentShareMatches.remove(fileKey)
