@@ -84,5 +84,8 @@ class DriveEpisodeContinuation(
         return LineageResolution.Found(media)
     }
 
+    /** 只列线索里的那一个文件夹 (分享或自己网盘), 一两秒. */
+    override fun isQuickToResolve(lineage: PlaybackLineage): Boolean = lineage is DriveShareLineage || lineage is DriveFolderLineage
+
     private val Media.driveUri: String? get() = (download as? ResourceLocation.HttpStreamingFile)?.uri
 }

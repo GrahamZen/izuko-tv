@@ -12,6 +12,7 @@ package me.him188.ani.app.domain.player.extension
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
 import me.him188.ani.app.data.repository.media.PlaybackLineageRepository
@@ -19,7 +20,9 @@ import me.him188.ani.app.domain.episode.EpisodeSession
 import me.him188.ani.app.domain.media.DroppedFileMedia
 import me.him188.ani.app.domain.media.continuation.EpisodeContinuation
 import me.him188.ani.app.domain.media.continuation.PlaybackLineage
+import me.him188.ani.app.domain.media.continuation.continuationTarget
 import me.him188.ani.app.domain.media.selector.SelectOrigin
+import me.him188.ani.app.domain.settings.GetMediaSelectorSettingsFlowUseCase
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
@@ -30,8 +33,9 @@ import org.koin.core.Koin
  * 资源真正播起来 (时钟开始走) 时判断:
  *
  * - 用户手动选的: 换成它的线索 (记不了线索的资源就清掉, 不再顺着旧的找);
- * - 还没有线索: 记下它的;
- * - 自动选上的、不在线索上 (线索这一集暂时找不到而兜底选的): 不换, 下一集照样先顺着原来的找.
+ * - 还没有线索: 记下它的. 自动选上的只在是偏好类型 (选源设置的 preferKind; 没设时都算) 时记: 偏好 BT 时自动选上的在线源
+ *   多半是 BT 这集还没资源才兜底选的, 记下来之后每集都会越过 BT 选它 (同「记住的源」, 见 ObserveWebMediaSourcePreferenceExtension);
+ * - 自动选上的、不在线索上 (线索这一集暂时找不到而兜底选的、别的版本的缓存): 不换, 下一集照样先顺着原来的找.
  *
  * 线索彻底失效时由选源那一步忘掉 (见 [me.him188.ani.app.domain.media.continuation.LineageResolution.Gone]), 之后播起来的资源接着记下.
  */
@@ -41,6 +45,7 @@ class PlaybackLineageExtension(
 ) : PlayerExtension("PlaybackLineage") {
     private val repository: PlaybackLineageRepository by koin.inject()
     private val continuation: EpisodeContinuation by koin.inject()
+    private val getMediaSelectorSettings: GetMediaSelectorSettingsFlowUseCase by koin.inject()
 
     override fun onStart(episodeSession: EpisodeSession, backgroundTaskScope: ExtensionBackgroundTaskScope) {
         backgroundTaskScope.launch("PlaybackLineage") {
@@ -73,6 +78,13 @@ class PlaybackLineageExtension(
                 logger.info { "Playing ${media.mediaId} off the playback lineage of subject $subjectId, keeping the lineage" }
             }
             return
+        }
+        if (!manual) {
+            val preferKind = getMediaSelectorSettings().first().preferKind
+            if (preferKind != null && media.continuationTarget.kind != preferKind) {
+                logger.info { "Automatically selected ${media.mediaId} is not of the preferred kind $preferKind, not recording it as the playback lineage" }
+                return
+            }
         }
         val lineage = continuation.lineageOf(media)
         if (lineage != current) repository.setLineage(subjectId, lineage)

@@ -33,6 +33,12 @@ interface EpisodeContinuation {
 
     /** 候选里没有时按 [lineage] 直接去取 [request] 那一集; 不归这一类管的线索返回 [LineageResolution.NotFound]. */
     suspend fun resolve(lineage: PlaybackLineage, request: MediaFetchRequest): LineageResolution
+
+    /**
+     * 按 [lineage] 直接去取很快 (网盘只列一个文件夹): 选源时不等它的数据源整轮搜完, 直接去取.
+     * 在线源、BT 直接去取就是让那个源再搜一遍, 不算.
+     */
+    fun isQuickToResolve(lineage: PlaybackLineage): Boolean = false
 }
 
 sealed interface LineageResolution {
@@ -73,4 +79,6 @@ class EpisodeContinuations(private val continuations: List<EpisodeContinuation>)
         }
         return LineageResolution.NotFound
     }
+
+    override fun isQuickToResolve(lineage: PlaybackLineage): Boolean = continuations.any { it.isQuickToResolve(lineage) }
 }
