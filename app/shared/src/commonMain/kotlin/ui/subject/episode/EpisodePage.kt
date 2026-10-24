@@ -1546,6 +1546,7 @@ private fun PictureInPicturePolicyEffect(
     val backgroundBehavior = vm.videoScaffoldConfig.backgroundBehavior
     val playerState by vm.player.state.collectAsStateWithLifecycle()
     val mediaProperties by vm.player.mediaProperties.collectAsStateWithLifecycle(null)
+    val armOwner = remember { Any() }
 
     LaunchedEffect(
         pictureInPictureController,
@@ -1554,11 +1555,10 @@ private fun PictureInPicturePolicyEffect(
         mediaProperties?.videoWidth,
         mediaProperties?.videoHeight,
     ) {
+        val autoEnter = shouldAutoEnterPictureInPicture(backgroundBehavior, playWhenReady = playerState.playWhenReady)
+        vm.setAutoPictureInPictureArmed(armOwner, autoEnter)
         pictureInPictureController.updatePolicy(
-            autoEnterEnabled = shouldAutoEnterPictureInPicture(
-                backgroundBehavior,
-                playWhenReady = playerState.playWhenReady,
-            ),
+            autoEnterEnabled = autoEnter,
             aspectWidth = mediaProperties?.videoWidth,
             aspectHeight = mediaProperties?.videoHeight,
         )
@@ -1566,6 +1566,7 @@ private fun PictureInPicturePolicyEffect(
 
     DisposableEffect(pictureInPictureController) {
         onDispose {
+            vm.setAutoPictureInPictureArmed(armOwner, false)
             pictureInPictureController.updatePolicy(
                 autoEnterEnabled = false,
                 aspectWidth = null,
