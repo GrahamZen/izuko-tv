@@ -87,14 +87,17 @@ internal class CloudDriveApi(
         return send("nickname", op.request).stringByPath(op.value)?.takeIf { it.isNotBlank() }
     }
 
-    /** 网盘还剩多少空间 (字节); 协议没有这项 (见 [DriveApiConfig.capacity]) 或取不到时为 null. */
+    /**
+     * 网盘还剩多少空间 (字节); 协议没有这项 (见 [DriveApiConfig.capacity]) 或取不到时为 null.
+     * 超额 (已用比总量多, 比如会员到期后总量变小) 时是负数: 要腾出的空间得把超出的那部分也算上.
+     */
     suspend fun freeSpace(): Long? {
         val op = protocol().api.capacity ?: return null
         val root = send("capacity", op.request)
         fun bytes(path: String): Long? = root.stringByPath(path)?.toDoubleOrNull()?.toLong()
         val total = bytes(op.total) ?: return null
         val used = bytes(op.used) ?: return null
-        return (total - used).coerceAtLeast(0)
+        return total - used
     }
 
     // endregion
