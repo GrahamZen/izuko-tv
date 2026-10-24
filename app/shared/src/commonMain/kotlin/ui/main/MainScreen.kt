@@ -336,7 +336,7 @@ private fun MainScreenNavigationLayout(
                         )
                     }
 
-                    MainScreenPage.CacheManagement -> {
+                    MainScreenPage.CacheManagement -> ProvideTouchUpstreamUi {
                         DownloadManagementScreen(
                             downloadManagementViewModel,
                             selfInfo = selfInfo,

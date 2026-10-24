@@ -10,17 +10,15 @@
 package me.him188.ani.app.ui.subject.details.layout
 
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeMonogramStyle
+import me.him188.ani.app.ui.subject.details.sections.VIEW_ALL_GALLERY_TOUCH_CIRCLE_TO_STEP
 import kotlin.math.roundToInt
 
 /**
- * 平板 (触屏) 的「查看全部」人物画廊照稿缩小圆: 直径为相邻两格间距的 [TV_TOUCH_GALLERY_CIRCLE_TO_STEP], 名字与副标题仍按原来的格宽排,
+ * 平板 (触屏) 的「查看全部」人物画廊照稿缩小圆: 直径为相邻两格间距的 [VIEW_ALL_GALLERY_TOUCH_CIRCLE_TO_STEP] (Compose 版同一个比例), 名字与副标题仍按原来的格宽排,
  * 圆在格里居中, 行跟着圆变矮. 遥控器上 ([touch] 为 false) 原样返回: 圆 = 格宽, 聚焦放大的那一圈要这么大才看得清.
  */
 internal fun TvNativeMonogramStyle.forTouchGallery(touch: Boolean): TvNativeMonogramStyle {
     if (!touch) return this
-    val circle = (stepPx * TV_TOUCH_GALLERY_CIRCLE_TO_STEP).roundToInt().coerceAtMost(cellWidthPx)
+    val circle = (stepPx * VIEW_ALL_GALLERY_TOUCH_CIRCLE_TO_STEP).roundToInt().coerceAtMost(cellWidthPx)
     return copy(sizePx = circle, cellWidthPx = cellWidthPx)
 }
-
-/** 稿里一排 6 个时圆的直径 118、相邻两格间距 212. */
-private const val TV_TOUCH_GALLERY_CIRCLE_TO_STEP = 118f / 212f

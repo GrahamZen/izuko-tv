@@ -18,7 +18,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import me.him188.ani.app.data.models.preference.TvScheduleLayout
+import androidx.lifecycle.viewmodel.compose.viewModel
 import me.him188.ani.app.data.network.TmdbImageService
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.navigation.AniNavigator
@@ -29,8 +29,7 @@ import me.him188.ani.app.ui.exploration.LocalExplorationPageVariant
 import me.him188.ani.app.ui.exploration.TvExplorationPage
 import me.him188.ani.app.ui.exploration.schedule.LocalSchedulePageVariant
 import me.him188.ani.app.ui.exploration.schedule.SchedulePageVariant
-import me.him188.ani.app.ui.exploration.schedule.TvSchedulePage
-import me.him188.ani.app.ui.exploration.schedule.grid.TvScheduleGridPage
+import me.him188.ani.app.ui.exploration.schedule.TvScheduleSlot
 import me.him188.ani.app.ui.exploration.search.LocalSearchPageVariant
 import me.him188.ani.app.ui.exploration.search.SearchPageVariant
 import me.him188.ani.app.ui.exploration.search.TvSearchPage
@@ -42,6 +41,7 @@ import me.him188.ani.app.ui.foundation.LocalTvPageShuffleHost
 import me.him188.ani.app.ui.foundation.TvBackLongPressHost
 import me.him188.ani.app.ui.foundation.TvPageActionHost
 import me.him188.ani.app.ui.foundation.TvPageAdjustHost
+import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.playback.PlaybackSessionEntry
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tv.LocalTvLoginSidePanel
@@ -63,17 +63,18 @@ import me.him188.ani.app.ui.subject.collection.LocalCollectionPageVariant
 import me.him188.ani.app.ui.subject.collection.TvCollectionPage
 import me.him188.ani.app.ui.subject.details.LocalSubjectDetailsPageVariant
 import me.him188.ani.app.ui.subject.details.layout.TvPadSubjectDetailsPageVariant
+import me.him188.ani.app.ui.subject.episode.RetainedPlaybackSessionHolder
 import me.him188.ani.app.ui.tv.TvAniUiBehavior
 import me.him188.ani.app.ui.tv.withTouchNavigation
 
 /**
  * 触屏设备 (iPad) 上跑电视界面时的界面行为: 同电视 ([TvAniUiBehavior]); 播放器用的是共享的那一版, 跟播放器相关的几项取共享的默认值,
- * 不自动装更新 (应用商店管); 二级页面有带返回按钮的顶栏 (见 withTouchNavigation).
+ * 但保留播放会话 (同安卓平板: 离开播放页后缩成应用内小窗接着放, 见 TouchMiniPlayer); 不自动装更新 (应用商店管);
+ * 二级页面有带返回按钮的顶栏 (见 withTouchNavigation).
  */
 val TvTouchAniUiBehavior: AniUiBehavior = TvAniUiBehavior.copy(
     supportsWindowedPlayback = AniUiBehavior.Default.supportsWindowedPlayback,
     forceDarkInPlayer = AniUiBehavior.Default.forceDarkInPlayer,
-    retainPlaybackSession = false,
     autoInstallUpdates = false,
 ).withTouchNavigation()
 
@@ -127,12 +128,7 @@ fun InstallTvTouchPageVariants(aniNavigator: AniNavigator, content: @Composable 
             }
         },
         LocalSchedulePageVariant provides SchedulePageVariant { presentation, onRetry, modifier ->
-            ProvideTvScrollActivity {
-                when (LocalThemeSettings.current.tvScheduleLayout) {
-                    TvScheduleLayout.Grid -> TvPosterWallTheme { TvScheduleGridPage(presentation, onRetry, modifier) }
-                    else -> TvSchedulePage(presentation, onRetry, modifier)
-                }
-            }
+            TvScheduleSlot(presentation, onRetry, onBack = { aniNavigator.popBackStack() }, modifier)
         },
         LocalSearchPageVariant provides SearchPageVariant { state, onIntent, suggestionsPager, modifier ->
             ProvideTvScrollActivity {
@@ -163,10 +159,15 @@ fun InstallTvTouchPageVariants(aniNavigator: AniNavigator, content: @Composable 
             val route = runCatching { aniNavigator.backStack.lastOrNull() }.getOrNull()
             route != null && route !is NavRoutes.EpisodeDetail && route !is NavRoutes.OAuthAuthorize && route !is NavRoutes.TvOnboarding
         }
+        // 保留的会话与 AniAppContent 里是同一个 ViewModel (同 owner 同 key 返回同一实例), 拿它只为把把手传给面板
+        // (顶上那张卡读会话、关会话、在后台准备), 同电视包的 TvPageVariants
+        val retainSession = LocalAniUiBehavior.current.retainPlaybackSession && LocalThemeSettings.current.tvRetainPlaybackSession
+        val sessionHolder = viewModel { RetainedPlaybackSessionHolder() }
+        val playbackEntry: PlaybackSessionEntry = if (retainSession) sessionHolder else PlaybackSessionEntry.None
         if (showQuickMenu) {
             TvQuickActionMenu(
                 navigator = aniNavigator,
-                playback = PlaybackSessionEntry.None,
+                playback = playbackEntry,
                 refreshHost = pageRefresh,
                 shuffleHost = pageShuffle,
                 adjustHost = pageAdjust,

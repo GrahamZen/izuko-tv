@@ -48,6 +48,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
+import me.him188.ani.app.ui.lang.tv_rail_back
 import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Search
@@ -380,6 +387,8 @@ fun TvNavigationSideRail(
      * TvPosterWallTone.drawBackground), 右缘照常羽化.
      */
     scrimPainter: (DrawScope.() -> Unit)? = null,
+    /** 非 null 时左上角钉一颗「返回」(触屏用: 没有返回键, 见 [TvTouchBackButton]); 不在居中的那一列里. */
+    onBack: (() -> Unit)? = null,
 ) {
     // hasFocus (含子节点): 任一条目聚焦即展开. 触屏上不展开: 条目点一下就是跳转 (按下不拿焦点), 焦点被兜底送进来也不出文字
     var expanded by remember { mutableStateOf(false) }
@@ -389,11 +398,11 @@ fun TvNavigationSideRail(
     //
     // 下端曾经也要留 (带浮出动作的条目排在整列最后), 随"正在播放"条目一起删了; 再给条目加
     // 往下长的浮出按钮的话, 这里要把那份预留加回来.
-    val topReserve = if (selfInfo != null && avatarActions.isNotEmpty()) {
-        floatingActionsStackHeight(avatarActions.size)
-    } else {
-        0.dp
-    }
+    // 左上角有返回时, 整列至少让开它
+    val topReserve = maxOf(
+        if (selfInfo != null && avatarActions.isNotEmpty()) floatingActionsStackHeight(avatarActions.size) else 0.dp,
+        if (onBack != null) TV_RAIL_BACK_RESERVE else 0.dp,
+    )
     // 垂直居中 (纵向位置由下面的 layout 自己算, 因此这里对齐到顶)
     Box(modifier.fillMaxHeight(), contentAlignment = Alignment.TopStart) {
         AnimatedVisibility(expanded, enter = fadeIn(), exit = fadeOut()) {
@@ -517,8 +526,34 @@ fun TvNavigationSideRail(
                 )
             }
         }
+        if (onBack != null) TvTouchBackButton(onBack)
     }
 }
+
+/**
+ * 触屏上左上角的「返回」(没有返回键; 侧边栏的 onBack、没有侧边栏的页面自己摆): 与侧边栏条目同一个图标方块, 点了有涟漪, 不拿焦点.
+ * 钉在左上角 (安全区之下 [TV_RAIL_BACK_TOP], 左边与侧边栏图标同一条线), 不放进侧边栏居中的那一列: 返回在哪一页都在同一个地方,
+ * 与 iPad 上各应用的返回一致. 放在铺满的 Box 里时按左上角对齐.
+ */
+@Composable
+internal fun TvTouchBackButton(onBack: () -> Unit, modifier: Modifier = Modifier) {
+    TvRailGlyphBox(
+        focused = false,
+        icon = Icons.AutoMirrored.Rounded.ArrowBack,
+        modifier = modifier
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
+            .padding(start = 16.dp, top = TV_RAIL_BACK_TOP)
+            .focusProperties { canFocus = false }
+            .clip(RoundedCornerShape(TV_RAIL_ITEM_CORNER))
+            .clickable(onClickLabel = stringResource(Lang.tv_rail_back), onClick = onBack),
+    )
+}
+
+/** 左上角「返回」离屏幕上缘 (安全区之下) 多远. */
+private val TV_RAIL_BACK_TOP = 24.dp
+
+/** 有左上角「返回」时整列至少让开这么多 (返回本身 + 上下留白), 见 topReserve. */
+private val TV_RAIL_BACK_RESERVE: Dp get() = TV_RAIL_BACK_TOP + TV_RAIL_ITEM_SIZE + 24.dp
 
 /**
  * 侧边栏统一的图标方块: 32dp 容器 + 20dp 字形, 聚焦时主色底 + 反色图标 (带颜色过渡动画).
