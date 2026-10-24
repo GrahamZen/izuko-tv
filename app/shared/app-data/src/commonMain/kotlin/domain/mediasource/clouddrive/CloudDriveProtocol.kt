@@ -26,7 +26,7 @@ import kotlinx.serialization.json.JsonObject
  * [type] 是 [WebDav.TYPE] 时是一台 WebDAV 服务器 (NAS 等): 不写请求模板, 引擎按 WebDAV 协议访问 [DriveHttpConfig.hosts] 的第一个地址
  * (见 [WebDav]), 用账号密码登录.
  *
- * @property id 稳定标识, 只用小写字母、数字与 `-`. 账号、记下的文件夹、添加的分享、资源都按它归属, 改了就是另一个网盘.
+ * @property id 稳定标识, 只用小写字母、数字与 `-`. 账号、播放线索、添加的分享、资源都按它归属, 改了就是另一个网盘.
  * 自己网盘那个数据源的 id 是 `<id>-drive`.
  * @property name 显示名, 如设置里的分组标题、数据源名
  * @property names 其它语言的显示名 (语言标记 → 名字, 如 `en`、`zh-TW`), 没有对应语言时用 [name]
