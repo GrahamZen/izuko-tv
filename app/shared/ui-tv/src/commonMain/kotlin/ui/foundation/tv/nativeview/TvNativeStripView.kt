@@ -303,12 +303,18 @@ abstract class TvNativeStripView(
     /**
      * 行已排好、第 [index] 张在屏外 (没排出来) 时平滑滚过去, 停下后回调 [onSettled] (由调用方再送焦; 行有焦点时 leanback 到位也会
      * 自己送). 不能直接改选中位置: leanback 会按此刻持焦的那张重排, 行只挪一截、焦点留在原处.
+     *
+     * 返回 false = 没滚起来, 不会回调 (调用方改用 [jumpToCard]). leanback 的平滑选中有几种情况不滚: 选中位置已经是它 (起步就换成目标,
+     * 上一趟半路被停掉后行停在半路) 时是空操作; 行有布局请求挂着时只改选中位置、等下一趟布局直接排过去; 要滚的距离是 0 / 流畅档一步到位.
      */
-    fun scrollToCardSmooth(index: Int, onSettled: () -> Unit) {
+    fun scrollToCardSmooth(index: Int, onSettled: () -> Unit): Boolean {
         val count = itemCount
-        if (count == 0) return
+        if (count == 0) return false
         settledCallback = onSettled
         setSelectedPositionSmooth(index.coerceIn(0, count - 1))
+        if (scrollState != SCROLL_STATE_IDLE || layoutManager?.isSmoothScrolling == true) return true
+        settledCallback = null
+        return false
     }
 
     /**
