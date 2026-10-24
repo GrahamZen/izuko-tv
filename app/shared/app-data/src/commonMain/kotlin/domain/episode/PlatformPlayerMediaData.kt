@@ -20,7 +20,9 @@ import org.openani.mediamp.source.UriMediaData
  * 会把它们原样发给网盘, 这里去掉; 安卓的播放器自己读完再去掉.
  */
 internal fun MediaData.forPlatformPlayer(): MediaData {
+    if (currentPlatform().isIos() && this !is UriMediaData) ipadDiag("player data: ${this::class.simpleName}")
     if (this !is UriMediaData || !currentPlatform().isIos()) return this
     val stripped = PlaybackRequestHints.strip(headers)
+    ipadDiag("player data: ${ipadDiagUrl(uri)} headers=${stripped.keys} stripped=${headers.keys - stripped.keys}")
     return if (stripped.size == headers.size) this else UriMediaData(uri, stripped, extraFiles)
 }

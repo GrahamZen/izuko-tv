@@ -9,6 +9,8 @@
 
 package me.him188.ani.app.ios
 
+import me.him188.ani.app.ui.foundation.IpadDiag
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
@@ -20,7 +22,9 @@ import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
  */
 @Composable
 internal fun DisableEdgeSwipeBack() {
-    val dispatcher = LocalNavigationEventDispatcherOwner.current?.navigationEventDispatcher ?: return
+    val dispatcher = LocalNavigationEventDispatcherOwner.current?.navigationEventDispatcher
+    LaunchedEffect(dispatcher) { IpadDiag.log("edge swipe back: dispatcher=${dispatcher != null}") }
+    if (dispatcher == null) return
     DisposableEffect(dispatcher) {
         dispatcher.isEnabled = false
         onDispose { dispatcher.isEnabled = true }

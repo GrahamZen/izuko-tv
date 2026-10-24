@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.foundation.tv
 
+import me.him188.ani.app.ui.foundation.IpadDiag
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
@@ -154,7 +155,12 @@ fun Modifier.tvImageZoomKeys(state: TvImageZoomState): Modifier = onPreviewKeyEv
 fun TvZoomedImageOverlay(state: TvImageZoomState, modifier: Modifier = Modifier) {
     val url = state.url ?: return
     // 触屏没有返回键: 点一下就关
-    val tapToClose = if (LocalTvTouchInputEnabled.current) Modifier.pointerInput(state) { detectTapGestures { state.close() } } else Modifier
+    val tapToClose = if (LocalTvTouchInputEnabled.current) Modifier.pointerInput(state) {
+        detectTapGestures {
+            IpadDiag.log("zoomed image closed by tap")
+            state.close()
+        }
+    } else Modifier
     Box(
         modifier.fillMaxSize().background(TV_ZOOM_SCRIM_COLOR).then(tapToClose),
         contentAlignment = Alignment.Center,

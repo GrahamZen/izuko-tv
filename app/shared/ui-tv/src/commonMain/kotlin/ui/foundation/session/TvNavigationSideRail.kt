@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.foundation.session
 
+import me.him188.ani.app.ui.foundation.IpadDiag
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
@@ -545,7 +546,10 @@ internal fun TvTouchBackButton(onBack: () -> Unit, modifier: Modifier = Modifier
             .padding(start = 16.dp, top = TV_RAIL_BACK_TOP)
             .focusProperties { canFocus = false }
             .clip(RoundedCornerShape(TV_RAIL_ITEM_CORNER))
-            .clickable(onClickLabel = stringResource(Lang.tv_rail_back), onClick = onBack),
+            .clickable(onClickLabel = stringResource(Lang.tv_rail_back)) {
+                IpadDiag.log("touch back tapped")
+                onBack()
+            },
     )
 }
 

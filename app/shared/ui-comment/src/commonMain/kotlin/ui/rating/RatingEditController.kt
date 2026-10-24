@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.rating
 
+import me.him188.ani.app.ui.foundation.IpadDiag
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -75,6 +76,7 @@ class RatingEditController(
     }
 
     override fun requestEditRating(source: Any?) {
+        IpadDiag.log("rating edit requested: collected=${isCollected()}")
         if (isCollected()) {
             editRequestSource.value = source
             showRatingDialog.value = true

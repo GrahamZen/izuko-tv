@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.subject.episode.details
 
+import me.him188.ani.app.ui.foundation.IpadDiag
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -552,7 +553,10 @@ fun EpisodeDetails(
         val sourceResults = mediaSourceResultListPresentation()
         val showBt = sourceResults.btSources.isNotEmpty()
         val closeSelector = { showMediaSelector = false }
-        val closeAfterSelect = { if (hideSelectorOnSelect) closeSelector() }
+        val closeAfterSelect = {
+            IpadDiag.log("source picked in details, close=$hideSelectorOnSelect")
+            if (hideSelectorOnSelect) closeSelector()
+        }
         val closeSelectorText = stringResource(Lang.subject_episode_close_selector)
         // 侧边栏占满窗口高度. 窗口太矮 (手机横屏) 时手动查找与 BT 改开窗口级对话框, 规则与播放器侧边栏相同.
         // 关掉对话框回到侧边栏并把模式置回自动匹配, 否则侧边栏立刻又变回对话框; 选中播放后全部关闭.

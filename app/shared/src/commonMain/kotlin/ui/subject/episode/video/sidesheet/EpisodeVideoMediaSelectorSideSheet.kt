@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.subject.episode.video.sidesheet
 
+import me.him188.ani.app.ui.foundation.IpadDiag
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -142,6 +143,7 @@ fun EpisodeVideoSideSheets.MediaSelectorSheet(
                 onFetchRequestChange,
                 onClickItem = {
                     mediaSelectorState.select(it)
+                    IpadDiag.log("source picked in player sheet, close=$hideOnSelect")
                     if (hideOnSelect) onDismissRequest()
                 },
                 onRestartSource = onRestartSource,
@@ -152,6 +154,7 @@ fun EpisodeVideoSideSheets.MediaSelectorSheet(
                 mediaSelectorState,
                 onClickItem = {
                     mediaSelectorState.select(it)
+                    IpadDiag.log("source picked in player sheet, close=$hideOnSelect")
                     if (hideOnSelect) onDismissRequest()
                 },
                 onRestartSource = onRestartSource,

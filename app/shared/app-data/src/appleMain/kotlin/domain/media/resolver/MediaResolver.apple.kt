@@ -22,6 +22,8 @@ import me.him188.ani.app.domain.media.player.data.MediaDataProvider
 import me.him188.ani.app.domain.mediasource.web.appleWebViewUserAgentFor
 import me.him188.ani.app.domain.player.toLogText
 import me.him188.ani.app.platform.Context
+import me.him188.ani.app.domain.episode.ipadDiag
+import me.him188.ani.app.domain.episode.ipadDiagUrl
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.matcher.MediaSourceWebVideoMatcherLoader
 import me.him188.ani.datasources.api.matcher.WebVideo
@@ -108,6 +110,7 @@ class IosWebMediaResolver(
             var video: WebVideo? = null
             var videoUrl: String? = null
             reportResolveAttempt(timeoutMillis)
+            ipadDiag("sniff ${media.mediaSourceId} round ${round + 1}: page ${ipadDiagUrl(media.download.uri)}, timeout ${timeoutMillis}ms, ${allMatchers.size} matchers")
             withContext(Dispatchers.Default) {
                 withContext(Dispatchers.Main) { extractor }.getVideoResourceUrl(
                     context = this@IosWebMediaResolver.iosContext,
@@ -130,9 +133,13 @@ class IosWebMediaResolver(
                         null -> WebViewVideoExtractor.Instruction.Continue
                     }
                 }
-            } ?: throw MediaResolutionException(ResolutionFailures.NO_MATCHING_RESOURCE)
+            } ?: run {
+                ipadDiag("sniff ${media.mediaSourceId} round ${round + 1}: nothing matched")
+                throw MediaResolutionException(ResolutionFailures.NO_MATCHING_RESOURCE)
+            }
 
             val found = video ?: error("getVideoResourceUrl completed but no video found")
+            ipadDiag("sniff ${media.mediaSourceId} round ${round + 1}: matched ${ipadDiagUrl(found.m3u8Url)} headers=${found.headers.keys}")
             if (round == MAX_SNIFF_ROUNDS - 1 || sniffedVideoUsable(found, round)) {
                 matchedVideo = found
                 break
@@ -206,6 +213,7 @@ class IosWebViewVideoExtractor(
                         try {
                             val body = didReceiveScriptMessage.body.toString()
                             logger.info { "JS -> Native: $body" }
+                            ipadDiag("sniff js report: ${ipadDiagUrl(body)}")
                             currentHandler?.handleInterceptedUrl(body)
                         } catch (e: Throwable) {
                             logger.warn(e) { "Error in script message handler" }

@@ -9,6 +9,8 @@
 
 package me.him188.ani.app.ui.subject.details.sections
 
+import me.him188.ani.app.ui.foundation.IpadDiag
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -331,6 +333,9 @@ private fun GalleryGrid(
 ) {
     BoxWithConstraints(modifier.fillMaxWidth()) {
         val cellWidth = viewAllGalleryCellWidth(maxWidth, columns, compact)
+        LaunchedEffect(cellWidth) {
+            IpadDiag.log("view-all gallery: width=$maxWidth cell=$cellWidth touchCircle=${viewAllGalleryTouchCircle(cellWidth)}")
+        }
         val state = rememberLazyGridState(initialFirstVisibleItemIndex = initialFocusIndex - initialFocusIndex % columns)
         ProvideScrollFadeFocusMargin {
             LazyVerticalGrid(

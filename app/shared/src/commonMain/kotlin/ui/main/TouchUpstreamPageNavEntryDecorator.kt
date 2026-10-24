@@ -9,6 +9,8 @@
 
 package me.him188.ani.app.ui.main
 
+import me.him188.ani.app.domain.episode.ipadDiag
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
@@ -36,7 +38,14 @@ fun rememberTouchUpstreamPageNavEntryDecorator(backStack: List<NavRoutes>): NavE
             val upstream = remember(entry.contentKey) {
                 currentBackStack.value.firstOrNull { NavEntry(it) {}.contentKey == entry.contentKey }?.isTouchUpstreamPage() == true
             }
-            if (upstream) ProvideTouchUpstreamUi { entry.Content() } else entry.Content()
+            if (upstream) {
+                ProvideTouchUpstreamUi {
+                    LaunchedEffect(entry.contentKey) { ipadDiag("upstream touch page: ${entry.contentKey}") }
+                    entry.Content()
+                }
+            } else {
+                entry.Content()
+            }
         }
     }
 }

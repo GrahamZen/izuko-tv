@@ -9,6 +9,8 @@
 
 package me.him188.ani.app.domain.media.resolver
 
+import me.him188.ani.app.domain.episode.ipadDiag
+import me.him188.ani.app.domain.episode.ipadDiagUrl
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.matcher.WebVideoDirectResolver
 import me.him188.ani.datasources.api.matcher.WebVideoMatcher
@@ -26,7 +28,9 @@ internal suspend fun List<WebVideoMatcher>.resolveDirectlyOrNull(
 ): HttpStreamingMediaDataProvider? {
     for (matcher in this) {
         if (matcher !is WebVideoDirectResolver) continue
-        val direct = matcher.resolveDirectly(media.download.uri, context) ?: continue
+        val direct = matcher.resolveDirectly(media.download.uri, context)
+        ipadDiag("direct resolve ${media.mediaSourceId}: ${direct?.let { "${ipadDiagUrl(it.m3u8Url)} headers=${it.headers.keys}" } ?: "none"}")
+        direct ?: continue
         return HttpStreamingMediaDataProvider(
             direct.m3u8Url,
             media.originalTitle,
@@ -34,6 +38,7 @@ internal suspend fun List<WebVideoMatcher>.resolveDirectlyOrNull(
             media.extraFiles.toMediampMediaExtraFiles(),
         )
     }
+    ipadDiag("direct resolve ${media.mediaSourceId}: no direct result (${count { it is WebVideoDirectResolver }} direct resolvers), sniff in WKWebView")
     return null
 }
 

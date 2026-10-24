@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.subject.details.layout
 
+import me.him188.ani.app.ui.foundation.IpadDiag
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -519,7 +520,10 @@ private fun TvPadDetailsHeader(
                     },
                     score = { TvPadRatingScore(info) },
                     histogram = { height -> TvPadRatingHistogram(info, height) },
-                    onClickRating = { state.requestEditRating(ratingSource) },
+                    onClickRating = {
+                        IpadDiag.log("pad rating tapped")
+                        state.requestEditRating(ratingSource)
+                    },
                 )
             },
             summary = { room, width -> TvPadSummary(displaySummary, room, width, onClick = { showSummaryDialog = true }) },
