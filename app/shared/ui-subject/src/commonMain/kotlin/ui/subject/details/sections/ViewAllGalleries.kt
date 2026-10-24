@@ -153,15 +153,15 @@ fun viewAllGalleryCellWidth(width: Dp): Dp =
 @Immutable
 data class ViewAllGalleryBadgeStyle(val text: TextStyle, val container: Color, val content: Color)
 
+/**
+ * 圆下缘标签: 照 tvOS 压在图上的标签 (分级标签那种, 黑 60% 底白字), 不用主题色 —— 彩色只留给有语义的标志, 压在头像上也读得清.
+ */
 @Composable
-fun viewAllGalleryBadgeStyle(): ViewAllGalleryBadgeStyle {
-    val colors = MaterialTheme.colorScheme
-    return ViewAllGalleryBadgeStyle(
-        text = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
-        container = colors.secondaryContainer,
-        content = colors.onSecondaryContainer,
-    )
-}
+fun viewAllGalleryBadgeStyle(): ViewAllGalleryBadgeStyle = ViewAllGalleryBadgeStyle(
+    text = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+    container = Color.Black.copy(alpha = 0.6f),
+    content = Color.White,
+)
 
 /** [ViewAllGalleries] 的 Compose 版 (没有原生实现的平台). */
 object ComposeViewAllGalleries : ViewAllGalleries {

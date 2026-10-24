@@ -122,7 +122,7 @@ fun AniFocusActionButton(
         onClick = { if (enabled) onClick() },
         modifier = modifier.onFocusChanged { focused = it.isFocused },
         shape = CircleShape,
-        // 未聚焦是玻璃按钮 (淡白底 + 上亮下暗的细高光边, 同面板边缘, 见 AniGlass.kt), 叠在玻璃面板或剧照上都看得出是按钮
+        // 未聚焦是玻璃按钮 (比面板深 / 浅一档的底 + 细描边, 见 aniGlassButtonColor), 叠在玻璃面板或剧照上都看得出是按钮
         color = if (showFocus) aniFocusContainerColor() else aniGlassButtonColor(),
         contentColor = if (enabled) contentColor else contentColor.copy(alpha = DISABLED_ALPHA),
         border = if (showFocus) null else aniGlassEdge(),

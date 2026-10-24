@@ -9,13 +9,10 @@
 
 package me.him188.ani.app.ui.subject.person
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -66,10 +63,7 @@ import me.him188.ani.app.ui.foundation.ImageViewerHandler
 import me.him188.ani.app.ui.foundation.rememberImageViewerHandler
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.dialogs.DialogWindowDimAmount
-import me.him188.ani.app.ui.foundation.dialogs.dialogWindowBlurBehind
-import me.him188.ani.app.ui.foundation.widgets.ANI_GLASS_BLUR_RADIUS
 import me.him188.ani.app.ui.foundation.widgets.ANI_GLASS_PANEL_SHAPE
-import me.him188.ani.app.ui.foundation.widgets.ANI_GLASS_WINDOW_DIM
 import me.him188.ani.app.ui.foundation.widgets.aniGlassEdge
 import me.him188.ani.app.ui.foundation.widgets.aniGlassPanelColor
 import me.him188.ani.app.ui.foundation.widgets.aniPanelTitleStyle
@@ -214,44 +208,33 @@ private fun PeoplePreviewSideSheet(
             onDismissRequest = onDismissRequest,
             properties = DialogProperties(usePlatformDefaultWidth = false),
         ) {
-            // 底色/窗外压暗与 AniCenteredPanelDialog 同一套: 盖在播放器上时画面要透得出来.
+            // 底色与窗外压暗与 AniCenteredPanelDialog 同一套: 盖在播放器上时画面要透得出来.
             // 四周只靠这层系统压暗, 不再自己多画一层黑 (两层叠起来会把画面压到近乎全黑)
-            val blurred = dialogWindowBlurBehind(ANI_GLASS_BLUR_RADIUS)
-            DialogWindowDimAmount(if (blurred) ANI_GLASS_WINDOW_DIM else CENTERED_PANEL_WINDOW_DIM)
-            // Dialog 是独立窗口, 按键到不了播放页的根按键路由 —— 从播放器的角色/制作人员面板
-            // 点开时画面还在后面放着, 遥控器播放暂停键仍该管用. 播放页之外为空操作
-            Box(Modifier.fillMaxSize().tvOverlayWindowKeys(onDismissRequest)) {
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = onDismissRequest,
-                        ),
-                )
-                Surface(
-                    Modifier.align(Alignment.Center)
-                        .fillMaxHeight(TV_PEOPLE_PREVIEW_HEIGHT_FRACTION)
-                        .width(TV_PEOPLE_PREVIEW_WIDTH),
-                    shape = ANI_GLASS_PANEL_SHAPE,
-                    color = aniGlassPanelColor(blurred),
-                    border = aniGlassEdge(),
-                    // 半透明底色查不到 "on" 色, 不显式给会退回 LocalContentColor 的默认纯黑
-                    contentColor = MaterialTheme.colorScheme.onSurface,
-                ) {
-                    // 玻璃面板里的控件约定 (项目换成玻璃底、按钮画成动作按钮), 见 ProvideAniGlassPanelContent
-                    ProvideAniGlassPanelContent {
-                        // 方向键在弹窗里走完: 里面有原生横滑行, 没接住的方向键交给系统会按屏幕位置挑中行里的卡
-                        Box(Modifier.tvContainDirectionalKeys()) {
-                            // 居中形态没有退场动画, 关闭就是直接清空目标. 横滑行用电视入口提供的原生实现
-                            PeoplePreviewBody(
-                                target, imageViewer,
-                                onClose = onDismissRequest,
-                                onDismissImmediately = onDismissRequest,
-                                rows = LocalPeoplePreviewRows.current,
-                            )
-                        }
+            DialogWindowDimAmount(CENTERED_PANEL_WINDOW_DIM)
+            // 面板就是弹窗内容的根; 点面板外面由 Dialog 自己关
+            Surface(
+                // Dialog 是独立窗口, 按键到不了播放页的根按键路由 —— 从播放器的角色/制作人员面板
+                // 点开时画面还在后面放着, 遥控器播放暂停键仍该管用. 播放页之外为空操作
+                Modifier.tvOverlayWindowKeys(onDismissRequest)
+                    .fillMaxHeight(TV_PEOPLE_PREVIEW_HEIGHT_FRACTION)
+                    .width(TV_PEOPLE_PREVIEW_WIDTH),
+                shape = ANI_GLASS_PANEL_SHAPE,
+                color = aniGlassPanelColor(),
+                border = aniGlassEdge(),
+                // 半透明底色查不到 "on" 色, 不显式给会退回 LocalContentColor 的默认纯黑
+                contentColor = MaterialTheme.colorScheme.onSurface,
+            ) {
+                // 玻璃面板里的控件约定 (项目换成玻璃底、按钮画成动作按钮), 见 ProvideAniGlassPanelContent
+                ProvideAniGlassPanelContent {
+                    // 方向键在弹窗里走完: 里面有原生横滑行, 没接住的方向键交给系统会按屏幕位置挑中行里的卡
+                    Box(Modifier.tvContainDirectionalKeys()) {
+                        // 居中形态没有退场动画, 关闭就是直接清空目标. 横滑行用电视入口提供的原生实现
+                        PeoplePreviewBody(
+                            target, imageViewer,
+                            onClose = onDismissRequest,
+                            onDismissImmediately = onDismissRequest,
+                            rows = LocalPeoplePreviewRows.current,
+                        )
                     }
                 }
             }

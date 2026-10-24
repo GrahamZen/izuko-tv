@@ -11,13 +11,13 @@ package me.him188.ani.app.ui.foundation.widgets
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.luminance
@@ -25,50 +25,39 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import me.him188.ani.app.ui.foundation.LocalTvPlayPauseHandler
 
 /**
- * 「轻透玻璃」: 居中面板弹窗 ([AniCenteredPanelDialog]) 与里面按钮 ([AniFocusActionButton]) 的样子 ——
- * 背后整屏模糊 (设备支持时, 见 `dialogWindowBlurBehind`) + 轻透的底色 + 上亮下暗的一圈细高光边 + 更圆的角.
- * 液态感只放在面板边缘与按钮上, 内容区还是平的底色, 读字不受干扰.
+ * 「轻透玻璃」: 居中面板弹窗 ([AniCenteredPanelDialog]) 与里面按钮 ([AniFocusActionButton]) 的样子, 照 tvOS 的弹窗 (tvOS 18 设计模板的
+ * Alert, 1080p 下 1pt = 0.5dp): 接近实底的中性底色 ([aniGlassPanelColor]) + 一圈白色细描边 + 24dp 圆角; 面板外面只压暗
+ * ([CENTERED_PANEL_WINDOW_DIM]). 内容区是平的底色, 读字不受干扰.
+ * 各端都不做 tvOS 那样的面板底下毛玻璃: 安卓上只模糊面板底下要把弹窗窗口收成面板大小, 窗口一收系统就挪它的位置, 弹窗出来时
+ * 会从屏幕左边飞到正中; iOS 上要另叠一层 UIKit 的毛玻璃视图跟着面板对位置.
  */
 val ANI_GLASS_PANEL_CORNER: Dp = 24.dp
 
 /** [ANI_GLASS_PANEL_CORNER] 的形状. */
 val ANI_GLASS_PANEL_SHAPE: Shape = RoundedCornerShape(ANI_GLASS_PANEL_CORNER)
 
-/** 弹窗背后整屏模糊的半径. */
-val ANI_GLASS_BLUR_RADIUS: Dp = 28.dp
-
-/** 背后模糊了时窗口外那层系统压暗 (模糊本身已经把背后压平, 不必再压那么暗; 没模糊时用 [CENTERED_PANEL_WINDOW_DIM]). */
-const val ANI_GLASS_WINDOW_DIM: Float = 0.2f
-
 /**
- * 玻璃面板的底色: 面板那一档配色 (`surfaceContainerHigh`) 加透明度. 背后模糊了才透得多 —— 透出来的是糊开的画面, 看着是玻璃;
- * 没模糊 (设备不支持) 时透多了后面的字会直接透上来, 退回接近实底; 盖在播放器上时同 [centeredPanelColor] 那一档.
+ * 玻璃面板的底色, 不取主题色 (种子色调出来的面板色偏紫). 面板底下不模糊 (见上), 透多了后面的字会直接透上来, 所以接近实底,
+ * 颜色取 tvOS 中档材质 (深色 #1E1E1E、浅色 #FEFDFF 的一半透明) 在常见底上合出来的那个: 浅色是一半 #FEFDFF 叠在压暗 40% 的浅色底
+ * (#F2F2F7) 上 ≈ #C8C7CA 的浅灰 —— 直接用 #FEFDFF 是一块白板, 比 tvOS 亮得多; 深色同理 ≈ #19191A. 盖在播放器上时同 [centeredPanelColor] 那一档.
  */
 @Composable
-fun aniGlassPanelColor(blurred: Boolean): Color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(
-    alpha = when {
-        blurred -> GLASS_PANEL_ALPHA_BLURRED
-        LocalTvPlayPauseHandler.current != null -> GLASS_PANEL_ALPHA_OVER_PLAYER
-        else -> GLASS_PANEL_ALPHA
-    },
-)
+fun aniGlassPanelColor(): Color {
+    val light = MaterialTheme.colorScheme.surface.luminance() > 0.5f
+    return (if (light) GLASS_PANEL_LIGHT else GLASS_PANEL_DARK).copy(
+        alpha = if (LocalTvPlayPauseHandler.current != null) GLASS_PANEL_ALPHA_OVER_PLAYER else GLASS_PANEL_ALPHA,
+    )
+}
 
-/** 玻璃的那圈细高光边: 白色, 上沿亮、下沿淡 (光从上面来). 浅色主题下亮一些, 深色下压着, 免得一圈白线抢眼. */
+/** 玻璃面板的那圈细描边: 照 tvOS 弹窗, 白色一圈画在面板里侧, 宽 1pt (0.5dp); 深色白 10%, 浅色白 16%. */
 @Composable
 fun aniGlassEdge(): BorderStroke {
     val light = MaterialTheme.colorScheme.surface.luminance() > 0.5f
-    return BorderStroke(
-        1.dp,
-        Brush.verticalGradient(
-            listOf(
-                Color.White.copy(alpha = if (light) 0.75f else 0.26f),
-                Color.White.copy(alpha = if (light) 0.2f else 0.05f),
-            ),
-        ),
-    )
+    return BorderStroke(0.5.dp, Color.White.copy(alpha = if (light) 0.16f else 0.1f))
 }
 
 /**
@@ -78,13 +67,11 @@ fun aniGlassEdge(): BorderStroke {
 val LocalAniGlassPanel = staticCompositionLocalOf { false }
 
 /**
- * 玻璃面板里项目的常态底: 很淡的一层白, 只为圈出这一项的范围 —— 不加高光边 (液态感只放在面板边缘与按钮上, 内容区保持平静).
+ * 玻璃面板里项目的常态底, 照 tvOS 弹窗里的选项行: 浅色面板上压暗一点 (tvOS 是「变暗」混合的 #F0F0F0, 约减 15),
+ * 深色面板上提亮一点 (「变亮」混合的 #0F0F0F, 约加 15) —— 只为圈出这一项的范围, 不加高光边.
  */
 @Composable
-fun aniGlassItemColor(): Color {
-    val light = MaterialTheme.colorScheme.surface.luminance() > 0.5f
-    return Color.White.copy(alpha = if (light) 0.45f else 0.07f)
-}
+fun aniGlassItemColor(): Color = glassOverlay(onLightPanel = 0.08f, onDarkPanel = 0.07f, onPhotoInLightTheme = 0.45f)
 
 /** 玻璃面板的内容: 标上 [LocalAniGlassPanel] (里面的项目换成玻璃底), 并照弹窗约定画按钮 ([ProvidePopupControlStyle]). */
 @Composable
@@ -105,26 +92,26 @@ fun ProvideAniGlassPanel(content: @Composable () -> Unit) {
 fun aniPanelItemColor(fallback: Color): Color = if (LocalAniGlassPanel.current) aniGlassItemColor() else fallback
 
 /**
- * 面板弹窗标题的字: 比正文大两档、加粗 (同设计稿的「选集」), 所有面板弹窗的标题统一用它 ([AniCenteredPanelDialog] 的 title 默认就是);
+ * 面板弹窗标题的字: 照 tvOS 面板 (Sheet) 的标题, Bold 38pt (19sp, 行高 23); 所有面板弹窗的标题统一用它 ([AniCenteredPanelDialog] 的 title 默认就是);
  * 标题下面的一行说明用 [aniPanelSubtitleStyle].
  */
 val aniPanelTitleStyle: TextStyle
-    @Composable get() = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)
+    @Composable get() = MaterialTheme.typography.headlineSmall.copy(fontSize = 19.sp, lineHeight = 23.sp, fontWeight = FontWeight.Bold)
 
-/** 面板标题下面那一行说明 (如所属条目名): 正文小一档, 颜色淡一档由调用方给 (onSurfaceVariant). */
+/** 面板标题下面那一行说明 (如所属条目名): tvOS 的 Caption1 (25pt, 12.5sp), 颜色淡一档由调用方给 (onSurfaceVariant). */
 val aniPanelSubtitleStyle: TextStyle
-    @Composable get() = MaterialTheme.typography.bodyMedium
+    @Composable get() = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.5.sp, lineHeight = 16.sp)
 
 /**
- * 锚在按钮上弹出的菜单 (Popup, 如详情页的选集网格、标签) 的玻璃面板: 形状、高光边、内容约定同玻璃弹窗.
- * 弹出窗口不模糊背后, 底色取没模糊的那一档 (见 [aniGlassPanelColor]).
+ * 锚在按钮上弹出的菜单 (Popup, 如详情页的选集网格、标签) 的玻璃面板: 照 tvOS 的上下文菜单, 圆角 30pt ([ANI_GLASS_MENU_SHAPE]);
+ * 底色、描边、内容约定同玻璃弹窗.
  */
 @Composable
 fun AniGlassPopupSurface(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     Surface(
         modifier,
-        shape = ANI_GLASS_PANEL_SHAPE,
-        color = aniGlassPanelColor(blurred = false),
+        shape = ANI_GLASS_MENU_SHAPE,
+        color = aniGlassPanelColor(),
         // 半透明底在配色表里查不到 "on" 色, 必须显式给
         contentColor = MaterialTheme.colorScheme.onSurface,
         border = aniGlassEdge(),
@@ -133,13 +120,32 @@ fun AniGlassPopupSurface(modifier: Modifier = Modifier, content: @Composable () 
     }
 }
 
-/** 玻璃按钮 (没聚焦时) 的底: 一层淡白, 叠在玻璃面板或剧照上都是「更亮一点的玻璃」. */
+/**
+ * 玻璃按钮 (没聚焦时) 的底, 照 tvOS 弹窗的按钮: 浅色面板上比面板暗一档 (「变暗」混合的 #E5E5EA, 约减 26),
+ * 深色面板上亮一档 (「变亮」混合的 #2C2C2E, 约加 44).
+ */
 @Composable
-fun aniGlassButtonColor(): Color {
-    val light = MaterialTheme.colorScheme.surface.luminance() > 0.5f
-    return Color.White.copy(alpha = if (light) 0.55f else 0.1f)
+fun aniGlassButtonColor(): Color = glassOverlay(onLightPanel = 0.14f, onDarkPanel = 0.2f, onPhotoInLightTheme = 0.55f)
+
+/**
+ * 叠在玻璃面板上的一层: 浅色面板上是黑 [onLightPanel] (压暗), 深色面板上是白 [onDarkPanel] (提亮) —— tvOS 弹窗里的按钮与选项
+ * 都是这样跟着面板深浅反着来. 浅色主题下铺剧照的面板 (压了暗、内容色是白) 上用白 [onPhotoInLightTheme]: 那里的按钮字仍是
+ * onSurface 的深色, 要靠一层够亮的淡白托住.
+ */
+@Composable
+private fun glassOverlay(onLightPanel: Float, onDarkPanel: Float, onPhotoInLightTheme: Float): Color {
+    val lightTheme = MaterialTheme.colorScheme.surface.luminance() > 0.5f
+    return when {
+        !lightTheme -> Color.White.copy(alpha = onDarkPanel)
+        LocalContentColor.current.luminance() > 0.5f -> Color.White.copy(alpha = onPhotoInLightTheme)
+        else -> Color.Black.copy(alpha = onLightPanel)
+    }
 }
 
-private const val GLASS_PANEL_ALPHA_BLURRED = 0.6f
+/** 锚在按钮上弹出的菜单的形状 (tvOS 上下文菜单的圆角 30pt), 见 [AniGlassPopupSurface]. */
+val ANI_GLASS_MENU_SHAPE: Shape = RoundedCornerShape(15.dp)
+
+private val GLASS_PANEL_DARK = Color(0xFF19191A)
+private val GLASS_PANEL_LIGHT = Color(0xFFC8C7CA)
 private const val GLASS_PANEL_ALPHA_OVER_PLAYER = 0.85f
 private const val GLASS_PANEL_ALPHA = 0.95f

@@ -34,7 +34,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import me.him188.ani.app.ui.foundation.dialogs.DialogWindowDimAmount
-import me.him188.ani.app.ui.foundation.dialogs.dialogWindowBlurBehind
 import kotlin.math.roundToInt
 import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
@@ -42,7 +41,7 @@ import me.him188.ani.app.ui.foundation.LocalTvPlayPauseHandler
 import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 
 /**
- * 居中面板弹窗, 「轻透玻璃」的样子 (见 AniGlass.kt): 背后整屏模糊 (设备支持时), 轻透的底色, 一圈上亮下暗的细高光边.
+ * 居中面板弹窗, 「轻透玻璃」的样子 (见 AniGlass.kt): 接近实底的中性底色, 一圈白色细描边.
  * 宽按窗口比例, 高随内容 (最高 [heightFraction] 屏高); 下层内容 (视频画面 / 页面) 隐约透出.
  *
  * 用于大屏上替代贴边侧栏与底部抽屉 —— 贴边面板离视线中心远, 焦点跳到屏幕边缘的过程也难以
@@ -89,16 +88,14 @@ fun AniCenteredPanelDialog(
         onDismissRequest = onDismissRequest,
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        // 背后整屏模糊 (玻璃); 设备不支持时返回 false, 面板底色随之退回接近实底 (见 aniGlassPanelColor)
-        val blurred = dialogWindowBlurBehind(ANI_GLASS_BLUR_RADIUS)
         // 面板占掉大半个屏幕, 窗口默认那档 0.6 的压暗会把四周压得几乎全黑 (电视上尤其明显).
-        // 0.35 接近 M3 给模态遮罩的 32%, 面板边界照样分得清, 下层页面/视频还透得出来; 背后模糊了就再淡一些
-        DialogWindowDimAmount(if (blurred) ANI_GLASS_WINDOW_DIM else CENTERED_PANEL_WINDOW_DIM)
+        // 0.35 接近 M3 给模态遮罩的 32%, 面板边界照样分得清, 下层页面/视频还透得出来
+        DialogWindowDimAmount(CENTERED_PANEL_WINDOW_DIM)
         if (sideNav == null || !LocalTvTouchInputEnabled.current) {
-            CenteredPanel(onDismissRequest, title, widthFraction, heightFraction, aspectRatio, maxWidth, background, blurred, content)
+            CenteredPanel(onDismissRequest, title, widthFraction, heightFraction, aspectRatio, maxWidth, background, content)
         } else {
             AniPanelSideNavHost(sideNav, onDismissRequest) {
-                CenteredPanel(onDismissRequest, title, widthFraction, heightFraction, aspectRatio, maxWidth, background, blurred, content)
+                CenteredPanel(onDismissRequest, title, widthFraction, heightFraction, aspectRatio, maxWidth, background, content)
             }
         }
     }
@@ -114,7 +111,6 @@ private fun CenteredPanel(
     aspectRatio: Float?,
     maxWidth: Dp,
     background: (@Composable BoxScope.() -> Unit)?,
-    blurred: Boolean,
     content: @Composable () -> Unit,
 ) {
     Surface(
@@ -139,7 +135,7 @@ private fun CenteredPanel(
                 },
             ),
         shape = ANI_GLASS_PANEL_SHAPE,
-        color = if (background != null) Color.Transparent else aniGlassPanelColor(blurred),
+        color = if (background != null) Color.Transparent else aniGlassPanelColor(),
         border = aniGlassEdge(),
         // 必须显式给: Surface 默认用 contentColorFor(color) 推内容色, 而这里的底色带了 alpha,
         // 在配色表里查不到对应的 "on" 色 -> 退回 LocalContentColor, 而它的**默认值是纯黑**

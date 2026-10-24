@@ -55,7 +55,6 @@ import androidx.paging.compose.itemContentType
 import androidx.paging.compose.itemKey
 import me.him188.ani.app.ui.comment.UIComment
 import me.him188.ani.app.ui.foundation.dialogs.DialogWindowDimAmount
-import me.him188.ani.app.ui.foundation.dialogs.dialogWindowBlurBehind
 import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.TvImageZoomState
@@ -66,9 +65,7 @@ import me.him188.ani.app.ui.foundation.focus.TvFocusKey
 import me.him188.ani.app.ui.foundation.focus.rememberTvFocusScope
 import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
 import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
-import me.him188.ani.app.ui.foundation.widgets.ANI_GLASS_BLUR_RADIUS
 import me.him188.ani.app.ui.foundation.widgets.ANI_GLASS_PANEL_SHAPE
-import me.him188.ani.app.ui.foundation.widgets.ANI_GLASS_WINDOW_DIM
 import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_CONTENT_PADDING
 import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_TITLE_GAP
 import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_WINDOW_DIM
@@ -120,9 +117,8 @@ internal fun ViewAllPanelDialog(
         val focus = rememberTvFocusScope()
         val touch = LocalTvTouchInputEnabled.current
         if (!touch) focus.InitialFocus(ViewAllGridFirstItemFocus)
-        // 玻璃面板、背后模糊与窗外压暗与 AniCenteredPanelDialog 同一套: 盖在播放器上时画面要透得出来
-        val blurred = dialogWindowBlurBehind(ANI_GLASS_BLUR_RADIUS)
-        DialogWindowDimAmount(if (blurred) ANI_GLASS_WINDOW_DIM else CENTERED_PANEL_WINDOW_DIM)
+        // 玻璃面板与窗外压暗与 AniCenteredPanelDialog 同一套: 盖在播放器上时画面要透得出来
+        DialogWindowDimAmount(CENTERED_PANEL_WINDOW_DIM)
         Surface(
             // 独立窗口收不到播放页的根按键路由, 播放器内嵌详情页开的弹窗要自己接播放/暂停键
             Modifier.tvOverlayWindowKeys(onDismissRequest)
@@ -133,7 +129,7 @@ internal fun ViewAllPanelDialog(
                 .fillMaxWidth(TV_DETAILS_DIALOG_WIDTH_FRACTION)
                 .fillMaxHeightAtMost(TV_DETAILS_DIALOG_HEIGHT_FRACTION),
             shape = ANI_GLASS_PANEL_SHAPE,
-            color = aniGlassPanelColor(blurred),
+            color = aniGlassPanelColor(),
             border = aniGlassEdge(),
             // 半透明底色查不到 "on" 色, 不显式给会退回 LocalContentColor 的默认纯黑
             contentColor = MaterialTheme.colorScheme.onSurface,
