@@ -703,12 +703,19 @@ private fun TvSettingsItemsBuilder.playerItems() {
         write = { copy(pauseVideoOnEditDanmaku = it) },
     )
     toggle(player, Lang.settings_player_auto_mark_done, read = { it.autoMarkDone }, write = { copy(autoMarkDone = it) })
-    // 共享版播放器 (触屏) 选完源一律关掉选源面板, 不看这一项
+    // 电视播放器与触屏上的共享版播放器各读一份 (默认值不同), 见 VideoScaffoldConfig.touchHideSelectorOnSelect
     tvPlayerOnly {
         toggle(
             player, Lang.settings_player_hide_selector_on_select,
             read = { it.hideSelectorOnSelect },
             write = { copy(hideSelectorOnSelect = it) },
+        )
+    }
+    touchPlayerOnly {
+        toggle(
+            player, Lang.settings_player_hide_selector_on_select,
+            read = { it.touchHideSelectorOnSelect },
+            write = { copy(touchHideSelectorOnSelect = it) },
         )
     }
     toggle(player, Lang.settings_player_auto_play_next, read = { it.autoPlayNext }, write = { copy(autoPlayNext = it) })

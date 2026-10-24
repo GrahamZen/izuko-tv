@@ -28,7 +28,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
-import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.subject_episode_close_selector
@@ -77,11 +76,7 @@ fun EpisodeVideoSideSheets.MediaSelectorSheet(
     fetchRequest: MediaFetchRequest? = null,
     onFetchRequestChange: (MediaFetchRequest) -> Unit = {},
     manualBrowseState: ManualBrowseState? = null,
-    /**
-     * 选中一个数据源后是否顺手关掉本面板, 见 `VideoScaffoldConfig.hideSelectorOnSelect`.
-     *
-     * **只有遥控器形态读它**, 见下面的 `hideOnSelectEffective`.
-     */
+    /** 选中一个数据源后是否顺手关掉本面板, 宿主按界面形态取值, 见 `hideSelectorOnSelectForCurrentUi`. */
     hideOnSelect: Boolean = false,
     /** 「完整搜索」开关的值 (null = 不显示, 设置里开了始终完整搜索), 见 EpisodeViewModel.fullMediaSearch. */
     fullSearch: Boolean? = null,
@@ -89,11 +84,6 @@ fun EpisodeVideoSideSheets.MediaSelectorSheet(
 ) {
     val selectMediaSourceText = stringResource(Lang.subject_episode_select_media_source)
     val closeSelectorText = stringResource(Lang.subject_episode_close_selector)
-    // 指针形态一律选完即关: 那个开关默认是关的, 直接读它等于把"点完源面板还盖着播放器"变成默认行为,
-    // 而这里从来只有一个出口 (右上角关闭按钮), 与手机上一贯的观感不符.
-    // 遥控器形态才照配置走: 那边返回键本来就是关面板的固定出口, 留在面板上是刻意的取舍 ——
-    // 换的源不行可以当场接着换下一个.
-    val hideOnSelectEffective = hideOnSelect || !LocalAniUiBehavior.current.focusDrivenNavigation
 
     val title: @Composable () -> Unit = {
         // SideSheetHeader 把 title 放在 Row(weight(1f)) 里, 内层不 fillMaxWidth 的话 chip 会贴着标题而不是靠右.
@@ -152,7 +142,7 @@ fun EpisodeVideoSideSheets.MediaSelectorSheet(
                 onFetchRequestChange,
                 onClickItem = {
                     mediaSelectorState.select(it)
-                    if (hideOnSelectEffective) onDismissRequest()
+                    if (hideOnSelect) onDismissRequest()
                 },
                 onRestartSource = onRestartSource,
                 modifier = modifier.fillMaxSize().navigationBarsPadding(),
@@ -162,7 +152,7 @@ fun EpisodeVideoSideSheets.MediaSelectorSheet(
                 mediaSelectorState,
                 onClickItem = {
                     mediaSelectorState.select(it)
-                    if (hideOnSelectEffective) onDismissRequest()
+                    if (hideOnSelect) onDismissRequest()
                 },
                 onRestartSource = onRestartSource,
                 onRequestManualSearch = { onModeChange(MediaSelectorMode.MANUAL) },
