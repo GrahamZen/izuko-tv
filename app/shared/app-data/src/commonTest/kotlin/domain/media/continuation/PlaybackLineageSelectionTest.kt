@@ -11,6 +11,7 @@ package me.him188.ani.app.domain.media.continuation
 
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runCurrent
 import me.him188.ani.app.data.models.preference.MediaPreference
 import me.him188.ani.app.data.models.preference.MediaSelectorSettings
@@ -38,7 +39,10 @@ class PlaybackLineageSelectionTest {
     private val lineage = DriveShareLineage("drive-share", "testdrive", DriveShareLocation("s1", "", "番", "d1", emptyList()))
 
     /** 线索上的资源 = 字幕组位置写着「线索」的; 直接去取时给出 [resolution]. */
-    private class FakeContinuation(var resolution: LineageResolution = LineageResolution.NotFound) : EpisodeContinuation {
+    private class FakeContinuation(
+        var resolution: LineageResolution = LineageResolution.NotFound,
+        private val quick: Boolean = false,
+    ) : EpisodeContinuation {
         var resolves = 0
         override fun owns(media: Media) = false
         override suspend fun lineageOf(media: Media): PlaybackLineage? = null
@@ -47,7 +51,11 @@ class PlaybackLineageSelectionTest {
             resolves++
             return resolution
         }
+        override fun isQuickToResolve(lineage: PlaybackLineage) = quick
     }
+
+    /** 记在会话里那个叫 drive 的数据源上的线索 */
+    private val lineageOnDrive = DriveShareLineage("drive", "testdrive", DriveShareLocation("s1", "", "番", "d1", emptyList()))
 
     private fun FetchMediaSelectorTestSuite.initWeb() {
         initSubject("Example Series")
@@ -104,6 +112,48 @@ class PlaybackLineageSelectionTest {
     }
 
     @Test
+    fun `a cache of another version is left to auto select instead of the lineage`() = runFetchMediaSelectorTestSuite {
+        // 从缓存页点进来、或「有缓存时直接播」: 缓存优先, 线索不去网上取
+        initWeb()
+        val repository = PlaybackLineageRepository(createTestPreferencesDataStore()).apply { setLineage(SUBJECT_ID, lineage) }
+        val (_, session, sources) = configureFetchSession {
+            object {
+                val drive by web()
+                val cache by localCache()
+            }
+        }
+        sources.drive.complete(media(kind = WEB, subjectName = "Example Series", alliance = ON_LINEAGE))
+        sources.cache.complete(media(kind = LocalCache, subjectName = "Example Series", alliance = "别的版本"))
+        testScope().runCurrent()
+        val continuation = FakeContinuation(LineageResolution.Found(media(kind = WEB, subjectName = "Example Series", alliance = ON_LINEAGE)))
+
+        assertFalse(select(repository, continuation, session))
+        assertNull(selector.selected.value)
+        assertEquals(0, continuation.resolves)
+        assertEquals(lineage, repository.lineageOf(SUBJECT_ID))
+    }
+
+    @Test
+    fun `a cache on the lineage is chosen without waiting for the network sources`() = runFetchMediaSelectorTestSuite {
+        initWeb()
+        val repository = PlaybackLineageRepository(createTestPreferencesDataStore()).apply { setLineage(SUBJECT_ID, lineage) }
+        val (_, session, sources) = configureFetchSession {
+            object {
+                val drive by web()
+                val cache by localCache()
+            }
+        }
+        // 网盘源还在查
+        sources.cache.complete(media(kind = LocalCache, subjectName = "Example Series", alliance = ON_LINEAGE))
+        testScope().runCurrent()
+        val start = testScope().currentTime
+
+        assertTrue(select(repository, FakeContinuation(), session))
+        assertEquals(LocalCache, selector.selected.value?.kind)
+        assertTrue(testScope().currentTime - start < 10_000)
+    }
+
+    @Test
     fun `not among the candidates - resolved directly from the lineage`() = runFetchMediaSelectorTestSuite {
         initWeb()
         val repository = PlaybackLineageRepository(createTestPreferencesDataStore()).apply { setLineage(SUBJECT_ID, lineage) }
@@ -118,6 +168,61 @@ class PlaybackLineageSelectionTest {
 
         assertTrue(select(repository, FakeContinuation(LineageResolution.Found(resolved)), session))
         assertEquals(resolved, selector.selected.value)
+    }
+
+    @Test
+    fun `a resolved resource the selector excludes is not selected`() = runFetchMediaSelectorTestSuite {
+        // 直接取回来的不在候选里, 照样要过过滤规则 (这里是条目名对不上)
+        initWeb()
+        val repository = PlaybackLineageRepository(createTestPreferencesDataStore()).apply { setLineage(SUBJECT_ID, lineage) }
+        val (_, session, sources) = configureFetchSession {
+            object {
+                val other by web()
+            }
+        }
+        sources.other.complete(media(kind = WEB, subjectName = "Example Series", alliance = "线路"))
+        testScope().runCurrent()
+        val continuation = FakeContinuation(LineageResolution.Found(media(kind = WEB, subjectName = "完全无关的番", alliance = ON_LINEAGE)))
+
+        assertFalse(select(repository, continuation, session))
+        assertNull(selector.selected.value)
+        assertEquals(1, continuation.resolves)
+    }
+
+    @Test
+    fun `a quick lineage is resolved without waiting for its source to finish`() = runFetchMediaSelectorTestSuite {
+        initWeb()
+        val repository = PlaybackLineageRepository(createTestPreferencesDataStore()).apply { setLineage(SUBJECT_ID, lineageOnDrive) }
+        val (_, session, _) = configureFetchSession {
+            object {
+                val drive by web()
+            }
+        }
+        // 网盘源还在整轮搜
+        testScope().runCurrent()
+        val resolved = media(kind = WEB, subjectName = "Example Series", alliance = ON_LINEAGE)
+        val start = testScope().currentTime
+
+        assertTrue(select(repository, FakeContinuation(LineageResolution.Found(resolved), quick = true), session))
+        assertEquals(resolved, selector.selected.value)
+        assertTrue(testScope().currentTime - start < 10_000)
+    }
+
+    @Test
+    fun `a lineage source that finished without the episode is not searched again`() = runFetchMediaSelectorTestSuite {
+        initWeb()
+        val repository = PlaybackLineageRepository(createTestPreferencesDataStore()).apply { setLineage(SUBJECT_ID, lineageOnDrive) }
+        val (_, session, sources) = configureFetchSession {
+            object {
+                val drive by web()
+            }
+        }
+        sources.drive.complete(media(kind = WEB, subjectName = "Example Series", alliance = "别的线路"))
+        testScope().runCurrent()
+        val continuation = FakeContinuation(LineageResolution.Found(media(kind = WEB, subjectName = "Example Series", alliance = ON_LINEAGE)))
+
+        assertFalse(select(repository, continuation, session))
+        assertEquals(0, continuation.resolves)
     }
 
     @Test
