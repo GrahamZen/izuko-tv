@@ -841,6 +841,7 @@
     <string name="collection_tv_progress_finale_day">Finale %1$s</string>
     <string name="collection_tv_progress_finale_at">Finale %1$s %2$s</string>
     <string name="collection_tv_progress_completed">All %1$s eps out</string>
+    <string name="collection_tv_progress_resume">Ep %1$s / %2$s</string>
     <string name="collection_tv_progress_wish_started">Now airing</string>
     <string name="collection_tv_progress_next">%1$s · Ep %2$s</string>
     <string name="collection_tv_progress_next_unknown">Next date TBA</string>

@@ -209,7 +209,7 @@ private fun tvProgressOrder(group: TvProgressGroup): Comparator<TvProgressEntry>
         compareBy<TvProgressEntry, Instant?>(nullsLast()) { it.nextAirTime?.instant }.thenByDescending { it.info.lastUpdated }
 }
 
-private fun EpisodeCollectionInfo.isMainStory(): Boolean {
+internal fun EpisodeCollectionInfo.isMainStory(): Boolean {
     val type = episodeInfo.type
     return (type == null || type == EpisodeType.MainStory) && episodeInfo.sort is EpisodeSort.Normal
 }
