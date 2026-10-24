@@ -69,7 +69,8 @@ fun SubjectDownloadGroupCard(
 ) {
     val containerColor by animateColorAsState(
         when {
-            selected -> MaterialTheme.colorScheme.secondaryContainer
+            // 选中用中性灰而不是 secondaryContainer: 那是种子色 (偏紫) 调出来的, 浅色主题下是一块浅紫; 界面上彩色只留给语义
+            selected -> MaterialTheme.colorScheme.surfaceContainerHighest
             selectionMode && allEntriesSelected -> MaterialTheme.colorScheme.surfaceContainer
             else -> MaterialTheme.colorScheme.surfaceContainerLowest
         },

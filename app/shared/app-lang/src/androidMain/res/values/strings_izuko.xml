@@ -956,6 +956,8 @@
     <string name="collection_tv_tab_order_subtitle">The row above is the tab row of the collection page. However you arrange it here is how it looks there.</string>
     <string name="collection_tv_tab_order_hint">OK to pick up  ·  Back to leave</string>
     <string name="collection_tv_tab_order_hint_grabbed">Left / Right to move  ·  OK to drop  ·  Back to undo</string>
+    <string name="collection_tv_tab_order_hint_touch">Tap a tab to pick it up</string>
+    <string name="collection_tv_tab_order_hint_grabbed_touch">Tap where it should go  ·  Tap it again to put it down</string>
     <string name="collection_tv_tab_order_reset">Reset to default order</string>
     <string name="collection_tv_progress_tab">Airing</string>
     <string name="collection_tv_progress_group_new">New episodes</string>
@@ -980,6 +982,8 @@
     <string name="tv_wall_scale_hint_adjust">Up / Down  Adjust the size</string>
     <string name="tv_wall_scale_hint_try">Right / OK  Try it on the page</string>
     <string name="tv_wall_scale_hint_back">Back  Leave</string>
+    <string name="tv_wall_scale_hint_drag">Tap or drag the slider to change the size</string>
+    <string name="tv_adjust_done">Done</string>
     <string name="tv_wall_scale_hint_preview">This page is a preview: OK opens the introduction, but no details page</string>
     <string name="tv_wall_scale_sample_title_short">Anime title</string>
     <string name="tv_wall_scale_sample_title_medium">A slightly longer anime title</string>

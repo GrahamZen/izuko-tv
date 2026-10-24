@@ -405,6 +405,8 @@ private fun AniAppContentImpl(
                 // 下发"本页是不是栈顶": 页面靠它在返回时补焦点落点. **不能用页面自己的 lifecycle** ——
                 // Nav3 里被盖住的条目一直是 RESUMED, 见 LocalPageIsForeground 的文档
                 rememberPageForegroundNavEntryDecorator(backStack),
+                // 触屏上没有电视版的页面照上游写法 (见 TouchUpstreamPageNavEntryDecorator)
+                rememberTouchUpstreamPageNavEntryDecorator(backStack),
             ),
             // TV 详情页返回缩回列表页 hero (TvHeroZoomHandoff.Shrink): 两页都不做转场 —— 缩回那一层画在导航之上, 两页都不画,
             // 详情页立刻移出组合 (那一帧落在缩回起步前的静止图上). 三条都判: 进页转场中途出栈时 Nav3 不一定按 pop 算

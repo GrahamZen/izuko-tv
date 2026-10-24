@@ -81,6 +81,7 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextMeasurer
@@ -455,7 +456,7 @@ private fun rememberTvPadBackdropUrl(state: SubjectDetailsState, info: SubjectIn
  * - 上: 标题 / 另一个名字 / 季度与连载, 右上角是评分 (条形图在上、分数 + 星级排名在下, 点开评分弹窗; 见 [TvPadTitleRow]);
  * - 中: 简介 (剩下的高度放几行算几行, 末尾「展开」)、两行标签 (放不下的收进「更多标签」); 点简介或「更多标签」开同一个弹窗
  *   (全文 + 全部标签, 见 [TvPadSummaryDialog]);
- * - 下: 左边播放 / 收藏 / Bangumi / 反馈, 右端收藏统计; 这一行贴着封面的底.
+ * - 下: 左边播放 / 收藏 / Bangumi / 反馈, 右端收藏统计 (窗口竖着时不画); 这一行贴着封面的底.
  * 全部选集与缓存在选集区的标题行 (见 TvPadEpisodesSection).
  */
 @Composable
@@ -538,8 +539,12 @@ private fun TvPadDetailsHeader(
                         onClickOpenExternal = onClickOpenExternal,
                         modifier = Modifier.weight(1f).graphicsLayer { alpha = actionsAlpha },
                     )
-                    // 自己改了收藏类型后统计跟着变 (uiState); 还没加载出来时先用条目信息里的
-                    TvPadStats(if (uiState.isPlaceholder) info.collectionStats else uiState.collectionStats)
+                    // 自己改了收藏类型后统计跟着变 (uiState); 还没加载出来时先用条目信息里的.
+                    // 窗口竖着时这一行放不下按钮, 统计不画
+                    val windowSize = LocalWindowInfo.current.containerSize
+                    if (windowSize.width >= windowSize.height) {
+                        TvPadStats(if (uiState.isPlaceholder) info.collectionStats else uiState.collectionStats)
+                    }
                 }
             },
         )
@@ -632,8 +637,10 @@ private fun TvPadTitleRow(
         val press = slot(
             TvPadTitleRowSlot.Press,
             {
+                // 外面那层 Box 把下限放宽到 0, 不铺满的话点按范围只剩内边距那么一小块
                 Box(
-                    Modifier.tvPadPressOutset(TV_PAD_RATING_PRESS_INSET, TV_PAD_RATING_PRESS_INSET / 2)
+                    Modifier.fillMaxSize()
+                        .tvPadPressOutset(TV_PAD_RATING_PRESS_INSET, TV_PAD_RATING_PRESS_INSET / 2)
                         .clip(RoundedCornerShape(TV_PAD_RATING_PRESS_INSET + 4.dp))
                         .clickable(onClick = onClickRating)
                         .padding(horizontal = TV_PAD_RATING_PRESS_INSET, vertical = TV_PAD_RATING_PRESS_INSET / 2),

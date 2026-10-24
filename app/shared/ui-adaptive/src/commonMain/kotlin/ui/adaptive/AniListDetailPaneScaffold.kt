@@ -420,15 +420,16 @@ data class ListDetailLayoutParameters(
         fun calculate(directive: PaneScaffoldDirective): ListDetailLayoutParameters {
             val isTwoPane = directive.maxHorizontalPartitions > 1
             val windowSizeClass = currentWindowAdaptiveInfo1().windowSizeClass
-            // 遥控器沉浸式界面上详情侧不做圆角卡片, 内容直接铺在页面背景上 (Prime Video 风格的两栏)
-            val focusDriven = LocalAniUiBehavior.current.focusDrivenNavigation
+            // 沉浸式外壳 (电视, 以及平板 / iPad 上的电视界面) 里详情侧不做圆角卡片, 内容直接铺在页面背景上 (Prime Video 风格的两栏).
+            // 按外壳而不是按输入方式分: 触屏上换回指针设备行为的页面也在这个外壳里
+            val immersive = LocalAniUiBehavior.current.immersiveShell
             return if (isTwoPane) {
                 ListDetailLayoutParameters(
                     listPaneContentStartPadding = windowSizeClass.paneHorizontalPadding,
                     listPaneContentEndPadding = windowSizeClass.paneHorizontalPadding,
                     detailPaneContentStartPadding = windowSizeClass.paneHorizontalPadding,
                     detailPaneContentEndPadding = windowSizeClass.paneHorizontalPadding,
-                    detailPaneShape = if (focusDriven) {
+                    detailPaneShape = if (immersive) {
                         RectangleShape
                     } else {
                         MaterialTheme.shapes.extraLarge.copy(
@@ -436,7 +437,7 @@ data class ListDetailLayoutParameters(
                             bottomEnd = ZeroCornerSize,
                         )
                     },
-                    detailPaneColors = if (focusDriven) {
+                    detailPaneColors = if (immersive) {
                         CardDefaults.cardColors(
                             containerColor = Color.Transparent,
                             contentColor = MaterialTheme.colorScheme.onSurface,
