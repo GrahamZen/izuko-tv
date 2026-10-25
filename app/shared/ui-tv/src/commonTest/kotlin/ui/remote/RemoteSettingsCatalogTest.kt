@@ -66,6 +66,36 @@ class RemoteSettingsCatalogTest {
         assertContains(bad.message, "not-a-tracker")
     }
 
+    @Test
+    fun `tracker subscriptions take web addresses one per line`() {
+        val spec = RemoteSettingsCatalog.items.single { it.key == "trackerSubscriptions" }
+
+        val ok = RemoteGenericSettings.parse(spec, " https://a.example/best.txt \n\nhttp://b.example/list\n")
+        assertIs<RemoteGenericSettings.Parsed.Value>(ok)
+        assertEquals(JsonPrimitive("https://a.example/best.txt\nhttp://b.example/list"), ok.element)
+
+        val bad = RemoteGenericSettings.parse(spec, "udp://a.example:1337/announce")
+        assertIs<RemoteGenericSettings.Parsed.Error>(bad)
+        assertContains(bad.message, "udp://a.example:1337/announce")
+    }
+
+    @Test
+    fun `a card action runs and answers with its message`() {
+        val spec = RemoteSettingSpec(
+            key = "withAction",
+            settings = { error("not used") },
+            serializer = MediaPreference.serializer(),
+            fieldName = "alliancePatterns",
+            title = Lang.settings_media_alliance,
+            action = RemoteSettingAction("立即更新") { "done" },
+        )
+
+        val ran = RemoteGenericSettings.action("withAction", listOf(spec))
+        assertEquals(JsonPrimitive(true), ran["ok"])
+        assertEquals(JsonPrimitive("done"), ran["message"])
+        assertEquals(JsonPrimitive(false), RemoteGenericSettings.action("missing", listOf(spec))["ok"])
+    }
+
     /** 嵌套字段 (`localRule.xxx`): 只换最里面那个字段, 同一层与外层的其他字段都不动 */
     @Test
     fun `nested field is read and written in place`() {
