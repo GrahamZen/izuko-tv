@@ -10,7 +10,9 @@
 package me.him188.ani.app.domain.media.probe
 
 import io.ktor.client.HttpClient
+import io.ktor.client.plugins.cookies.HttpCookies
 import io.ktor.client.plugins.expectSuccess
+import io.ktor.client.plugins.pluginOrNull
 import io.ktor.client.request.header
 import io.ktor.client.request.prepareGet
 import io.ktor.client.statement.bodyAsChannel
@@ -27,6 +29,7 @@ import me.him188.ani.app.domain.media.MediaDynamicRange
 import me.him188.ani.app.domain.media.MediaSurroundAudio
 import me.him188.ani.app.domain.media.hls.TsPacketReader
 import me.him188.ani.utils.ktor.UrlHelpers
+import me.him188.ani.utils.ktor.rawCookieHeader
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.roundToInt
 
@@ -270,7 +273,11 @@ object MediaStreamProbe {
     private suspend fun HttpClient.fetch(url: String, headers: Map<String, String>, range: LongRange?, max: Int): Fetched? = try {
         prepareGet(url) {
             expectSuccess = false
-            headers.forEach { (name, value) -> header(name, value) }
+            // 装了 Cookie 插件的客户端会把手写的 Cookie 重新编码 (网盘直链因此回 412), 这种客户端上原样发 (见 rawCookieHeader)
+            val rawCookie = pluginOrNull(HttpCookies) != null
+            headers.forEach { (name, value) ->
+                if (rawCookie && name.equals(HttpHeaders.Cookie, ignoreCase = true)) rawCookieHeader(value) else header(name, value)
+            }
             if (range != null) header(HttpHeaders.Range, "bytes=${range.first}-${range.last}")
         }.execute { response ->
             if (response.status.value !in 200..299) return@execute null
