@@ -29,6 +29,7 @@ import me.him188.ani.app.data.repository.media.MediaSourceSaves
 import me.him188.ani.app.data.repository.media.MediaSourceSubscriptionsSaveData
 import me.him188.ani.app.data.repository.media.MikanIndexes
 import me.him188.ani.app.data.repository.player.EpisodeHistories
+import me.him188.ani.app.data.repository.torrent.TrackerSubscriptionSaveData
 import me.him188.ani.app.data.repository.torrent.peer.PeerFilterSubscriptionsSaveData
 import me.him188.ani.app.data.repository.user.TokenSave
 import me.him188.ani.app.domain.media.cache.storage.MediaCacheSave
@@ -169,6 +170,14 @@ abstract class PlatformDataStoreManager {
             corruptionHandler = ReplaceFileCorruptionHandler {
                 PeerFilterSubscriptionsSaveData.Default
             },
+        )
+    }
+
+    val trackerSubscriptionStore by lazy {
+        DataStoreFactory.create(
+            serializer = TrackerSubscriptionSaveData.serializer().asDataStoreSerializer({ TrackerSubscriptionSaveData.Default }),
+            produceFile = { resolveDataStoreFile("trackerSubscription") },
+            corruptionHandler = ReplaceFileCorruptionHandler { TrackerSubscriptionSaveData.Default },
         )
     }
 

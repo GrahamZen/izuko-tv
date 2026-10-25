@@ -79,6 +79,7 @@ import me.him188.ani.app.domain.mediasource.subscription.BundledSubscriptions
 import me.him188.ani.app.data.repository.repositoryModules
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
 import me.him188.ani.app.data.repository.subject.SubjectNsfw
+import me.him188.ani.app.data.repository.torrent.TrackerSubscriptionRepository
 import me.him188.ani.app.data.repository.torrent.peer.PeerFilterSubscriptionRepository
 import me.him188.ani.app.data.repository.user.AccessTokenSession
 import me.him188.ani.app.data.repository.user.SettingsRepository
@@ -917,6 +918,8 @@ fun KoinApplication.startCommonKoinModule(
         val peerFilterRepo = koin.get<PeerFilterSubscriptionRepository>()
         peerFilterRepo.updateOrLoadAll(reuseRecent = true)
     }
+
+    coroutineScope.launch { koin.get<TrackerSubscriptionRepository>().keepUpdated() }
 
     // 作品是不是 NSFW 的登记表 (见 SubjectNsfw): 读回落盘的、从收藏库补齐, 跟上设置
     SubjectNsfw.attach(
