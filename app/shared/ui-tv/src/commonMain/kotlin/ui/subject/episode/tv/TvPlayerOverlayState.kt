@@ -88,6 +88,9 @@ enum class TvPlayerFocusRegion {
     /** 浮出面板内 (弹幕列表/推荐/评论的条目上). */
     PANEL,
 
+    /** 胶囊上方的叠层里 (画廊 / 人物页 / 查看全部 / 评论详情, 见 TvPlayerDetailLayers). */
+    LAYER,
+
     /** 进度条上方的胶囊按钮行. */
     PILLS,
 
@@ -174,6 +177,18 @@ class TvPlayerOverlayState(
      */
     var replyingComment: TvCommentReplyTarget? by mutableStateOf(null)
         private set
+
+    /** 胶囊上方的叠层 (三颗胶囊的画廊、人物页、人物页里的「查看全部」, 见 TvPlayerDetailLayers). 评论详情那一层由 [replyingComment] 驱动. */
+    internal val detailLayers = TvPlayerDetailLayersState()
+
+    /** 有叠层开着 (人物 / 画廊 / 评论详情). */
+    val hasDetailLayer: Boolean get() = detailLayers.isOpen || replyingComment != null
+
+    /**
+     * 叠层往下出边、焦点回到胶囊的那一下: 同一次按住的下键连发不再往下走 (否则一路从胶囊跳进度条, 面板一收叠层就清掉了), 松手解锁.
+     * 由根路由读写 (见 TvEpisodeScreen 的 downKeyLatched).
+     */
+    var downKeyLatchedByLayer: Boolean = false
 
     /**
      * 评论弹窗里长按引用区放大看的图 (见 TvCommentReplyDialog). 画在弹窗之上、同一个窗口里;
@@ -380,10 +395,13 @@ class TvPlayerOverlayState(
         markInteraction()
     }
 
-    /** 关闭评论弹窗, 焦点还给刚点开的那条评论. */
-    fun dismissReply() {
+    /**
+     * 关闭评论详情, 焦点还给刚点开的那条评论. [restoreFocus] = false: 焦点不在详情里 (已经回到胶囊上, 那里返回或换胶囊时顺手关掉), 不动焦点.
+     */
+    fun dismissReply(restoreFocus: Boolean = true) {
         val target = replyingComment ?: return
         replyingComment = null
+        if (!restoreFocus) return
         // 面板里点开的那条: 焦点还给它. 胶囊点开的"发表评论"没有对应的面板条目 (面板里那些
         // 条目此刻一个都没被点过), 焦点由那颗胶囊自己的 restoreFocusAfter 收回 —— 这里再抢
         // 一次就是把焦点硬塞进面板, 与用户离开时的位置对不上
