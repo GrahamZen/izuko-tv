@@ -807,8 +807,8 @@ private fun TvExplorationPageContent(
         }
     }
 
-    // 返回键分层规则: 不在行首卡 -> 回本行首卡; 区块内非首行的行首卡 -> 回区块首行首卡;
-    // 区块首行的行首卡 -> hero 主按钮; hero 主按钮上轮播不在第一项 -> 回第一项
+    // 返回键分层规则 (见 tvExploreBackTarget): 不在行首卡 -> 回本行首卡; 不在第一行的行首卡 -> 回第一行首卡 (有继续观看是它, 没有是第一个推荐行);
+    // 第一行的行首卡 -> hero 主按钮; hero 主按钮上轮播不在第一项 -> 回第一项
     // (最后这层在 [TvHeroCarouselBackHandler], 单独注册).
     //
     // **不能只看 cardAreaHasFocus**: 从详情页/播放器返回本页时它要等目标行排出来、焦点
@@ -834,28 +834,16 @@ private fun TvExplorationPageContent(
         val pending = cardFocusRequest
         val key = pending?.rowKey ?: focusedRowKey
         val cardIndex = if (pending != null) pending.cardIndex.let { if (it < 0) 1 else it } else focusedCardIndex
-        val sectionFirstKey = if (key == TV_FOLLOWED_ROW_KEY) TV_FOLLOWED_ROW_KEY else tvRecRowKey(0)
-        when {
-            key == null -> {
-                heroFocusRequest = TvHeroFocusRequest(TvHeroFocusButton.PRIMARY)
-            }
-
-            // 回本行首卡同样按远跳走 (同追番页返回回首卡): 途中按方向键当场落到行首, 按确认排队, 落地后点它
-            cardIndex > 0 -> {
-                wallFarJumpRow = key
-                cardFocusRequest = TvCardFocusRequest(key, cardIndex = 0)
-            }
-
-            key != sectionFirstKey -> {
-                wallFarJumpRow = sectionFirstKey
-                cardFocusRequest = TvCardFocusRequest(sectionFirstKey, cardIndex = 0)
-            }
-
-            else -> {
-                // 挂着的回首卡请求作废, 否则它落地时把焦点又拉回卡片 (后落地的赢)
-                cardFocusRequest = null
-                heroFocusRequest = TvHeroFocusRequest(TvHeroFocusButton.PRIMARY)
-            }
+        val firstRowKey = nativeState.view?.firstRowKey() ?: if (hasFollowed) TV_FOLLOWED_ROW_KEY else tvRecRowKey(0)
+        val target = tvExploreBackTarget(key, cardIndex, firstRowKey)
+        if (target != null) {
+            // 回首卡按远跳走 (同追番页返回回首卡): 途中按方向键当场落到目标, 按确认排队, 落地后点它
+            wallFarJumpRow = target
+            cardFocusRequest = TvCardFocusRequest(target, cardIndex = 0)
+        } else {
+            // 挂着的回首卡请求作废, 否则它落地时把焦点又拉回卡片 (后落地的赢)
+            cardFocusRequest = null
+            heroFocusRequest = TvHeroFocusRequest(TvHeroFocusButton.PRIMARY)
         }
     }
     // 轮播态的最后一层 (注册在卡片那条之后、pendingNav 那条之前, 三者的 enabled 互斥).
@@ -1212,6 +1200,17 @@ private fun TvRecommendationRefreshProgress(
 @Composable
 private fun TvHeroCarouselBackHandler(enabled: () -> Boolean, onBack: () -> Unit) {
     BackHandler(enabled = enabled(), onBack = onBack)
+}
+
+/**
+ * 探索页卡片区按返回落到哪一行的第一张 (返回键分层): 焦点在 [rowKey] 行第 [cardIndex] 张 (条目下标). 不在行首 -> 本行; 在行首、不在第一行
+ * ([firstRowKey]: 有继续观看是它, 没有是第一个推荐行) -> 第一行; 第一行的行首 (或焦点不在卡上, [rowKey] 为 null) -> null, 回 hero 主按钮.
+ */
+internal fun tvExploreBackTarget(rowKey: String?, cardIndex: Int, firstRowKey: String?): String? = when {
+    rowKey == null -> null
+    cardIndex > 0 -> rowKey
+    firstRowKey != null && rowKey != firstRowKey -> firstRowKey
+    else -> null
 }
 
 /** [TvFocusRestoreClaim] 的读取器版: [active] 在这里读, 它翻转时只重组这一小块. */
