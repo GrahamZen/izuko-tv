@@ -1,0 +1,43 @@
+version: 2.1
+
+parameters:
+  run_ios:
+    type: boolean
+    default: false
+    description: "Create the manually approved iOS build workflow."
+  build_type:
+    type: enum
+    enum: [debug, release]
+    default: release
+
+jobs:
+  ios_ipa:
+    macos:
+      xcode: "26.4.1"
+    resource_class: m4pro.medium
+    environment:
+      IOS_BUILD_TYPE: << pipeline.parameters.build_type >>
+      GRADLE_LOCK_STALE: "14400"
+    steps:
+      - checkout
+      - run:
+          name: Prepare Apple Silicon build environment
+          command: bash .circleci/ios-build.sh prepare
+          no_output_timeout: 20m
+      - run:
+          name: Build unsigned iOS IPA
+          command: bash .circleci/ios-build.sh build
+          no_output_timeout: 30m
+      - store_artifacts:
+          path: app/ios/build/archives/<< pipeline.parameters.build_type >>/Animeko.ipa
+          destination: izuko-ios-<< pipeline.parameters.build_type >>.ipa
+
+workflows:
+  ios_manual:
+    when: << pipeline.parameters.run_ios >>
+    jobs:
+      - approve_macos_start:
+          type: approval
+      - ios_ipa:
+          requires:
+            - approve_macos_start
