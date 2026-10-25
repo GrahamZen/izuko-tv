@@ -11,6 +11,7 @@ package me.him188.ani.android.tv
 
 import android.content.pm.PackageManager
 import me.him188.ani.app.ui.diagnostics.TraceSection
+import me.him188.ani.app.ui.feedback.TouchFeedbackHost
 import me.him188.ani.app.ui.foundation.tv.LocalTvOpenActionPanel
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
@@ -528,6 +529,7 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
                     val actionToasts = rememberActionToastState(plain = LocalToaster.current)
                     CompositionLocalProvider(LocalTvOpenActionPanel provides openActionPanel, LocalToaster provides actionToasts) { content() }
                     ActionToastHost(actionToasts)
+                    TouchFeedbackHost()
                 } else {
                     content()
                 }

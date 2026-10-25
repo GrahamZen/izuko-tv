@@ -27,12 +27,19 @@ import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
@@ -46,6 +53,9 @@ import me.him188.ani.app.tools.update.DownloadPackage
 import me.him188.ani.app.tools.update.SourceOutcome
 import me.him188.ani.app.tools.update.FileDownloadStage
 import me.him188.ani.app.tools.update.formatTransferProgress
+import me.him188.ani.app.ui.feedback.FeedbackApkInstall
+import me.him188.ani.app.ui.feedback.FeedbackApkInstaller
+import me.him188.ani.app.ui.feedback.FeedbackApkStatus
 import me.him188.ani.app.ui.foundation.lan.LanHttpRequest
 import me.him188.ani.app.ui.foundation.lan.LanHttpServer
 import me.him188.ani.app.ui.update.NewVersion
@@ -123,6 +133,15 @@ internal object RemoteAppUpdate {
 
     @Volatile
     private var state = State()
+        // 与下面的 setState 函数在 JVM 上同名, 换一个
+        @JvmName("assignState")
+        set(value) {
+            field = value
+            stateFlow.value = value
+        }
+
+    /** [state] 的流: 应用内装测试包时界面上跟着显示 (见 [inApp]). */
+    private val stateFlow = MutableStateFlow(State())
 
     @Volatile
     private var sessionId = -1
@@ -517,6 +536,31 @@ internal object RemoteAppUpdate {
         val o = offered ?: return result(false, tr("测试包已经不在了，回到「反馈」页再点一次「装到电视」"))
         val ctx = context ?: return result(false, NOT_READY)
         needPermission(ctx, request)?.let { return it }
+        return beginOfferInstall(ctx, o)
+    }
+
+    /**
+     * 应用内 (平板上的反馈弹窗) 装工单测试包: 同控制台「装到电视」那条路 ([offer] + 下载安装), 人就在设备前,
+     * 没有「安装未知应用」授权时直接打开授权页. 状态行 ([FeedbackApkStatus]) 只报这一个测试包的.
+     */
+    val inApp: FeedbackApkInstaller = object : FeedbackApkInstaller {
+        override val status: StateFlow<FeedbackApkStatus?> = stateFlow
+            .map { s -> offered?.url?.let { url -> phaseText(s).takeIf { it.isNotEmpty() }?.let { FeedbackApkStatus(url, it) } } }
+            .stateIn(scope, SharingStarted.Eagerly, null)
+
+        override fun install(url: String, sha256: String?, issue: Int): FeedbackApkInstall {
+            val ctx = context ?: return FeedbackApkInstall.NOT_READY
+            offer(url, sha256, issue)
+            if (!canInstall(ctx)) {
+                launchPermission(ctx)
+                return FeedbackApkInstall.NEED_PERMISSION
+            }
+            val started = beginOfferInstall(ctx, offered ?: return FeedbackApkInstall.NOT_READY)["ok"]?.jsonPrimitive?.booleanOrNull == true
+            return if (started) FeedbackApkInstall.STARTED else FeedbackApkInstall.BUSY
+        }
+    }
+
+    private fun beginOfferInstall(ctx: Context, o: Offer): JsonObject {
         synchronized(lock) {
             if (state.phase in BUSY) return result(false, tr("正在安装，等这次完成后再试"))
             abandonSession(ctx)

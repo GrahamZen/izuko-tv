@@ -46,6 +46,7 @@ import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.navigation.LocalNavigator
 import me.him188.ani.app.navigation.SettingsTab
 import me.him188.ani.app.platform.navigation.rememberAsyncBrowserNavigator
+import me.him188.ani.app.ui.feedback.withTouchFeedback
 import me.him188.ani.app.ui.foundation.LocalSketch
 import me.him188.ani.app.ui.foundation.effects.rememberNoticeSoundPlayer
 import me.him188.ani.app.ui.foundation.focus.tvWindowInitialFocus
@@ -95,7 +96,7 @@ fun TvSettingsPage(
 ) {
     // 触屏设备 (平板装了 TV 包): 同一份清单画成触屏的样子; 电视上没有触摸屏, 不走这里
     if (LocalTvTouchInputEnabled.current) {
-        return TvPageBaseColorsTheme { TouchSettingsPage(vm, initialTab, legacy, loadOpenSourceLibrariesJsons, TvSettingsTvPlatform, modifier) }
+        return TvPageBaseColorsTheme { TouchSettingsPage(vm, initialTab, legacy, loadOpenSourceLibrariesJsons, remember { TvSettingsTvPlatform.withTouchFeedback() }, modifier) }
     }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
