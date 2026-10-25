@@ -23,6 +23,8 @@ import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.io.SystemPath
 import me.him188.ani.utils.io.absolutePath
 import me.him188.ani.utils.io.delete
+import me.him188.ani.app.data.repository.subject.SubjectRewatchEntry
+import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 
 /**
  * 换电视时用户库文件的搬法: 旧电视拍一份快照整个传过去 (所有表, 以后加的表也自动跟着), 新电视
@@ -45,8 +47,10 @@ internal object DeviceMigrationDatabases {
     /**
      * 把 [database] 拍一份快照写到 [target] (库开着也能拍, 是一致的一刻), 再清掉 [DEVICE_TABLES] 与 [CACHE_TABLES] 并压紧.
      * 快照保留库的版本号 (`user_version`).
+     *
+     * @param rewatches 这个用户正在重温的 (见 `SubjectRewatch`): 快照里按开始时的看过与各集看过算, 重温不跟去新电视
      */
-    suspend fun snapshot(database: AniDatabase, target: SystemPath) {
+    suspend fun snapshot(database: AniDatabase, target: SystemPath, rewatches: Map<Int, SubjectRewatchEntry> = emptyMap()) {
         withContext(Dispatchers.IO_) { target.delete() }
         database.useWriterConnection { connection ->
             connection.usePrepared("VACUUM INTO ?") { statement ->
@@ -60,9 +64,38 @@ internal object DeviceMigrationDatabases {
                 for (table in connection.tableNames()) {
                     if (table in DEVICE_TABLES || table in CACHE_TABLES) connection.execSQL("DELETE FROM `$table`")
                 }
+                for (entry in rewatches.values) connection.restoreRewatch(entry)
                 connection.execSQL("VACUUM")
             } finally {
                 connection.close()
+            }
+        }
+    }
+
+    /** 库里这一部还是在看 (重温中) 才还原成开始时的看过与各集看过; 已经不是在看的不动, 那份就是现在的. */
+    private fun SQLiteConnection.restoreRewatch(entry: SubjectRewatchEntry) {
+        val doing = prepare("SELECT collectionType FROM subject_collection WHERE subjectId = ?").use {
+            it.bindInt(1, entry.subjectId)
+            it.step() && it.getText(0) == UnifiedCollectionType.DOING.name
+        }
+        if (!doing) return
+        prepare("UPDATE subject_collection SET collectionType = ?, lastUpdated = ? WHERE subjectId = ?").use {
+            it.bindText(1, UnifiedCollectionType.DONE.name)
+            it.bindLong(2, entry.lastUpdated)
+            it.bindInt(3, entry.subjectId)
+            it.step()
+        }
+        prepare("UPDATE episode_collection SET selfCollectionType = ? WHERE subjectId = ?").use {
+            it.bindText(1, UnifiedCollectionType.NOT_COLLECTED.name)
+            it.bindInt(2, entry.subjectId)
+            it.step()
+        }
+        for ((episodeId, type) in entry.episodes) {
+            prepare("UPDATE episode_collection SET selfCollectionType = ? WHERE subjectId = ? AND episodeId = ?").use {
+                it.bindText(1, type.name)
+                it.bindInt(2, entry.subjectId)
+                it.bindInt(3, episodeId)
+                it.step()
             }
         }
     }

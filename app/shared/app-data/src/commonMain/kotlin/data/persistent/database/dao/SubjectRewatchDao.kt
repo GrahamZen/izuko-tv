@@ -37,6 +37,13 @@ interface SubjectRewatchDao {
     @Query("""UPDATE episode_collection SET selfCollectionType = :type WHERE subjectId = :subjectId AND episodeId = :episodeId""")
     suspend fun setEpisodeType(subjectId: Int, episodeId: Int, type: UnifiedCollectionType)
 
+    /** 标成过期: 下次用到时按 Bangumi 现在的重取. */
+    @Query("""UPDATE subject_collection SET lastFetched = 0 WHERE subjectId = :subjectId""")
+    suspend fun expireSubject(subjectId: Int)
+
+    @Query("""UPDATE episode_collection SET lastFetched = 0 WHERE subjectId = :subjectId""")
+    suspend fun expireEpisodes(subjectId: Int)
+
     /**
      * 开始重温: 本地还是看过才改成在看 (收藏更新时间记成 [now], 排到「继续观看」前面), 各集看过清空.
      * @return 是否改了 (收藏类型在这之前被改成了别的就不动)
@@ -51,11 +58,26 @@ interface SubjectRewatchDao {
     /**
      * 结束重温: 本地还是在看才还原成看过与开始时的收藏更新时间, 各集看过照 [episodes] 还原 (不在里面的清空).
      * 本地已经不是在看 (bgm 的数据写进来过) 就不动, 那份就是现在的.
+     *
+     * 还原的是开始时的样子, 重温期间 Bangumi 上可能改过分集: 条目与分集一起标成过期, 开着的页面马上按 Bangumi 现在的重取.
      */
     @Transaction
     suspend fun endRewatch(subjectId: Int, lastUpdated: Long, episodes: Map<Int, UnifiedCollectionType>) {
         if (replaceType(subjectId, UnifiedCollectionType.DOING, UnifiedCollectionType.DONE, lastUpdated) == 0) return
         setAllEpisodeTypes(subjectId, UnifiedCollectionType.NOT_COLLECTED)
         for ((episodeId, type) in episodes) setEpisodeType(subjectId, episodeId, type)
+        expireSubject(subjectId)
+        expireEpisodes(subjectId)
+    }
+
+    /**
+     * Bangumi 上在别处改了收藏类型、重温作废时: 各集看过先还原成开始时的 (别停在这一轮的), 再标成过期, 用到时按 Bangumi 重取.
+     * 收藏类型由调用方照取到的写.
+     */
+    @Transaction
+    suspend fun dropRewatch(subjectId: Int, episodes: Map<Int, UnifiedCollectionType>) {
+        setAllEpisodeTypes(subjectId, UnifiedCollectionType.NOT_COLLECTED)
+        for ((episodeId, type) in episodes) setEpisodeType(subjectId, episodeId, type)
+        expireEpisodes(subjectId)
     }
 }

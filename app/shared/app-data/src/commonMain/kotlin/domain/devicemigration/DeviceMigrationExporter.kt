@@ -22,6 +22,7 @@ import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.io.SystemPath
 import me.him188.ani.utils.io.exists
 import me.him188.ani.utils.io.readText
+import me.him188.ani.app.data.repository.subject.readSubjectRewatches
 
 /**
  * 换电视的旧电视一侧: 交出清单、整机数据、每个用户的配置与库文件快照 (见 [DeviceMigrationShared] 前的说明).
@@ -39,6 +40,8 @@ class DeviceMigrationExporter(
     private val openDatabase: (fileName: String) -> AniDatabase,
     private val stores: DeviceMigrationStores,
     private val appVersion: String,
+    /** 某个用户的重温记录 (见 `SubjectRewatch`): 快照里重温中的番按开始时的看过算, 重温不跟去新电视. null = 不看重温 (测试). */
+    private val rewatchFile: (UserProfile) -> SystemPath? = { null },
 ) {
     suspend fun manifest(): DeviceMigrationManifest = withContext(Dispatchers.IO_) {
         DeviceMigrationManifest(
@@ -91,7 +94,8 @@ class DeviceMigrationExporter(
      */
     suspend fun snapshotDatabase(id: Int, target: SystemPath): Boolean {
         val profile = registry.find(id) ?: return false
-        withDatabase(profile) { DeviceMigrationDatabases.snapshot(it, target) }
+        val rewatches = rewatchFile(profile)?.let { readSubjectRewatches(it) }.orEmpty()
+        withDatabase(profile) { DeviceMigrationDatabases.snapshot(it, target, rewatches) }
         return true
     }
 
