@@ -164,8 +164,9 @@ fun TvAnchoredStrip(
  * 长按右键跑到头就跳进那一行接着滚.
  *
  * @param focusedIndex 此刻聚焦的下标 (事件只在焦点在本行里时才到这里)
+ * @param exitRight 末项按右时让 Compose 往右找; false = 停住 (行的右边没有该去的地方, 往右找会挑中右上方的东西, 如播放器内嵌介绍页里评价行上面的标签)
  */
-fun Modifier.tvRowEndKeys(itemCount: () -> Int, focusedIndex: () -> Int): Modifier = composed {
+fun Modifier.tvRowEndKeys(itemCount: () -> Int, focusedIndex: () -> Int, exitRight: Boolean = true): Modifier = composed {
     val focusManager = LocalFocusManager.current
     onKeyEvent { event ->
         if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
@@ -174,7 +175,7 @@ fun Modifier.tvRowEndKeys(itemCount: () -> Int, focusedIndex: () -> Int): Modifi
             event.key == Key.DirectionLeft && focusedIndex() == 0 -> FocusDirection.Left
             else -> return@onKeyEvent false
         }
-        focusManager.moveFocus(direction)
+        if (direction != FocusDirection.Right || exitRight) focusManager.moveFocus(direction)
         true
     }
 }

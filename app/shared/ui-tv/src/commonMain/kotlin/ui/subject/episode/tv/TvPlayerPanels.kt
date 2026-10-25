@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
@@ -89,7 +90,6 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -769,17 +769,17 @@ internal fun TvPlayerRecommendationsGallery(vm: EpisodeViewModel) {
     )
 }
 
-/** 胶囊上方的画廊没有内容时贴着胶囊的那一句 (同面板条目的底; 叠层贴着屏幕左缘, 卡与胶囊行左对齐). */
+/** 胶囊上方的画廊没有内容时贴着胶囊的那一句 (同面板条目的底): 从画廊的格起头的地方起 (叠层贴着屏幕左缘), 字靠左. */
 @Composable
 private fun TvPanelEmptyCard(text: String) {
     Box(
         Modifier
             .fillMaxSize()
-            .padding(start = TV_PLAYER_HORIZONTAL_PAD, bottom = TV_PANEL_BOTTOM_GAP),
+            .padding(start = TV_PLAYER_GALLERY_CONTENT_PADDING_H, bottom = TV_PANEL_BOTTOM_GAP),
         contentAlignment = Alignment.BottomStart,
     ) {
         Surface(
-            Modifier.width(TV_PANEL_WIDTH),
+            Modifier.widthIn(max = TV_PANEL_WIDTH),
             shape = RoundedCornerShape(12.dp),
             color = TV_PANEL_ITEM_COLOR,
             contentColor = Color.White,
@@ -790,7 +790,6 @@ private fun TvPanelEmptyCard(text: String) {
                 Modifier.padding(16.dp),
                 color = Color.White.copy(alpha = 0.7f),
                 style = MaterialTheme.typography.bodyMedium,
-                textAlign = TextAlign.Center,
             )
         }
     }
