@@ -36,13 +36,22 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -58,6 +67,7 @@ import me.him188.ani.app.ui.foundation.dialogs.DialogWindowDimAmount
 import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.TvImageZoomState
+import me.him188.ani.app.ui.foundation.tv.rememberTvImageZoomState
 import me.him188.ani.app.ui.foundation.tv.TvZoomedImageOverlay
 import me.him188.ani.app.ui.foundation.tv.tvImageZoomKeys
 import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
@@ -109,8 +119,12 @@ internal fun ViewAllPanelDialog(
 ) {
     // 有别的宿主 (电视播放器胶囊上方的叠层) 就交给它摆, 不弹窗 (见 ViewAllPanelHost)
     LocalViewAllPanelHost.current?.let { return it.Panel(title, onDismissRequest, count, subtitle, imageZoom, headerAction, content) }
+    val back = remember { ViewAllBackHandlers() }
+    val currentOnDismissRequest by rememberUpdatedState(onDismissRequest)
+    // 返回键先退里面那层 (评论列表点开的整楼), 退完了才关
+    val backOrDismiss = { if (!back.back()) currentOnDismissRequest() }
     Dialog(
-        onDismissRequest = onDismissRequest,
+        onDismissRequest = backOrDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
         // **scope 必须建在 Dialog 内容里**: 它的解析器按 LocalWindowInfo 判"窗口有焦点"来重试,
@@ -128,6 +142,12 @@ internal fun ViewAllPanelDialog(
                 // 大图开着期间吞掉一切按键 (返回键只关大图, 不关本弹窗). 挂在这儿而不是每个
                 // 条目上: onPreviewKeyEvent 只在焦点路径上触发, 网格与卡片都在它的子树里
                 .ifThen(imageZoom != null) { tvImageZoomKeys(imageZoom!!) }
+                // 返回键自己接: 里面没人要的返回键 Compose 会当成「焦点退出一层」吃掉 (焦点在原生列表里时就是这样), 弹窗收不到, 要按好几下才关
+                .onKeyEvent { event ->
+                    if (event.key != Key.Back) return@onKeyEvent false
+                    if (event.type == KeyEventType.KeyUp) backOrDismiss()
+                    true
+                }
                 .fillMaxWidth(TV_DETAILS_DIALOG_WIDTH_FRACTION)
                 .fillMaxHeightAtMost(TV_DETAILS_DIALOG_HEIGHT_FRACTION),
             shape = ANI_GLASS_PANEL_SHAPE,
@@ -144,7 +164,9 @@ internal fun ViewAllPanelDialog(
                         verticalArrangement = Arrangement.spacedBy(CENTERED_PANEL_TITLE_GAP),
                     ) {
                         ViewAllPanelHeader(title, count, subtitle, onDismissRequest.takeIf { touch }, headerAction)
-                        content(if (touch) Modifier else Modifier.tvFocusAnchor(focus, ViewAllGridFirstItemFocus))
+                        CompositionLocalProvider(LocalViewAllBackHandlers provides back, LocalViewAllImageZoom provides imageZoom) {
+                            content(if (touch) Modifier else Modifier.tvFocusAnchor(focus, ViewAllGridFirstItemFocus))
+                        }
                     }
                     imageZoom?.let { TvZoomedImageOverlay(it) }
                 }
@@ -322,7 +344,8 @@ private data object NoIndication : IndicationNodeFactory {
 }
 
 /**
- * 评论列表的 TV / 平板大弹窗 (条目评价 / 人物评论共用): 标题 (+可选"写评价"动作), 下面是两列瀑布流的评论 ([CommentsList]).
+ * 评论列表的 TV / 平板大弹窗 (条目评价 / 人物评论共用): 标题 (+可选"写评价"动作), 下面是评论列表 ([ViewAllCommentsList]).
+ * 电视上点一条在原地换成那一整楼 (返回回到列表), 楼里的图长按看大图.
  */
 @Composable
 internal fun CommentsGridDialog(
@@ -334,10 +357,69 @@ internal fun CommentsGridDialog(
     /** 打开时落在第几条 (从详情页的某张评论卡进来时是那一条). */
     initialFocusIndex: Int = 0,
 ) {
-    ViewAllPanelDialog(title, onDismissRequest, headerAction = headerAction) { initialFocus ->
+    ViewAllPanelDialog(title, onDismissRequest, imageZoom = rememberTvImageZoomState(), headerAction = headerAction) { initialFocus ->
         LocalViewAllCommentsList.current.Comments(comments, showRating, initialFocusIndex, initialFocus, Modifier.weight(1f, fill = false))
     }
 }
+
+/**
+ * 直接打开 [comments] 里第 [index] 条的一整楼 (详情页 / 人物页的评论预览里点一条, 见 [ViewAllCommentsList.hasThread]), 返回关掉.
+ * 外壳同「查看全部」: 弹窗, 或电视播放器的叠层 (见 ViewAllPanelHost).
+ */
+@Composable
+internal fun CommentThreadDialog(
+    title: String,
+    comments: LazyPagingItems<UIComment>,
+    index: Int,
+    showRating: Boolean,
+    onDismissRequest: () -> Unit,
+) {
+    ViewAllPanelDialog(title, onDismissRequest, imageZoom = rememberTvImageZoomState()) { initialFocus ->
+        LocalViewAllCommentsList.current.Thread(comments, index, showRating, initialFocus, Modifier.weight(1f, fill = false))
+    }
+}
+
+/**
+ * 「查看全部」那一块里面自己还有一层 (评论列表点开的整楼): 返回键先退里面那层, 退完了才关「查看全部」.
+ * 由外壳提供 ([ViewAllPanelDialog], 电视播放器的叠层), 里面的内容用 [ViewAllBackHandler] 登记.
+ */
+@Stable
+class ViewAllBackHandlers {
+    private val handlers = ArrayList<() -> Unit>()
+
+    internal fun add(handler: () -> Unit) {
+        handlers += handler
+    }
+
+    internal fun remove(handler: () -> Unit) {
+        handlers.remove(handler)
+    }
+
+    /** 交给最后登记的那一层退回去; 没有登记的返回 false (外壳自己关). */
+    fun back(): Boolean {
+        val handler = handlers.lastOrNull() ?: return false
+        handler()
+        return true
+    }
+}
+
+val LocalViewAllBackHandlers = staticCompositionLocalOf<ViewAllBackHandlers?> { null }
+
+/** [enabled] 时返回键先交给 [onBack] (见 [ViewAllBackHandlers]); 不在「查看全部」里时什么都不做. */
+@Composable
+fun ViewAllBackHandler(enabled: Boolean, onBack: () -> Unit) {
+    val handlers = LocalViewAllBackHandlers.current ?: return
+    val currentOnBack by rememberUpdatedState(onBack)
+    DisposableEffect(handlers, enabled) {
+        if (!enabled) return@DisposableEffect onDispose {}
+        val handler = { currentOnBack() }
+        handlers.add(handler)
+        onDispose { handlers.remove(handler) }
+    }
+}
+
+/** 「查看全部」那一块里长按看大图用的状态 (外壳给的, 大图画在外壳里); null = 这一块看不了大图. */
+val LocalViewAllImageZoom = staticCompositionLocalOf<TvImageZoomState?> { null }
 
 /** TV 详情弹窗宽/高占屏比例 (与人物"查看全部"弹窗一致). */
 private const val TV_DETAILS_DIALOG_WIDTH_FRACTION = 0.85f

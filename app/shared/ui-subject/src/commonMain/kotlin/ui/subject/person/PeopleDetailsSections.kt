@@ -29,6 +29,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -94,6 +95,8 @@ import me.him188.ani.app.ui.subject.details.components.SubjectCommentColumn
 import me.him188.ani.app.ui.subject.details.components.SubjectDetailsDefaults
 import me.him188.ani.app.ui.subject.details.sections.SectionHeader
 import me.him188.ani.app.ui.subject.details.sections.CommentsGridDialog
+import me.him188.ani.app.ui.subject.details.sections.CommentThreadDialog
+import me.him188.ani.app.ui.subject.details.sections.LocalViewAllCommentsList
 import me.him188.ani.app.ui.subject.details.sections.groupThousands
 import me.him188.ani.app.ui.subject.details.sections.toPlainText
 import me.him188.ani.app.ui.subject.details.sections.viewAllPanelOrigin
@@ -488,6 +491,12 @@ internal fun PersonCommentsSection(
     // 从上面下来先落到它, 第一条评论按上回到它
     val showAll = remember { FocusRequester() }
     var showAllFocused by remember { mutableStateOf(false) }
+    // 电视上点一条直接开那一整楼 (见 ViewAllCommentsList.hasThread); -1 = 没开
+    val commentsList = LocalViewAllCommentsList.current
+    var threadAt by remember { mutableIntStateOf(-1) }
+    if (threadAt >= 0) {
+        CommentThreadDialog(stringResource(Lang.person_details_comments), comments, threadAt, showRating = false, onDismissRequest = { threadAt = -1 })
+    }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SectionHeader(
             stringResource(Lang.person_details_comments),
@@ -518,7 +527,7 @@ internal fun PersonCommentsSection(
                             .ifThen(i == 0) { focusProperties { up = showAll } }
                             .viewAllPanelOrigin()
                             .clip(MaterialTheme.shapes.small)
-                            .clickable(onClick = onShowAll),
+                            .clickable(onClick = { if (commentsList.hasThread) threadAt = i else onShowAll() }),
                     )
                 }
             }

@@ -39,6 +39,14 @@ data class SubjectReview(
      * 当前登录用户对这条评价的投票, 未投票或未登录时为 `null`.
      */
     val selfVote: CommentVoteValue? = null,
+    /** 别人给这条评价贴的表情 (bangumi 的「回应」). */
+    val reactions: List<SubjectReviewReaction> = emptyList(),
+)
+
+data class SubjectReviewReaction(
+    val value: String,
+    val count: Int,
+    val selected: Boolean,
 )
 
 enum class SubjectReviewSource {

@@ -17,14 +17,15 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.CoroutineContext
-import kotlin.time.Instant
 import kotlinx.coroutines.Dispatchers
 import me.him188.ani.app.data.repository.subject.SubjectNsfw
 import me.him188.ani.app.data.models.person.CharacterDetailsInfo
 import me.him188.ani.app.data.models.person.CharacterSubjectInfo
 import me.him188.ani.app.data.models.person.InfoboxRowInfo
 import me.him188.ani.app.data.models.person.PersonCastInfo
-import me.him188.ani.app.data.models.person.PersonCommentInfo
+import me.him188.ani.app.data.models.person.PersonComment
+import me.him188.ani.app.data.models.person.PersonCommentReaction
+import me.him188.ani.app.data.models.person.PersonCommentSource
 import me.him188.ani.app.data.models.person.PersonDetailsInfo
 import me.him188.ani.app.data.models.person.PersonSubjectSummary
 import me.him188.ani.app.data.models.person.PersonWorkInfo
@@ -32,7 +33,9 @@ import me.him188.ani.app.data.models.subject.CharacterInfo
 import me.him188.ani.app.data.models.subject.CharacterRole
 import me.him188.ani.app.data.models.subject.PersonInfo
 import me.him188.ani.app.data.models.subject.PersonPosition
+import me.him188.ani.app.data.models.episode.EpisodeComment
 import me.him188.ani.app.data.network.mapper.orBangumiPlaceholder
+import me.him188.ani.app.data.network.toEpisodeComment
 import me.him188.ani.app.data.models.subject.PersonType
 import me.him188.ani.app.data.repository.Repository
 import me.him188.ani.app.data.repository.RepositoryException
@@ -181,18 +184,18 @@ class PersonDetailsRepository(
             }
         }
 
-    // bangumi 的吐槽箱不分页, 一次给全部
-    fun personCommentsPager(personId: Int): Flow<PagingData<PersonCommentInfo>> = offsetPager { offset, _ ->
+    // bangumi 的吐槽箱不分页, 一次给全部; 接口按楼层给 (删掉的也占着位置), 楼层号就是下标
+    fun personCommentsPager(personId: Int): Flow<PagingData<PersonComment>> = offsetPager { offset, _ ->
         if (offset > 0) return@offsetPager Paged(total = 0, items = emptyList())
         personsApi { getPersonComments(personId).body() }.let { comments ->
-            Paged(total = comments.size, items = comments.map { it.toInfo() })
+            Paged(total = comments.size, items = comments.mapIndexed { index, it -> it.toPersonComment(floor = index + 1) })
         }
     }
 
-    fun characterCommentsPager(characterId: Int): Flow<PagingData<PersonCommentInfo>> = offsetPager { offset, _ ->
+    fun characterCommentsPager(characterId: Int): Flow<PagingData<PersonComment>> = offsetPager { offset, _ ->
         if (offset > 0) return@offsetPager Paged(total = 0, items = emptyList())
         charactersApi { getCharacterComments(characterId).body() }.let { comments ->
-            Paged(total = comments.size, items = comments.map { it.toInfo() })
+            Paged(total = comments.size, items = comments.mapIndexed { index, it -> it.toPersonComment(floor = index + 1) })
         }
     }
 
@@ -294,14 +297,25 @@ private fun List<BangumiNextInfoboxItem>?.toRows(): List<InfoboxRowInfo> {
     }
 }
 
-private fun BangumiNextComment.toInfo(): PersonCommentInfo {
-    return PersonCommentInfo(
-        id = id.toLong(),
-        authorId = user?.id?.toString(),
-        authorNickname = user?.nickname,
-        authorAvatarUrl = user?.avatar?.large,
-        content = content,
-        createdAt = Instant.fromEpochSeconds(createdAt.toLong()),
-        replyCount = replies.size,
-    )
-}
+/**
+ * 人物 / 角色的吐槽箱与单集评论是同一种楼 (楼中回复、回复对象、贴贴、删除占位), 走单集评论那条转换再换成人物评论.
+ * 网页上的吐槽箱不能贴贴, 电视上也不发, 这里不标自己贴过哪个.
+ */
+private fun BangumiNextComment.toPersonComment(floor: Int): PersonComment =
+    toEpisodeComment(episodeId = 0, selfUserId = null, floor = floor).toPersonComment()
+
+private fun EpisodeComment.toPersonComment(): PersonComment = PersonComment(
+    stableId = stableId,
+    source = PersonCommentSource.BANGUMI,
+    sourceCommentId = sourceCommentId,
+    createdAt = createdAt,
+    content = content,
+    author = author,
+    reactions = reactions.map { PersonCommentReaction(it.value, it.count, it.selected) },
+    replies = replies.map { it.toPersonComment() },
+    canReply = false,
+    replyCount = replyCount,
+    replyToCommentId = replyToCommentId,
+    floor = floor,
+    deleted = deleted,
+)

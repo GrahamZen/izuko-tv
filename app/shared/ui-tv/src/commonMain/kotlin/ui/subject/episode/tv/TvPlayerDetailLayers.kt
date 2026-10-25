@@ -89,11 +89,14 @@ import me.him188.ani.app.ui.foundation.widgets.ANI_SCROLL_FADE
 import me.him188.ani.app.ui.foundation.widgets.ProvideAniGlassPanelContent
 import me.him188.ani.app.ui.foundation.widgets.ProvideScrollFadeFocusMargin
 import me.him188.ani.app.ui.subject.details.sections.LocalViewAllGalleries
+import me.him188.ani.app.ui.subject.details.sections.LocalViewAllBackHandlers
+import me.him188.ani.app.ui.subject.details.sections.LocalViewAllImageZoom
 import me.him188.ani.app.ui.subject.details.sections.LocalViewAllPanelHost
 import me.him188.ani.app.ui.subject.details.sections.VIEW_ALL_GALLERY_COMPACT_COLUMN_SPACING
 import me.him188.ani.app.ui.subject.details.sections.VIEW_ALL_GALLERY_COMPACT_VERTICAL_INSET
 import me.him188.ani.app.ui.subject.details.sections.VIEW_ALL_GALLERY_COMPACT_SIDE_INSET
 import me.him188.ani.app.ui.subject.details.sections.ViewAllGalleries
+import me.him188.ani.app.ui.subject.details.sections.ViewAllBackHandlers
 import me.him188.ani.app.ui.subject.details.sections.ViewAllPanelHost
 import me.him188.ani.app.ui.subject.episode.EpisodeViewModel
 import me.him188.ani.app.ui.subject.person.LocalPeoplePreviewRows
@@ -341,7 +344,11 @@ internal class TvPlayerDetailLayersState {
         val top = stack.lastIndex
         if (top < 0) return true
         val viewAll = peopleHosts[top]?.shown
-        if (viewAll != null) viewAll.dismiss() else stack.removeAt(top)
+        when {
+            // 「查看全部」里面自己还有一层 (评论列表点开的整楼): 先退它
+            viewAll != null -> if (!viewAll.back.back()) viewAll.dismiss()
+            else -> stack.removeAt(top)
+        }
         return stack.isEmpty() && gallery == null
     }
 
@@ -884,6 +891,9 @@ internal class TvLayerViewAll(
     private val onDismissRequest: () -> Unit,
     private val onDismissed: () -> Unit,
 ) {
+    /** 里面自己的那一层 (评论列表点开的整楼) 登记在这, 返回先退它 (见 [TvPlayerDetailLayersState.back]). */
+    val back = ViewAllBackHandlers()
+
     /** 关掉, 焦点回到点开它的那颗按钮 (见 [TvLayerViewAllHost.onDismissed]). */
     fun dismiss() {
         onDismissed()
@@ -972,7 +982,11 @@ private fun TvLayerViewAllPanel(
         ),
         overlay = { shown.imageZoom?.let { TvZoomedImageOverlay(it) } },
     ) {
-        CompositionLocalProvider(LocalViewAllGalleries provides layerGalleries) {
+        CompositionLocalProvider(
+            LocalViewAllGalleries provides layerGalleries,
+            LocalViewAllBackHandlers provides shown.back,
+            LocalViewAllImageZoom provides shown.imageZoom,
+        ) {
             shown.content(this, if (touch) Modifier else Modifier.tvFocusAnchor(focus, TvLayerViewAllFocus))
         }
     }
