@@ -47,7 +47,7 @@ object CommentMapperContext {
             author = creator,
             content = parseBBCode(content),
             createdAt = updatedAt,
-            reactions = emptyList(),
+            reactions = reactions.map { UICommentReaction(it.value, it.count, it.selected) },
             briefReplies = emptyList(),
             replyCount = 0,
             rating = rating,
@@ -127,6 +127,12 @@ object CommentMapperContext {
      */
     fun PersonComment.parseToUIComment(): UIComment {
         val comment = this
+        // 同 EpisodeComment.parseToUIComment: 被回复者的昵称就在同一楼里
+        val nicknamesByCommentId: Map<String, String> = buildMap {
+            comment.replies.forEach { reply ->
+                reply.author?.nickname?.takeIf { it.isNotBlank() }?.let { put(reply.sourceCommentId, it) }
+            }
+        }
         return UIComment(
             id = comment.stableId.toUiCommentId(),
             stableId = comment.stableId,
@@ -149,6 +155,11 @@ object CommentMapperContext {
                     sourceCommentId = reply.sourceCommentId,
                     canReply = reply.canReply,
                     rawContent = reply.content,
+                    replyTo = reply.replyToCommentId?.let { targetId ->
+                        nicknamesByCommentId[targetId]?.let { UICommentReplyTarget(targetId, it) }
+                    },
+                    floor = reply.floor,
+                    deleted = reply.deleted,
                 )
             },
             replyCount = comment.replyCount,
@@ -159,6 +170,8 @@ object CommentMapperContext {
             likeCount = comment.likeCount,
             selfVote = comment.selfVote?.toUICommentVote(),
             rawContent = comment.content,
+            floor = comment.floor,
+            deleted = comment.deleted,
         )
     }
 

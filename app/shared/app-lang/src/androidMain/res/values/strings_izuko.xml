@@ -595,6 +595,7 @@
     <string name="video_player_tv_comment_sort_time_descending">Newest first</string>
     <string name="video_player_tv_comment_sort_most_reactions">Most reactions</string>
     <string name="video_player_tv_comment_sort_most_replies">Most replies</string>
+    <string name="tv_comment_replies_total">All %1$s replies</string>
     <!-- 评论被删掉时的占位 (仍占着楼层), 同 bangumi 网页 -->
     <string name="video_player_tv_comment_deleted">deleted this reply</string>
     <string name="video_player_tv_comment_image_zoom_hint">Press and hold OK to view images full screen</string>
