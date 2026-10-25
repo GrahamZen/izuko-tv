@@ -43,6 +43,21 @@ enum class TvScheduleLayout {
 }
 
 /**
+ * TV 探索页的风格 (设置「探索页风格」), 见 [ThemeSettings.tvExploreLayout]. 平板触屏一律是海报墙.
+ */
+@Serializable
+enum class TvExploreLayout {
+    /** 海报墙 (默认): 焦点在卡片之间移动, 聚焦的海报放大, 按确定照「海报上按确定」. */
+    PosterWall,
+
+    /**
+     * 固定焦点 (照 Prime Video): 聚焦卡恒在行首锚点、整行从固定的聚焦框下滑过, 卡片不放大、不显示番名, 焦点在卡上时 hero 一直显示,
+     * 按一下确定就打开 (照「海报上按确定」: 直接播放, 另两档进详情页); 未登录时的推荐行按右循环.
+     */
+    FixedFocus,
+}
+
+/**
  * TV: 海报墙 (探索 / 追番 / 搜索, 以及新番时间表) 的卡片上按确定做什么. 见 [ThemeSettings.tvPosterConfirm].
  * 播放键、长按 (收藏菜单)、推荐行末的「更多」卡三档都不变.
  */
@@ -431,6 +446,12 @@ data class ThemeSettings(
      * @since 1.0.6
      */
     val tvPosterIdleDim: Boolean = true,
+    /**
+     * TV: 探索页的风格 (海报墙 / 固定焦点, 见 [TvExploreLayout]). 默认海报墙; 在设置「主题与色彩」里改.
+     *
+     * @since 1.0.9
+     */
+    val tvExploreLayout: TvExploreLayout = TvExploreLayout.PosterWall,
     @Suppress("PropertyName") @Transient val _placeholder: Int = 0,
 ) {
     @Transient
