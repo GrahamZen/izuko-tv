@@ -703,12 +703,10 @@ class TorrentMediaCacheEngine(
                 metadata.episodeEp?.let { range.contains(it, allowSeason = false) } == true
     }
 
+    private val recordDeletionLock = Mutex()
+
     private suspend fun deleteEpisodeRecord(mediaId: String, episodeId: String) {
-        dao.deleteEpisode(mediaId, episodeId)
-        // 同一合集的其他剧集记录还在使用种子数据与目录, 最后一条记录删除时才删种子行.
-        if (dao.countEpisodes(mediaId) == 0) {
-            dao.deleteByMediaId(mediaId)
-        }
+        recordDeletionLock.withLock { dao.deleteEpisodeRecord(mediaId, episodeId) }
     }
 
     /**

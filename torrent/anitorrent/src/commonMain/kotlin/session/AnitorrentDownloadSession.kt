@@ -683,7 +683,14 @@ class AnitorrentDownloadSession(
      * 重新缓存这一集时也会秒判完成而交出不存在的文件.
      */
     private suspend fun discardEntry(entry: AnitorrentEntry): Boolean {
-        if (openFiles.value.any { it.entry === entry } || !actualTorrentInfo.isCompleted) return false
+        val handlesOnEntry = openFiles.value.count { it.entry === entry }
+        if (handlesOnEntry > 0 || !actualTorrentInfo.isCompleted) {
+            logger.info {
+                "[$handleId] Kept the data of ${entry.relativePath}: handles=$handlesOnEntry, " +
+                        "infoReady=${actualTorrentInfo.isCompleted}"
+            }
+            return false
+        }
         if (!fileDiscard.discard(entry.index)) return false
         // 与原生层同一个口径: 完全落在这个文件里的分块算没下载, 首尾与相邻集共用的不动
         val fileEnd = entry.offset + entry.length
