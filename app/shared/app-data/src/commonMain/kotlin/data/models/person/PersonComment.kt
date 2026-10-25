@@ -50,6 +50,12 @@ data class PersonComment(
     val likeCount: Int = 0,
     /** 当前登录用户对这条评论的投票, 未投票或未登录时为 `null`. */
     val selfVote: CommentVoteValue? = null,
+    /** 楼中回复针对的同楼另一条回复; 直接回复主楼时为 `null`. 同 [me.him188.ani.app.data.models.episode.EpisodeComment.replyToCommentId]. */
+    val replyToCommentId: String? = null,
+    /** 楼层号, 同 bangumi 网页: 主楼 `"3"`, 楼中回复 `"3-2"`. */
+    val floor: String? = null,
+    /** 已被删除 (仍占着楼层, 没有正文). */
+    val deleted: Boolean = false,
 )
 
 @Immutable

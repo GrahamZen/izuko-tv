@@ -596,6 +596,7 @@
     <string name="video_player_tv_comment_sort_time_descending">按时间倒序</string>
     <string name="video_player_tv_comment_sort_most_reactions">按贴贴数</string>
     <string name="video_player_tv_comment_sort_most_replies">按回复数</string>
+    <string name="tv_comment_replies_total">共 %1$s 条回复</string>
     <!-- 评论被删掉时的占位 (仍占着楼层), 同 bangumi 网页 -->
     <string name="video_player_tv_comment_deleted">删除了回复</string>
     <string name="video_player_tv_comment_image_zoom_hint">长按确定键看大图</string>
