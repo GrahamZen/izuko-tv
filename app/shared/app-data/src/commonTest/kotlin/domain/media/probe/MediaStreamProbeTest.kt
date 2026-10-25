@@ -13,6 +13,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.respondError
+import io.ktor.client.plugins.cookies.HttpCookies
 import io.ktor.client.request.HttpRequestData
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
@@ -20,6 +21,7 @@ import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
 import me.him188.ani.app.domain.media.MediaDynamicRange
 import me.him188.ani.app.domain.media.MediaSurroundAudio
+import me.him188.ani.utils.ktor.installRawCookieHeader
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.test.Test
@@ -252,7 +254,26 @@ class MediaStreamProbeTest {
     private suspend fun probe(name: String, file: ByteArray): MediaStreamProbe.Result? =
         MediaStreamProbe.probe(serve(mapOf("https://v.example.com/$name" to file)), "https://v.example.com/$name")
 
-    private fun serve(files: Map<String, ByteArray>, refuse: (HttpRequestData) -> Boolean = { false }) = HttpClient(
+    @Test
+    fun `drive cookie reaches the origin unchanged through a client with the cookie plugin`() = runTest {
+        val client = serve(mapOf(DRIVE_URL to Base64.decode(FAST_MP4)), cookiePlugin = true) { it.headers[HttpHeaders.Cookie] != DRIVE_COOKIE }
+        val result = MediaStreamProbe.probe(client, DRIVE_URL, mapOf(HttpHeaders.Cookie to DRIVE_COOKIE))
+        assertEquals("HEVC", result?.codec)
+    }
+
+    @Test
+    fun `drive cookie reaches the origin unchanged through a plain client`() = runTest {
+        val client = serve(mapOf(DRIVE_URL to Base64.decode(FAST_MP4))) { it.headers[HttpHeaders.Cookie] != DRIVE_COOKIE }
+        val result = MediaStreamProbe.probe(client, DRIVE_URL, mapOf(HttpHeaders.Cookie to DRIVE_COOKIE))
+        assertEquals("HEVC", result?.codec)
+    }
+
+    /** [cookiePlugin]: 同共用客户端那样装 Cookie 插件与 [installRawCookieHeader]. */
+    private fun serve(
+        files: Map<String, ByteArray>,
+        cookiePlugin: Boolean = false,
+        refuse: (HttpRequestData) -> Boolean = { false },
+    ) = HttpClient(
         MockEngine { request ->
             if (refuse(request)) return@MockEngine respondError(HttpStatusCode.Forbidden)
             val body = files[request.url.toString()] ?: return@MockEngine respondError(HttpStatusCode.NotFound)
@@ -268,9 +289,16 @@ class MediaStreamProbeTest {
                 )
             }
         },
-    )
+    ) {
+        if (cookiePlugin) install(HttpCookies)
+    }.also { if (cookiePlugin) it.installRawCookieHeader() }
 
     private companion object {
+        const val DRIVE_URL = "https://dl.example.com/f/abc?auth_key=1"
+
+        /** 网盘登录 Cookie 的样子: 值里有 base64 与百分号编码. */
+        const val DRIVE_COOKIE = "__pus=AAQ+x/y0Z==; __kps=AAT%2Bz%3D; a=b"
+
         val CORRUPT_VALUES = byteArrayOf(0xFF.toByte(), 0x01, 0x00, 0x7F)
 
         /** `ffmpeg -f lavfi -i testsrc=size=640x272:rate=2:duration=2 -c:v libx265 a.mkv` 的开头, 到第一个 Cluster 的头为止. */
