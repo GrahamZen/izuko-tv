@@ -370,7 +370,10 @@ abstract class AnitorrentTorrentDownloader<THandle : TorrentHandle, TAddInfo : T
     }
 
     fun applyConfig(config: TorrentDownloaderConfig) {
+        // 新加的 (如 tracker 订阅更新了) 也补给在下的种子, libtorrent 不会重复加已有的
+        val added = config.extraTrackers - extraTrackers.toSet()
         extraTrackers = config.extraTrackers
+        if (added.isNotEmpty()) openSessions.value.values.forEach { it.addTrackers(added) }
         native.applyConfig(config)
     }
 
