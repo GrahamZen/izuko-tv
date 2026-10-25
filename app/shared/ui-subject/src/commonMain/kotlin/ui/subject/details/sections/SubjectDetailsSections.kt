@@ -44,6 +44,7 @@ import me.him188.ani.app.data.models.subject.Tag
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.OutlinedTag
 import me.him188.ani.app.ui.foundation.AniSelectionContainer
+import me.him188.ani.app.ui.foundation.tv.tvReadableBlock
 import me.him188.ani.app.ui.foundation.widgets.AniFocusActionButton
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.subject_details_air_date
@@ -180,7 +181,7 @@ fun SubjectSummarySection(
         AniSelectionContainer {
             Text(
                 summary,
-                Modifier.fillMaxWidth().clickable { expanded = !expanded },
+                Modifier.fillMaxWidth().tvReadableBlock().clickable { expanded = !expanded },
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = if (expanded) Int.MAX_VALUE else collapsedMaxLines,
                 overflow = TextOverflow.Ellipsis,

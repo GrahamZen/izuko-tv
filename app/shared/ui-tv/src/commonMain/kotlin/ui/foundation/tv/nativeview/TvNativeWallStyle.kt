@@ -75,6 +75,10 @@ data class TvNativeTextStyle(
     val letterSpacingEm: Float,
     val weight: Int,
     val color: Int,
+    /** 文字阴影 (模糊半径 / 下移 / 颜色); 半径 0 = 不画 (也不去清别处设的阴影). 见 [overVideo]. */
+    val shadowRadiusPx: Float = 0f,
+    val shadowDyPx: Float = 0f,
+    val shadowColor: Int = 0,
 ) {
     fun applyTo(view: TextView) {
         view.setTextSizePx(sizePx)
@@ -89,8 +93,26 @@ data class TvNativeTextStyle(
         view.letterSpacing = letterSpacingEm
         view.typeface = tvNativeTypeface(weight)
         view.setTextColor(color)
+        if (shadowRadiusPx > 0f) view.setShadowLayer(shadowRadiusPx, 0f, shadowDyPx, shadowColor)
     }
 }
+
+/**
+ * 直接压在播放画面上的字 (播放器胶囊上方的画廊, 底只有一层很淡的烟灰): 换成 [color], 垫一层很轻的深色阴影 —— 靠字自己在亮画面上认得出,
+ * 不靠把整片画面压黑.
+ */
+fun TvNativeTextStyle.overVideo(color: Color, density: Density): TvNativeTextStyle = with(density) {
+    copy(
+        color = color.toArgb(),
+        shadowRadiusPx = TV_OVER_VIDEO_TEXT_SHADOW_RADIUS.toPx(),
+        shadowDyPx = TV_OVER_VIDEO_TEXT_SHADOW_DY.toPx(),
+        shadowColor = Color.Black.copy(alpha = TV_OVER_VIDEO_TEXT_SHADOW_ALPHA).toArgb(),
+    )
+}
+
+private val TV_OVER_VIDEO_TEXT_SHADOW_RADIUS = 3.dp
+private val TV_OVER_VIDEO_TEXT_SHADOW_DY = 1.dp
+private const val TV_OVER_VIDEO_TEXT_SHADOW_ALPHA = 0.6f
 
 /** 换成 [TvNativeTextStyle]. 字距 sp 按字号折成 em (TextView 的字距按 em 算). */
 fun TextStyle.toTvNativeTextStyle(density: Density, color: Color): TvNativeTextStyle = with(density) {

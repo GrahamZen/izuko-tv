@@ -48,7 +48,7 @@ object TvPeoplePreviewRows : PeoplePreviewRows {
         }
         TvNativeMonogramStrip(
             items = monograms,
-            style = rememberTvMonogramStyle(TV_PEOPLE_PREVIEW_CELL, TV_PEOPLE_PREVIEW_CELL_SPACING, viewAllLabel = ""),
+            style = rememberTvMonogramStyle(TV_PEOPLE_PREVIEW_CELL, TV_PEOPLE_PREVIEW_CELL_SPACING, viewAllLabel = "", smallText = true),
             onClick = onClick,
             onLongPress = null,
             modifier = modifier.horizontalBleed(start = startBleed(contentPadding), end = contentPadding),
