@@ -435,7 +435,8 @@ class SubjectCollectionRepositoryImpl(
         val generation = loginGeneration.value
         // 分集单独按 cacheExpiry 判: 强制刷新会连着重取条目, 每次都跟着把分集也拉一遍不值当
         // —— 分集变化远比收藏状态慢
-        val fetchEpisodes = forceEpisodes || episodesExpired(subjectId)
+        // 重温中连分集一起取: Bangumi 上在别处改了收藏类型时重温作废, 分集当场换成 Bangumi 的 (见 SubjectRewatch.keepsSelfState)
+        val fetchEpisodes = forceEpisodes || episodesExpired(subjectId) || rewatch?.isActive(subjectId) == true
         // 分集与条目是并发取的, 分集的失败**不能**直接抛出来: 它会顺着 coroutineScope 立刻取消条目那一路,
         // 于是"这个条目取不到"的结论变成了分集接口的那条异常 —— 同一个不存在/没权限的条目, 谁先回来就报谁,
         // 详情页一会儿说"账号看不到这个条目"、一会儿甩出 collections/{id}/episodes 的 404 原文 (2026-09-27 真机实测).
@@ -475,7 +476,7 @@ class SubjectCollectionRepositoryImpl(
         if (localProfile || rewatch?.keepsSelfState(subjectId, savedSubject.collectionType) == true) {
             // 本地档取到的是匿名结果, 重温中的看过只在本机: 收藏、评分与看过保留库里的, 同样单个事务 (见该方法 KDoc)
             subjectCollectionDao.upsertSubjectKeepingSelfState(savedSubject, episodeEntities)
-            logger.info { "bgm-direct: fetched subject $subjectId for local profile (${episodeEntities?.size ?: "no"} episodes)" }
+            logger.info { "bgm-direct: fetched subject $subjectId keeping local self state (${episodeEntities?.size ?: "no"} episodes)" }
         } else if (episodeEntities != null) {
             // 条目 + 分集 + 差集删除在**单个事务**里 (含保留 relations 盖章), 见该方法 KDoc
             subjectCollectionDao.upsertSubjectWithEpisodes(

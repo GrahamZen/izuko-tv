@@ -243,6 +243,7 @@ internal object RemotePlayerExtras {
             put("loggedIn", loggedIn)
             put("title", info.subjectInfo.nameCnOrName)
             put("collection", info.collectionType.name)
+            put("rewatching", RemoteRewatch.isRewatching(subjectId))
             put("score", rating.score)
             put("comment", rating.comment.orEmpty())
             put("private", rating.isPrivate)
@@ -250,6 +251,7 @@ internal object RemotePlayerExtras {
     }
 
     private fun setCollection(handle: RemotePlayerHandle, typeName: String): JsonObject {
+        if (typeName == RemoteRewatch.TYPE) return RemoteRewatch.start(handle.vm.subjectId)
         val type = UnifiedCollectionType.entries.firstOrNull { it.name == typeName } ?: return result(false, tr("无效的收藏状态"))
         if (type == UnifiedCollectionType.NOT_COLLECTED) return result(false, tr(UNCOLLECT_UNSUPPORTED))
         val done = runCatching {
@@ -276,8 +278,10 @@ internal object RemotePlayerExtras {
                 put("ok", true)
                 put("title", info.subjectInfo.nameCnOrName)
                 put("collection", info.collectionType.name)
+                put("rewatching", RemoteRewatch.isRewatching(subjectId))
             }
         }
+        if (f["type"] == RemoteRewatch.TYPE) return RemoteRewatch.start(subjectId)
         val type = UnifiedCollectionType.entries.firstOrNull { it.name == f["type"] } ?: return result(false, tr("无效的收藏状态"))
         if (type == UnifiedCollectionType.NOT_COLLECTED) return result(false, tr(UNCOLLECT_UNSUPPORTED))
         val done = runCatching {
