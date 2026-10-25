@@ -22,6 +22,8 @@ import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.platform.currentTimeMillis
 import kotlin.math.max
+import me.him188.ani.app.data.repository.subject.readSubjectRewatches
+import me.him188.ani.utils.io.SystemPath
 
 /**
  * 一个本地用户 (见 [UserProfileKind.LOCAL]) 导出成的文件: 收藏 (类型、评分、短评、标签、看过的集) 与播放进度.
@@ -110,6 +112,8 @@ class ProfileArchiver(
     /** 重取这个条目的分集落进当前用户的库 (收藏状态、评分与看过不动), 取不到时抛. */
     private val loadEpisodes: suspend (subjectId: Int) -> Unit,
     private val clock: () -> Long = { currentTimeMillis() },
+    /** 某个用户的重温记录 (见 `SubjectRewatch`): 重温中的番按开始时的看过导出. null = 不看重温 (测试). */
+    private val rewatchFile: (UserProfile) -> SystemPath? = { null },
 ) {
     sealed interface CollectionOutcome {
         /** 当前用户已经收藏了, 没动. */
@@ -131,7 +135,8 @@ class ProfileArchiver(
             ProfileArchive(
                 exportedAt = clock(),
                 profileName = profile.name,
-                collections = database.readLocalCollections().map { it.toArchive() },
+                collections = database.readLocalCollections(rewatchFile(profile)?.let { readSubjectRewatches(it) }.orEmpty())
+                    .map { it.toArchive() },
                 playback = database.playbackHistoryDao().getActiveRecords()
                     .sortedByDescending { it.updatedAtMillis }
                     .map { it.toArchive() },
