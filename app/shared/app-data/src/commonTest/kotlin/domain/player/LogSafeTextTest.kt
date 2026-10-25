@@ -22,15 +22,20 @@ import kotlin.test.assertFalse
  */
 class LogSafeTextTest {
     @Test
-    fun `media keeps the address and header names - drops header values`() {
+    fun `media keeps the host and header names - drops the signed address and header values`() {
         val data = UriMediaData(
-            "https://drive.example.com/file.mkv",
+            "https://drive.example.com/f/file.mkv?auth_key=signed-key&token=signed-token",
             mapOf("Cookie" to "session=secret-value", "User-Agent" to "Agent/1.0"),
             MediaExtraFiles(listOf(Subtitle("https://drive.example.com/file.ass"))),
         )
         val text = data.toLogText()
-        assertEquals("UriMediaData(uri=https://drive.example.com/file.mkv, headers=[Cookie, User-Agent], subtitles=1)", text)
-        assertFalse("secret-value" in text)
+        assertEquals("UriMediaData(uri=https://drive.example.com/…, headers=[Cookie, User-Agent], subtitles=1)", text)
+        assertFalse("secret-value" in text || "signed-" in text)
+    }
+
+    @Test
+    fun `local media keeps the whole path`() {
+        assertEquals("UriMediaData(uri=file:///cache/a.mp4, headers=[])", UriMediaData("file:///cache/a.mp4").toLogText())
     }
 
     @Test

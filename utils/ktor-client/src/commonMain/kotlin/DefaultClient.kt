@@ -153,7 +153,7 @@ fun HttpClient.registerLogging(
 
         logger.logHttp(
             method = request.method,
-            url = request.url.toString(),
+            url = request.urlForLog(),
             isAuthorized = request.headers.contains(HttpHeaders.Authorization),
             responseStatus = result.map { it.response.status },
             duration = duration,
