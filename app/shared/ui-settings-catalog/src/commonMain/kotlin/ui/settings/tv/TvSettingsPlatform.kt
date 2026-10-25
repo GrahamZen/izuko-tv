@@ -52,6 +52,9 @@ interface TvSettingsPlatform {
      */
     val openFeedback: (() -> Unit)? get() = null
 
+    /** debug 包的调试接口 (开发机经局域网连进来测这一端): 「调试」里列出它的地址, 点一下复制; null = 没有. */
+    val debugConsole: TvDebugConsoleEntry? get() = null
+
     /** 都不给: 没有这些功能的端. */
     object None : TvSettingsPlatform
 }
@@ -62,6 +65,14 @@ interface TvInterfaceModeSwitch {
 
     /** 写下新的模式 (同步写盘: 调用方紧接着重启). */
     fun setTvMode(context: Context, tvMode: Boolean)
+}
+
+/** 调试接口的地址与复制 (见 [TvSettingsPlatform.debugConsole]). */
+interface TvDebugConsoleEntry {
+    /** 没在监听或还没拿到本机地址时为 null. */
+    val url: Flow<String?>
+
+    fun copy(url: String)
 }
 
 /** 经 Worker 中转发起授权的结果 (见 [TvSettingsPlatform.startRelayLogin]). */
