@@ -35,6 +35,8 @@ import me.him188.ani.app.data.repository.user.Settings
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.remote_settings_peer_client_rules
+import me.him188.ani.app.ui.lang.remote_settings_tracker_subscriptions
+import me.him188.ani.app.ui.lang.remote_settings_tracker_subscriptions_description
 import me.him188.ani.app.ui.lang.remote_settings_peer_client_rules_description
 import me.him188.ani.app.ui.lang.remote_settings_peer_id_rules
 import me.him188.ani.app.ui.lang.remote_settings_peer_id_rules_description
@@ -73,6 +75,18 @@ internal object RemoteSettingsCatalog {
             description = Lang.settings_media_torrent_extra_trackers_dialog_description,
             // BT 下载开始前与内置 tracker 一起添加 (见 AnitorrentEngine)
             editor = RemoteSettingEditor.Lines(accepts = ::isTrackerUrl, invalidMessage = "这一行不像 tracker 地址：{0}"),
+        ),
+        RemoteSettingSpec(
+            key = "trackerSubscriptions",
+            settings = { anitorrentConfig },
+            serializer = AnitorrentConfig.serializer(),
+            fieldName = "trackerSubscriptionUrls",
+            title = Lang.remote_settings_tracker_subscriptions,
+            description = Lang.remote_settings_tracker_subscriptions_description,
+            // 存下就开始拉 (TrackerSubscriptionRepository.keepUpdated 跟着地址走), 每天重拉一次
+            editor = RemoteSettingEditor.Lines(accepts = ::isWebUrl, invalidMessage = "这一行不是网址：{0}"),
+            status = { RemoteTrackerSubscriptions.status() },
+            action = RemoteSettingAction("立即更新") { RemoteTrackerSubscriptions.refresh() },
         ),
         RemoteSettingSpec(
             key = "preferredAlliances",
@@ -147,6 +161,9 @@ internal object RemoteSettingsCatalog {
 
     private fun isTrackerUrl(line: String): Boolean = TRACKER_SCHEMES.any { line.startsWith(it, ignoreCase = true) }
 
+    private fun isWebUrl(line: String): Boolean =
+        listOf("http://", "https://").any { line.startsWith(it, ignoreCase = true) && line.length > it.length }
+
     /** Peer 的 IP 规则: 与过滤时同一个解析器 ([IpSeqRange]) 认得的写法. */
     fun isIpPattern(line: String): Boolean = runCatching { IpSeqRange.parse(line) }.isSuccess
 
@@ -193,6 +210,9 @@ internal sealed interface RemoteSettingEditor {
     }
 }
 
+/** 设置卡片上的第二个按钮 (如「立即更新」): [label] 是按钮文字 (简体原文, 走网页译文表), 按下运行 [run], 返回给网页的提示. */
+internal class RemoteSettingAction(val label: String, val run: suspend () -> String)
+
 /**
  * 清单里的一项.
  *
@@ -209,6 +229,10 @@ internal class RemoteSettingSpec<T>(
     val description: StringResource? = null,
     val placeholder: StringResource? = null,
     val editor: RemoteSettingEditor? = null,
+    /** 卡片上输入框下面的一段状态 (如订阅上次拉到多少), 每次给网页清单时现算; null 时不显示. */
+    val status: (suspend () -> String?)? = null,
+    /** 卡片上「保存」旁边的第二个按钮, 见 [RemoteSettingAction]. */
+    val action: RemoteSettingAction? = null,
 ) {
     private val path: List<String> get() = fieldName.split('.')
 
@@ -303,6 +327,7 @@ internal object RemoteGenericSettings {
         val title = getString(spec.title)
         val description = spec.description?.let { getString(it) }
         val placeholder = spec.placeholder?.let { getString(it) }
+        val status = spec.status?.invoke()
         val choices = (editor as? RemoteSettingEditor.Choice)?.let { choice ->
             val d = spec.fieldDescriptor
             (0 until d.elementsCount).map { d.getElementName(it) }.map { name ->
@@ -316,6 +341,8 @@ internal object RemoteGenericSettings {
             placeholder?.let { put("placeholder", it) }
             put("editor", editor.type)
             put("value", value)
+            status?.let { put("status", it) }
+            spec.action?.let { put("action", tr(it.label)) }
             if (editor is RemoteSettingEditor.Number) {
                 editor.min?.let { put("min", it) }
                 editor.max?.let { put("max", it) }
@@ -343,6 +370,13 @@ internal object RemoteGenericSettings {
         val spec = specs.firstOrNull { it.key == key }
             ?: return result(false, tr("没有这一项设置：{0}", key))
         return runBlocking { setTyped(spec, repository, raw) }
+    }
+
+    /** 网页按了这一项的第二个按钮 ([RemoteSettingSpec.action]). */
+    fun action(key: String, specs: List<RemoteSettingSpec<*>> = RemoteSettingsCatalog.items): JsonObject {
+        val action = specs.firstOrNull { it.key == key }?.action
+            ?: return result(false, tr("没有这一项设置：{0}", key))
+        return result(true, runBlocking { action.run() })
     }
 
     private suspend fun <T> setTyped(spec: RemoteSettingSpec<T>, repository: SettingsRepository, raw: String): JsonObject {
