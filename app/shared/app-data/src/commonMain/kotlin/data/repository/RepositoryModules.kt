@@ -50,7 +50,9 @@ import me.him188.ani.app.data.repository.subject.SubjectRelationsRepository
 import me.him188.ani.app.data.repository.subject.SubjectSearchCompletionRepository
 import me.him188.ani.app.data.repository.subject.SubjectSearchHistoryRepository
 import me.him188.ani.app.data.repository.subject.SubjectSearchRepository
+import me.him188.ani.app.data.repository.torrent.TrackerSubscriptionRepository
 import me.him188.ani.app.data.repository.torrent.peer.PeerFilterSubscriptionRepository
+import me.him188.ani.app.data.repository.torrent.trackerSubscriptionUrlList
 import me.him188.ani.app.data.repository.user.PreferencesRepositoryImpl
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.data.repository.user.TokenRepository
@@ -220,6 +222,14 @@ fun KoinApplication.repositoryModules(
         PeerFilterSubscriptionRepository(
             dataStore = getContext().dataStores.peerFilterSubscriptionStore,
             ruleSaveDir = getContext().files.dataDir.resolve("peerfilter-subs"),
+            httpClient = get<HttpClientProvider>().get(ScopedHttpClientUserAgent.ANI),
+        )
+    }
+
+    single<TrackerSubscriptionRepository> {
+        TrackerSubscriptionRepository(
+            urls = settingsRepository.anitorrentConfig.flow.map { it.trackerSubscriptionUrlList() },
+            dataStore = getContext().dataStores.trackerSubscriptionStore,
             httpClient = get<HttpClientProvider>().get(ScopedHttpClientUserAgent.ANI),
         )
     }

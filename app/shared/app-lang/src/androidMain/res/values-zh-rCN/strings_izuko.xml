@@ -1031,6 +1031,8 @@
     <string name="remote_settings_peer_id_rules_description">电视上打开「过滤客户端指纹」后生效。每行一条正则表达式，如 -HP[0-9]{4}- 屏蔽指纹为 -HPxxxx- 的客户端。</string>
     <string name="remote_settings_peer_client_rules">Peer 过滤：客户端类型规则</string>
     <string name="remote_settings_peer_client_rules_description">电视上打开「过滤客户端类型」后生效。每行一条正则表达式，如 go.torrent 屏蔽百度网盘的离线下载客户端。</string>
+    <string name="remote_settings_tracker_subscriptions">Tracker 订阅</string>
+    <string name="remote_settings_tracker_subscriptions_description">tracker 列表的地址，每行一个。每天拉一次，里面的 tracker 与内置、额外的一起用，正在下载的种子也会加上；拉不到时继续用上次的。例如 https://cf.trackerslist.com/best.txt</string>
     <!-- 电视设置「关于」里的反馈群 -->
     <string name="settings_about_qq_group">QQ 群</string>
     <!-- 触屏设备的设置页: 电视版设置清单里说「按确定」「在电视上」的几句换成触屏的说法 -->

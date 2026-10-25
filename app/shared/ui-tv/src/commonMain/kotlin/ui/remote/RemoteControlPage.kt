@@ -6332,8 +6332,10 @@ private val SETTINGS_SCRIPT = """
           (g.min != null ? ' min="' + g.min + '"' : '') + (g.max != null ? ' max="' + g.max + '"' : '') +
           (g.step != null ? ' step="' + esc(String(g.step)) + '"' : '') +
           ' value="' + esc(g.value == null ? '' : String(g.value)) + '">';
-      return '<form class="card set-card"' + k + '>' + head + input +
-        '<div class="row"><button type="submit" class="primary">' + T('保存') + '</button></div></form>';
+      // 状态 (如订阅拉到多少) 与第二个按钮 (如「立即更新」) 由服务端给, 见 RemoteSettingSpec.status / action
+      return '<form class="card set-card"' + k + '>' + head + input + genHint(g.status) + '<div class="row">' +
+        (g.action ? '<button type="button" class="ghost" data-gaction>' + esc(g.action) + '</button>' : '') +
+        '<button type="submit" class="primary">' + T('保存') + '</button></div></form>';
     }).join('');
   }
   // 卡片的提交: 通用项与调试项各走各的接口
@@ -6345,6 +6347,14 @@ private val SETTINGS_SCRIPT = """
       e.preventDefault();
       var f = e.target;
       save(f.getAttribute('data-gkey'), f.querySelector('[name=value]').value).catch(fail);
+    });
+    box.addEventListener('click', function (e) {
+      var b = e.target.closest && e.target.closest('[data-gaction]');
+      if (!b) return;
+      b.disabled = true;
+      post(path.substring(0, path.lastIndexOf('/')) + '/action', { key: b.closest('form').getAttribute('data-gkey') })
+        .then(function (r) { toast(r.message); if (r.ok) load(); })
+        .catch(fail).then(function () { b.disabled = false; });
     });
     box.addEventListener('change', function (e) {
       var i = e.target;

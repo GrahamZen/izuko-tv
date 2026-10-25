@@ -97,6 +97,7 @@ internal object RemoteSettings {
                 request.path == "api/settings/generic/set" -> request.formFields().let { form ->
                     RemoteGenericSettings.set(settingsRepository, form["key"].orEmpty(), form["value"].orEmpty())
                 }
+                request.path == "api/settings/generic/action" -> RemoteGenericSettings.action(request.formFields()["key"].orEmpty())
                 // 「调试」组 (debug 包才收, 见 RemoteDebugSettings)
                 request.path == "api/settings/debug/set" -> request.formFields().let { form ->
                     RemoteDebugSettings.set(settingsRepository, form["key"].orEmpty(), form["value"].orEmpty())
