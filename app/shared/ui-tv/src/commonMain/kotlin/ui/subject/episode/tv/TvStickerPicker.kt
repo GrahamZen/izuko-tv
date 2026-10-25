@@ -61,7 +61,6 @@ import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
 import me.him188.ani.app.ui.foundation.widgets.ProvideScrollFadeFocusMargin
 import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFade
 import me.him188.ani.app.ui.foundation.ifThen
-import me.him188.ani.app.ui.foundation.tv.TvInWindowPanel
 import me.him188.ani.app.ui.foundation.widgets.AniFocusSelectableSurface
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.comment_add_emoji
@@ -77,12 +76,6 @@ private val TV_STICKER_IMAGE_SIZE = 36.dp
 
 /** 左侧表情包列表的宽度 (最长的名字是"Bangumi 娘"). */
 private val TV_STICKER_PACK_COLUMN_WIDTH = 132.dp
-
-private const val TV_STICKER_DIALOG_WIDTH_FRACTION = 0.68f
-
-private const val TV_STICKER_DIALOG_HEIGHT_FRACTION = 0.7f
-
-/** 与评论弹窗同一层压暗 (它已经盖在评论弹窗上, 再暗一档就成黑屏了). */
 
 /**
  * 表情选择器: 左边选包, 右边选表情, 确定即把表情代码插进输入框.
@@ -121,13 +114,9 @@ internal fun TvStickerPicker(
         gridState.scrollToItem(0)
     }
 
-    // 焦点锁在选择器内 (不锁的话网格边缘的方向键会滑到底下评论弹窗的按钮上, 而返回键只会关
-    // 选择器), scrim 与面板几何都在 TvInWindowPanel
-    TvInWindowPanel(
-        widthFraction = TV_STICKER_DIALOG_WIDTH_FRACTION,
-        modifier = modifier.tvFocusNavSignal(focus),
-        heightFraction = TV_STICKER_DIALOG_HEIGHT_FRACTION,
-    ) {
+    // 盖在评论详情那一层上 (同宽同高). 焦点锁在选择器内, 往下也不出去: 回了胶囊再按上会落进被它挡住的评论详情里,
+    // 而返回键只会关选择器
+    TvPlayerLayerPanel(modifier = modifier.tvFocusNavSignal(focus), lockDown = true) {
                 Text(
                     stringResource(Lang.comment_add_emoji),
                     style = MaterialTheme.typography.titleLarge,

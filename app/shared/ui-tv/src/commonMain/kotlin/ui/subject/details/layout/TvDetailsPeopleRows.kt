@@ -29,6 +29,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.paging.compose.LazyPagingItems
 import me.him188.ani.app.data.models.subject.RelatedCharacterInfo
 import me.him188.ani.app.data.models.subject.RelatedPersonInfo
@@ -234,6 +235,7 @@ private fun TvDetailsPeopleRow(
  * @param viewAllLabel 「查看全部」那格的字 (行里没有这一格时可以不给).
  * @param textGap 圆下缘到姓名.
  * @param badges 画圆下缘的标签 (「查看全部」的人物画廊, 取值同 Compose 版 ViewAllGalleries.kt).
+ * @param smallText 姓名与副标题各小一号 (13 / 11sp, 行高 18 / 15): 圆比详情页小的地方 (播放器叠层里的画廊、人物页的横滑行).
  */
 @Composable
 internal fun rememberTvMonogramStyle(
@@ -242,6 +244,7 @@ internal fun rememberTvMonogramStyle(
     viewAllLabel: String = stringResource(Lang.subject_details_view_all),
     textGap: Dp = TV_MONOGRAM_TEXT_GAP,
     badges: Boolean = false,
+    smallText: Boolean = false,
 ): TvNativeMonogramStyle {
     val density = LocalDensity.current
     val typography = MaterialTheme.typography
@@ -251,7 +254,7 @@ internal fun rememberTvMonogramStyle(
     val crossfade = LocalImageCrossfade.current
     val arrow = rememberTvNativeIcon(Icons.AutoMirrored.Outlined.ArrowForward, 24.dp)
     val badgeStyle = if (badges) viewAllGalleryBadgeStyle() else null
-    return remember(density, typography, colors, content, placeholder, crossfade, arrow, viewAllLabel, size, spacing, textGap, badgeStyle) {
+    return remember(density, typography, colors, content, placeholder, crossfade, arrow, viewAllLabel, size, spacing, textGap, badgeStyle, smallText) {
         with(density) {
             val scale = size / TV_MONOGRAM_SIZE
             TvNativeMonogramStyle(
@@ -259,8 +262,12 @@ internal fun rememberTvMonogramStyle(
                 spacingPx = spacing.roundToPx(),
                 textGapPx = textGap.roundToPx(),
                 lineGapPx = TV_MONOGRAM_LINE_GAP.roundToPx(),
-                name = typography.titleSmall.copy(fontWeight = FontWeight.SemiBold).toTvNativeTextStyle(density, content),
-                subtitle = typography.bodySmall.toTvNativeTextStyle(density, content),
+                name = typography.titleSmall.copy(fontWeight = FontWeight.SemiBold)
+                    .let { if (smallText) it.copy(fontSize = 13.sp, lineHeight = 18.sp) else it }
+                    .toTvNativeTextStyle(density, content),
+                subtitle = typography.bodySmall
+                    .let { if (smallText) it.copy(fontSize = 11.sp, lineHeight = 15.sp) else it }
+                    .toTvNativeTextStyle(density, content),
                 subtitleIdleAlpha = TV_MONOGRAM_SUBTITLE_ALPHA,
                 initials = typography.titleLarge.toTvNativeTextStyle(density, colors.onSurfaceVariant),
                 focusScale = TV_MONOGRAM_FOCUS_SCALE,

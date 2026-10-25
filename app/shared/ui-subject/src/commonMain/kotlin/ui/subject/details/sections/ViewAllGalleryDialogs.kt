@@ -38,16 +38,16 @@ import org.jetbrains.compose.resources.stringResource
 
 /*
  * 「查看全部」在电视与平板上的弹窗 (居中弹窗形态; 手机仍是底部抽屉, 见 ViewAllSheet): 人物是圆头像画廊, 作品是海报画廊
- * (网格见 ViewAllGalleries). 点人物先关本弹窗再弹预览 (不叠第二层弹窗, 遥控器上两层弹窗的焦点归属没有好解法), 点作品进条目详情;
- * 遥控器上长按人物放大看照片 (大图画在本窗口里), 触屏上没有 (放大层只认返回键).
+ * (网格见 ViewAllGalleries). 点人物先关本弹窗再进人物整页 (电视与平板不开人物预览, 见 PeoplePreviewHost), 点作品进条目详情;
+ * 遥控器上长按人物放大看照片 (大图画在本窗口里), 触屏上没有 (放大层只认返回键). 播放器里不弹这些: 交给胶囊上方的叠层摆 (见 ViewAllPanelHost,
+ * ui-tv 的 TvPlayerDetailLayers), 那时点人物不先关画廊 (人物叠在它上面, 退回来还是这张画廊).
  */
 
 /**
  * 条目角色的「查看全部」: 名字下面写「配音 某某」, 主角压一枚「主角」标签.
  *
  * @param subtitle 标题下面那行说明 (所属条目名); null = 不写.
- * @param onBeforeOpenPreview 点人物时在弹预览**之前**调用, 默认就是关掉本弹窗; 电视播放器额外记一笔「预览是从这儿开的」(关掉预览后焦点
- *   该还给胶囊而不是面板条目).
+ * @param onBeforeOpenPreview 点人物时在打开那个人**之前**调用, 默认就是关掉本弹窗.
  */
 @Composable
 fun CharactersGalleryDialog(
@@ -58,20 +58,7 @@ fun CharactersGalleryDialog(
     onBeforeOpenPreview: () -> Unit = onDismissRequest,
 ) {
     val onClickCharacter = rememberPeopleClickHandler()
-    val voiceActor = stringResource(Lang.subject_details_voice_actor_label)
-    val snapshot = allCharacters.itemSnapshotList
-    val items = remember(snapshot, voiceActor) {
-        snapshot.map { info ->
-            info?.let {
-                PeopleRowItem(
-                    imageUrl = it.character.imageMedium,
-                    name = it.character.displayName,
-                    subtitle = it.character.actors.firstOrNull()?.let { actor -> "$voiceActor ${actor.displayName}" }.orEmpty(),
-                    badge = it.role.nameCn.takeIf { _ -> it.isMainCharacter() },
-                )
-            }
-        }
-    }
+    val items = rememberCharacterGalleryItems(allCharacters)
     PeopleGalleryDialog(
         title = stringResource(Lang.subject_details_characters),
         count = totalCount,
@@ -99,12 +86,7 @@ fun StaffGalleryDialog(
     onBeforeOpenPreview: () -> Unit = onDismissRequest,
 ) {
     val onClickPerson = rememberPeopleClickHandler()
-    val snapshot = allStaff.itemSnapshotList
-    val items = remember(snapshot) {
-        snapshot.map { info ->
-            info?.let { PeopleRowItem(it.personInfo.imageMedium, it.personInfo.displayName, it.position.nameCn.orEmpty()) }
-        }
-    }
+    val items = rememberStaffGalleryItems(allStaff)
     PeopleGalleryDialog(
         title = stringResource(Lang.subject_details_staff),
         count = totalCount,
@@ -122,6 +104,36 @@ fun StaffGalleryDialog(
     )
 }
 
+/** 条目角色画廊的格子: 名字下面写「配音 某某」, 主角压一枚「主角」标签. */
+@Composable
+fun rememberCharacterGalleryItems(allCharacters: LazyPagingItems<RelatedCharacterInfo>): List<PeopleRowItem?> {
+    val voiceActor = stringResource(Lang.subject_details_voice_actor_label)
+    val snapshot = allCharacters.itemSnapshotList
+    return remember(snapshot, voiceActor) {
+        snapshot.map { info ->
+            info?.let {
+                PeopleRowItem(
+                    imageUrl = it.character.imageMedium,
+                    name = it.character.displayName,
+                    subtitle = it.character.actors.firstOrNull()?.let { actor -> "$voiceActor ${actor.displayName}" }.orEmpty(),
+                    badge = it.role.nameCn.takeIf { _ -> it.isMainCharacter() },
+                )
+            }
+        }
+    }
+}
+
+/** 条目制作人员画廊的格子 (同 [rememberCharacterGalleryItems]): 名字下面写职位. */
+@Composable
+fun rememberStaffGalleryItems(allStaff: LazyPagingItems<RelatedPersonInfo>): List<PeopleRowItem?> {
+    val snapshot = allStaff.itemSnapshotList
+    return remember(snapshot) {
+        snapshot.map { info ->
+            info?.let { PeopleRowItem(it.personInfo.imageMedium, it.personInfo.displayName, it.position.nameCn.orEmpty()) }
+        }
+    }
+}
+
 /** 人物 (声优) 出演角色的「查看全部」: 角色头像, 名字下面写作品名; 点角色走 [navigation] (预览里换成那个角色). */
 @Composable
 internal fun PersonCastsGalleryDialog(
@@ -129,6 +141,8 @@ internal fun PersonCastsGalleryDialog(
     navigation: PeopleDetailsNavigation,
     onDismissRequest: () -> Unit,
 ) {
+    // 画廊摆在别的宿主里 (播放器的叠层) 时点人物不先关它: 人物叠在上面一层, 退回来还是这张画廊
+    val keepOpen = LocalViewAllPanelHost.current != null
     val snapshot = casts.itemSnapshotList
     val items = remember(snapshot) {
         snapshot.map { cast -> cast?.let { PeopleRowItem(it.character.imageMedium, it.character.displayName, it.subject.displayName) } }
@@ -139,7 +153,7 @@ internal fun PersonCastsGalleryDialog(
         onDismissRequest = onDismissRequest,
         onClick = { index ->
             casts.peek(index)?.let {
-                onDismissRequest()
+                if (!keepOpen) onDismissRequest()
                 navigation.onClickCharacter(it.character.id)
             }
         },
@@ -237,9 +251,9 @@ private fun PeopleGalleryDialog(
     }
 }
 
-/** 作品画廊弹窗: [ViewAllPanelDialog] 里一张 [ViewAllGalleries.PosterGallery]. */
+/** 作品画廊弹窗: [ViewAllPanelDialog] 里一张 [ViewAllGalleries.PosterGallery]. 电视播放器的相关推荐画廊也用它 (ui-tv 的 TvPlayerPanels). */
 @Composable
-private fun PosterGalleryDialog(
+fun PosterGalleryDialog(
     title: String,
     items: List<PosterRowItem?>,
     onDismissRequest: () -> Unit,

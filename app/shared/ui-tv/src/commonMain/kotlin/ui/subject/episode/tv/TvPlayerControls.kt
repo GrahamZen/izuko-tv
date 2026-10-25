@@ -9,10 +9,18 @@
 
 package me.him188.ani.app.ui.subject.episode.tv
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.util.lerp
 import me.him188.ani.app.ui.diagnostics.TraceSection
+import me.him188.ani.app.ui.foundation.ifThen
+import me.him188.ani.app.ui.foundation.tv.TvZoomedImageOverlay
 import me.him188.ani.app.ui.foundation.tv.tvUseOriginalTitle
 import me.him188.ani.app.ui.lang.playback_history_episode_label
 import me.him188.ani.app.ui.lang.subject_episode_details
@@ -171,7 +179,8 @@ import me.him188.ani.app.domain.player.tracks.AudioTrackSupport
 import me.him188.ani.app.ui.mediaselect.summary.MediaSelectorSummary
 import me.him188.ani.app.ui.subject.collection.components.EditCollectionTypeDropDown
 import me.him188.ani.app.ui.subject.collection.components.EditableSubjectCollectionTypeDialogsHost
-import me.him188.ani.app.ui.subject.person.PeoplePreviewHost
+import me.him188.ani.app.ui.subject.person.LocalPeoplePreviewHandler
+import me.him188.ani.app.ui.subject.person.PeoplePreviewTarget
 import me.him188.ani.app.ui.subject.episode.EpisodePageState
 import me.him188.ani.app.ui.subject.episode.EpisodeViewModel
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
@@ -195,12 +204,20 @@ import org.openani.mediamp.features.PlaybackSpeed
 import org.openani.mediamp.features.VideoAspectRatio
 import org.openani.mediamp.features.audioTracks
 import org.openani.mediamp.features.subtitleTracks
+import kotlin.math.roundToInt
 import kotlin.time.Duration
 
 // ---- 布局调参 ----
 
 /** 内容水平留白 (Prime 风格大留白). */
 internal val TV_PLAYER_HORIZONTAL_PAD = 48.dp
+
+/** 焦点进了胶囊的面板 / 上方的叠层时, 那颗胶囊描的边. */
+internal val TV_PILL_SELECTED_BORDER = 1.5.dp
+
+/** 焦点在某颗胶囊打开的东西里 (浮出面板, 或胶囊上方的叠层): 那颗胶囊描一圈边. */
+internal val TvPlayerFocusRegion.isInsidePillContent: Boolean
+    get() = this == TvPlayerFocusRegion.PANEL || this == TvPlayerFocusRegion.LAYER
 
 /** 底部渐变 scrim 高度. */
 internal val TV_PLAYER_BOTTOM_SCRIM_HEIGHT = 380.dp
@@ -212,6 +229,19 @@ internal val TV_PLAYER_BOTTOM_SCRIM_HEIGHT = 380.dp
  * (进度条一出来尤其明显). 控件都是白字/白图标, 0.72 下最亮的画面也只剩三成亮度, 对比够了.
  */
 internal const val TV_PLAYER_BOTTOM_SCRIM_ALPHA = 0.72f
+
+/**
+ * 胶囊上方的画廊在场时 (那三颗胶囊上 / 焦点在画廊里) 底部渐变最深处的不透明度, 与渐变从多高才开始 (占整条的比例):
+ * 画廊左下角叠着这条渐变会压得很黑, 这时只托住进度条与胶囊那一截 (图标行收着, 下面没有别的字).
+ */
+private const val TV_PLAYER_BOTTOM_SCRIM_ALPHA_UNDER_GALLERY = 0.42f
+private const val TV_PLAYER_BOTTOM_SCRIM_START_UNDER_GALLERY = 0.45f
+
+/** 图标行展开 / 收起的弹簧 (同 AniAnimatedVisibility 在列里的展开 / 收起). */
+private val TV_PLAYER_BELOW_PROGRESS_SPRING = spring<Float>(stiffness = Spring.StiffnessMediumLow, visibilityThreshold = 0.001f)
+
+/** 底部渐变在两档之间换的时长. */
+private const val TV_PLAYER_BOTTOM_SCRIM_SHIFT_MILLIS = 200
 
 /** 顶部渐变 scrim 高度 (标题可读性). */
 internal val TV_PLAYER_TOP_SCRIM_HEIGHT = 180.dp
@@ -365,18 +395,31 @@ internal fun TvPlayerControlsOverlay(
         } else {
             1f
         }
+        // 胶囊上方的画廊在场时减淡、往下收 (见 TV_PLAYER_BOTTOM_SCRIM_ALPHA_UNDER_GALLERY). 进度在绘制阶段读: 换胶囊只重画这一条
+        val galleryScrim = remember { Animatable(0f) }
+        LaunchedEffect(overlay) {
+            snapshotFlow { overlay.detailLayers.gallery != null }.collect { shown ->
+                galleryScrim.animateTo(if (shown) 1f else 0f, tween(TV_PLAYER_BOTTOM_SCRIM_SHIFT_MILLIS))
+            }
+        }
         Box(
             chrome
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .height(bottomScrimHeight)
-                .background(
-                    Brush.verticalGradient(
-                        0f to Color.Transparent,
-                        gradientEnd to Color.Black.copy(alpha = TV_PLAYER_BOTTOM_SCRIM_ALPHA),
-                        1f to Color.Black.copy(alpha = TV_PLAYER_BOTTOM_SCRIM_ALPHA),
-                    ),
-                ),
+                .drawBehind {
+                    val t = galleryScrim.value
+                    val alpha = lerp(TV_PLAYER_BOTTOM_SCRIM_ALPHA, TV_PLAYER_BOTTOM_SCRIM_ALPHA_UNDER_GALLERY, t)
+                    val start = lerp(0f, TV_PLAYER_BOTTOM_SCRIM_START_UNDER_GALLERY, t) * gradientEnd
+                    drawRect(
+                        Brush.verticalGradient(
+                            0f to Color.Transparent,
+                            start to Color.Transparent,
+                            gradientEnd to Color.Black.copy(alpha = alpha),
+                            1f to Color.Black.copy(alpha = alpha),
+                        ),
+                    )
+                },
         )
         // 顶部渐变 scrim (标题/时钟可读性)
         Box(
@@ -458,7 +501,8 @@ internal fun TvPlayerControlsOverlay(
         val hideBelowProgress by remember {
             derivedStateOf {
                 overlay.focusRegion == TvPlayerFocusRegion.PILLS ||
-                        overlay.focusRegion == TvPlayerFocusRegion.PANEL
+                        overlay.focusRegion == TvPlayerFocusRegion.PANEL ||
+                        overlay.focusRegion == TvPlayerFocusRegion.LAYER
             }
         }
         // **控制层淡出时图标行一并收掉** (2026-09-05 改): 那时本层留在场上只为托住 trailing 那两个
@@ -467,7 +511,7 @@ internal fun TvPlayerControlsOverlay(
         // 于是这两种情形下位置一模一样, 不会因为控制层收没收起而上下跳.
         //
         // 这一条推翻了原来"图标行绝不能摘掉、否则按钮往下掉"的做法 —— 往下掉正是现在要的,
-        // 而且 AniAnimatedVisibility 会把这一段高度变化做成动画, 唤出控制层时位置自己滑回去.
+        // 而且这一段高度变化做成了动画 (见图标行的 belowProgressReveal), 唤出控制层时位置自己滑回去.
         // **进度条行仍然不许摘**: 摘了那两个控件就贴到屏幕底缘了.
         // 最后一项: 用户可以把图标行整行藏掉 (只剩分组竖线也算空) —— 那时这一行连同它的
         // 间距都不该占位, 进度条的下键也没有落点可指
@@ -501,12 +545,37 @@ internal fun TvPlayerControlsOverlay(
                 overlay.focusProgress()
             }
         }
-        // 角色 / 制作人员胶囊按下确定: 弹与详情页同一个「查看全部」大网格 (见 TvPlayerPeopleViewAllDialog).
-        // 只会是 STAFF / CHARACTERS 两颗; null = 没开.
-        var peopleViewAll by remember { mutableStateOf<TvPlayerPanel?>(null) }
-        // 人物预览是从那个弹窗点开的 (弹窗先关、预览再开), 关掉之后焦点要还给**胶囊**而不是面板条目.
-        // 从面板条目点开的那条路不置这个标志, 仍旧还回条目
-        var peoplePreviewFrom by remember { mutableStateOf<TvPlayerPanel?>(null) }
+        // 胶囊上方的叠层 (画廊、人物页 / 查看全部、评论详情, 见 TvPlayerDetailLayers). 往下出边回到打开它的胶囊,
+        // 同一次按住的下键连发不再往下走 (见 downKeyLatchedByLayer)
+        val layers = overlay.detailLayers
+        SideEffect {
+            layers.focusPill = {
+                overlay.activePanel?.let { panel -> runCatching { pillFocusRequesters.getValue(panel).requestFocus() } }
+            }
+        }
+        val layerExit: () -> Unit = remember(overlay) {
+            {
+                overlay.downKeyLatchedByLayer = true
+                layers.focusPill()
+            }
+        }
+        // 画廊之间左右跨 (见 TvPlayerDetailLayersState.crossGallery): 照胶囊行的顺序, 换过去即换胶囊
+        SideEffect {
+            layers.pillOrder = pillOrder
+            layers.selectPanel = { overlay.activePanel = it }
+            layers.focusPillOf = { runCatching { pillFocusRequesters.getValue(it).requestFocus() } }
+        }
+        // 叠层跟着胶囊: 那三颗胶囊显示各自的画廊; 换了胶囊人物页清掉, 焦点去了进度条 / 图标行 (面板随之收起) 画廊收起;
+        // 控制层收起就全清, 焦点不动 (已经在别处了)
+        LaunchedEffect(overlay) {
+            snapshotFlow { overlay.activePanel to overlay.layer }.collect { (panel, layer) ->
+                val leaving = layer != TvPlayerLayer.CONTROLS
+                if (leaving) layers.reset() else layers.showPanel(panel)
+                if (overlay.replyingComment != null && (leaving || panel != TvPlayerPanel.COMMENTS)) {
+                    overlay.dismissReply(restoreFocus = false)
+                }
+            }
+        }
         // 进入休眠: 复位视觉状态, 关掉跟着本层的菜单与弹窗. 纯视频态下再把焦点收回根节点一次 (收起时 hideAll 已经要过,
         // 这里是兜底: 万一焦点还在某颗按钮上, 它刚变成不可聚焦, 焦点被清掉了). 托着提示按钮时不要: 焦点归那颗按钮
         LaunchedEffect(dormant) {
@@ -514,11 +583,14 @@ internal fun TvPlayerControlsOverlay(
             if (overlay.layer == TvPlayerLayer.HIDDEN && !trailingVisibleState.value) overlay.requestRootFocus()
             overlay.onControlsHidden()
             commentSortMenu.value = false
-            peopleViewAll = null
-            peoplePreviewFrom = null
+            layers.reset()
         }
         // 进度条按下键的显式落点: 图标行最左按钮 (全宽进度条交给空间搜索会落到中间按钮)
         val bottomRowFirstFocus = remember { FocusRequester() }
+        // 进度条行下沿与底部那一列下沿 (窗口坐标): 两者之差 = 进度条下面还占着的那一截 (图标行, 收起动画里逐帧变矮).
+        // 胶囊行现在的位置加上这一截就是图标行收起后它停的位置 (动画途中两者之和不变), 叠层按它定内容的高 (见 tvPlayerLayerHeight)
+        val progressRowBottomPx = remember { mutableFloatStateOf(Float.NaN) }
+        val controlsColumnBottomPx = remember { mutableFloatStateOf(Float.NaN) }
         // 发弹幕弹出 IME 时**只抬这一列, 遮罩与画面都不动**:
         //  - 画面不动靠 TV 变体声明的 adjustNothing (见 tv/AndroidManifest.xml) —— 窗口一旦被系统
         //    顶起, SurfaceView 跟着缩放, 画面下半被拉长; 而暂停时不再产生新帧, 那一帧就一直错着;
@@ -540,6 +612,7 @@ internal fun TvPlayerControlsOverlay(
                 Column(
                     Modifier
                         .padding(horizontal = TV_PLAYER_HORIZONTAL_PAD)
+                        .onGloballyPositioned { controlsColumnBottomPx.floatValue = it.boundsInWindow().bottom }
                         // 选集条展开、进了详情层时这一列在淡出, 焦点却可能还停在图标行的按钮上 (送往选集条的焦点要过几帧才到,
                         // 选集条为空直接进详情层那一路不往这里送): 连按「下、确定」的确定会点到看不见的按钮. 这时吞掉按键 (返回放行);
                         // 选集条那一路再送一次焦点 —— 这一下按键取消了在途的送焦 (见 tvFocusNavSignal)
@@ -556,62 +629,63 @@ internal fun TvPlayerControlsOverlay(
                                     (overlay.layer == TvPlayerLayer.CONTROLS && overlay.episodeStripExpanded)
                         },
                 ) {
-                    // L2 浮出面板 (聚焦胶囊按钮时出现, 条目吸底, 从下往上导航).
-                    // PeoplePreviewHost: 角色/制作人员面板点击卡片弹居中人物预览 (播放器里不进整页, 进了就离开播放器),
-                    // 开着期间抑制控制层自动隐藏
-                    PeoplePreviewHost(
-                        previewInCenteredDialogs = true,
-                        onPreviewOpenChanged = { open ->
-                            overlay.onPopupExpandedChanged(open)
-                            // 预览关掉后焦点还给刚点开的那张卡片: 弹窗节点被移除时 Compose 会清掉
-                            // 整棵树的焦点 (不交给祖先), 不还的话面板还在但方向键全失效.
-                            //
-                            // 从「查看全部」弹窗点开的那条路除外: 那时面板里一张卡都没被点过,
-                            // 塞进面板与用户离开时的位置对不上. 只清标志, 焦点由胶囊上的
-                            // restoreFocusAfter 接手 (它等的正是"这一整段结束")
-                            if (!open) {
-                                if (peoplePreviewFrom != null) peoplePreviewFrom = null
-                                else overlay.requestPanelItemFocus()
-                            }
-                        },
-                    ) {
-                        TraceSection("Izuko:Controls/PanelHost") {
-                            TvPlayerPanelHost(
-                                // 卡片底色/图片/阴影相叠, 走整层合成 (见 chrome 处的分档)
-                                modifier = chromeLayered,
-                                overlay = overlay,
-                                vm = vm,
-                                page = page,
-                                pillFocusRequesters = pillFocusRequesters,
-                                pillOrder = pillOrder,
-                                // NaN (尚未测得) 由面板侧兜底成固定高度
-                                availableHeightPx = { pillsRowTopPx.floatValue - topInfoTopPx.floatValue },
-                            )
-                        }
-                        // 弹窗要在 PeoplePreviewHost **之内**: 点卡片走的是 rememberPeopleClickHandler,
-                        // 拿不到 host 时它会退化成"导航去人物详情页" —— 那是直接离开播放器
-                        peopleViewAll?.let { panel ->
-                            TvPlayerPeopleViewAllDialog(
-                                vm = vm,
-                                panel = panel,
-                                onDismissRequest = { peopleViewAll = null },
-                                onOpenPreview = {
-                                    // 先记来路再关窗: 关窗那一步会触发胶囊的 restoreFocusAfter 判据,
-                                    // 而这一段还没结束 (预览马上就要开)
-                                    peoplePreviewFrom = panel
-                                    peopleViewAll = null
-                                },
-                            )
-                        }
+                    // L2 浮出面板 (评论 / 弹幕胶囊聚焦时出现, 条目吸底, 从下往上导航). 前三颗胶囊的画廊、画廊里点开的人物页、
+                    // 面板里点开的评论详情叠在胶囊上方 (见 TvPlayerDetailLayers), 叠层开着时面板不画、焦点不进.
+                    // 点人物 (画廊、人物页里的人) 一律开在叠层里: 拿不到这个 handler 时 rememberPeopleClickHandler
+                    // 会退化成"导航去人物详情页", 那是直接离开播放器
+                    val peopleHandler: (PeoplePreviewTarget) -> Unit = remember(overlay) {
+                        { target -> layers.openPeople(target, owner = overlay.activePanel) }
                     }
-                    // 弹窗是独立窗口, 按键不经根路由 -> interactionTick 不再自增, 控制层会被
-                    // 5 秒自动隐藏吃掉 (与一起看弹窗同一套引用计数上报)
-                    // 开合状态先落成本次组合的局部值: onDispose 里读 peopleViewAll 拿到的是**当前**值
-                    // (它是 snapshot state), 关窗那一次 dispose 时它已经是 null, 计数就减不回去了
-                    val viewAllOpen = peopleViewAll != null
-                    DisposableEffect(viewAllOpen) {
-                        if (viewAllOpen) overlay.onPopupExpandedChanged(true)
-                        onDispose { if (viewAllOpen) overlay.onPopupExpandedChanged(false) }
+                    // 面板能长多高: 胶囊行上沿到标题块上沿; NaN (尚未测得) 由面板兜底成固定高度. 叠层按胶囊行上沿自己算 (长到屏幕顶)
+                    val panelAvailableHeightPx = { pillsRowTopPx.floatValue - topInfoTopPx.floatValue }
+                    val layerPillsRowTopPx = { pillsRowTopPx.floatValue }
+                    val layerSettledPillsRowTopPx = {
+                        pillsRowTopPx.floatValue + (controlsColumnBottomPx.floatValue - progressRowBottomPx.floatValue)
+                    }
+                    CompositionLocalProvider(
+                        LocalPeoplePreviewHandler provides peopleHandler,
+                        LocalTvPlayerLayerExit provides layerExit,
+                    ) {
+                        Box(contentAlignment = Alignment.BottomStart) {
+                            TraceSection("Izuko:Controls/PanelHost") {
+                                TvPlayerPanelHost(
+                                    // 卡片底色/图片/阴影相叠, 走整层合成 (见 chrome 处的分档)
+                                    modifier = chromeLayered.hiddenUnderDetailLayers(overlay),
+                                    overlay = overlay,
+                                    vm = vm,
+                                    page = page,
+                                    pillFocusRequesters = pillFocusRequesters,
+                                    pillOrder = pillOrder,
+                                    availableHeightPx = panelAvailableHeightPx,
+                                )
+                            }
+                            TvPlayerDetailLayers(overlay, vm, layers, layerPillsRowTopPx, layerSettledPillsRowTopPx, modifier = chromeLayered)
+                            // 评论详情 / 回复 (面板里点一条评论): 叠在评论面板的位置上, 同宽
+                            overlay.replyingComment?.let { target ->
+                                // 上报"还在组合树上": 面板的焦点找回要等它真的走了才发, 理由与取证见
+                                // TvPlayerOverlayState.replyDialogComposed
+                                DisposableEffect(Unit) {
+                                    overlay.replyDialogComposed = true
+                                    onDispose { overlay.replyDialogComposed = false }
+                                }
+                                // 只读的是一整楼的视图 (见 TvCommentThreadView): 同人物页那样贴着屏幕左缘, 从屏幕顶铺到胶囊行
+                                val threadView = target.quoted != null && !target.canReply
+                                TvCommentReplyDialog(
+                                    target = target,
+                                    editorState = vm.commentEditorState,
+                                    onSent = { overlay.dismissReply() },
+                                    // 左右键翻相邻评论: 由评论面板消费 (行列表在它手上), 见 overlay.replyNavRequest
+                                    onNavigate = { overlay.navigateReply(it) },
+                                    imageZoom = overlay.commentImageZoom,
+                                    modifier = chromeLayered
+                                        .ifThen(threadView) { tvPlayerLayerLeftBleed() }
+                                        .width(if (threadView) TV_PANEL_WIDTH + TV_PLAYER_HORIZONTAL_PAD else TV_PANEL_WIDTH)
+                                        .tvPlayerLayerHeight(layerPillsRowTopPx, layerSettledPillsRowTopPx)
+                                        .focusRequester(layers.replyFocus)
+                                        .onFocusChanged { if (it.hasFocus) overlay.focusRegion = TvPlayerFocusRegion.LAYER },
+                                )
+                            }
+                        }
                     }
 
                     // 胶囊按钮行 (+ 弹幕发送展开框).
@@ -635,10 +709,7 @@ internal fun TvPlayerControlsOverlay(
                             commentSortMenu = commentSortMenu,
                             onEditChromeItem = onEditChromeItem,
                             pillFocusRequesters = pillFocusRequesters,
-                            onViewAllPeople = { peopleViewAll = it },
-                            // 「查看全部」这条路占着焦点的整段: 弹窗开着, 以及从它点开的人物预览还开着.
-                            // 中途还一次焦点会与正要打开的预览抢
-                            viewAllPeopleActive = peopleViewAll ?: peoplePreviewFrom,
+                            onEnterGallery = { layers.enterTop(true) },
                             trailing = pillsRowTrailing,
                             // 胶囊本体跟着控制层淡出, 末尾那颗提示按钮不跟 (它有自己的显示时长)
                             pillsModifier = chrome,
@@ -666,17 +737,38 @@ internal fun TvPlayerControlsOverlay(
                             downFocus = bottomRowFirstFocus.takeIf { showBelowProgress },
                             // 胶囊被用户整行藏掉时没有落点: 传 null (指向未附着的请求器会抛)
                             upFocus = pillOrder.firstOrNull()?.let { pillFocusRequesters.getValue(it) },
-                            modifier = chrome.tvFocusAnchor(playerFocus, TvPlayerFocusTarget.PROGRESS),
+                            modifier = chrome
+                                .tvFocusAnchor(playerFocus, TvPlayerFocusTarget.PROGRESS)
+                                .onGloballyPositioned { progressRowBottomPx.floatValue = it.boundsInWindow().bottom },
                         )
                     }
 
                     // 图标行 (原顶栏按钮并入; 再往下 = 选集条, 由根路由处理).
                     // 拖拽预览中同样按成隐形 (同上: 那会儿唯一该看的是圆点和缩略图)
-                    AniAnimatedVisibility(visible = showBelowProgress) {
+                    // 收起时不移出组合, 只把高度收到 0 (同列上的展开 / 收起动画, 见 belowProgressReveal)、焦点进不去: 焦点在胶囊与进度条之间
+                    // 来回时每回到进度条都要把这一行从头组合、挂节点、排版一遍, 那一帧六七十毫秒 (Shield 实测), 按下键看着一顿
+                    if (bottomRowHasFocusable) {
+                        val belowProgressReveal = remember { Animatable(if (showBelowProgress) 1f else 0f) }
+                        LaunchedEffect(showBelowProgress) {
+                            belowProgressReveal.animateTo(if (showBelowProgress) 1f else 0f, TV_PLAYER_BELOW_PROGRESS_SPRING)
+                        }
+                        val belowProgressShown by rememberUpdatedState(showBelowProgress)
                         Column(
-                            chrome.graphicsLayer {
-                                alpha = if (progressSliderState.isPreviewing) 0f else 1f
-                            },
+                            Modifier
+                                .clipToBounds()
+                                // 在排版阶段读进度: 动画每帧只重排, 不重组
+                                .layout { measurable, constraints ->
+                                    val placeable = measurable.measure(constraints)
+                                    val height = (placeable.height * belowProgressReveal.value).roundToInt()
+                                    layout(placeable.width, height) { placeable.place(0, 0) }
+                                }
+                                .focusProperties { onEnter = { if (!belowProgressShown) cancelFocusChange() } }
+                                .focusGroup()
+                                .then(
+                                    chrome.graphicsLayer {
+                                        alpha = if (progressSliderState.isPreviewing) 0f else 1f
+                                    },
+                                ),
                         ) {
                             Spacer(Modifier.height(TV_PLAYER_PROGRESS_ROW_GAP))
                             TraceSection("Izuko:Controls/BottomRow") {
@@ -721,6 +813,8 @@ internal fun TvPlayerControlsOverlay(
                 chrome.align(Alignment.BottomStart)
                     .padding(horizontal = TV_PLAYER_HORIZONTAL_PAD, vertical = TV_EPISODE_STRIP_LOADING_HINT_BOTTOM),
             )
+            // 评论里长按放大的图: 铺满整屏画在最上面 (评论详情那一栏只有四百多 dp 宽). 按键在评论那一层 (tvImageZoomKeys)
+            TvZoomedImageOverlay(overlay.commentImageZoom)
         }
     }
 }
@@ -912,10 +1006,8 @@ private fun TvPlayerPillsRow(
     onEditChromeItem: ((TvPlayerChromeItem) -> Unit)?,
     pillFocusRequesters: Map<TvPlayerPanel, FocusRequester>,
     /** 评论胶囊按下确定: 发表本集评论 (见 [openNewEpisodeComment]). */
-    /** 角色 / 制作人员胶囊按下确定: 开对应的「查看全部」弹窗. */
-    onViewAllPeople: (TvPlayerPanel) -> Unit,
-    /** 上面那条路正占着焦点的是哪一颗胶囊 (弹窗或它点开的人物预览还开着); null = 都关了. */
-    viewAllPeopleActive: TvPlayerPanel?,
+    /** 相关推荐 / 角色 / 制作人员胶囊按下确定: 焦点进胶囊上方那张画廊的第一格 (画廊胶囊聚焦就显示, 见 TvPlayerDetailLayers). */
+    onEnterGallery: () -> Unit,
     /** 行末靠右对齐的插槽 (OP/ED 提示按钮): 不受 [pillsModifier] 影响, 有自己的显示时长. */
     trailing: @Composable () -> Unit,
     /** 只作用于胶囊本体那一组 (控制层淡出), 不含 [trailing]. */
@@ -947,6 +1039,7 @@ private fun TvPlayerPillsRow(
                         panel = TvPlayerPanel.RECOMMENDATIONS,
                         overlay = overlay,
                         focusRequester = pillFocusRequesters.getValue(TvPlayerPanel.RECOMMENDATIONS),
+                        onClick = onEnterGallery,
                         modifier = chromeItemModifier(item),
                     )
 
@@ -956,14 +1049,9 @@ private fun TvPlayerPillsRow(
                         panel = TvPlayerPanel.STAFF,
                         overlay = overlay,
                         focusRequester = pillFocusRequesters.getValue(TvPlayerPanel.STAFF),
-                        // 与评论胶囊同一个道理 (见那颗的注释): 默认的"把焦点送进面板"与直接按上键完全重复.
-                        // 这一下改成弹详情页那份「查看全部」大网格 —— 聚焦时浮出的窄面板只够扫一眼,
-                        // 而这两类内容在播放器里没有别的入口 (内嵌详情页是精简版, 没有这两个区块)
-                        onClick = { onViewAllPeople(TvPlayerPanel.STAFF) },
-                        modifier = chromeItemModifier(item).restoreFocusAfter(
-                            viewAllPeopleActive == TvPlayerPanel.STAFF,
-                            abandon = { overlay.layer != TvPlayerLayer.CONTROLS },
-                        ),
+                        // 胶囊聚焦就在上方显示画廊; 按确定进第一格 (按上是落回离开时那格, 见 TvPlayerDetailLayers)
+                        onClick = onEnterGallery,
+                        modifier = chromeItemModifier(item),
                     )
 
                     TvPlayerChromeItem.PILL_CHARACTERS -> TvPlayerPill(
@@ -972,11 +1060,8 @@ private fun TvPlayerPillsRow(
                         panel = TvPlayerPanel.CHARACTERS,
                         overlay = overlay,
                         focusRequester = pillFocusRequesters.getValue(TvPlayerPanel.CHARACTERS),
-                        onClick = { onViewAllPeople(TvPlayerPanel.CHARACTERS) },
-                        modifier = chromeItemModifier(item).restoreFocusAfter(
-                            viewAllPeopleActive == TvPlayerPanel.CHARACTERS,
-                            abandon = { overlay.layer != TvPlayerLayer.CONTROLS },
-                        ),
+                        onClick = onEnterGallery,
+                        modifier = chromeItemModifier(item),
                     )
 
                     // 外面套一层只为给长按的排序菜单当锚点 (菜单是弹层, 不占位)
@@ -1073,16 +1158,23 @@ private fun TvPlayerPill(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val focused by interactionSource.collectIsFocusedAsState()
+    // 焦点进了本胶囊的面板 / 上方的叠层 (见 TvPlayerDetailLayers): 描一圈边, 标出那是哪颗的. 只在自己翻转时重组 (焦点区域每走一步都在变)
+    val selected by remember(overlay, panel) {
+        derivedStateOf { overlay.activePanel == panel && overlay.focusRegion.isInsidePillContent }
+    }
     TvPillShell(
         highlighted = focused,
         onClick = onClick,
         interactionSource = interactionSource,
         touchTwoStep = true,
+        border = if (selected && !focused) BorderStroke(TV_PILL_SELECTED_BORDER, Color.White.copy(alpha = 0.85f)) else null,
         dimmed = loadFailed,
         loading = loading,
         modifier = modifier
             .focusRequester(focusRequester)
-            .onFocusChanged { if (it.isFocused) overlay.activePanel = panel },
+            .onFocusChanged { if (it.isFocused) overlay.activePanel = panel }
+            // 胶囊上方的画廊第一次按上进来时落在横向离胶囊最近的那一列
+            .onGloballyPositioned { overlay.detailLayers.pillCenterX[panel] = it.boundsInWindow().center.x },
     ) {
         if (loadFailed) TvPillFailedIcon(highlighted = focused) else icon()
         Text(label, style = MaterialTheme.typography.labelMedium, maxLines = 1)
@@ -1957,3 +2049,9 @@ private val TV_PROGRESS_TOUCH_SLACK_H = 12.dp
 
 /** 触屏设备上进度条行上下各加的触摸高度: 光是 24dp 的滑块对手指太窄. 电视上不加, 布局不变. */
 private val TV_PROGRESS_TOUCH_PAD_V = 8.dp
+
+/** 叠层 (人物页 / 查看全部 / 评论详情) 开着时面板不画、焦点不进: 叠层是半透明的, 面板的字会透上来; 从胶囊按上也不能落进被盖住的条目. */
+private fun Modifier.hiddenUnderDetailLayers(overlay: TvPlayerOverlayState): Modifier = this
+    .graphicsLayer { alpha = if (overlay.hasDetailLayer) 0f else 1f }
+    .focusProperties { onEnter = { if (overlay.hasDetailLayer) cancelFocusChange() } }
+    .focusGroup()

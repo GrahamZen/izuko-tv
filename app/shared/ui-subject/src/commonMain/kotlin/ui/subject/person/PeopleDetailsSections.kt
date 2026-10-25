@@ -66,6 +66,7 @@ import me.him188.ani.app.ui.foundation.layout.rememberConnectedScrollState
 import me.him188.ani.app.ui.foundation.rememberImageViewerHandler
 import me.him188.ani.app.ui.foundation.tv.tvCardTextInset
 import me.him188.ani.app.ui.foundation.tv.tvFocusableCard
+import me.him188.ani.app.ui.foundation.tv.tvReadableBlock
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.richtext.RichTextDefaults
 import me.him188.ani.app.ui.lang.Lang
@@ -95,6 +96,7 @@ import me.him188.ani.app.ui.subject.details.sections.SectionHeader
 import me.him188.ani.app.ui.subject.details.sections.CommentsGridDialog
 import me.him188.ani.app.ui.subject.details.sections.groupThousands
 import me.him188.ani.app.ui.subject.details.sections.toPlainText
+import me.him188.ani.app.ui.subject.details.sections.viewAllPanelOrigin
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -296,7 +298,7 @@ internal fun PeopleInfoTable(
     labelWidth: Dp = 78.dp,
     rowSpacing: Dp = 12.dp,
 ) {
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(rowSpacing)) {
+    Column(modifier.fillMaxWidth().tvReadableBlock(focusable = true), verticalArrangement = Arrangement.spacedBy(rowSpacing)) {
         for (row in rows) {
             Row(Modifier.fillMaxWidth()) {
                 Text(
@@ -453,7 +455,7 @@ internal fun <T : Any> PeopleStripSection(
                 title,
                 actionLabel = stringResource(Lang.subject_details_view_all),
                 onAction = onViewAll,
-                actionModifier = Modifier.focusRequester(viewAll).onFocusChanged { viewAllFocused = it.isFocused },
+                actionModifier = Modifier.focusRequester(viewAll).onFocusChanged { viewAllFocused = it.isFocused }.viewAllPanelOrigin(),
             )
         } else {
             SectionHeader(title)
@@ -493,7 +495,7 @@ internal fun PersonCommentsSection(
                 ?.let { stringResource(Lang.person_details_comments_count, remember(it) { groupThousands(it) }) }
                 ?: stringResource(Lang.subject_details_view_all),
             onAction = onShowAll,
-            actionModifier = Modifier.focusRequester(showAll).onFocusChanged { showAllFocused = it.isFocused },
+            actionModifier = Modifier.focusRequester(showAll).onFocusChanged { showAllFocused = it.isFocused }.viewAllPanelOrigin(),
         )
         val previewCount = minOf(comments.itemCount, maxPreviewItems)
         if (previewCount == 0) {
@@ -514,6 +516,7 @@ internal fun PersonCommentsSection(
                         comment,
                         Modifier
                             .ifThen(i == 0) { focusProperties { up = showAll } }
+                            .viewAllPanelOrigin()
                             .clip(MaterialTheme.shapes.small)
                             .clickable(onClick = onShowAll),
                     )
