@@ -768,6 +768,9 @@
     <string name="subject_details_tv_no_episodes_ok">知道了</string>
     <string name="subject_details_tv_episodes_fetch_failed_title">分集沒取到</string>
     <string name="subject_details_tv_episodes_fetch_failed_message">這部作品的分集沒能從 Bangumi 取到，多半是網路不好。再按一次播放會重新取得。</string>
+    <string name="subject_collection_rewatch">重溫</string>
+    <string name="subject_collection_rewatching">重溫中</string>
+    <string name="subject_collection_rewatch_pending_sync">這部還有看過紀錄沒同步到 Bangumi，同步完再開始重溫</string>
     <string name="foundation_load_error_subject_not_accessible">目前 Bangumi 帳號看不到這個項目。成人項目需要帳號註冊滿 60 天，也可能是項目已被刪除。</string>
     <string name="foundation_browser_open_failed_title">無法打開連結</string>
     <string name="foundation_browser_open_failed_scan_hint">目前裝置沒有可用的瀏覽器，請用手機掃碼打開，或手動輸入下方連結</string>
