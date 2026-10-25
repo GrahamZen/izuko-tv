@@ -11,6 +11,7 @@ package me.him188.ani.app.domain.torrent.client
 
 import android.os.Build
 import android.os.IInterface
+import android.os.RemoteException
 import androidx.annotation.RequiresApi
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineName
@@ -44,6 +45,7 @@ import me.him188.ani.utils.coroutines.childScope
 import me.him188.ani.utils.io.SystemPath
 import me.him188.ani.utils.io.absolutePath
 import me.him188.ani.utils.logging.logger
+import me.him188.ani.utils.logging.warn
 import kotlin.coroutines.CoroutineContext
 
 /**
@@ -144,7 +146,13 @@ class RemoteAnitorrentEngine(
 
         connection.connected.filter { it }.collectLatest {
             stateFlow.collect {
-                remoteCall.call { transact(it) }
+                // 服务进程死了、还没重连时设置变了会抛 (拿不到新的远端对象). 不能让它结束这个协程: 结束后这项设置再也送不到服务里
+                // (BT 引擎等不到配置, 下载全停). 重新连上时 connected 又变成 true, 这里整份重发当前值
+                try {
+                    remoteCall.call { transact(it) }
+                } catch (e: RemoteException) {
+                    logger.warn { "Failed to send settings to the torrent service, sending again once reconnected: $e" }
+                }
             }
         }
     }
