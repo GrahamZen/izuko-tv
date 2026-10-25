@@ -269,7 +269,7 @@ internal class RemotePlayerHandle(
     }
 
     /**
-     * 改查询条件 (同电视上「编辑查询请求」的「保存并刷新」): 重启所有数据源的搜索, 条目名按条目记住
+     * 改查询条件 (同电视上「编辑查询请求」的「保存并刷新」): 重启数据源的搜索 (禁用的只在开着「完整搜索」时), 条目名按条目记住
      * (见 [EpisodeViewModel.updateFetchRequest]). 校验与电视上的编辑框一致: 主搜索名不能空, 两种集数至少填一个.
      * @return 出错时的提示文案; 成功为 null.
      */
@@ -299,6 +299,11 @@ internal class RemotePlayerHandle(
     /** 手机上点了「完整搜索」: 同电视选源面板里的开关, 放开被暂停的数据源, 本播放页之后一直查完. */
     fun searchAllSources() {
         vm.setFullMediaSearch(true)
+    }
+
+    /** 手机上点了「重新搜索（含新数据源）」: 用最新的数据源列表重新搜, 禁用的只在开着「完整搜索」时一并搜. */
+    fun rebuildFetchSession() {
+        vm.rebuildFetchSession()
     }
 
     /**

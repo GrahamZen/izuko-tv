@@ -38,6 +38,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.data.models.preference.DarkMode
 import me.him188.ani.app.domain.media.fetch.restart
+import me.him188.ani.app.domain.media.fetch.restartSources
 import me.him188.ani.app.ui.download.subject.TvDownloadMediaPickerArgs
 import me.him188.ani.app.ui.foundation.dialogs.DialogWindowDimAmount
 import me.him188.ani.app.navigation.LocalNavigator
@@ -83,7 +84,7 @@ fun TvDownloadSourcePanel(args: TvDownloadMediaPickerArgs) {
         val host = object : TvSourcePanelHost {
             override fun pick(media: Media) = currentArgs.onSelect(media)
             override fun restartSource(instanceId: String) = currentArgs.fetchSession.restart(instanceId)
-            override fun refresh() = currentArgs.fetchSession.restartAll()
+            override fun refresh() = currentArgs.fetchSession.restartSources(includeDisabled = false)
             override fun setFullSearch(enabled: Boolean) = Unit
 
             override fun editKeywords() {
