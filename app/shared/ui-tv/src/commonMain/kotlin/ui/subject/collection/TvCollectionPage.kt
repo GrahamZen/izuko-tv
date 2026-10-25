@@ -169,6 +169,8 @@ import me.him188.ani.app.ui.main.TvWallScaleEntry
 import me.him188.ani.app.ui.search.LoadErrorCard
 import me.him188.ani.app.ui.search.isLoadingFirstPageOrRefreshing
 import me.him188.ani.app.ui.subject.collection.components.EditCollectionTypeDropDown
+import me.him188.ani.app.ui.subject.details.layout.TvRewatchMenuItem
+import me.him188.ani.app.ui.subject.details.layout.rememberTvRewatches
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 import me.him188.ani.utils.analytics.Analytics
 import me.him188.ani.utils.analytics.AnalyticsEvent.Companion.SubjectEnter
@@ -746,11 +748,29 @@ private fun TvCollectionPageContent(
 
     // 卡片长按弹出的收藏下拉 (与探索页一致, 锚在原生网格报上来的封面框上); 打开后短暂吞掉长按残余的确认键, 避免误触第一项.
     // remember: 工厂传给原生网格的接线 (TvCollectionNativeGrid), 每次新实例都会让它跟着重组
+    // 末尾的「重温」见 TvRewatches: 重温中收藏类型那几项都不勾
+    val rewatches = rememberTvRewatches()
     val collectionMenuFor: (SubjectCollectionInfo) -> @Composable (expanded: Boolean, onDismiss: () -> Unit) -> Unit = remember {
         { info ->
             { expanded, onDismiss ->
+                // 开始重温后条目改成在看: 不在在看标签时同下面改成别的状态一样, 先躲开、等它离开; 没开始成就送回原卡
+                val rewatch = rewatches.of(
+                    info.subjectId,
+                    beforeStart = {
+                        if (COLLECTION_TABS_SORTED[state.selectedTypeIndex] != UnifiedCollectionType.DOING) {
+                            awaitingRemovalSubjectId = info.subjectId
+                            runCatching { transitAnchor.requestFocus() }
+                        }
+                    },
+                    onFailed = {
+                        if (awaitingRemovalSubjectId == info.subjectId) {
+                            awaitingRemovalSubjectId = null
+                            gridFocus.focusItem(lastFocusedCard.coerceAtLeast(0))
+                        }
+                    },
+                )
                 EditCollectionTypeDropDown(
-                    currentType = info.collectionType,
+                    currentType = info.collectionType.takeUnless { rewatch.rewatching },
                     expanded = expanded,
                     onDismissRequest = onDismiss,
                     onClick = { action ->
@@ -782,6 +802,7 @@ private fun TvCollectionPageContent(
                     modifier = Modifier.consumeHeldConfirmKey(),
                     // 摆在长按的那张卡旁边 (右边放得下放右边, 否则左边), 不压住封面
                     positionProvider = rememberTvBesideAnchorPositionProvider(),
+                    trailingItems = { TvRewatchMenuItem(rewatch, info.collectionType, onDismiss) },
                 )
             }
         }

@@ -46,6 +46,7 @@ import me.him188.ani.app.data.repository.subject.DefaultSubjectRelationsReposito
 import me.him188.ani.app.data.repository.subject.FollowedSubjectsRepository
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepositoryImpl
+import me.him188.ani.app.data.repository.subject.SubjectRewatch
 import me.him188.ani.app.data.repository.subject.SubjectRelationsRepository
 import me.him188.ani.app.data.repository.subject.SubjectSearchCompletionRepository
 import me.him188.ani.app.data.repository.subject.SubjectSearchHistoryRepository
@@ -71,6 +72,7 @@ import me.him188.ani.datasources.bangumi.BangumiApiProvider
 import org.koin.core.KoinApplication
 import org.koin.core.scope.Scope
 import org.koin.dsl.module
+import me.him188.ani.utils.io.SystemPath
 
 
 private val Scope.database get() = get<AniDatabase>()
@@ -103,6 +105,8 @@ fun KoinApplication.repositoryModules(
     single<SubjectTrackChoiceRepository> { SubjectTrackChoiceRepository(getContext().dataStores.preferredAllianceStore) }
     single<PlaybackLineageRepository> { PlaybackLineageRepository(getContext().dataStores.preferredAllianceStore) }
 
+    single<SubjectRewatch> { SubjectRewatch(database, subjectRewatchFile(getContext(), UserProfiles.current)) }
+
     single<SubjectCollectionRepository> {
         SubjectCollectionRepositoryImpl(
             subjectService = get(),
@@ -121,6 +125,7 @@ fun KoinApplication.repositoryModules(
             getEpisodeTypeFiltersUseCase = get(),
             scope = coroutineScope,
             localProfile = UserProfiles.current.isLocal,
+            rewatch = get(),
         )
     }
 
@@ -188,6 +193,7 @@ fun KoinApplication.repositoryModules(
             getEpisodeTypeFiltersUseCase = get(),
             onDirtyChanged = { get<EpisodeCollectionSyncer>().requestSync() },
             localProfile = UserProfiles.current.isLocal,
+            rewatch = get(),
         )
     }
 
@@ -289,3 +295,7 @@ fun KoinApplication.repositoryModules(
         )
     }
 }
+
+/** [profile] 的重温记录 (见 [SubjectRewatch]), 在应用的数据目录下; 删用户时一起删. */
+fun subjectRewatchFile(context: Context, profile: UserProfile): SystemPath =
+    context.files.dataDir.resolve(profile.scopedFileName(SubjectRewatch.FILE_NAME))

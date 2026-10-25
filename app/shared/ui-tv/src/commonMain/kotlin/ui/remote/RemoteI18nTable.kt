@@ -1768,4 +1768,10 @@ private fun part17() = listOf(
     RemoteText("下载上次的（{0}）", "Download the last one ({0})", "下載上次的（{0}）", "下載上次的（{0}）"),
     RemoteText("开始方法采样 {0} 秒，请在电视上操作要测的界面", "Method sampling for {0} s. Use the screen you want to test on the TV.", "開始方法採樣 {0} 秒，請在電視上操作要測的界面", "開始方法取樣 {0} 秒，請在電視上操作要測的介面"),
     RemoteText("正在采样", "Sampling is already running", "正在採樣", "正在取樣"),
+    RemoteText("重温", "Rewatch", "重溫", "重溫"),
+    RemoteText("重温中", "Rewatching", "重溫中", "重溫中"),
+    RemoteText("已开始重温，这一轮的进度只记在电视上", "Rewatch started. Progress for this round is kept on the TV only.", "已開始重溫，這一輪的進度只記在電視上", "已開始重溫，這一輪的進度只記在電視上"),
+    RemoteText("只有看过的番能重温", "Only watched titles can be rewatched", "只有看過的番能重溫", "只有看過的番能重溫"),
+    RemoteText("这部还有看过记录没同步到 Bangumi，同步完再开始重温", "Some watched episodes of this title haven’t synced to Bangumi yet. Start the rewatch after they sync.", "這部還有看過紀錄沒同步到 Bangumi，同步完再開始重溫", "這部還有看過紀錄沒同步到 Bangumi，同步完再開始重溫"),
+    RemoteText("开始重温失败，请重试", "Couldn’t start the rewatch. Please try again.", "開始重溫失敗，請重試", "開始重溫失敗，請重試"),
 )
