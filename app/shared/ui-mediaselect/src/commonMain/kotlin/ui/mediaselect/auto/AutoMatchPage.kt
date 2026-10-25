@@ -38,7 +38,7 @@ import me.him188.ani.utils.platform.annotations.TestOnly
 import me.him188.ani.utils.platform.isMobile
 
 /**
- * 自动匹配页 = WEB 源列表 + 救援按钮 (在查询失败的源之前, 见 [MediaSelectorWebSourcesColumn]). 不画顶栏, 不画「正在观看」.
+ * 自动匹配页 = 这一集的缓存 ([AutoMatchCachedRow]) + WEB 源列表 + 救援按钮 (在查询失败的源之前, 见 [MediaSelectorWebSourcesColumn]). 不画顶栏, 不画「正在观看」.
  * 验证码文案沿用 webCaptchaRequiredMessage(kind) 与 iOS 分支 media_selector_web_captcha_unsupported.
  *
  * @param onClickItem 用户点了线路 chip (channel.original); 宿主负责 select + 关闭容器.
@@ -92,6 +92,7 @@ fun AutoMatchPage(
         },
         onRequestManualSearch = onRequestManualSearch,
         onOpenSource = { openedSourceId = it.instanceId },
+        header = { AutoMatchCachedRow(autoMatchCachedItems(presentation.filteredCandidates), presentation.selected, onClickItem, Modifier.fillMaxWidth()) },
         modifier = modifier
             .testTag(AutoMatchPageTestTags.ROOT)
             .padding(bottom = bottomPadding)
@@ -108,6 +109,10 @@ object AutoMatchPageTestTags {
 
     /** 源的名字 (点了进 [SourceResourcesPage]). */
     fun sourceName(instanceId: String) = "auto_match_source_name_$instanceId"
+
+    /** 「已缓存」一行 ([AutoMatchCachedRow]) 与其中的一条. */
+    const val CACHED_ROW = "auto_match_cached_row"
+    fun cachedItem(mediaId: String) = "auto_match_cached_item_$mediaId"
 }
 
 @OptIn(TestOnly::class)

@@ -120,6 +120,8 @@ fun MediaSelectorWebSourcesColumn(
     preferredSourceContainerColor: Color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.33f),
     /** 点了源的名字 (进这个源的全部条目, 见 SourceResourcesPage); null 时名字不可点. */
     onOpenSource: ((WebSource) -> Unit)? = null,
+    /** 画在源列表最前面 (自动匹配页的「已缓存」一行, 见 AutoMatchCachedRow). */
+    header: @Composable () -> Unit = {},
 ) {
     val card = @Composable { source: WebSource ->
         WebSourceCard(
@@ -150,6 +152,7 @@ fun MediaSelectorWebSourcesColumn(
     val (failedSources, otherSources) = list.partition { it.isError }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         // not scrollable. 否则会跟 bottom sheet 的 scroll 冲突. 
+        header()
         otherSources.forEach { source ->
             card(source)
         }
