@@ -317,6 +317,10 @@
     <string name="settings_theme_tv_poster_confirm_details">直接进详情页</string>
     <string name="settings_theme_tv_poster_idle_dim">停手压暗</string>
     <string name="settings_theme_tv_poster_idle_dim_description">在探索、追番、搜索与新番时间表里停在一张海报上 3 秒后，其余海报变暗、这张再放大一点，按方向键就恢复；打开简介时也一直压暗。</string>
+    <string name="settings_theme_tv_explore_layout">探索页风格</string>
+    <string name="settings_theme_tv_explore_layout_description">海报墙：焦点在卡片之间移动，聚焦的海报放大。固定焦点：焦点框固定在每行最左边，卡片从框下滑过；焦点在卡片上时一直显示简介，按一下确定就打开（照「海报上按确定」进详情页或直接播放），未登录时一直按右会循环。</string>
+    <string name="settings_theme_tv_explore_layout_poster_wall">海报墙</string>
+    <string name="settings_theme_tv_explore_layout_fixed_focus">固定焦点</string>
     <string name="settings_theme_tv_episodes">选集</string>
     <string name="settings_theme_tv_episode_specials">特别篇 (电视)</string>
     <string name="settings_theme_tv_episode_specials_description">详情页和播放器选集里 SP、OP、ED 等非正片放在哪。上一集 / 下一集始终只在同类型之间切换</string>

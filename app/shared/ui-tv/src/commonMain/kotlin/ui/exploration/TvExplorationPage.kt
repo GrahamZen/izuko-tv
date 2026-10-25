@@ -874,8 +874,8 @@ private fun TvExplorationPageContent(
         pendingNav = null
         navLocked = false
     }
-    // hero 态: 按返回回卡片墙 (注册在最后, 先拿到). 导航已按下未发出时让给上面那条 (反悔)
-    BackHandler(enabled = nativeState.heroActive && pendingNav == null) {
+    // hero 态: 按返回回卡片墙 (注册在最后, 先拿到). 导航已按下未发出时让给上面那条 (反悔). 钉死锚点版式的 hero 态跟着焦点走, 返回照卡片的分层
+    BackHandler(enabled = nativeState.heroActive && pendingNav == null && !tvExploreFixedAnchor()) {
         nativeState.exitHero()
     }
     // 长按返回本页不单独注册: 根部兜底统一弹快捷菜单 (回到主界面 / 回到·关闭正在播放 /
@@ -958,7 +958,7 @@ private fun TvExplorationPageContent(
         }
 
         override fun onCardClick(rowKey: String, index: Int) {
-            // 「海报上按确定」选直接播放: 同播放键 (见 navigateToPlay); 另两档进详情页
+            // 「海报上按确定」选直接播放: 同播放键 (见 navigateToPlay); 另两档进详情页 (钉死锚点版式一样)
             val play = posterConfirm == TvPosterConfirmAction.Play
             if (rowKey == TV_FOLLOWED_ROW_KEY) {
                 followedItems.peekOrNull(index)?.subjectInfo?.let {
@@ -1582,7 +1582,8 @@ internal fun tvExplorationWallLayout(): TvExplorationWallLayout {
     // 列表各项一律定高: 停位按高度直接算, 不用等测量. 行 = 海报 + 两行番名 + 行距 (这三样随海报墙大小缩放), 组标题 [TV_WALL_SECTION_LABEL_BLOCK],
     // hero 占位 = 轮播态下卡片区顶线到首组标题的距离: 首组标题落在 [TV_EXPLORATION_CARD_TOP], 轮播按钮下缘到它恰好一个 [TV_EXPLORATION_ROW_GAP]
     val wallCardWidth = wallGrid.cardWidth
-    val wallLabelHeight = tvPosterWallLabelHeight() * cardScale
+    // 钉死锚点版式不显示番名 (标题在 hero 里): 行里不留番名那一截
+    val wallLabelHeight = if (tvExploreFixedAnchor()) 0.dp else tvPosterWallLabelHeight() * cardScale
     val wallRowSpacing = TV_POSTER_WALL_ROW_SPACING * cardScale
     val metrics = with(LocalDensity.current) {
         val pageWidth = pageWindowSize.width - railWidth

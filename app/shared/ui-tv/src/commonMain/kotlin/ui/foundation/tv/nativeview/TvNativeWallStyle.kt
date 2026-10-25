@@ -243,7 +243,8 @@ data class TvNativeCardCountBadgeStyle(
  * 详情页的关联行另算. [columns] = 屏上一排完整放得下的张数 (预取用). [badge] 见 [TvNativeWallStyle.badge].
  * [columnSpacing] = 卡格之间的距离 (不含卡格里的聚焦框空隙). [cardHeight] = 卡格高 (含聚焦框空隙); null = 按卡宽与封面比例
  * [TV_PORTRAIT_CARD_COVER_RATIO] 算. [labelVibrancy] 见 [TvNativeWallStyle.labelVibrancy] (浅色主题下不生效). [countBadge] = 卡片的 [TvNativeCard.count]
- * 画成数字角标 (白底黑字, 照 tvOS 灰阶: 深浅主题一样, 压在封面图上).
+ * 画成数字角标 (白底黑字, 照 tvOS 灰阶: 深浅主题一样, 压在封面图上). [fixedAnchor] = 钉死锚点版式 (探索页, 聚焦由固定聚焦框表达):
+ * 卡片聚焦不放大, 不画高光、不停手压暗 (见 [TvNativeFocusCueStyle.None]).
  *
  * 在海报墙大小 ([LocalTvPosterWallScale]) 里面时, 卡宽卡高之外的卡片尺寸 (番名字号与块高、行距与列距、聚焦框空隙、圆角、投影、进度条) 一起按它缩放.
  */
@@ -256,6 +257,7 @@ fun rememberTvNativeWallStyle(
     cardHeight: Dp? = null,
     labelVibrancy: Boolean = false,
     countBadge: Boolean = false,
+    fixedAnchor: Boolean = false,
 ): TvNativeWallStyle {
     val density = LocalDensity.current
     val colors = MaterialTheme.colorScheme
@@ -277,13 +279,13 @@ fun rememberTvNativeWallStyle(
     val subtitleStyle = tvPosterWallSubtitleStyle()
     val labelHeight = tvPosterWallLabelHeight()
     val cardScale = LocalTvPosterWallScale.current
-    return remember(density, cardScale, colors, light, visualEffects, crossfade, titleColor, titleStyle, subtitleStyle, labelHeight, cardWidth, columns, badge, columnSpacing, cardHeight, labelVibrancy, countBadge) {
+    return remember(density, cardScale, colors, light, visualEffects, crossfade, titleColor, titleStyle, subtitleStyle, labelHeight, cardWidth, columns, badge, columnSpacing, cardHeight, labelVibrancy, countBadge, fixedAnchor) {
         val cardWidthPx = with(density) { cardWidth.roundToPx() }
         val cardHeightPx = with(density) { (cardHeight ?: (cardWidth / TV_PORTRAIT_CARD_COVER_RATIO)).roundToPx() }
         // 卡片自己的尺寸按海报墙大小换算 (卡宽卡高已经由调用方按它算好)
         val cardDensity = if (cardScale == 1f) density else Density(density.density * cardScale, density.fontScale)
         with(cardDensity) {
-            val focusScale = TV_POSTER_WALL_CARD_FOCUS_STYLE.focusScale
+            val focusScale = if (fixedAnchor) 1f else TV_POSTER_WALL_CARD_FOCUS_STYLE.focusScale
             val gapPx = TvFocusRing.Gap.roundToPx()
             val cornerPx = TV_PORTRAIT_CARD_CORNER.toPx()
             TvNativeWallStyle(
@@ -343,11 +345,15 @@ fun rememberTvNativeWallStyle(
                 },
                 labelVibrancy = labelVibrancy && !light,
                 moreGlass = if (light) TV_NATIVE_MORE_GLASS_LIGHT else TV_NATIVE_MORE_GLASS_DARK,
-                focusCues = TvNativeFocusCueStyle(
-                    enabled = true,
-                    animated = visualEffects.transitions,
-                    idleDim = if (light) TV_NATIVE_IDLE_DIM_LIGHT else TV_NATIVE_IDLE_DIM,
-                ),
+                focusCues = if (fixedAnchor) {
+                    TvNativeFocusCueStyle.None
+                } else {
+                    TvNativeFocusCueStyle(
+                        enabled = true,
+                        animated = visualEffects.transitions,
+                        idleDim = if (light) TV_NATIVE_IDLE_DIM_LIGHT else TV_NATIVE_IDLE_DIM,
+                    )
+                },
             )
         }
     }

@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.paging.compose.LazyPagingItems
 import kotlinx.datetime.TimeZone
 import me.him188.ani.app.data.models.player.EpisodeHistory
+import me.him188.ani.app.data.models.preference.TvExploreLayout
 import me.him188.ani.app.data.models.preference.TvPosterConfirmAction
 import me.him188.ani.app.data.models.episode.preferredDisplayName
 import me.him188.ani.app.data.models.recommend.RecommendedSubjectInfo
@@ -60,7 +61,9 @@ import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
 import me.him188.ani.app.data.models.subject.preferredDisplayName
 import me.him188.ani.app.data.models.subject.subjectInfo
 import me.him188.ani.app.data.recommendation.RecommendationGroup
+import me.him188.ani.app.data.recommendation.RecommendationGroupKind
 import me.him188.ani.app.tools.WeekFormatter
+import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativeAnchorRingStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.withNsfwCards
 import me.him188.ani.app.ui.foundation.tv.nativeview.withNsfw
 import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
@@ -244,10 +247,27 @@ private val TvExplorationNativeStateSaver = Saver<TvExplorationNativeState, Arra
 )
 
 /**
+ * 探索页用不用钉死锚点版式 (设置「探索页风格」选了固定焦点, 见 TvExploreLayout). 平板触屏照旧是海报墙.
+ */
+@Composable
+internal fun tvExploreFixedAnchor(): Boolean =
+    LocalThemeSettings.current.tvExploreLayout == TvExploreLayout.FixedFocus && !LocalTvTouchInputEnabled.current
+
+/** 循环行 (见 TvNativeExploreItem.Row.loopPeriod) 把这一行重复多少遍: 一直按住右键也要走一分钟多才到头. */
+private const val TV_EXPLORE_LOOP_COPIES = 100
+
+/** [base] 重复 [copies] 遍的只读列表 (循环行), 不另存元素. */
+private class TvLoopedCards(private val base: List<TvNativeCard?>, private val copies: Int) : AbstractList<TvNativeCard?>() {
+    override val size: Int get() = base.size * copies
+    override fun get(index: Int): TvNativeCard? = base[index % base.size]
+}
+
+/**
  * 原生海报墙的列表项 (结构见 TvNativeExploreList.kt): hero 占位 + 继续观看 (标题 + 一行) + 各组推荐 (标题 + 行).
  * 继续观看行按分页快照给 (没到的是占位), 卡上带集数观看进度条 (见 followedCardProgress), 番名下面写追更信息、有新集的画没看几集的角标
  * (同追番页「追更」, 见 tvProgressCardLine).
  * 还能接着推荐的组 ([RecommendationGroup.extendable]) 行尾多一张「更多」卡, [extending] 里的组画成加载中.
+ * 钉死锚点版式 ([tvExploreFixedAnchor]) 下未登录时的整份推荐 ([RecommendationGroupKind.FEED], 切成定长的几行) 按右循环: 行里是这几张重复很多遍.
  */
 @Composable
 internal fun rememberTvExplorationNativeItems(
@@ -266,6 +286,7 @@ internal fun rememberTvExplorationNativeItems(
     val followed: List<FollowedSubjectInfo?>? = if (hasFollowed) followedItems.itemSnapshotList else null
     // NSFW 设为模糊时封面打码 (见 withNsfwCards; 隐藏的在数据那头已经去掉了, 见 SubjectNsfw)
     val nsfw = rememberNsfwPolicy()
+    val fixedAnchor = tvExploreFixedAnchor()
     val useOriginalTitle = tvUseOriginalTitle()
     // 非中文界面: 查到过 TMDB 标题的番用它 (见 SubjectInfo.tvTitle)
     val tmdbTitles = rememberTvTmdbTitles()
@@ -278,9 +299,10 @@ internal fun rememberTvExplorationNativeItems(
     }
     return remember(
         hasFollowed, followed, recRows, recFlat, playHistories, followedTitle, groupTitles, extending,
-        moreTitle, moreGenericTitle, moreLoadingTitle, nsfw.snapshot, useOriginalTitle, tmdbTitles, followedLines,
+        moreTitle, moreGenericTitle, moreLoadingTitle, nsfw.snapshot, useOriginalTitle, tmdbTitles, followedLines, fixedAnchor,
     ) {
         val result = ArrayList<TvNativeExploreItem>()
+        val loopRows = HashSet<String>()
         result.add(TvNativeExploreItem.Spacer(TV_WALL_HERO_SPACER_KEY))
         if (followed != null) {
             val followedCards: List<TvNativeCard?> = followed.mapIndexed { index, item: FollowedSubjectInfo? ->
@@ -324,8 +346,15 @@ internal fun rememberTvExplorationNativeItems(
                 null
             }
             result.add(TvNativeExploreItem.Row(tvRecRowKey(recRow), if (more != null) cards + more else cards))
+            if (fixedAnchor && row.group.kind == RecommendationGroupKind.FEED) loopRows += tvRecRowKey(recRow)
         }
-        result.withNsfwCards(nsfw)
+        result.withNsfwCards(nsfw).map { item ->
+            if (item is TvNativeExploreItem.Row && item.key in loopRows && item.cards.isNotEmpty()) {
+                item.copy(cards = TvLoopedCards(item.cards, TV_EXPLORE_LOOP_COPIES), loopPeriod = item.cards.size)
+            } else {
+                item
+            }
+        }
     }
 }
 
@@ -359,13 +388,16 @@ internal fun TvExplorationNativeWall(
     val density = LocalDensity.current
     val splitFloorPx = with(density) { -TV_POSTER_WALL_HERO_SPLIT_BAND.toPx() }
     // hero 态在整页底下铺模糊背景, 按确定对焦变清晰再进详情页 (设置里的开关, 见 TvNativeExploreView.heroBlur)
-    // 「海报上按确定」只有先看简介这一档有 hero 态 (见 TvPosterConfirmAction); 模糊背景也只对它有用
-    val heroEnabled = LocalThemeSettings.current.tvPosterConfirm == TvPosterConfirmAction.Hero
+    // 「海报上按确定」只有先看简介这一档有 hero 态 (见 TvPosterConfirmAction); 模糊背景也只对它有用. 钉死锚点版式一直有 hero 态 (焦点在卡上就显示)
+    val fixedAnchor = tvExploreFixedAnchor()
+    val posterConfirm = LocalThemeSettings.current.tvPosterConfirm
+    val heroEnabled = fixedAnchor || posterConfirm == TvPosterConfirmAction.Hero
     val wallBlur = LocalThemeSettings.current.tvWallBackdropBlur
     val heroBlur = heroEnabled && wallBlur != TvBackdropBlurLevel.None
     val blurSpec = tvBackdropBlurSpec(wallBlur)
     // 铺着模糊背景时卡片的字照 vibrancy 画 (深色主题, 见 TvNativeWallStyle.labelVibrancy); 继续观看的卡画没看几集的角标 (见 tvProgressCardLine)
-    val style = rememberTvNativeWallStyle(cardWidth, metrics.columns, labelVibrancy = heroBlur, countBadge = true)
+    val style = rememberTvNativeWallStyle(cardWidth, metrics.columns, labelVibrancy = heroBlur, countBadge = true, fixedAnchor = fixedAnchor)
+    val ringStyle = rememberTvNativeAnchorRingStyle(style)
     val textStyle = rememberTvNativeHeroTextStyle(titleMaxLines = 1, lineSpacing = 10.dp)
     val buttonStyle = rememberTvNativeHeroButtonStyle()
     val headerStyle = tvPosterWallHeaderStyle().toTvNativeTextStyle(density, LocalContentColor.current)
@@ -395,6 +427,8 @@ internal fun TvExplorationNativeWall(
         TvNativeHost(
             factory = { context ->
                 TvNativeExploreView(context, sketch, scope, style, metrics, textStyle, buttonStyle, headerStyle).also { view ->
+                    // 建行之前定: 横滑行建出来就是钉死锚点的
+                    view.fixedAnchor = fixedAnchor
                     view.composeRoot = composeRoot
                     view.restore(
                         state.savedScrollPx, state.savedRowLeft, state.savedRowFocused,
@@ -441,8 +475,11 @@ internal fun TvExplorationNativeWall(
                 view.fadeColor = fadeColor.toArgb()
                 view.treatmentFor = { mode -> tvPageBackdropTreatment(mode, topScrim = false, fadeColor = fadeColor, geometry = geometry) }
                 view.heroEnabled = heroEnabled
+                // 钉死锚点版式选了直接播放: 按确定直接播, 不放进详情页的那段对焦
+                view.openFocusesWall = !(fixedAnchor && posterConfirm == TvPosterConfirmAction.Play)
                 view.touchInput = touchInput
                 view.heroBlur = heroBlur
+                view.anchorRingStyle = ringStyle
                 view.wallColor = wallColor.toArgb()
                 view.wallBackdrop?.let { wb ->
                     wb.maskColor = heroBlurMask.toArgb()
@@ -459,8 +496,8 @@ internal fun TvExplorationNativeWall(
                 view.setCarousel(carouselCount, selected, dotColor)
             },
             modifier = Modifier.focusRequester(state.focusRequester),
-            // 海报墙大小一变整块重建: 卡片视图的尺寸建好就定了. 停位与各行停在哪张存在 state 里, 新视图照返回本页那样恢复 (见 factory)
-            rebuildKey = LocalTvPosterWallScale.current,
+            // 海报墙大小、钉死锚点一变整块重建: 卡片视图的尺寸与横滑行的滚法建好就定了. 停位与各行停在哪张存在 state 里, 新视图照返回本页那样恢复 (见 factory)
+            rebuildKey = LocalTvPosterWallScale.current to fixedAnchor,
         )
         // 长按卡片的收藏菜单: 锚在那张卡的封面上 (原生视图报上来的封面框, 窗口坐标)
         // 收起时照样组合着上一次的目标, 菜单淡完才撤 (见 rememberTvMenuTarget)
