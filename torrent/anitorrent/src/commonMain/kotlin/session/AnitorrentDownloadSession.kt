@@ -711,6 +711,12 @@ class AnitorrentDownloadSession(
         return info.entries.count { entry -> entry.pathInTorrent !in filesInUse && discardEntry(entry) }
     }
 
+    /** 给这个种子加上 [trackers] (已有的 libtorrent 不会重复加). */
+    fun addTrackers(trackers: List<String>) {
+        for (tracker in trackers) handle.addTracker(tracker, 0, 0)
+        logger.info { "[$handleId] Added ${trackers.size} trackers" }
+    }
+
     private fun createPiecePriorities(): PiecePriorities {
         return object : PiecePriorities {
             private val baseDeadline = -5000

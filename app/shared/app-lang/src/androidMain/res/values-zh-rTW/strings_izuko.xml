@@ -982,6 +982,8 @@
     <string name="remote_settings_peer_id_rules_description">電視上開啟「過濾用戶端指紋」後生效。每行一條正規表示式，如 -HP[0-9]{4}- 封鎖指紋為 -HPxxxx- 的用戶端。</string>
     <string name="remote_settings_peer_client_rules">Peer 過濾：用戶端類型規則</string>
     <string name="remote_settings_peer_client_rules_description">電視上開啟「過濾用戶端類型」後生效。每行一條正規表示式，如 go.torrent 封鎖百度網盤的離線下載用戶端。</string>
+    <string name="remote_settings_tracker_subscriptions">Tracker 訂閱</string>
+    <string name="remote_settings_tracker_subscriptions_description">tracker 清單的網址，每行一個。每天抓取一次，裡面的 tracker 與內建、額外的一起使用，正在下載的種子也會加上；抓取失敗時繼續使用上次的。例如 https://cf.trackerslist.com/best.txt</string>
     <!-- 电视设置「关于」里的反馈群 -->
     <string name="settings_about_qq_group">QQ 群</string>
     <!-- 触屏设备的设置页: 电视版设置清单里说「按确定」「在电视上」的几句换成触屏的说法 -->

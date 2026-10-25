@@ -17,6 +17,7 @@ import me.him188.ani.app.data.persistent.dataStores
 import me.him188.ani.app.data.persistent.database.DeviceAniDatabase
 import me.him188.ani.app.data.repository.WindowStateRepository
 import me.him188.ani.app.data.repository.WindowStateRepositoryImpl
+import me.him188.ani.app.data.repository.torrent.TrackerSubscriptionRepository
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.foundation.HttpClientProvider
 import me.him188.ani.app.domain.foundation.ScopedHttpClientUserAgent
@@ -129,6 +130,7 @@ fun getDesktopModules(getContext: () -> DesktopContext, scope: CoroutineScope) =
             get(),
             baseSaveDir = { Path(saveDir).toKtPath().inSystem },
             pikpak = get<PikPakEngine>(),
+            trackerSubscriptions = get<TrackerSubscriptionRepository>().trackers,
         )
     }
     single<HttpMediaCacheEngine> {

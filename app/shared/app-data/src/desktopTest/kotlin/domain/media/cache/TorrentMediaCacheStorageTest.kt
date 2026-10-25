@@ -33,6 +33,7 @@ import me.him188.ani.app.domain.torrent.TorrentEngine
 import me.him188.ani.app.torrent.anitorrent.test.TestAnitorrentTorrentDownloader
 import me.him188.ani.app.torrent.anitorrent.test.TestTorrentDescriptor
 import me.him188.ani.app.torrent.anitorrent.test.TestTorrentFileInfo
+import me.him188.ani.app.torrent.api.TorrentDownloaderConfig
 import me.him188.ani.app.torrent.api.TorrentHandleState
 import me.him188.ani.app.torrent.api.files.AbstractTorrentFileEntry
 import me.him188.ani.app.torrent.api.files.FilePriority
@@ -364,6 +365,24 @@ class TorrentMediaCacheStorageTest : AbstractTorrentMediaCacheEngineTest() {
         assertEquals(FilePriority.IGNORE, handle.filePriorities[0])
         assertEquals(FilePriority.NORMAL, handle.filePriorities[2])
         assertTrue(ep3Pieces.any { handle.pieceDeadlines[it] != null }, "the last episode did not start its window")
+    }
+
+    @Test
+    fun `trackers added to the config also reach downloads in progress`() = runTest {
+        val storage = createStorage(createEngine(onDownloadStarted = { it.onTorrentChecked() }))
+        storage.cache(testMedia, mediaCacheMetadata(), resume = true)
+        advanceUntilIdle()
+        val downloader = torrentEngine.getDownloader() as TestAnitorrentTorrentDownloader
+        val handle = downloader.native.handles.single()
+        val added = handle.trackers.toList()
+        val subscribed = "udp://subscribed.example:6969/announce"
+
+        downloader.applyConfig(TorrentDownloaderConfig(extraTrackers = listOf(subscribed)))
+        assertEquals(added + subscribed, handle.trackers)
+
+        // 没变的配置 (比如只改了限速) 不再重复加
+        downloader.applyConfig(TorrentDownloaderConfig(extraTrackers = listOf(subscribed)))
+        assertEquals(added + subscribed, handle.trackers)
     }
 
     @Test
