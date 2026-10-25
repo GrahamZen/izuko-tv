@@ -118,7 +118,10 @@ class TvSettingsState(
             scope.launch {
                 runCatching {
                     key.flow(deps).collect { value -> liveValues.update { it + (key to value) } }
-                }.onFailure { e -> logger.error(e) { "Failed to collect live setting ${key.name}" } }
+                }.onFailure { e ->
+                    if (e is CancellationException) throw e
+                    logger.error(e) { "Failed to collect live setting ${key.name}" }
+                }
             }
         }
     }
