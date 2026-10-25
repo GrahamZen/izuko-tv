@@ -1146,6 +1146,10 @@
     <string name="tv_settings_debug_refresh_ok">續期成功</string>
     <string name="tv_settings_debug_refresh_failed">續期失敗：%1$s</string>
     <string name="tv_settings_debug_crash">讓應用崩潰（測試）</string>
+    <string name="tv_settings_debug_console">偵錯控制台</string>
+    <string name="tv_settings_debug_console_description">同一 Wi-Fi 下的開發機經這個位址偵錯本機 (只有 debug 包有)。點一下複製。\n%1$s</string>
+    <string name="tv_settings_debug_console_off">還沒在監聽 (沒拿到 Wi-Fi 位址)。</string>
+    <string name="tv_settings_debug_console_copied">已複製位址</string>
     <string name="tv_settings_login_proxy_status">代理 %1$s 連不上</string>
     <string name="tv_settings_login_proxy_hint">電視上的代理連不上，登入和其他連網都會失敗。開啟或關閉提供代理的應用程式，或在「代理」中把代理方式改成「停用」，再按確定重試。</string>
     <string name="tv_onboarding_login_proxy_unreachable">電視上的代理 %1$s 連不上：開啟或關閉提供代理的應用程式，或之後在設定的「代理」中把代理方式改成「停用」，再掃一次。</string>

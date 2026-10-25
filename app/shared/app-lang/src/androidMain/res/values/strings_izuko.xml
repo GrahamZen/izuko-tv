@@ -1194,6 +1194,10 @@
     <string name="tv_settings_debug_refresh_ok">Renewed</string>
     <string name="tv_settings_debug_refresh_failed">Renewal failed: %1$s</string>
     <string name="tv_settings_debug_crash">Crash the app (test)</string>
+    <string name="tv_settings_debug_console">Debug console</string>
+    <string name="tv_settings_debug_console_description">A development machine on the same Wi-Fi drives this device through this address (debug builds only). Tap to copy it.\n%1$s</string>
+    <string name="tv_settings_debug_console_off">Not listening yet (no Wi-Fi address).</string>
+    <string name="tv_settings_debug_console_copied">Address copied</string>
     <string name="tv_settings_login_proxy_status">Proxy %1$s can’t be reached</string>
     <string name="tv_settings_login_proxy_hint">The TV’s proxy can’t be reached, so signing in and everything else online fails. Start or quit the app that provides the proxy, or set Proxy to Disabled under Proxy, then press OK to try again.</string>
     <string name="tv_onboarding_login_proxy_unreachable">The TV’s proxy %1$s can’t be reached. Start or quit the app that provides it, or set Proxy to Disabled in Settings later, then scan again.</string>

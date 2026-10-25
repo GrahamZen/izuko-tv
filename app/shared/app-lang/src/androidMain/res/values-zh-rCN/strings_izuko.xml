@@ -1194,6 +1194,10 @@
     <string name="tv_settings_debug_refresh_ok">续期成功</string>
     <string name="tv_settings_debug_refresh_failed">续期失败：%1$s</string>
     <string name="tv_settings_debug_crash">让应用崩溃（测试）</string>
+    <string name="tv_settings_debug_console">调试控制台</string>
+    <string name="tv_settings_debug_console_description">同一 Wi-Fi 下的开发机经这个地址调试本机 (只有 debug 包有)。点一下复制。\n%1$s</string>
+    <string name="tv_settings_debug_console_off">还没在监听 (没拿到 Wi-Fi 地址)。</string>
+    <string name="tv_settings_debug_console_copied">已复制地址</string>
     <string name="tv_settings_login_proxy_status">代理 %1$s 连不上</string>
     <string name="tv_settings_login_proxy_hint">电视上的代理连不上，登录和其他联网都会失败。打开或关掉提供代理的应用，或者在「代理」里把代理方式改成「禁用」，再按确定重试。</string>
     <string name="tv_onboarding_login_proxy_unreachable">电视上的代理 %1$s 连不上：打开或关掉提供代理的应用，或者之后在设置的「代理」里把代理方式改成「禁用」，再扫一次。</string>

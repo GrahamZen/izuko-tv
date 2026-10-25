@@ -72,6 +72,7 @@ import me.him188.ani.app.platform.torrentMediaResolvers
 import me.him188.ani.app.platform.trace.recordAppStart
 import me.him188.ani.app.tools.update.IosUpdateInstaller
 import me.him188.ani.app.tools.update.UpdateInstaller
+import me.him188.ani.app.ui.debugconsole.startIosDebugConsole
 import me.him188.ani.app.ui.foundation.TestGlobalLifecycleOwner
 import me.him188.ani.app.ui.foundation.layout.LocalPlatformWindow
 import me.him188.ani.app.ui.foundation.navigation.LocalOnBackPressedDispatcherOwner
@@ -192,6 +193,7 @@ fun startIosApp(): AniIosApplication {
     }
 
     koin.get<TorrentManager>() // start sharing, connect to DHT now
+    startIosDebugConsole(context.files.dataDir, context.files.logsDir) // debug 包: 开发机经局域网调试本机 (见 DebugConsole)
 
     val aniNavigator = AniNavigator()
     val onBackPressedDispatcherOwner = SkikoOnBackPressedDispatcherOwner(
