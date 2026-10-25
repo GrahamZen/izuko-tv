@@ -46,6 +46,7 @@ import me.him188.ani.app.data.repository.subject.DefaultSubjectRelationsReposito
 import me.him188.ani.app.data.repository.subject.FollowedSubjectsRepository
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepositoryImpl
+import me.him188.ani.app.data.repository.subject.SubjectRewatch
 import me.him188.ani.app.data.repository.subject.SubjectRelationsRepository
 import me.him188.ani.app.data.repository.subject.SubjectSearchCompletionRepository
 import me.him188.ani.app.data.repository.subject.SubjectSearchHistoryRepository
@@ -103,6 +104,10 @@ fun KoinApplication.repositoryModules(
     single<SubjectTrackChoiceRepository> { SubjectTrackChoiceRepository(getContext().dataStores.preferredAllianceStore) }
     single<PlaybackLineageRepository> { PlaybackLineageRepository(getContext().dataStores.preferredAllianceStore) }
 
+    single<SubjectRewatch> {
+        SubjectRewatch(database, getContext().files.dataDir.resolve(UserProfiles.current.scopedFileName(SubjectRewatch.FILE_NAME)))
+    }
+
     single<SubjectCollectionRepository> {
         SubjectCollectionRepositoryImpl(
             subjectService = get(),
@@ -121,6 +126,7 @@ fun KoinApplication.repositoryModules(
             getEpisodeTypeFiltersUseCase = get(),
             scope = coroutineScope,
             localProfile = UserProfiles.current.isLocal,
+            rewatch = get(),
         )
     }
 
@@ -188,6 +194,7 @@ fun KoinApplication.repositoryModules(
             getEpisodeTypeFiltersUseCase = get(),
             onDirtyChanged = { get<EpisodeCollectionSyncer>().requestSync() },
             localProfile = UserProfiles.current.isLocal,
+            rewatch = get(),
         )
     }
 

@@ -27,6 +27,7 @@ import me.him188.ani.app.data.repository.Repository
 import me.him188.ani.app.data.repository.RepositoryException
 import me.him188.ani.app.data.repository.subject.GetEpisodeTypeFiltersUseCase
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
+import me.him188.ani.app.data.repository.subject.SubjectRewatch
 import me.him188.ani.app.domain.episode.EpisodeCollections
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.PackedDate
@@ -83,7 +84,12 @@ class EpisodeCollectionRepository(
     private val onDirtyChanged: () -> Unit = {},
     /** 本地档: 看过状态只存在本地库, 不入同步队列、不推 Bangumi, 见 SubjectCollectionRepositoryImpl 的同名参数. */
     private val localProfile: Boolean = false,
+    /** 重温 (见 [SubjectRewatch]): 重温中的条目看过状态同本地档, 只在本地库. null = 没有这个功能 (测试). */
+    private val rewatch: SubjectRewatch? = null,
 ) : Repository(defaultDispatcher), EpisodeCollectionPendingOpSource {
+
+    /** 这一部的看过状态只在本地库: 本地档, 或这一部正在重温. */
+    private suspend fun isLocalOnly(subjectId: Int): Boolean = localProfile || rewatch?.isActive(subjectId) == true
 
     private val subjectCollectionRepository by subjectCollectionRepository
 
@@ -126,8 +132,8 @@ class EpisodeCollectionRepository(
      */
     private suspend fun refreshEpisodesOf(subjectId: Int): List<EpisodeCollectionEntity> {
         val fetched = episodeService.getEpisodeCollectionEntities(subjectId, lastFetched = currentTimeMillis())
-        return if (localProfile) {
-            // 本地档取到的是匿名结果: 看过状态以库里的为准
+        return if (isLocalOnly(subjectId)) {
+            // 本地档取到的是匿名结果, 重温中的看过只在本机: 看过状态以库里的为准
             fetched.map { episodeCollectionDao.upsertKeepingSelfState(it) }
         } else {
             episodeCollectionDao.upsert(fetched)
@@ -205,8 +211,8 @@ class EpisodeCollectionRepository(
 
         val now = nowMillis()
         episodeCollectionDao.setAllEpisodesWatched(subjectId)
-        // 本地档只改本地, 不入同步队列
-        if (localProfile) return@withContext
+        // 本地档与重温中的条目只改本地, 不入同步队列
+        if (isLocalOnly(subjectId)) return@withContext
         pendingOpDao.replacePendingOps(
             episodeIds.map { episodeId ->
                 EpisodeCollectionPendingOpEntity(
@@ -233,8 +239,8 @@ class EpisodeCollectionRepository(
             logger.warn { "User has not yet collected subject $subjectId when we want to setEpisodeCollectionType, ignoring." }
         }
         episodeCollectionDao.updateSelfCollectionType(subjectId, episodeId, collectionType)
-        // 本地档只改本地, 不入同步队列
-        if (localProfile) return@withContext
+        // 本地档与重温中的条目只改本地, 不入同步队列
+        if (isLocalOnly(subjectId)) return@withContext
         pendingOpDao.replacePendingOps(
             listOf(
                 EpisodeCollectionPendingOpEntity(
@@ -301,8 +307,8 @@ class EpisodeCollectionRepository(
     ): UnifiedCollectionType? = withContext(defaultDispatcher) {
         try {
             val local = episodeCollectionDao.findByEpisodeId(episodeId).first()
-            // 本地档的看过状态只在本地库里, 服务端那份是匿名的
-            if (localProfile) return@withContext local?.selfCollectionType
+            // 本地档的看过状态只在本地库里, 服务端那份是匿名的; 重温中的以本机这一轮为准
+            if (isLocalOnly(subjectId)) return@withContext local?.selfCollectionType
             // 不许联网时本地没有就是不知道
             if (local == null && !allowNetwork) return@withContext null
 
