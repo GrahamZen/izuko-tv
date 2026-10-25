@@ -111,7 +111,8 @@ import kotlin.math.roundToInt
  * - 评论详情 / 回复 (TvCommentReplyDialog) 也摆在这个位置, 由 TvPlayerOverlayState.replyingComment 驱动, 外壳同 [TvPlayerLayerPanel].
  *
  * 焦点 (按键在根路由, 见 TvEpisodeScreen): 胶囊上按确定进画廊第一格; 按上进画廊, 第一次落在看得见的最下一行里离胶囊最近的那格, 之后落回离开时那格.
- * 画廊 (连同人物页里「查看全部」的画廊) 最左列按左 / 最右边按右跨到相邻胶囊 (见 [TvPlayerDetailLayersState.crossGallery]); 快速连点到边上的那一下不跨.
+ * 画廊 (连同人物页里「查看全部」的画廊) 最左列按左 / 最右边按右跨到相邻胶囊 (见 [TvPlayerDetailLayersState.crossGallery]); 人物页里的画廊快速连点到边上的那一下不跨
+ * (跨走就丢掉人物页), 胶囊的画廊之间误跨了反方向一按就回到原来那格.
  * 别的叠层里左右上到边停住; 往下出边回到胶囊, 叠着的人物页留着, 再按上回去. 返回退一层, 退到画廊再按返回回胶囊; 胶囊上返回清掉人物页.
  * 左右换胶囊清掉人物页; 画廊只组合当前那一张 (换胶囊再回来落回离开时那格), 控制层收起时连停的位置一起清掉.
  */
@@ -217,8 +218,11 @@ internal class TvPlayerDetailLayersState {
     /** 焦点从胶囊进各张画廊 (各自登记, 参数见 [enterTop]). */
     internal val galleryEnter = HashMap<TvPlayerPanel, (first: Boolean) -> Unit>()
 
-    /** 焦点从旁边那张画廊跨进各张画廊 (各自登记, 参数见 TvGalleryGridHandle.selectEdgeNearest). */
-    internal val galleryEnterSide = HashMap<TvPlayerPanel, (rightColumn: Boolean, windowY: Float) -> Unit>()
+    /**
+     * 焦点从旁边那张画廊跨进各张画廊 (各自登记, 前两个参数见 TvGalleryGridHandle.selectEdgeNearest); restore = 落回网格自己记着的那格
+     * (离开时那格, 见 [crossGallery]), 不按第一屏挑.
+     */
+    internal val galleryEnterSide = HashMap<TvPlayerPanel, (rightColumn: Boolean, windowY: Float, restore: Boolean) -> Unit>()
 
     /** 胶囊此刻的视觉顺序 (左→右, 由控制层设): 画廊之间左右跨的依据. */
     internal var pillOrder: List<TvPlayerPanel> = emptyList()
@@ -232,11 +236,22 @@ internal class TvPlayerDetailLayersState {
     /** 正在跨 (等目标画廊排出格): 按住左右键连发时不再跨第二次. */
     private var crossing = false
 
+    /** 上一次在胶囊的画廊之间跨: 从 [from] 跨到 [to], 落在 [to] 的第 [landed] 格 (见 [crossGallery] 的「立刻跨回」). */
+    private class TvGalleryCross(val from: TvPlayerPanel, val to: TvPlayerPanel, val landed: Int)
+
+    private var lastCross: TvGalleryCross? = null
+
+    /** [panel] 的画廊停在哪一格: 网格还在就是它选中的那格, 拆了就是拆时记下的那格 (重建时落回去); -1 = 没有. */
+    private fun keptSelection(panel: TvPlayerPanel): Int = gridHandle(panel).let { it.view?.selectedPosition ?: it.savedSelection }
+
     /**
      * 焦点在 [from] 那颗胶囊的画廊 (或叠在它上面的人物页里「查看全部」的画廊) 最左列按左 / 最右边按右: 相邻那颗胶囊也是画廊时换过去,
      * 焦点落在它第一屏里贴着来路那一列、纵向离 [windowY] 最近的那格 (往左跨落最右列, 往右跨落最左列); 那张画廊排不出格来 (没有内容) 时
      * 焦点落到那颗胶囊上. 相邻的不是画廊 (评论 / 弹幕) 时焦点也落到那颗胶囊上 (同面板条目上按左右). 旁边没有胶囊了就停住.
      * 叠着的人物页跨走就丢掉, 跨回来进的是那颗胶囊自己的画廊.
+     *
+     * 立刻跨回: 刚从 A 跨到 B、在 B 里还停在落下的那格就按反方向跨回 A 时, 落回离开 A 时那格 (不按第一屏挑) —— 胶囊的画廊之间误跨了
+     * 反方向一按就原样回来, 所以不像人物页里的画廊那样防快速连点 (见 TvNativeGalleryGridView.guardHurriedSideExit).
      */
     internal suspend fun crossGallery(from: TvPlayerPanel, toRight: Boolean, windowY: Float) {
         if (crossing || owner != from || gallery != from) return
@@ -245,6 +260,7 @@ internal class TvPlayerDetailLayersState {
         val neighbor = pillOrder.getOrNull(index + if (toRight) 1 else -1) ?: return
         if (!neighbor.showsGallery) {
             // 换了胶囊, 叠着的人物页随之清掉 (showPanel)
+            lastCross = null
             focusPillOf(neighbor)
             return
         }
@@ -253,6 +269,12 @@ internal class TvPlayerDetailLayersState {
             // 先换胶囊 (只组合当前那一张画廊, 这一下才开始排), 排出格来再把焦点送进去. 叠着人物页时先留着它们: 焦点还在上面那张画廊里,
             // 新画廊在底下排; 现在就清的话持焦那格没了, 排好之前焦点无处可落
             val fromPages = stack.isNotEmpty()
+            // 立刻跨回落到的那格: 换胶囊之前读 (那张画廊重建后才落回去, 落回是排完版才做的, 送焦点时可能还没到)
+            val restoreTo = keptSelection(neighbor)
+            val back = lastCross?.takeIf {
+                !fromPages && it.to == from && it.from == neighbor && keptSelection(from) == it.landed && restoreTo >= 0
+            }
+            lastCross = null
             selectPanel(neighbor)
             showPanel(neighbor, keepPages = true)
             val handle = gridHandle(neighbor)
@@ -268,7 +290,8 @@ internal class TvPlayerDetailLayersState {
                 clearPages()
                 if (!ready) focusPillOf(neighbor)
             } else if (ready) {
-                enter(!toRight, windowY)
+                enter(!toRight, windowY, back != null)
+                lastCross = TvGalleryCross(from = from, to = neighbor, landed = if (back != null) restoreTo else keptSelection(neighbor))
             } else {
                 focusPillOf(neighbor)
             }
@@ -348,6 +371,7 @@ internal class TvPlayerDetailLayersState {
         gridHandles.clear()
         galleryEnter.clear()
         galleryEnterSide.clear()
+        lastCross = null
     }
 }
 
@@ -654,8 +678,9 @@ private fun TvGalleryLayer(
     val scope = rememberCoroutineScope()
     DisposableEffect(layers, panel) {
         layers.galleryEnter[panel] = { first -> currentEnter(first) }
-        layers.galleryEnterSide[panel] = { rightColumn, windowY ->
-            if (grid.selectEdgeNearest(rightColumn, windowY)) runCatching { viewAllFocus.requestFocus() }
+        layers.galleryEnterSide[panel] = { rightColumn, windowY, restore ->
+            // restore: 网格重建时已落回离开时那格 (TvGalleryGridHandle.savedSelection), 直接送焦点
+            if (restore || grid.selectEdgeNearest(rightColumn, windowY)) runCatching { viewAllFocus.requestFocus() }
         }
         // 左右跨到相邻胶囊的画廊 (见 TvPlayerDetailLayersState.crossGallery)
         grid.onExitSide = { toRight, windowY -> scope.launch { layers.crossGallery(panel, toRight, windowY) } }
