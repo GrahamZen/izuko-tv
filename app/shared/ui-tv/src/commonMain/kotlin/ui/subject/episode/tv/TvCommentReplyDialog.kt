@@ -93,12 +93,10 @@ import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
 import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
 import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.tvLongPressKey
-import me.him188.ani.app.ui.foundation.tv.TvInWindowPanel
 import me.him188.ani.app.ui.foundation.tv.TvImageZoomState
 import me.him188.ani.app.ui.foundation.tv.TvTextFieldFrame
 import me.him188.ani.app.ui.foundation.tv.tvFieldBorder
 import me.him188.ani.app.ui.foundation.tv.tvFieldBorderStroke
-import me.him188.ani.app.ui.foundation.tv.TvZoomedImageOverlay
 import me.him188.ani.app.ui.foundation.tv.tvImageZoomKeys
 import me.him188.ani.app.ui.foundation.tv.tvPageScrollKeys
 import me.him188.ani.app.ui.richtext.CommentAsyncImage
@@ -119,7 +117,6 @@ import me.him188.ani.app.ui.lang.comment_send
 import me.him188.ani.app.ui.lang.comment_send_comment
 import me.him188.ani.app.ui.lang.comment_send_failed_network
 import me.him188.ani.app.ui.lang.comment_send_failed_unknown
-import me.him188.ani.app.ui.lang.comment_view_comment
 import me.him188.ani.app.ui.richtext.StickerImage
 import me.him188.ani.app.ui.richtext.UIRichElement
 import org.jetbrains.compose.resources.stringResource
@@ -154,13 +151,17 @@ class TvCommentReplyTarget(
      */
     val quoted: TvQuotedComment? = null,
     /**
-     * 这条评论到底能不能回复. `false` 时弹窗退化成只读 (不出输入框和发送按钮, 顶部给出提示).
+     * 这条评论到底能不能回复. `false` 时是只读的一整楼 (见 [TvCommentThreadView]), 不出输入框和发送按钮.
      *
      * 能回复的只有 Ani 源且服务端给了 `canReply` 的**主楼**: Bangumi 评论在 Ani 内只读,
      * 楼中回复也没有对应的写接口 (`createEpisodeReply` 只接受主楼 id).
      * 发表新评论走的是 `createEpisodeComment`, 恒可写.
      */
     val canReply: Boolean = true,
+    /** 只读时一起显示的这一楼的回复, 由上往下 (见 [TvCommentThreadView]). */
+    val replies: List<TvThreadReply> = emptyList(),
+    /** 只读时打开落在第几条回复上 ([replies] 的下标); -1 = 落在主楼上. */
+    val focusReply: Int = -1,
 )
 
 /** 引用区里展示的那条评论. */
@@ -180,6 +181,8 @@ class TvQuotedComment(
     val floorText: String? = null,
     /** 已被删除: 正文处显示「删除了回复」. */
     val deleted: Boolean = false,
+    /** 作者头像 (整楼视图里用, 见 [TvCommentThreadView]); 没有为 null. */
+    val avatarUrl: String? = null,
 )
 
 /** 一枚回应: 一个表情 + 贴的人数. */
@@ -188,12 +191,6 @@ class TvCommentReaction(
     val sticker: UIRichElement.Annotated.Sticker,
     val count: Int,
 )
-
-/** 回复弹窗宽度占屏比 (TV 上 dp 视口约 960x540, 0.62 约合 600dp). */
-private const val TV_REPLY_DIALOG_WIDTH_FRACTION = 0.62f
-
-/** 回复弹窗高度占屏比. */
-private const val TV_REPLY_DIALOG_HEIGHT_FRACTION = 0.78f
 
 /** 弹窗内各块 (引用区 / 输入框 / 预览) 的圆角: 裁剪与边框共用, 三块必须一致. */
 private val TV_REPLY_BLOCK_CORNER = 12.dp
@@ -239,18 +236,19 @@ private val reactionChipColor: Color
 
 /**
  * TV 评论弹窗: 回复某条评论, 或发表本集评论 (`target.quoted == null`, 见 [TvCommentReplyTarget]).
+ * 不能回复时 (只读) 是一整楼的视图, 见 [TvCommentThreadView].
  *
- * 发表新评论没有引用区, 弹窗高度按内容收 (撑满 78% 屏高的话输入框会吊在一大片空白上面),
+ * 发表新评论没有引用区, 高度按内容收 (撑满的话输入框会吊在一大片空白上面),
  * 初始焦点也直接落输入框 —— 那时没有"先看完被回复的那条"这一步.
  *
  * 与手机端的底部 sheet ([me.him188.ani.app.ui.comment.EditComment]) 相比:
- * - 大弹窗居中, 被回复的评论正文在**输入框上方**, 放不下时可用上下键翻 (翻到底再按下键
- *   才进输入框), 而不是把正文挤成两行贴在输入框下面;
- * - 没有右上角关闭按钮, 纯弹窗: 出口只有返回键 (由 TvEpisodeScreen 的唯一按键路由处理);
- * - 焦点锁在弹窗内 (方向键走到边界即取消这次焦点搜索), 不会滑到底下还在场的播放器控件上.
+ * - 叠在胶囊上方 (评论面板的位置, 同宽, 见 TvPlayerDetailLayers), 被回复的评论正文在**输入框上方**, 放不下时可用上下键翻
+ *   (翻到底再按下键才进输入框), 而不是把正文挤成两行贴在输入框下面;
+ * - 没有右上角关闭按钮: 出口是返回键 (由 TvEpisodeScreen 的唯一按键路由处理), 以及在最下面再按下回到评论胶囊 (这一层留着);
+ * - 左右上走到边停住 (见 [TvPlayerLayerPanel]), 不会滑到底下还在场的播放器控件上.
  *
  * 不用真 `Dialog`: 那是独立窗口, 播放器根部的唯一按键路由收不到它的按键, 且本窗口会失去
- * 窗口焦点 —— 与详情层/侧边 sheet 一样, 这里也是同窗口内的全屏 Box.
+ * 窗口焦点 —— 这里画在控制层里.
  */
 @Composable
 internal fun TvCommentReplyDialog(
@@ -268,11 +266,15 @@ internal fun TvCommentReplyDialog(
     onNavigate: ((delta: Int) -> Unit)? = null,
     /**
      * 非 null 时引用区里的图可以放大看: 引用区上长按确认键, 从正文翻到的那张图开始全屏看, 不止一张时左右键换图.
-     * 大图画在本弹窗之上 (见 [TvImageZoomState]), 焦点留在引用区; 返回键由调用方的根路由先关它.
+     * 大图由控制层铺满整屏画 (见 TvPlayerControlsOverlay), 焦点留在引用区; 返回键由调用方的根路由先关它.
      */
     imageZoom: TvImageZoomState? = null,
     modifier: Modifier = Modifier,
 ) {
+    if (target.quoted != null && !target.canReply) {
+        TvCommentThreadView(target, onNavigate, imageZoom, modifier)
+        return
+    }
     val scope = rememberCoroutineScope()
     val focus = rememberTvFocusScope()
     val scrollState = rememberScrollState()
@@ -318,12 +320,13 @@ internal fun TvCommentReplyDialog(
     // 选中的表情包: 记在弹窗这一层, 关掉选择器再开还在原来那一包
     var stickerPackIndex by remember { mutableIntStateOf(0) }
 
-    TvInWindowPanel(
-        widthFraction = TV_REPLY_DIALOG_WIDTH_FRACTION,
+    TvPlayerLayerPanel(
         // 大图开着时左右键换图、其余按键一概吞掉 (返回键由根路由处理)
         modifier = modifier.tvFocusNavSignal(focus).ifThen(imageZoom != null) { tvImageZoomKeys(imageZoom!!) },
-        // 没有引用区就按内容收高: 撑满屏高的话输入框和发送按钮会吊在一大片空白下面
-        heightFraction = if (quoted != null) TV_REPLY_DIALOG_HEIGHT_FRACTION else null,
+        // 没有引用区就按内容收高: 撑满的话输入框和发送按钮会吊在一大片空白下面
+        fillHeight = quoted != null,
+        // 表情选择器盖上来时本层不画: 两层半透明的底叠着会透出下面的字
+        contentHidden = stickerPickerOpen,
         overlay = {
             // 表情选择器: 盖在本弹窗之上 (同一个全屏 Box 里的第二个孩子). 返回键先关它再关本弹窗,
             // 由根路由处理 (见 TvEpisodeScreen) —— 它在弹窗之上, 但按键仍走那唯一一条路由
@@ -339,31 +342,19 @@ internal fun TvCommentReplyDialog(
                     modifier = Modifier.matchParentSize(),
                 )
             }
-            imageZoom?.let { TvZoomedImageOverlay(it, Modifier.matchParentSize()) }
         },
     ) {
                 Text(
-                    stringResource(
-                        when {
-                            quoted == null -> Lang.comment_new_comment
-                            // 只读态标题不能还写"回复评论": 下面没有输入框, 两者对不上
-                            target.canReply -> Lang.comment_reply
-                            else -> Lang.comment_view_comment
-                        },
-                    ),
+                    stringResource(if (quoted == null) Lang.comment_new_comment else Lang.comment_reply),
                     // 标题字号与其他居中大弹窗一致 (AniCenteredPanelDialog 的 title 用 titleLarge)
                     style = MaterialTheme.typography.titleLarge,
                 )
                 Spacer(Modifier.height(4.dp))
-                // 只在能回复时给提示. 直连 bangumi 之后一条都不能回复 (发表吐槽要过 Cloudflare
-                // Turnstile 验证码), 每条评论都挂一句"不支持回复"只是噪音 —— 标题已经是"查看评论".
-                if (target.canReply) {
-                    Text(
-                        stringResource(Lang.comment_ani_only_notice),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = hintColor,
-                    )
-                }
+                Text(
+                    stringResource(Lang.comment_ani_only_notice),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = hintColor,
+                )
                 if (canZoom) {
                     Text(
                         stringResource(Lang.video_player_tv_comment_image_zoom_hint),
@@ -406,12 +397,12 @@ internal fun TvCommentReplyDialog(
                                 else -> false
                             }
                         }
-                        // 只读态与预览态下面都没有输入框 (预览把 BasicTextField 整个换掉了),
+                        // 预览态下面没有输入框 (预览把 BasicTextField 整个换掉了),
                         // 不能给 down 指一个未附着的请求器: 焦点搜索命中自定义落点后就不再退回
                         // 空间搜索, 而未附着的请求器只是静默返回 false, 下键当场变死键.
                         // 不给 down, 空间搜索会自己落到下面的按钮行 (与 [actionUpFocus] 对称)
                         .then(
-                            if (target.canReply && !previewing) {
+                            if (!previewing) {
                                 Modifier.focusProperties { down = fieldFocusRequester }
                             } else {
                                 Modifier
@@ -494,11 +485,6 @@ internal fun TvCommentReplyDialog(
                             TvCommentReactionRow(quoted.reactions)
                         }
                     }
-                }
-
-                // 只读态到这里就结束: 引用区已经 weight(1f) 撑满剩余高度
-                if (!target.canReply) {
-                    return@TvInWindowPanel
                 }
 
                 Spacer(Modifier.height(16.dp))
@@ -672,7 +658,7 @@ private enum class TvCommentReplyFocus : TvFocusKey { Quote, Field }
  * 不可聚焦、不可点: 见 [TvCommentReplyTarget.reactions].
  */
 @Composable
-private fun TvCommentReactionRow(reactions: List<TvCommentReaction>, modifier: Modifier = Modifier) {
+internal fun TvCommentReactionRow(reactions: List<TvCommentReaction>, modifier: Modifier = Modifier) {
     FlowRow(
         modifier,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -710,7 +696,7 @@ private fun TvCommentReactionRow(reactions: List<TvCommentReaction>, modifier: M
  * 图本身不可聚焦: 引用区是"整块一个焦点 + 上下键翻页"; 放大看图走引用区的长按 (见 [TvCommentReplyDialog] 的 imageZoom).
  */
 @Composable
-private fun TvCommentQuoteImage(url: String, modifier: Modifier = Modifier) {
+internal fun TvCommentQuoteImage(url: String, modifier: Modifier = Modifier) {
     CommentAsyncImage(
         url,
         modifier.fillMaxWidth(),

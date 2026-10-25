@@ -17,7 +17,6 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
@@ -30,6 +29,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.isImeVisible
@@ -62,7 +62,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -72,7 +74,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
@@ -87,7 +88,6 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalWindowInfo
@@ -101,7 +101,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.paging.LoadState
 import androidx.paging.compose.collectAsLazyPagingItemsWithLifecycle
-import androidx.paging.compose.itemKey
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filter
@@ -110,7 +109,9 @@ import kotlinx.coroutines.launch
 import me.him188.ani.app.data.models.subject.nameCn
 import me.him188.ani.app.data.repository.RepositoryRateLimitedException
 import me.him188.ani.app.domain.danmaku.DanmakuLoadingState
+import me.him188.ani.app.domain.episode.SubjectRecommendation
 import me.him188.ani.app.domain.episode.preferredDisplayName
+import me.him188.ani.app.navigation.AniNavigator
 import me.him188.ani.app.navigation.LocalNavigator
 import me.him188.ani.app.navigation.SubjectDetailPlaceholder
 import me.him188.ani.app.tools.LocalTimeFormatter
@@ -124,8 +125,6 @@ import me.him188.ani.app.ui.comment.UICommentSource
 import me.him188.ani.app.ui.comment.UIRichText
 import me.him188.ani.app.ui.danmaku.DanmakuEditorState
 import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
-import me.him188.ani.app.ui.foundation.AsyncImage
-import me.him188.ani.app.ui.foundation.avatar.AvatarImage
 import me.him188.ani.app.ui.foundation.focus.TvFocusKey
 import me.him188.ani.app.ui.foundation.focus.rememberTvFocusScope
 import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
@@ -136,7 +135,6 @@ import me.him188.ani.app.ui.foundation.tv.TvPillFailedIcon
 import me.him188.ani.app.ui.foundation.tv.TvPillShell
 import me.him188.ani.app.ui.foundation.tv.tvTmdbSubjectTitleFilled
 import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
-import me.him188.ani.app.ui.foundation.tv.tvAmbientMarquee
 import me.him188.ani.app.ui.foundation.tv.tvUseOriginalTitle
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFade
@@ -146,15 +144,16 @@ import me.him188.ani.app.ui.lang.episode_danmaku
 import me.him188.ani.app.ui.lang.episode_send_danmaku_failed
 import me.him188.ani.app.ui.lang.episode_send_danmaku_quota_exceeded
 import me.him188.ani.app.ui.lang.subject_episode_danmaku_list_empty
+import me.him188.ani.app.ui.lang.subject_episode_related_recommendations
 import me.him188.ani.app.ui.lang.subject_episode_related_recommendations_empty
 import me.him188.ani.app.ui.richtext.UIRichElement
 import me.him188.ani.app.ui.subject.details.SubjectDetailsLoadState
 import me.him188.ani.app.ui.subject.details.sections.CharactersViewAllDialog
+import me.him188.ani.app.ui.subject.details.sections.PosterGalleryDialog
 import me.him188.ani.app.ui.subject.details.sections.StaffViewAllDialog
 import me.him188.ani.app.ui.subject.episode.EpisodePageState
 import me.him188.ani.app.ui.subject.episode.EpisodeViewModel
-import me.him188.ani.app.ui.subject.person.PeoplePreviewTarget
-import me.him188.ani.app.ui.subject.person.rememberPeopleClickHandler
+import me.him188.ani.app.ui.subject.person.PosterRowItem
 import me.him188.ani.app.ui.episode.danmaku.DanmakuSourceChips
 import me.him188.ani.app.ui.episode.danmaku.DanmakuTimeShiftDialog
 import me.him188.ani.app.ui.episode.danmaku.renderDanmakuServiceId
@@ -179,10 +178,7 @@ import me.him188.ani.app.ui.lang.video_player_tv_comment_deleted
 // ---- 面板调参 ----
 
 /** 面板宽度 (Prime 实测约屏宽 1/4): 弹幕列表/评论等文字面板. */
-private val TV_PANEL_WIDTH = 420.dp
-
-/** 卡片类面板宽度 (相关推荐/角色/制作人员: 头像 + 单行文字, 收窄; 放不下的文字聚焦跑马灯). */
-private val TV_PANEL_CARD_WIDTH = 240.dp
+internal val TV_PANEL_WIDTH = 420.dp
 
 /**
  * 还没量到空隙 (首帧) 时面板的最大高度 (条目少时仍按内容收缩).
@@ -225,13 +221,16 @@ internal class TvPanelItemFocusRegistry {
 }
 
 /** 面板条目未聚焦底色 (半透明玻璃, 视频上可读). */
-private val TV_PANEL_ITEM_COLOR = Color.Black.copy(alpha = 0.55f)
+internal val TV_PANEL_ITEM_COLOR = Color.Black.copy(alpha = 0.55f)
 
 /** 面板条目聚焦底色. */
-private val TV_PANEL_ITEM_FOCUSED_COLOR = Color.Black.copy(alpha = 0.8f)
+internal val TV_PANEL_ITEM_FOCUSED_COLOR = Color.Black.copy(alpha = 0.8f)
+
+/** 面板最下一条与胶囊行之间的空. */
+internal val TV_PANEL_BOTTOM_GAP = 14.dp
 
 /**
- * L2 浮出面板宿主: 弹幕列表 / 相关推荐 / 本集评论.
+ * L2 浮出面板宿主: 弹幕列表 / 本集评论. 相关推荐 / 角色 / 制作人员三颗胶囊的面板是胶囊上方的画廊 (见 TvPlayerDetailLayers), 这里不画.
  *
  * 统一形态: `LazyColumn(reverseLayout = true)` —— index 0 在底部, 向上导航 = 索引递增,
  * 聚焦项吸附到底缘 (禁默认 bring-into-view + animateScrollToItem), 最底项按下键
@@ -259,10 +258,7 @@ internal fun TvPlayerPanelHost(
     modifier: Modifier = Modifier,
 ) {
     val danmakuListState = rememberLazyListState()
-    val recommendationsListState = rememberLazyListState()
     val commentsListState = rememberLazyListState()
-    val charactersListState = rememberLazyListState()
-    val staffListState = rememberLazyListState()
 
     // 当前聚焦条目下标 (吸底滚动用; 同一时刻只有一个面板在场, 共享一个)
     val focusedIndex = remember { mutableIntStateOf(-1) }
@@ -282,21 +278,42 @@ internal fun TvPlayerPanelHost(
         itemFocus.requester = null
         val listState = when (overlay.activePanel) {
             TvPlayerPanel.DANMAKU_LIST -> danmakuListState
-            TvPlayerPanel.RECOMMENDATIONS -> recommendationsListState
             TvPlayerPanel.COMMENTS -> commentsListState
-            TvPlayerPanel.CHARACTERS -> charactersListState
-            TvPlayerPanel.STAFF -> staffListState
-            null -> return@LaunchedEffect
+            else -> return@LaunchedEffect
         }
         focusedIndex.intValue = -1
         runCatching { listState.scrollToItem(0) }
     }
 
-    // 点击胶囊把焦点送进当前面板: 请求悬挂到该面板 index 0 锚点附着.
+    // 换集 (上一集 / 下一集键、自动连播、控制台): 评论 / 弹幕整张换掉, 持焦的那一条跟着没了 —— Compose 移除持焦节点时整棵树没有焦点,
+    // 遥控器像失灵. 焦点在这两个面板里、或在评论详情里 (那一楼是上一集的, 一并关掉) 时回到打开面板的那颗胶囊, 列表回到底.
+    // 画廊与人物页按条目算, 换集不变, 焦点留在原处
+    val currentEpisodeId by rememberUpdatedState(page.episodePresentation.episodeId)
+    LaunchedEffect(Unit) {
+        snapshotFlow { currentEpisodeId }.drop(1).collect {
+            focusedIndex.intValue = -1
+            itemFocus.requester = null
+            val panel = overlay.activePanel
+            val commentOpen = overlay.replyingComment != null
+            val focusInside = overlay.focusRegion == TvPlayerFocusRegion.PANEL ||
+                    (commentOpen && overlay.focusRegion == TvPlayerFocusRegion.LAYER)
+            if (commentOpen) overlay.dismissReply(restoreFocus = false)
+            if (focusInside) {
+                val pill = panel?.takeUnless { it.showsGallery }?.let { pillFocusRequesters[it] }
+                if (pill != null) runCatching { pill.requestFocus() } else overlay.focusProgress()
+            }
+            // 不挂起的那个: 不在场的那张列表 (从没排过版) 用 scrollToItem 会一直等它第一次排版
+            danmakuListState.requestScrollToItem(0)
+            commentsListState.requestScrollToItem(0)
+        }
+    }
+
+    // 点击胶囊把焦点送进当前面板: 请求悬挂到该面板 index 0 锚点附着. 画廊胶囊交给画廊 (见 TvPlayerDetailLayers)
     LaunchedEffect(Unit) {
         snapshotFlow { overlay.pendingFocus }.collectLatest { (target, _) ->
             if (target != TvPlayerFocusTarget.PANEL) return@collectLatest
-            overlay.activePanel?.let { focus.request(TvPanelEntryFocus(it)) }
+            val panel = overlay.activePanel ?: return@collectLatest
+            if (panel.showsGallery) overlay.detailLayers.requestGalleryFocus() else focus.request(TvPanelEntryFocus(panel))
         }
     }
 
@@ -316,8 +333,9 @@ internal fun TvPlayerPanelHost(
                     requester != null && windowFocused && !dialogComposed
                 }
                 .first ?: return@collectLatest
+            // 从叠层 (评论详情 / 人物页) 退回来时焦点区域还停在 LAYER (叠层获焦时上报的)
             if (overlay.activePanel != null && overlay.layer == TvPlayerLayer.CONTROLS &&
-                overlay.focusRegion == TvPlayerFocusRegion.PANEL
+                (overlay.focusRegion == TvPlayerFocusRegion.PANEL || overlay.focusRegion == TvPlayerFocusRegion.LAYER)
             ) {
                 runCatching { requester.requestFocus() }
             }
@@ -343,14 +361,8 @@ internal fun TvPlayerPanelHost(
         contentAlignment = Alignment.BottomStart,
         label = "tvPlayerPanel",
     ) { panel ->
-        val panelWidth = when (panel) {
-            TvPlayerPanel.RECOMMENDATIONS, TvPlayerPanel.CHARACTERS, TvPlayerPanel.STAFF ->
-                TV_PANEL_CARD_WIDTH
-
-            else -> TV_PANEL_WIDTH
-        }
         val panelModifier = Modifier
-            .width(panelWidth)
+            .width(TV_PANEL_WIDTH)
             // 最大高度按屏实算 (顶到顶部信息上沿为止); 在测量阶段读位置, 不因位置变化重组
             .layout { measurable, constraints ->
                 val available = availableHeightPx()
@@ -364,7 +376,7 @@ internal fun TvPlayerPanelHost(
                 )
                 layout(placeable.width, placeable.height) { placeable.place(0, 0) }
             }
-            .padding(bottom = 14.dp)
+            .padding(bottom = TV_PANEL_BOTTOM_GAP)
             // 从下方胶囊按上键进来 (焦点搜索进组) 一律改道到入口锚点 (index 0), 与点击胶囊同一个落点.
             // 交给空间搜索的话它只认胶囊正上方的候选: 弹幕面板最底行是一排靠左的窄胶囊, 从行末的「弹幕」胶囊
             // 往上会越过它们, 落到上面整行宽的弹幕条上. onEnter 只在焦点组上生效, 组在 TvPanelList 里, 挂在它外面正好
@@ -410,22 +422,8 @@ internal fun TvPlayerPanelHost(
                 }
             }
         when (panel) {
-            null -> Box(Modifier.height(0.dp))
-
-            TvPlayerPanel.STAFF -> TvStaffPanel(
-                vm, overlay, staffListState, focusedIndex, itemFocus,
-                Modifier.tvFocusAnchor(focus, TvPanelEntryFocus(panel)), panelModifier,
-            )
-
-            TvPlayerPanel.CHARACTERS -> TvCharactersPanel(
-                vm, overlay, charactersListState, focusedIndex, itemFocus,
-                Modifier.tvFocusAnchor(focus, TvPanelEntryFocus(panel)), panelModifier,
-            )
-
-            TvPlayerPanel.RECOMMENDATIONS -> TvRecommendationsPanel(
-                vm, overlay, recommendationsListState, focusedIndex, itemFocus,
-                Modifier.tvFocusAnchor(focus, TvPanelEntryFocus(panel)), panelModifier,
-            )
+            // 画廊画在胶囊上方的叠层里 (见 TvPlayerDetailLayers)
+            null, TvPlayerPanel.RECOMMENDATIONS, TvPlayerPanel.STAFF, TvPlayerPanel.CHARACTERS -> Box(Modifier.height(0.dp))
 
             TvPlayerPanel.COMMENTS -> TvCommentsPanel(
                 vm, page, overlay, commentsListState, focusedIndex, itemFocus,
@@ -695,127 +693,105 @@ private fun renderTvPlayerTimeShort(millis: Long): String {
     return "${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}"
 }
 
-// ============================ 相关推荐面板 ============================
+// ============================ 相关推荐画廊 ============================
 
-/** 相关推荐: 卡片形态 (封面 + 标题), 点击离开播放器进入对应条目详情页 (与手机版行为一致). */
-@OptIn(ExperimentalFoundationApi::class)
+/** 点一条相关推荐: 去那个条目的详情页 (面板与画廊同一个动作). 没有条目 id 的不动. */
+private fun openRecommendation(navigator: AniNavigator, recommendation: SubjectRecommendation) {
+    val targetSubjectId = recommendation.subjectId?.toInt() ?: return
+    Analytics.recordEvent(SubjectRecommendationClick) {
+        put("subject_id", targetSubjectId)
+    }
+    Analytics.recordEvent(SubjectEnter) {
+        put("source", "episode_recommendation")
+        put("subject_id", targetSubjectId)
+    }
+    navigator.navigateSubjectDetails(
+        targetSubjectId,
+        SubjectDetailPlaceholder(
+            id = targetSubjectId,
+            name = recommendation.name,
+            nameCN = recommendation.nameCn ?: "",
+            coverUrl = recommendation.imageUrl,
+        ),
+    )
+}
+
+/**
+ * 相关推荐胶囊的面板: 推荐的条目排成作品海报画廊 (同人物页「出演作品」的), 经 LocalViewAllPanelHost 摆进胶囊上方的叠层 (见 TvPlayerDetailLayers).
+ * 番名照 TMDB 标题 / 原名设置, 下面一行写另一个名字; 点海报离开播放器进那个条目的详情页.
+ * 还没拿到时不画; 拿到了一条都没有时贴着胶囊写一句 (Bangumi 的推荐对 2023 年下半年起开播的条目普遍为空, 近几年的番多半是这样).
+ */
 @Composable
-private fun TvRecommendationsPanel(
-    vm: EpisodeViewModel,
-    overlay: TvPlayerOverlayState,
-    listState: LazyListState,
-    focusedIndex: MutableIntState,
-    itemFocus: TvPanelItemFocusRegistry,
-    entryFocusModifier: Modifier,
-    modifier: Modifier = Modifier,
-) {
+internal fun TvPlayerRecommendationsGallery(vm: EpisodeViewModel) {
     val navigator = LocalNavigator.current
-    // null = 还没拿到 (加载中或失败), 面板留空; 空列表 = 拿到了但一条都没有, 显示空状态.
-    // Bangumi 的推荐 (「看过这部的人也看过」) 对 2023 年下半年起开播的条目普遍为空, 近几年的番多半走空状态
+    // null = 还没拿到 (加载中或失败)
     val loaded by vm.episodeDetailsState.recommendations
     // NSFW 设为隐藏时去掉、模糊时封面打码 (见 NsfwPolicy)
     val nsfw = rememberNsfwPolicy()
     val recommendations = nsfw.visible(loaded.orEmpty()) { it.subjectId?.toInt() ?: -1 }
-    TvPanelList(listState, overlay, focusedIndex, modifier) {
-        if (loaded != null && recommendations.isEmpty()) {
-            item("recommendations_empty") {
-                Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                    // 放不下就换行, 不截断
-                    Text(
-                        stringResource(Lang.subject_episode_related_recommendations_empty),
-                        color = Color.White.copy(alpha = 0.7f),
-                        style = MaterialTheme.typography.bodyMedium,
-                        textAlign = TextAlign.Center,
-                    )
-                }
-            }
+    if (recommendations.isEmpty()) {
+        if (loaded != null) TvPanelEmptyCard(stringResource(Lang.subject_episode_related_recommendations_empty))
+        return
+    }
+    val useOriginalTitle = tvUseOriginalTitle()
+    val items = recommendations.map { recommendation ->
+        key(recommendation.uniqueId) {
+            val tmdbTitle = recommendation.subjectId?.toInt()?.let { tvTmdbSubjectTitleFilled(it) }
+            val title = tmdbTitle ?: recommendation.preferredDisplayName(useOriginalTitle)
+            val other = (if (title == recommendation.name) recommendation.nameCn else recommendation.name)
+                ?.takeIf { it.isNotBlank() && it != title }
+            PosterRowItem(recommendation.imageUrl, title, other, subjectId = recommendation.subjectId?.toInt())
         }
-        items(
-            count = recommendations.size,
-            key = { i -> recommendations[i].uniqueId },
-        ) { i ->
-            val recommendation = recommendations[i]
-            TvPanelItem(
-                index = i,
-                focusedIndex = focusedIndex,
-                itemFocus = itemFocus,
-                modifier = if (i == 0) entryFocusModifier else Modifier,
-                onClick = {
-                    val targetSubjectId = recommendation.subjectId?.toInt() ?: return@TvPanelItem
-                    Analytics.recordEvent(SubjectRecommendationClick) {
-                        put("subject_id", targetSubjectId)
-                    }
-                    Analytics.recordEvent(SubjectEnter) {
-                        put("source", "episode_recommendation")
-                        put("subject_id", targetSubjectId)
-                    }
-                    navigator.navigateSubjectDetails(
-                        targetSubjectId,
-                        SubjectDetailPlaceholder(
-                            id = targetSubjectId,
-                            name = recommendation.name,
-                            nameCN = recommendation.nameCn ?: "",
-                            coverUrl = recommendation.imageUrl,
-                        ),
-                    )
-                },
-            ) { focused ->
-                Row(
-                    Modifier.padding(10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    AsyncImage(
-                        recommendation.imageUrl,
-                        contentDescription = null,
-                        Modifier
-                            .size(width = 52.dp, height = 72.dp),
-                        downsampleLongEdgePx = recommendation.subjectId?.toInt()?.let { nsfw.coverDownsample(it) },
-                    )
-                    Column(Modifier.weight(1f)) {
-                        // 单行, 放不下时聚焦跑马灯 (与选集卡片同规矩)
-                        // 非中文界面没开「显示原名」时先用 TMDB 的标题 (见 SubjectInfo.tvTitle)
-                        val tmdbTitle = recommendation.subjectId?.toInt()?.let { tvTmdbSubjectTitleFilled(it) }
-                        val title = tmdbTitle ?: recommendation.preferredDisplayName(tvUseOriginalTitle())
-                        Text(
-                            title,
-                            Modifier.tvAmbientMarquee(enabled = focused, iterations = Int.MAX_VALUE),
-                            style = MaterialTheme.typography.titleSmall,
-                            maxLines = 1,
-                            overflow = if (focused) TextOverflow.Clip else TextOverflow.Ellipsis,
-                        )
-                        // 另一个名字: 番名是原名时是中文名, 否则 (中文名或 TMDB 标题) 是原名
-                        (if (title == recommendation.name) recommendation.nameCn else recommendation.name)
-                            ?.takeIf { it.isNotBlank() && it != title }?.let {
-                            Spacer(Modifier.height(2.dp))
-                            Text(
-                                it,
-                                Modifier.tvAmbientMarquee(enabled = focused, iterations = Int.MAX_VALUE),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.6f),
-                                maxLines = 1,
-                                overflow = if (focused) TextOverflow.Clip else TextOverflow.Ellipsis,
-                            )
-                        }
-                    }
-                }
-            }
+    }
+    PosterGalleryDialog(
+        title = stringResource(Lang.subject_episode_related_recommendations),
+        items = items,
+        // 画廊是胶囊的面板, 不由它自己关 (返回回胶囊, 见 TvPlayerDetailLayersState.back)
+        onDismissRequest = {},
+        onClick = { index -> recommendations.getOrNull(index)?.let { openRecommendation(navigator, it) } },
+        onBind = {},
+    )
+}
+
+/** 胶囊上方的画廊没有内容时贴着胶囊的那一句 (同面板条目的底; 叠层贴着屏幕左缘, 卡与胶囊行左对齐). */
+@Composable
+private fun TvPanelEmptyCard(text: String) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .padding(start = TV_PLAYER_HORIZONTAL_PAD, bottom = TV_PANEL_BOTTOM_GAP),
+        contentAlignment = Alignment.BottomStart,
+    ) {
+        Surface(
+            Modifier.width(TV_PANEL_WIDTH),
+            shape = RoundedCornerShape(12.dp),
+            color = TV_PANEL_ITEM_COLOR,
+            contentColor = Color.White,
+        ) {
+            // 放不下就换行, 不截断
+            Text(
+                text,
+                Modifier.padding(16.dp),
+                color = Color.White.copy(alpha = 0.7f),
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
+            )
         }
     }
 }
 
 // ============================ 本集评论面板 ============================
 
-/** 回复卡的左缩进 (给 thread 竖线留出的槽). */
-private val TV_COMMENT_REPLY_INDENT = 28.dp
+/** 回复卡的左缩进 (给 thread 竖线留出的槽). 评论详情的整楼视图 (TvCommentThreadView) 也用这一套. */
+internal val TV_COMMENT_REPLY_INDENT = 28.dp
 
 /** thread 竖线: 在缩进槽里的 x 位置 / 线宽 / 颜色. */
-private val TV_COMMENT_THREAD_LINE_INSET = 12.dp
-private val TV_COMMENT_THREAD_LINE_WIDTH = 2.dp
-private val TV_COMMENT_THREAD_LINE_COLOR = Color.White.copy(alpha = 0.22f)
+internal val TV_COMMENT_THREAD_LINE_INSET = 12.dp
+internal val TV_COMMENT_THREAD_LINE_WIDTH = 2.dp
+internal val TV_COMMENT_THREAD_LINE_COLOR = Color.White.copy(alpha = 0.22f)
 
 /** 条目间距. 与 [TvPanelList] 的默认值一致 (即改动前的间距), 竖线跨缝延伸也用它. */
-private val TV_COMMENT_ROW_SPACING = 8.dp
+internal val TV_COMMENT_ROW_SPACING = 8.dp
 
 /** 楼与楼的额外分隔留白 (只在上一楼确实展开了回复时给). */
 private val TV_COMMENT_GROUP_GAP = 6.dp
@@ -920,10 +896,10 @@ private fun TvCommentsPanel(
     val timeFormatter = LocalTimeFormatter.current
 
     /**
-     * 打开评论弹窗, 显示第 [index] 行. 回复实际发到该行所属的主楼.
+     * 打开评论详情, 显示第 [index] 行所在的那一楼. 回复实际发到该行所属的主楼.
      *
-     * 楼中回复的弹窗是只读的 (没有输入框和发送按钮): Bangumi 评论在 Ani 内只读, 楼中回复也
-     * 没有对应的写接口 —— 与其给个发不出去的输入框, 不如明说只能看.
+     * 只读时 (Bangumi 评论在 Ani 内只读, 楼中回复也没有对应的写接口) 是一整楼的视图: 主楼在上、回复在下 (见 TvCommentThreadView),
+     * 点的是一条回复就把焦点落在那条回复上. 能回复的 (Ani 源的主楼, 没有楼中回复) 照旧是带输入框的弹窗.
      */
     fun openCommentAt(index: Int) {
         val row = rows.getOrNull(index) ?: return
@@ -941,21 +917,15 @@ private fun TvCommentsPanel(
         if (canReply) {
             vm.commentEditorState.startEdit(context)
         }
+        val replies = if (canReply || thread.source == UICommentSource.ANI) emptyList() else thread.briefReplies
         // TV 走自己那个大弹窗 (见 TvCommentReplyDialog), 不是手机端的底部 sheet
         overlay.startReply(
             TvCommentReplyTarget(
                 context = context,
-                quoted = TvQuotedComment(
-                    authorName = row.comment.displayAuthorName(),
-                    timeText = timeFormatter.formatCommentTime(row.comment.createdAt),
-                    // 弹窗按"文本段 + 图片"逐块渲染 (卡片上的 [图片] 占位在这里变成真图)
-                    blocks = row.comment.content.toCommentBlocks(),
-                    reactions = row.comment.reactions.toTvReactions(),
-                    authorSign = row.comment.author?.sign,
-                    floorText = row.comment.floorText(),
-                    deleted = row.comment.deleted,
-                ),
+                quoted = thread.toTvQuotedComment(timeFormatter),
                 canReply = canReply,
+                replies = replies.map { TvThreadReply(it.toTvQuotedComment(timeFormatter), it.replyTo?.authorName) },
+                focusReply = if (row is TvCommentReplyRow) replies.indexOfFirst { it.stableId == row.comment.stableId } else -1,
             ),
         )
         shownRowIndex = index
@@ -966,9 +936,9 @@ private fun TvCommentsPanel(
     // effect 里不能直接调上面那个 openCommentAt / 读上面那个 rows: 它们是**当次组合**的值,
     // 分页 append 换掉 rows 之后, 长期存活的 effect 捕获到的就是旧列表了
     val openLatest by rememberUpdatedState<(Int) -> Unit> { openCommentAt(it) }
-    val rowCount by rememberUpdatedState(rows.size)
+    val rowsLatest by rememberUpdatedState(rows)
 
-    // 弹窗内左右键: 原地翻到相邻的一条评论, 并让背后的面板跟着滚 (focusedIndex 一改,
+    // 弹窗内左右键: 原地翻到相邻的一楼 (只在主楼之间翻, 回复在整楼视图里), 并让背后的面板跟着滚 (focusedIndex 一改,
     // TvPanelList 就把那一行吸到底缘) —— 关掉弹窗时焦点也就落在最后看的那条上 (改锚见
     // TvPanelItem 的 reanchorFocusRegistry).
     //
@@ -976,10 +946,18 @@ private fun TvCommentsPanel(
     LaunchedEffect(Unit) {
         snapshotFlow { overlay.replyNavRequest }.drop(1).collect { (delta, _) ->
             if (overlay.replyingComment == null) return@collect
+            val rows = rowsLatest
             val from = shownRowIndex
-            val next = from + delta
+            if (from !in rows.indices) return@collect
+            // 当前这一楼的主楼行: 一楼的行是「回复…, 主楼」, 点的是回复时主楼在它后面
+            val currentMain = (from until rows.size).firstOrNull { rows[it] is TvCommentMainRow } ?: return@collect
+            val next = if (delta > 0) {
+                ((currentMain + 1) until rows.size).firstOrNull { rows[it] is TvCommentMainRow }
+            } else {
+                (currentMain - 1 downTo 0).firstOrNull { rows[it] is TvCommentMainRow }
+            }
             // 到端点无动作 (与选集详情弹窗左右键一致)
-            if (from < 0 || next < 0 || next >= rowCount) return@collect
+                ?: return@collect
             openLatest(next)
             focusedIndex.intValue = next
         }
@@ -1111,6 +1089,18 @@ private fun flattenTvCommentRows(comments: List<UIComment?>, threadOrder: List<S
         }
     }
 }
+
+/** 评论详情里显示的这一条 (弹窗按「文本段 + 图片」逐块渲染: 卡片上的 [图片] 占位在这里变成真图). */
+private fun UIComment.toTvQuotedComment(timeFormatter: TimeFormatter): TvQuotedComment = TvQuotedComment(
+    authorName = displayAuthorName(),
+    timeText = timeFormatter.formatCommentTime(createdAt),
+    blocks = content.toCommentBlocks(),
+    reactions = reactions.toTvReactions(),
+    authorSign = author?.sign,
+    floorText = floorText(),
+    deleted = deleted,
+    avatarUrl = author?.avatarUrl,
+)
 
 /** 条目文本. 时间要 [formatDateTime] (@Composable), 所以在组合里算好再给非组合的点击回调用. */
 private class TvCommentText(
@@ -1316,76 +1306,20 @@ internal fun UIRichText.toCommentBlocks(): List<TvCommentBlock> {
     return blocks
 }
 
-// ============================ 角色 / 制作人员面板 ============================
+// ============================ 角色 / 制作人员画廊 ============================
 
 /**
- * 角色面板: 卡片形态 (头像 + 名字 + 角色/CV), 点击弹居中人物预览
- * (需调用方在面板宿主外包 [me.him188.ani.app.ui.subject.person.PeoplePreviewHost]).
- * 数据与详情层/选集条共用 subjectDetailsStateLoader (进屏已预载);
- * 用完整名单 pager (原详情页"查看全部"的数据源) —— 详情页的角色/制作人员区块已移除,
- * 本面板是 TV 上唯一入口, 向上翻页自动加载更多.
+ * 角色 / 制作人员胶囊的面板: 完整名单的「查看全部」画廊 —— **与详情页独立页里那两个区块的弹窗是同一个**
+ * ([CharactersViewAllDialog] / [StaffViewAllDialog]), 经 LocalViewAllPanelHost 摆进胶囊上方的叠层 (见 TvPlayerDetailLayers).
+ * 这两类内容在播放器里没有别的入口 (内嵌详情页是精简版, 没有这两个区块).
+ * 画廊是胶囊的面板, 不由它自己关 (返回回胶囊); 点人物不关画廊, 人叠在上面一层, 退回来还是这张画廊那一格.
+ *
+ * 数据与详情层 / 选集条共用 subjectDetailsStateLoader (进屏已预载); 还没到、或名单是空的时不画.
  */
 @Composable
-private fun TvCharactersPanel(
-    vm: EpisodeViewModel,
-    overlay: TvPlayerOverlayState,
-    listState: LazyListState,
-    focusedIndex: MutableIntState,
-    itemFocus: TvPanelItemFocusRegistry,
-    entryFocusModifier: Modifier,
-    modifier: Modifier = Modifier,
-) {
-    val detailsState = vm.episodeDetailsState
-    // 进屏预载失败过 (或还没轮到) 时这里补一次; 已加载好就什么都不做
-    LaunchedEffect(Unit) { vm.ensureTvSubjectDetails() }
-    val uiState by detailsState.subjectDetailsStateLoader.state
-        .collectAsStateWithLifecycle(SubjectDetailsLoadState.Placeholder(detailsState.subjectId))
-    val details = (uiState as? SubjectDetailsLoadState.Ok)?.value ?: return
-    val characters = details.charactersPager.collectAsLazyPagingItemsWithLifecycle()
-    val onClickCharacter = rememberPeopleClickHandler()
-    TvPanelList(listState, overlay, focusedIndex, modifier) {
-        items(
-            count = characters.itemCount,
-            key = characters.itemKey { it.character.id },
-        ) { i ->
-            val item = characters[i] ?: return@items
-            TvPanelItem(
-                index = i,
-                focusedIndex = focusedIndex,
-                itemFocus = itemFocus,
-                modifier = if (i == 0) entryFocusModifier else Modifier,
-                onClick = { onClickCharacter(PeoplePreviewTarget.Character(item.character.id)) },
-            ) {
-                val cv = item.character.actors.firstOrNull()?.displayName
-                TvPersonPanelItemContent(
-                    avatarUrl = item.character.imageMedium,
-                    name = item.character.displayName,
-                    subtitle = if (cv.isNullOrBlank()) item.role.nameCn else item.role.nameCn + " · " + cv,
-                )
-            }
-        }
-    }
-}
-
-/**
- * 角色 / 制作人员胶囊按下确定弹的「查看全部」大网格 —— **与详情页独立页里那两个区块的弹窗是同一个**
- * ([CharactersViewAllDialog] / [StaffViewAllDialog]).
- *
- * 胶囊聚焦时浮出的窄面板 (420dp 一列) 只够扫一眼, 而这两类内容在播放器里没有别的入口:
- * 内嵌详情页是精简版, 角色/制作人员区块本来就不在那儿. 胶囊的点击原先是"把焦点送进面板",
- * 与直接按上键完全重复, 等于白按 —— 与评论胶囊改成"发表评论"是同一笔账.
- *
- * 数据用完整名单 pager (与两个面板同源, 进屏已预载); 数据还没到时本组合直接不渲染,
- * 那一下点击就什么也不发生 —— 与面板里"还在加载"时看到的是一回事.
- *
- * @param onOpenPreview 点卡片开人物预览之前调用 (关窗 + 记来路, 见调用处).
- */
-@Composable
-internal fun TvPlayerPeopleViewAllDialog(
+internal fun TvPlayerPeopleGallery(
     vm: EpisodeViewModel,
     panel: TvPlayerPanel,
-    onDismissRequest: () -> Unit,
-    onOpenPreview: () -> Unit,
 ) {
     val detailsState = vm.episodeDetailsState
     LaunchedEffect(Unit) { vm.ensureTvSubjectDetails() }
@@ -1394,109 +1328,33 @@ internal fun TvPlayerPeopleViewAllDialog(
     val details = (uiState as? SubjectDetailsLoadState.Ok)?.value ?: return
     val detailsUiState by details.uiState.collectAsStateWithLifecycle()
     when (panel) {
-        TvPlayerPanel.CHARACTERS -> CharactersViewAllDialog(
-            allCharacters = details.charactersPager.collectAsLazyPagingItemsWithLifecycle(),
-            totalCharactersCount = detailsUiState.totalCharactersCount,
-            onDismissRequest = onDismissRequest,
-            onBeforeOpenPreview = onOpenPreview,
-        )
+        TvPlayerPanel.CHARACTERS -> {
+            val characters = details.charactersPager.collectAsLazyPagingItemsWithLifecycle()
+            if (characters.itemCount > 0) {
+                CharactersViewAllDialog(
+                    allCharacters = characters,
+                    totalCharactersCount = detailsUiState.totalCharactersCount,
+                    onDismissRequest = {},
+                    onBeforeOpenPreview = {},
+                )
+            }
+        }
 
-        TvPlayerPanel.STAFF -> StaffViewAllDialog(
-            allStaff = details.staffPager.collectAsLazyPagingItemsWithLifecycle(),
-            totalStaffCount = detailsUiState.totalStaffCount,
-            onDismissRequest = onDismissRequest,
-            onBeforeOpenPreview = onOpenPreview,
-        )
+        TvPlayerPanel.STAFF -> {
+            val staff = details.staffPager.collectAsLazyPagingItemsWithLifecycle()
+            if (staff.itemCount > 0) {
+                StaffViewAllDialog(
+                    allStaff = staff,
+                    totalStaffCount = detailsUiState.totalStaffCount,
+                    onDismissRequest = {},
+                    onBeforeOpenPreview = {},
+                )
+            }
+        }
 
         else -> Unit
     }
 }
-
-/** 制作人员面板: 卡片形态 (头像 + 名字 + 职位), 点击弹居中人物预览; 完整名单 (同角色面板). */
-@Composable
-private fun TvStaffPanel(
-    vm: EpisodeViewModel,
-    overlay: TvPlayerOverlayState,
-    listState: LazyListState,
-    focusedIndex: MutableIntState,
-    itemFocus: TvPanelItemFocusRegistry,
-    entryFocusModifier: Modifier,
-    modifier: Modifier = Modifier,
-) {
-    val detailsState = vm.episodeDetailsState
-    LaunchedEffect(Unit) { vm.ensureTvSubjectDetails() }
-    val uiState by detailsState.subjectDetailsStateLoader.state
-        .collectAsStateWithLifecycle(SubjectDetailsLoadState.Placeholder(detailsState.subjectId))
-    val details = (uiState as? SubjectDetailsLoadState.Ok)?.value ?: return
-    val staff = details.staffPager.collectAsLazyPagingItemsWithLifecycle()
-    val onClickPerson = rememberPeopleClickHandler()
-    TvPanelList(listState, overlay, focusedIndex, modifier) {
-        items(
-            count = staff.itemCount,
-            key = staff.itemKey { it.personInfo.id },
-        ) { i ->
-            val person = staff[i] ?: return@items
-            TvPanelItem(
-                index = i,
-                focusedIndex = focusedIndex,
-                itemFocus = itemFocus,
-                modifier = if (i == 0) entryFocusModifier else Modifier,
-                onClick = { onClickPerson(PeoplePreviewTarget.Person(person.personInfo.id)) },
-            ) {
-                TvPersonPanelItemContent(
-                    avatarUrl = person.personInfo.imageMedium,
-                    name = person.personInfo.displayName,
-                    subtitle = person.position.nameCn ?: "",
-                )
-            }
-        }
-    }
-}
-
-/** 面板人物条目内容: 头像 + 名字 + 副标题 (容器用面板玻璃条目). */
-@Composable
-private fun TvPersonPanelItemContent(
-    avatarUrl: String?,
-    name: String,
-    subtitle: String,
-) {
-    Row(
-        Modifier.padding(10.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        // 头像方圆角, crop 顶部对齐 (人物图多为立绘, 顶部对齐保证露脸)
-        Box(Modifier.size(TV_PERSON_PANEL_AVATAR_SIZE).clip(RoundedCornerShape(8.dp))) {
-            AvatarImage(
-                avatarUrl,
-                Modifier.size(TV_PERSON_PANEL_AVATAR_SIZE),
-                contentScale = ContentScale.Crop,
-                alignment = Alignment.TopCenter,
-            )
-        }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(
-                name,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (subtitle.isNotBlank()) {
-                Text(
-                    subtitle,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = Color.White.copy(alpha = 0.6f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-    }
-}
-
-/** 人物面板条目头像尺寸. */
-private val TV_PERSON_PANEL_AVATAR_SIZE = 48.dp
 
 // ============================ 弹幕发送入口 ============================
 
@@ -1623,11 +1481,16 @@ internal fun TvDanmakuSendEntry(
 
     val interactionSource = remember { MutableInteractionSource() }
     val focused by interactionSource.collectIsFocusedAsState()
+    // 焦点进了弹幕列表面板: 描一圈边 (同其余胶囊). 只在自己翻转时重组
+    val selected by remember(overlay) {
+        derivedStateOf { overlay.activePanel == TvPlayerPanel.DANMAKU_LIST && overlay.focusRegion.isInsidePillContent }
+    }
     TvPillShell(
         // 展开成输入框后即使聚焦也保持深色: 白底上放不下输入光标
         highlighted = focused && !expanded,
         onClick = { if (!expanded) overlay.danmakuInputExpanded = true },
         interactionSource = interactionSource,
+        border = if (selected && !focused && !expanded) BorderStroke(TV_PILL_SELECTED_BORDER, Color.White.copy(alpha = 0.85f)) else null,
         // 输入框那一段不压暗也不呼吸: 那时人在打字, 灰掉的只会是输入框前面那个图标, 呼吸则是在打字的地方一闪一闪
         dimmed = loadFailed && !expanded,
         loading = loading && !expanded,

@@ -15,8 +15,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_CONTENT_PADDING
 import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_TITLE_GAP
@@ -24,16 +27,18 @@ import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeCard
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeMonogram
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeMonogramGallery
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativePosterGallery
-import me.him188.ani.app.ui.subject.details.sections.VIEW_ALL_GALLERY_COLUMNS
-import me.him188.ani.app.ui.subject.details.sections.VIEW_ALL_GALLERY_COLUMN_SPACING
+import me.him188.ani.app.ui.foundation.tv.nativeview.TV_OVER_VIDEO_SUBTITLE_ALPHA
+import me.him188.ani.app.ui.foundation.tv.nativeview.overVideo
 import me.him188.ani.app.ui.subject.details.sections.VIEW_ALL_GALLERY_ROW_SPACING
-import me.him188.ani.app.ui.subject.details.sections.VIEW_ALL_GALLERY_BOTTOM_INSET
-import me.him188.ani.app.ui.subject.details.sections.VIEW_ALL_GALLERY_SIDE_INSET
 import me.him188.ani.app.ui.subject.details.sections.VIEW_ALL_GALLERY_TEXT_GAP
-import me.him188.ani.app.ui.subject.details.sections.VIEW_ALL_GALLERY_TOP_INSET
 import me.him188.ani.app.ui.subject.details.sections.ViewAllGalleries
 import me.him188.ani.app.ui.subject.details.sections.monogramInitials
+import me.him188.ani.app.ui.subject.details.sections.viewAllGalleryBottomInset
 import me.him188.ani.app.ui.subject.details.sections.viewAllGalleryCellWidth
+import me.him188.ani.app.ui.subject.details.sections.viewAllGalleryCircleSize
+import me.him188.ani.app.ui.subject.details.sections.viewAllGalleryColumnSpacing
+import me.him188.ani.app.ui.subject.details.sections.viewAllGallerySideInset
+import me.him188.ani.app.ui.subject.details.sections.viewAllGalleryTopInset
 import me.him188.ani.app.ui.subject.person.PeopleRowItem
 import me.him188.ani.app.ui.subject.person.PosterRowItem
 
@@ -50,6 +55,10 @@ object TvViewAllGalleries : ViewAllGalleries {
         onBind: (index: Int) -> Unit,
         initialFocus: Modifier,
         modifier: Modifier,
+        columns: Int,
+        initialFocusIndex: Int,
+        onExitDown: (() -> Unit)?,
+        compact: Boolean,
     ) {
         val touch = LocalTvTouchInputEnabled.current
         val monograms = remember(items) {
@@ -58,28 +67,46 @@ object TvViewAllGalleries : ViewAllGalleries {
             }
         }
         BoxWithConstraints(modifier.fillMaxWidth()) {
-            val style = rememberTvMonogramStyle(
-                size = viewAllGalleryCellWidth(maxWidth),
-                spacing = VIEW_ALL_GALLERY_COLUMN_SPACING,
+            val circle = viewAllGalleryCircleSize(viewAllGalleryCellWidth(maxWidth, columns, compact), compact)
+            val baseStyle = rememberTvMonogramStyle(
+                size = circle,
+                spacing = if (compact) compactPeopleColumnSpacing(maxWidth, columns, circle) else viewAllGalleryColumnSpacing(compact),
                 viewAllLabel = "",
                 textGap = VIEW_ALL_GALLERY_TEXT_GAP,
                 badges = true,
+                smallText = compact,
             )
+            val density = LocalDensity.current
+            // 紧凑档在播放器胶囊上方, 字直接压在画面上 (见 overVideo)
+            val style = remember(baseStyle, compact, density) {
+                if (!compact) {
+                    baseStyle
+                } else {
+                    baseStyle.copy(
+                        name = baseStyle.name.overVideo(Color.White, density),
+                        subtitle = baseStyle.subtitle.overVideo(Color.White, density),
+                        subtitleIdleAlpha = TV_OVER_VIDEO_SUBTITLE_ALPHA,
+                    )
+                }
+            }
             TvNativeMonogramGallery(
                 items = monograms,
                 style = style.forTouchGallery(touch),
-                columns = VIEW_ALL_GALLERY_COLUMNS,
+                columns = columns,
                 rowSpacing = VIEW_ALL_GALLERY_ROW_SPACING,
-                sideInset = VIEW_ALL_GALLERY_SIDE_INSET,
-                topInset = VIEW_ALL_GALLERY_TOP_INSET,
-                bottomInset = VIEW_ALL_GALLERY_BOTTOM_INSET,
+                sideInset = viewAllGallerySideInset(compact),
+                topInset = viewAllGalleryTopInset(compact),
+                bottomInset = viewAllGalleryBottomInset(compact),
                 touchTaps = touch,
-                edgeBleed = galleryEdgeBleed,
-                topBleed = CENTERED_PANEL_TITLE_GAP,
+                // 紧凑档 (播放器胶囊上方的叠层) 外面没有弹窗的内边距与标题间距可伸, 首末列的投影画在网格自己的让出里
+                edgeBleed = if (compact) 0.dp else galleryEdgeBleed,
+                topBleed = if (compact) 0.dp else CENTERED_PANEL_TITLE_GAP,
                 onClick = onClick,
                 onLongPress = onLongPress,
                 onBind = onBind,
                 modifier = initialFocus,
+                initialIndex = initialFocusIndex,
+                onExitDown = onExitDown,
             )
         }
     }
@@ -91,6 +118,10 @@ object TvViewAllGalleries : ViewAllGalleries {
         onBind: (index: Int) -> Unit,
         initialFocus: Modifier,
         modifier: Modifier,
+        columns: Int,
+        initialFocusIndex: Int,
+        onExitDown: (() -> Unit)?,
+        compact: Boolean,
     ) {
         val touch = LocalTvTouchInputEnabled.current
         val cards = remember(items) {
@@ -99,19 +130,23 @@ object TvViewAllGalleries : ViewAllGalleries {
         BoxWithConstraints(modifier.fillMaxWidth()) {
             TvNativePosterGallery(
                 cards = cards,
-                cardWidth = viewAllGalleryCellWidth(maxWidth),
-                columns = VIEW_ALL_GALLERY_COLUMNS,
-                columnSpacing = VIEW_ALL_GALLERY_COLUMN_SPACING,
+                cardWidth = viewAllGalleryCellWidth(maxWidth, columns, compact),
+                columns = columns,
+                columnSpacing = viewAllGalleryColumnSpacing(compact),
                 rowSpacing = VIEW_ALL_GALLERY_ROW_SPACING,
-                sideInset = VIEW_ALL_GALLERY_SIDE_INSET,
-                topInset = VIEW_ALL_GALLERY_TOP_INSET,
-                bottomInset = VIEW_ALL_GALLERY_BOTTOM_INSET,
+                sideInset = viewAllGallerySideInset(compact),
+                topInset = viewAllGalleryTopInset(compact),
+                bottomInset = viewAllGalleryBottomInset(compact),
                 touchTaps = touch,
-                edgeBleed = galleryEdgeBleed,
-                topBleed = CENTERED_PANEL_TITLE_GAP,
+                // 紧凑档 (播放器胶囊上方的叠层) 外面没有弹窗的内边距与标题间距可伸, 首末列的投影画在网格自己的让出里
+                edgeBleed = if (compact) 0.dp else galleryEdgeBleed,
+                topBleed = if (compact) 0.dp else CENTERED_PANEL_TITLE_GAP,
                 onClick = onClick,
                 onBind = onBind,
                 modifier = initialFocus,
+                initialIndex = initialFocusIndex,
+                onExitDown = onExitDown,
+                overVideo = compact,
             )
         }
     }
@@ -123,3 +158,10 @@ object TvViewAllGalleries : ViewAllGalleries {
  */
 private val galleryEdgeBleed: Dp
     @Composable get() = CENTERED_PANEL_CONTENT_PADDING.calculateStartPadding(LocalLayoutDirection.current)
+
+/**
+ * 紧凑档人物画廊的列间距: 圆比格窄一圈 (见 viewAllGalleryCircleSize), 最左、最右两列的圆贴到网格两边 (与标题、海报画廊的边对齐),
+ * 多出来的空摊进列间距; 格宽 = 圆, 名字按圆宽排.
+ */
+private fun compactPeopleColumnSpacing(width: Dp, columns: Int, circle: Dp): Dp =
+    if (columns <= 1) 0.dp else ((width - viewAllGallerySideInset(compact = true) * 2 - circle * columns) / (columns - 1)).coerceAtLeast(0.dp)
