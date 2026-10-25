@@ -45,6 +45,7 @@ import me.him188.ani.app.domain.media.resolver.IosWebMediaResolver
 import me.him188.ani.app.domain.media.resolver.LocalFileUriMediaResolver
 import me.him188.ani.app.domain.media.resolver.MediaResolver
 import me.him188.ani.app.domain.media.resolver.CloudDriveMediaResolver
+import me.him188.ani.app.domain.media.range.ParallelRangePlayback
 import me.him188.ani.app.domain.mediasource.web.captcha.CaptchaBrowserFactory
 import me.him188.ani.app.domain.mediasource.web.captcha.ImageCaptchaRecognizer
 import me.him188.ani.app.domain.mediasource.web.captcha.WkWebViewCaptchaBrowserFactory
@@ -351,6 +352,7 @@ fun getIosModules(
         AniAVKitMediampPlayerFactory()
     }
     single<HlsPlaybackPreparer> { PlatformHlsPlaybackPreparer(get()) }
+    single { ParallelRangePlayback(get()) }
     single<MediaSaveDirProvider> {
         object : MediaSaveDirProvider {
             override val saveDir: String

@@ -39,6 +39,7 @@ import me.him188.ani.app.domain.media.resolver.TorrentOpenProgress
 import me.him188.ani.app.domain.media.resolver.TorrentOpenProgressReporter
 import me.him188.ani.app.domain.media.resolver.UnsupportedMediaException
 import me.him188.ani.app.domain.media.selector.MediaSelector
+import me.him188.ani.app.domain.media.range.ParallelRangePlayback
 import me.him188.ani.app.domain.mediasource.MediaSourceTags
 import me.him188.ani.app.domain.mediasource.instance.GetMediaSourceInstancesUseCase
 import me.him188.ani.app.domain.player.VideoLoadingState
@@ -79,6 +80,8 @@ class PlayerSession(
 ) {
     val mediaResolver: MediaResolver by koin.inject()
     private val hlsPlaybackPreparer: HlsPlaybackPreparer by koin.inject()
+    // 只有 iOS 注册: 网盘原文件经本机代理多连接取 (见 ParallelRangePlayback)
+    private val parallelRangePlayback: ParallelRangePlayback? by lazy { koin.getOrNull() }
     private val getVideoScaffoldConfigUseCase: GetVideoScaffoldConfigUseCase by koin.inject()
     private val getMediaSourceInstancesUseCase: GetMediaSourceInstancesUseCase by koin.inject()
 
@@ -194,11 +197,11 @@ class PlayerSession(
             } finally {
                 _torrentOpenProgress.value = null
             }
-            val preparedData = prepareHlsPlaybackIfEnabled(
+            val preparedData = (parallelRangePlayback?.prepare(data)?.let { PreparedMediaData(it.data, it.session) } ?: prepareHlsPlaybackIfEnabled(
                 data.forPlatformPlayer(),
                 media,
                 startPositionHintMillis = startPositionMillis.takeIf { it > 0L },
-            ).also {
+            )).also {
                 preparedHlsPlaybackProxySession = it.session
             }.data
 
