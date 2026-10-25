@@ -199,7 +199,8 @@ fun ReviewsSummarySection(
             var focusedCell by remember { mutableIntStateOf(-1) }
             Row(
                 (if (cardHeight == null) Modifier.height(IntrinsicSize.Min) else Modifier)
-                    .tvRowEndKeys(itemCount = { count + 1 }, focusedIndex = { focusedCell }),
+                    // 行尾按右停住: 右边没有该去的地方 (播放器内嵌介绍页里往右找会挑中上面的标签)
+                    .tvRowEndKeys(itemCount = { count + 1 }, focusedIndex = { focusedCell }, exitRight = false),
                 horizontalArrangement = Arrangement.spacedBy(TV_REVIEW_CARD_SPACING),
             ) {
                 repeat(count) { i ->
