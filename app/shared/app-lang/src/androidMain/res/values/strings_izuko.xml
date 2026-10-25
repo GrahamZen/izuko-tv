@@ -318,6 +318,10 @@
     <string name="settings_theme_tv_poster_confirm_details">Open the details page</string>
     <string name="settings_theme_tv_poster_idle_dim">Dim other posters when idle</string>
     <string name="settings_theme_tv_poster_idle_dim_description">On Explore, Collection, Search and the airing schedule, after you rest on a poster for 3 seconds the other posters dim and this one grows a little; any arrow key brings them back. They also stay dimmed while the overview is open.</string>
+    <string name="settings_theme_tv_explore_layout">Explore style</string>
+    <string name="settings_theme_tv_explore_layout_description">Poster wall: focus moves between the cards and the focused poster grows. Fixed focus: the focus frame stays at the start of each row and the cards slide under it; the details of the focused card stay on screen, a single OK opens it (details page or playback, as set in Selecting a poster), and before you sign in the rows keep looping when you press right.</string>
+    <string name="settings_theme_tv_explore_layout_poster_wall">Poster wall</string>
+    <string name="settings_theme_tv_explore_layout_fixed_focus">Fixed focus</string>
     <string name="settings_theme_tv_episodes">Episodes</string>
     <string name="settings_theme_tv_episode_specials">Specials (TV)</string>
     <string name="settings_theme_tv_episode_specials_description">Where SP, OP, ED and other non-main episodes go in the episode list on the details page and in the player. Previous / next episode always stays within the same type</string>

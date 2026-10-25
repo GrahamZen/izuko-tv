@@ -26,6 +26,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.github.panpf.sketch.Sketch
 import kotlinx.coroutines.CoroutineScope
 import me.him188.ani.app.ui.foundation.focus.TvScrollSpring
+import me.him188.ani.app.ui.foundation.tv.TV_CARD_PAST_DIM_ALPHA
 import me.him188.ani.app.ui.foundation.tv.TV_SCROLL_STILL_FRAMES
 import me.him188.ani.app.ui.foundation.tv.TV_SCROLL_STILL_PX
 import me.him188.ani.app.ui.foundation.tv.TvBackdropTreatment
@@ -245,6 +246,43 @@ open class TvNativeRowWallView private constructor(
             if (!value && timeline.active) setHeroActive(false)
         }
 
+    /**
+     * 钉死锚点版式 (探索页「固定焦点」风格, 见 TvExploreLayout): 横滑行钉死锚点 (聚焦卡恒在行首停靠线上, 见 TvNativeStripView 的 anchored),
+     * 焦点一落到卡上就进 hero 态 (确定直接进详情页), 停靠线上一个固定的聚焦框 ([anchorRingStyle]), hero 态里聚焦行下面的行压暗、滑上 hero 线时
+     * 提亮, 卡片下不显示番名, 不做聚光压暗. 在有行之前设, 之后不改 (宿主改了就整块重建). 循环行见 [TvNativeExploreItem.Row.loopPeriod].
+     */
+    var fixedAnchor: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            list.fixedAnchor = value
+            if (value && anchorRing.parent == null) addView(anchorRing)
+            applyItemFades()
+        }
+
+    /** 钉死锚点版式的固定聚焦框 (只在 [fixedAnchor] 时挂上): 停在 hero 线上聚焦行的行首停靠线处, 焦点在卡片区时显示. */
+    private val anchorRing = TvNativeAnchorRingView(context).apply { alpha = 0f }
+
+    /** 测试用: 固定聚焦框. */
+    internal val anchorRingView: View get() = anchorRing
+
+    /** 固定聚焦框的样子 (见 [rememberTvNativeAnchorRingStyle]). */
+    var anchorRingStyle: TvNativeAnchorRingStyle?
+        get() = anchorRing.ringStyle
+        set(value) {
+            anchorRing.ringStyle = value
+        }
+
+    /** 固定聚焦框的显示程度 (0..1), 由 [updateAnchorRing] 过渡; 点开时再乘各行的淡没 (见 [applyAnchorRingAlpha]). */
+    private var anchorRingShown = 0f
+    private var anchorRingAnimator: ValueAnimator? = null
+
+    /**
+     * hero 态里按确定打开时先对焦整屏背景 (铺着模糊背景时: 卡片淡没、背景变清晰, 到位再交给页面, 见 TvNativeWallFocus); false = 直接交给页面
+     * (钉死锚点版式选了「直接播放」: 不进详情页, 用不着这段进详情页的过渡).
+     */
+    var openFocusesWall: Boolean = true
+
     /** hero 态里组标题跟着上面几行淡没 (聚焦行的也藏, 同网格页的 hero 态只剩一排卡); false = 聚焦行的组标题留着 (探索页). */
     var hideHeadersInHero: Boolean = false
         set(value) {
@@ -459,7 +497,7 @@ open class TvNativeRowWallView private constructor(
         }
         addView(list)
         list.cardListener = { rowKey -> RowListener(rowKey) }
-        list.onBindCard = { rowKey, index -> rowListener?.onBindCard(rowKey, index) }
+        list.onBindCard = { rowKey, index -> rowListener?.onBindCard(rowKey, pageIndex(rowKey, index)) }
         list.onItemsMoved = { onListMoved() }
         list.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
@@ -544,7 +582,9 @@ open class TvNativeRowWallView private constructor(
         if (now == null || now == subjectId) return
         val index = focusedCardIndex
         post {
-            if (cardAreaHasFocus && focusedRowKey == rowKey && focusedCardIndex == index) rowListener?.onCardFocused(rowKey, index, focusedColumn)
+            if (cardAreaHasFocus && focusedRowKey == rowKey && focusedCardIndex == index) {
+                rowListener?.onCardFocused(rowKey, pageIndex(rowKey, index), focusedColumn)
+            }
         }
     }
 
@@ -575,7 +615,8 @@ open class TvNativeRowWallView private constructor(
         list.rowLeftIndex.putAll(rowLeftIndex)
         this.rowFocusedIndex.putAll(rowFocusedIndex)
         this.focusedRowKey = focusedRowKey
-        this.focusedCardIndex = focusedCardIndex
+        // 页面给的是条目下标 (循环行折回过的): 这一行停的那张是本视图自己报的位置, 有就用它
+        this.focusedCardIndex = focusedRowKey?.let { rowFocusedIndex[it] } ?: focusedCardIndex
         // 返回本页 (页面重建, 如从播放器回来) 时焦点会回这一行上次停的那张 (见页面的进页恢复): 从排出来的第一帧起就按住它的聚焦态.
         // 等落点请求送到再按住就晚了 —— 那时它多半已经按未聚焦画过一帧, 焦点到了再放大一遍
         if (holdLook && focusedRowKey != null) {
@@ -584,7 +625,7 @@ open class TvNativeRowWallView private constructor(
         // 宾客模式下 hero 态是宿主的: 按它此刻的
         if (heroActive && guest == null) {
             timeline.setActive(true, animated = false)
-            TvNativeFocusCues.setSpotlight(this, on = true, animated = false)
+            if (!fixedAnchor) TvNativeFocusCues.setSpotlight(this, on = true, animated = false)
         }
         // 列表停位等数据到了再定 (空列表定不了位)
         restoreHeroStop = if (guest != null) timeline.active else heroActive
@@ -731,11 +772,12 @@ open class TvNativeRowWallView private constructor(
         farJumpAlongRow = false
         pendingInstant = false
         val item = list.indexOfKey(rowKey)
+        val rowIndex = rowIndexOf(rowKey, index)
         pendingRow = rowKey
-        pendingIndex = index
+        pendingIndex = rowIndex
         pendingColumn = -1
         pendingSmooth = false
-        if (!far && !cardAreaHasFocus) holdLandingLook(rowKey, index)
+        if (!far && !cardAreaHasFocus) holdLandingLook(rowKey, rowIndex)
         if (item < 0 || !isLaidOut) return false
         if (far && !targetLaidOut(rowKey, item)) {
             farJumpRow = rowKey
@@ -874,7 +916,7 @@ open class TvNativeRowWallView private constructor(
         setFocusEffectSuppressed(false)
         if (item < 0 || target < 0) return true
         val columns = metrics.columns.coerceAtLeast(1)
-        list.rowLeftIndex[rowKey] = tvStripLeftIndex(current, target, count, columns)
+        list.rowLeftIndex[rowKey] = if (fixedAnchor) target else tvStripLeftIndex(current, target, count, columns)
         rowFocusedIndex[rowKey] = target
         list.jumpTo(stopFor(item))
         shiftToStop(item, pace = null)
@@ -1024,7 +1066,7 @@ open class TvNativeRowWallView private constructor(
             return
         }
         timeline.setActive(active, animated = true)
-        TvNativeFocusCues.setSpotlight(this, active, animated = true)
+        if (!fixedAnchor) TvNativeFocusCues.setSpotlight(this, active, animated = true)
         rowListener?.onHeroActiveChanged(active)
         // 焦点没换, 只是进出 hero 态: 停位换成 hero 线 / 视口正中, 走 Far
         updateStop(heroToggled = true)
@@ -1181,7 +1223,7 @@ open class TvNativeRowWallView private constructor(
             if (now - lastHorizontalRepeat < TV_NATIVE_HORIZONTAL_REPEAT_MILLIS) return true
             lastHorizontalRepeat = now
         }
-        navigateHorizontal(rowKey, if (code == KeyEvent.KEYCODE_DPAD_LEFT) -1 else 1)
+        navigateHorizontal(rowKey, if (code == KeyEvent.KEYCODE_DPAD_LEFT) -1 else 1, repeat = event.repeatCount > 0)
         return true
     }
 
@@ -1193,7 +1235,7 @@ open class TvNativeRowWallView private constructor(
      * FocusFinder 在整个宿主里按布局位置挑目标 —— 不计平移 (随列表上移出屏的顶部区域照样按原位参与), 行首停靠线左边露一截的那张
      * 常被别处比下去. 行首再按左出页面 (侧边栏; 按住的连发也出去, 同搜索页的网格), 焦点真落到行首那张之后才出; 行尾按右交给页面.
      */
-    private fun navigateHorizontal(rowKey: String, direction: Int) {
+    private fun navigateHorizontal(rowKey: String, direction: Int, repeat: Boolean) {
         // 连按时上一下还没落地 (目标卡还没排出来): 从它接着算
         val pending = pendingRow?.takeIf { pendingIndex >= 0 }
         val fromKey = pending ?: rowKey
@@ -1201,9 +1243,12 @@ open class TvNativeRowWallView private constructor(
         val item = list.indexOfKey(fromKey)
         val row = (if (item >= 0) list.rowAt(item) else null) ?: return
         val target = from + direction
-        if (target < 0) {
-            // 上一下还没落地 (焦点还在往行首赶): 这一下不出页面
-            if (pending == null) rowListener?.onExitLeft()
+        // 循环行每一圈的第一张同行首: 按左出页面 (不往回接上一圈的最后一张)
+        val period = loopPeriodOf(fromKey)
+        if (target < 0 || direction < 0 && period > 0 && from % period == 0) {
+            // 上一下还没落地 (焦点还在往行首赶): 这一下不出页面. 钉死锚点时按住的连发还要等这一行真滑到行首: 滚动落后焦点两张多,
+            // 焦点到了第一张时画面还在往回滑, 这一发出去看着像还没到头就闪到了侧边栏
+            if (pending == null && !(fixedAnchor && repeat && !row.isDocked(from))) rowListener?.onExitLeft()
             return
         }
         if (target >= row.cards.itemCount) {
@@ -1331,14 +1376,14 @@ open class TvNativeRowWallView private constructor(
                 // 进详情页: 焦点交出去之后这张卡仍画成聚焦态, 返回后焦点交还前也不缩 (见 holdLandingLook)
                 list.heldFocus = rowKey to index
                 // hero 态的模糊背景: 先对焦 (背景变清晰、卡片淡没) 再进, 见 TvNativeWallFocus
-                if (openWithWallFocus(rowKey, index)) return
-                rowListener?.onCardClick(rowKey, index)
+                if (openFocusesWall && openWithWallFocus(rowKey, index)) return
+                rowListener?.onCardClick(rowKey, pageIndex(rowKey, index))
             }
         }
 
         override fun onLongPress(index: Int, anchor: Rect) {
             if (isMoreCard(rowKey, index)) return
-            rowListener?.onCardLongPress(rowKey, index, anchor)
+            rowListener?.onCardLongPress(rowKey, pageIndex(rowKey, index), anchor)
         }
 
         // 卡片墙上点一下 = 聚焦并进 hero 态; hero 态里点另一张只换焦点 (确认就进详情页了), 「更多」卡也只聚焦
@@ -1367,7 +1412,25 @@ open class TvNativeRowWallView private constructor(
 
     /** 点开对焦到位: 交给页面进详情页. 子类另有自己的点开 (探索页轮播的「立即观看」) 时覆盖. */
     protected open fun onWallOpenedAt(rowKey: String, index: Int) {
-        rowListener?.onCardClick(rowKey, index)
+        rowListener?.onCardClick(rowKey, pageIndex(rowKey, index))
+    }
+
+    /** [rowKey] 那一行的循环周期 (见 [TvNativeExploreItem.Row.loopPeriod]); 不循环 0. */
+    private fun loopPeriodOf(rowKey: String): Int =
+        (list.items.getOrNull(list.indexOfKey(rowKey)) as? TvNativeExploreItem.Row)?.loopPeriod ?: 0
+
+    /** 行里第 [index] 张报给页面的下标: 循环行按周期折回条目下标, 否则原样. */
+    private fun pageIndex(rowKey: String, index: Int): Int {
+        val period = loopPeriodOf(rowKey)
+        return if (period > 0 && index >= 0) index % period else index
+    }
+
+    /** 页面给的条目下标 [index] (-1 = 这一行上次停的那张) 换成行里的位置: 循环行取这一行停的那一圈里的那张, 否则原样. */
+    private fun rowIndexOf(rowKey: String, index: Int): Int {
+        val period = loopPeriodOf(rowKey)
+        if (period <= 0 || index < 0) return index
+        val at = rowFocusedIndex[rowKey] ?: list.rowLeftIndex[rowKey] ?: 0
+        return at / period * period + index % period
     }
 
     /** 点开途中按了返回: 不进了, 倒放. */
@@ -1389,11 +1452,11 @@ open class TvNativeRowWallView private constructor(
         list.heldFocus = null
         val item = list.indexOfKey(rowKey)
         val row = if (item >= 0) list.rowAt(item) else null
-        // 按需挪之后的行首: 走到行尾留白里那张才挪, 挪到它刚好完整露出
+        // 按需挪之后的行首: 走到行尾留白里那张才挪, 挪到它刚好完整露出; 钉死锚点时行首就是这一张
         val columns = metrics.columns.coerceAtLeast(1)
         val current = list.rowLeftIndex[rowKey] ?: row?.leftIndex() ?: 0
         val count = (list.items.getOrNull(item) as? TvNativeExploreItem.Row)?.cards?.size ?: (index + 1)
-        val left = tvStripLeftIndex(current, index, count, columns)
+        val left = if (fixedAnchor) index else tvStripLeftIndex(current, index, count, columns)
         list.rowLeftIndex[rowKey] = left
         rowFocusedIndex[rowKey] = index
         focusedRowKey = rowKey
@@ -1402,14 +1465,19 @@ open class TvNativeRowWallView private constructor(
         if (pendingRow == rowKey || farJumpRow == null) pendingRow = null
         pendingInstant = false
         setCardAreaFocus(true)
-        rowListener?.onCardFocused(rowKey, index, focusedColumn)
+        rowListener?.onCardFocused(rowKey, pageIndex(rowKey, index), focusedColumn)
         if (clickOnLandingRow != null) {
             // 远跳落地: 途中按的确认点在目标上 (走卡自己的点击, 同按一下确认; 放到这次焦点回调之后)
             val card = if (clickOnLandingRow == rowKey) row?.findViewHolderForAdapterPosition(index)?.itemView else null
             clickOnLandingRow = null
             card?.let { post { if (it.isFocused) it.performClick() } }
         }
-        updateStop(heroToggled = false)
+        if (fixedAnchor && heroEnabled && !timeline.active && guest == null) {
+            // 钉死锚点: 焦点落到卡上就进 hero 态 (按 hero 线滚过去, 见 setHeroActive)
+            setHeroActive(true)
+        } else {
+            updateStop(heroToggled = false)
+        }
         applyFrame()
     }
 
@@ -1417,7 +1485,45 @@ open class TvNativeRowWallView private constructor(
         if (cardAreaHasFocus == has) return
         cardAreaHasFocus = has
         applyHeaderEmphasis()
+        updateAnchorRing()
         rowListener?.onCardAreaFocusChanged(has)
+    }
+
+    /** 固定聚焦框跟着焦点在不在卡片区显隐 (钉死锚点版式; 按卡片聚焦的节奏, 流畅档当场到位). */
+    private fun updateAnchorRing() {
+        val target = if (fixedAnchor && cardAreaHasFocus) 1f else 0f
+        if (anchorRingTarget == target) return
+        anchorRingTarget = target
+        anchorRingAnimator?.cancel()
+        anchorRingAnimator = null
+        if (!transitions) {
+            anchorRingShown = target
+            applyAnchorRingAlpha()
+            return
+        }
+        anchorRingAnimator = ValueAnimator.ofFloat(anchorRingShown, target).apply {
+            duration = style.focusMillis
+            interpolator = TV_NATIVE_FAST_OUT_SLOW_IN
+            addUpdateListener {
+                anchorRingShown = it.animatedValue as Float
+                applyAnchorRingAlpha()
+            }
+            start()
+        }
+    }
+
+    /** 固定聚焦框要过渡到的显示程度. */
+    private var anchorRingTarget = 0f
+
+    /**
+     * 固定聚焦框的透明度 (显示程度乘点开时各行的淡没) 与纵向位置: 摆在 hero 线上, 聚焦行滚不到 hero 线 (开头几行, 见 heroShortfall) 时跟着它停在上面
+     * 差的那一截, 再加列表此刻的整片平移.
+     */
+    private fun applyAnchorRingAlpha() {
+        anchorRing.alpha = anchorRingShown * (1f - stage.openFade)
+        val item = focusedRowKey?.let { list.indexOfKey(it) } ?: -1
+        val shortfall = if (item >= 0) metrics.heroShortfall(list.items, item) else 0
+        anchorRing.translationY = list.translationY - shortfall
     }
 
     /**
@@ -1618,14 +1724,30 @@ open class TvNativeRowWallView private constructor(
                 ) * (1f - openFade)
             when (child) {
                 is TvNativeRowView -> {
-                    child.rowAlpha = a
-                    child.cards.setTitleVisibility(child, 1f - p)
+                    child.rowAlpha = a * belowLineDim(child, p)
+                    // 钉死锚点不显示番名 (标题在 hero 里)
+                    child.cards.setTitleVisibility(child, if (fixedAnchor) 0f else 1f - p)
                 }
 
                 is TvNativeExploreHeaderView -> child.fade = if (hideHeadersInHero) a * (1f - p) else a
                 else -> child.alpha = a
             }
         }
+        // 固定聚焦框跟着点开淡没、跟着聚焦行的停位 (子类的逐帧也走这里)
+        if (fixedAnchor) applyAnchorRingAlpha()
+    }
+
+    /**
+     * 钉死锚点版式 hero 态里 hero 线下面的行压暗 (同行首左边滑过停靠线的卡, 压到 [TV_CARD_PAST_DIM_ALPHA]): 按这一行离 hero 线的距离, 往上滑到
+     * hero 线的途中逐渐提亮, 越过 hero 线的照常越线淡没. 跟着 hero 态的进度 [p] 进出; 别的版式恒 1.
+     */
+    private fun belowLineDim(row: View, p: Float): Float {
+        if (!fixedAnchor || p <= 0f) return 1f
+        val m = metrics
+        val below = row.top - (list.paddingTop + m.headerPx + m.heroHeaderTopPx)
+        if (below <= 0) return 1f
+        val t = (below.toFloat() / m.rowPx.coerceAtLeast(1)).coerceIn(0f, 1f)
+        return 1f - t * (1f - TV_CARD_PAST_DIM_ALPHA) * p
     }
 
     /** 进出 hero 态途中不按位置淡的起点: 聚焦行的组标题 (紧挨在上面时), 否则聚焦行本身; 焦点在顶部区域上时 0. */
@@ -1688,6 +1810,7 @@ open class TvNativeRowWallView private constructor(
             heroBox.measure(exactly(m.pageWidthPx - m.heroStartPx - m.heroEndPadPx), exactly(m.heroBlockExpandedPx))
         }
         list.measure(exactly(width), exactly(height - m.listTopPx + m.listTopBleedPx))
+        if (anchorRing.parent != null) anchorRing.measure(exactly(style.cardWidthPx), exactly(style.cardHeightPx))
         measureTopArea()
         setMeasuredDimension(width, height)
     }
@@ -1709,6 +1832,11 @@ open class TvNativeRowWallView private constructor(
         }
         val ly = m.listTopPx - m.listTopBleedPx
         list.layout(0, ly, list.measuredWidth, ly + list.measuredHeight)
+        if (anchorRing.parent != null) {
+            // hero 态聚焦行的卡片顶 = 列表内容顶 + 组标题 + hero 线 (见 heroScroll), 卡格左缘 = 行首停靠线
+            val ry = m.listTopPx + m.headerPx + m.heroHeaderTopPx
+            anchorRing.layout(m.rowStartPx, ry, m.rowStartPx + anchorRing.measuredWidth, ry + anchorRing.measuredHeight)
+        }
         layoutTopArea()
         applyFrame()
         // 建出来之前就发过来的落点
