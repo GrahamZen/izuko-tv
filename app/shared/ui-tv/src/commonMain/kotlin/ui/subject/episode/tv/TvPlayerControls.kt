@@ -18,10 +18,13 @@ import androidx.compose.foundation.border
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.util.lerp
+import kotlinx.coroutines.launch
 import me.him188.ani.app.ui.diagnostics.TraceSection
 import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.tv.TvZoomedImageOverlay
 import me.him188.ani.app.ui.foundation.tv.tvUseOriginalTitle
+import me.him188.ani.app.ui.foundation.widgets.LocalToaster
+import me.him188.ani.app.ui.foundation.widgets.showLoadError
 import me.him188.ani.app.ui.lang.playback_history_episode_label
 import me.him188.ani.app.ui.lang.subject_episode_details
 import me.him188.ani.app.ui.lang.video_player_select_episode
@@ -178,6 +181,8 @@ import me.him188.ani.app.domain.player.tracks.AudioTrackSupport
 import me.him188.ani.app.ui.mediaselect.summary.MediaSelectorSummary
 import me.him188.ani.app.ui.subject.collection.components.EditCollectionTypeDropDown
 import me.him188.ani.app.ui.subject.collection.components.EditableSubjectCollectionTypeDialogsHost
+import me.him188.ani.app.ui.subject.details.layout.TvRewatchMenuItem
+import me.him188.ani.app.ui.subject.details.layout.rememberTvSubjectRewatch
 import me.him188.ani.app.ui.subject.person.LocalPeoplePreviewHandler
 import me.him188.ani.app.ui.subject.person.PeoplePreviewTarget
 import me.him188.ani.app.ui.subject.episode.EpisodePageState
@@ -1791,8 +1796,7 @@ internal val TV_BOTTOM_ROW_DIVIDER_HEIGHT = 16.dp
 internal const val TV_BOTTOM_ROW_DIVIDER_ALPHA = 0.35f
 
 /**
- * 收藏按钮: 图标反映当前收藏状态 (实心/空心), 点击弹收藏状态下拉
- * ([EditCollectionTypeDropDown] 的 state 重载自带开合与错误 toast);
+ * 收藏按钮: 图标反映当前收藏状态 (实心/空心), 点击弹收藏状态下拉 (末尾的「重温」见 [rememberTvSubjectRewatch]);
  * 设为"看过"且有未看剧集时的确认对话框由 [EditableSubjectCollectionTypeDialogsHost] 承担.
  */
 @Composable
@@ -1826,10 +1830,19 @@ private fun TvPlayerCollectionButton(
             contentDescription = stringResource(Lang.video_player_tv_collection),
             onClick = { dropdownExpanded = true },
         )
+        val rewatch = rememberTvSubjectRewatch(vm.subjectId)
+        val scope = rememberCoroutineScope()
+        val toaster = LocalToaster.current
         EditCollectionTypeDropDown(
-            state,
+            currentType = presentation.selfCollectionType.takeUnless { rewatch.rewatching },
             expanded = dropdownExpanded,
             onDismissRequest = { dropdownExpanded = false },
+            onClick = {
+                scope.launch { state.setSelfCollectionType(it.type)?.let(toaster::showLoadError) }
+            },
+            trailingItems = {
+                TvRewatchMenuItem(rewatch, presentation.selfCollectionType, onDismissRequest = { dropdownExpanded = false })
+            },
         )
     }
 }

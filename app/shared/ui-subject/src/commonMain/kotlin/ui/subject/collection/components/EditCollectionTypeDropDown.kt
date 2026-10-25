@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.subject.collection.components
 
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -82,6 +83,8 @@ fun EditCollectionTypeDropDown(
     showDelete: Boolean = UserProfiles.current.isLocal,
     /** 焦点导航上菜单摆在哪 (见 [AniDropdownMenu] 的同名参数); null = 贴着锚点往下. */
     positionProvider: PopupPositionProvider? = null,
+    /** 收藏类型之后另加的菜单项 (TV 详情页的「重温」). */
+    trailingItems: @Composable ColumnScope.() -> Unit = {},
 ) {
     var showConfirmDeleteDialog by rememberSaveable { mutableStateOf(false) }
     AniDropdownMenu(
@@ -115,6 +118,7 @@ fun EditCollectionTypeDropDown(
                 },
             )
         }
+        trailingItems()
 
         if (showConfirmDeleteDialog) {
             AniAlertDialog(
