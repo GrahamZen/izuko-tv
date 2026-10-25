@@ -38,6 +38,7 @@ import me.him188.ani.app.data.persistent.database.dao.SearchHistoryEntity
 import me.him188.ani.app.data.persistent.database.dao.SearchTagDao
 import me.him188.ani.app.data.persistent.database.dao.SearchTagEntity
 import me.him188.ani.app.data.persistent.database.dao.SubjectCollectionDao
+import me.him188.ani.app.data.persistent.database.dao.SubjectRewatchDao
 import me.him188.ani.app.data.persistent.database.dao.SubjectRelations
 import me.him188.ani.app.data.persistent.database.dao.SubjectCollectionEntity
 import me.him188.ani.app.data.persistent.database.dao.SubjectRelationsDao
@@ -112,6 +113,7 @@ abstract class AniDatabase : RoomDatabase() {
     abstract fun searchTag(): SearchTagDao
     abstract fun subjectCollection(): SubjectCollectionDao
     abstract fun episodeCollection(): EpisodeCollectionDao
+    abstract fun subjectRewatch(): SubjectRewatchDao
 
     /**
      * @since 4.0.0-alpha04

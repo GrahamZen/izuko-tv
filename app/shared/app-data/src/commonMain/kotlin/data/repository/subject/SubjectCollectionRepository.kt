@@ -157,6 +157,12 @@ abstract class SubjectCollectionRepository(
     /** 这个条目的分集在本进程里取过没有, 见 [EpisodesFetchState]. fake 默认按「取完了, 没有分集」. */
     open fun episodesFetchStateFlow(subjectId: Int): Flow<EpisodesFetchState> = flowOf(EpisodesFetchState.Fetched(0))
 
+    /** 这一部是不是正在重温, 见 [SubjectRewatch]. 改收藏状态 ([setSubjectCollectionTypeOrDelete]) 即结束重温. */
+    open fun rewatchingFlow(subjectId: Int): Flow<Boolean> = flowOf(false)
+
+    /** 开始重温, 见 [SubjectRewatch.start]. */
+    open suspend fun startRewatch(subjectId: Int): RewatchStartResult = RewatchStartResult.NOT_DONE
+
     abstract fun subjectCollectionsPager(
         query: CollectionsFilterQuery = CollectionsFilterQuery.Empty,
         /**
@@ -259,6 +265,8 @@ class SubjectCollectionRepositoryImpl(
      * 网络只拿来取条目与分集的公开信息. 一个进程只属于一个用户, 构造时定下.
      */
     private val localProfile: Boolean = false,
+    /** 重温 (见 [SubjectRewatch]): 重温中的条目按本地档那样落库. null = 没有这个功能 (测试). */
+    private val rewatch: SubjectRewatch? = null,
 ) : SubjectCollectionRepository(defaultDispatcher) {
     override fun subjectCollectionCountsFlow(): Flow<SubjectCollectionCounts?> {
         if (localProfile) return localCollectionCountsFlow()
@@ -305,6 +313,11 @@ class SubjectCollectionRepositoryImpl(
 
     override fun episodesFetchStateFlow(subjectId: Int): Flow<EpisodesFetchState> = episodesFetchTracker.stateFlow(subjectId)
 
+    override fun rewatchingFlow(subjectId: Int): Flow<Boolean> = rewatch?.rewatchingFlow(subjectId) ?: flowOf(false)
+
+    override suspend fun startRewatch(subjectId: Int): RewatchStartResult =
+        withContext(defaultDispatcher) { rewatch?.start(subjectId) ?: RewatchStartResult.NOT_DONE }
+
     private val recurrenceFiller = SubjectRecurrenceFiller(animeScheduleRepository, subjectCollectionDao, scope, getCurrentDate)
 
     /**
@@ -319,7 +332,10 @@ class SubjectCollectionRepositoryImpl(
 
     init {
         scope.launch {
-            sessionManager.eventFlow.filterIsInstance<SessionEvent.NewLogin>().collect { loginGeneration.incrementAndGet() }
+            sessionManager.eventFlow.filterIsInstance<SessionEvent.NewLogin>().collect {
+                loginGeneration.incrementAndGet()
+                rewatch?.dropAll()
+            }
         }
     }
 
@@ -456,8 +472,8 @@ class SubjectCollectionRepositoryImpl(
         val staleByLogin = loginGeneration.value != generation
         if (staleByLogin) logger.info { "bgm-direct: subject $subjectId was fetched across a new login, saved as stale" }
         val savedSubject = if (staleByLogin) subjectEntity.copy(lastFetched = 0) else subjectEntity
-        if (localProfile) {
-            // 本地档取到的是匿名结果: 收藏、评分与看过保留库里的, 同样单个事务 (见该方法 KDoc)
+        if (localProfile || rewatch?.keepsSelfState(subjectId, savedSubject.collectionType) == true) {
+            // 本地档取到的是匿名结果, 重温中的看过只在本机: 收藏、评分与看过保留库里的, 同样单个事务 (见该方法 KDoc)
             subjectCollectionDao.upsertSubjectKeepingSelfState(savedSubject, episodeEntities)
             logger.info { "bgm-direct: fetched subject $subjectId for local profile (${episodeEntities?.size ?: "no"} episodes)" }
         } else if (episodeEntities != null) {
@@ -501,7 +517,7 @@ class SubjectCollectionRepositoryImpl(
         if (episodes != null) {
             // 取数期间有新登录: 结果照写, 取数时刻记 0, 见 [loginGeneration]
             val saved = if (loginGeneration.value != generation) episodes.map { it.copy(lastFetched = 0) } else episodes
-            if (localProfile) {
+            if (localProfile || rewatch?.isActive(subjectId) == true) {
                 subjectCollectionDao.upsertSubjectKeepingSelfState(subject, saved)
             } else {
                 subjectCollectionDao.upsertSubjectWithEpisodes(subject, saved)
@@ -688,9 +704,11 @@ class SubjectCollectionRepositoryImpl(
                 relations = existing[it.id]?.relations ?: SubjectRelations.Empty,
             )
         }
-        subjectCollectionDao.upsertSubjectsWithEpisodes(subjects = subjects, episodes = emptyList())
+        // 重温中的那几部保留本地的收藏类型 (见 SubjectRewatch); 补分集仍按 Bangumi 上的类型挑, 重温的番在那边是看过, 不会被补
+        val saved = rewatch?.keepSelfStates(subjects, existing) ?: subjects
+        subjectCollectionDao.upsertSubjectsWithEpisodes(subjects = saved, episodes = emptyList())
         fetchEpisodesForInProgressSubjects(subjects, lastFetched, existing, items.associate { it.id to it.interest?.epStatus })
-        val changed = subjects.any { new ->
+        val changed = saved.any { new ->
             val old = existing[new.subjectId]
             old == null || old.collectionType != new.collectionType || old.lastUpdated != new.lastUpdated
         }
@@ -762,7 +780,8 @@ class SubjectCollectionRepositoryImpl(
         // 拉满了就只信"更新时间不早于窗口最末一条"的那些 —— 更早的可能只是排在窗口之外.
         val windowFloor = if (fetched.size < limit) Long.MIN_VALUE else fetched.minOf { it.lastUpdated }
         val stale = subjectCollectionDao.filterMostRecentUpdated(listOf(type), limit).first()
-            .filter { it.subjectId !in fetchedIds && it.lastUpdated >= windowFloor }
+            // 重温中的番本地是在看、Bangumi 上是看过, 不是在别处改的 (见 SubjectRewatch)
+            .filter { it.subjectId !in fetchedIds && it.lastUpdated >= windowFloor && rewatch?.isActive(it.subjectId) != true }
         if (stale.isEmpty()) return
 
         logger.info { "Local collections still marked $type but missing from server: ${stale.map { it.subjectId }}" }
@@ -901,7 +920,10 @@ class SubjectCollectionRepositoryImpl(
                 fullSyncPageSize = FULL_SYNC_PAGE_SIZE,
                 fetchAndSave = { offset, pageSize -> fetchAndSaveSubjectCollectionsWithEpisodes(type, pageSize, offset) },
                 reconcileFirstPage = { page -> if (type != null) reconcileCollectionsLeftType(type, firstPageSize, page.subjects) },
-                localIds = { subjectCollectionDao.subjectIdsByCollectionType(types).first() },
+                localIds = {
+                    subjectCollectionDao.subjectIdsByCollectionType(types).first()
+                        .let { ids -> rewatch?.idsAsOnBangumi(types, ids) ?: ids }
+                },
                 removeLeftType = { subjectIds ->
                     logger.info { "Local collections marked $types but missing from server after full sync: $subjectIds" }
                     correctLeftType(types, subjectIds)
@@ -918,6 +940,8 @@ class SubjectCollectionRepositoryImpl(
         type: UnifiedCollectionType?,
     ) {
         return withContext(defaultDispatcher) {
+            // 改收藏状态即结束重温, 库里先还原成 Bangumi 那份; 改回的就是看过的话 Bangumi 上本来就是, 不用再写
+            if (rewatch?.end(subjectId) == true && type == UnifiedCollectionType.DONE) return@withContext
             if (localProfile) {
                 setLocalCollectionType(subjectId, type ?: UnifiedCollectionType.NOT_COLLECTED)
                 return@withContext
