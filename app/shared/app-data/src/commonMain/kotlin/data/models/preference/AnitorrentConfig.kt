@@ -39,6 +39,10 @@ data class AnitorrentConfig(
      * 额外的 tracker 服务器, 每行一个. 将在 BT 下载开始前与内置 tracker 一起添加.
      */
     val extraTrackers: String = "",
+    /**
+     * tracker 列表的订阅地址, 每行一个. 拉到的 tracker 与内置、[extraTrackers] 一起用, 见 `TrackerSubscriptionRepository`.
+     */
+    val trackerSubscriptionUrls: String = "",
     @Transient private val _placeholder: Int = 0,
 ) {
     companion object {

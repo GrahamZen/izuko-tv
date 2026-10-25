@@ -212,7 +212,11 @@ open class TestTorrentHandle(
         pieceDeadlines.fill(null)
     }
 
+    /** [addTracker] 加过的, 按顺序 */
+    val trackers: MutableList<String> = mutableListOf()
+
     override fun addTracker(tracker: String, tier: Short, failLimit: Short) {
+        trackers += tracker
     }
 
     override fun getMagnetUri(): String? = null

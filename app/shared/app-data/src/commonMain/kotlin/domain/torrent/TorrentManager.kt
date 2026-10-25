@@ -10,9 +10,13 @@
 package me.him188.ani.app.domain.torrent
 
 import kotlinx.coroutines.CoroutineName
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOf
+import me.him188.ani.app.data.repository.torrent.TrackerSubscriptionRepository
 import me.him188.ani.app.data.repository.torrent.peer.PeerFilterSubscriptionRepository
+import me.him188.ani.app.data.repository.torrent.withSubscribedTrackers
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.torrent.peer.PeerFilterSettings
 import me.him188.ani.app.platform.MeteredNetworkDetector
@@ -55,6 +59,8 @@ class DefaultTorrentManager(
     meteredNetworkDetector: MeteredNetworkDetector,
     baseSaveDir: () -> SystemPath,
     private val pikpak: TorrentEngine? = null,
+    /** tracker 订阅拉到的, 见 [TrackerSubscriptionRepository.trackers] */
+    trackerSubscriptions: Flow<List<String>> = flowOf(emptyList()),
 ) : TorrentManager {
     private val scope = parentCoroutineContext.childScope()
     private val logger = logger<DefaultTorrentManager>()
@@ -65,11 +71,12 @@ class DefaultTorrentManager(
             combine(
                 settingsRepository.anitorrentConfig.flow,
                 meteredNetworkDetector.isMeteredNetworkFlow.distinctUntilChanged(),
-            ) { config, isMetered ->
+                trackerSubscriptions,
+            ) { config, isMetered, subscribedTrackers ->
                 val isUploadLimited = isMetered && config.limitUploadOnMeteredNetwork
                 val limit = if (isUploadLimited) 10.kiloBytes else config.uploadRateLimit
                 logger.debug { "Anitorrent upload rate limit: $limit/s" }
-                config.copy(uploadRateLimit = limit)
+                config.copy(uploadRateLimit = limit).withSubscribedTrackers(subscribedTrackers)
             },
             client = client,
             combine(
@@ -102,6 +109,7 @@ class DefaultTorrentManager(
             baseSaveDir: () -> SystemPath,
             torrentEngineFactory: TorrentEngineFactory = LocalAnitorrentEngineFactory,
             pikpak: TorrentEngine? = null,
+            trackerSubscriptions: Flow<List<String>> = flowOf(emptyList()),
         ): DefaultTorrentManager {
             return DefaultTorrentManager(
                 parentCoroutineContext = parentCoroutineContext,
@@ -112,6 +120,7 @@ class DefaultTorrentManager(
                 subscriptionRepository = subscriptionRepository,
                 baseSaveDir = baseSaveDir,
                 pikpak = pikpak,
+                trackerSubscriptions = trackerSubscriptions,
             )
         }
     }
