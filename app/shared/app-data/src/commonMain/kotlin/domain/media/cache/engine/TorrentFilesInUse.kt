@@ -27,11 +27,14 @@ private val logger = logger<TorrentMediaCacheEngine>()
  * 按目录而不是按资源汇总: 同一个种子可能经不同数据源各缓存过几集, 它们共用目录与会话.
  * 只看数据库里的记录: 已下完的集恢复成本地文件, 不开种子句柄, 看句柄判断不出它还在用.
  * 有记录还没选定文件时返回 null —— 不知道它会用哪个.
+ *
+ * 先读剧集行再读资源行, 与 [deleteEpisodeRecord] 先删资源行再删剧集行配对, 见那里.
  */
 internal suspend fun TorrentCacheInfoDao.filesInUse(relativeDir: String): Set<String>? {
+    val allEpisodes = getAllEpisodes().first()
     val torrents = getAll().first().filter { it.relativeDir == relativeDir }
     val mediaIds = torrents.mapTo(HashSet()) { it.mediaId }
-    val episodes = getAllEpisodes().first().filter { it.mediaId in mediaIds }
+    val episodes = allEpisodes.filter { it.mediaId in mediaIds }
     val files = HashSet<String>()
     for (torrent in torrents) {
         val own = episodes.filter { it.mediaId == torrent.mediaId }
@@ -54,11 +57,26 @@ internal suspend fun TorrentCacheInfoDao.filesInUse(relativeDir: String): Set<St
  */
 internal suspend fun TorrentCacheInfoDao.releaseDeletedEpisodeFile(handle: TorrentFileHandle, relativeDir: String) {
     val inUse = filesInUse(relativeDir)
+    // 删了却没还空间时据此取证: 走的哪一支、当时算出谁还在用
+    logger.info { "Releasing ${handle.entry.pathInTorrent} of a deleted record in $relativeDir, files in use: $inUse" }
     when {
         inUse == null -> handle.close()
         inUse.isEmpty() -> handle.closeAndDelete()
         else -> handle.closeAndDiscard(inUse)
     }
+}
+
+/**
+ * 删掉一条剧集记录的行; 同一资源没有别的剧集记录时连资源行一起删 (合集的其他集还在用种子数据与目录).
+ *
+ * 资源行先删, 剧集行后删: [filesInUse] 先读剧集再读资源, 两次读之间删掉时, 读到的要么是删之前, 要么这个资源已经不在
+ * (它的剧集行跟着不算). 反过来删会让它读到一个没有剧集的资源行, 当成还没选定文件的记录, 那次删除什么都不还.
+ * 先数再删不是原子的, 调用方要串行 (两条最后的记录同时删, 会都以为对方还在, 留下没有剧集的资源行).
+ */
+internal suspend fun TorrentCacheInfoDao.deleteEpisodeRecord(mediaId: String, episodeId: String) {
+    val others = countEpisodes(mediaId) - (if (getEpisode(mediaId, episodeId) != null) 1 else 0)
+    if (others == 0) deleteByMediaId(mediaId)
+    deleteEpisode(mediaId, episodeId)
 }
 
 /**
