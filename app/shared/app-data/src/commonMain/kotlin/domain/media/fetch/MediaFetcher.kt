@@ -595,7 +595,7 @@ class MediaSourceMediaFetcher(
                 return
             }
             overrideFetchRequest.value = request
-            restartAll()
+            restartSources(includeDisabled = false)
         }
     }
 

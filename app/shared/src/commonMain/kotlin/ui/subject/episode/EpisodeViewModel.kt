@@ -57,6 +57,7 @@ import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.data.models.episode.EpisodeInfo
 import me.him188.ani.app.data.models.episode.displayName
 import me.him188.ani.app.data.models.episode.nameOrNameCn
@@ -110,10 +111,13 @@ import me.him188.ani.app.domain.media.cache.EpisodeCacheStatus
 import me.him188.ani.app.domain.media.cache.engine.TorrentEngineAccess
 import me.him188.ani.app.domain.media.download.MediaDownloadManager
 import me.him188.ani.app.domain.media.fetch.MediaFetchSession
+import me.him188.ani.app.domain.media.fetch.MediaFetchSessionRefresh
 import me.him188.ani.app.domain.media.fetch.MediaSourceFetchState
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
 import me.him188.ani.app.domain.media.fetch.MediaSourceResultsFilterer
+import me.him188.ani.app.domain.media.fetch.restartSources
 import me.him188.ani.app.domain.media.fetch.resumePausedSources
+import me.him188.ani.app.domain.media.fetch.startDisabledSources
 import me.him188.ani.app.domain.media.player.ActivePlayback
 import me.him188.ani.app.domain.media.player.PlaybackActivity
 import me.him188.ani.app.domain.media.resolver.MediaResolveDeadline
@@ -1294,15 +1298,18 @@ open class EpisodeViewModel(
         }
     }
 
+    /**
+     * 选源面板里的「刷新」: 重新查询数据源, 禁用的只在开着「完整搜索」(或设置为「始终」) 时一并查.
+     * 不改「完整搜索」, 开播后的暂停照常 (见 PauseMediaFetchWhilePlayingExtension).
+     */
     fun refreshFetch() {
-        // 用户主动重新搜索就是要搜: 本播放页之后一直搜完, 同「完整搜索」 (见 PauseMediaFetchWhilePlayingExtension)
-        _fullMediaSearch.value = true
+        val includeDisabled = searchesToCompletion()
         launchInBackground {
-            // 手动重新查询: 清除本条目的 web 源搜索缓存, 让所有数据源真正重新搜索
+            // 手动重新查询: 清除本条目的 web 源搜索缓存, 让数据源真正重新搜索
             selectorEpisodeCacheRepository.clearByRequestedSubject(subjectId)
             // Although it's flow, it should be ready.
             currentMediaFetchSession()
-                ?.restartAll()
+                ?.restartSources(includeDisabled)
         }
     }
 
@@ -1403,6 +1410,23 @@ open class EpisodeViewModel(
             // 手动刷新单个源: 只清除该源的搜索缓存, 让它真正重新搜索, 不影响其他源的缓存
             selectorEpisodeCacheRepository.clearByRequestedSubjectAndSource(subjectId, result.mediaSourceId)
             result.restart()
+        }
+    }
+
+    /**
+     * 手机控制台的「重新搜索（含新数据源）」: 用最新的数据源列表换一个查询会话, 新启用的源加入; 禁用的只在开着
+     * 「完整搜索」时一并查 (同「刷新」, 见 [refreshFetch]). 不改「完整搜索」; 换会话时已经在播, 不算开播, 不会被暂停.
+     */
+    @OptIn(UnsafeEpisodeSessionApi::class)
+    fun rebuildFetchSession() {
+        val includeDisabled = searchesToCompletion()
+        launchInBackground {
+            val old = currentMediaFetchSession()
+            koin.get<MediaFetchSessionRefresh>().request()
+            if (!includeDisabled) return@launchInBackground
+            withTimeoutOrNull(30.seconds) {
+                fetchPlayState.mediaFetchSessionFlow.filterNotNull().first { it !== old }
+            }?.startDisabledSources()
         }
     }
 
@@ -1687,6 +1711,7 @@ open class EpisodeViewModel(
     }
 
     fun updateFetchRequest(request: MediaFetchRequest) {
+        val includeDisabled = searchesToCompletion()
         launchInBackground {
             // 条目级的搜索名按条目记住, 下一集与下次进页都用它; 与 Bangumi 名字一致时清掉记录.
             // 分集字段每集不同, 只作用于本次会话
@@ -1697,14 +1722,17 @@ open class EpisodeViewModel(
                         .takeIf { request.subjectNames != default.subjectNames },
                 )
             }
-            // 编辑查询条件后会重启所有源的搜索, 同样清除本条目的 web 源搜索缓存
+            // 编辑查询条件后会重启各源的搜索, 同样清除本条目的 web 源搜索缓存
             selectorEpisodeCacheRepository.clearByRequestedSubject(subjectId)
-            fetchPlayState.episodeSessionFlow
+            val session = fetchPlayState.episodeSessionFlow
                 .firstOrNull()
                 ?.fetchSelectFlow
                 ?.firstOrNull()
                 ?.mediaFetchSession
-                ?.setFetchRequest(request)
+                ?: return@launchInBackground
+            session.setFetchRequest(request)
+            // 禁用的数据源只在开着「完整搜索」时一并查 (同「刷新」, 见 restartSources)
+            if (includeDisabled) session.startDisabledSources()
         }
     }
 

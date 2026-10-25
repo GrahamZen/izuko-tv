@@ -1224,9 +1224,8 @@ object TvRemoteControl {
      * 不进 [PLAYER_FRONT_PATHS]: 不需要把 Ani 叫到前台, 电视在后台时刷了也算数 (下次进播放页就是新的)。
      */
     private fun refetchSources(): JsonObject {
-        // 用户主动重新搜索就是要搜: 播放页先开「完整搜索」, 重建出来的会话一直搜完, 不因为正在播而暂停
-        player?.searchAllSources()
-        KoinPlatform.getKoin().get<MediaFetchSessionRefresh>().request()
+        // 用最新的数据源列表重建查询会话: 新启用的源加入, 禁用的只在开着「完整搜索」时一并搜 (见 EpisodeViewModel.rebuildFetchSession)
+        player?.rebuildFetchSession() ?: KoinPlatform.getKoin().get<MediaFetchSessionRefresh>().request()
         logger.info { "Remote requested a media fetch session rebuild, newly added sources will join the search" }
         return result(true, tr("正在用最新的数据源重新搜索"))
     }
