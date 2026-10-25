@@ -93,7 +93,6 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -1333,7 +1332,7 @@ private fun TvPlayerProgressRow(
     ) {
         // 拖拽预览中这里仍是**播放位置** (Prime 实测): 目标时间由圆点上方的浮窗给出,
         // 两处都显示目标就没人告诉用户"原来播到哪儿了", 返回取消后也失去了参照
-        TvPlayerTimeText(live) { progressSliderState.currentPositionMillis }
+        TvPlayerTimeText(live) { renderTvPlayerTime(progressSliderState.currentPositionMillis) }
         Box(
             Modifier
                 .weight(1f)
@@ -1356,9 +1355,21 @@ private fun TvPlayerProgressRow(
                 framePreview = framePreview,
             )
         }
-        TvPlayerTimeText(live) { progressSliderState.totalDurationMillis }
+        // 右边平时是「-剩余」(同 tvOS 系统播放器); 拖拽预览中换成总长: 目标时间在圆点上方的浮窗里, 拖的时候要的是「一共多长」这个参照.
+        // 宽度按「-总长」占住: 两种之间换、剩余的位数变少时进度条都不挪 (圆点与浮窗跟着挪会晃)
+        TvPlayerTimeText(live, widthOf = { "-" + renderTvPlayerTime(progressSliderState.totalDurationMillis) }) {
+            tvPlayerTrailingTime(
+                positionMillis = progressSliderState.currentPositionMillis,
+                totalMillis = progressSliderState.totalDurationMillis,
+                previewing = progressSliderState.isPreviewing,
+            )
+        }
     }
 }
+
+/** 进度条右边的时间: 平时「-剩余」, 拖拽预览中是总长; 总长还不知道 (0) 时照写 00:00, 不带负号. */
+internal fun tvPlayerTrailingTime(positionMillis: Long, totalMillis: Long, previewing: Boolean): String =
+    if (previewing || totalMillis <= 0) renderTvPlayerTime(totalMillis) else "-" + renderTvPlayerTime(totalMillis - positionMillis)
 
 /**
  * 进度条行两端的时间文字.
@@ -1370,23 +1381,29 @@ private fun TvPlayerProgressRow(
  * `live` 在层级一变就翻假 —— 归零的话这一行还在屏上时时间就"啪"地跳成 00:00, 表现为"按返回
  * 收起控制层的瞬间左边的时间变成 00:00" (2026-09-07 用户报). 冻住之后淡出途中显示的仍是离开
  * 那一刻的时间, 而不订阅热状态这条好处照旧.
+ *
+ * [widthOf] 非空时按它的宽占位、文字靠右 (见进度条右边那个).
  */
 @Composable
-private fun TvPlayerTimeText(live: Boolean, millis: () -> Long) {
-    var frozen by remember { mutableLongStateOf(0L) }
-    val shown = if (live) millis() else frozen
+private fun TvPlayerTimeText(live: Boolean, widthOf: (() -> String)? = null, text: () -> String) {
+    var frozen by remember { mutableStateOf(renderTvPlayerTime(0)) }
+    val shown = if (live) text() else frozen
     if (live) {
         // 记账放 SideEffect: 组合期间写快照状态会让本次组合自己失效
         SideEffect { frozen = shown }
     }
-    Text(
-        renderTvPlayerTime(shown),
-        color = Color.White,
-        style = MaterialTheme.typography.labelLarge,
-    )
+    val style = MaterialTheme.typography.labelLarge
+    if (widthOf == null) {
+        Text(shown, color = Color.White, style = style)
+    } else {
+        Box(contentAlignment = Alignment.CenterEnd) {
+            Text(widthOf(), color = Color.Transparent, style = style)
+            Text(shown, color = Color.White, style = style)
+        }
+    }
 }
 
-private fun renderTvPlayerTime(millis: Long): String {
+internal fun renderTvPlayerTime(millis: Long): String {
     val totalSeconds = (millis / 1000).coerceAtLeast(0)
     val hours = totalSeconds / 3600
     val minutes = (totalSeconds % 3600) / 60
