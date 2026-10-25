@@ -287,11 +287,13 @@ interface TvGridPageSurface {
 }
 
 /**
- * 网格页里与各份网格换着显示的一组一行的内容 (追番页「追更」): [key] = 它占的 gridKey. 卡片样式、几何与组标题由各端自己带
- * (安卓见 TvNativeGridPageRowsSpec); 数据与事件由页面对 [TvNativeGridPageState.rows] 接.
+ * 网格页里与各份网格换着显示的一组一行的内容 (追番页「追更」): [key] = 它占的 gridKey, [metrics] = 几何 (从页顶算), [cardWidth] = 卡宽.
+ * 原生版另带的卡片样式与组标题见 TvNativeGridPageRowsSpec; 数据与事件由页面对 [TvNativeGridPageState.rows] 接.
  */
 interface TvNativeGridPageRows {
     val key: Int
+    val metrics: TvNativeExploreMetrics
+    val cardWidth: Dp
 }
 
 /** 两个入口共用的接线: 安卓接原生视图, 别的端画 Compose 版. 参数见两个 [TvNativeGridPageHost]. */

@@ -24,7 +24,7 @@ import me.him188.ani.app.ui.foundation.tv.tvPosterWallHeaderStyle
 
 /** 安卓上「追更」那份内容是原生的行式海报墙: 卡片样式 (带数字角标)、几何与组标题在这里建. */
 @Composable
-internal actual fun rememberTvCollectionProgressRows(key: Int): TvNativeGridPageRows? {
+internal actual fun rememberTvCollectionProgressRows(key: Int): TvNativeGridPageRows {
     val density = LocalDensity.current
     val layout = tvCollectionProgressLayout()
     val settings = LocalThemeSettings.current
@@ -32,5 +32,7 @@ internal actual fun rememberTvCollectionProgressRows(key: Int): TvNativeGridPage
     val heroBlur = settings.tvPosterConfirm == TvPosterConfirmAction.Hero && settings.tvWallBackdropBlur != TvBackdropBlurLevel.None
     val style = rememberTvNativeWallStyle(layout.cardWidth, layout.metrics.columns, labelVibrancy = heroBlur, countBadge = true)
     val headerStyle = tvPosterWallHeaderStyle().toTvNativeTextStyle(density, LocalContentColor.current)
-    return remember(key, style, layout.metrics, headerStyle) { TvNativeGridPageRowsSpec(key, style, layout.metrics, headerStyle) }
+    return remember(key, style, layout.metrics, layout.cardWidth, headerStyle) {
+        TvNativeGridPageRowsSpec(key, style, layout.metrics, layout.cardWidth, headerStyle)
+    }
 }

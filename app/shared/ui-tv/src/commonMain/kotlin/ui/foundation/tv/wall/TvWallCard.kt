@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -35,9 +36,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,11 +64,14 @@ import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.lerp
 import com.github.panpf.sketch.LocalPlatformContext
 import me.him188.ani.app.ui.foundation.AsyncImage
@@ -92,23 +96,26 @@ import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_SECONDARY_LABEL_ALPHA_L
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_SHADOW_COLOR_LIGHT
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_TITLE_TOP_GAP
 import me.him188.ani.app.ui.foundation.tv.TvFocusRing
+import me.him188.ani.app.ui.foundation.tv.TvModulateAlphaCompositing
 import me.him188.ani.app.ui.foundation.tv.focusScale
 import me.him188.ani.app.ui.foundation.tv.nativeview.TV_NATIVE_MORE_GLASS_DARK
 import me.him188.ani.app.ui.foundation.tv.nativeview.TV_NATIVE_MORE_GLASS_LIGHT
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvBackdropBlurSpec
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeCard
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeCardBadgeStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeMore
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeMoreGlassStyle
-import me.him188.ani.app.ui.foundation.tv.nativeview.TvBackdropBlurSpec
 import me.him188.ani.app.ui.foundation.tv.nativeview.tvFetchBlurredBackdrop
 import me.him188.ani.app.ui.foundation.tv.tvAmbientMarquee
 import me.him188.ani.app.ui.foundation.tv.tvHeroContentColor
+import me.him188.ani.app.ui.foundation.tv.tvNoFontPadding
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallLabelHeight
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallSubtitleStyle
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallTitleStyle
 import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
 import me.him188.ani.app.ui.foundation.tvLongPressKey
-import me.him188.ani.app.ui.foundation.tv.TvModulateAlphaCompositing
+import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_TITLE_LINE_HEIGHT
+import kotlin.math.ceil
 
 /*
  * Compose 版海报墙 (安卓电视上是原生视图, 见 nativeview 包; 别的端画这一套) 的卡片: 竖版海报 + 下方定高两行番名, 外观与原生卡片
@@ -143,6 +150,8 @@ internal class TvWallCardStyle(
     val progressFill: Color,
     val moreGlass: TvNativeMoreGlassStyle,
     val badge: TvNativeCardBadgeStyle?,
+    /** 封面右上角的数字角标 ([TvNativeCard.count]); null = 不画. */
+    val countBadge: TvWallCountBadgeStyle?,
     val animated: Boolean,
     val marquee: Boolean,
 ) {
@@ -154,14 +163,22 @@ internal class TvWallCardStyle(
 }
 
 /**
+ * 封面右上角的数字角标 (追番页「追更」与继续观看的没看几集), 同原生卡片 (TvNativeWallStyle 的 countBadge): 白底黑字 (照 tvOS 灰阶, 深浅主题一样,
+ * 压在封面图上), 一位数是圆, 字宽了左右各留 [paddingPx] 变成胶囊.
+ */
+@Immutable
+internal class TvWallCountBadgeStyle(val heightPx: Int, val paddingPx: Int, val insetPx: Int, val textStyle: TextStyle)
+
+/**
  * [TvWallCardStyle]: [cardWidth] = 卡宽 (含聚焦框空隙), [cardHeight] = 卡高 (null = 按卡宽与封面比例算). [badge] 给了就按卡片的
- * [TvNativeCard.badge] 画角标.
+ * [TvNativeCard.badge] 画角标, [countBadge] 为 true 时按卡片的 [TvNativeCard.count] 画数字角标.
  */
 @Composable
 internal fun rememberTvWallCardStyle(
     cardWidth: Dp,
     cardHeight: Dp? = null,
     badge: TvNativeCardBadgeStyle? = null,
+    countBadge: Boolean = false,
 ): TvWallCardStyle {
     val density = LocalDensity.current
     val colors = MaterialTheme.colorScheme
@@ -172,7 +189,7 @@ internal fun rememberTvWallCardStyle(
     val subtitleStyle = tvPosterWallSubtitleStyle()
     val labelHeight = tvPosterWallLabelHeight()
     val cardScale = LocalTvPosterWallScale.current
-    return remember(density, cardScale, colors, light, visualEffects, titleColor, titleStyle, subtitleStyle, labelHeight, cardWidth, cardHeight, badge) {
+    return remember(density, cardScale, colors, light, visualEffects, titleColor, titleStyle, subtitleStyle, labelHeight, cardWidth, cardHeight, badge, countBadge) {
         val cardWidthPx = with(density) { cardWidth.roundToPx() }
         val cardHeightPx = with(density) { (cardHeight ?: (cardWidth / TV_PORTRAIT_CARD_COVER_RATIO)).roundToPx() }
         // 卡片自己的尺寸按海报墙大小换算 (卡宽卡高已经由调用方按它算好)
@@ -183,7 +200,8 @@ internal fun rememberTvWallCardStyle(
                 cardHeightPx = cardHeightPx,
                 gapPx = TvFocusRing.Gap.roundToPx(),
                 cornerPx = TV_PORTRAIT_CARD_CORNER.toPx(),
-                labelHeightPx = labelHeight.roundToPx(),
+                // 两行番名的高按向上取整 (四舍五入差零点几像素时, 第二行就被判成放不下、只排一行加省略号)
+                labelHeightPx = TV_POSTER_WALL_TITLE_TOP_GAP.roundToPx() + ceil(TV_POSTER_WALL_TITLE_LINE_HEIGHT.toPx() * 2).toInt(),
                 titleTopGapPx = TV_POSTER_WALL_TITLE_TOP_GAP.roundToPx(),
                 rowSpacingPx = TV_POSTER_WALL_ROW_SPACING.roundToPx(),
                 textDensity = cardDensity,
@@ -201,6 +219,23 @@ internal fun rememberTvWallCardStyle(
                 progressFill = colors.primary,
                 moreGlass = if (light) TV_NATIVE_MORE_GLASS_LIGHT else TV_NATIVE_MORE_GLASS_DARK,
                 badge = badge,
+                countBadge = if (countBadge) {
+                    TvWallCountBadgeStyle(
+                        heightPx = TV_WALL_COUNT_BADGE_HEIGHT.roundToPx(),
+                        paddingPx = TV_WALL_COUNT_BADGE_PADDING.roundToPx(),
+                        insetPx = TV_WALL_COUNT_BADGE_INSET.roundToPx(),
+                        textStyle = TextStyle(
+                            color = TV_WALL_COUNT_BADGE_TEXT_COLOR,
+                            fontSize = TV_WALL_COUNT_BADGE_TEXT,
+                            lineHeight = TV_WALL_COUNT_BADGE_TEXT,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center,
+                            platformStyle = tvNoFontPadding,
+                        ),
+                    )
+                } else {
+                    null
+                },
                 animated = visualEffects.transitions,
                 marquee = visualEffects.marquee,
             )
@@ -313,8 +348,9 @@ internal fun TvWallCard(
                 card,
                 style,
                 focused = focused,
+                // 这一层按卡片的密度排 (海报墙调小时字跟着缩): 定高也要按它换算, 不然被缩两次, 第二行字给截掉
                 modifier = Modifier.fillMaxWidth()
-                    .height(labelHeight)
+                    .height(with(style.textDensity) { style.labelHeightPx.toDp() })
                     .graphicsLayer {
                         val w = focusWeight
                         // 放大后海报下缘多伸出 (倍数 − 1) × 卡高 / 2: 番名往下让开, 只挪绘制, 行高不变
@@ -385,6 +421,26 @@ private fun TvWallCardCover(card: TvNativeCard, style: TvWallCardStyle) {
                 contentAlignment = Alignment.Center,
             ) {
                 Image(badge.icon, contentDescription = null, Modifier.fillMaxSize())
+            }
+        }
+        val count = card.count
+        val countBadge = style.countBadge
+        if (countBadge != null && count != null) {
+            val height = with(density) { countBadge.heightPx.toDp() }
+            val inset = with(density) { countBadge.insetPx.toDp() }
+            Box(
+                Modifier.align(Alignment.TopEnd)
+                    .offset(x = -inset, y = inset)
+                    .height(height)
+                    .widthIn(min = height)
+                    .clip(CircleShape)
+                    .background(Color.White)
+                    .padding(horizontal = with(density) { countBadge.paddingPx.toDp() }),
+                contentAlignment = Alignment.Center,
+            ) {
+                CompositionLocalProvider(LocalDensity provides style.textDensity) {
+                    Text(if (count > 99) "99+" else count.toString(), style = countBadge.textStyle, maxLines = 1)
+                }
             }
         }
     }
@@ -500,3 +556,10 @@ private val TV_WALL_CARD_IDLE_ELEVATION = 2.dp
 
 /** 「更多」卡中间圆钮的直径. */
 private val TV_WALL_MORE_BUTTON_SIZE = 44.dp
+
+// 数字角标的尺寸与颜色, 同原生卡片 (TvNativeWallStyle), 两边改一处要同步
+private val TV_WALL_COUNT_BADGE_HEIGHT = 20.dp
+private val TV_WALL_COUNT_BADGE_PADDING = 6.dp
+private val TV_WALL_COUNT_BADGE_INSET = 6.dp
+private val TV_WALL_COUNT_BADGE_TEXT = 12.sp
+private val TV_WALL_COUNT_BADGE_TEXT_COLOR = Color(0xFF111111)
