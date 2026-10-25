@@ -61,7 +61,7 @@ class SubjectRewatchTest {
 
     /** 看过的一部: 第 1 2 集看过, 第 3 集没标. */
     private suspend fun seedDone(subjectId: Int = SUBJECT) {
-        subjects.upsert(testSubjectCollectionEntity(subjectId, DONE, lastUpdated = WATCHED_AT))
+        subjects.upsert(testSubjectCollectionEntity(subjectId, DONE, lastUpdated = WATCHED_AT).copy(lastFetched = FETCHED_AT))
         episodes.upsert(
             listOf(
                 episode(subjectId, subjectId * 100 + 1, DONE),
@@ -75,6 +75,9 @@ class SubjectRewatchTest {
 
     private suspend fun episodeTypes(subjectId: Int = SUBJECT) =
         episodes.filterBySubjectId(subjectId).first().map { it.selfCollectionType }
+
+    private suspend fun episodeFetchTimes(subjectId: Int = SUBJECT) =
+        episodes.filterBySubjectId(subjectId).first().map { it.lastFetched }.distinct()
 
     @Test
     fun `start turns a watched subject into doing with no watched episodes`() = realTimeTest {
@@ -132,6 +135,9 @@ class SubjectRewatchTest {
         assertEquals(DONE, row().collectionType)
         assertEquals(WATCHED_AT, row().lastUpdated)
         assertEquals(listOf(DONE, DONE, NOT_COLLECTED), episodeTypes())
+        // 标成过期, 用到时按 Bangumi 现在的重取
+        assertEquals(0, row().lastFetched)
+        assertEquals(listOf(0L), episodeFetchTimes())
         assertFalse(rewatch.isActive(SUBJECT))
         assertFalse(rewatch.rewatchingFlow(SUBJECT).first())
         assertFalse(file.exists())
@@ -166,9 +172,15 @@ class SubjectRewatchTest {
         seedDone()
         val rewatch = rewatch()
         rewatch.start(SUBJECT)
+        // 这一轮看了第 3 集
+        episodes.updateSelfCollectionType(SUBJECT, SUBJECT * 100 + 3, DONE)
 
         assertFalse(rewatch.keepsSelfState(SUBJECT, DOING))
+
         assertFalse(rewatch.isActive(SUBJECT))
+        // 分集不停在这一轮: 还原成开始时的, 标成过期等重取
+        assertEquals(listOf(DONE, DONE, NOT_COLLECTED), episodeTypes())
+        assertEquals(listOf(0L), episodeFetchTimes())
     }
 
     @Test
@@ -258,6 +270,7 @@ class SubjectRewatchTest {
         const val SUBJECT = 7
         const val OTHER = 8
         const val WATCHED_AT = 500L
+        const val FETCHED_AT = 600L
         const val NOW = 9_000L
     }
 }

@@ -203,6 +203,7 @@ import me.him188.ani.utils.logging.warn
 import org.koin.core.KoinApplication
 import org.koin.core.scope.Scope
 import org.koin.dsl.module
+import me.him188.ani.app.data.repository.subjectRewatchFile
 
 private val Scope.client get() = get<BangumiClient>()
 private val Scope.database get() = get<AniDatabase>()
@@ -597,6 +598,7 @@ private fun KoinApplication.otherModules(
                 database.episodeCollection().resetAllLastFetched()
                 get<SubjectService>().invalidateCollectionCounts()
             },
+            rewatchFile = { profile -> subjectRewatchFile(getContext(), profile) },
         )
     }
     // 本地用户导出成文件 / 从文件导入当前的本地用户 (Web 控制台), 见 ProfileArchiver
@@ -613,6 +615,7 @@ private fun KoinApplication.otherModules(
             },
             // 本地档的重取保留库里的收藏状态、评分与看过
             loadEpisodes = { subjectId -> get<SubjectCollectionRepository>().refreshSubjectCollection(subjectId) },
+            rewatchFile = { profile -> subjectRewatchFile(getContext(), profile) },
         )
     }
     // 当前用户自己的收藏记录 (计数 / 清除); Bangumi 用户改成本地用户, 见 LocalProfileConversion
@@ -962,6 +965,7 @@ private suspend fun deleteUserProfileFiles(context: Context, profile: UserProfil
     }
     context.files.cacheDir.resolve(profile.scopedFileName(UserProfile.RECOMMENDATION_COLLECTIONS_FILE_NAME)).delete()
     pendingLocalCollectionsFile(context, profile).delete()
+    subjectRewatchFile(context, profile).delete()
 }
 
 /**

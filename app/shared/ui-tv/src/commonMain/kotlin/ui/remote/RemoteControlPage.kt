@@ -2591,8 +2591,10 @@ private val SCRIPT = """
       m.className = 'ep-menu coll-menu';
       m.id = 'coll-menu';
       m.setAttribute('role', 'listbox');
-      m.innerHTML = COLL_TYPES.map(function (c) {
-        var cur = c[0] === d.collection;
+      // 看过的番多一项「重温」; 重温中勾它, 不勾在看 (选别的收藏状态就结束重温)
+      var types = d.collection === 'DONE' || d.rewatching ? COLL_TYPES.concat([['REWATCH', T('重温')]]) : COLL_TYPES;
+      m.innerHTML = types.map(function (c) {
+        var cur = c[0] === (d.rewatching ? 'REWATCH' : d.collection);
         // 属性名别用 data-ctype: 「评论与评分」那排收藏按钮用的就是它
         return '<button type="button" role="option" class="ep-opt' + (cur ? ' cur' : '') + '" data-colltype="' + c[0] + '">' +
           '<span class="ep-mark">' + (cur ? '✓' : '') + '</span><span class="ep-name">' + c[1] + '</span></button>';
@@ -7317,7 +7319,7 @@ private val REVIEW_SCRIPT = """
   }
   function render(d) {
     if (!d.ok) { body.innerHTML = '<p class="hint">' + esc(d.message) + '</p>'; return; }
-    sum.textContent = typeLabel(d.collection) + (d.score ? ' · ' + T('{0} 分', d.score) : '');
+    sum.textContent = (d.rewatching ? T('重温中') : typeLabel(d.collection)) + (d.score ? ' · ' + T('{0} 分', d.score) : '');
     // 没登录时收藏、评分做不了, 只放登录入口 (登录上以后 hooks.login 会重读); 去网页写评论不看电视登没登录
     if (!d.loggedIn) {
       body.innerHTML = '<div class="cm-login"><p class="hint cm-warn">' + T('还没登录：收藏和评分要先登录') + '</p>' +
@@ -7326,8 +7328,13 @@ private val REVIEW_SCRIPT = """
     }
     var collected = d.collection !== 'NOT_COLLECTED', off = collected ? '' : ' disabled';
     var seg = '', stars = '';
+    // 看过的番多一个「重温」; 重温中亮它, 不亮在看 (选别的收藏状态就结束重温)
+    var curType = d.rewatching ? 'REWATCH' : d.collection;
     for (var i = 1; i < TYPES.length; i++) {
-      seg += '<button type="button" data-ctype="' + TYPES[i][0] + '"' + (TYPES[i][0] === d.collection ? ' class="on"' : '') + '>' + TYPES[i][1] + '</button>';
+      seg += '<button type="button" data-ctype="' + TYPES[i][0] + '"' + (TYPES[i][0] === curType ? ' class="on"' : '') + '>' + TYPES[i][1] + '</button>';
+    }
+    if (d.collection === 'DONE' || d.rewatching) {
+      seg += '<button type="button" data-ctype="REWATCH"' + (d.rewatching ? ' class="on"' : '') + '>' + T('重温') + '</button>';
     }
     for (var j = 0; j < 10; j++) stars += STAR;
     body.innerHTML =

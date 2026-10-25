@@ -142,12 +142,14 @@ class SubjectRewatch(
 
     /**
      * 单个条目从 Bangumi 取回来、落库之前: 重温中且取到的还是看过 (或没有收藏信息: 没登录时是匿名结果, 分不出是不是在别处取消了)
-     * 时返回 true, 调用方保留本地的收藏类型与看过. 在别处改成了别的收藏类型就结束重温 (库照取到的写), 返回 false.
+     * 时返回 true, 调用方保留本地的收藏类型与看过. 在别处改成了别的收藏类型就结束重温, 返回 false: 收藏类型由调用方照取到的写,
+     * 各集看过先还原成开始时的再标成过期 (这次没连分集一起取的话, 用到时按 Bangumi 重取), 不停在这一轮的进度上.
      */
     suspend fun keepsSelfState(subjectId: Int, fetchedType: UnifiedCollectionType): Boolean {
-        if (subjectId !in loaded()) return false
+        val entry = loaded()[subjectId] ?: return false
         if (fetchedType == UnifiedCollectionType.DONE || fetchedType == UnifiedCollectionType.NOT_COLLECTED) return true
         logger.info { "Subject $subjectId is $fetchedType on Bangumi now, rewatch dropped" }
+        database.subjectRewatch().dropRewatch(subjectId, entry.episodes)
         remove(subjectId)
         return false
     }
@@ -223,17 +225,7 @@ class SubjectRewatch(
         }
     }
 
-    private suspend fun read(): Map<Int, SubjectRewatchEntry> = withContext(Dispatchers.IO_) {
-        if (!file.exists()) return@withContext emptyMap()
-        try {
-            json.decodeFromString(SubjectRewatchSave.serializer(), file.readText()).entries.associateBy { it.subjectId }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.warn(e) { "Failed to read ${file.name}, treating as empty" }
-            emptyMap()
-        }
-    }
+    private suspend fun read(): Map<Int, SubjectRewatchEntry> = readSubjectRewatches(file)
 
     private suspend fun writeQuietly(entries: Map<Int, SubjectRewatchEntry>) {
         try {
@@ -273,8 +265,24 @@ class SubjectRewatch(
 
         private const val MOVE_ATTEMPTS = 5
         private val MOVE_RETRY_DELAY = 50.milliseconds
-        private val json = Json { ignoreUnknownKeys = true }
+        internal val json = Json { ignoreUnknownKeys = true }
         private val logger = logger<SubjectRewatch>()
+    }
+}
+
+/**
+ * 读 [file] 里记着的重温, 不经 [SubjectRewatch]: 导出收藏、换电视时读某个用户的 (不一定是当前用户). 读不出来当没有.
+ * 用的时候只认库里那一行还是在看的 (见 [SubjectRewatch] 的「中途被杀」).
+ */
+internal suspend fun readSubjectRewatches(file: SystemPath): Map<Int, SubjectRewatchEntry> = withContext(Dispatchers.IO_) {
+    if (!file.exists()) return@withContext emptyMap()
+    try {
+        SubjectRewatch.json.decodeFromString(SubjectRewatchSave.serializer(), file.readText()).entries.associateBy { it.subjectId }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        logger<SubjectRewatch>().warn(e) { "Failed to read ${file.name}, treating as empty" }
+        emptyMap()
     }
 }
 
@@ -290,7 +298,10 @@ internal data class SubjectRewatchEntry(
     val startedAt: Long,
     val lastUpdated: Long,
     val episodes: Map<Int, UnifiedCollectionType>,
-)
+) {
+    /** 开始时标了看过的集. */
+    val watchedEpisodeIds: List<Int> get() = episodes.filterValues { it == UnifiedCollectionType.DONE }.keys.toList()
+}
 
 @Serializable
 private data class SubjectRewatchSave(val entries: List<SubjectRewatchEntry> = emptyList())

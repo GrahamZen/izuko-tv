@@ -30,6 +30,9 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
+import me.him188.ani.app.data.repository.subject.SubjectRewatchEntry
+import me.him188.ani.app.data.repository.subject.readSubjectRewatches
+import me.him188.ani.utils.io.SystemPath
 
 /**
  * 把一个本地用户 (见 [UserProfileKind.LOCAL]) 的收藏加到当前登录的 Bangumi 账号上.
@@ -58,6 +61,8 @@ class LocalProfileImporter(
     private val rateLimitRetryInterval: Duration = 30.seconds,
     /** 同一条因限频最多等多久, 比 Bangumi 的一个限频窗口 (5 分钟) 长; 等过了还被拒就算这条失败. */
     private val rateLimitMaxWait: Duration = 6.minutes,
+    /** 某个用户的重温记录 (见 `SubjectRewatch`): 重温中的番按开始时的看过导入. null = 不看重温 (测试). */
+    private val rewatchFile: (UserProfile) -> SystemPath? = { null },
 ) {
     /** 本地用户的一条收藏. */
     data class Entry(
@@ -201,7 +206,7 @@ class LocalProfileImporter(
     private suspend fun readEntries(source: UserProfile): List<Entry> = withContext(Dispatchers.IO_) {
         val database = if (source.isPrimary) deviceDatabase.database else openDatabase(source.databaseFileName)
         try {
-            database.readLocalCollections()
+            database.readLocalCollections(rewatchFile(source)?.let { readSubjectRewatches(it) }.orEmpty())
         } finally {
             if (!source.isPrimary) database.close()
         }
@@ -212,22 +217,29 @@ class LocalProfileImporter(
     }
 }
 
-/** 这个库里收藏了的条目 (浏览过而没收藏的不算), 最近动过的在前; 连同标了看过的集. */
-internal suspend fun AniDatabase.readLocalCollections(): List<LocalProfileImporter.Entry> {
+/**
+ * 这个库里收藏了的条目 (浏览过而没收藏的不算), 最近动过的在前; 连同标了看过的集.
+ *
+ * @param rewatches 这个库的用户正在重温的 (见 `SubjectRewatch`): 库里是在看、各集是这一轮的, 带出去的按开始时的看过与看过的集算
+ */
+internal suspend fun AniDatabase.readLocalCollections(
+    rewatches: Map<Int, SubjectRewatchEntry> = emptyMap(),
+): List<LocalProfileImporter.Entry> {
     val episodes = episodeCollection()
     return subjectCollection()
         .filterMostRecentUpdated(LOCAL_COLLECTED_TYPES, limit = Int.MAX_VALUE)
         .first()
         .map { subject ->
+            val rewatch = rewatches[subject.subjectId]?.takeIf { subject.collectionType == UnifiedCollectionType.DOING }
             LocalProfileImporter.Entry(
                 subjectId = subject.subjectId,
                 name = subject.nameCn.ifEmpty { subject.name },
-                type = subject.collectionType,
+                type = if (rewatch != null) UnifiedCollectionType.DONE else subject.collectionType,
                 rating = subject.selfRatingInfo,
-                watchedEpisodeIds = episodes.filterBySubjectId(subject.subjectId).first()
+                watchedEpisodeIds = rewatch?.watchedEpisodeIds ?: episodes.filterBySubjectId(subject.subjectId).first()
                     .filter { it.selfCollectionType == UnifiedCollectionType.DONE }
                     .map { it.episodeId },
-                updatedAt = subject.lastUpdated,
+                updatedAt = rewatch?.lastUpdated ?: subject.lastUpdated,
             )
         }
 }
