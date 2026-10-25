@@ -47,6 +47,8 @@ import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_HERO_SUMMARY_WIDTH_FRACTIO
 import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_HERO_TEXT_BOTTOM
 import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_HERO_TITLE_WIDTH_FRACTION
 import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_HERO_WALL_SUMMARY_LINES
+import me.him188.ani.utils.logging.info
+import me.him188.ani.utils.logging.logger
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -550,6 +552,9 @@ open class TvNativeRowWallView private constructor(
     /** [restore] 恢复在 hero 态: 停位按聚焦行的 hero 停位重新对 (见 [applyRestoredScroll]). */
     private var restoreHeroStop = false
 
+    /** 宾客模式: 换过来跟上宿主 hero 态时一行都还没到 (见 [onHostHeroChanged]), 数据到了再对停位 (见 [setItems]). */
+    private var hostHeroStopDeferred = false
+
     /** 下一次从页面外进来落在第几行 (见 [enterRow]); null = 不按行号. */
     private var enterRowNumber: Int? = null
 
@@ -763,6 +768,7 @@ open class TvNativeRowWallView private constructor(
         } else if (structural) {
             realignFocusedRow()
         }
+        if (hostHeroStopDeferred && firstRowKey() != null) onHostHeroChanged(animated = false)
         if (focusedRow != null) followFocusAfterItemsChanged(oldItems, focusedRow, focusedSubject)
         // 等的落点行到了
         post { resolvePending(scrollIfMissing = true) }
@@ -851,7 +857,8 @@ open class TvNativeRowWallView private constructor(
         list.jumpTo(px)
         if (!restoreHeroStop) return
         restoreHeroStop = false
-        val item = focusedRowKey?.let { list.indexOfKey(it) } ?: -1
+        // 没聚焦过按第一行停 (同 onHostHeroChanged)
+        val item = (focusedRowKey ?: firstRowKey())?.let { list.indexOfKey(it) } ?: -1
         if (item < 0) return
         list.jumpTo(stopFor(item))
         shiftToStop(item, pace = null)
@@ -1308,7 +1315,19 @@ open class TvNativeRowWallView private constructor(
             // 按触屏的规矩走时退出 hero 态停在原地 (见 exitHeroInPlace)
             if (touchMode && !timeline.active) shiftToStop(-1, TvScrollSpring.Far) else updateStop(heroToggled = true)
         } else {
-            val item = focusedRowKey?.let { list.indexOfKey(it) } ?: -1
+            // hero 态里没聚焦过 (在标签行上换过来的) 按第一行停, 同网格: 不然停在列表顶, 第一行在 hero 线以上被淡没, 屏上只剩第二行
+            val rowKey = focusedRowKey ?: firstRowKey().takeIf { timeline.active }
+            val item = rowKey?.let { list.indexOfKey(it) } ?: -1
+            // 一行都还没到 (换过来时数据在路上): 到了再对
+            hostHeroStopDeferred = guest != null && timeline.active && item < 0 && firstRowKey() == null
+            if (guest != null) {
+                val what = when {
+                    hostHeroStopDeferred -> "还没有行, 数据到了再对"
+                    focusedRowKey != null -> "聚焦行 $rowKey (第 $item 项)"
+                    else -> "没聚焦过, 第一行 $rowKey (第 $item 项)"
+                }
+                logger.info { "[RowWallGuest] 跟上宿主 hero=${timeline.active}: $what" }
+            }
             if (item >= 0) {
                 list.jumpTo(stopFor(item))
                 shiftToStop(item, pace = null)
@@ -2264,3 +2283,5 @@ internal fun tvNativeIsWallInputKey(keyCode: Int): Boolean = when (keyCode) {
     KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> true
     else -> tvNativeIsConfirmKey(keyCode)
 }
+
+private val logger = logger("TvNativeRowWallView")
