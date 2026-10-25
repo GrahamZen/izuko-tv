@@ -46,8 +46,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.Comment
-import androidx.compose.material.icons.automirrored.rounded.Reply
 import androidx.compose.material.icons.rounded.Subtitles
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -74,12 +72,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.toArgb
@@ -92,7 +88,6 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -116,20 +111,21 @@ import me.him188.ani.app.navigation.LocalNavigator
 import me.him188.ani.app.navigation.SubjectDetailPlaceholder
 import me.him188.ani.app.tools.LocalTimeFormatter
 import me.him188.ani.app.tools.TimeFormatter
-import me.him188.ani.app.tools.formatDateTime
 import me.him188.ani.app.domain.comment.CommentContext
 import me.him188.ani.app.ui.comment.UIComment
-import me.him188.ani.app.ui.comment.BangumiStickers
-import me.him188.ani.app.ui.comment.UICommentReaction
-import me.him188.ani.app.ui.comment.UICommentSource
-import me.him188.ani.app.ui.comment.UIRichText
 import me.him188.ani.app.ui.danmaku.DanmakuEditorState
 import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
 import me.him188.ani.app.ui.foundation.focus.TvFocusKey
 import me.him188.ani.app.ui.foundation.focus.rememberTvFocusScope
 import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
 import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
+import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.ProvideRingOnlyFocus
+import me.him188.ani.app.ui.foundation.tv.nativeview.TV_NATIVE_COMMENT_ENTRY_NEAREST_BOTTOM
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeComment
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeCommentEdge
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeCommentList
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeCommentListController
 import me.him188.ani.app.ui.foundation.tv.TV_PILL_ICON_SIZE
 import me.him188.ani.app.ui.foundation.tv.TvPillFailedIcon
 import me.him188.ani.app.ui.foundation.tv.TvPillShell
@@ -139,18 +135,17 @@ import me.him188.ani.app.ui.foundation.tv.tvUseOriginalTitle
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFade
 import me.him188.ani.app.ui.lang.Lang
-import me.him188.ani.app.ui.lang.comment_reply_to
 import me.him188.ani.app.ui.lang.episode_danmaku
 import me.him188.ani.app.ui.lang.episode_send_danmaku_failed
 import me.him188.ani.app.ui.lang.episode_send_danmaku_quota_exceeded
 import me.him188.ani.app.ui.lang.subject_episode_danmaku_list_empty
 import me.him188.ani.app.ui.lang.subject_episode_related_recommendations
 import me.him188.ani.app.ui.lang.subject_episode_related_recommendations_empty
-import me.him188.ani.app.ui.richtext.UIRichElement
 import me.him188.ani.app.ui.subject.details.SubjectDetailsLoadState
 import me.him188.ani.app.ui.subject.details.sections.CharactersViewAllDialog
 import me.him188.ani.app.ui.subject.details.sections.PosterGalleryDialog
 import me.him188.ani.app.ui.subject.details.sections.StaffViewAllDialog
+import me.him188.ani.app.ui.subject.details.layout.rememberTvPlayerCommentStyle
 import me.him188.ani.app.ui.subject.episode.EpisodePageState
 import me.him188.ani.app.ui.subject.episode.EpisodeViewModel
 import me.him188.ani.app.ui.subject.person.PosterRowItem
@@ -169,11 +164,6 @@ import org.jetbrains.compose.resources.stringResource
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.withStyle
-import me.him188.ani.app.ui.lang.video_player_tv_comment_deleted
 
 // ---- 面板调参 ----
 
@@ -232,9 +222,8 @@ internal val TV_PANEL_BOTTOM_GAP = 14.dp
 /**
  * L2 浮出面板宿主: 弹幕列表 / 本集评论. 相关推荐 / 角色 / 制作人员三颗胶囊的面板是胶囊上方的画廊 (见 TvPlayerDetailLayers), 这里不画.
  *
- * 统一形态: `LazyColumn(reverseLayout = true)` —— index 0 在底部, 向上导航 = 索引递增,
- * 聚焦项吸附到底缘 (禁默认 bring-into-view + animateScrollToItem), 最底项按下键
- * 显式回到打开面板的胶囊. 面板每次浮出都复位到底部 (进入焦点恒落最下第一项).
+ * 弹幕: `LazyColumn(reverseLayout = true)` —— index 0 在底部, 向上导航 = 索引递增, 聚焦项吸附到底缘, 最底项按下键显式回到打开面板的胶囊,
+ * 面板每次浮出都复位到底部 (进入焦点恒落最下第一项). 评论: 原生列表, 第一楼在最上面, 进出规矩同胶囊上方的画廊 (见 TvCommentsPanel).
  */
 @Composable
 internal fun TvPlayerPanelHost(
@@ -258,7 +247,7 @@ internal fun TvPlayerPanelHost(
     modifier: Modifier = Modifier,
 ) {
     val danmakuListState = rememberLazyListState()
-    val commentsListState = rememberLazyListState()
+    val commentsList = remember { TvNativeCommentListController() }
 
     // 当前聚焦条目下标 (吸底滚动用; 同一时刻只有一个面板在场, 共享一个)
     val focusedIndex = remember { mutableIntStateOf(-1) }
@@ -276,13 +265,20 @@ internal fun TvPlayerPanelHost(
     LaunchedEffect(overlay.activePanel) {
         // 换面板/关面板: 旧面板条目的登记作废 (它的节点即将被移除, 焦点找回不能落在上面)
         itemFocus.requester = null
-        val listState = when (overlay.activePanel) {
-            TvPlayerPanel.DANMAKU_LIST -> danmakuListState
-            TvPlayerPanel.COMMENTS -> commentsListState
-            else -> return@LaunchedEffect
+        when (overlay.activePanel) {
+            TvPlayerPanel.DANMAKU_LIST -> {
+                focusedIndex.intValue = -1
+                runCatching { danmakuListState.scrollToItem(0) }
+            }
+
+            TvPlayerPanel.COMMENTS -> {
+                focusedIndex.intValue = -1
+                commentsList.entryIndex = TV_NATIVE_COMMENT_ENTRY_NEAREST_BOTTOM
+                commentsList.scrollTo(0)
+            }
+
+            else -> {}
         }
-        focusedIndex.intValue = -1
-        runCatching { listState.scrollToItem(0) }
     }
 
     // 换集 (上一集 / 下一集键、自动连播、控制台): 评论 / 弹幕整张换掉, 持焦的那一条跟着没了 —— Compose 移除持焦节点时整棵树没有焦点,
@@ -304,7 +300,8 @@ internal fun TvPlayerPanelHost(
             }
             // 不挂起的那个: 不在场的那张列表 (从没排过版) 用 scrollToItem 会一直等它第一次排版
             danmakuListState.requestScrollToItem(0)
-            commentsListState.requestScrollToItem(0)
+            commentsList.entryIndex = TV_NATIVE_COMMENT_ENTRY_NEAREST_BOTTOM
+            commentsList.scrollTo(0)
         }
     }
 
@@ -313,6 +310,11 @@ internal fun TvPlayerPanelHost(
         snapshotFlow { overlay.pendingFocus }.collectLatest { (target, _) ->
             if (target != TvPlayerFocusTarget.PANEL) return@collectLatest
             val panel = overlay.activePanel ?: return@collectLatest
+            if (panel == TvPlayerPanel.COMMENTS) {
+                // 胶囊上按确定进第一楼 (按上进来是回到上次离开的那楼, 见 TvCommentsPanel)
+                commentsList.entryIndex = 0
+                commentsList.scrollTo(0)
+            }
             if (panel.showsGallery) overlay.detailLayers.requestGalleryFocus() else focus.request(TvPanelEntryFocus(panel))
         }
     }
@@ -340,6 +342,18 @@ internal fun TvPlayerPanelHost(
                 runCatching { requester.requestFocus() }
             }
         }
+    }
+
+    /** 焦点去 [panel] 那颗胶囊左 / 右 ([offset] = -1 / 1) 相邻的那颗; 0 = 就是那颗. 那颗胶囊已经不在行上了 (刚被藏掉) 时不猜邻居. */
+    fun focusPill(panel: TvPlayerPanel, offset: Int) {
+        val target = if (offset == 0) {
+            panel
+        } else {
+            val current = pillOrder.indexOf(panel)
+            if (current < 0) return
+            pillOrder.getOrNull(current + offset) ?: return
+        }
+        runCatching { pillFocusRequesters.getValue(target).requestFocus() }
     }
 
     AnimatedContent(
@@ -383,13 +397,14 @@ internal fun TvPlayerPanelHost(
             .focusProperties {
                 onEnter = { panel?.let { runCatching { focus.requesterOf(TvPanelEntryFocus(it)).requestFocus() } } }
             }
-            // 最底项 (index 0) 按下键: 显式回到打开本面板的胶囊 —— 交给空间搜索会落到
+            // 弹幕面板最底项 (index 0) 按下键: 显式回到打开本面板的胶囊 —— 交给空间搜索会落到
             // 面板正下方的任意按钮, 落错后该按钮的聚焦回调又把面板切成自己的 (面板跳变)
             .onPreviewKeyEvent { event ->
                 when {
                     panel == null -> false
 
-                    event.key == Key.DirectionDown && focusedIndex.intValue == 0 -> {
+                    // 评论面板第一楼在最上面, 什么时候回胶囊由原生列表自己的到边处理定 (最后一楼再按下, 见 TvCommentsPanel)
+                    event.key == Key.DirectionDown && panel != TvPlayerPanel.COMMENTS && focusedIndex.intValue == 0 -> {
                         if (event.type == KeyEventType.KeyDown) {
                             runCatching { pillFocusRequesters.getValue(panel).requestFocus() }
                         }
@@ -404,15 +419,7 @@ internal fun TvPlayerPanelHost(
                             !(panel == TvPlayerPanel.DANMAKU_LIST && focusedIndex.intValue == 0 &&
                                     danmakuChipsPresent.value) -> {
                         if (event.type == KeyEventType.KeyDown) {
-                            val current = pillOrder.indexOf(panel)
-                            // -1 = 打开本面板的那颗胶囊已经不在行上了 (刚被藏掉): 不猜邻居
-                            if (current >= 0) {
-                                val neighborIndex =
-                                    current + (if (event.key == Key.DirectionLeft) -1 else 1)
-                                pillOrder.getOrNull(neighborIndex)?.let {
-                                    runCatching { pillFocusRequesters.getValue(it).requestFocus() }
-                                }
-                            }
+                            focusPill(panel, if (event.key == Key.DirectionLeft) -1 else 1)
                         }
                         // 到头 (最左/最右胶囊的面板) 也消费, 防斜跳
                         true
@@ -426,7 +433,16 @@ internal fun TvPlayerPanelHost(
             null, TvPlayerPanel.RECOMMENDATIONS, TvPlayerPanel.STAFF, TvPlayerPanel.CHARACTERS -> Box(Modifier.height(0.dp))
 
             TvPlayerPanel.COMMENTS -> TvCommentsPanel(
-                vm, page, overlay, commentsListState, focusedIndex, itemFocus,
+                vm, page, overlay, commentsList, focusedIndex, itemFocus,
+                // 原生列表到边 (条目上的方向键原生那边先收到): 同上面的规则, 往下回胶囊、往左右去相邻胶囊
+                onExit = { edge ->
+                    when (edge) {
+                        TvNativeCommentEdge.DOWN -> focusPill(panel, 0)
+                        TvNativeCommentEdge.LEFT -> focusPill(panel, -1)
+                        TvNativeCommentEdge.RIGHT -> focusPill(panel, 1)
+                        TvNativeCommentEdge.UP -> {}
+                    }
+                },
                 Modifier.tvFocusAnchor(focus, TvPanelEntryFocus(panel)), panelModifier,
             )
 
@@ -782,7 +798,7 @@ private fun TvPanelEmptyCard(text: String) {
 
 // ============================ 本集评论面板 ============================
 
-/** 回复卡的左缩进 (给 thread 竖线留出的槽). 评论详情的整楼视图 (TvCommentThreadView) 也用这一套. */
+/** 回复的左缩进 (给 thread 竖线留出的槽): 列表卡里楼下的回复与整楼视图里的回复卡都用这一套. */
 internal val TV_COMMENT_REPLY_INDENT = 28.dp
 
 /** thread 竖线: 在缩进槽里的 x 位置 / 线宽 / 颜色. */
@@ -790,25 +806,9 @@ internal val TV_COMMENT_THREAD_LINE_INSET = 12.dp
 internal val TV_COMMENT_THREAD_LINE_WIDTH = 2.dp
 internal val TV_COMMENT_THREAD_LINE_COLOR = Color.White.copy(alpha = 0.22f)
 
-/** 条目间距. 与 [TvPanelList] 的默认值一致 (即改动前的间距), 竖线跨缝延伸也用它. */
+/** 整楼视图里回复卡之间的空, 竖线跨缝延伸也用它. */
 internal val TV_COMMENT_ROW_SPACING = 8.dp
 
-/** 楼与楼的额外分隔留白 (只在上一楼确实展开了回复时给). */
-private val TV_COMMENT_GROUP_GAP = 6.dp
-
-/** 条目里 "回复 X" / 回复数这类元信息的图标尺寸. */
-private val TV_COMMENT_META_ICON_SIZE = 12.dp
-
-/**
- * 本集评论: 紧凑纯文本条目 (保持单条目单焦点, 富文本/大图等完整功能在详情页评论区).
- *
- * 主楼 + 一层回复展平进同一个列表 (见 [flattenTvCommentRows]), 回复用缩进 + thread 竖线
- * (回复的是同层另一条回复时再加一行 "回复 X") 表达回复关系 —— 不做 Reddit 那样的多层嵌套,
- * 10 尺 UI 上横向层级没法用方向键导航.
- *
- * 点击任一条目 = 回复其**所属主楼** (与改动前一致): 服务端写接口只接受主楼 id,
- * 见 [me.him188.ani.app.domain.comment.PostCommentUseCase]; 弹窗里回显的是被点的那一条.
- */
 /**
  * 发表本集评论 (主楼): 评论胶囊按下确定的去处, 见 `TvPlayerPillsRow`.
  *
@@ -859,14 +859,26 @@ internal fun TvCommentsLoadTracker(
     }
 }
 
+/**
+ * 本集评论: 同「查看全部」的原生评论列表 (见 TvViewAllCommentsList), 一列, 第一楼在最上面, 一楼一张卡: 主楼 + 楼下前几条回复 (竖线串着)
+ * + 「共 N 条回复」, 画面上的半透明黑底白字 (同面板别的条目); 滚动同「查看全部」的列表: 焦点在看得见的楼里走, 快到边才滚.
+ *
+ * 焦点 (同胶囊上方的画廊): 胶囊上按确定进第一楼 (再按一下就打开它); 按上进来落回上次离开时那楼, 这一次面板浮出后还没进来过就是看得见的
+ * 里面最靠下的那楼 (离胶囊最近); 最后一楼再按下回打开面板的胶囊、按左 / 右去相邻胶囊 ([onExit]), 第一楼按上停住; 点开的详情关掉后
+ * 回到点开 (或翻到) 的那楼 (由面板宿主的焦点找回送进来, 列表交给 entryIndex 那楼).
+ *
+ * 点一楼: 只读 (Bangumi 评论在 Ani 内只读, 楼中回复也没有对应的写接口) 是一整楼的视图 (见 TvCommentThreadView); 能回复的
+ * (Ani 源的主楼) 照旧是带输入框的弹窗, 回复发到主楼 (服务端写接口只接受主楼 id, 见 [me.him188.ani.app.domain.comment.PostCommentUseCase]).
+ */
 @Composable
 private fun TvCommentsPanel(
     vm: EpisodeViewModel,
     page: EpisodePageState,
     overlay: TvPlayerOverlayState,
-    listState: LazyListState,
+    list: TvNativeCommentListController,
     focusedIndex: MutableIntState,
     itemFocus: TvPanelItemFocusRegistry,
+    onExit: (TvNativeCommentEdge) -> Unit,
     entryFocusModifier: Modifier,
     modifier: Modifier = Modifier,
 ) {
@@ -879,35 +891,29 @@ private fun TvCommentsPanel(
     val threadOrder = remember(threadIds, sort) {
         tvSortCommentThreads(snapshot.filterNotNull(), sort).map { it.stableId }
     }
-    val rows = remember(snapshot, threadOrder) { flattenTvCommentRows(snapshot, threadOrder) }
-    // 换了排序: 回到最底那一条 (新排序的第一条), 同面板每次浮出时. 新顺序交给列表之后才跳 (按 threadOrder 起效),
-    // 否则列表按 key 保位置, 又停回原来那条现在所在的地方
+    val threads = remember(snapshot, threadOrder) { orderTvPanelCommentThreads(snapshot, threadOrder) }
+    // 非组合环境 (翻楼的 effect、点击回调) 里也要算时间戳, 所以在这里取一次格式器
+    val timeFormatter = LocalTimeFormatter.current
+    // 每楼只转一次 (时间格式化、富文本压平); 按对象认, 分页刷新换了新的才重转
+    val converted = remember(timeFormatter) { HashMap<UIComment, TvNativeComment>() }
+    val items = remember(threads, converted) {
+        threads.map { thread -> converted.getOrPut(thread.comment) { thread.comment.toTvNativeComment(timeFormatter, showRating = false) } }
+    }
+    // 换了排序: 回到最底那一条 (新排序的第一条), 同面板每次浮出时. 新顺序交给列表之后才跳 (按 threadOrder 起效)
     var listedSort by remember { mutableStateOf(sort) }
     LaunchedEffect(threadOrder) {
         if (listedSort == sort) return@LaunchedEffect
         listedSort = sort
         focusedIndex.intValue = -1
-        runCatching { listState.scrollToItem(0) }
+        list.entryIndex = TV_NATIVE_COMMENT_ENTRY_NEAREST_BOTTOM
+        list.scrollTo(0)
     }
-    // 弹窗里正在显示的是哪一行 (左右键翻相邻评论的锚). -1 = 没开弹窗
-    var shownRowIndex by remember { mutableIntStateOf(-1) }
-    val dialogOpen = overlay.replyingComment != null
-    // 非组合环境 (弹窗翻页的 effect、点击回调) 里也要算时间戳, 所以在这里取一次格式器
-    val timeFormatter = LocalTimeFormatter.current
+    // 详情里正在显示的是哪一楼 (左右键翻相邻的楼的锚). -1 = 没开
+    var shownIndex by remember { mutableIntStateOf(-1) }
 
-    /**
-     * 打开评论详情, 显示第 [index] 行所在的那一楼. 回复实际发到该行所属的主楼.
-     *
-     * 只读时 (Bangumi 评论在 Ani 内只读, 楼中回复也没有对应的写接口) 是一整楼的视图: 主楼在上、回复在下 (见 TvCommentThreadView),
-     * 点的是一条回复就把焦点落在那条回复上. 能回复的 (Ani 源的主楼, 没有楼中回复) 照旧是带输入框的弹窗.
-     */
     fun openCommentAt(index: Int) {
-        val row = rows.getOrNull(index) ?: return
-        val thread = when (row) {
-            is TvCommentMainRow -> row.comment
-            is TvCommentReplyRow -> row.thread
-        }
-        val canReply = row is TvCommentMainRow && row.comment.canReply
+        val thread = threads.getOrNull(index)?.comment ?: return
+        val canReply = thread.canReply
         val context = CommentContext.EpisodeReply(
             vm.subjectId,
             page.episodePresentation.episodeId.toLong(),
@@ -917,393 +923,85 @@ private fun TvCommentsPanel(
         if (canReply) {
             vm.commentEditorState.startEdit(context)
         }
-        val replies = if (canReply || thread.source == UICommentSource.ANI) emptyList() else thread.briefReplies
-        // TV 走自己那个大弹窗 (见 TvCommentReplyDialog), 不是手机端的底部 sheet
         overlay.startReply(
             TvCommentReplyTarget(
                 context = context,
                 quoted = thread.toTvQuotedComment(timeFormatter),
                 canReply = canReply,
-                replies = replies.map { TvThreadReply(it.toTvQuotedComment(timeFormatter), it.replyTo?.authorName) },
-                focusReply = if (row is TvCommentReplyRow) replies.indexOfFirst { it.stableId == row.comment.stableId } else -1,
+                replies = if (canReply) emptyList() else thread.toTvThreadReplies(timeFormatter),
             ),
         )
-        shownRowIndex = index
-        // 不动播放状态: 这个弹窗多数时候只是"看完整评论" (Bangumi 评论在 Ani 内只读), 与弹幕列表、
-        // 推荐这些面板一样是边看边翻, 停一下再自己按播放很烦
+        shownIndex = index
+        // 详情关掉后焦点回到这一楼
+        list.entryIndex = index
+        // 不动播放状态: 详情多数时候只是"看完整评论", 与弹幕列表、推荐这些面板一样是边看边翻, 停一下再自己按播放很烦
     }
 
-    // effect 里不能直接调上面那个 openCommentAt / 读上面那个 rows: 它们是**当次组合**的值,
-    // 分页 append 换掉 rows 之后, 长期存活的 effect 捕获到的就是旧列表了
+    // effect 里不能直接调上面那个 openCommentAt / 读上面那个 threads: 它们是**当次组合**的值,
+    // 分页 append 换掉 threads 之后, 长期存活的 effect 捕获到的就是旧列表了
     val openLatest by rememberUpdatedState<(Int) -> Unit> { openCommentAt(it) }
-    val rowsLatest by rememberUpdatedState(rows)
+    val threadsLatest by rememberUpdatedState(threads)
 
-    // 弹窗内左右键: 原地翻到相邻的一楼 (只在主楼之间翻, 回复在整楼视图里), 并让背后的面板跟着滚 (focusedIndex 一改,
-    // TvPanelList 就把那一行吸到底缘) —— 关掉弹窗时焦点也就落在最后看的那条上 (改锚见
-    // TvPanelItem 的 reanchorFocusRegistry).
-    //
-    // 在这里消费而不是把回调塞进弹窗: 只有本面板手上有展平后的行列表
+    // 详情里左右键: 原地翻到相邻的一楼, 背后的面板跟着滚到那一楼 (同焦点走过去时的滚动) —— 关掉详情时焦点落在最后看的那楼上, 不再挪.
+    // 在这里消费而不是把回调塞进详情: 只有本面板手上有排好序的楼
     LaunchedEffect(Unit) {
         snapshotFlow { overlay.replyNavRequest }.drop(1).collect { (delta, _) ->
             if (overlay.replyingComment == null) return@collect
-            val rows = rowsLatest
-            val from = shownRowIndex
-            if (from !in rows.indices) return@collect
-            // 当前这一楼的主楼行: 一楼的行是「回复…, 主楼」, 点的是回复时主楼在它后面
-            val currentMain = (from until rows.size).firstOrNull { rows[it] is TvCommentMainRow } ?: return@collect
-            val next = if (delta > 0) {
-                ((currentMain + 1) until rows.size).firstOrNull { rows[it] is TvCommentMainRow }
-            } else {
-                (currentMain - 1 downTo 0).firstOrNull { rows[it] is TvCommentMainRow }
-            }
+            val next = shownIndex + delta
             // 到端点无动作 (与选集详情弹窗左右键一致)
-                ?: return@collect
+            if (shownIndex !in threadsLatest.indices || next !in threadsLatest.indices) return@collect
             openLatest(next)
             focusedIndex.intValue = next
+            list.reveal(next)
         }
     }
 
-    TvPanelList(listState, overlay, focusedIndex, modifier, itemSpacing = TV_COMMENT_ROW_SPACING) {
-        items(
-            count = rows.size,
-            key = { rows[it].key },
-        ) { i ->
-            val row = rows[i]
-            // 展平后不再是 1 pager item : 1 list item, 读一次以保住 paging 的预取/append 触发
-            comments[row.pagerIndex]
-            val text = rememberTvCommentText(row.comment)
-            // 面板入口落点恒在 index 0 (最底那一条, 不一定还是主楼)
-            val entryModifier = if (i == 0) entryFocusModifier else Modifier
-            when (row) {
-                is TvCommentMainRow -> {
-                    // 楼与楼的分隔. reverseLayout 下视觉上方 = index 更大, 所以看 i + 1;
-                    // 上一楼没展开回复时不加, 全是无回复主楼的列表间距与改动前完全一致
-                    val groupGap = if (rows.getOrNull(i + 1) is TvCommentReplyRow) TV_COMMENT_GROUP_GAP else 0.dp
-                    TvPanelItem(
-                        index = i,
-                        focusedIndex = focusedIndex,
-                        itemFocus = itemFocus,
-                        // reverseLayout 只反排列, 条目内部的上下方向不反
-                        modifier = Modifier.padding(top = groupGap).then(entryModifier),
-                        onClick = { openCommentAt(i) },
-                        reanchorFocusRegistry = dialogOpen,
-                    ) {
-                        TvCommentRowContent(
-                            text = text,
-                            isReply = false,
-                            replyCount = row.replyCount,
-                            replyToName = null,
-                        )
-                    }
-                }
-
-                is TvCommentReplyRow -> TvPanelItem(
-                    index = i,
-                    focusedIndex = focusedIndex,
-                    itemFocus = itemFocus,
-                    modifier = Modifier
-                        // 竖线画在缩进槽里 (卡片之外), 不和聚焦白描边打架.
-                        // 只向上多画一个条目间距: 顶端接上方 (主楼卡 / 上一条回复) 的下边缘,
-                        // 底端停在自己身上 —— 向下延伸会看起来连到下一楼去
-                        .drawBehind {
-                            val x = TV_COMMENT_THREAD_LINE_INSET.toPx()
-                            drawLine(
-                                color = TV_COMMENT_THREAD_LINE_COLOR,
-                                start = Offset(x, -TV_COMMENT_ROW_SPACING.toPx()),
-                                end = Offset(x, size.height),
-                                strokeWidth = TV_COMMENT_THREAD_LINE_WIDTH.toPx(),
-                            )
-                        }
-                        .padding(start = TV_COMMENT_REPLY_INDENT)
-                        .then(entryModifier),
-                    // 楼中回复没法被单独回复 (写接口只认主楼), 弹窗只读
-                    onClick = { openCommentAt(i) },
-                    reanchorFocusRegistry = dialogOpen,
-                ) {
-                    TvCommentRowContent(
-                        text = text,
-                        isReply = true,
-                        replyCount = 0,
-                        replyToName = row.replyToName,
-                    )
-                }
-            }
-        }
+    // 焦点找回 (详情关掉后) 送到列表上, 列表交给 entryIndex 那楼
+    val listFocus = remember { FocusRequester() }
+    DisposableEffect(listFocus) {
+        onDispose { itemFocus.unregister(listFocus) }
     }
+    TvNativeCommentList(
+        items = items,
+        style = rememberTvPlayerCommentStyle(),
+        initialFocusIndex = 0,
+        touchTaps = LocalTvTouchInputEnabled.current,
+        onClick = { openCommentAt(it) },
+        // 读一次以保住 paging 的预取 / append 触发 (面板里的顺序与 pager 不同)
+        onBind = { index -> threads.getOrNull(index)?.let { comments[it.pagerIndex] } },
+        modifier = modifier
+            .focusRequester(listFocus)
+            .then(entryFocusModifier)
+            .onFocusChanged {
+                if (it.hasFocus) {
+                    overlay.focusRegion = TvPlayerFocusRegion.PANEL
+                    itemFocus.register(listFocus)
+                }
+            },
+        controller = list,
+        onEdge = { edge, newPress ->
+            if (newPress) onExit(edge)
+            true
+        },
+        // 下次按上进来落回这一楼
+        onFocusedPosition = {
+            focusedIndex.intValue = it
+            list.entryIndex = it
+        },
+    )
 }
 
-/**
- * 评论面板的一行. 展平后一行 = 一个焦点目标, index 连续 —— 面板宿主"最底项按下键回胶囊"
- * 的守卫依赖 `focusedIndex == 0`.
- */
-private sealed class TvCommentRow {
-    /** 所属主楼在 pager 里的下标 (读一次以保住 paging 预取). */
-    abstract val pagerIndex: Int
+/** 面板里的一楼: 主楼与它在 pager 里的下标. */
+private class TvPanelCommentThread(val pagerIndex: Int, val comment: UIComment)
 
-    /** 本行展示的评论 (主楼行是主楼自己, 回复行是那条回复). */
-    abstract val comment: UIComment
-    abstract val key: String
-}
-
-private class TvCommentMainRow(
-    override val pagerIndex: Int,
-    override val comment: UIComment,
-    /** 本楼展开的回复条数, 0 表示不显示计数. */
-    val replyCount: Int,
-) : TvCommentRow() {
-    override val key: String = "main-" + comment.stableId
-}
-
-private class TvCommentReplyRow(
-    override val pagerIndex: Int,
-    override val comment: UIComment,
-    /** 所属主楼: 点击回复时用它的 id. */
-    val thread: UIComment,
-    /** 非空 = 回复的是同层某条回复, 要显式指明; null = 直接回复主楼, 缩进已足够表达. */
-    val replyToName: String?,
-) : TvCommentRow() {
-    override val key: String = "reply-" + comment.stableId
-}
-
-/**
- * 主楼 + 一层回复展平成面板行, 主楼按 [threadOrder] (主楼 stableId, 见 [tvSortCommentThreads]) 的先后.
- *
- * 面板是 reverseLayout (index 0 在底, 越大越靠上), 所以排在前面的楼贴着胶囊; 同一楼里回复要**先**发且倒序,
- * 主楼最后发 —— 这样视觉自上而下才是 主楼 → 回复1 → 回复2, 方向键上下 = 空间上下.
- *
- * Ani 源按无回复关系处理 (服务端不返回被回复者, 见 `AniEpisodeCommentReply`): 只出主楼,
- * 与改动前完全一致.
- */
-private fun flattenTvCommentRows(comments: List<UIComment?>, threadOrder: List<String>): List<TvCommentRow> {
+/** 按 [threadOrder] (主楼 stableId, 见 [tvSortCommentThreads]) 排好的楼, 排在前面的贴着胶囊. */
+private fun orderTvPanelCommentThreads(comments: List<UIComment?>, threadOrder: List<String>): List<TvPanelCommentThread> {
     val pagerIndexOf = HashMap<String, Int>(comments.size)
     comments.forEachIndexed { pagerIndex, comment -> if (comment != null) pagerIndexOf[comment.stableId] = pagerIndex }
-    return buildList {
-        for (id in threadOrder) {
-            val pagerIndex = pagerIndexOf[id] ?: continue
-            val comment = comments[pagerIndex] ?: continue
-            val replies = if (comment.source == UICommentSource.ANI) emptyList() else comment.briefReplies
-            replies.asReversed().forEach { reply ->
-                add(TvCommentReplyRow(pagerIndex, reply, comment, reply.replyTo?.authorName))
-            }
-            add(TvCommentMainRow(pagerIndex, comment, replies.size))
-        }
+    return threadOrder.mapNotNull { id ->
+        val pagerIndex = pagerIndexOf[id] ?: return@mapNotNull null
+        comments[pagerIndex]?.let { TvPanelCommentThread(pagerIndex, it) }
     }
-}
-
-/** 评论详情里显示的这一条 (弹窗按「文本段 + 图片」逐块渲染: 卡片上的 [图片] 占位在这里变成真图). */
-private fun UIComment.toTvQuotedComment(timeFormatter: TimeFormatter): TvQuotedComment = TvQuotedComment(
-    authorName = displayAuthorName(),
-    timeText = timeFormatter.formatCommentTime(createdAt),
-    blocks = content.toCommentBlocks(),
-    reactions = reactions.toTvReactions(),
-    authorSign = author?.sign,
-    floorText = floorText(),
-    deleted = deleted,
-    avatarUrl = author?.avatarUrl,
-)
-
-/** 条目文本. 时间要 [formatDateTime] (@Composable), 所以在组合里算好再给非组合的点击回调用. */
-private class TvCommentText(
-    val authorName: String,
-    /** 个人签名, 跟在昵称后面的灰字 (同 bangumi 网页); 没有为 null. */
-    val sign: String?,
-    /** `#3` / `#3-2`, 数据源不给时为 null. */
-    val floorText: String?,
-    val timeText: String,
-    val content: TvInlineText,
-    /** 已被删除: 正文换成「删除了回复」. */
-    val deleted: Boolean,
-)
-
-@Composable
-private fun rememberTvCommentText(comment: UIComment): TvCommentText {
-    val timeText = formatDateTime(comment.createdAt)
-    val content = remember(comment.stableId) { comment.content.toInlineText() }
-    return remember(comment.stableId, timeText, content) {
-        TvCommentText(
-            authorName = comment.displayAuthorName(),
-            sign = comment.author?.sign,
-            floorText = comment.floorText(),
-            timeText = timeText,
-            content = content,
-            deleted = comment.deleted,
-        )
-    }
-}
-
-/** 楼层号的展示: `#3` / `#3-2`. */
-private fun UIComment.floorText(): String? = floor?.let { "#$it" }
-
-/** 昵称 + 灰色的个人签名 `(签名)`, 一行放不下时先截签名. */
-private fun authorWithSign(authorName: String, sign: String?, signColor: Color): AnnotatedString =
-    buildAnnotatedString {
-        append(authorName)
-        if (sign != null) {
-            withStyle(SpanStyle(color = signColor, fontWeight = FontWeight.Normal)) { append("  ($sign)") }
-        }
-    }
-
-/** 昵称缺失时退到用户 id (匿名/注销用户). 卡片与弹窗共用一套取法. */
-private fun UIComment.displayAuthorName(): String = author?.nickname ?: author?.id.orEmpty()
-
-/**
- * 回应 -> 弹窗用的展示模型, 按人数降序 (与 bgm 网页端一致).
- *
- * 认不出的编号整条丢掉: 回应只有"表情 + 人数"两样, 表情画不出来就只剩一个数字, 没有意义.
- * 注意编号要过 [BangumiStickers.reactionStickerTokenOf] 换算, 不能直接当表情代码用.
- */
-private fun List<UICommentReaction>.toTvReactions(): List<TvCommentReaction> =
-    sortedByDescending { it.count }
-        .mapNotNull { reaction ->
-            val token = BangumiStickers.reactionStickerTokenOf(reaction.value) ?: return@mapNotNull null
-            val imageUrl = BangumiStickers.imageUrlOf(token) ?: return@mapNotNull null
-            TvCommentReaction(
-                sticker = UIRichElement.Annotated.Sticker(id = token, resource = null, imageUrl = imageUrl),
-                count = reaction.count,
-            )
-        }
-
-/**
- * 时间戳 -> 展示文本, 与 [formatDateTime] 同语义 (0 = 未知, 显示空).
- * 弹窗那边在非组合环境里算 (见 `openCommentAt`), 所以不能直接用那个 @Composable 版本.
- */
-private fun TimeFormatter.formatCommentTime(millis: Long): String =
-    if (millis == 0L) "" else format(millis)
-
-/** 评论/回复条目内容 (纯文本紧凑形态). [isReply] 收紧一号字与行数; [replyToName] 非空时顶部多一行. */
-@Composable
-private fun TvCommentRowContent(
-    text: TvCommentText,
-    isReply: Boolean,
-    replyCount: Int,
-    replyToName: String?,
-) {
-    val secondaryColor = Color.White.copy(alpha = 0.6f)
-    Column(
-        Modifier.padding(
-            horizontal = if (isReply) 10.dp else 12.dp,
-            vertical = if (isReply) 8.dp else 10.dp,
-        ),
-    ) {
-        if (replyToName != null) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    Icons.AutoMirrored.Rounded.Reply,
-                    null,
-                    Modifier.size(TV_COMMENT_META_ICON_SIZE),
-                    tint = secondaryColor,
-                )
-                Spacer(Modifier.width(4.dp))
-                Text(
-                    stringResource(Lang.comment_reply_to, replyToName),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = secondaryColor,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Spacer(Modifier.height(3.dp))
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                authorWithSign(text.authorName, text.sign, secondaryColor),
-                Modifier.weight(1f),
-                style = if (isReply) {
-                    MaterialTheme.typography.labelMedium
-                } else {
-                    MaterialTheme.typography.labelLarge
-                },
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (replyCount > 0) {
-                Icon(
-                    Icons.AutoMirrored.Rounded.Comment,
-                    null,
-                    Modifier.size(TV_COMMENT_META_ICON_SIZE),
-                    tint = secondaryColor,
-                )
-                Spacer(Modifier.width(3.dp))
-                Text(
-                    replyCount.toString(),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = secondaryColor,
-                )
-                Spacer(Modifier.width(8.dp))
-            }
-            // 楼层号在时间前面, 同 bangumi 网页的「#3 - 时间」
-            Text(
-                text.floorText?.let { "$it  ${text.timeText}" } ?: text.timeText,
-                style = MaterialTheme.typography.labelSmall,
-                color = secondaryColor,
-            )
-        }
-        Spacer(Modifier.height(if (isReply) 3.dp else 4.dp))
-        if (text.deleted) {
-            Text(
-                stringResource(Lang.video_player_tv_comment_deleted),
-                style = MaterialTheme.typography.bodyMedium,
-                color = secondaryColor,
-            )
-        } else {
-            Text(
-                text.content.text,
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color.White.copy(alpha = 0.9f),
-                maxLines = if (isReply) 3 else 4,
-                overflow = TextOverflow.Ellipsis,
-                inlineContent = tvStickerInlineContent(text.content.stickers),
-            )
-        }
-    }
-}
-
-/**
- * 富文本压成一段文字 + 行内表情 (面板紧凑形态; 完整富文本在详情页评论区), 见 [TvInlineText].
- * 图片在卡片上只留 `[图片]` 占位, 点开弹窗才是真图 (见 [toCommentBlocks]).
- */
-private fun UIRichText.toInlineText(): TvInlineText {
-    val builder = TvInlineTextBuilder()
-    elements.forEach { element ->
-        when (element) {
-            is UIRichElement.AnnotatedText -> builder.append(element.slice)
-            is UIRichElement.Quote -> {}
-            is UIRichElement.Image -> builder.append(TV_IMAGE_FALLBACK_TEXT)
-        }
-    }
-    return builder.build()
-}
-
-/**
- * 富文本拆成弹窗用的正文块: 文本段与图片按原顺序排列, 相邻文本并成一段.
- *
- * 引用块与 [toInlineText] 一样跳过 —— 拍平进正文会把别人被引用的话混成本人说的,
- * 而在这个"整块单焦点"的引用区里没有地方摆引用的边框和出处.
- */
-internal fun UIRichText.toCommentBlocks(): List<TvCommentBlock> {
-    val blocks = mutableListOf<TvCommentBlock>()
-    val pending = TvInlineTextBuilder()
-
-    fun flushText() {
-        val text = pending.build()
-        if (!text.isEmpty) blocks += TvCommentBlock.Text(text)
-        pending.clear()
-    }
-
-    elements.forEach { element ->
-        when (element) {
-            is UIRichElement.AnnotatedText -> pending.append(element.slice)
-
-            is UIRichElement.Image -> {
-                flushText()
-                blocks += TvCommentBlock.Image(element.imageUrl)
-            }
-
-            is UIRichElement.Quote -> {}
-        }
-    }
-    flushText()
-    return blocks
 }
 
 // ============================ 角色 / 制作人员画廊 ============================

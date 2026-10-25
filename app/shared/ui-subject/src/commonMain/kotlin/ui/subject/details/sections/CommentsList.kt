@@ -108,7 +108,7 @@ internal fun CommentsList(
 
 /**
  * 「查看全部」评论列表 ([CommentsGridDialog] 里那块) 的画法: 默认是 Compose 版 [CommentsList] (iPad 等用它); 电视包换成原生列表
- * (ui-tv 的 TvViewAllCommentsList), 遥控器长按连翻不卡. 外观两边照同一套 (两列瀑布流, 一条的排法见 [CommentsList]).
+ * (ui-tv 的 TvViewAllCommentsList), 遥控器长按连翻不卡, 一楼带着前几条回复, 点一条在原地换成那一整楼 ([Thread]; 条目评价没有回复, 就是那一条的全文).
  */
 interface ViewAllCommentsList {
     @Composable
@@ -119,6 +119,20 @@ interface ViewAllCommentsList {
         initialFocus: Modifier,
         modifier: Modifier,
     )
+
+    /** 能单独打开一整楼 ([Thread]): 详情页 / 人物页的评论预览里点一条直接开那一楼; false 时预览照旧打开「查看全部」落在那一条. */
+    val hasThread: Boolean get() = false
+
+    /** [comments] 里第 [index] 条的一整楼 (主楼全文 + 全部回复), 左右键翻相邻的楼. 只在 [hasThread] 时调. */
+    @Composable
+    fun Thread(
+        comments: LazyPagingItems<UIComment>,
+        index: Int,
+        showRating: Boolean,
+        initialFocus: Modifier,
+        modifier: Modifier,
+    ) {
+    }
 }
 
 /** [ViewAllCommentsList] 的 Compose 版. */

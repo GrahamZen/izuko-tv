@@ -19,6 +19,7 @@ import com.github.panpf.sketch.Sketch
 import com.github.panpf.sketch.asBitmapOrNull
 import com.github.panpf.sketch.disposeLoad
 import com.github.panpf.sketch.request.Depth
+import com.github.panpf.sketch.request.disallowAnimatedImage
 import com.github.panpf.sketch.request.ImageRequest
 import com.github.panpf.sketch.request.ImageResult
 import com.github.panpf.sketch.transform.BlurTransformation
@@ -208,6 +209,29 @@ object TvNativeImages {
             )
             crossfade(false)
             allowNullImage(true)
+        }
+        sketch.enqueue(request)
+    }
+
+    /**
+     * 评论里的行内表情 (原生文字画, 见 ui-tv 的 TvNativeStickerSpan): 按 [sizePx] 见方等比解, 不上屏. [onResult] 在主线程回调解出的位图,
+     * 失败为 null. 动图只取第一帧 (同 Compose 那侧行内表情的静态图).
+     */
+    fun fetchSticker(sketch: Sketch, context: Context, url: String, sizePx: Int, onResult: (Bitmap?) -> Unit) {
+        val request = ImageRequest(context, url) {
+            configureAniImageRequest(
+                contentScale = ContentScale.Fit,
+                alignment = Alignment.Center,
+                requestSize = IntSize(sizePx, sizePx).toAniImageRequestSize(),
+            )
+            crossfade(false)
+            allowNullImage(true)
+            // bangumi 的表情多是 GIF: 只解第一帧成位图 (动图解出来不是位图, 取不到)
+            disallowAnimatedImage()
+            addListener(
+                onError = { _, _ -> onResult(null) },
+                onSuccess = { _, result -> onResult(result.image.asBitmapOrNull()) },
+            )
         }
         sketch.enqueue(request)
     }

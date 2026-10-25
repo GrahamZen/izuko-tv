@@ -183,6 +183,8 @@ class TvQuotedComment(
     val deleted: Boolean = false,
     /** 作者头像 (整楼视图里用, 见 [TvCommentThreadView]); 没有为 null. */
     val avatarUrl: String? = null,
+    /** 评分 (1~10, 条目评价才有); null = 不画星. */
+    val rating: Int? = null,
 )
 
 /** 一枚回应: 一个表情 + 贴的人数. */

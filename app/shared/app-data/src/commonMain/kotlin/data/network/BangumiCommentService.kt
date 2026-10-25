@@ -13,6 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.him188.ani.app.data.models.UserInfo
 import me.him188.ani.app.data.models.subject.SubjectReview
+import me.him188.ani.app.data.models.subject.SubjectReviewReaction
 import me.him188.ani.app.data.models.subject.SubjectReviewSource
 import me.him188.ani.app.data.repository.RepositoryException
 import me.him188.ani.datasources.api.paging.Paged
@@ -78,4 +79,6 @@ private fun BangumiNextSubjectInterestComment.toSubjectReview() = SubjectReview(
     ),
     likeCount = reactions.orEmpty().sumOf { it.users.size },
     selfVote = null,
+    // 传输用的值同单集评论: "bgm" + bangumi 的回应编号 (见 BangumiStickers)
+    reactions = reactions.orEmpty().map { SubjectReviewReaction(value = "bgm${it.value}", count = it.users.size, selected = false) },
 )

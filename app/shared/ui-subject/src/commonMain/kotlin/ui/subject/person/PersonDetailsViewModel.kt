@@ -17,10 +17,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.retryWhen
 import me.him188.ani.app.data.repository.subject.withoutHiddenNsfw
-import me.him188.ani.app.data.models.UserInfo
-import me.him188.ani.app.data.models.person.PersonCommentInfo
+import me.him188.ani.app.data.models.person.PersonComment
 import me.him188.ani.app.data.repository.person.PersonDetailsRepository
-import me.him188.ani.app.ui.comment.CommentMapperContext
+import me.him188.ani.app.ui.comment.CommentMapperContext.parseToUIComment
 import me.him188.ani.app.ui.comment.CommentState
 import me.him188.ani.app.ui.comment.UIComment
 import me.him188.ani.app.ui.foundation.AbstractViewModel
@@ -41,7 +40,7 @@ class PersonDetailsViewModel(personId: Int) : AbstractViewModel(), KoinComponent
     // NSFW 设为隐藏时去掉 (见 SubjectNsfw)
     val worksPager = repository.personWorksPager(personId).withoutHiddenNsfw { it.subject.subjectId }.cachedIn(backgroundScope)
 
-    /** 复用剧集/条目评论 UI ([me.him188.ani.app.ui.comment.CommentColumn]); 人物评论无评分、只读 (不支持贴表情). */
+    /** 复用剧集/条目评论 UI ([me.him188.ani.app.ui.comment.CommentColumn]); 人物评论无评分、只读 (不支持贴表情), 带楼中回复. */
     val commentState = CommentState(
         list = repository.personCommentsPager(personId).toUICommentPager().cachedIn(backgroundScope),
         countState = details.map { it?.commentCount }.produceState(null),
@@ -71,28 +70,8 @@ class CharacterDetailsViewModel(characterId: Int) : AbstractViewModel(), KoinCom
     )
 }
 
-private fun Flow<PagingData<PersonCommentInfo>>.toUICommentPager(): Flow<PagingData<UIComment>> =
-    map { page -> page.map { it.toUIComment() } }
-
-private fun PersonCommentInfo.toUIComment(): UIComment {
-    return UIComment(
-        id = id,
-        stableId = id.toString(),
-        author = if (authorId == null && authorNickname == null && authorAvatarUrl == null) null else UserInfo(
-            id = authorId ?: "",
-            username = null,
-            nickname = authorNickname,
-            avatarUrl = authorAvatarUrl,
-        ),
-        content = CommentMapperContext.parseBBCode(content),
-        createdAt = createdAt.toEpochMilliseconds(),
-        reactions = emptyList(),
-        briefReplies = emptyList(),
-        replyCount = replyCount,
-        rating = null,
-        rawContent = content,
-    )
-}
+private fun Flow<PagingData<PersonComment>>.toUICommentPager(): Flow<PagingData<UIComment>> =
+    map { page -> page.map { it.parseToUIComment() } }
 
 private fun <T> Flow<T>.retryWithBackoff() = retryWhen { _, attempt ->
     delay(2.seconds * (attempt + 1).coerceAtMost(5).toInt())

@@ -143,8 +143,9 @@ private val STACK_REVIEW_CARDS_BELOW_WIDTH = 480.dp
  * (WCAG H2 "相邻的冗余链接应合并", ARIA "复合控件在焦点序列里只占一个停靠点"). 于是改成整块只有行末一个落点.
  *
  * 但真机上一排卡里只有最右一张能聚焦很别扭 (用户 2026-09-15), 而"九个落点一个结果"的病根其实是**结果相同**,
- * 不是落点多: 现在每张卡进的是全量弹窗里**它自己那一条** ([onShowAll] 带序号), 落点与结果一一对应, 冗余链接
- * 的前提不成立. 形态仍照 Plex 的评论行 (卡不可写, 写评价交给手机).
+ * 不是落点多: 现在每张卡进的是**它自己那一条** —— 电视上直接开那一条的全文 (见 ViewAllCommentsList.hasThread),
+ * 别处是全量弹窗里的那一条 ([onShowAll] 带序号), 落点与结果一一对应, 冗余链接的前提不成立.
+ * 形态仍照 Plex 的评论行 (卡不可写, 写评价交给手机).
  */
 @Composable
 fun ReviewsSummarySection(
@@ -166,6 +167,12 @@ fun ReviewsSummarySection(
     /** 正文行数上限. 卡矮了行数要跟着降, 否则文字撑破卡片. */
     cardTextLines: Int = TV_REVIEW_CARD_TEXT_LINES,
 ) {
+    // 电视上卡片直接开那一条的全文 (见 ViewAllCommentsList.hasThread); -1 = 没开
+    val commentsList = LocalViewAllCommentsList.current
+    var threadAt by remember { mutableIntStateOf(-1) }
+    if (threadAt >= 0) {
+        CommentThreadDialog(stringResource(Lang.subject_details_tab_comments), comments, threadAt, showRating = true, onDismissRequest = { threadAt = -1 })
+    }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(TV_REVIEW_HEADER_GAP)) {
         // **不放评分汇总**: hero 的信息带上已经有分数了 (用户 2026-09-15 指出重复)
         SectionHeader(stringResource(Lang.subject_details_tab_comments))
@@ -197,10 +204,10 @@ fun ReviewsSummarySection(
             ) {
                 repeat(count) { i ->
                     comments[i]?.let { comment ->
-                        // 每张卡进的是全量弹窗里它自己那一条 (见本函数 KDoc)
+                        // 每张卡进的是它自己那一条 (见本函数 KDoc)
                         ReviewPreviewCard(
                             comment,
-                            onClick = { onShowAll(i) },
+                            onClick = { if (commentsList.hasThread) threadAt = i else onShowAll(i) },
                             modifier = cardModifier.onFocusChanged { if (it.hasFocus) focusedCell = i },
                             maxTextLines = cardTextLines,
                             tvCard = true,
