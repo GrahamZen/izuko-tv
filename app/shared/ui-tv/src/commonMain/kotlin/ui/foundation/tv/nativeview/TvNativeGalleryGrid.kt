@@ -111,9 +111,15 @@ class TvNativeGalleryGridView(
 
     /**
      * 焦点在最左列按左 / 最右边那格按右时调 (toRight, 焦点那格中线的窗口纵坐标): 播放器胶囊上方叠层里的画廊用它跨到相邻那颗胶囊
-     * (见 [TvGalleryGridHandle]、[LocalTvGalleryExitSide]); null = 吞掉不动. 同方向刚按过的那一下不调 (见 [TV_GALLERY_EXIT_SIDE_PAUSE_MILLIS]).
+     * (见 [TvGalleryGridHandle]、[LocalTvGalleryExitSide]); null = 吞掉不动.
      */
     internal var onExitSide: ((toRight: Boolean, windowY: Float) -> Unit)? = null
+
+    /**
+     * 同方向刚按过的那一下不调 [onExitSide], 格子顶一下 (见 [TV_GALLERY_EXIT_SIDE_PAUSE_MILLIS]). 给跨走就回不来的画廊 (人物页叠出来的
+     * 「查看全部」, 跨走丢掉那一摞人物页); 胶囊的画廊之间误跨了反方向一按就回到原来那格, 不拦.
+     */
+    internal var guardHurriedSideExit: Boolean = false
 
     /** 一开始要选中的那一格 (见 [applyPendingSelection]); -1 = 没有. */
     internal var pendingSelection: Int = -1
@@ -346,7 +352,7 @@ class TvNativeGalleryGridView(
             if (event.repeatCount == 0) {
                 when (code) {
                     KeyEvent.KEYCODE_DPAD_DOWN -> onExitDown?.invoke()
-                    KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> if (hurried && onExitSide != null) {
+                    KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> if (hurried && guardHurriedSideExit && onExitSide != null) {
                         bump(focused, toRight = code == KeyEvent.KEYCODE_DPAD_RIGHT)
                     } else onExitSide?.let { exit ->
                         val location = IntArray(2)
@@ -403,8 +409,8 @@ internal fun tvGalleryGridTarget(index: Int, count: Int, columns: Int, keyCode: 
 }
 
 /**
- * 最左列按左 / 最右边按右要隔上一次同方向的按键这么久才送出去 ([TvNativeGalleryGridView.onExitSide]): 快速连点走到边上时多点的那一下不跨走,
- * 停在边上再按一下就跨.
+ * 最左列按左 / 最右边按右要隔上一次同方向的按键这么久才送出去 ([TvNativeGalleryGridView.onExitSide], 只对 [TvNativeGalleryGridView.guardHurriedSideExit] 的画廊):
+ * 快速连点走到边上时多点的那一下不跨走, 停在边上再按一下就跨.
  */
 private const val TV_GALLERY_EXIT_SIDE_PAUSE_MILLIS = 400L
 
@@ -669,6 +675,8 @@ private fun TvNativeGalleryHost(
                 }
                 if (handle != null || exitSide != null) {
                     grid.onExitSide = { toRight, windowY -> (handle?.onExitSide ?: exitSide)?.invoke(toRight, windowY) }
+                    // 没有把手的是人物页叠出来的画廊: 跨走回不来, 拦快速连点 (见 guardHurriedSideExit)
+                    grid.guardHurriedSideExit = handle == null
                 }
                 grid.onScrollChanged = {
                     canScrollUp = grid.hasMoreAbove()
