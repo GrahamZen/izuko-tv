@@ -107,6 +107,8 @@ internal fun ViewAllPanelDialog(
     headerAction: @Composable () -> Unit = {},
     content: @Composable ColumnScope.(initialFocus: Modifier) -> Unit,
 ) {
+    // 有别的宿主 (电视播放器胶囊上方的叠层) 就交给它摆, 不弹窗 (见 ViewAllPanelHost)
+    LocalViewAllPanelHost.current?.let { return it.Panel(title, onDismissRequest, count, subtitle, imageZoom, headerAction, content) }
     Dialog(
         onDismissRequest = onDismissRequest,
         properties = DialogProperties(usePlatformDefaultWidth = false),

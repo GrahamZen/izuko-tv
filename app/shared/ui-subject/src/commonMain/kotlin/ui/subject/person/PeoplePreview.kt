@@ -63,6 +63,7 @@ import me.him188.ani.app.ui.foundation.ImageViewerHandler
 import me.him188.ani.app.ui.foundation.rememberImageViewerHandler
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.dialogs.DialogWindowDimAmount
+import me.him188.ani.app.ui.foundation.tv.LocalTvReadableBlocks
 import me.him188.ani.app.ui.foundation.widgets.ANI_GLASS_PANEL_SHAPE
 import me.him188.ani.app.ui.foundation.widgets.aniGlassEdge
 import me.him188.ani.app.ui.foundation.widgets.aniGlassPanelColor
@@ -258,8 +259,11 @@ private fun PeoplePreviewSideSheet(
     }
 }
 
+/**
+ * 预览的内容: 头部 (名字 + 「打开完整页面」, 指针设备另有关闭) 与单栏详情列. 电视播放器在胶囊上方的叠层里也用它 (ui-tv 的 TvPlayerDetailLayers).
+ */
 @Composable
-private fun PeoplePreviewBody(
+fun PeoplePreviewBody(
     target: PeoplePreviewTarget,
     imageViewer: ImageViewerHandler,
     /** 头部关闭按钮: 侧边形态传 `state.close()` 以播退场动画, TV 居中形态不显示该按钮. */
@@ -307,7 +311,8 @@ private fun PersonPreviewContent(
     val details by vm.details.collectAsState()
     // 焦点驱动的滚动到不了不可聚焦的头图/名字: 顶部内容块 (头图+简介) 或头部
     // 按钮获得焦点时整体滚回顶部, 露出完整头图.
-    // 指针设备不能这么做: 鼠标点简介展开也会给它焦点, 不应跟着跳回顶部
+    // 指针设备不能这么做: 鼠标点简介展开也会给它焦点, 不应跟着跳回顶部.
+    // 长内容能停焦点翻页的地方 (LocalTvReadableBlocks) 也不回顶: 焦点在简介正文与「显示更多」之间挪也会触发, 把正在读的那段拽回顶上
     val focusDriven = LocalAniUiBehavior.current.focusDrivenNavigation
     val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
@@ -330,7 +335,7 @@ private fun PersonPreviewContent(
                 // 预览内点击跳转前先关闭预览
                 navigation = rememberPeopleDetailsNavigation(onBeforeNavigate = onDismissRequest),
                 imageViewer = imageViewer,
-                onTopContentFocused = if (focusDriven) scrollToTop else null,
+                onTopContentFocused = if (focusDriven && !LocalTvReadableBlocks.current) scrollToTop else null,
                 previewRows = rows,
                 previewRowsPadding = PEOPLE_PREVIEW_CONTENT_PADDING,
             )
@@ -372,7 +377,7 @@ private fun CharacterPreviewContent(
                 // 预览内点击跳转前先关闭预览
                 navigation = rememberPeopleDetailsNavigation(onBeforeNavigate = onDismissRequest),
                 imageViewer = imageViewer,
-                onTopContentFocused = if (focusDriven) scrollToTop else null,
+                onTopContentFocused = if (focusDriven && !LocalTvReadableBlocks.current) scrollToTop else null,
                 previewRows = rows,
                 previewRowsPadding = PEOPLE_PREVIEW_CONTENT_PADDING,
             )

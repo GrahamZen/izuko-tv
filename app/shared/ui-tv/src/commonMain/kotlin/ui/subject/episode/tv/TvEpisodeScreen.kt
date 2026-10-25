@@ -67,6 +67,7 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -844,7 +845,8 @@ fun TvEpisodeScreenContent(
         if (key == Key.DirectionDown) {
             if (isKeyUp) {
                 downKeyLatched = false
-            } else if (isKeyDown && downKeyLatched) {
+                overlay.downKeyLatchedByLayer = false
+            } else if (isKeyDown && (downKeyLatched || overlay.downKeyLatchedByLayer)) {
                 return@router true
             }
         }
@@ -902,10 +904,26 @@ fun TvEpisodeScreenContent(
         // LocalTvPlayPauseHandler + Modifier.tvPlayPauseKey() 各自挂
         if (key in TV_PLAY_PAUSE_KEYS && !progressSliderState.isPreviewing &&
             (imageViewer.viewing.value || overlay.danmakuInputExpanded ||
-                    overlay.replyingComment != null || anySheetVisible || overlay.layer == TvPlayerLayer.SOURCES)
+                    overlay.hasDetailLayer || anySheetVisible || overlay.layer == TvPlayerLayer.SOURCES)
         ) {
             overlay.markInteraction()
             if (isKeyDown) togglePlayPause()
+            return@router true
+        }
+        // 上一集 / 下一集键同理: 胶囊上方的叠层 (画廊 / 人物页 / 评论详情) 与弹幕输入只是盖在画面上, 照常换集.
+        // 换集后评论详情关掉、焦点回胶囊 (内容整张换了, 见 TvPlayerPanelHost); 画廊与人物页按条目算, 不变
+        if ((key == Key.MediaFastForward || key == Key.MediaRewind) && !progressSliderState.isPreviewing &&
+            (overlay.danmakuInputExpanded || overlay.hasDetailLayer)
+        ) {
+            overlay.markInteraction()
+            if (isKeyDown) {
+                val selector = vm.episodeSelectorState
+                if (key == Key.MediaFastForward) {
+                    if (selector.hasNextEpisode) selector.selectNext()
+                } else {
+                    if (selector.hasPrevEpisode) selector.selectPrev()
+                }
+            }
             return@router true
         }
         // 图片查看器 (详情页评论区打开的大图) 优先: 返回关闭
@@ -925,9 +943,9 @@ fun TvEpisodeScreenContent(
             overlay.markInteraction()
             return@router false
         }
-        // 评论弹窗 (回复 / 发表): 返回关闭并把焦点还给刚点开的那条评论 (见 overlay.dismissReply),
-        // 其余按键全部交给弹窗内部 (引用区翻页 / 输入框 / IME)
-        if (overlay.replyingComment != null) {
+        // 评论详情 (回复 / 发表, 胶囊上方的叠层) 里: 返回关闭并把焦点还给刚点开的那条评论 (见 overlay.dismissReply),
+        // 其余按键全部交给它 (引用区翻页 / 输入框 / IME). 焦点回到胶囊上时 (往下出边, 这一层留着) 按胶囊那一档走, 见下面
+        if (overlay.replyingComment != null && overlay.focusRegion == TvPlayerFocusRegion.LAYER) {
             overlay.markInteraction()
             if (isBack) {
                 if (isKeyUp) {
@@ -944,6 +962,47 @@ fun TvEpisodeScreenContent(
                 return@router true
             }
             return@router false
+        }
+        // 胶囊上方的叠层 (画廊 / 人物页 / 查看全部) 里: 返回先关放大的图, 再退一层; 退到画廊再按返回、或人退完了底下没有画廊,
+        // 焦点回胶囊. 其余按键交给叠层
+        if (overlay.detailLayers.isOpen && overlay.focusRegion == TvPlayerFocusRegion.LAYER) {
+            overlay.markInteraction()
+            if (isBack) {
+                val layers = overlay.detailLayers
+                if (isKeyUp && !layers.closeZoom() && layers.back()) layers.focusPill()
+                return@router true
+            }
+            return@router false
+        }
+        // 焦点在胶囊上、上方有叠层 (那三颗胶囊的画廊, 或从人物页 / 评论详情往下出边回来时留着的那一层): 按上进叠层
+        // (画廊第一次落在最下一行离胶囊最近那格, 之后落回离开时那格; 人物页 / 评论详情落在最下面那一格, 即离开时那一格).
+        // 叠着人物页 / 评论详情时: 确定同按上, 返回清掉它们 (画廊留着), 焦点留在胶囊上. 只有画廊时确定与返回照常交给胶囊
+        // (确定 = 进画廊第一格; 长按去改版式也在胶囊上). 左右换胶囊、往下去进度条照常 (叠层随之换 / 收起, 见 TvPlayerControlsOverlay)
+        if (overlay.layer == TvPlayerLayer.CONTROLS && overlay.focusRegion == TvPlayerFocusRegion.PILLS &&
+            overlay.hasDetailLayer
+        ) {
+            val layers = overlay.detailLayers
+            val stacked = layers.pages.isNotEmpty() || overlay.replyingComment != null
+            if (isBack && stacked) {
+                overlay.markInteraction()
+                if (isKeyUp) {
+                    layers.clearPages()
+                    overlay.dismissReply(restoreFocus = false)
+                }
+                return@router true
+            }
+            if (key == Key.DirectionUp || (isConfirm && stacked)) {
+                overlay.markInteraction()
+                if (isKeyDown) {
+                    if (overlay.replyingComment != null) {
+                        runCatching { layers.replyFocus.requestFocus(FocusDirection.Up) }
+                    } else {
+                        layers.enterTop(false)
+                    }
+                }
+                // 确定的抬起也吞掉: 不然落到胶囊自己的点击上
+                return@router true
+            }
         }
         // 跳过 OP/ED 按钮持焦中. 本块**只做两件事**, 其余一概不碰 —— 提示在场的这几秒里,
         // 遥控器上每个键的意义都必须和没有这颗按钮时一模一样 (返回还是返回, 左右还是快进退),
@@ -1883,26 +1942,6 @@ fun TvEpisodeScreenContent(
                     TvPlayerSideSheets(vm, sheetsController)
                 }
 
-                // 评论回复弹窗 (TV 专用大弹窗): 同窗口内的全屏层, 不用真 Dialog ——
-                // 那是独立窗口, 上面那个唯一按键路由收不到它的按键. 控制层与面板留在下面不动,
-                // 关掉后焦点直接还给刚点开的那条评论
-                overlay.replyingComment?.let { target ->
-                    // 上报"弹窗还在组合树上": 面板的焦点找回要等它真的走了才发, 理由与取证见
-                    // TvPlayerOverlayState.replyDialogComposed
-                    DisposableEffect(Unit) {
-                        overlay.replyDialogComposed = true
-                        onDispose { overlay.replyDialogComposed = false }
-                    }
-                    TvCommentReplyDialog(
-                        target = target,
-                        editorState = vm.commentEditorState,
-                        onSent = { overlay.dismissReply() },
-                        // 左右键翻相邻评论: 由评论面板消费 (行列表在它手上), 见 overlay.replyNavRequest
-                        onNavigate = { overlay.navigateReply(it) },
-                        imageZoom = overlay.commentImageZoom,
-                        modifier = Modifier.matchParentSize(),
-                    )
-                }
             }
         }
     }
