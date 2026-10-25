@@ -39,12 +39,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
@@ -59,6 +56,7 @@ import androidx.compose.ui.unit.dp
 import com.github.panpf.sketch.LocalPlatformContext
 import me.him188.ani.app.ui.foundation.AsyncImage
 import me.him188.ani.app.ui.foundation.LocalSketch
+import me.him188.ani.app.ui.foundation.effects.featherLeftAndBottom
 import me.him188.ani.app.ui.foundation.tv.TV_OBSCURED_BACKDROP_LONG_EDGE_PX
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeHeroSource
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeHeroText
@@ -192,7 +190,7 @@ private fun TvPadHeroBackdrop(source: TvNativeHeroSource, ownBlur: Boolean) {
                 Modifier.align(Alignment.TopEnd)
                     .fillMaxHeight()
                     .aspectRatio(16f / 9f, matchHeightConstraintsFirst = true)
-                    .tvPadHeroFeather(),
+                    .featherLeftAndBottom(TV_PAD_HERO_LEFT_FADE_START, TV_PAD_HERO_LEFT_FADE_END, TV_PAD_HERO_BOTTOM_FADE_START),
                 contentScale = ContentScale.Crop,
                 downsampleLongEdgePx = if (backdrop.obscure) TV_OBSCURED_BACKDROP_LONG_EDGE_PX else null,
             )
@@ -295,20 +293,6 @@ private fun TvPadHeroTitle(text: TvNativeHeroText, width: Dp, color: Color) {
     }
 }
 
-/** 横版图左缘与下缘羽化成透明, 露出底下的模糊层: 遮罩画在离屏层里 (DstIn), 不离屏会把底下的模糊层一起擦掉. */
-private fun Modifier.tvPadHeroFeather(): Modifier = this
-    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-    .drawWithContent {
-        drawContent()
-        drawRect(
-            Brush.horizontalGradient(TV_PAD_HERO_LEFT_FADE_START to Color.Transparent, TV_PAD_HERO_LEFT_FADE_END to Color.Black),
-            blendMode = BlendMode.DstIn,
-        )
-        drawRect(
-            Brush.verticalGradient(TV_PAD_HERO_BOTTOM_FADE_START to Color.Black, 1f to Color.Transparent),
-            blendMode = BlendMode.DstIn,
-        )
-    }
 
 /** 模糊底: 先只解一张长边这么多像素的小图, 再叠一层模糊去掉放大后的块感. */
 private const val TV_PAD_HERO_BLUR_DECODE_LONG_EDGE_PX = 160
