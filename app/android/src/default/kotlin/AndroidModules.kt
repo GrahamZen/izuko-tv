@@ -22,6 +22,7 @@ import kotlinx.io.files.Path
 import me.him188.ani.android.navigation.AndroidBrowserNavigator
 import me.him188.ani.android.provider.ExternalContentProviderFactoryImpl
 import me.him188.ani.app.data.persistent.database.DeviceAniDatabase
+import me.him188.ani.app.data.repository.torrent.TrackerSubscriptionRepository
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.foundation.HttpClientProvider
 import me.him188.ani.app.domain.foundation.ScopedHttpClientUserAgent
@@ -170,6 +171,7 @@ fun getAndroidModules(
                 LocalAnitorrentEngineFactory
             },
             pikpak = get<PikPakEngine>(),
+            trackerSubscriptions = get<TrackerSubscriptionRepository>().trackers,
         )
     }
 
