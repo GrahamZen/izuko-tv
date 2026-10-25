@@ -22,6 +22,7 @@ import kotlinx.coroutines.launch
 import me.him188.ani.app.data.models.preference.MediaSelectorSettings
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
+import kotlin.concurrent.Volatile
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeMark
 import kotlin.time.TimeSource
