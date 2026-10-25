@@ -28,6 +28,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import me.him188.ani.app.data.models.preference.ThemeSettings
 import me.him188.ani.app.ui.exploration.TvCardFocusRequest
@@ -49,7 +50,9 @@ import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeExploreListener
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGridMetrics
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGridPageCallbacks
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGridPageMetrics
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGridPageRows
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGridPageState
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeRowWallListener
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeTestHost
 import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativeGridPageState
 import me.him188.ani.app.ui.foundation.tv.nativeview.testCards
@@ -62,7 +65,8 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * Compose 版海报墙 (iOS 上画的那一套, 安卓上由调试开关切换) 的遥控器导航: 关联作品横排、网格页的 hero 态、探索页的上下左右与 hero 按钮.
+ * Compose 版海报墙 (iOS 上画的那一套, 安卓上由调试开关切换) 的遥控器导航: 关联作品横排、网格页的 hero 态、网格页里的一组一行 (追番页「追更」)、
+ * 探索页的上下左右与 hero 按钮.
  * 规则同原生版 (见各原生视图的导航测试); 这里只看焦点落在哪、页面收到了哪些回调.
  */
 class TvWallComposeTest {
@@ -135,7 +139,11 @@ class TvWallComposeTest {
         var topRowUp = 0
     }
 
-    private fun showGrid(record: GridRecord, heroEnabled: Boolean): Pair<() -> TvNativeGridPageState, () -> TvGridFocusState> {
+    private fun showGrid(
+        record: GridRecord,
+        heroEnabled: Boolean,
+        rows: TvNativeGridPageRows? = null,
+    ): Pair<() -> TvNativeGridPageState, () -> TvGridFocusState> {
         var pageState: TvNativeGridPageState? = null
         var gridFocus: TvGridFocusState? = null
         val metrics = TvNativeGridPageMetrics(
@@ -173,7 +181,7 @@ class TvWallComposeTest {
                 state = state,
                 metrics = metrics,
                 cardWidth = with(LocalDensity.current) { 257.toDp() },
-                gridKey = 0,
+                gridKey = rows?.key ?: 0,
                 slideDirection = { _, _ -> 0 },
                 cards = cards,
                 itemAt = { index -> cards.getOrNull(index) },
@@ -204,6 +212,7 @@ class TvWallComposeTest {
                 topBarScrollAwayPx = 0,
                 columnSpacing = TV_POSTER_WALL_COLUMN_SPACING,
                 cardHeight = null,
+                rows = rows,
                 emptyContent = {},
             )
         }
@@ -253,6 +262,115 @@ class TvWallComposeTest {
         host.press(KeyEvent.KEYCODE_DPAD_CENTER)
         assertEquals(listOf(3), record.clicked)
         assertFalse(host.onMain { state().heroActive })
+    }
+
+    // ---- 网格页里的一组一行 (追番页「追更」) ----
+
+    private class RowsRecord : TvNativeRowWallListener {
+        val focused = mutableListOf<Pair<String, Int>>()
+        val clicked = mutableListOf<Pair<String, Int>>()
+        var topRowUp = 0
+        var exitLeft = 0
+        var exitRight = 0
+
+        override fun onCardFocused(rowKey: String, index: Int, column: Int) {
+            focused += rowKey to index
+        }
+
+        override fun onCardClick(rowKey: String, index: Int) {
+            clicked += rowKey to index
+        }
+
+        override fun onCardLongPress(rowKey: String, index: Int, anchor: Rect) = Unit
+        override fun onBindCard(rowKey: String, index: Int) = Unit
+        override fun onExitLeft() {
+            exitLeft++
+        }
+
+        override fun onExitRight() {
+            exitRight++
+        }
+
+        override fun onTopRowUp(): Boolean {
+            topRowUp++
+            return true
+        }
+
+        override fun onHeroActiveChanged(active: Boolean) = Unit
+        override fun onCardAreaFocusChanged(hasFocus: Boolean) = Unit
+        override fun onToneChanged(tone: Float, splitY: Float) = Unit
+        override fun onScrollingChanged(scrolling: Boolean) = Unit
+    }
+
+    /** 一组一行的内容的几何: 同探索页的, 只是顶上没有轮播区 (前几行在 hero 态里要整片往下推). */
+    private val rowsMetrics = testExploreMetrics(testWallStyle()).copy(spacerPx = 0)
+
+    /** 网格页显示一组一行的内容 (占 key −1), 页面那一侧照「追更」接上数据与事件. */
+    private fun showGridRows(record: RowsRecord): Pair<TvNativeGridPageState, TvWallRowsGuest> {
+        val style = testWallStyle()
+        val cardWidth = Density(host.instrumentation.targetContext).run { style.cardWidthPx.toDp() }
+        val (state, _) = showGrid(GridRecord(), heroEnabled = true, rows = TvWallGridRowsSpec(ROWS_KEY, rowsMetrics, cardWidth))
+        host.waitUntil("网格页建出一组一行的内容") { state().rows != null }
+        val guest = host.onMain { state().rows as TvWallRowsGuest }
+        host.onMain {
+            guest.rowListener = record
+            guest.heroEnabled = true
+            guest.setItems(
+                listOf(
+                    TvNativeExploreItem.Header("h0", "有新集"),
+                    TvNativeExploreItem.Row("r0", subjectCards(0, 3)),
+                    TvNativeExploreItem.Header("h1", "本周更新"),
+                    TvNativeExploreItem.Row("r1", subjectCards(100, 8)),
+                ),
+            )
+        }
+        host.instrumentation.waitForIdleSync()
+        return host.onMain { state() } to guest
+    }
+
+    @Test
+    fun `grid page rows content moves between rows and hands the edges to the page`() {
+        val record = RowsRecord()
+        val (_, guest) = showGridRows(record)
+        host.onMain { guest.requestCardsFocus() }
+        host.waitUntil("送焦到首行第一张") { record.focused.lastOrNull() == ("r0" to 0) }
+        host.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+        host.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+        host.waitUntil("走到首行最后一张") { record.focused.lastOrNull() == ("r0" to 2) }
+        host.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+        assertEquals(1, record.exitRight, "行尾按右交给页面 (换到右边的标签)")
+        host.press(KeyEvent.KEYCODE_DPAD_DOWN)
+        host.waitUntil("下一行屏上同一列") { record.focused.lastOrNull() == ("r1" to 2) }
+        host.press(KeyEvent.KEYCODE_DPAD_UP)
+        host.waitUntil("回到首行") { record.focused.lastOrNull() == ("r0" to 2) }
+        host.press(KeyEvent.KEYCODE_DPAD_UP)
+        assertEquals(1, record.topRowUp, "首行按上交给页面 (回标签行)")
+        host.press(KeyEvent.KEYCODE_DPAD_LEFT)
+        host.press(KeyEvent.KEYCODE_DPAD_LEFT)
+        host.waitUntil("回到行首") { record.focused.lastOrNull() == ("r0" to 0) }
+        host.press(KeyEvent.KEYCODE_DPAD_LEFT)
+        assertEquals(1, record.exitLeft, "行首按左交给页面")
+    }
+
+    @Test
+    fun `grid page rows content enters the host hero state and pushes the first row down to the hero line`() {
+        val record = RowsRecord()
+        val (state, guest) = showGridRows(record)
+        host.onMain { guest.requestCardsFocus() }
+        host.waitUntil("送焦到首行第一张") { record.focused.lastOrNull() == ("r0" to 0) }
+        host.press(KeyEvent.KEYCODE_DPAD_CENTER)
+        assertTrue(host.onMain { state.heroActive }, "卡片墙上按确定进网格页的 hero 态")
+        assertEquals(emptyList(), record.clicked)
+        // 首行滚到顶也落不到 hero 线上: 整片往下推, 组标题落在 hero 线
+        host.waitUntil("首行整片推到 hero 线") { guest.shift.value == rowsMetrics.heroHeaderTopPx.toFloat() }
+        host.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+        host.waitUntil("hero 态里换卡") { record.focused.lastOrNull() == ("r0" to 1) }
+        host.press(KeyEvent.KEYCODE_DPAD_CENTER)
+        assertEquals(listOf("r0" to 1), record.clicked, "hero 态里按确定进详情页")
+        // 返回键 (页面调) 退回卡片墙, 撤掉整片下推
+        host.onMain { state.exitHero() }
+        assertFalse(host.onMain { state.heroActive })
+        host.waitUntil("撤掉整片下推") { guest.shift.value == 0f }
     }
 
     // ---- 探索页 ----
@@ -406,3 +524,6 @@ class TvWallComposeTest {
         host.waitUntil("按上回「立即观看」") { record.heroButtons.lastOrNull() == 0 }
     }
 }
+
+/** 一组一行的内容在网格页里占的 key (同追番页「追更」). */
+private const val ROWS_KEY = -1

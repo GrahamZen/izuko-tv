@@ -29,8 +29,5 @@ internal expect fun tvLanguageDisplayName(language: String, uiLanguageTag: Strin
 /** 先把标题 logo 解好放进内存缓存 (邻居预取), 按 [widthPx] × [heightPx] 解. */
 internal expect fun tvPreloadTitleLogo(sketch: Sketch, context: PlatformContext, url: String, widthPx: Int, heightPx: Int)
 
-/** 追番页有没有「追更」页 (它的画面只有安卓的原生版, 见 TvCollectionProgressPane). */
-internal expect val tvCollectionProgressAvailable: Boolean
-
 /** 有没有 Web 控制台 (手机扫码遥控 / 输入, 见 TvRemoteControl): 没有时不画给手机扫的码 (搜索页的手机输入、动作面板角上的码). */
 internal expect val tvWebConsoleAvailable: Boolean

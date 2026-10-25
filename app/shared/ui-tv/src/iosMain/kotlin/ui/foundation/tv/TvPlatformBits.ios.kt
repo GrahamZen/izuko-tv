@@ -32,6 +32,4 @@ internal actual fun tvPreloadTitleLogo(sketch: Sketch, context: PlatformContext,
     sketch.enqueue(ImageRequest(context, url) { size(widthPx, heightPx) })
 }
 
-internal actual val tvCollectionProgressAvailable: Boolean = false
-
 internal actual val tvWebConsoleAvailable: Boolean = false
