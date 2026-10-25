@@ -48,6 +48,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import me.him188.ani.app.pip.rememberPictureInPictureController
 import me.him188.ani.app.pip.shouldAutoEnterPictureInPicture
 import me.him188.ani.app.ui.foundation.LocalPlatform
@@ -60,6 +61,9 @@ import me.him188.ani.app.ui.lang.video_player_play
 import me.him188.ani.app.videoplayer.ui.VideoPlayer
 import org.jetbrains.compose.resources.stringResource
 import me.him188.ani.utils.platform.isIos
+import me.him188.ani.utils.logging.info
+import me.him188.ani.utils.logging.logger
+import me.him188.ani.utils.logging.warn
 import org.openani.mediamp.MediaStatus
 import kotlin.time.Duration.Companion.seconds
 
@@ -76,12 +80,24 @@ class TouchMiniPlayer internal constructor(
     /** 停在哪个角、宽多少 (见 [MiniPlayerFrame]): 收起再出来、换了会话都还是用户摆好的样子. */
     internal val corner: MutableIntState,
     internal val widthFraction: MutableFloatState,
+    /**
+     * 正在铺满全屏接住系统小窗的「还原」: 底下已经展开成播放页, 小窗还留着 (同一块视频图层, 系统收回落在它上面不黑),
+     * 等播放页自己的画面出来再撤 (见 [MiniPlayerSystemPictureInPicture]).
+     */
+    internal val takeover: Boolean,
+    private val onTakeover: (Boolean) -> Unit,
     private val onDismiss: () -> Unit,
 ) {
     val isShown: Boolean get() = vm != null
 
+    internal fun setTakeover(on: Boolean) {
+        logger.info { "[PiP] 应用内小窗${if (on) "铺满全屏接住还原" else "撤掉铺满的那一层"}" }
+        onTakeover(on)
+    }
+
     /** 收起 (× 按钮): 暂停并不再显示这个会话, 会话照样留着 (侧边栏「正在播放」回得去). */
     fun dismiss() {
+        logger.info { "[PiP] 应用内小窗: 点了收起" }
         vm?.player?.pause()
         onDismiss()
     }
@@ -92,14 +108,21 @@ class TouchMiniPlayer internal constructor(
 fun rememberTouchMiniPlayer(holder: RetainedPlaybackSessionHolder?, onPlayerPage: Boolean): TouchMiniPlayer {
     val touch = LocalTvTouchInputEnabled.current
     var dismissed by remember { mutableStateOf<EpisodeViewModel?>(null) }
+    // 铺满全屏接住还原的那个会话 (见 TouchMiniPlayer.takeover): 已经在播放页上也先留着
+    var takeover by remember { mutableStateOf<EpisodeViewModel?>(null) }
     // 回到播放页就忘掉「收起过」: 下次离开照样缩成小窗
     LaunchedEffect(onPlayerPage) {
         if (onPlayerPage) dismissed = null
     }
     val corner = rememberSaveable { mutableIntStateOf(MINI_PLAYER_DEFAULT_CORNER) }
     val widthFraction = rememberSaveable { mutableFloatStateOf(MINI_PLAYER_SMALL_FRACTION) }
-    val vm = holder?.currentViewModel?.takeIf { touch && !onPlayerPage && it !== dismissed }
-    return remember(vm) { TouchMiniPlayer(vm, corner, widthFraction) { dismissed = vm } }
+    val vm = holder?.currentViewModel?.takeIf { touch && (it === takeover || !onPlayerPage && it !== dismissed) }
+    val shown = vm != null
+    LaunchedEffect(shown) { logger.info { "[PiP] 应用内小窗${if (shown) "出现" else "不显示"} (在播放页=$onPlayerPage)" } }
+    val takingOver = vm != null && vm === takeover
+    return remember(vm, takingOver) {
+        TouchMiniPlayer(vm, corner, widthFraction, takingOver, onTakeover = { on -> takeover = if (on) vm else null }) { dismissed = vm }
+    }
 }
 
 /**
@@ -119,21 +142,33 @@ fun TouchMiniPlayerHost(miniPlayer: TouchMiniPlayer, onExpand: () -> Unit, modif
         }
     }
     // iOS: 小窗开着时回桌面也接成系统画中画. 安卓的系统画中画是整个应用缩小 (连着别的页面), 只在播放页上开
-    if (LocalPlatform.current.isIos()) MiniPlayerSystemPictureInPicture(vm, onExpand)
+    if (LocalPlatform.current.isIos()) MiniPlayerSystemPictureInPicture(vm, onExpand, miniPlayer::setTakeover)
+    val takeover = miniPlayer.takeover
+    // 铺满接住还原时收尾的信号万一没来 (系统小窗收起回调丢了), 也别一直盖着播放页
+    LaunchedEffect(takeover) {
+        if (!takeover) return@LaunchedEffect
+        delay(MINI_PLAYER_TAKEOVER_MAX)
+        logger.warn { "[PiP] 铺满接住还原 ${MINI_PLAYER_TAKEOVER_MAX.inWholeSeconds} 秒还没收尾, 撤掉" }
+        miniPlayer.setTakeover(false)
+    }
     MiniPlayerFrame(
         corner = miniPlayer.corner,
         widthFraction = miniPlayer.widthFraction,
         onTap = { controlsVisible = !controlsVisible },
-        modifier = modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(MINI_PLAYER_MARGIN),
+        modifier = modifier.fillMaxSize()
+            .then(if (takeover) Modifier else Modifier.windowInsetsPadding(WindowInsets.safeDrawing).padding(MINI_PLAYER_MARGIN)),
+        fullscreen = takeover,
         video = { VideoPlayer(vm.player, Modifier.fillMaxSize()) },
         controls = {
-            MiniPlayerControls(
-                vm,
-                visible = controlsVisible,
-                onInteract = { interactions++ },
-                onExpand = onExpand,
-                onClose = miniPlayer::dismiss,
-            )
+            if (!takeover) {
+                MiniPlayerControls(
+                    vm,
+                    visible = controlsVisible,
+                    onInteract = { interactions++ },
+                    onExpand = onExpand,
+                    onClose = miniPlayer::dismiss,
+                )
+            }
         },
     )
 }
@@ -143,14 +178,31 @@ fun TouchMiniPlayerHost(miniPlayer: TouchMiniPlayer, onExpand: () -> Unit, modif
  * 回桌面由系统自动接成画中画; 同时告诉会话宿主这时退到后台别按暂停 ([EpisodeViewModel.setAutoPictureInPictureArmed], 按本组件登记,
  * 播放页退场撤销它自己那份时不影响这里).
  * 控制器找的是播放器最后登记的视频图层, 也就是小窗这个 (见 IosVideoLayerRegistry).
- * 用户点系统小窗上的「还原」回来时直接展开成播放页 ([onExpand]), 不停在应用内小窗.
+ * 用户点系统小窗上的「还原」回来时直接到全屏的播放页 ([onExpand]), 不停在应用内小窗 (系统小窗只有「还原」这一个回来的按钮, 回来就是接着看):
+ * 小窗先铺满全屏接住 ([onTakeover], 系统收回落在当初开小窗的这块图层上, 它留着最后一帧, 不黑), 底下展开成播放页;
+ * 系统小窗收完、播放页自己的画面出来了 ([PictureInPictureController.restoreFinishedCount] 比开始接住时大了) 再撤掉铺满的这一层.
  */
 @Composable
-private fun MiniPlayerSystemPictureInPicture(vm: EpisodeViewModel, onExpand: () -> Unit) {
+private fun MiniPlayerSystemPictureInPicture(vm: EpisodeViewModel, onExpand: () -> Unit, onTakeover: (Boolean) -> Unit) {
     val controller = rememberPictureInPictureController(vm.player)
     val currentOnExpand by rememberUpdatedState(onExpand)
+    val currentOnTakeover by rememberUpdatedState(onTakeover)
+    // 开始接住时的收尾次数: 收尾那一刻控制器可能已经换了 (播放页的新图层一登记就跟着换), 按次数比, 换了也看得到
+    var takeoverFrom by remember { mutableStateOf<Int?>(null) }
     LaunchedEffect(controller) {
-        controller.restoreRequests.collect { currentOnExpand() }
+        controller.restoreRequests.collect {
+            logger.info { "[PiP] 系统小窗点了还原: 应用内小窗铺满全屏接住, 底下展开成全屏播放页" }
+            takeoverFrom = controller.restoreFinishedCount.value
+            currentOnTakeover(true)
+            vm.isFullscreen = true
+            currentOnExpand()
+        }
+    }
+    LaunchedEffect(controller, takeoverFrom) {
+        val from = takeoverFrom ?: return@LaunchedEffect
+        controller.restoreFinishedCount.first { it > from }
+        takeoverFrom = null
+        currentOnTakeover(false)
     }
     val state by vm.player.state.collectAsStateWithLifecycle()
     val autoEnter = shouldAutoEnterPictureInPicture(vm.videoScaffoldConfig.backgroundBehavior, playWhenReady = state.playWhenReady)
@@ -213,3 +265,8 @@ private val MINI_PLAYER_MARGIN = 16.dp
 private const val MINI_PLAYER_SCRIM_ALPHA = 0.35f
 private val MINI_PLAYER_PLAY_BUTTON_SIZE = 56.dp
 private val MINI_PLAYER_CONTROLS_TIMEOUT = 3.seconds
+
+/** 铺满接住还原最多盖多久 (正常是系统小窗收起 + 播放页出画面, 两三秒内收尾). */
+private val MINI_PLAYER_TAKEOVER_MAX = 5.seconds
+
+private val logger = logger("PictureInPicture")

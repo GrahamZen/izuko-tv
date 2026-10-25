@@ -17,17 +17,19 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import me.him188.ani.utils.logging.info
+import me.him188.ani.utils.logging.logger
 import org.openani.mediamp.MediampPlayer
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * 系统画中画收起时 [IosPictureInPictureController] 要做的两件事:
- * - 用户点了小窗上的「还原」按钮 (AVKit 先问 restoreUserInterface 再收起): 收起之后发一次 [requests], 应用内小窗收到后展开成全屏播放页.
- *   从播放页进的画中画收回播放页本身, 没有人听, 什么也不发生.
+ * - 用户点了小窗上的「还原」按钮 (AVKit 先问 restoreUserInterface 再收起): 当场发一次 [requests], 应用内小窗收到后直接展开成全屏播放页
+ *   (系统小窗收回到哪由控制器换, 见 IosPictureInPictureController.restore). 从播放页进的画中画收回播放页本身, 没有人听, 什么也不发生.
  * - 回到应用 (点了还原, 或回前台时应用自己收起) 时系统有时把正在放的视频暂停: 收起前在放、收起后 [KEEP_PLAYING_WINDOW] 内变成暂停的, 接着放.
  *   点小窗上的关闭按钮那种收起不管, 系统本来就该停.
  */
-internal class IosPictureInPictureStop(private val player: MediampPlayer) {
+internal class IosPictureInPictureStop(private val player: MediampPlayer, private val id: Int) {
     private val _requests = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val requests: Flow<Unit> get() = _requests
 
@@ -38,8 +40,12 @@ internal class IosPictureInPictureStop(private val player: MediampPlayer) {
     private var stoppedByApp = false
     private var playingBeforeStop = false
 
-    fun onRestoreTapped() {
+    /** 点了「还原」; 返回有没有人接 (应用内小窗要展开成播放页). */
+    fun onRestoreTapped(): Boolean {
         restoreTapped = true
+        val listened = _requests.subscriptionCount.value > 0
+        _requests.tryEmit(Unit)
+        return listened
     }
 
     /** 应用自己要收起小窗 (回前台、页面要求退出). */
@@ -49,6 +55,7 @@ internal class IosPictureInPictureStop(private val player: MediampPlayer) {
 
     fun onWillStop() {
         playingBeforeStop = player.state.value.playWhenReady
+        logger.info { "[PiP] #$id 系统小窗要收起: 点了还原=$restoreTapped 应用自己收=$stoppedByApp 在放=$playingBeforeStop" }
     }
 
     fun onDidStop() {
@@ -56,20 +63,22 @@ internal class IosPictureInPictureStop(private val player: MediampPlayer) {
         val backToApp = restore || stoppedByApp
         restoreTapped = false
         stoppedByApp = false
-        if (restore) _requests.tryEmit(Unit)
         if (backToApp && playingBeforeStop) keepPlaying()
     }
 
     private fun keepPlaying() {
         scope.launch {
-            withTimeoutOrNull(KEEP_PLAYING_WINDOW) {
+            val resumed = withTimeoutOrNull(KEEP_PLAYING_WINDOW) {
                 player.state.first { !it.playWhenReady }
                 player.play()
             }
+            if (resumed != null) logger.info { "[PiP] #$id 收起后被系统暂停了, 接着放" }
         }
     }
 
     private companion object {
+        private val logger = logger("PictureInPicture")
+
         /** iPad 上见过的系统暂停在收起后 1 秒左右到. */
         val KEEP_PLAYING_WINDOW = 1500.milliseconds
     }
