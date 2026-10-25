@@ -146,7 +146,7 @@ fun KoinApplication.useCaseModules() = module {
             listOf(DriveEpisodeContinuation(get(), instances), TorrentContinuation(instances), WebSourceContinuation(instances)),
         )
     }
-    single<PlaybackLineageSelection> { PlaybackLineageSelection(get(), get()) }
+    single<PlaybackLineageSelection> { PlaybackLineageSelection(get(), get(), get()) }
 }
 
 val GlobalKoin get() = KoinPlatform.getKoin()
