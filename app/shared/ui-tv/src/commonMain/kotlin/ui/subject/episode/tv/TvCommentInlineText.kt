@@ -22,6 +22,9 @@ import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.unit.TextUnit
+import me.him188.ani.app.ui.foundation.tv.nativeview.TV_NATIVE_STICKER_PLACEHOLDER
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeInlineText
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeSticker
 import me.him188.ani.app.ui.richtext.StickerImage
 import me.him188.ani.app.ui.richtext.StickerSizes
 import me.him188.ani.app.ui.richtext.UIRichElement
@@ -98,23 +101,7 @@ internal class TvInlineTextBuilder {
 
     /** 首尾文字去空白 (评论正文常带换行), 表情不动. */
     fun build(): TvInlineText {
-        val trimmed = pieces.toMutableList()
-        while (trimmed.isNotEmpty()) {
-            val first = trimmed.first() as? TvTextPiece.Text ?: break
-            val text = first.text.trimStart()
-            if (text.isEmpty()) trimmed.removeAt(0) else {
-                trimmed[0] = TvTextPiece.Text(text)
-                break
-            }
-        }
-        while (trimmed.isNotEmpty()) {
-            val last = trimmed.last() as? TvTextPiece.Text ?: break
-            val text = last.text.trimEnd()
-            if (text.isEmpty()) trimmed.removeAt(trimmed.lastIndex) else {
-                trimmed[trimmed.lastIndex] = TvTextPiece.Text(text)
-                break
-            }
-        }
+        val trimmed = trimmedPieces()
         if (trimmed.isEmpty()) return TvInlineText.Empty
 
         val stickers = mutableMapOf<String, UIRichElement.Annotated.Sticker>()
@@ -135,6 +122,53 @@ internal class TvInlineTextBuilder {
             }
         }
         return TvInlineText(text, stickers.values.toList())
+    }
+
+    /**
+     * 原生列表用的 ([TvNativeInlineText]): 表情处一个占位符, 记下地址由视图取图. 只有随包图、没有地址的表情原生侧取不到,
+     * 同没有配图的一样写占位文本.
+     */
+    fun buildNative(): TvNativeInlineText {
+        val trimmed = trimmedPieces()
+        if (trimmed.isEmpty()) return TvNativeInlineText.Empty
+        val text = StringBuilder()
+        val stickers = mutableListOf<TvNativeSticker>()
+        trimmed.forEach { piece ->
+            when (piece) {
+                is TvTextPiece.Text -> text.append(piece.text)
+                is TvTextPiece.Sticker -> {
+                    val url = piece.sticker.imageUrl
+                    if (url == null) {
+                        text.append(TV_STICKER_FALLBACK_TEXT)
+                    } else {
+                        stickers += TvNativeSticker(text.length, url)
+                        text.append(TV_NATIVE_STICKER_PLACEHOLDER)
+                    }
+                }
+            }
+        }
+        return TvNativeInlineText(text.toString(), stickers)
+    }
+
+    private fun trimmedPieces(): List<TvTextPiece> {
+        val trimmed = pieces.toMutableList()
+        while (trimmed.isNotEmpty()) {
+            val first = trimmed.first() as? TvTextPiece.Text ?: break
+            val text = first.text.trimStart()
+            if (text.isEmpty()) trimmed.removeAt(0) else {
+                trimmed[0] = TvTextPiece.Text(text)
+                break
+            }
+        }
+        while (trimmed.isNotEmpty()) {
+            val last = trimmed.last() as? TvTextPiece.Text ?: break
+            val text = last.text.trimEnd()
+            if (text.isEmpty()) trimmed.removeAt(trimmed.lastIndex) else {
+                trimmed[trimmed.lastIndex] = TvTextPiece.Text(text)
+                break
+            }
+        }
+        return trimmed
     }
 }
 
