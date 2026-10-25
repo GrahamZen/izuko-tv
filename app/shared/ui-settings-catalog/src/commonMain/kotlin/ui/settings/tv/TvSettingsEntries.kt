@@ -22,6 +22,7 @@ import me.him188.ani.app.data.models.preference.ThemeSettings
 import me.him188.ani.app.data.models.preference.TvBackdropBlurLevel
 import me.him188.ani.app.data.models.preference.TvEpisodeSpecialsPlacement
 import me.him188.ani.app.data.models.preference.TvExitBehavior
+import me.him188.ani.app.data.models.preference.TvExploreLayout
 import me.him188.ani.app.data.models.preference.TvLongPressAction
 import me.him188.ani.app.data.models.preference.TvPosterConfirmAction
 import me.him188.ani.app.data.models.preference.TvScheduleLayout
@@ -62,6 +63,10 @@ import me.him188.ani.app.ui.lang.settings_app_nsfw_hide
 import me.him188.ani.app.ui.lang.settings_app_search
 import me.him188.ani.app.ui.lang.settings_app_subject_title
 import me.him188.ani.app.ui.lang.settings_app_use_original_title
+import me.him188.ani.app.ui.lang.settings_theme_tv_explore_layout
+import me.him188.ani.app.ui.lang.settings_theme_tv_explore_layout_description
+import me.him188.ani.app.ui.lang.settings_theme_tv_explore_layout_fixed_focus
+import me.him188.ani.app.ui.lang.settings_theme_tv_explore_layout_poster_wall
 import me.him188.ani.app.ui.lang.settings_tv_use_original_title_description
 import me.him188.ani.app.ui.lang.settings_category_app_ui
 import me.him188.ani.app.ui.lang.settings_category_data_playback
@@ -560,6 +565,20 @@ private fun TvSettingsItemsBuilder.themeItems() {
         },
         read = { it.tvPosterConfirm },
         write = { copy(tvPosterConfirm = it) },
+    )
+    choice(
+        theme, Lang.settings_theme_tv_explore_layout, Lang.settings_theme_tv_explore_layout_description,
+        options = { TvExploreLayout.entries },
+        label = {
+            tvText(
+                when (it) {
+                    TvExploreLayout.PosterWall -> Lang.settings_theme_tv_explore_layout_poster_wall
+                    TvExploreLayout.FixedFocus -> Lang.settings_theme_tv_explore_layout_fixed_focus
+                },
+            )
+        },
+        read = { it.tvExploreLayout },
+        write = { copy(tvExploreLayout = it) },
     )
     toggle(
         theme, Lang.settings_theme_tv_poster_idle_dim, Lang.settings_theme_tv_poster_idle_dim_description,

@@ -19,7 +19,7 @@ import me.him188.ani.app.ui.foundation.focus.TV_FOCUS_MOVE_MAX_PER_SECOND_VERTIC
 import me.him188.ani.app.ui.foundation.tv.TV_CARD_PAST_DIM_ALPHA
 
 /**
- * 原生海报墙的一条横滑行 (探索页的每一行、详情页的关联条目), 行为见 [TvNativeStripView]: 按需挪, 行首按左默认放出去 (探索页的按键在
+ * 原生海报墙的一条横滑行 (探索页的每一行、详情页的关联条目), 行为见 [TvNativeStripView]: 按需挪 ([anchored] 时钉死锚点), 行首按左默认放出去 (探索页的按键在
  * TvNativeExploreView 里就接住了, 到不了这里; 详情页单独成行时吞掉, 见 TvNativePosterStrip), 行尾按右吞掉, 上下键不管.
  *
  * 滑过行首的卡压暗着出屏 (越线 [fadeDistancePx] 内压到 [TV_CARD_PAST_DIM_ALPHA]). 长按连发时下一张要总是已经排好 (领先滚动的张数见
@@ -39,6 +39,7 @@ class TvNativeRowView(
     private val fadeDistancePx: Float,
     topPx: Int = 0,
     standalone: Boolean = false,
+    anchored: Boolean = false,
 ) : TvNativeStripView(
     context,
     stepPx = style.cardWidthPx + style.columnSpacingPx,
@@ -50,6 +51,7 @@ class TvNativeRowView(
     topPx = topPx,
     bottomPx = bottomPx,
     aheadLayoutPx = if (standalone) (style.cardWidthPx + style.columnSpacingPx) * (TV_NATIVE_STRIP_HOLD_LEAD_CARDS - 1) else 0,
+    anchored = anchored,
 ) {
     val cards = TvNativeCardAdapter(style, sketch)
 

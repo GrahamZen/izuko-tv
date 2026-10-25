@@ -52,9 +52,12 @@ sealed interface TvNativeExploreItem {
     /**
      * 一条横滑行. [cards] 里的 null 是分页还没到的占位. 卡的稳定 id 按下标: 推荐重算落库时持焦的卡原地换内容,
      * 焦点不被带走 (按条目 id 的话持焦的那张被换掉, 焦点跟着丢).
+     *
+     * [loopPeriod] > 0 = 循环行 (钉死锚点版式下未登录的推荐): [cards] 是这一行的 [loopPeriod] 张重复很多遍, 按右一直接回第一张; 报给页面的
+     * 下标按周期折回 (见 TvNativeRowWallView). 0 = 不循环.
      */
     @Immutable
-    data class Row(override val key: String, val cards: List<TvNativeCard?>) : TvNativeExploreItem
+    data class Row(override val key: String, val cards: List<TvNativeCard?>, val loopPeriod: Int = 0) : TvNativeExploreItem
 }
 
 /** [items] 里 [rowKey] 那一行的卡; 没有这一行时 null. */
@@ -159,6 +162,9 @@ class TvNativeExploreList(
 
     /** 各行记住的行首 (回收重绑时恢复横向位置), 按行键. */
     val rowLeftIndex = HashMap<String, Int>()
+
+    /** 横滑行钉死锚点 (见 [TvNativeStripView] 的 anchored). 建行时定, 在有行之前设 (宿主改了就整块重建). */
+    var fixedAnchor: Boolean = false
 
     /** 各行的卡片事件 (页面实现, 带上行键). */
     var cardListener: ((row: String) -> TvNativeCardListener)? = null
@@ -424,6 +430,7 @@ class TvNativeExploreList(
                     parent.context, style, sketch, cardPool,
                     startPx = m.rowStartPx, endPx = m.endPadPx, bottomPx = m.rowGapPx,
                     fadeDistancePx = m.fadeDistancePx,
+                    anchored = fixedAnchor,
                 )
             }
             return object : ViewHolder(view) {}
