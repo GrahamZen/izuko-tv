@@ -43,12 +43,14 @@ import kotlin.math.abs
  * @param aheadLayoutPx 行里有焦点之后才在 [extraLayoutPx] 之外再多排的宽度 (单独成行的详情页各行: 建行那一帧只排屏上那几张).
  *   拿到焦点那一下常常是详情页换页的第一帧, 多排的建卡、绑定等 [TV_NATIVE_AHEAD_LAYOUT_DELAY_MILLIS] 再做 (焦点那时还在行里才做);
  *   等不到就在第一次按左右键时当场排, 长按连发总在这之后.
+ * @param anchored 钉死锚点 (探索页的钉死锚点版式): 选中的那张恒停在行首停靠线上, 整行从停靠线下滑过 (对齐滚动, 同详情页选集行);
+ *   行尾留白取「行宽 − 停靠线 − 卡宽」, 最后一张也滑得到停靠线. 行首 = 选中的那张. false = 按需挪.
  */
 @SuppressLint("ViewConstructor")
 abstract class TvNativeStripView(
     context: Context,
     private val stepPx: Int,
-    spacingPx: Int,
+    private val spacingPx: Int,
     private val extraLayoutPx: Int,
     prefetchItems: Int,
     startPx: Int,
@@ -56,6 +58,7 @@ abstract class TvNativeStripView(
     topPx: Int,
     bottomPx: Int,
     private val aheadLayoutPx: Int = 0,
+    val anchored: Boolean = false,
 ) : HorizontalGridView(context) {
     private val scroll = TvNativeSpringScroll()
     private var lastRepeatMove = 0L
@@ -84,10 +87,20 @@ abstract class TvNativeStripView(
         isFocusable = false
         setPadding(startPx, topPx, endPx, bottomPx)
         horizontalSpacing = spacingPx
-        // 受限 API (leanback-grid 1.0.0 仍实现, 之后的版本标成不支持): 按需挪
-        @SuppressLint("RestrictedApi")
-        val strategy = BaseGridView.FOCUS_SCROLL_ITEM
-        setFocusScrollStrategy(strategy)
+        if (anchored) {
+            // 对齐滚动: 选中的那张左缘对到停靠线 (= 行首留白)
+            setFocusScrollStrategy(BaseGridView.FOCUS_SCROLL_ALIGNED)
+            windowAlignment = BaseGridView.WINDOW_ALIGN_NO_EDGE
+            windowAlignmentOffsetPercent = BaseGridView.WINDOW_ALIGN_OFFSET_PERCENT_DISABLED
+            windowAlignmentOffset = startPx
+            itemAlignmentOffset = 0
+            itemAlignmentOffsetPercent = 0f
+        } else {
+            // 受限 API (leanback-grid 1.0.0 仍实现, 之后的版本标成不支持): 按需挪
+            @SuppressLint("RestrictedApi")
+            val strategy = BaseGridView.FOCUS_SCROLL_ITEM
+            setFocusScrollStrategy(strategy)
+        }
         setExtraLayoutSpace(extraLayoutPx)
         initialPrefetchItemCount = prefetchItems
         // leanback 默认关掉 GapWorker 预取 (注释说低端芯片上回退); 这里的卡在空闲帧里先建好, 换行那一帧不现建
@@ -110,8 +123,33 @@ abstract class TvNativeStripView(
         addOnLayoutCompletedListener { onRowMoved() }
     }
 
-    /** 停稳时 (以及从回收缓存里拿回来重新上屏时) 把行对齐到合法的停位; 默认贴齐卡片列 ([snapToColumns]). */
-    protected open fun alignWhenIdle() = snapToColumns()
+    /** 停稳时 (以及从回收缓存里拿回来重新上屏时) 把行对齐到合法的停位; 默认贴齐卡片列 ([snapToColumns]), 钉死锚点时选中的那张对回停靠线. */
+    protected open fun alignWhenIdle() = if (anchored) dockSelected() else snapToColumns()
+
+    /** 钉死锚点: 停稳时选中的那张没停在停靠线上 (平滑滚动半路被打断) 就挪过去. */
+    private fun dockSelected() {
+        if (!isAttachedToWindow || scrollState != SCROLL_STATE_IDLE) return
+        val view = findViewHolderForAdapterPosition(selectedPosition)?.itemView ?: return
+        val delta = view.left - paddingLeft
+        if (delta != 0) scrollBy(delta, 0)
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        // 钉死锚点: 行尾留白让最后一张也滑得到停靠线
+        if (anchored) {
+            val end = (w - paddingLeft - (stepPx - spacingPx)).coerceAtLeast(0)
+            if (end != paddingRight) setPadding(paddingLeft, paddingTop, end, paddingBottom)
+        }
+    }
+
+    /** 第 [index] 张已经停在行首停靠线上、行停稳了 (钉死锚点: 滚动落后焦点时, 焦点到了而画面还在滑). */
+    fun isDocked(index: Int): Boolean =
+        scrollState == SCROLL_STATE_IDLE && findViewHolderForAdapterPosition(index)?.itemView?.left == paddingLeft
+
+    /** 焦点走到第 [target] 张 (共 [count] 张, 屏上完整放得下 [columns] 张) 后行首该是第几张: 钉死锚点时就是它, 否则按需挪 ([tvStripLeftIndex]). */
+    fun leftIndexFor(current: Int, target: Int, count: Int, columns: Int): Int =
+        if (anchored) target.coerceIn(0, (count - 1).coerceAtLeast(0)) else tvStripLeftIndex(current, target, count, columns)
 
     /**
      * 从行外进来时, 已经排出来的落点那张 ([entryIndex]) 能不能直接接焦点. 默认要完整露在行首停靠线与行尾留白之间 (进来不滚); 不行就按
@@ -183,6 +221,15 @@ abstract class TvNativeStripView(
     protected fun placeAfterSubmit(count: Int, leftIndex: Int, columns: Int, focusIndex: Int) {
         if (count == 0) {
             pendingLeft = -1
+            return
+        }
+        if (anchored) {
+            // 钉死锚点: 行首就是选中的那张, 最后一张也停得到停靠线
+            val left = (if (focusIndex >= 0) focusIndex else leftIndex).coerceIn(0, count - 1)
+            selectedPosition = left
+            pendingLeft = left
+            requestLayout()
+            retryLayoutIfMissed(TV_NATIVE_LAYOUT_RETRIES)
             return
         }
         // 挪到底时最后一张贴在行尾留白线上: 行首最多到 count - columns
@@ -318,7 +365,7 @@ abstract class TvNativeStripView(
     }
 
     /**
-     * 一步挪到第 [index] 张 (远跳途中按了方向键: 当场落地): 停掉在走的滚动, 行首照按需挪的规矩 ([tvStripLeftIndex]) 定, 下一趟布局就排出来,
+     * 一步挪到第 [index] 张 (远跳途中按了方向键: 当场落地): 停掉在走的滚动, 行首照 [leftIndexFor] 定, 下一趟布局就排出来,
      * 布局完调 [onLaidOut] (由调用方送焦). 行里没有焦点时用 (焦点停放在行外): 否则 leanback 按持焦那张重排.
      */
     fun jumpToCard(index: Int, columns: Int, onLaidOut: () -> Unit) {
@@ -329,7 +376,7 @@ abstract class TvNativeStripView(
         stopScroll()
         val target = index.coerceIn(0, count - 1)
         layoutCallback = onLaidOut
-        placeAfterSubmit(count, tvStripLeftIndex(leftIndex(), target, count, columns), columns, target)
+        placeAfterSubmit(count, leftIndexFor(leftIndex(), target, count, columns), columns, target)
     }
 
     /** [jumpToCard] 之后这一趟布局完成时调, null = 没有. */
