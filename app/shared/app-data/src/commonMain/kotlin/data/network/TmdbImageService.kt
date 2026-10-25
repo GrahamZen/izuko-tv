@@ -715,6 +715,7 @@ class TmdbImageService(
             } else {
                 emptySet()
             }
+            val own = TmdbOwnNames.of(originalName, hints, activeAsOfDate)
             // 两次 searchLayered 共用一个 resolver: 各建各的会把 lineage 请求发两遍
             val resolveRootName = rootNameResolver(subjectId, originalName, hints.nameCn)
             val path = try {
@@ -731,7 +732,7 @@ class TmdbImageService(
                     },
                 ) { query, requireExactTitle ->
                     searchBackdropPath(
-                        query, subjectYear, requireExactTitle,
+                        query, subjectYear, own, requireExactTitle,
                         theatrical = hints.theatrical, candidateNames = candidateNames,
                     )
                 }
@@ -744,7 +745,7 @@ class TmdbImageService(
                         // (Kanon 2002 东映版), 前面每一层都会空手而归.
                         // **逐字同名那道闸门要一起带过来**: 少了它, `ANGEL VOICE` 削出的 `ANGEL`
                         // 会在这一遍拿到 Angel Beats! 的海报 —— backdrop 那遍拦住的正是这个.
-                        searchPosterPath(query, subjectYear, requireExactTitle)?.let { LayeredHit(it) }
+                        searchPosterPath(query, subjectYear, own, requireExactTitle)?.let { LayeredHit(it) }
                     }
             } catch (e: CancellationException) {
                 throw e
@@ -817,12 +818,13 @@ class TmdbImageService(
 
         // 见 doResolveBackdropUrl 里同名变量的说明
         val subjectYear = tmdbSubjectYear(activeAsOfDate.yearOrNull(), hints.screeningYear, hints.airYear)
+        val own = TmdbOwnNames.of(originalName, hints, activeAsOfDate)
         val urls = try {
             searchLayered(
                 originalName,
                 rootNameResolver(subjectId, originalName, hints.nameCn),
             ) { query, _ ->
-                searchAnimeRef(query, subjectYear)
+                searchAnimeRef(query, subjectYear, own)
             }?.let { fetchAllBackdropUrls(it) }.orEmpty()
         } catch (e: CancellationException) {
             throw e
@@ -847,14 +849,18 @@ class TmdbImageService(
             .map { "$IMAGE_BASE_URL$it" }
 
     /** 跨类型取匹配条目的引用 (type + id), 档次顺序与 [searchBackdropPath] 一致. */
-    private suspend fun searchAnimeRef(query: String, subjectYear: Int?): LayeredHit<TmdbMediaRef>? {
+    private suspend fun searchAnimeRef(
+        query: String,
+        subjectYear: Int?,
+        own: TmdbOwnNames,
+    ): LayeredHit<TmdbMediaRef>? {
         fun List<TmdbSearchResult>.firstWithId() = firstOrNull { it.id != null }
         fun TmdbSearchResult.hit(type: String) =
             LayeredHit(TmdbMediaRef(type, id!!), isTentativeSeasonHit(query, type, this))
 
-        val tv = searchAnime(query, "tv", subjectYear)
+        val tv = searchAnime(query, "tv", subjectYear, own)
         tv.primary.firstWithId()?.let { return it.hit("tv") }
-        val movie = searchAnime(query, "movie", subjectYear)
+        val movie = searchAnime(query, "movie", subjectYear, own)
         return movie.primary.firstWithId()?.hit("movie")
             ?: tv.fallback.firstWithId()?.hit("tv")
             ?: movie.fallback.firstWithId()?.hit("movie")
@@ -918,8 +924,9 @@ class TmdbImageService(
     ): TmdbMediaRef? {
         if (originalName.isBlank()) return null
         val subjectYear = tmdbSubjectYear(activeAsOfDate.yearOrNull(), hints.screeningYear, hints.airYear)
+        val own = TmdbOwnNames.of(originalName, hints, activeAsOfDate)
         return searchLayered(originalName, rootNameResolver(subjectId, originalName, hints.nameCn)) { query, _ ->
-            searchAnimeRef(query, subjectYear)
+            searchAnimeRef(query, subjectYear, own)
         }
     }
 
@@ -1248,8 +1255,9 @@ class TmdbImageService(
         language: String,
         subjectYear: Int?,
         subjectAirDate: String?,
+        own: TmdbOwnNames,
     ): TmdbEpisodeStills {
-        val movieId = findOwnMovieId(originalName, subjectYear, subjectAirDate)
+        val movieId = findOwnMovieId(originalName, subjectYear, subjectAirDate, own)
             ?: return TmdbEpisodeStills()
         logger.info { "TMDB movie match for subject $subjectId: https://www.themoviedb.org/movie/$movieId" }
         return buildMovieAsSingleEpisode(movieId, language)
@@ -1379,16 +1387,17 @@ class TmdbImageService(
         originalName: String,
         subjectYear: Int?,
         subjectAirDate: String?,
+        own: TmdbOwnNames,
     ): Int? {
         val candidates = searchQueryCandidates(originalName)
         for (query in candidates.primary) {
-            val movie = searchAnime(query, "movie", subjectYear)
+            val movie = searchAnime(query, "movie", subjectYear, own)
             (movie.primary.firstOrNull { it.id != null } ?: movie.fallback.firstOrNull { it.id != null })
                 ?.let { return it.id }
         }
         val nameNormalized = normalizeForMatch(originalName)
         for (query in candidates.derived) {
-            val movie = searchAnime(query, "movie", subjectYear)
+            val movie = searchAnime(query, "movie", subjectYear, own)
             val hit = (movie.primary + movie.fallback).firstOrNull { it.id != null } ?: continue
             val sameName = hit.hasExactTitle(nameNormalized)
             val closeDate = subjectAirDate != null &&
@@ -1421,6 +1430,7 @@ class TmdbImageService(
         // 血统判定在搜索前主动做 (搜索层只在直搜落空时才需要根条目名):
         // 建索引时要用"是否衍生作"决定 season 0 的取舍, 见下方季循环.
         val lineage = resolveLineageOrNull(subjectId, originalName, hints.nameCn)
+        val own = TmdbOwnNames.of(originalName, hints, subjectAirDate)
 
         // **单集条目 (剧场版/OVA) 先搜 movie**: 这类条目在 TMDB 上就是一个 movie, 而 tv 搜索
         // 几乎总能撞上同系列的某部剧 (实测 君の名は。命中毫不相干的 tv「キミの名を呼べば」、
@@ -1435,7 +1445,7 @@ class TmdbImageService(
         // 赢走、拿了 1995 年 TV 版的分集数据 —— 当初为此单写了一条"没有任何一季年份吻合就再找
         // movie"的启发式, 现在 infobox 判据一个字段就认出来了.
         val ownMovie = if (hints.theatrical || subjectEpisodeCount == 1) {
-            fetchMovieAsSingleEpisode(subjectId, originalName, language, subjectYear, subjectAirDate)
+            fetchMovieAsSingleEpisode(subjectId, originalName, language, subjectYear, subjectAirDate, own)
         } else {
             null
         }
@@ -1486,7 +1496,7 @@ class TmdbImageService(
 
             suspend fun searchOne(query: String): TmdbSearchResult? {
                 val usable = { r: TmdbSearchResult -> r.id?.let { it !in rejectedTvIds } == true }
-                return searchAnime(query, "tv", subjectYear)
+                return searchAnime(query, "tv", subjectYear, own)
                     .let { it.primary.firstOrNull(usable) ?: it.fallback.firstOrNull(usable) }
             }
 
@@ -1618,7 +1628,7 @@ class TmdbImageService(
             }
             val built = buildEpisodeStills(
                 tvId, matchedQuery, subjectId, originalName, language, token,
-                subjectYear, subjectAirDate, lineage, ownMovie,
+                subjectYear, subjectAirDate, lineage, ownMovie, own,
             )
             if (built.hasAnyStill()) return@use built
             logger.info { "TMDB tv/$tvId has no still at all for subject $subjectId" }
@@ -1639,7 +1649,7 @@ class TmdbImageService(
         // 罗马字/英文, 只有中文别名对得上.
         firstBuilt
             ?: ownMovie
-            ?: fetchMovieAsSingleEpisode(subjectId, originalName, language, subjectYear, subjectAirDate)
+            ?: fetchMovieAsSingleEpisode(subjectId, originalName, language, subjectYear, subjectAirDate, own)
                 .takeIf { it.byEpisodeNumber.values.any { media -> media.stillUrl != null } }
             ?: hints.nameCn.takeIf { it.isNotBlank() }?.let { nameCn ->
                 fetchChineseMovieAsSingleEpisode(subjectId, nameCn, language, subjectYear, false, originalName)
@@ -1700,12 +1710,13 @@ class TmdbImageService(
         hints: TmdbMatchHints,
         entry: TmdbSubjectMapEntry,
     ): TmdbEpisodeStills? {
+        val own = TmdbOwnNames.of(originalName, hints, subjectAirDate)
         suspend fun tv(tvId: Int, specialsOnly: Boolean): TmdbEpisodeStills {
             // 只索引 S0 时季的先后无所谓; 否则要看是不是衍生作 (见 buildEpisodeStills 的 specialsLast)
             val lineage = if (specialsOnly) null else resolveLineageOrNull(subjectId, originalName, hints.nameCn)
             return buildEpisodeStills(
                 tvId, null, subjectId, originalName, language, token,
-                subjectYear, subjectAirDate, lineage, ownMovie = null,
+                subjectYear, subjectAirDate, lineage, ownMovie = null, own = own,
                 seasonFilter = if (specialsOnly) setOf(0) else null,
             )
         }
@@ -1717,7 +1728,7 @@ class TmdbImageService(
             // 逐集对位: 只取用到的那几季, 连同剧集详情一起并行取; 对集照编号, 不必认季也不必取原语言集名
             source?.type == "tv" && episodeMap != null -> buildEpisodeStills(
                 source.id, null, subjectId, originalName, language, token,
-                subjectYear, subjectAirDate, lineage = null, ownMovie = null,
+                subjectYear, subjectAirDate, lineage = null, ownMovie = null, own = own,
                 seasonFilter = episodeMap.seasons, mapped = true, mappedMainStart = episodeMap.mainStart,
             ).copy(episodeMap = entry.episodes)
 
@@ -1740,6 +1751,7 @@ class TmdbImageService(
      *
      * @param matchedQuery 命中这部剧的候选词, 用于判定衍生条目该不该只索引 season 0.
      * @param ownMovie 已拉到的"本条目作为 movie"的数据 (没拉过为 null), 供剧集装不下本条目时改用.
+     * @param own 改用 movie 时找那部电影要用的条目名字, 见 [isTmdbPartialWordHit].
      * @param seasonFilter 只索引这几季 (对应表说只取 S0、或逐集对位用到的季, 见 [stillsFromMap]); null = 按下面的规则全部索引.
      * @param mapped 照对应表的逐集对位建 (见 [TmdbEpisodeMap]): 对集离线做过, 不需要认季、电影回退与原语言集名,
      *   只收 [TmdbEpisodeStills.bySeasonEpisode]; 剧集详情与各季同时取.
@@ -1757,6 +1769,7 @@ class TmdbImageService(
         subjectAirDate: String?,
         lineage: BgmLineage?,
         ownMovie: TmdbEpisodeStills?,
+        own: TmdbOwnNames,
         seasonFilter: Set<Int>? = null,
         mapped: Boolean = false,
         mappedMainStart: Pair<Int, Int>? = null,
@@ -1799,7 +1812,7 @@ class TmdbImageService(
                 seasonYears.any { (it - subjectYearOrNull).absoluteValue <= YEAR_TOLERANCE }
             if (!plausible) {
                 val byMovie = ownMovie
-                    ?: fetchMovieAsSingleEpisode(subjectId, originalName, language, subjectYear, subjectAirDate)
+                    ?: fetchMovieAsSingleEpisode(subjectId, originalName, language, subjectYear, subjectAirDate, own)
                 if (byMovie.byAirDate.keys.any { it.daysFrom(subjectAirDate).let { d -> d != null && d <= 1 } }) {
                     logger.info {
                         "TMDB tv/$tvId has no season near $subjectAirDate for subject $subjectId, using movie instead"
@@ -2288,6 +2301,7 @@ class TmdbImageService(
     private suspend fun searchBackdropPath(
         query: String,
         subjectYear: Int?,
+        own: TmdbOwnNames,
         requireExactTitle: Boolean = false,
         theatrical: Boolean = false,
         candidateNames: Set<String> = emptySet(),
@@ -2307,15 +2321,15 @@ class TmdbImageService(
         // 同名**才采用: 否则 `怪獣8号 第1期総集編` 会拿到**同日上映**的兄弟作「保科の休日」
         // (同日, 日期判据分不开), `Kong — The Origin` 会顺着根条目名 `悟空` 拿到龙珠剧场版.
         if (theatrical) {
-            val movieFirst = searchAnime(query, "movie", subjectYear)
+            val movieFirst = searchAnime(query, "movie", subjectYear, own)
             (movieFirst.primary + movieFirst.fallback).firstOrNull {
                 it.backdropPath != null && it.matchesAnyCandidate(candidateNames)
             }?.let { return it.hit("movie") }
         }
 
-        val tv = searchAnime(query, "tv", subjectYear)
+        val tv = searchAnime(query, "tv", subjectYear, own)
         tv.primary.firstWithBackdrop()?.let { return it.hit("tv") }
-        val movie = searchAnime(query, "movie", subjectYear)
+        val movie = searchAnime(query, "movie", subjectYear, own)
         return movie.primary.firstWithBackdrop()?.hit("movie")
             ?: tv.fallback.firstWithBackdrop()?.hit("tv")
             ?: movie.fallback.firstWithBackdrop()?.hit("movie")
@@ -2335,6 +2349,7 @@ class TmdbImageService(
     private suspend fun searchPosterPath(
         query: String,
         subjectYear: Int?,
+        own: TmdbOwnNames,
         requireExactTitle: Boolean = false,
     ): String? {
         val tokens = tokenizeForMatch(query)
@@ -2348,6 +2363,7 @@ class TmdbImageService(
                     }) &&
                     result.yearPlausible(type, subjectYear) &&
                     result.matchesTokens(tokens) &&
+                    !result.isPartialWordHit(query, own) &&
                     (!requireExactTitle || result.hasExactTitle(queryNormalized))
         }
 
@@ -2503,10 +2519,14 @@ class TmdbImageService(
         json.decodeFromString(TmdbSearchResponse.serializer(), body).results
     }
 
+    /**
+     * @param own 条目自己的名字与日期: 标题校验之外再排除半截词命中, 见 [isTmdbPartialWordHit].
+     */
     private suspend fun searchAnime(
         query: String,
         type: String,
         subjectYear: Int?,
+        own: TmdbOwnNames,
     ): TmdbAnimeSearchResults {
         val tokens = tokenizeForMatch(query)
         val queryNormalized = normalizeForMatch(query)
@@ -2515,7 +2535,7 @@ class TmdbImageService(
         // 不该浪费在年份上根本不可能的条目上 (攻殻機動隊 1995 剧场版的 movie 搜索里, 正确的
         // tv/9323 排在 2.0 重制版与 2026 新作之后, 年份先筛掉那两个它才进得了别名校验).
         val anime = results.filter { GENRE_ANIMATION in it.genreIds && it.yearPlausible(type, subjectYear) }
-        val matched = anime.filter { it.matchesTokens(tokens) }
+        val matched = anime.filter { it.matchesTokens(tokens) && !it.isPartialWordHit(query, own) }
             .ifEmpty {
                 // 主标题没匹配上时查别名再校验一次: TMDB 模糊搜索能命中而主标题不含查询词,
                 // 通常是别名在起作用 (如 JoJo 主条目别名含 "スティール・ボール・ラン ジョジョの奇妙な冒険").
@@ -2523,7 +2543,8 @@ class TmdbImageService(
                 anime.take(2).filter { result ->
                     val id = result.id ?: return@filter false
                     val altTitles = runCatching { fetchAlternativeTitles(id, type) }.getOrElse { emptyList() }
-                    altTitles.isNotEmpty() && result.matchesTokens(tokens, altTitles)
+                    altTitles.isNotEmpty() && result.matchesTokens(tokens, altTitles) &&
+                            !result.isPartialWordHit(query, own, altTitles)
                 }
             }
         // 标题与查询完全一致的排最前: "标题多出词允许"会让外传/衍生作也通过校验
@@ -2551,7 +2572,7 @@ class TmdbImageService(
             // 兜底档只做主标题校验, 不值得为弱信号再发别名请求
             fallback = results
                 .filter { it.genreIds.isEmpty() && it.originalLanguage == "ja" && it.yearPlausible(type, subjectYear) }
-                .filter { it.matchesTokens(tokens) },
+                .filter { it.matchesTokens(tokens) && !it.isPartialWordHit(query, own) },
         )
     }
 
@@ -3154,8 +3175,10 @@ data class TmdbImageCache(
          *      hero 背景与整排选集卡都存成了那部的图 (2026-09-06 用户报的).
          * v23: 对应表上线后本机不再存「没找到」, 表里有的条目一律以表为准. 查表之前留下的负缓存 (一年以上不活跃的老番是
          *      永久的) 会一直挡着屏保全量剧照与分集剧照走表, 连同自己搜的旧结果整表作废.
+         * v24: 半截词命中不采纳 (见 isTmdbPartialWordHit), 存的是错的正缓存: `ガイ` 存着「強殖装甲ガイバー」的图,
+         *      `なりヒロwww` 存着一部成人片的图.
          */
-        const val CURRENT_VERSION = 23
+        const val CURRENT_VERSION = 24
     }
 }
 
@@ -3691,6 +3714,18 @@ private fun TmdbSearchResult.matchesTokens(tokens: List<String>, extraTitles: Li
     return tokens.all { token -> titles.any { it.contains(token) } }
 }
 
+/** 见 [isTmdbPartialWordHit]; [extraTitles] 是已取到的别名. */
+private fun TmdbSearchResult.isPartialWordHit(
+    query: String,
+    own: TmdbOwnNames,
+    extraTitles: List<String> = emptyList(),
+): Boolean = isTmdbPartialWordHit(
+    query,
+    listOfNotNull(originalName, originalTitle, name, title) + extraTitles,
+    own,
+    firstAirDate ?: releaseDate,
+)
+
 /**
  * 季号标记 (CJK 写法): 第2クール / 第3期 / 第2部 / 第2シーズン / 第2季.
  *
@@ -3792,7 +3827,7 @@ internal fun tmdbTentativeSeasonHit(query: String, isMovie: Boolean, exactTitle:
 private fun String?.yearOrNull(): Int? = this?.take(4)?.toIntOrNull()
 
 /** 两个 `YYYY-MM-DD` 日期相差的天数 (绝对值); 任一侧解析不出来返回 null. */
-private fun String.daysFrom(other: String): Int? {
+internal fun String.daysFrom(other: String): Int? {
     val a = runCatching { LocalDate.parse(this) }.getOrNull() ?: return null
     val b = runCatching { LocalDate.parse(other) }.getOrNull() ?: return null
     return a.daysUntil(b).absoluteValue
