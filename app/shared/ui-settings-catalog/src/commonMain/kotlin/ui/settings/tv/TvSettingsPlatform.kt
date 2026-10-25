@@ -46,6 +46,12 @@ interface TvSettingsPlatform {
     /** 有触摸屏时界面用平板模式还是电视模式 (见 [TvInterfaceModeSwitch]); null = 没有这个选择. */
     val interfaceMode: TvInterfaceModeSwitch? get() = null
 
+    /**
+     * 打开应用内的反馈弹窗 (触屏端: 平板 / iPad): 「我的反馈」点了直接开它.
+     * null = 没有 (电视上写反馈用 Web 控制台, 「我的反馈」进下一层、画控制台的码).
+     */
+    val openFeedback: (() -> Unit)? get() = null
+
     /** 都不给: 没有这些功能的端. */
     object None : TvSettingsPlatform
 }

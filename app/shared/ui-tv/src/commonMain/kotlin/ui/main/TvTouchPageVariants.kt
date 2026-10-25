@@ -33,6 +33,8 @@ import me.him188.ani.app.ui.exploration.schedule.TvScheduleSlot
 import me.him188.ani.app.ui.exploration.search.LocalSearchPageVariant
 import me.him188.ani.app.ui.exploration.search.SearchPageVariant
 import me.him188.ani.app.ui.exploration.search.TvSearchPage
+import me.him188.ani.app.ui.feedback.TouchFeedbackHost
+import me.him188.ani.app.ui.feedback.withTouchFeedback
 import me.him188.ani.app.ui.foundation.AniUiBehavior
 import me.him188.ani.app.ui.foundation.LocalTvBackLongPressHost
 import me.him188.ani.app.ui.foundation.LocalTvPageAdjustHost
@@ -145,7 +147,7 @@ fun InstallTvTouchPageVariants(aniNavigator: AniNavigator, content: @Composable 
         LocalTvLoginSidePanel provides null,
         // 设置页: 触屏版 (分类与设置项同电视版); 电视独有的项 (控制台、首次引导等) 这里没有
         LocalSettingsScreenVariant provides SettingsScreenVariant { vm, initialTab, legacy, licenses, modifier ->
-            TouchSettingsPage(vm, initialTab, legacy, licenses, TvSettingsPlatform.None, modifier)
+            TouchSettingsPage(vm, initialTab, legacy, licenses, remember { TvSettingsPlatform.None.withTouchFeedback() }, modifier)
         },
     ) {
         // 动作面板顶上那张卡在没有会话时显示「接下来播放」, 它的目标由这条链算 (见 TvUpNextStore)
@@ -186,6 +188,7 @@ fun InstallTvTouchPageVariants(aniNavigator: AniNavigator, content: @Composable 
             // 动作面板的入口在侧边栏 (触屏上没有长按返回 / 长按播放键)
             val openActionPanel = remember { { if (currentDestinationClaimable()) showQuickMenu = true } }
             CompositionLocalProvider(LocalTvOpenActionPanel provides openActionPanel) { content() }
+            TouchFeedbackHost()
         }
     }
 }
