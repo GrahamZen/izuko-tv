@@ -29,7 +29,9 @@ import kotlinx.io.files.SystemFileSystem
 import me.him188.ani.app.data.persistent.database.DeviceAniDatabase
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.data.repository.user.UserRepository
+import me.him188.ani.app.domain.foundation.BangumiEchTransport
 import me.him188.ani.app.domain.foundation.HttpClientProvider
+import me.him188.ani.app.domain.foundation.IosEchTransport
 import me.him188.ani.app.domain.foundation.get
 import me.him188.ani.app.domain.media.cache.engine.AlwaysUseTorrentEngineAccess
 import me.him188.ani.app.domain.media.cache.engine.HttpMediaCacheEngine
@@ -323,6 +325,7 @@ fun getIosModules(
         GrantedPermissionManager
     }
     single<BrowserNavigator> { IosBrowserNavigator() }
+    single<BangumiEchTransport> { IosEchTransport(get(), lazy { get() }) } // bangumi 加密直连
     // WKWebView: Bangumi 应用内登录 (授权页的回调在浏览器里拦下) 与网页源的人机验证
     single<CaptchaBrowserFactory> { WkWebViewCaptchaBrowserFactory }
     single<ImageCaptchaRecognizer> { IosOnnxImageCaptchaRecognizer() }

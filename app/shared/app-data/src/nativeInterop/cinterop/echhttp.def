@@ -1,0 +1,216 @@
+# iOS 加密直连 (ECH) 用的 libcurl + BoringSSL (预编译包与下载见 build-logic 的 echHttpSdk.kt).
+# Kotlin 只用到 curl 的类型与常量, 以及下面这段 C: 证书校验与 ECH 的 BoringSSL 回调, 和几个有类型的 curl_easy_setopt (它是变参函数).
+headers = curl/curl.h
+headerFilter = curl/*
+compilerOpts = -DCURL_STATICLIB -DCURL_DISABLE_TYPECHECK
+nonStrictEnums = CURLcode CURLoption CURLINFO
+# 只给 BoringSSL 当回调的, 参数是 OpenSSL 的类型 (不生成绑定)
+excludedFunctions = izk_tls_free_ex izk_tls_of izk_verify izk_handshake_info izk_configure_ssl_ctx
+staticLibraries = libcurl.a libssl.a libcrypto.a libzlib.a
+linkerOpts = -lc++ -framework Security -framework CoreFoundation -framework SystemConfiguration
+package = me.him188.ani.app.domain.foundation.echcurl
+
+---
+
+#include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
+#include <openssl/err.h>
+#include <openssl/pool.h>
+#include <openssl/ssl.h>
+#include <openssl/stack.h>
+#include <CoreFoundation/CoreFoundation.h>
+#include <Security/Security.h>
+
+/*
+ * 一次加密直连请求的 TLS 状态. 请求持一份引用; curl 为这次连接建的 SSL_CTX 也持一份 (连接复用时它比请求活得久, 由 ex_data 的释放函数放掉).
+ * 回调都在执行这次请求的线程上跑, 只有引用计数会在别的线程上减 (连接被另一个请求关掉时).
+ */
+typedef struct izk_ech_tls {
+    int refs;
+    char hostname[256];
+    int require_ech;
+    /* 证书按应当的名字 (真实域名, ECH 被拒时是公共名) 校验通过 */
+    int hostname_verified;
+    /* 系统的证书校验没通过 */
+    int trust_failed;
+    /* ECH 被拒时服务器给的新配置 (只在证书通过时记) */
+    uint8_t *retry_config;
+    size_t retry_config_len;
+} izk_ech_tls;
+
+static int izk_tls_index = -1;
+
+static void izk_ech_tls_release(izk_ech_tls *tls) {
+    if (tls && __atomic_sub_fetch(&tls->refs, 1, __ATOMIC_ACQ_REL) == 0) {
+        free(tls->retry_config);
+        free(tls);
+    }
+}
+
+static void izk_tls_free_ex(void *parent, void *ptr, CRYPTO_EX_DATA *ad, int index, long argl, void *argp) {
+    izk_ech_tls_release((izk_ech_tls *) ptr);
+}
+
+/* curl 与 ex_data 下标只初始化一次 (调用方保证只调一次). */
+static CURLcode izk_global_init(void) {
+    CURLcode result = curl_global_init(CURL_GLOBAL_DEFAULT);
+    if (result == CURLE_OK && izk_tls_index < 0) {
+        izk_tls_index = SSL_CTX_get_ex_new_index(0, NULL, NULL, NULL, izk_tls_free_ex);
+        if (izk_tls_index < 0) return CURLE_FAILED_INIT;
+    }
+    return result;
+}
+
+static izk_ech_tls *izk_ech_tls_new(const char *hostname, int require_ech) {
+    if (!hostname || strlen(hostname) >= sizeof(((izk_ech_tls *) 0)->hostname)) return NULL;
+    izk_ech_tls *tls = calloc(1, sizeof(izk_ech_tls));
+    if (!tls) return NULL;
+    tls->refs = 1;
+    strcpy(tls->hostname, hostname);
+    tls->require_ech = require_ech;
+    return tls;
+}
+
+static int izk_ech_tls_hostname_verified(const izk_ech_tls *tls) { return tls->hostname_verified; }
+static int izk_ech_tls_trust_failed(const izk_ech_tls *tls) { return tls->trust_failed; }
+static size_t izk_ech_tls_retry_config_len(const izk_ech_tls *tls) { return tls->retry_config_len; }
+
+static size_t izk_ech_tls_copy_retry_config(const izk_ech_tls *tls, uint8_t *out, size_t capacity) {
+    if (!tls->retry_config || tls->retry_config_len > capacity) return 0;
+    memcpy(out, tls->retry_config, tls->retry_config_len);
+    return tls->retry_config_len;
+}
+
+static izk_ech_tls *izk_tls_of(const SSL *ssl) {
+    return izk_tls_index < 0 ? NULL : (izk_ech_tls *) SSL_CTX_get_ex_data(SSL_get_SSL_CTX(ssl), izk_tls_index);
+}
+
+/*
+ * 用系统的信任设置 (SecTrust) 校验证书链与域名, 不带自己的根证书. 校验的名字: ECH 被拒时是服务器的公共名 (SSL_get0_ech_name_override),
+ * 握手随后以 SSL_R_ECH_REJECTED 失败、给出新配置; 否则是真实域名.
+ */
+static enum ssl_verify_result_t izk_verify(SSL *ssl, uint8_t *out_alert) {
+    izk_ech_tls *tls = izk_tls_of(ssl);
+    if (!tls) {
+        *out_alert = SSL_AD_INTERNAL_ERROR;
+        return ssl_verify_invalid;
+    }
+    const char *override_name = NULL;
+    size_t override_len = 0;
+    SSL_get0_ech_name_override(ssl, &override_name, &override_len);
+    CFStringRef name = override_len > 0
+        ? CFStringCreateWithBytes(NULL, (const UInt8 *) override_name, (CFIndex) override_len, kCFStringEncodingUTF8, false)
+        : CFStringCreateWithCString(NULL, tls->hostname, kCFStringEncodingUTF8);
+    const STACK_OF(CRYPTO_BUFFER) *chain = SSL_get0_peer_certificates(ssl);
+    size_t count = chain ? sk_CRYPTO_BUFFER_num(chain) : 0;
+    CFMutableArrayRef certificates = CFArrayCreateMutable(NULL, (CFIndex) count, &kCFTypeArrayCallBacks);
+    for (size_t i = 0; certificates && i < count; i++) {
+        const CRYPTO_BUFFER *buffer = sk_CRYPTO_BUFFER_value(chain, i);
+        CFDataRef der = CFDataCreate(NULL, CRYPTO_BUFFER_data(buffer), (CFIndex) CRYPTO_BUFFER_len(buffer));
+        SecCertificateRef certificate = der ? SecCertificateCreateWithData(NULL, der) : NULL;
+        if (der) CFRelease(der);
+        if (certificate) {
+            CFArrayAppendValue(certificates, certificate);
+            CFRelease(certificate);
+        }
+    }
+    bool trusted = false;
+    if (name && certificates && CFArrayGetCount(certificates) > 0) {
+        SecPolicyRef policy = SecPolicyCreateSSL(true, name);
+        SecTrustRef trust = NULL;
+        if (policy && SecTrustCreateWithCertificates(certificates, policy, &trust) == errSecSuccess && trust) {
+            trusted = SecTrustEvaluateWithError(trust, NULL);
+        }
+        if (trust) CFRelease(trust);
+        if (policy) CFRelease(policy);
+    }
+    if (certificates) CFRelease(certificates);
+    if (name) CFRelease(name);
+    if (!trusted) {
+        tls->trust_failed = 1;
+        *out_alert = SSL_AD_CERTIFICATE_UNKNOWN;
+        return ssl_verify_invalid;
+    }
+    tls->hostname_verified = 1;
+    return ssl_verify_ok;
+}
+
+static void izk_handshake_info(const SSL *ssl, int where, int ret) {
+    izk_ech_tls *tls = izk_tls_of(ssl);
+    if (!tls) return;
+    if (where & SSL_CB_HANDSHAKE_START) {
+        /* 握手一开始 (选 ECH 配置之前): 要求 ECH 时, 配置不能用就失败, 不退回明文的 ClientHello */
+        SSL_set_reject_unusable_ech_config((SSL *) ssl, tls->require_ech);
+        return;
+    }
+    if (!(where & SSL_CB_EXIT) || ret > 0 || !tls->hostname_verified) return;
+    uint32_t error = ERR_peek_last_error();
+    if (ERR_GET_LIB(error) != ERR_LIB_SSL || ERR_GET_REASON(error) != SSL_R_ECH_REJECTED) return;
+    const uint8_t *bytes = NULL;
+    size_t len = 0;
+    SSL_get0_ech_retry_configs(ssl, &bytes, &len);
+    if (!bytes || len == 0 || len > 65535) return;
+    uint8_t *copy = malloc(len);
+    if (!copy) return;
+    memcpy(copy, bytes, len);
+    free(tls->retry_config);
+    tls->retry_config = copy;
+    tls->retry_config_len = len;
+}
+
+static CURLcode izk_configure_ssl_ctx(CURL *curl, void *ssl_ctx, void *userptr) {
+    izk_ech_tls *tls = (izk_ech_tls *) userptr;
+    SSL_CTX *ctx = (SSL_CTX *) ssl_ctx;
+    __atomic_add_fetch(&tls->refs, 1, __ATOMIC_RELAXED);
+    if (izk_tls_index < 0 || !SSL_CTX_set_ex_data(ctx, izk_tls_index, tls)) {
+        izk_ech_tls_release(tls);
+        return CURLE_OUT_OF_MEMORY;
+    }
+    SSL_CTX_set_custom_verify(ctx, SSL_VERIFY_PEER, izk_verify);
+    SSL_CTX_set_info_callback(ctx, izk_handshake_info);
+    return CURLE_OK;
+}
+
+/* 这次请求新建的连接用 [tls] 校验证书、要求 ECH. */
+static CURLcode izk_install_tls(CURL *easy, izk_ech_tls *tls) {
+    CURLcode result = curl_easy_setopt(easy, CURLOPT_SSL_CTX_FUNCTION, izk_configure_ssl_ctx);
+    if (result == CURLE_OK) result = curl_easy_setopt(easy, CURLOPT_SSL_CTX_DATA, (void *) tls);
+    return result;
+}
+
+/* 刚完成的请求所在的连接用上了 ECH: 1 是, 0 否, -1 不知道. */
+static int izk_ech_accepted(CURL *easy) {
+    struct curl_tlssessioninfo *info = NULL;
+    if (curl_easy_getinfo(easy, CURLINFO_TLS_SSL_PTR, &info) != CURLE_OK || !info || !info->internals) return -1;
+    return SSL_ech_accepted((const SSL *) info->internals);
+}
+
+static CURLcode izk_setopt_long(CURL *easy, CURLoption option, long value) { return curl_easy_setopt(easy, option, value); }
+static CURLcode izk_setopt_str(CURL *easy, CURLoption option, const char *value) { return curl_easy_setopt(easy, option, value); }
+static CURLcode izk_setopt_slist(CURL *easy, CURLoption option, struct curl_slist *value) { return curl_easy_setopt(easy, option, value); }
+static CURLcode izk_setopt_buffer(CURL *easy, CURLoption option, char *value) { return curl_easy_setopt(easy, option, value); }
+
+/* 请求体: 先给长度再交给 curl 拷一份 (二进制安全, 调用方的内存在返回后就可以释放). */
+static CURLcode izk_set_body(CURL *easy, const void *data, long long len) {
+    CURLcode result = curl_easy_setopt(easy, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t) len);
+    if (result == CURLE_OK) result = curl_easy_setopt(easy, CURLOPT_COPYPOSTFIELDS, len > 0 ? data : "");
+    return result;
+}
+
+static CURLcode izk_set_callbacks(
+    CURL *easy,
+    curl_write_callback body,
+    curl_write_callback header,
+    curl_xferinfo_callback progress,
+    void *data
+) {
+    CURLcode result = curl_easy_setopt(easy, CURLOPT_WRITEFUNCTION, body);
+    if (result == CURLE_OK) result = curl_easy_setopt(easy, CURLOPT_WRITEDATA, data);
+    if (result == CURLE_OK) result = curl_easy_setopt(easy, CURLOPT_HEADERFUNCTION, header);
+    if (result == CURLE_OK) result = curl_easy_setopt(easy, CURLOPT_HEADERDATA, data);
+    if (result == CURLE_OK) result = curl_easy_setopt(easy, CURLOPT_XFERINFOFUNCTION, progress);
+    if (result == CURLE_OK) result = curl_easy_setopt(easy, CURLOPT_XFERINFODATA, data);
+    if (result == CURLE_OK) result = curl_easy_setopt(easy, CURLOPT_NOPROGRESS, 0L);
+    return result;
+}
