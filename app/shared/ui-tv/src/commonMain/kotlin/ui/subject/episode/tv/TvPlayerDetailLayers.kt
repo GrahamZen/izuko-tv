@@ -69,6 +69,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.constrainWidth
 import androidx.compose.ui.unit.offset
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.ui.foundation.focus.TvFocusKey
@@ -183,6 +184,8 @@ internal class TvPlayerDetailLayersState {
     /** [panel] 的画廊排好了 (排出了格, 或者确定没有内容): 它还是当前胶囊的话换上来. */
     internal fun galleryReady(panel: TvPlayerPanel) {
         if (gallery != panel || shownGallery == panel) return
+        // 正跨过来、这张没有内容 (没排出格): 焦点先交给这颗胶囊, 再换下旧画廊 —— 焦点还在旧画廊的格里, 先拆掉它焦点就没了
+        if (crossing && (gridHandle(panel).view?.childCount ?: 0) == 0) focusPillOf(panel)
         shownGalleryFadeIn = shownGallery == null
         shownGallery = panel
     }
@@ -239,6 +242,17 @@ internal class TvPlayerDetailLayersState {
     /** 正在跨 (等目标画廊排出格): 按住左右键连发时不再跨第二次. */
     private var crossing = false
 
+    /**
+     * 跨画廊在这个 scope 里跑 (叠层那一级, 由 [TvPlayerDetailLayers] 设): 不能用发起跨的那张画廊自己的 —— 跨过去之后它就被拆掉,
+     * 跨到一半的协程跟着取消, 目标画廊没有内容时「焦点落到那颗胶囊上」那一步就做不到了.
+     */
+    internal var crossScope: CoroutineScope? = null
+
+    /** 见 [crossGallery]. */
+    internal fun launchCross(from: TvPlayerPanel, toRight: Boolean, windowY: Float) {
+        crossScope?.launch { crossGallery(from, toRight, windowY) }
+    }
+
     /** 上一次在胶囊的画廊之间跨: 从 [from] 跨到 [to], 落在 [to] 的第 [landed] 格 (见 [crossGallery] 的「立刻跨回」). */
     private class TvGalleryCross(val from: TvPlayerPanel, val to: TvPlayerPanel, val landed: Int)
 
@@ -281,8 +295,9 @@ internal class TvPlayerDetailLayersState {
             selectPanel(neighbor)
             showPanel(neighbor, keepPages = true)
             val handle = gridHandle(neighbor)
+            // 排出格来, 或者已经报了排好 (没有内容, 见 galleryReady) 就不再等
             withTimeoutOrNull(TV_GALLERY_CROSS_WAIT_MILLIS) {
-                while ((handle.view?.childCount ?: 0) == 0) delay(16)
+                while ((handle.view?.childCount ?: 0) == 0 && shownGallery != neighbor) delay(16)
             }
             if (gallery != neighbor) return
             val enter = galleryEnterSide[neighbor]
@@ -567,6 +582,8 @@ internal fun TvPlayerDetailLayers(
     val gallery = layers.gallery
     // 换胶囊时旧画廊留到新的排好 (见 shownGallery)
     val outgoing = layers.shownGallery?.takeIf { gallery != null && it != gallery }
+    val crossScope = rememberCoroutineScope()
+    SideEffect { layers.crossScope = crossScope }
     if (gallery == null && layers.pages.isEmpty()) return
     TvLayerAutoHideHold(overlay, layers)
     Box(
@@ -682,7 +699,6 @@ private fun TvGalleryLayer(
         runCatching { viewAllFocus.requestFocus(FocusDirection.Up) }
     }
     val currentEnter by rememberUpdatedState(enter)
-    val scope = rememberCoroutineScope()
     DisposableEffect(layers, panel) {
         layers.galleryEnter[panel] = { first -> currentEnter(first) }
         layers.galleryEnterSide[panel] = { rightColumn, windowY, restore ->
@@ -690,7 +706,7 @@ private fun TvGalleryLayer(
             if (restore || grid.selectEdgeNearest(rightColumn, windowY)) runCatching { viewAllFocus.requestFocus() }
         }
         // 左右跨到相邻胶囊的画廊 (见 TvPlayerDetailLayersState.crossGallery)
-        grid.onExitSide = { toRight, windowY -> scope.launch { layers.crossGallery(panel, toRight, windowY) } }
+        grid.onExitSide = { toRight, windowY -> layers.launchCross(panel, toRight, windowY) }
         onDispose {
             layers.galleryEnter.remove(panel)
             layers.galleryEnterSide.remove(panel)
@@ -779,10 +795,9 @@ private fun TvPeopleLayer(
     host.onDismissed = { restoreOrigin[0] = true }
     val viewAllOpen = host.shown != null
     val currentViewAllOpen by rememberUpdatedState(viewAllOpen)
-    val scope = rememberCoroutineScope()
-    val exitSide = remember(layers, scope) {
+    val exitSide = remember(layers) {
         { toRight: Boolean, windowY: Float ->
-            layers.owner?.let { owner -> scope.launch { layers.crossGallery(owner, toRight, windowY) } }
+            layers.owner?.let { owner -> layers.launchCross(owner, toRight, windowY) }
             Unit
         }
     }
@@ -1040,8 +1055,8 @@ private const val TV_PLAYER_LAYER_GALLERY_COLUMNS = 3
 /** 胶囊的画廊一行几格 (格子同上, 叠层窄一截, 见 [galleryLayerWidth]). */
 private const val TV_PLAYER_PILL_GALLERY_COLUMNS = 2
 
-/** 画廊那一层的左右内边距. */
-private val TV_PLAYER_GALLERY_CONTENT_PADDING_H = 20.dp
+/** 画廊那一层的左右内边距 (画廊的格从这里起; 没有内容时那一句也从这里起, 见 TvPanelEmptyCard). */
+internal val TV_PLAYER_GALLERY_CONTENT_PADDING_H = 20.dp
 
 /**
  * 画廊往左右各多占 [VIEW_ALL_GALLERY_COMPACT_SIDE_INSET] (紧凑档网格自己两侧让出这么多给聚焦放大与投影): 第一列的左缘与内容对齐;
