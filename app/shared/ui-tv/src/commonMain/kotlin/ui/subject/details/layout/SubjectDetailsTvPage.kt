@@ -4960,6 +4960,7 @@ private fun tvGlassColor(alpha: Float = TV_GLASS_ALPHA): Color = glassContainerC
 private fun TvCollectionCapsule(
     presentation: EditableSubjectCollectionTypeState.Presentation,
     actions: SubjectCollectionTypeEditActions,
+    subjectId: Int,
     modifier: Modifier = Modifier,
 ) {
     EditableSubjectCollectionTypeDialogsHost(presentation, actions)
@@ -4967,13 +4968,17 @@ private fun TvCollectionCapsule(
     var dropdownExpanded by remember { mutableStateOf(false) }
     val type = presentation.selfCollectionType
     val action = remember(type) { SubjectCollectionActionsForCollect.find { it.type == type } }
+    // 重温中显示「重温中」, 菜单里不勾在看 (见 TvSubjectRewatch)
+    val rewatch = rememberTvSubjectRewatch(subjectId)
     Box(modifier) {
         TvCapsuleButton(
             // 更新进行中忽略点击但保持可聚焦: enabled=false 会让按钮失去焦点能力, 焦点会飞走
             onClick = { if (!presentation.isSetSelfCollectionTypeWorking) dropdownExpanded = true },
-            icon = { action?.icon?.invoke() },
+            icon = { if (rewatch.rewatching) TvRewatchIcon() else action?.icon?.invoke() },
             label = {
-                if (type == UnifiedCollectionType.NOT_COLLECTED) {
+                if (rewatch.rewatching) {
+                    TvRewatchingLabel()
+                } else if (type == UnifiedCollectionType.NOT_COLLECTED) {
                     action?.title?.invoke()
                 } else {
                     Text(renderCollectionTypeAsCurrent(type), softWrap = false)
@@ -4983,7 +4988,7 @@ private fun TvCollectionCapsule(
         val scope = rememberCoroutineScope()
         val toaster = LocalToaster.current
         EditCollectionTypeDropDown(
-            currentType = type,
+            currentType = if (rewatch.rewatching) null else type,
             expanded = dropdownExpanded,
             onDismissRequest = { dropdownExpanded = false },
             onClick = {
@@ -4991,6 +4996,7 @@ private fun TvCollectionCapsule(
                     actions.setSelfCollectionType(it.type)?.let(toaster::showLoadError)
                 }
             },
+            trailingItems = { TvRewatchMenuItem(rewatch, type, onDismissRequest = { dropdownExpanded = false }) },
         )
     }
 }
@@ -5268,7 +5274,7 @@ private fun TvHeroBlock(
                             },
                         )
                     } else {
-                        TvCollectionCapsule(uiState.collectionTypeEdit, state)
+                        TvCollectionCapsule(uiState.collectionTypeEdit, state, state.subjectId)
                     }
                     // 选集快速跳转 (圆钮 + 下拉网格), 样式与相邻圆钮一致
                     episodeGridCapsule()

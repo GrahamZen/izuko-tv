@@ -17,6 +17,7 @@ import me.him188.ani.app.domain.devicemigration.DeviceMigrationImporter
 import me.him188.ani.app.domain.devicemigration.DeviceMigrationStores
 import me.him188.ani.app.domain.profile.UserProfiles
 import org.koin.core.module.Module
+import me.him188.ani.app.data.repository.subjectRewatchFile
 
 /**
  * 换电视 (Web 控制台「维护 → 换电视」) 的两侧: 旧电视交出数据 ([DeviceMigrationExporter]), 新电视写进来 ([DeviceMigrationImporter]).
@@ -33,6 +34,7 @@ internal fun Module.deviceMigration(getContext: () -> Context, openDatabase: (fi
             openDatabase = openDatabase,
             stores = DeviceMigrationStores.of(getContext().dataStores),
             appVersion = currentAniBuildConfig.versionName,
+            rewatchFile = { profile -> subjectRewatchFile(getContext(), profile) },
         )
     }
     single<DeviceMigrationImporter> {
