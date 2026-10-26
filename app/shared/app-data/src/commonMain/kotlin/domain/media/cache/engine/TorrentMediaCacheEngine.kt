@@ -49,6 +49,10 @@ import me.him188.ani.app.domain.media.cache.DownloaderStatus
 import me.him188.ani.app.domain.media.cache.LocalFileMediaCache
 import me.him188.ani.app.domain.media.cache.MediaCache
 import me.him188.ani.app.domain.media.cache.MediaCacheState
+import me.him188.ani.app.domain.media.cache.location.InternalOnlyMediaCacheLocations
+import me.him188.ani.app.domain.media.cache.location.MediaCacheLocations
+import me.him188.ani.app.domain.media.cache.location.UnavailableMediaCache
+import me.him188.ani.app.domain.media.cache.location.isConnected
 import me.him188.ani.app.domain.media.cache.storage.MediaSaveDirProvider
 import me.him188.ani.app.domain.media.resolver.EpisodeMetadata
 import me.him188.ani.app.domain.media.resolver.TorrentMediaResolver
@@ -113,6 +117,8 @@ class TorrentMediaCacheEngine(
     val flowDispatcher: CoroutineContext = Dispatchers.Default,
     private val baseSaveDirProvider: MediaSaveDirProvider,
     private val onDownloadStarted: suspend (session: TorrentSession) -> Unit = {},
+    /** 缓存可以放在哪些位置; 种子记录的目录 ([TorrentCacheInfoEntity.relativeDir]) 相对它所在位置的根目录 */
+    private val locations: MediaCacheLocations = InternalOnlyMediaCacheLocations(Path(baseSaveDirProvider.saveDir).inSystem),
 ) : MediaCacheEngine, AutoCloseable {
     companion object {
         private val logger = logger<TorrentMediaCacheEngine>()
@@ -160,6 +166,8 @@ class TorrentMediaCacheEngine(
         val fileHandle: FileHandle,
         /** 种子的保存目录, 见 [TorrentCacheInfoEntity.relativeDir]. 删除时按它找同一个种子的其他记录 */
         internal val relativeDir: String,
+        /** 种子目录在哪个位置, 见 [TorrentCacheInfoEntity.location] */
+        override val locationId: String? = null,
     ) : MediaCache, SynchronizedObject() {
         private val metadataFlow = MutableStateFlow(initialMetadata)
         override val metadata: MediaCacheMetadata get() = metadataFlow.value
@@ -610,6 +618,14 @@ class TorrentMediaCacheEngine(
         }
         val data = torrent.torrentData
 
+        // 种子所在的盘没接上: 占着位置, 不碰引擎与文件 —— 找不到文件不等于丢了, 不能当成没下完去重新开种子
+        if (torrentDirOf(torrent) == null) {
+            logger.info { "Location ${torrent.location} of ${origin.mediaId} is not available, restoring it as unavailable" }
+            return UnavailableMediaCache(origin, metadata, torrent.location.orEmpty(), locations.isConnected(torrent.location)) {
+                deleteEpisodeRecord(origin.mediaId, metadata.episodeId)
+            }
+        }
+
         // Completed files remain usable after the engine is disabled or credentials are removed.
         val record = getOrMigrateEpisodeRecord(origin, metadata, torrent)
         val localFile = record?.let { resolveCompletedFile(torrent, it) }
@@ -636,8 +652,10 @@ class TorrentMediaCacheEngine(
                                         EncodedTorrentInfo.createRaw(data),
                                         metadata,
                                         coroutineContext,
+                                        saveDir = saveDirArgOf(torrent),
                                     ),
                                     relativeDir = torrent.relativeDir,
+                                    locationId = torrent.location,
                                 ).apply {
                                     resume()
                                     closeAndDeleteFiles()
@@ -663,8 +681,12 @@ class TorrentMediaCacheEngine(
             TorrentMediaCache(
                 origin = origin,
                 initialMetadata = metadata,
-                fileHandle = getFileHandle(origin.mediaId, EncodedTorrentInfo.createRaw(data), metadata, parentContext),
+                fileHandle = getFileHandle(
+                    origin.mediaId, EncodedTorrentInfo.createRaw(data), metadata, parentContext,
+                    saveDir = saveDirArgOf(torrent),
+                ),
                 relativeDir = torrent.relativeDir,
+                locationId = torrent.location,
             )
         }
     }
@@ -738,13 +760,19 @@ class TorrentMediaCacheEngine(
         encoded: EncodedTorrentInfo,
         metadata: MediaCacheMetadata,
         parentContext: CoroutineContext,
+        /** 种子目录; `null` = 由引擎决定 (内部存储) */
+        saveDir: SystemPath? = null,
     ): FileHandle {
         // The record already knows which file is this episode's; re-deriving it from the title can pick
         // another one after the torrent's file list changes.
         val recordedPath = dao.getEpisode(mediaId, metadata.episodeId)?.pathInTorrent?.takeIf { it.isNotEmpty() }
         val downloader = torrentEngine.getDownloader()
         val res = kotlinx.coroutines.withTimeoutOrNull(30_000) {
-            val session = downloader.startDownload(encoded, parentContext)
+            val session = if (saveDir == null) {
+                downloader.startDownload(encoded, parentContext)
+            } else {
+                downloader.startDownloadAt(encoded, saveDir, parentContext)
+            }
             logger.info { "$mediaSourceId: waiting for files" }
             onDownloadStarted(session)
 
@@ -820,23 +848,30 @@ class TorrentMediaCacheEngine(
             }
             // 同一合集的其他剧集记录共用种子行, 只更新种子数据与目录.
             val existingTorrent = dao.get(origin.mediaId)
-            dao.upsert(
-                existingTorrent?.copy(torrentData = data.data, relativeDir = relativeDir)
-                    ?: TorrentCacheInfoEntity(
-                        mediaId = origin.mediaId,
-                        torrentData = data.data,
-                        relativeDir = relativeDir,
-                    ),
-            )
+            val torrent = existingTorrent?.copy(torrentData = data.data, relativeDir = relativeDir)
+                ?: TorrentCacheInfoEntity(
+                    mediaId = origin.mediaId,
+                    torrentData = data.data,
+                    relativeDir = relativeDir,
+                    location = locationOfNewTorrent(relativeDir),
+                )
+            if (torrentDirOf(torrent) == null) {
+                throw IllegalStateException(
+                    "The torrent of ${origin.mediaId} is on location ${torrent.location}, which is not available",
+                )
+            }
+            dao.upsert(torrent)
             if (dao.getEpisode(origin.mediaId, metadata.episodeId) == null) {
                 dao.upsertEpisode(TorrentCacheEpisodeEntity(mediaId = origin.mediaId, episodeId = metadata.episodeId))
             }
 
+            logger.info { "$mediaSourceId: torrent of ${origin.mediaId} is on location ${torrent.location ?: "internal"}" }
             return TorrentMediaCache(
                 origin = origin,
                 initialMetadata = metadata,
-                fileHandle = getFileHandle(origin.mediaId, data, metadata, parentContext),
+                fileHandle = getFileHandle(origin.mediaId, data, metadata, parentContext, saveDir = saveDirArgOf(torrent)),
                 relativeDir = relativeDir,
+                locationId = torrent.location,
             )
         }
     }
@@ -859,7 +894,7 @@ class TorrentMediaCacheEngine(
 
             val allowedAbsolute = buildSet {
                 dao.batchGet(all.map { it.origin.mediaId }).forEach {
-                    add(Path(baseSaveDirProvider.saveDir).resolve(it.relativeDir).inSystem.absolutePath)
+                    torrentDirOf(it)?.let { dir -> add(dir.absolutePath) }
                     add(downloader.getSaveDirForTorrent(EncodedTorrentInfo.createRaw(it.torrentData)).absolutePath)
                 }
             }
@@ -872,8 +907,27 @@ class TorrentMediaCacheEngine(
                         save.deleteRecursively()
                     }
                 }
+                if (!engineKey.isCloud) dao.deleteUnusedTorrentDirsOnOtherLocations(locations, torrentEngine.saveDir, baseSaveDirProvider.saveDir)
             }
         }
+    }
+
+    /** [torrent] 的种子目录; 它所在的盘没接上时为 `null` */
+    private fun torrentDirOf(torrent: TorrentCacheInfoEntity): SystemPath? =
+        locations.rootOf(torrent.location)?.let { Path(it.absolutePath, torrent.relativeDir).inSystem }
+
+    /** 交给下载引擎的种子目录: 内部存储上的照旧由引擎决定, 别的位置上的指定目录 */
+    private fun saveDirArgOf(torrent: TorrentCacheInfoEntity): SystemPath? =
+        if (torrent.location == null) null else torrentDirOf(torrent)
+
+    /**
+     * 新种子放在哪个位置. 一个种子只放一个地方 (一个下载会话): 别的数据源已经缓存过同一个种子时跟着它, 否则用现在选的默认位置.
+     * 网盘引擎的文件只放内部存储.
+     */
+    private suspend fun locationOfNewTorrent(relativeDir: String): String? {
+        dao.getAll().first().firstOrNull { it.relativeDir == relativeDir }?.let { return it.location }
+        if (engineKey.isCloud) return null
+        return locations.locationForNewCache()
     }
 
     /** 启动恢复之后丢掉打开的种子里没有记录用着的文件, 见 [TorrentCacheInfoDao.discardFilesWithoutRecords]. */
@@ -892,7 +946,7 @@ class TorrentMediaCacheEngine(
         if (!record.completed) return null
         val pathInTorrent = record.pathInTorrent.takeIf { it.isNotEmpty() } ?: return null
 
-        val file = Path(baseSaveDirProvider.saveDir, torrent.relativeDir).resolve(pathInTorrent).inSystem
+        val file = (torrentDirOf(torrent) ?: return null).resolve(pathInTorrent)
         if (!file.exists() || file.isDirectory()) {
             return null
         }

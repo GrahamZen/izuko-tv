@@ -280,11 +280,22 @@ abstract class AnitorrentTorrentDownloader<THandle : TorrentHandle, TAddInfo : T
     override suspend fun startDownload(
         data: EncodedTorrentInfo,
         parentCoroutineContext: CoroutineContext,
+    ): TorrentSession = startDownloadIn(data, getSaveDirForTorrent(data), parentCoroutineContext)
+
+    override suspend fun startDownloadAt(
+        data: EncodedTorrentInfo,
+        saveDir: SystemPath,
+        parentCoroutineContext: CoroutineContext,
+    ): TorrentSession = startDownloadIn(data, saveDir, parentCoroutineContext)
+
+    private suspend fun startDownloadIn(
+        data: EncodedTorrentInfo,
+        saveDir: SystemPath,
+        parentCoroutineContext: CoroutineContext,
     ): TorrentSession = withHandleTaskQueue {
         // 这个函数的 native 部分跑得也都很快, 整个函数十几毫秒就可以跑完, 所以 lock 也不会影响性能 (刚启动时需要尽快恢复 resume)
 
         val info = AnitorrentAddTorrentInfo.decodeFrom(data)
-        val saveDir = getSaveDirForTorrent(data)
         val fastResumeFile = saveDir.resolve(FAST_RESUME_FILENAME)
 
         openSessions.value[data.data.contentHashCode().toString()]?.let {
@@ -292,6 +303,7 @@ abstract class AnitorrentTorrentDownloader<THandle : TorrentHandle, TAddInfo : T
             return@withHandleTaskQueue it
         }
 
+        logger.info { "Starting a session in ${saveDir.absolutePath}" }
         val handle = native.createTorrentHandle()
         val addInfo = native.createTorrentAddInfo()
         when (info.data) {

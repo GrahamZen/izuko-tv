@@ -320,7 +320,10 @@ internal object RemoteCache {
             }
             runBlocking { autoHint(subjectId, caches) }?.let { put("autoHint", it) }
             // 挑几集之前心里有数 (合集按集只下那一集的文件, 但删掉一集要等同一个种子的都删了才回收)
-            RemoteCacheList.freeSpace()?.let { put("free", it.first.bytes.toString()) }
+            RemoteCacheList.freeSpace()?.let { space ->
+                put("free", space.free.bytes.toString())
+                space.drive?.let { put("freeLabel", tr("{0} 剩余空间", it)) }
+            }
             if (b != null) putJsonObject("batch") {
                 put("running", b.running)
                 put("done", b.done)

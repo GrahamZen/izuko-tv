@@ -195,6 +195,7 @@ class MediaCacheStorageSource(
         return SinglePagePagedSource {
             storage.listFlow.first().mapNotNull { cache ->
                 val kind = query.matchesSubject(cache.metadata) ?: return@mapNotNull null
+                if (cache.isLocationUnavailable) return@mapNotNull null // 盘没接上, 放不了
                 // 跳过无法提供媒体的缓存; 协程取消必须继续向上传播.
                 val cachedMedia = try {
                     cache.getCachedMedia()
