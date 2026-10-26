@@ -60,7 +60,7 @@ import kotlin.time.Duration.Companion.minutes
  * 网页类数据源 (网页、规则) 自动搜索的离线录放: 在录好的站点回应上用真的数据源代码跑每一部的每个源, 记下发了哪些请求、
  * 选择器 (同开播, 不看字幕组与分辨率偏好) 对要的这一集留下哪些资源, 写进 `result-<标签>.json`. 改搜索规则前后各跑一次, 比两份文件.
  *
- * 设 `WEB_REPLAY_DIR` (数据目录)、`WEB_REPLAY_GRAPH` (系列关系图 bgm-series-graph.tsv)、`WEB_REPLAY_TMDB` (bangumi-tmdb-map 的 bgm-tmdb.tsv) 才跑;
+ * 设 `WEB_REPLAY_DIR` (数据目录)、`WEB_REPLAY_GRAPH` (全部动画的表 bgm-anime.tsv 或系列关系图 bgm-series-graph.tsv)、`WEB_REPLAY_TMDB` (bangumi-tmdb-map 的 bgm-tmdb.tsv) 才跑;
  * `WEB_REPLAY_LABEL` 是输出的标签 (默认 `run`), `WEB_REPLAY_RECORD=1` 时没录过的请求现场发出去录下 (站点的请求间隔照常),
  * 不录时没录过的请求失败并写进 `missing.json`. `WEB_REPLAY_CASES` 只跑这几部 (逗号分隔的条目 id). 数据目录里:
  * - `cases.json`: 样例 (格式见 [ReplaySubjects]);
@@ -83,6 +83,8 @@ class WebSearchReplayTest {
         val label = System.getenv("WEB_REPLAY_LABEL") ?: "run"
         val record = System.getenv("WEB_REPLAY_RECORD") == "1"
         val only = System.getenv("WEB_REPLAY_CASES")?.split(',')?.mapNotNull { it.trim().toIntOrNull() }?.toSet()
+        // 同 app: 网页认部用全部动画的名字表
+        AnimeNames.source = { table }
 
         val http = WebReplayHttp(File(dir, "responses"), record)
         val sources = File(dir, "sources").listFiles { f -> f.extension == "json" }.orEmpty().sortedBy { it.name }.map { file ->
@@ -119,6 +121,7 @@ class WebSearchReplayTest {
         indexScope.cancel()
         File(dir, "result-$label.json").writeText(result.toString(), Charsets.UTF_8)
         File(dir, "missing.json").writeText(buildJsonArray { http.missing.sorted().forEach { add(JsonPrimitive(it)) } }.toString(), Charsets.UTF_8)
+        AnimeNames.source = null
         println("web replay ($label): ${result.size} 条 (部 × 源), 缺 ${http.missing.size} 个请求")
     }
 

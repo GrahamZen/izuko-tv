@@ -113,7 +113,7 @@ private fun isWholeWorkLabel(name: String): Boolean {
         .none { it !in WHOLE_WORK_LABEL_SEPARATORS }
 }
 
-private val WHOLE_WORK_LABEL_TOKENS = Regex(
+internal val WHOLE_WORK_LABEL_TOKENS = Regex(
     "HD|BD|TC|HC|4K|2K|2160P|1440P|1080P|720P|" +
         "超清|高清|清晰|流畅|标准|抢先|正片|全片|" +
         "原声|原版|国语|日语|粤语|普通话|中字|中文|双语|字幕|版",

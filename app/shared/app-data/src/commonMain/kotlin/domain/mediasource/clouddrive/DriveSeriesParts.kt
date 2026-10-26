@@ -11,6 +11,7 @@ package me.him188.ani.app.domain.mediasource.clouddrive
 
 import me.him188.ani.app.data.network.SeriesGraphTable
 import me.him188.ani.app.data.network.SeriesNode
+import me.him188.ani.app.domain.mediasource.search.TitleForms
 import me.him188.ani.app.domain.mediasource.toSimplifiedChinese
 
 /**
@@ -27,7 +28,7 @@ import me.him188.ani.app.domain.mediasource.toSimplifiedChinese
  */
 internal class DriveSeriesParts(
     val keywords: List<String>,
-    /** 系列名, 已归一化 ([DriveNameParser.normalize]) */
+    /** 系列名, 已归一化 ([TitleForms.compact]) */
     val seriesNames: List<String>,
     /** 这一部的副标题, 已归一化 */
     val ownParts: List<String>,
@@ -36,7 +37,7 @@ internal class DriveSeriesParts(
 ) {
     /** 站点给的分享标题是不是这一部的: 同时有系列名与这一部的副标题 (「诀别谭+相克谭」这类几部合在一起的也算). */
     fun acceptsTitle(title: String): Boolean {
-        val normalized = DriveNameParser.normalize(title)
+        val normalized = TitleForms.compact(title)
         return seriesNames.any { it in normalized } && ownParts.any { it in normalized }
     }
 
@@ -54,7 +55,8 @@ internal class DriveSeriesParts(
         private const val MAX_SERIES_NODES = 200
 
         /**
-         * 条目 [subjectId] 在系列里的叫法; 不是「系列名 + 副标题」的写法、或系列关系图里没有它时为 null.
+         * 条目 [subjectId] 在系列里的叫法; 本条目与同系列别的作品都没有副标题 (不是「系列名 + 副标题」的写法)、或系列关系图里没有它时为 null.
+         * 本条目自己没有副标题 (「JOJO的奇妙冒险 石之海 第2部分」) 时只有别的部的副标题 (「黄金之风」), 没有拿去搜的.
          * 只看表里的中文名与原名 (同系列别的作品在表里也只有这两个名字): 别名多是英文意译, 与「BLEACH」比出来的「Thousand」不是副标题.
          */
         fun of(subjectId: Int?, table: SeriesGraphTable): DriveSeriesParts? {
@@ -62,35 +64,36 @@ internal class DriveSeriesParts(
             val node = table.nodeOf(id) ?: return null
             val names = listOf(node.nameCn, node.name).map { it.trim() }.filter { it.isNotEmpty() }.distinct()
             if (names.any { RE_EDIT.containsMatchIn(it) }) return null
-            val ownNormalized = names.map(DriveNameParser::normalize)
+            val ownNormalized = names.map(TitleForms::compact)
             // 与本条目名字一字不差的 (同一段的剧场版、TV 版) 不是别的部. 只差标点的是别的季 (辉夜第一季与「辉夜…告白?～…」第二季), 照算
             val siblingNames = seriesNodesOf(id, table).flatMap { listOf(it.name, it.nameCn) }
                 .filter { it.isNotBlank() && it.trim() !in names }
                 .distinct()
             if (siblingNames.isEmpty()) return null
-            val siblingNormalized = siblingNames.map(DriveNameParser::normalize)
+            val siblingNormalized = siblingNames.map(TitleForms::compact)
 
             val series = LinkedHashSet<String>()
             val own = LinkedHashMap<String, String>()
             val others = LinkedHashSet<String>()
             for (name in names) {
                 val cuts = siblingNames.map { it to commonPrefixEnd(name, it) }
-                    .filter { (_, cut) -> DriveNameParser.normalize(name.substring(0, cut)).length >= MIN_SERIES_LENGTH }
-                val best = cuts.maxOfOrNull { it.second } ?: continue
-                series += DriveNameParser.normalize(name.substring(0, best))
-                for (piece in piecesOf(name.substring(best))) {
-                    val normalized = DriveNameParser.normalize(piece)
-                    // 同系列别的作品的名字里也有的不算这一部的 (「千年血战篇」)
-                    if (siblingNormalized.none { normalized in it }) own.putIfAbsent(normalized, piece)
-                }
+                    .filter { (_, cut) -> TitleForms.compact(name.substring(0, cut)).length >= MIN_SERIES_LENGTH }
                 for ((sibling, cut) in cuts) {
                     for (piece in piecesOf(sibling.substring(cut))) {
-                        val normalized = DriveNameParser.normalize(piece)
+                        val normalized = TitleForms.compact(piece)
                         if (ownNormalized.none { normalized in it }) others += normalized
                     }
                 }
+                // 别的作品的名字以整个条目名开头 (「Fate/strange Fake -Whispers of Dawn-」) 时条目名不是系列名
+                val best = cuts.map { it.second }.filter { TitleForms.compact(name.substring(it)).isNotEmpty() }.maxOrNull() ?: continue
+                series += TitleForms.compact(name.substring(0, best))
+                for (piece in piecesOf(name.substring(best))) {
+                    val normalized = TitleForms.compact(piece)
+                    // 同系列别的作品的名字里也有的不算这一部的 (「千年血战篇」)
+                    if (siblingNormalized.none { normalized in it }) own.putIfAbsent(normalized, piece)
+                }
             }
-            if (own.isEmpty() || series.isEmpty()) return null
+            if (series.isEmpty() || own.isEmpty() && others.isEmpty()) return null
             return DriveSeriesParts(own.values.take(MAX_KEYWORDS), series.toList(), own.keys.toList(), others.toList())
         }
 
@@ -141,7 +144,7 @@ internal class DriveSeriesParts(
                 .flatMap { segment -> if (segment.any(::isCjk)) segment.split(WHITESPACE) else listOf(segment) }
                 .map { it.trim() }
                 .filter { piece ->
-                    val normalized = DriveNameParser.normalize(piece)
+                    val normalized = TitleForms.compact(piece)
                     val min = if (normalized.all { it in 'a'..'z' || it in '0'..'9' }) MIN_LATIN_PART_LENGTH else MIN_PART_LENGTH
                     normalized.length >= min && !piece.all { it.isDigit() }
                 }

@@ -458,8 +458,16 @@ internal class CloudDriveApi(
             "mp4", "mkv", "avi", "mov", "flv", "webm", "ts", "m2ts", "mts", "rmvb", "rm", "wmv", "m4v", "3gp", "mpg", "mpeg", "vob",
         )
 
+        /** 网盘的类别字段也算成视频的外挂音轨、字幕 (`.mka` 之类): 不是视频. */
+        private val NOT_VIDEO_EXTENSIONS = setOf(
+            "mka", "flac", "mp3", "aac", "m4a", "wav", "ogg", "opus", "ac3", "eac3", "dts", "thd", "wma", "ape", "ass", "ssa", "srt", "sup",
+        )
+
         /** 文件名的扩展名是视频. */
         internal fun isVideoFileName(name: String): Boolean = name.substringAfterLast('.', "").lowercase() in VIDEO_EXTENSIONS
+
+        /** 文件名的扩展名是音频或字幕, 类别字段说是视频也不算. */
+        internal fun isNotVideoFileName(name: String): Boolean = name.substringAfterLast('.', "").lowercase() in NOT_VIDEO_EXTENSIONS
 
         /**
          * 网盘专用的 HttpClient.
@@ -496,7 +504,7 @@ internal class CloudDriveApi(
             val name = value(fields.name).orEmpty()
             val dir = value(fields.isDir)?.let { it in fields.dirValues } ?: false
             val updatedAt = value(fields.updatedAt)?.toDoubleOrNull()?.toLong()?.let { if (fields.updatedAtSeconds) it * 1000 else it } ?: 0
-            val isVideo = !dir && if (fields.category.isNotBlank()) {
+            val isVideo = !dir && !isNotVideoFileName(name) && if (fields.category.isNotBlank()) {
                 value(fields.category) in fields.videoCategories
             } else {
                 isVideoFileName(name)

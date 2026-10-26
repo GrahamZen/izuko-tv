@@ -84,19 +84,6 @@ class DriveNameParserTest {
     }
 
     @Test
-    fun `decorations in names become spaces without dropping words`() {
-        assertEquals("浪客剑心 明治剑客浪漫谭 京都动乱", DriveNameParser.withoutDecorations("浪客剑心 －明治剑客浪漫谭－ 京都动乱"))
-        assertEquals("死神 千年血战篇 祸进谭", DriveNameParser.withoutDecorations("死神 千年血战篇-祸进谭"))
-        assertEquals("86 不存在的战区 第2部分", DriveNameParser.withoutDecorations("86 -不存在的战区- 第2部分"))
-        assertEquals("IDOLiSH7 偶像星愿 Second BEAT", DriveNameParser.withoutDecorations("IDOLiSH7-偶像星愿- Second BEAT"))
-        assertEquals("我推的孩子", DriveNameParser.withoutDecorations("【我推的孩子】"))
-        // 英文里的标点照旧
-        for (name in listOf("Re:Zero kara Hajimeru Isekai Seikatsu", "Fate/strange Fake", "Kaguya-sama wa Kokurasetai", "葬送的芙莉莲")) {
-            assertEquals(name, DriveNameParser.withoutDecorations(name))
-        }
-    }
-
-    @Test
     fun `no episode number`() {
         assertEpisode("Title 1080p.mp4", null)
         assertEpisode("云缨-神骥·越千峰 闪卡.mp4", null)
@@ -177,6 +164,7 @@ class DriveNameParserTest {
         assertEquals(setOf(DriveNameParser.WorkKind.OVA), DriveNameParser.workKindsOf("在地下城寻求邂逅是否搞错了什么 第二季 OVA"))
         assertEquals(emptySet(), DriveNameParser.workKindsOf("在地下城寻求邂逅是否搞错了什么 IV"))
         assertEquals(emptySet(), DriveNameParser.workKindsOf("Movies and Novas"))
+        assertEquals(setOf(DriveNameParser.WorkKind.SHORT_DRAMA), DriveNameParser.workKindsOf("9月3日短剧更新汇总（17）180.新婚夜和夫君间谍过家家（66集）"))
         assertTrue(DriveNameParser.isCollectionName("在地下城寻求邂逅是否搞错了什么 TV+剧场版"))
         assertTrue(DriveNameParser.isCollectionName("在地下城寻求邂逅是否搞错了什么 1-4季全 1080P"))
         assertFalse(DriveNameParser.isCollectionName("剧场版 -俄里翁之箭-"))
@@ -195,26 +183,6 @@ class DriveNameParserTest {
     }
 
     @Test
-    fun `base title`() {
-        assertEquals("无职转生", DriveNameParser.baseTitle("无职转生 第三季 ～到了异世界就拿出真本事～"))
-        assertEquals("葬送的芙莉莲", DriveNameParser.baseTitle("葬送的芙莉莲 第二季"))
-        assertEquals(
-            "Smoking Behind the Supermarket with You",
-            DriveNameParser.baseTitle("Smoking Behind the Supermarket with You"),
-        )
-        assertEquals("Re:ゼロから始める異世界生活", DriveNameParser.baseTitle("Re:ゼロから始める異世界生活 3rd season"))
-        assertEquals("无职转生", DriveNameParser.baseTitle("无职转生Ⅱ ～到了异世界就拿出真本事～"))
-    }
-
-    @Test
-    fun normalize() {
-        assertEquals(
-            DriveNameParser.normalize("Smoking Behind the Supermarket with You"),
-            DriveNameParser.normalize("Smoking.Behind.the.Supermarket.With.You"),
-        )
-    }
-
-    @Test
     fun `chinese numbers`() {
         assertEquals(3, DriveNameParser.parseNumber("3"))
         assertEquals(10, DriveNameParser.parseNumber("十"))
@@ -222,5 +190,35 @@ class DriveNameParserTest {
         assertEquals(20, DriveNameParser.parseNumber("二十"))
         assertEquals(23, DriveNameParser.parseNumber("二十三"))
         assertNull(DriveNameParser.parseNumber("abc"))
+    }
+
+    @Test
+    fun `numbers of codecs and audio channels are not episodes`() {
+        assertEpisode("ONE.PIECE.FAN.LETTER.2024.1080p.WEB-DL.AAC.H.265.CHS.mp4", null)
+        assertEpisode("Millennium.Actress.2001.JAPANESE.BD2160P×265.AAC.CHS.mp4", null)
+        assertEpisode("Akira.1988.UHD.BluRay.2160p.x265.HDR.TrueHD5.1-MiniHD.mkv", null)
+        assertEpisode("Title.2024.1080p.WEB-DL.DDP5.1.H.264 07.mkv", 7)
+    }
+
+    @Test
+    fun `numbers in the subject names are not episodes`() {
+        val titles = DriveNameParser.titlePatterns(listOf("秒速5厘米", "5 Centimeters per Second", "Jujutsu Kaisen 2", "86"))
+        assertEquals(null, DriveNameParser.parseFile("秒速5厘米.2007.BD1080P.日语中字.mp4", titles).episode)
+        assertEquals(null, DriveNameParser.parseFile("[Ygm] 5 Centimeters Per Second [Ma10p_2160p].mkv", titles).episode)
+        // 两头挨着别的数字的不是名字
+        assertEquals(EpisodeSort(24), DriveNameParser.parseFile("Jujutsu Kaisen 24.mkv", titles).episode)
+        assertEquals(EpisodeSort(3), DriveNameParser.parseFile("秒速5厘米 03.mp4", titles).episode)
+    }
+
+    @Test
+    fun `a number left in the name is not anchored`() {
+        assertTrue(DriveNameParser.parseFile("[Nekomoe kissaten][Sousou no Frieren][12][1080p][CHS].mp4").anchored)
+        assertTrue(DriveNameParser.parseFile("第12集.mp4").anchored)
+        assertFalse(DriveNameParser.parseFile("【电影】言叶之庭.简日双语特效.酷漫404&拨雪寻春.2013.1080P.mp4").anchored)
+    }
+
+    @Test
+    fun `kind markers split by bars count`() {
+        assertEquals(setOf(DriveNameParser.WorkKind.LIVE_ACTION), DriveNameParser.workKindsOf("H）海丨贼丨王丨真丨人丨版（2023）"))
     }
 }

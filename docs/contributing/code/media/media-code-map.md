@@ -49,8 +49,14 @@
 ### 搜索计划 (非 BT 数据源共用)
 
 - `SubjectSearchPlan`（`app/shared/app-data/.../domain/mediasource/search/SubjectSearchPlan.kt`）：由请求建，
-  `keywords(KeywordStyle)` 给关键词链，`identify` / `foundOwn` / `pagesToOpen` 认站点上的条目是不是这一部；
-  网页、规则、JSON API、直连 API 数据源都从这里取，见 [MediaSource](media-source.md#搜索计划)。
+  `keywords(KeywordStyle)` 给关键词链 (按标题原样找的站点用 `KeywordStyle.literal`)，`identify` / `foundOwn` / `pagesToOpen` 认网页类站点上的条目是不是这一部；
+  网页、规则、JSON API、直连 API、网盘数据源都从这里取，见 [MediaSource](media-source.md#搜索计划)。名字的几种写法在同包的 `TitleForms`。
+- 全部动画的名字表 (同包)：`AnimeNameIndex` (名字 → 条目, 建在 `SeriesGraphTable` 上)、`TitleParts` (一段名字里写的作品名)、
+  `AnimeNames` (网页认部取表的入口, app 启动时接到 `SeriesGraphTableRepository.loaded`)。
+- 网盘认部认集 (`domain/mediasource/clouddrive/`)：`DriveSubjectIdentity` (名字点名哪一部; 名字后面接着别的标题、短名字是否单独成词见 `DriveTitleContinuation`,
+  系列以外认得的作品见 `DriveKnownWorks`; 网页的条目名也经它的 `rejectsPageTitle`)、`DrivePathAttribution` (视频的路径点名哪一部)、
+  `DriveSubjectSeason` (条目按第几季找)、`DriveEpisodeResolver` (视频是哪一集)、`DriveSeriesParts` (系列名与副标题)，
+  由 `DriveSubjectMatcher.matchEpisodes` 串起来, 见 [MediaSource](media-source.md#网盘数据源)。
 - 请求里认部用的名字 `MediaFetchNameHints`（`datasource/api/.../source/MediaFetchNameHints.kt`）由 `fetchNameHintsOf`
   （`domain/media/fetch/FetchNameHints.kt`）与 `withRegionalNames` 填；「系列名 第N季」由 `seriesSeasons` / `withSeasonNames`
   （`data/network/SeriesSeasonNames.kt`）从系列索引推出，选择器的条目信息经 `withSeasonAliases` 带上同一组。
@@ -136,6 +142,9 @@
    `EpisodeViewModel` 管选源面板开关（`onMediaSelectorShown` / `onMediaSelectorHidden`）与「完整搜索」
    （`setFullMediaSearch`，手机控制中心经 `TvRemoteControl` 的 `api/player/full-search`）；
    播放失败换源（`PlayerLoadErrorHandler.handleError`）也会放开暂停的数据源。
+   自动选中的资源打开后，播放器给的时长与这一集（Bangumi 记的时长，`EpisodeInfo.durationSeconds`，存在 `episode_collection`）
+   差得离谱时（`EpisodeDurations`：短于 0.4 倍或长于 2.5 倍）`observeEpisodeDurationMismatch` 换一条：
+   这是同名的剧场版、真人电影或总集篇，不算播放失败，只排除这一条与同一个源里同名的其它线路，先在同一个源里挑（`MediaAutoSelector` 的 `preferredSourceId`）。
 10. 媒体的轨道出来时，Android 播放器（`LibassExoPlayerMediampPlayer` 里的 `PreferredTrackSelector`）问
     `PreferredTracksExtension` 设置的 `SubjectTrackChooser` 选哪条字幕与音轨（规则见 `TrackChoicePolicy`：
     字幕跟界面语言，音轨日语原声优先，这部番手动换过的按语言沿用、同一语言有好几条时先认同名的那条，存在 `EpisodePreferencesRepository.trackChoiceFlow`）。

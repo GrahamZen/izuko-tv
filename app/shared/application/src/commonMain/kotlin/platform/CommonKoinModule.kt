@@ -75,6 +75,7 @@ import me.him188.ani.app.data.repository.media.MediaSourceSubscriptionRepository
 import me.him188.ani.app.domain.feedback.FeedbackTickets
 import me.him188.ani.app.domain.foundation.CloudflareServiceTransport
 import me.him188.ani.app.domain.mediasource.profile.SourceProfiles
+import me.him188.ani.app.domain.mediasource.search.AnimeNames
 import me.him188.ani.app.domain.mediasource.subscription.BundledSubscriptions
 import me.him188.ani.app.data.repository.repositoryModules
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
@@ -513,7 +514,7 @@ private fun KoinApplication.otherModules(
             scope = coroutineScope,
             // 续作换季原先单独下的「续作 → 候选季」表, 换季改由系列关系图在本地算
             obsoleteFiles = listOf(getContext().files.dataDir.resolve("bgm-sequel-seasons.tsv")),
-        )
+        ).also { repository -> AnimeNames.source = repository::loaded }
     }
     // 推荐目录: 探索页推荐与「相关推荐」先在本地答; 启动就建, 后台读盘 / 下载
     single<RecommendationCatalogRepository>(createdAtStart = true) {

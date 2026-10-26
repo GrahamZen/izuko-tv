@@ -41,7 +41,8 @@ import me.him188.ani.app.domain.mediasource.web.WebSearchEpisodeInfo
 import me.him188.ani.app.domain.mediasource.web.WebSearchSubjectInfo
 import me.him188.ani.app.domain.mediasource.web.findMatchingEpisodeOrNull
 import me.him188.ani.app.domain.mediasource.web.guessSubtitleLanguageIds
-import me.him188.ani.app.domain.mediasource.web.matchingEpisodeSort
+import me.him188.ani.app.domain.mediasource.web.mainEpisodeCountOrNull
+import me.him188.ani.app.domain.mediasource.web.matchingEpisodeSortFor
 import me.him188.ani.datasources.api.DefaultMedia
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.Media
@@ -422,12 +423,7 @@ class JsonApiMediaSource(
         }
 
         val subjectId = query.subjectId.toIntOrNull()
-        val filterContext = MediaListFilterContext(
-            subjectNames = query.subjectNames.toSet(),
-            episodeSort = query.episodeSort,
-            episodeEp = query.episodeEp,
-            episodeName = query.episodeName,
-        )
+        val filterContext = JsonApiFilterContext(query)
         val freshnessProbe = query.latestAiredEpisode()?.let { Probe(it.sort, it.ep, it.name) }
             ?: Probe(query.episodeSort, query.episodeEp, query.episodeName)
 
@@ -449,6 +445,16 @@ class JsonApiMediaSource(
 
     private class Probe(val episodeSort: EpisodeSort, val episodeEp: EpisodeSort?, val episodeName: String?)
 
+    /** 自动匹配的筛选条件, 另带条目的正片集数 (多集的番里没写集号的一条不认作第 1 集, 见 [matchingEpisodeSortFor]) */
+    private class JsonApiFilterContext(query: MediaFetchRequest) : MediaListFilterContext(
+        subjectNames = query.subjectNames.toSet(),
+        episodeSort = query.episodeSort,
+        episodeEp = query.episodeEp,
+        episodeName = query.episodeName,
+    ) {
+        val subjectEpisodeCount = query.mainEpisodeCountOrNull()
+    }
+
     /**
      * 向站点搜 [keyword] (搜索计划改写好的词), 取可能是这一部的条目 ([SubjectSearchPlan.pagesToOpen], 站点给的别名也看) 的全部剧集.
      * 不是这一部的条目选择器也会排除, 不值得为它们请求剧集. 结果写入搜索缓存; 站点回应先查跨条目共用的记忆 ([SiteSearchMemory]).
@@ -459,7 +465,7 @@ class JsonApiMediaSource(
         keyword: String,
         plan: SubjectSearchPlan,
         probe: Probe,
-        filterContext: MediaListFilterContext,
+        filterContext: JsonApiFilterContext,
     ): List<DefaultMedia> {
         val ttl = searchConfig.searchCacheTtl
         val found = repository.siteMemory.searchResults(mediaSourceId, keyword, ttl) { searchSubjectsOnline(keyword) }.orEmpty()
@@ -502,7 +508,7 @@ class JsonApiMediaSource(
         subjectId: Int?,
         subjectName: String,
         probe: Probe,
-        filterContext: MediaListFilterContext,
+        filterContext: JsonApiFilterContext,
     ): List<DefaultMedia>? {
         val caches = try {
             repository.getCache(subjectId, mediaSourceId, subjectName)
@@ -548,11 +554,12 @@ class JsonApiMediaSource(
     private fun selectMedia(
         subject: JsonApiSubjectInfo,
         episodes: List<JsonApiEpisodeInfo>,
-        filterContext: MediaListFilterContext,
+        filterContext: JsonApiFilterContext,
     ): List<DefaultMedia> {
         val parser = LabelFirstRawTitleParser()
         val list = episodes.mapNotNull { episode ->
-            val sort = episode.toWebSearchEpisodeInfo().matchingEpisodeSort(filterContext.episodeSort, filterContext.episodeEp)
+            val sort = episode.toWebSearchEpisodeInfo()
+                .matchingEpisodeSortFor(filterContext.episodeSort, filterContext.episodeEp, filterContext.subjectEpisodeCount)
                 ?: return@mapNotNull null
             createMedia(subject, episode, sort, parser)
         }

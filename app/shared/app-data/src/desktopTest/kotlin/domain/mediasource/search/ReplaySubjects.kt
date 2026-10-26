@@ -13,7 +13,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.int
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -34,6 +36,7 @@ import me.him188.ani.app.domain.media.fetch.withRegionalNames
 import me.him188.ani.app.domain.media.fetch.withSeasonAliases
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.EpisodeType
+import me.him188.ani.datasources.api.PackedDate
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 import me.him188.ani.datasources.bangumi.next.apis.SubjectBangumiNextApi
@@ -42,7 +45,8 @@ import me.him188.ani.utils.ktor.ApiInvoker
 /**
  * 离线录放 ([WebSearchReplayTest]、网盘的 `DriveSeasonReplayTest`) 照开播时的样子建查询请求与选择器要的条目信息
  * (见 `CreateMediaFetchSelectBundleFlowUseCase`): 系列信息由系列关系图 [table] 算, 港台译名取自对应表 [tmdb] (没有时不加).
- * 样例 (`cases.json` 的一项) 是 `{id, names, sort, ep, episodes: [{sort, ep}]}`, names 按条目服务的顺序 (中文名、原名、别名), sort / ep 是要的那一集.
+ * 样例 (`cases.json` 的一项) 是 `{id, names, sort, ep, episodes: [{sort, ep, duration}]}`, names 按条目服务的顺序 (中文名、原名、别名), sort / ep 是要的那一集;
+ * 分集的 ep 为空时同 sort; duration (条目服务记的秒数) 与 airdate (播出日期 `yyyy-MM-dd`, 开播年份由它算) 可以没有.
  */
 internal class ReplaySubjects(table: SeriesGraphTable, private val tmdb: TmdbSubjectMapIndex?, scope: CoroutineScope) {
     private val service = SubjectSeriesIndexService(noNetwork(), scope = scope, graph = { table })
@@ -78,7 +82,9 @@ internal class ReplaySubjects(table: SeriesGraphTable, private val tmdb: TmdbSub
                     episodeId = id * 1000 + index,
                     type = EpisodeType.MainStory,
                     sort = EpisodeSort(o["sort"]!!.jsonPrimitive.content),
-                    ep = EpisodeSort(o["ep"]!!.jsonPrimitive.content),
+                    ep = EpisodeSort(o["ep"]?.jsonPrimitive?.contentOrNull ?: o["sort"]!!.jsonPrimitive.content),
+                    durationSeconds = o["duration"]?.jsonPrimitive?.intOrNull,
+                    airDate = o["airdate"]?.jsonPrimitive?.contentOrNull?.let(PackedDate::parseFromDate) ?: PackedDate.Invalid,
                 ),
                 UnifiedCollectionType.NOT_COLLECTED,
             )

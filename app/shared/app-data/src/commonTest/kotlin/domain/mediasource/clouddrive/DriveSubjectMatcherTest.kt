@@ -10,6 +10,7 @@
 package me.him188.ani.app.domain.mediasource.clouddrive
 
 import kotlinx.coroutines.test.runTest
+import me.him188.ani.app.domain.mediasource.search.TitleForms
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import kotlin.test.Test
@@ -53,6 +54,20 @@ class DriveSubjectMatcherTest {
         episodes = episodes,
     )
 
+    @Test
+    fun `files far shorter than the episode are not this episode`() {
+        val episodes = (1..12).map { MediaFetchRequest.Episode(episodeId = "e$it", sort = EpisodeSort(it), durationSeconds = 1450) }
+        val request = request("间谍过家家", episodes = episodes)
+        fun candidate(id: String, name: String, seconds: Int) = DriveSubjectMatcher.Candidate(
+            DriveFile(id, fileName = name, size = 300L * 1024 * 1024, isVideo = true, durationSeconds = seconds),
+            listOf("间谍过家家合集"),
+        )
+        // 短剧汇总里的「第06集」2 分 52 秒; 时长不知道的照旧按集号认
+        val candidates = listOf(candidate("drama", "第06集.mp4", 172), candidate("ep6", "06.mp4", 1416), candidate("ep7", "07.mp4", 0))
+        assertEquals(listOf("06.mp4@06", "07.mp4@07"), DriveSubjectMatcher.matchEpisodes(request, candidates).map { it.summary() })
+        // 用户手挑的文件夹不查
+        assertEquals(3, DriveSubjectMatcher.matchEpisodes(request, candidates, trustFolders = true).size)
+    }
     private fun two(n: Int) = n.toString().padStart(2, '0')
 
     private fun DriveSubjectMatcher.MatchedFile.summary() = "${file.fileName}@${episode}"
@@ -243,7 +258,7 @@ class DriveSubjectMatcherTest {
     }
 
     /** 条目名搜索用的关键词 (第一个名字的主标题). */
-    private fun keywordOf(name: String) = DriveSubjectMatcher.keywordsOf(listOf(name)).first()
+    private fun keywordOf(name: String) = TitleForms.mainTitle(name)
 
     /** 「赛博朋克：边缘行者 2」的分享: 第一季原盘与第二季并排, 原盘文件名不写 S (`01E06-E07`); 另有不写季的 4K 版本文件夹. */
     @Test
@@ -330,7 +345,7 @@ class DriveSubjectMatcherTest {
         val numbering = TmdbEpisodeNumbering { request -> request.episodes.associate { (1 to it.sort.number!!.toInt()) to it.sort } }
         // 「piece」太泛, 不当副标题 (没有 parts); 认路径用条目全名
         val identity = DriveSubjectIdentity(
-            ownNames = listOf(DriveNameParser.normalize(name)), otherWorkNames = emptyList(), seriesSeason = 2, laterWork = true,
+            ownNames = listOf(TitleForms.compact(name)), otherWorkNames = emptyList(), seriesSeason = 2, laterWork = true,
         )
 
         val matched = DriveSubjectMatcher(browser, numbering, DriveSubjectIdentities { identity }).match(request(name, episodes = episodes))
@@ -371,9 +386,9 @@ class DriveSubjectMatcherTest {
         val numbering = TmdbEpisodeNumbering { request -> request.episodes.associate { (2 to it.sort.number!!.toInt()) to it.sort } }
         val parts = DriveSeriesParts(
             keywords = listOf("祸进谭"),
-            seriesNames = listOf(DriveNameParser.normalize("死神 千年血战篇")),
-            ownParts = listOf(DriveNameParser.normalize("祸进谭")),
-            otherParts = listOf("诀别谭", "相克谭").map(DriveNameParser::normalize),
+            seriesNames = listOf(TitleForms.compact("死神 千年血战篇")),
+            ownParts = listOf(TitleForms.compact("祸进谭")),
+            otherParts = listOf("诀别谭", "相克谭").map(TitleForms::compact),
         )
         val identity = DriveSubjectIdentity(ownNames = emptyList(), otherWorkNames = emptyList(), parts = parts)
 
@@ -410,10 +425,23 @@ class DriveSubjectMatcherTest {
     }
 
     @Test
-    fun `keywords are base titles without duplicates`() {
-        assertEquals(
-            listOf("葬送的芙莉莲", "葬送のフリーレン"),
-            DriveSubjectMatcher.keywordsOf(listOf("葬送的芙莉莲 第二季", "葬送のフリーレン 第2期", "葬送的芙莉莲", "A")),
+    fun `a single episode subject takes a lone video whatever number is left in its name`() {
+        val request = request("言叶之庭", episodes = listOf(MediaFetchRequest.Episode("e1", EpisodeSort(1))))
+        val lone = DriveSubjectMatcher.Candidate(video("movie", "【电影】言叶之庭.简日双语特效.酷漫404&拨雪寻春.2013.1080P.mp4"), listOf("言叶之庭"))
+        assertEquals(listOf("【电影】言叶之庭.简日双语特效.酷漫404&拨雪寻春.2013.1080P.mp4@01"), DriveSubjectMatcher.matchEpisodes(request, listOf(lone)).map { it.summary() })
+        // 一个文件夹里有好几个视频的照旧按集号认
+        val series = (1..3).map { DriveSubjectMatcher.Candidate(video("tv$it", "0$it.mp4"), listOf("言叶之庭 TV")) }
+        assertEquals(listOf("01.mp4@01", "02.mp4@02", "03.mp4@03"), DriveSubjectMatcher.matchEpisodes(request, series).map { it.summary() })
+    }
+
+    @Test
+    fun `numbers in the subject name are not episode numbers`() {
+        val episodes = (1..3).map { MediaFetchRequest.Episode("e$it", EpisodeSort(it)) }
+        val request = request("秒速5厘米", episodes = episodes)
+        val candidates = listOf(
+            DriveSubjectMatcher.Candidate(video("a", "秒速5厘米 02.mp4"), listOf("秒速5厘米")),
+            DriveSubjectMatcher.Candidate(video("b", "秒速5厘米.2007.BD1080P.mp4"), listOf("秒速5厘米 全片")),
         )
+        assertEquals(listOf("秒速5厘米 02.mp4@02"), DriveSubjectMatcher.matchEpisodes(request, candidates).map { it.summary() })
     }
 }

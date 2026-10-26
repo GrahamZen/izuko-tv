@@ -46,7 +46,7 @@ internal class DriveShareReader(
 
     /**
      * 打开分享并列出视频: 最多往下 [MAX_DEPTH] 层、[MAX_LISTED_FOLDERS] 个文件夹、[MAX_FILES] 个文件; 每层 [skipFolders] 挑出的文件夹
-     * 不往下列 (一般是 [otherSeasonFolders]). 分享失效 (取消、违规、提取码不对) 时抛 [CloudDriveShareUnavailableException].
+     * 不往下列 (一般是 [DriveSubjectSeason.otherSeasonFolders]). 分享失效 (取消、违规、提取码不对) 时抛 [CloudDriveShareUnavailableException].
      */
     suspend fun read(shareId: String, passcode: String, skipFolders: (List<String>) -> Set<String> = { emptySet() }): Contents {
         val title = shares.open(shareId, passcode)
@@ -68,13 +68,9 @@ internal class DriveShareReader(
         return collectVideos(shareId, passcode, folderId, path, skipFolders)
     }
 
-    /** [request] 这个条目在网盘上按第几季找, 见 [DriveSubjectSeason]. [identity] 带着系列关系图推出的季. */
-    suspend fun subjectSeason(request: MediaFetchRequest, identity: DriveSubjectIdentity?): DriveSubjectSeason? =
-        DriveSubjectSeason.of(request, numbering.of(request), identity?.seriesSeason)
-
-    /** 按季分好的一层里, [request] 这个条目不会出现在里面的文件夹, 见 [DriveSubjectMatcher.otherSeasonFolders]. */
-    suspend fun otherSeasonFolders(request: MediaFetchRequest, identity: DriveSubjectIdentity?): (List<String>) -> Set<String> =
-        DriveSubjectMatcher.otherSeasonFolders(subjectSeason(request, identity), numbering.of(request))
+    /** [request] 这个条目在网盘上按第几季找, 见 [DriveSubjectSeason]. [identity] 带着系列关系图里的位置. */
+    suspend fun subjectSeason(request: MediaFetchRequest, identity: DriveSubjectIdentity?): DriveSubjectSeason =
+        DriveSubjectSeason.of(request, numbering.of(request), identity)
 
     /**
      * 从 [videos] 里挑出 [request] 这个条目的剧集 (规则同自己网盘的数据源, 见 [DriveSubjectMatcher]).
