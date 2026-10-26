@@ -174,7 +174,11 @@ internal object RemoteCacheList {
                 // 所在的盘没接上: 占位记录, 没有可读的状态
                 if (cache.isLocationUnavailable) {
                     val back = withTimeoutOrNull(FLOW_TIMEOUT) { (cache as? UnavailableMediaCache)?.reconnected?.first() } == true
-                    val text = if (back) tr("盘已接上，正在恢复") else tr("所在的盘没接上")
+                    val text = when {
+                        (cache as? UnavailableMediaCache)?.moving == true -> tr("正在移动到其他盘")
+                        back -> tr("盘已接上，正在恢复")
+                        else -> tr("所在的盘没接上")
+                    }
                     return@async Row(cache, null, MediaCache.FileStats.Unspecified, false, offlineText = text)
                 }
                 if (cache.needsTorrentService && skipReason != null) {

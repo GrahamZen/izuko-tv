@@ -72,6 +72,8 @@ import me.him188.ani.utils.logging.warn
 import org.openani.mediamp.source.SeekableInputMediaData
 import org.openani.mediamp.source.UriMediaData
 import me.him188.ani.app.domain.media.cache.location.InternalOnlyMediaCacheLocations
+import me.him188.ani.app.domain.media.cache.location.MOVING_SUFFIX
+import me.him188.ani.app.domain.media.cache.location.MediaCacheEngineMover
 import me.him188.ani.app.domain.media.cache.location.MediaCacheLocations
 import me.him188.ani.app.domain.media.cache.location.UnavailableMediaCache
 import me.him188.ani.app.domain.media.cache.location.isConnected
@@ -90,6 +92,9 @@ class HttpMediaCacheEngine(
 ) : MediaCacheEngine {
     /** 网盘视频旁边的外挂字幕随缓存存到本地, 见 [CacheSidecarSubtitles] */
     private val sidecarSubtitles = CacheSidecarSubtitles(saveDir)
+
+    /** 把缓存搬到别的位置 (见 MediaCacheMover) */
+    internal val mover: MediaCacheEngineMover = HttpCacheMover(dao, downloader, saveDir, locations)
     override val engineKey: MediaCacheEngineKey = MediaCacheEngineKey.WebM3u
 
     override val stats: Flow<MediaStats> = run {
@@ -142,11 +147,12 @@ class HttpMediaCacheEngine(
 
         // 文件所在的盘没接上: 占着位置, 不恢复下载 (不然会被记成失败)
         val known = downloader.getState(downloadId) ?: dao.getById(downloadId)
-        if (known != null && dirOfOrNull(known.location) == null) {
-            logger.info { "Location ${known.location} of $downloadId is not available, restoring it as unavailable" }
-            // 盘刚拔掉时任务可能还在跑: 停下 (记成暂停, 不是失败), 插回来恢复时接着下
+        val moving = httpMoveKey(downloadId) in locations.moving.value
+        if (known != null && (moving || dirOfOrNull(known.location) == null)) {
+            logger.info { "Location ${known.location} of $downloadId is not available (moving: $moving), restoring it as unavailable" }
+            // 盘刚拔掉或要搬走时任务可能还在跑: 停下 (记成暂停, 不是失败), 之后恢复时接着下
             if (downloadId in downloader.getActiveDownloadIds()) downloader.pause(downloadId)
-            return UnavailableMediaCache(origin, metadata, known.location.orEmpty(), locations.isConnected(known.location)) {
+            return UnavailableMediaCache(origin, metadata, known.location, locations.isConnected(known.location), moving) {
                 downloader.remove(downloadId)
                 dao.deleteById(downloadId)
             }
@@ -219,8 +225,7 @@ class HttpMediaCacheEngine(
     }
 
     /** [location] 位置上放在线源缓存的目录 (见 [DownloadState.location]); 那个盘没接上时为 `null` */
-    private fun dirOfOrNull(location: String?): Path? =
-        if (location == null) saveDir else locations.rootOf(location)?.let { Path(it.absolutePath, MEDIA_CACHE_DIR) }
+    private fun dirOfOrNull(location: String?): Path? = httpCacheDirOf(saveDir, locations, location)
 
     private fun dirOf(location: String?): Path =
         dirOfOrNull(location) ?: throw DownloadLocationUnavailableException(location.orEmpty())
@@ -269,7 +274,8 @@ class HttpMediaCacheEngine(
             val saves = dirs.flatMap { SystemFileSystem.list(it) }
             for (save in saves) {
                 val myPath = save.inSystem.absolutePath
-                if (allowedAbsolute.none {
+                // 搬到一半留下的 (见 HttpCacheMover) 名字以记录里的文件名开头, 不能按前缀算作有主
+                if (myPath.endsWith(MOVING_SUFFIX) || allowedAbsolute.none {
                         myPath.startsWith(it)
                     }) {
                     logger.warn { "本地 WEB 缓存文件未找到匹配的 MediaCache, 已释放 ${save.inSystem.actualSize().bytes}: ${save.inSystem.absolutePath}" }

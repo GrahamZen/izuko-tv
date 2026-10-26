@@ -128,6 +128,11 @@ interface HttpDownloader : AutoCloseable {
     suspend fun getAllStates(): List<DownloadState>
 
     /**
+     * 任务的文件已经被搬到 [location] 位置 (见 [DownloadState.location]), 改记下的位置. 任务正在下载或已经不在时不改, 返回 false.
+     */
+    suspend fun relocate(downloadId: DownloadId, location: String?): Boolean = false
+
+    /**
      * Closes and releases all resources used by this downloader.
      */
     override fun close()

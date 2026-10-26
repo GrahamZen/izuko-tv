@@ -435,6 +435,7 @@
     <string name="cache_episode_status_awaiting_bt_service">等待 BT 服務啟動</string>
     <string name="cache_episode_status_location_unavailable">所在的磁碟未連接</string>
     <string name="cache_episode_status_location_reconnected">磁碟已連接，正在恢復</string>
+    <string name="cache_episode_status_location_moving">正在移到其他磁碟</string>
     <!-- 正在播放同一集, 缓存停着等播放结束 -->
     <string name="cache_episode_status_waiting_for_playback">正在播放，稍後繼續</string>
     <!-- 标记看过后删除缓存 (设置 - 存储), 删的时候弹的提示 -->
@@ -450,6 +451,25 @@
     <string name="settings_storage_cache_location_disconnected_description">插回之前，新緩存放內部儲存空間</string>
     <string name="settings_storage_cache_location_fat32">%1$s 是 FAT32 格式，單個檔案最大 4 GB，放不下緩存。在電腦上格式化成 exFAT 後可以使用</string>
     <string name="settings_storage_cache_location_read_only">%1$s 在這部裝置上只能讀取（NTFS 格式的磁碟常會這樣），放不了緩存。在電腦上格式化成 exFAT 後可以使用</string>
+    <string name="settings_storage_cache_move">移動已有緩存</string>
+    <string name="settings_storage_cache_move_description">把放在其他位置的緩存移到「緩存位置」選的磁碟。移動時這些緩存暫停下載、不能播放，正在播放的番會跳過；未下完的 BT 緩存移完要重新校驗一遍資料</string>
+    <string name="settings_storage_cache_move_pending">其他位置有 %1$d 條 · %2$s</string>
+    <string name="settings_storage_cache_move_none">都在這裏</string>
+    <string name="settings_storage_cache_move_progress">正在移動 %1$d/%2$d · %3$s / %4$s</string>
+    <string name="settings_storage_cache_move_confirm_title">把 %1$d 條緩存移到「%2$s」？</string>
+    <string name="settings_storage_cache_move_confirm_text">共 %1$s。移動在背景進行，可以離開這一頁，移完會提示。移動時這些緩存暫停下載、不能播放，正在播放的番會跳過。</string>
+    <string name="settings_storage_cache_move_confirm">移動</string>
+    <string name="settings_storage_cache_move_stop_title">停止移動？</string>
+    <string name="settings_storage_cache_move_stop_text">已經移好的留在新位置，正在移的這一條回到原處。</string>
+    <string name="settings_storage_cache_move_stop">停止</string>
+    <string name="settings_storage_cache_move_nothing">沒有要移的緩存</string>
+    <string name="settings_storage_cache_move_target_unavailable">「緩存位置」選的磁碟現在不能用</string>
+    <string name="cache_move_started">開始移動 %1$d 條緩存（%2$s）。可以離開這一頁，移完會提示</string>
+    <string name="cache_move_done">已把 %1$d 條緩存移到「%2$s」</string>
+    <string name="cache_move_summary">移動結束：移好 %1$d 條，沒移成 %2$d 條，正在播放跳過 %3$d 條</string>
+    <string name="cache_move_stopped_space">「%1$s」剩餘空間不夠，移好 %2$d 條後停下了</string>
+    <string name="cache_move_stopped_unavailable">「%1$s」現在不能用，沒有移動</string>
+    <string name="cache_move_cancelled">已停止移動，移好的 %1$d 條留在新位置</string>
     <string name="cache_deleted_when_done">已刪除「%1$s」的 %2$d 集緩存</string>
     <string name="cache_paused_low_space">儲存空間只剩 %1$s，已暫停 %2$d 個緩存下載。刪除部分緩存騰出空間後再繼續</string>
     <string name="cache_paused_low_space_drive">%1$s 只剩 %2$s，已暫停這個磁碟上的 %3$d 個緩存下載。刪除一些緩存騰出空間後再繼續</string>
