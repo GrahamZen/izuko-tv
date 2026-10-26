@@ -20,11 +20,7 @@ import me.him188.ani.app.data.models.fold
 import me.him188.ani.app.data.models.runApiRequest
 import me.him188.ani.app.data.repository.media.SelectorMediaSourceEpisodeCacheRepository
 import me.him188.ani.app.domain.media.fetch.wholeSubjectEpisodeSortsOrNull
-import me.him188.ani.app.domain.mediasource.MediaListFilter
-import me.him188.ani.app.domain.mediasource.MediaListFilterContext
-import me.him188.ani.app.domain.mediasource.MediaListFilters
 import me.him188.ani.app.domain.mediasource.MediaSourceEngineHelpers
-import me.him188.ani.app.domain.mediasource.asCandidate
 import me.him188.ani.app.domain.mediasource.codec.DefaultMediaSourceCodec
 import me.him188.ani.app.domain.mediasource.codec.DontForgetToRegisterCodec
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceArguments
@@ -32,6 +28,9 @@ import me.him188.ani.app.domain.mediasource.codec.MediaSourceTier
 import me.him188.ani.app.domain.mediasource.keywordSearchChain
 import me.him188.ani.app.domain.mediasource.latestAiredEpisode
 import me.him188.ani.app.domain.mediasource.rememberedKeywords
+import me.him188.ani.app.domain.mediasource.search.SiteSearchMemory
+import me.him188.ani.app.domain.mediasource.search.SubjectSearchPlan
+import me.him188.ani.app.domain.mediasource.search.keywordStyle
 import me.him188.ani.app.domain.mediasource.web.captcha.SolveOutcome
 import me.him188.ani.app.domain.mediasource.web.captcha.WebSessionManager
 import me.him188.ani.datasources.api.DefaultMedia
@@ -69,7 +68,6 @@ import me.him188.ani.utils.platform.currentTimeMillis
 import kotlin.concurrent.atomics.AtomicLong
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.coroutines.cancellation.CancellationException
-import kotlin.time.Duration.Companion.minutes
 
 @Suppress("unused") // bug
 private typealias ArgumentType = SelectorMediaSourceArguments
@@ -134,12 +132,6 @@ class SelectorMediaSource(
          * 代价是这类条目切集时要换一个查询会话 (见 `servesEpisodeOf`), BT 源随之重新搜索.
          */
         const val MAX_WHOLE_SUBJECT_EPISODES = 300
-
-        /**
-         * 只读回当前一集的缓存时, 页面在这么久之内写入、又有当前这一集, 就直接用, 不因为缺「已上映的最新一集」而重搜.
-         * 站点比 Bangumi 晚一两集是常事; 长番切集要换查询会话, 不这样的话每切一集都要把上千集的条目页重新抓一遍、写一遍缓存.
-         */
-        val RECENT_SEARCH = 30.minutes
 
         /**
          * [matcher] 对 WebView 配置的修改: 依次合并 [config] 已有的 cookies、[matchVideo] 中配置的 cookies 和 [captchaCookies];
@@ -314,8 +306,9 @@ class SelectorMediaSource(
     /**
      * 尝试从 [repository] 缓存中构建搜索结果.
      *
-     * 仅当缓存的条目页面剧集列表中能找到 [SelectorSearchQuery.freshnessProbe] (请求里已上映的最新一集, 未知时为当前剧集)
-     * 时才命中, 否则返回 `null` 走完整搜索 (页面可能已更新, 例如刚开播的新集在缓存里还没有).
+     * 缓存的每一页都要用得上才命中: 页面的剧集列表里有 [SelectorSearchQuery.freshnessProbe] (请求里已上映的最新一集, 未知时为当前剧集),
+     * 或者 (只查这一集时) 有当前这一集. 有一页用不上就返回 `null` 走完整搜索 (页面可能已更新, 例如刚开播的新集在缓存里还没有),
+     * 不跳过它只用别的页: 同一个词第二次查不能比第一次少.
      */
     private suspend fun EngineType.searchFromCacheOrNull(
         searchConfig: SelectorSearchConfig,
@@ -349,7 +342,6 @@ class SelectorMediaSource(
 
         val probe = query.freshnessProbe
             ?: SelectorEpisodeProbe(query.episodeSort, query.episodeEp, query.episodeName)
-        val now = currentTimeMillis()
         // 窄读只读回当前这一集的行, 判断页面新旧要找的「已上映的最新一集」不在里面, 每页都会被当成旧的、整个重搜
         // (长番切集就是这样). 另外窄读一次最新那一集: 有它的页面才算新, 仍然不必整页读回
         val freshPages = if (narrowed && probe.episodeSort != query.episodeSort) {
@@ -371,10 +363,12 @@ class SelectorMediaSource(
                 val episodes = cache.webEpisodeInfos
                 val fresh = freshPages?.contains(cache.webSubjectInfo.fullUrl)
                     ?: (episodes.findMatchingEpisodeOrNull(probe.episodeSort, probe.episodeEp, probe.episodeName) != null)
-                val recentWithCurrent = narrowed && now - cache.cachedAt < RECENT_SEARCH.inWholeMilliseconds &&
-                        episodes.findMatchingEpisodeOrNull(query.episodeSort, query.episodeEp, query.episodeName) != null
-                if (!fresh && !recentWithCurrent) {
-                    continue
+                // 页面没有已上映的最新一集 (可能已经更新, 也可能站点把几集合成一条「第12-13集」): 有当前这一集、又只查这一集时照用;
+                // 否则整个重搜, 不能跳过这一页只用别的页 —— 那样这一页的资源就悄悄没了, 第二次查比第一次少
+                if (!fresh && (query.subjectEpisodeSorts != null ||
+                            episodes.findMatchingEpisodeOrNull(query.episodeSort, query.episodeEp, query.episodeName) == null)
+                ) {
+                    return null
                 }
                 addAll(
                     selectFilteredMedia(
@@ -396,36 +390,38 @@ class SelectorMediaSource(
         MediaSourceEngineHelpers.isSupportedByPlatformPlayer(searchConfig.onlySupportsPlayers, info.displayName, logger)
 
     /**
-     * 向站点搜索一个关键词, 返回搜到的所有条目的全部剧集. 不读搜索缓存, 调用方先查 [searchFromCacheOrNull].
+     * 向站点搜索 [keyword] (搜索计划改写好的词), 返回搜到的条目里可能是这一部的 ([SubjectSearchPlan.pagesToOpen]) 的全部剧集.
+     * 不读搜索缓存, 调用方先查 [searchFromCacheOrNull]; 站点回应先查跨条目共用的记忆 ([SiteSearchMemory]).
      */
     private suspend fun EngineType.searchOnline(
         searchConfig: SelectorSearchConfig,
         query: SelectorSearchQuery,
+        keyword: String,
+        plan: SubjectSearchPlan,
         mediaSourceId: String,
         subjectId: Int?,
     ): List<DefaultMedia> = withContext(Dispatchers.Default) {
-        delayUntilNextAllowedSearch()
+        val searchUrl = buildSearchUrl(keyword)
+        val originalSubjects = repository.siteMemory.searchResults(mediaSourceId, searchUrl, searchConfig.searchCacheTtl) {
+            delayUntilNextAllowedSearch()
+            fetchPageOrThrow(searchUrl, PageExpectation.SearchResults(searchConfig))
+        } ?: return@withContext emptyList()
 
-        val searchUrl = buildSearchUrl(
-            MediaSourceEngineHelpers.getSearchKeyword(
-                query.subjectName,
-                searchConfig.autoMatch.searchRemoveSpecial,
-                searchConfig.autoMatch.searchUseOnlyFirstWord,
-            ),
-        )
-
-        val originalSubjects = fetchPageOrThrow(searchUrl, PageExpectation.SearchResults(searchConfig))
-            ?: return@withContext emptyList()
-
-        val subjects = searchConfig.orderSubjectsForAutoMatch(originalSubjects)
+        val subjects = plan.pagesToOpen(originalSubjects, searchConfig.autoMatch.preferShorterName) { it.name }
+        val probe = query.freshnessProbe ?: SelectorEpisodeProbe(query.episodeSort, query.episodeEp, query.episodeName)
 
         buildList {
             for (subjectInfo in subjects) {
                 val episodes = try {
-                    fetchPageOrThrow(
-                        subjectInfo.fullUrl,
-                        PageExpectation.SubjectDetails(searchConfig, subjectInfo.fullUrl),
-                    )?.episodes
+                    repository.siteMemory.page(
+                        mediaSourceId, subjectInfo.fullUrl, searchConfig.searchCacheTtl,
+                        isFresh = { it.findMatchingEpisodeOrNull(probe.episodeSort, probe.episodeEp, probe.episodeName) != null },
+                    ) {
+                        fetchPageOrThrow(
+                            subjectInfo.fullUrl,
+                            PageExpectation.SubjectDetails(searchConfig, subjectInfo.fullUrl),
+                        )?.episodes
+                    }
                 } catch (e: BlockedException) {
                     throw e
                 } catch (e: CancellationException) {
@@ -480,19 +476,13 @@ class SelectorMediaSource(
             subjectEpisodeSorts = subjectEpisodeSorts,
         )
 
-        val primary = query.subjectNames.take(searchConfig.autoMatch.searchUseSubjectNamesCount.coerceAtLeast(1))
-        val fallback = searchConfig.distinctFallbackKeywords(primary, query.fallbackSearchKeywords)
-        val remembered = repository.rememberedKeywords(subjectId, mediaSourceId, primary + fallback, logger)
-        val filterContext = MediaListFilterContext(
-            subjectNames = allSubjectNames,
-            episodeSort = query.episodeSort,
-            episodeEp = query.episodeEp,
-            episodeName = query.episodeName,
-        )
+        val plan = SubjectSearchPlan.of(query)
+        val keywords = plan.keywords(searchConfig.autoMatch.keywordStyle(), mediaSourceId)
+        val remembered = repository.rememberedKeywords(subjectId, mediaSourceId, keywords.primaryNames + keywords.fallbackNames, logger)
         return keywordSearchChain(
-            primary, fallback, remembered,
+            keywords.primaryNames, keywords.fallbackNames, remembered,
             requestInterval = searchConfig.requestInterval,
-            matches = { media -> media.anySubjectNameMatches(filterContext) },
+            matches = plan::foundOwn,
         ) { name ->
             val searchQuery = searchQuery(name)
             // 搜索缓存: 上一次真实搜索已把条目页面的全部剧集写入缓存 (addCache).
@@ -501,7 +491,7 @@ class SelectorMediaSource(
             engine.searchFromCacheOrNull(searchConfig, searchQuery, mediaSourceId, subjectId)
                 ?: run {
                     beforeOnlineSearch()
-                    engine.searchOnline(searchConfig, searchQuery, mediaSourceId, subjectId)
+                    engine.searchOnline(searchConfig, searchQuery, keywords.keywordOf(name), plan, mediaSourceId, subjectId)
                 }
         }.map { MediaMatch(it, MatchKind.FUZZY) }
     }
@@ -574,20 +564,6 @@ class SelectorMediaSource(
         }
     }
 
-}
-
-/**
- * 结果里是否有条目名能对上请求条目的. 判据与选择器过滤 WEB 资源的一致 ([MediaListFilters.ContainsSubjectName]),
- * 所以这里认为对上的, 选择器不会以名字不符为由排除.
- */
-private fun List<DefaultMedia>.anySubjectNameMatches(context: MediaListFilterContext): Boolean = with(context) {
-    any { media ->
-        MediaListFilters.ContainsSubjectName.applyOn(
-            object : MediaListFilter.Candidate by media.asCandidate() {
-                override val subjectName: String get() = media.properties.subjectName ?: media.originalTitle
-            },
-        )
-    }
 }
 
 /**

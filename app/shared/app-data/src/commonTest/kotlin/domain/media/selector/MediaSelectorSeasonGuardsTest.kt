@@ -76,6 +76,34 @@ class MediaSelectorSeasonGuardsTest {
         assertPage(firstSeason, 1 to "included FUZZY SORT")
     }
 
+    /** 系列的第一部名字不写季号, 就是第 1 季: 页名只写了后面的季的是那一季 (后面各季在 Bangumi 上的名字常不写季号). */
+    @Test
+    fun `first work excludes pages of later seasons`() = runSimpleMediaSelectorTestSuite {
+        initSubject("辉夜大小姐想让我告白～天才们的恋爱头脑战～") {
+            seriesInfo(seasonSort = 1) { sequel("辉夜大小姐想让我告白-超级浪漫-") }
+        }
+        val second = addPage("辉夜大小姐想让我告白～天才们的恋爱头脑战～ 第二季", 1..12)
+        val third = addPage("辉夜大小姐想让我告白：天才们的恋爱头脑战第三季", 1..13, source = "web2")
+        val first = addPage("辉夜大小姐想让我告白：天才们的恋爱头脑战 第一季", 1..12, source = "web3")
+        val merged = addPage("辉夜大小姐想让我告白～天才们的恋爱头脑战～【第一季+第二季】", 1..24, source = "web4")
+
+        assertPage(second, 1 to "excluded FromSeriesSeason")
+        assertPage(third, 1 to "excluded FromSeriesSeason")
+        assertPage(first, 1 to "included FUZZY SORT")
+        assertPage(merged, 1 to "included FUZZY SORT")
+    }
+
+    @Test
+    fun `a later work not first in the series keeps its season pages`() = runSimpleMediaSelectorTestSuite {
+        // 没写季号的续作 (系列主线上不排第一) 不当第一季
+        initSubject("工作细胞！！") {
+            seriesInfo(seasonSort = 2) { series("工作细胞") }
+        }
+        val own = addPage("工作细胞 第二季", 1..8)
+
+        assertPage(own, 1 to "included FUZZY SORT")
+    }
+
     /** Bangumi 上前几季的名字不一定写了季号 (「一人之下3」), 当前季之前的季总是有的. */
     @Test
     fun `earlier seasons count even when their names carry no number`() = runSimpleMediaSelectorTestSuite {
@@ -114,7 +142,8 @@ class MediaSelectorSeasonGuardsTest {
 
         assertPage(bare, 1 to "excluded FromSeriesSeason")
         assertPage(labelledFirst, 1 to "excluded FromSeriesSeason")
-        assertPage(own, 1 to "included FUZZY SORT")
+        // 条目名末尾的「2」与页名的「第二季」是同一季的两种写法
+        assertPage(own, 1 to "included EXACT SORT")
     }
 
     @Test

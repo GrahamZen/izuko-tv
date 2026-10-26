@@ -103,8 +103,8 @@ class SelectorMediaSourceFetchFallbackTest {
         )
 
         assertEquals(listOf("更多", "出包王女"), site.searchKeywords)
-        // 整个系列都返回, 由选择器挑出本季
-        assertEquals(listOf("出包王女", "出包王女第二季", "出包王女 Darkness", "出包王女Darkness 第二季"), subjects)
+        // 整个系列都搜出来, 只打开本季的页面 (第一季、Darkness 选择器反正会排除)
+        assertEquals(listOf("出包王女第二季"), subjects)
     }
 
     @Test
@@ -146,19 +146,16 @@ class SelectorMediaSourceFetchFallbackTest {
     }
 
     @Test
-    fun `primary results are kept even when none of them matches`() = runTest {
+    fun `only pages that may be the subject are opened and the chain goes on until one is`() = runTest {
         val (source, site) = createSource()
 
         val subjects = source.fetchSubjectNames(
-            // 搜到的是「出包王女」系列, 但没有一个名字能对上「出包王女 OVA」
+            // 搜到的是「出包王女」系列, 没有一个名字是「出包王女 OVA」: 带上 OVA 对得上的两页说不准, 打开看; 别的不开
             request(subjectNames = listOf("出包王女 OVA"), fallbackSearchKeywords = listOf("铃芽之旅")),
         )
 
         assertEquals(listOf("出包王女", "铃芽之旅"), site.searchKeywords)
-        assertEquals(
-            listOf("出包王女", "出包王女第二季", "出包王女 Darkness", "出包王女Darkness 第二季", "铃芽之旅"),
-            subjects,
-        )
+        assertEquals(listOf("出包王女", "出包王女第二季"), subjects)
     }
 
     @Test
@@ -192,7 +189,7 @@ class SelectorMediaSourceFetchFallbackTest {
         // 切集: 缓存的条目页含第 2 集, 不发任何请求; 「更多」没有缓存行, 不再搜
         val subjects = source.fetchSubjectNames(request(names, fallback, episode = 2))
         assertEquals(listOf("更多", "出包王女"), site.searchKeywords)
-        assertEquals(listOf("出包王女", "出包王女第二季", "出包王女 Darkness", "出包王女Darkness 第二季"), subjects)
+        assertEquals(listOf("出包王女第二季"), subjects)
     }
 
     @Test
@@ -206,10 +203,10 @@ class SelectorMediaSourceFetchFallbackTest {
 
         source.fetchSubjectNames(request(names, fallback, episode = 1))
 
-        // 新一集不在缓存的条目页里: 只对记住的「出包王女」发请求
+        // 新一集不在缓存的条目页里: 只重查记住的「出包王女」; 它的搜索结果刚搜过 (站点回应的记忆), 只重开条目页
         val subjects = source.fetchSubjectNames(request(names, fallback, episode = 3))
-        assertEquals(listOf("更多", "出包王女", "出包王女"), site.searchKeywords)
-        assertEquals(listOf("出包王女", "出包王女第二季", "出包王女 Darkness", "出包王女Darkness 第二季"), subjects)
+        assertEquals(listOf("更多", "出包王女"), site.searchKeywords)
+        assertEquals(listOf("出包王女第二季"), subjects)
     }
 
     /**
@@ -257,21 +254,6 @@ class SelectorMediaSourceFetchFallbackTest {
 
         source.fetchSubjectNames(longSeries(2))
         assertEquals(listOf("出包王女"), site.searchKeywords)
-    }
-
-    @Test
-    fun `fallback keywords are deduplicated against the primary keywords`() {
-        val fallback = listOf("出包王女 第二季", "出包王女", "更多 出包王女", "", "出包王女第2季")
-        // 取首词: 「出包王女 第二季」与「出包王女」同为「出包王女」; 「更多 出包王女」与主关键词同为「更多」; 「出包王女第2季」没有空格, 整个是关键词
-        assertEquals(
-            listOf("出包王女 第二季", "出包王女第2季"),
-            config.distinctFallbackKeywords(primary = listOf("更多 出包王女"), fallback = fallback),
-        )
-        assertEquals(
-            listOf("出包王女 第二季", "出包王女", "出包王女第2季"),
-            config.copy(autoMatch = SelectorAutoMatchConfig(searchUseOnlyFirstWord = false))
-                .distinctFallbackKeywords(primary = listOf("更多 出包王女"), fallback = fallback),
-        )
     }
 
     private companion object {

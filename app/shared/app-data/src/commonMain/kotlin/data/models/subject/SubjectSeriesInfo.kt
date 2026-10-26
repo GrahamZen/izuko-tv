@@ -42,6 +42,8 @@ data class SubjectSeriesInfo(
      * 不是时 (只在一季里接着编, 如「地错 第四季 深章 灾厄篇」从 12 起) 不能按 sort 认领不带季号的系列页面, 那里的同号集是第一季的.
      */
     val sortsSpanSeries: Boolean? = null,
+    /** 系列关系推出的本条目的「系列名 第N季」, 算作条目的别名 (见 `withSeasonNames`); 推不出时为空. */
+    val seasonAliases: List<String> = emptyList(),
 ) {
     companion object {
         fun compute(
