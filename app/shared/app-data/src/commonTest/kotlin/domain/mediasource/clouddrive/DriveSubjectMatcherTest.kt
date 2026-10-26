@@ -303,9 +303,9 @@ class DriveSubjectMatcherTest {
         )
         val episodes = (1..23).map { MediaFetchRequest.Episode("e$it", EpisodeSort(24 + it), EpisodeSort(it)) }
         val numbering = TmdbEpisodeNumbering { request -> request.episodes.associate { (1 to it.sort.number!!.toInt()) to it.sort } }
-        val guard = OtherWorkGuard(ownNames = emptyList(), otherWorkNames = emptyList(), firstWorkAirYear = null, seriesSeason = 2)
+        val identity = DriveSubjectIdentity(ownNames = emptyList(), otherWorkNames = emptyList(), seriesSeason = 2, laterWork = true)
 
-        val matched = DriveSubjectMatcher(browser, numbering, OtherWorks { guard }).match(request(name, episodes = episodes))
+        val matched = DriveSubjectMatcher(browser, numbering, DriveSubjectIdentities { identity }).match(request(name, episodes = episodes))
         assertEquals(listOf("new@01", "abs@25"), matched.map { "${it.file.fid}@${it.episode}" })
         // 没有系列关系图时推不出是第二季: 照旧当第一季
         val fallback = DriveSubjectMatcher(browser, numbering).match(request(name, episodes = episodes))
@@ -328,10 +328,12 @@ class DriveSubjectMatcherTest {
         )
         val episodes = (1..13).map { MediaFetchRequest.Episode("e$it", EpisodeSort(it)) }
         val numbering = TmdbEpisodeNumbering { request -> request.episodes.associate { (1 to it.sort.number!!.toInt()) to it.sort } }
-        // 「piece」太泛, 不拿来补搜 (没有 parts); 认路径用条目全名
-        val guard = OtherWorkGuard(ownNames = emptyList(), otherWorkNames = emptyList(), firstWorkAirYear = null, seriesSeason = 2)
+        // 「piece」太泛, 不当副标题 (没有 parts); 认路径用条目全名
+        val identity = DriveSubjectIdentity(
+            ownNames = listOf(DriveNameParser.normalize(name)), otherWorkNames = emptyList(), seriesSeason = 2, laterWork = true,
+        )
 
-        val matched = DriveSubjectMatcher(browser, numbering, OtherWorks { guard }).match(request(name, episodes = episodes))
+        val matched = DriveSubjectMatcher(browser, numbering, DriveSubjectIdentities { identity }).match(request(name, episodes = episodes))
         assertEquals(listOf("k9@09", "new@01", "tmdb@01"), matched.map { "${it.file.fid}@${it.episode}" }.sorted())
     }
 
@@ -367,16 +369,15 @@ class DriveSubjectMatcherTest {
         )
         val episodes = (1..8).map { MediaFetchRequest.Episode("e$it", EpisodeSort(40 + it), EpisodeSort(it)) }
         val numbering = TmdbEpisodeNumbering { request -> request.episodes.associate { (2 to it.sort.number!!.toInt()) to it.sort } }
-        val parts = DriveSharePartSearch(
+        val parts = DriveSeriesParts(
             keywords = listOf("祸进谭"),
             seriesNames = listOf(DriveNameParser.normalize("死神 千年血战篇")),
             ownParts = listOf(DriveNameParser.normalize("祸进谭")),
             otherParts = listOf("诀别谭", "相克谭").map(DriveNameParser::normalize),
-            rootNames = listOf(DriveNameParser.normalize("死神")),
         )
-        val guard = OtherWorkGuard(ownNames = emptyList(), otherWorkNames = emptyList(), firstWorkAirYear = null, parts = parts)
+        val identity = DriveSubjectIdentity(ownNames = emptyList(), otherWorkNames = emptyList(), parts = parts)
 
-        val matched = DriveSubjectMatcher(browser, numbering, OtherWorks { guard }).match(request(name, episodes = episodes))
+        val matched = DriveSubjectMatcher(browser, numbering, DriveSubjectIdentities { identity }).match(request(name, episodes = episodes))
         assertEquals(listOf("S01E41.mkv@41"), matched.map { it.summary() })
         // 路径没点名这一部时照旧按表: 不是这个条目
         val unnamed = DriveSubjectMatcher(browser, numbering).match(request(name, episodes = episodes))
