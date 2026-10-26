@@ -9,10 +9,12 @@
 
 package me.him188.ani.app.ui.subject.episode.tv.source
 
-import androidx.compose.foundation.background
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -20,33 +22,48 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import me.him188.ani.app.data.models.preference.DarkMode
 import me.him188.ani.app.domain.media.fetch.restart
 import me.him188.ani.app.domain.media.fetch.restartSources
 import me.him188.ani.app.ui.download.subject.TvDownloadMediaPickerArgs
 import me.him188.ani.app.ui.foundation.dialogs.DialogWindowDimAmount
 import me.him188.ani.app.navigation.LocalNavigator
 import me.him188.ani.app.navigation.SettingsTab
+import me.him188.ani.app.ui.foundation.LocalSketch
+import me.him188.ani.app.ui.foundation.theme.AniTheme
+import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
+import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
+import me.him188.ani.app.ui.foundation.tv.TV_FULLSCREEN_BACKDROP_DIM_ALPHA
+import me.him188.ani.app.ui.foundation.tv.nativeview.tvBackdropBlurSpec
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.tv_source_excluded_toast
 import me.him188.ani.app.ui.lang.tv_source_manual_pick_failed
+import me.him188.ani.app.ui.subject.details.layout.TvBlurredBackdropImage
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import org.jetbrains.compose.resources.stringResource
 
 /**
- * 缓存页的选源 (TvDownloadMediaPickerVariant 的 TV 实现): 同一块选源面板, 装在铺满屏幕的独立窗口里盖在缓存页上 (窗口不压暗, 面板自己画渐变底).
+ * 缓存页的选源 (TvDownloadMediaPickerVariant 的 TV 实现): 同一块选源面板, 装在铺满屏幕的独立窗口里盖在缓存页上.
+ * 背后整个盖住缓存页 (剧集列表透上来会和面板的行叠在一起): 铺这部番横版背景图的模糊版 (见 [TvDownloadPickerBackdrop]),
+ * 没有横版图时只铺底色. 面板是按深色画的 (白字、半透明黑底), 这一层不跟主题, 恒按深色.
+ * 背景图还没好时面板先不出来, 最多等 [TV_DOWNLOAD_PICKER_BACKDROP_WAIT] (期间停在缓存页上, 不先变黑);
+ * 等不到就先出面板, 背后是压暗的缓存页, 图好了再淡入. 图已经好了就第一帧画上, 不淡入.
  * 选了资源进入选集 ([TvDownloadMediaPickerArgs.onSelect]); 手动查找点的一集经会话自己进入选集. 返回在进去的那一层里先退一层, 否则直接关.
  * 没有完整搜索、缓存这一条 (这里本来就是在缓存).
  */
@@ -111,30 +128,61 @@ fun TvDownloadSourcePanel(args: TvDownloadMediaPickerArgs) {
         )
     }
 
+    var subjectId by remember(args.fetchSession) { mutableStateOf<Int?>(null) }
+    var show by remember(args.fetchSession) { mutableStateOf(false) }
+    val backdropKey = rememberTvDownloadPickerBackdropKey(subjectId)
+    val sketch = LocalSketch.current
+    val context = LocalContext.current.applicationContext
+    val windowSize = LocalWindowInfo.current.containerSize
+    val blurSpec = tvBackdropBlurSpec(LocalThemeSettings.current.tvDetailsBackdropBlur)
+    LaunchedEffect(args.fetchSession) {
+        val id = args.fetchSession.request.first().subjectId.toIntOrNull()
+        subjectId = id
+        if (id != null && windowSize.width > 0 && windowSize.height > 0) {
+            val key = TvDownloadPickerBackdrop.Key(id, windowSize, blurSpec)
+            withTimeoutOrNull(TV_DOWNLOAD_PICKER_BACKDROP_WAIT) { TvDownloadPickerBackdrop.prepare(key, sketch, context).await() }
+        }
+        show = true
+    }
+    if (!show) return
+
     Dialog(
         onDismissRequest = args.onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     ) {
         DialogWindowDimAmount(0f)
-        Box(
-            Modifier
-                .fillMaxSize()
-                // 面板背后不铺暗底 (在播放器里画面要露出来); 缓存页上背后是剧集列表, 压暗免得和卡片混在一起
-                .background(Color.Black.copy(alpha = 0.85f))
-                // 返回键先给面板 (退出筛选 / 内容里退一层), 面板不要了才关窗口
-                .onPreviewKeyEvent { event ->
-                    if (event.key != Key.Back && event.key != Key.Escape) return@onPreviewKeyEvent false
-                    if (event.type == KeyEventType.KeyUp && !controller.back()) currentArgs.onDismiss()
-                    true
-                },
-        ) {
-            TvSourcePanel(
-                state = state,
-                controller = controller,
-                leaving = false,
-                onClose = args.onDismiss,
-                modifier = Modifier.fillMaxSize(),
-            )
+        AniTheme(darkModeOverride = DarkMode.DARK) {
+            val ready = TvDownloadPickerBackdrop.ready?.takeIf { it.key == backdropKey }
+            // 首次组合时就好了: 直接是终值, 不淡入; 等不到先出来的: 压暗的缓存页, 图好了 (或确定没有图) 再淡到不透明
+            val imageAlpha by animateFloatAsState(if (ready?.image != null) 1f else 0f)
+            val baseAlpha by animateFloatAsState(if (ready != null) 1f else 0.85f)
+            val pageColor = AniThemeDefaults.pageContentBackgroundColor
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .drawBehind { drawRect(pageColor.copy(alpha = baseAlpha)) }
+                    // 返回键先给面板 (退出筛选 / 内容里退一层), 面板不要了才关窗口
+                    .onPreviewKeyEvent { event ->
+                        if (event.key != Key.Back && event.key != Key.Escape) return@onPreviewKeyEvent false
+                        if (event.type == KeyEventType.KeyUp && !controller.back()) currentArgs.onDismiss()
+                        true
+                    },
+            ) {
+                // 压暗同详情页的模糊底
+                TvBlurredBackdropImage(
+                    ready?.image,
+                    alpha = { imageAlpha },
+                    maskColor = pageColor.copy(alpha = TV_FULLSCREEN_BACKDROP_DIM_ALPHA),
+                    textColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                TvSourcePanel(
+                    state = state,
+                    controller = controller,
+                    leaving = false,
+                    onClose = args.onDismiss,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
     }
 

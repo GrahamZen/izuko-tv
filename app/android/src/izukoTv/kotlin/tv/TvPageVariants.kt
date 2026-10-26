@@ -134,8 +134,10 @@ import me.him188.ani.app.ui.foundation.tv.LocalTvLoginSidePanel
 import me.him188.ani.app.ui.foundation.tv.LocalTvOnboardingVariant
 import me.him188.ani.app.ui.foundation.tv.TvOnboardingVariant
 import me.him188.ani.app.ui.subject.episode.tv.TvEpisodeScreenContent
+import me.him188.ani.app.ui.subject.episode.tv.source.PrepareTvDownloadPickerBackdrop
 import me.him188.ani.app.ui.subject.episode.tv.source.TvDownloadSourcePanel
 import me.him188.ani.app.ui.download.subject.LocalTvDownloadMediaPickerVariant
+import me.him188.ani.app.ui.download.subject.LocalTvDownloadPickerPrewarm
 import me.him188.ani.app.ui.download.subject.TvDownloadMediaPickerVariant
 import me.him188.ani.app.ui.user.SelfInfoUiState
 import me.him188.ani.app.ui.remote.RegisterTvRemoteBackgroundPlayer
@@ -332,6 +334,8 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         LocalViewAllCommentsList provides TvViewAllCommentsList,
         // 缓存页的选源: 与播放器同一块选源面板
         LocalTvDownloadMediaPickerVariant provides TvDownloadMediaPickerVariant { TvDownloadSourcePanel(it) },
+        // 缓存页一打开就准备选源背后的模糊背景, 按下载时不用再等
+        LocalTvDownloadPickerPrewarm provides { subjectId -> PrepareTvDownloadPickerBackdrop(subjectId) },
         // 设置页: 原生三栏 (要打字的设置在手机 Web 控制台里)
         LocalSettingsScreenVariant provides SettingsScreenVariant { vm, initialTab, legacy, licenses, modifier ->
             TvSettingsPage(vm, initialTab, legacy, licenses, modifier)
