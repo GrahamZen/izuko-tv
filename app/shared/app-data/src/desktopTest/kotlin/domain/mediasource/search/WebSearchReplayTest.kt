@@ -36,6 +36,7 @@ import me.him188.ani.app.data.models.preference.MediaSelectorSettings
 import me.him188.ani.app.data.network.SeriesGraphTable
 import me.him188.ani.app.data.network.TmdbSubjectMapIndex
 import me.him188.ani.app.data.repository.media.SelectorMediaSourceEpisodeCacheRepository
+import me.him188.ani.app.domain.media.selector.MatchMetadata
 import me.him188.ani.app.domain.media.selector.MaybeExcludedMedia
 import me.him188.ani.app.domain.media.selector.MediaSelectorContext
 import me.him188.ani.app.domain.media.selector.filter.MediaSelectorFilterSortAlgorithm
@@ -195,6 +196,15 @@ class WebSearchReplayTest {
             put("media", media.size)
             put("pages", buildJsonArray { media.mapNotNull { it.properties.subjectName }.distinct().forEach { add(JsonPrimitive(it)) } })
             put("included", buildJsonArray { filtered.filterIsInstance<MaybeExcludedMedia.Included>().forEach { add(JsonPrimitive(it.result.describe())) } })
+            // 条目名算精确匹配的 (选源面板上不提示「条目名不完全一致」, 自动选源优先)
+            put(
+                "exact",
+                buildJsonArray {
+                    filtered.filterIsInstance<MaybeExcludedMedia.Included>()
+                        .filter { it.metadata.subjectMatchKind == MatchMetadata.SubjectMatchKind.EXACT }
+                        .forEach { add(JsonPrimitive(it.result.describe())) }
+                },
+            )
             put(
                 "excluded",
                 buildJsonObject {
