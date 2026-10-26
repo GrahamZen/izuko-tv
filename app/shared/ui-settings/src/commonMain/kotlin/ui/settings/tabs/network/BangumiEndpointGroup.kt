@@ -30,8 +30,6 @@ import me.him188.ani.app.ui.lang.settings_network_bangumi_custom_url_description
 import me.him188.ani.app.ui.lang.settings_network_bangumi_custom_url_invalid
 import me.him188.ani.app.ui.lang.settings_network_bangumi_endpoint
 import me.him188.ani.app.ui.lang.settings_network_bangumi_endpoint_description
-import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror_auto_message
-import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror_auto_title
 import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror_credentials
 import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror_credentials_cancel
 import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror_credentials_off_confirm
@@ -42,7 +40,6 @@ import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror_credentials_ris
 import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror_credentials_risk_message
 import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror_credentials_risk_title
 import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror_switch_allow
-import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror_switch_later
 import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror_switch_logout
 import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror_switch_message
 import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror_switch_title
@@ -202,7 +199,6 @@ internal fun SettingsScope.BangumiEndpointGroup(
 
     askSwitch?.let { target ->
         MirrorSwitchConsentDialog(
-            automatic = false,
             onAllow = {
                 askSwitch = null
                 state.update(target.copy(allowCredentialsViaMirror = true))
@@ -234,24 +230,18 @@ internal fun SettingsScope.BangumiEndpointGroup(
 }
 
 /**
- * 已登录的人改成只剩第三方镜像之前的选择 (见 [BangumiMirrorConsent]): 允许凭证经过镜像 / 退出登录再切 / 不切.
- *
- * @param automatic `true` = 确定官方连不上、只有镜像通, 要自动关掉官方 (标题与说明换成「连不上官方」那套, 取消叫「暂不」)
+ * 已登录的人自己改成只剩第三方镜像之前的选择 (见 [BangumiMirrorConsent]): 允许凭证经过镜像 / 退出登录再切 / 不切.
+ * 官方连不上时应用自己问的那一句不在这里 (见 SettingAdjustments 与电视的 TvSettingAdjustmentHost).
  */
 @Composable
 fun MirrorSwitchConsentDialog(
-    automatic: Boolean,
     onAllow: () -> Unit,
     onLogoutAndSwitch: () -> Unit,
     onDismissRequest: () -> Unit,
 ) {
     SettingChoiceDialog(
-        title = stringResource(
-            if (automatic) Lang.settings_network_bangumi_mirror_auto_title else Lang.settings_network_bangumi_mirror_switch_title,
-        ),
-        message = stringResource(
-            if (automatic) Lang.settings_network_bangumi_mirror_auto_message else Lang.settings_network_bangumi_mirror_switch_message,
-        ),
+        title = stringResource(Lang.settings_network_bangumi_mirror_switch_title),
+        message = stringResource(Lang.settings_network_bangumi_mirror_switch_message),
         actions = listOf(
             SettingChoiceDialogAction(
                 stringResource(Lang.settings_network_bangumi_mirror_switch_allow),
@@ -260,9 +250,7 @@ fun MirrorSwitchConsentDialog(
             ),
             SettingChoiceDialogAction(stringResource(Lang.settings_network_bangumi_mirror_switch_logout), onClick = onLogoutAndSwitch),
         ),
-        cancel = stringResource(
-            if (automatic) Lang.settings_network_bangumi_mirror_switch_later else Lang.settings_network_bangumi_mirror_credentials_cancel,
-        ),
+        cancel = stringResource(Lang.settings_network_bangumi_mirror_credentials_cancel),
         onDismissRequest = onDismissRequest,
         heightFraction = 0.75f,
     )
