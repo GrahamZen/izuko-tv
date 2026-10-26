@@ -54,4 +54,14 @@ class TitlePartsTest {
         assertEquals(setOf("kanon"), TitleParts.namesIn("Kanon - 01v2 [1080p].mkv"))
         assertEquals(setOf("机动战士高达0079"), TitleParts.namesIn("机动战士高达0079 第三十集"))
     }
+
+    @Test
+    fun `whole names keep the season and the mixed scripts`() {
+        val season = "[内嵌简中]（炸梦！第二季）BanG Dream! 2nd Season (2019)"
+        assertEquals(setOf("炸梦", "bangdream"), TitleParts.namesIn(season))
+        assertTrue("bangdream2ndseason" in TitleParts.wholeNamesIn(season))
+        val pico = "[内嵌简中]（炸梦！少女乐团派对☆PICO）BanG Dream! ガルパ☆ピコ (2018)[26集全]"
+        assertTrue(TitleForms.compact("BanG Dream! ガルパ☆ピコ") !in TitleParts.namesIn(pico))
+        assertTrue(TitleForms.compact("BanG Dream! ガルパ☆ピコ") in TitleParts.wholeNamesIn(pico))
+    }
 }
