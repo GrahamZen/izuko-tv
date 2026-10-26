@@ -162,15 +162,25 @@ private class WkWebViewCaptchaBrowser(userAgent: String?) : CaptchaBrowser {
     }
 
     override suspend fun collectCookies(urls: List<String>): List<BrowserCookie> = withContext(Dispatchers.Main) {
+        cookiesFor(urls).map { cookie -> BrowserCookie(name = cookie.name, value = cookie.value, domain = cookie.domain, path = cookie.path) }
+    }
+
+    override suspend fun clearCookies(urls: List<String>) = withContext(Dispatchers.Main) {
+        val store = webView.configuration.websiteDataStore.httpCookieStore
+        for (cookie in cookiesFor(urls)) {
+            suspendCancellableCoroutine<Unit> { cont -> store.deleteCookie(cookie) { if (cont.isActive) cont.resume(Unit) } }
+        }
+    }
+
+    /** 默认存储里 [urls] 各自可见的 cookies (WKWebView 的 cookie 存储是整个 app 共用的). 主线程上调. */
+    private suspend fun cookiesFor(urls: List<String>): List<NSHTTPCookie> {
         val cookies: List<NSHTTPCookie> = suspendCancellableCoroutine { cont ->
             webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { all ->
                 if (cont.isActive) cont.resume(all.orEmpty().filterIsInstance<NSHTTPCookie>())
             }
         }
         val hosts = urls.mapNotNull { NSURL(string = it).host }
-        cookies
-            .filter { cookie -> hosts.any { host -> host.endsWith(cookie.domain.removePrefix(".")) } }
-            .map { cookie -> BrowserCookie(name = cookie.name, value = cookie.value, domain = cookie.domain, path = cookie.path) }
+        return cookies.filter { cookie -> hosts.any { host -> host.endsWith(cookie.domain.removePrefix(".")) } }
     }
 
     override fun setResourceInterceptor(handler: ((url: String) -> InterceptDecision)?) {

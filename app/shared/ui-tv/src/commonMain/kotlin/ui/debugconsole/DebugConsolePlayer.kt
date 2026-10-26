@@ -40,10 +40,10 @@ internal object DebugConsolePlayer {
     val vm: EpisodeViewModel? get() = DebugConsole.playback?.currentViewModel
 
     /** 页面状态与选源器只在有人订阅时更新: 没人看着 (后台、小窗) 时订阅一下等它出来. */
-    private suspend fun page(vm: EpisodeViewModel): EpisodePageState? =
+    suspend fun page(vm: EpisodeViewModel): EpisodePageState? =
         vm.pageState.value ?: withTimeoutOrNull(WAIT) { vm.pageState.filterNotNull().first() }
 
-    private suspend fun presentation(page: EpisodePageState): MediaSelectorState.Presentation {
+    suspend fun presentation(page: EpisodePageState): MediaSelectorState.Presentation {
         val flow = page.mediaSelectorState.presentationFlow
         return flow.value.takeUnless { it.isPlaceholder }
             ?: withTimeoutOrNull(WAIT) { flow.first { !it.isPlaceholder } }

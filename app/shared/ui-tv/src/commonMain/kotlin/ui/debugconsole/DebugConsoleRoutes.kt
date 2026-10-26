@@ -50,6 +50,7 @@ import kotlin.time.Duration.Companion.seconds
  * - `api/logs` (lines, grep, file): 日志末尾, 纯文本; `api/logs/files`: 有哪些日志文件
  * - `api/screenshot`: 当前画面 PNG
  * - `api/settings`: 调试开关 (`debug` 一组, 同 Web 控制台); `api/settings/debug/set` (key = dev.<名字>, value)
+ * - `api/debug/http` / `api/debug/webview` / `api/debug/resolve` / `api/debug/candidates`: 在这台设备上发请求、开网页、解析候选、列一个源的全部候选, 参数见 [DebugConsoleProbes]
  */
 internal suspend fun handleDebugConsoleRequest(request: DebugConsoleRequest, config: DebugConsoleConfig): DebugConsoleResponse {
     val nav = DebugConsole.navigator
@@ -170,6 +171,11 @@ internal suspend fun handleDebugConsoleRequest(request: DebugConsoleRequest, con
             val switch = DevSwitches.all.firstOrNull { "dev.${it.key}" == key } ?: return result("unknown switch $key")
             result(if (switch.set(request.params["value"].orEmpty())) null else "invalid value")
         }
+
+        "api/debug/http" -> DebugConsoleResponse.json(DebugConsoleProbes.http(request))
+        "api/debug/webview" -> DebugConsoleResponse.json(DebugConsoleProbes.webview(request))
+        "api/debug/resolve" -> DebugConsoleResponse.json(DebugConsoleProbes.resolve(request))
+        "api/debug/candidates" -> DebugConsoleResponse.json(DebugConsoleProbes.candidates(request))
 
         else -> DebugConsoleResponse.text("unknown path ${request.path}", 404)
     }
