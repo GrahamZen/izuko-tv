@@ -218,13 +218,13 @@
     <string name="settings_theme_tv_hero_backdrop_description">When off, Explore, Search and Collection all become poster walls with a title under each poster; press OK on a card to show its hero background, and OK again to open it</string>
     <string name="settings_theme_tv_immersive_schedule">Immersive Airing Schedule (TV)</string>
     <string name="settings_theme_tv_immersive_schedule_description">Show the airing schedule as a date rail plus a poster grid. Turn off to fall back to the classic side-by-side day columns</string>
-    <string name="settings_theme_tv_backdrop_blur">Blurred background (TV)</string>
+    <string name="settings_theme_tv_backdrop_blur">Blurred background</string>
     <string name="settings_theme_tv_backdrop_blur_description">Fills the page behind with a blurred version of the title artwork, at two levels picked together: the poster wall level for the wall after selecting a poster (when “Selecting a poster” is “Show the overview first”) and for the airing schedule (Medium when Off), and the details level past the first screen of a details page. A strong wall and a light details page look best: the wall background stays out of the way and the details page still shows the artwork. With Off, the details zoom in from the artwork and the details page keeps the artwork sharp and dimmed</string>
     <string name="settings_theme_tv_backdrop_blur_pair">%1$s on the poster wall, %2$s on details</string>
     <string name="settings_theme_tv_backdrop_blur_both">%1$s everywhere</string>
-    <string name="settings_theme_tv_title_logo">Title logo (TV)</string>
+    <string name="settings_theme_tv_title_logo">Title logo</string>
     <string name="settings_theme_tv_title_logo_description">Show the show’s title logo from TMDB in place of the title text at the top of the explore, collection and search pages, on the first screen of the details page and in the player. Shows without a logo keep the text title. When a logo is hard to see against the background, auto color flips its black, white and gray parts or adds a soft glow behind it; text when unclear shows the text title everywhere for that show as soon as the logo is hard to see on the list or details page</string>
-    <string name="settings_theme_tv_title_logo_language">Title logo language (TV)</string>
+    <string name="settings_theme_tv_title_logo_language">Title logo language</string>
     <string name="settings_theme_tv_title_logo_language_description">Original uses the logo in the work’s original language (Japanese for Japanese anime, English for American shows); App language uses logos in the app’s language. Text is shown when there is no suitable logo. Report a wrong logo from the details page</string>
     <string name="settings_theme_tv_title_logo_language_original">Original</string>
     <string name="settings_theme_tv_title_logo_language_app">App language</string>
@@ -387,7 +387,7 @@
     <string name="settings_theme_tv_backdrop_blur_light">Light</string>
     <string name="settings_theme_tv_backdrop_blur_medium">Medium</string>
     <string name="settings_theme_tv_backdrop_blur_strong">Strong</string>
-    <string name="settings_theme_tv_poster_confirm">Selecting a poster (TV)</string>
+    <string name="settings_theme_tv_poster_confirm">Selecting a poster</string>
     <string name="settings_theme_tv_poster_confirm_description">What OK does on a poster on Explore, Collection, Search and the airing schedule. The Play key and long press are unaffected</string>
     <string name="settings_theme_tv_poster_confirm_hero">Show the overview first</string>
     <string name="settings_theme_tv_poster_confirm_play">Play right away</string>
@@ -399,7 +399,7 @@
     <string name="settings_theme_tv_explore_layout_poster_wall">Poster wall</string>
     <string name="settings_theme_tv_explore_layout_fixed_focus">Fixed focus</string>
     <string name="settings_theme_tv_episodes">Episodes</string>
-    <string name="settings_theme_tv_episode_specials">Specials (TV)</string>
+    <string name="settings_theme_tv_episode_specials">Specials</string>
     <string name="settings_theme_tv_episode_specials_description">Where SP, OP, ED and other non-main episodes go in the episode list on the details page and in the player. Previous / next episode always stays within the same type</string>
     <string name="settings_theme_tv_episode_specials_hidden">Hide</string>
     <string name="settings_theme_tv_episode_specials_after_main">After the main episodes</string>

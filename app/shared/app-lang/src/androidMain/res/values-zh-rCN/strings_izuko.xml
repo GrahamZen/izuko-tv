@@ -218,13 +218,13 @@
     <string name="settings_theme_tv_hero_backdrop_description">关掉后探索、搜索、追番三页都换成海报墙：海报下面写番名，卡片上按确定先显示 hero 背景，再按确定进详情</string>
     <string name="settings_theme_tv_immersive_schedule">沉浸式新番时间表</string>
     <string name="settings_theme_tv_immersive_schedule_description">新番时间表使用日期胶囊 + 海报网格布局。关闭则回退到 15 天并排的纵向列表</string>
-    <string name="settings_theme_tv_backdrop_blur">模糊背景 (电视)</string>
+    <string name="settings_theme_tv_backdrop_blur">模糊背景</string>
     <string name="settings_theme_tv_backdrop_blur_description">整页底下铺这部作品大图的模糊版，海报墙与详情页按搭配一起选：海报墙按确定后（「海报上按确定」选「先看简介」时）和新番时间表用海报墙那一档（时间表选不模糊时按中），详情页翻过第一屏后用详情页那一档。海报墙重、详情页轻最好看：卡片墙后面的底不抢眼，详情页还认得出画面。选不模糊时海报墙从大图放大进详情页，详情页的大图清晰地淡在后面</string>
     <string name="settings_theme_tv_backdrop_blur_pair">海报墙%1$s、详情页%2$s</string>
     <string name="settings_theme_tv_backdrop_blur_both">都%1$s</string>
-    <string name="settings_theme_tv_title_logo">标题 logo (电视)</string>
+    <string name="settings_theme_tv_title_logo">标题 logo</string>
     <string name="settings_theme_tv_title_logo_description">探索、追番、搜索页上方、详情页第一屏和播放器左上角，用 TMDB 上这部的标题 logo 代替文字标题，没有 logo 的照旧显示文字。logo 压在背景上看不清时：自动调色会把黑白灰的部分翻色，或在背后加一点柔光；显示文字则是列表页或详情页只要有一处看不清，这部各处都换成文字</string>
-    <string name="settings_theme_tv_title_logo_language">标题 logo 语言 (电视)</string>
+    <string name="settings_theme_tv_title_logo_language">标题 logo 语言</string>
     <string name="settings_theme_tv_title_logo_language_description">原版：作品原语言的 logo（日本动画是日文，美国动画是英文）；跟随界面语言：中文界面用中文 logo。没有合适的显示文字。哪张不对可以在详情页报告</string>
     <string name="settings_theme_tv_title_logo_language_original">原版</string>
     <string name="settings_theme_tv_title_logo_language_app">跟随界面语言</string>
@@ -387,7 +387,7 @@
     <string name="settings_theme_tv_backdrop_blur_light">轻</string>
     <string name="settings_theme_tv_backdrop_blur_medium">中</string>
     <string name="settings_theme_tv_backdrop_blur_strong">重</string>
-    <string name="settings_theme_tv_poster_confirm">海报上按确定 (电视)</string>
+    <string name="settings_theme_tv_poster_confirm">海报上按确定</string>
     <string name="settings_theme_tv_poster_confirm_description">探索、追番、搜索和新番时间表的海报上按确定做什么。播放键和长按不受影响</string>
     <string name="settings_theme_tv_poster_confirm_hero">先看简介</string>
     <string name="settings_theme_tv_poster_confirm_play">直接播放</string>
@@ -399,7 +399,7 @@
     <string name="settings_theme_tv_explore_layout_poster_wall">海报墙</string>
     <string name="settings_theme_tv_explore_layout_fixed_focus">固定焦点</string>
     <string name="settings_theme_tv_episodes">选集</string>
-    <string name="settings_theme_tv_episode_specials">特别篇 (电视)</string>
+    <string name="settings_theme_tv_episode_specials">特别篇</string>
     <string name="settings_theme_tv_episode_specials_description">详情页和播放器选集里 SP、OP、ED 等非正片放在哪。上一集 / 下一集始终只在同类型之间切换</string>
     <string name="settings_theme_tv_episode_specials_hidden">隐藏</string>
     <string name="settings_theme_tv_episode_specials_after_main">排在正片后面</string>
