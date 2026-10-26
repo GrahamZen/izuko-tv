@@ -75,6 +75,8 @@ data class DownloadItem(
     val locationUnavailable: Boolean = false,
     /** [locationUnavailable] 时盘已经接回来, 正在重新恢复 (BT 要先校验盘上的数据) */
     val locationReconnected: Boolean = false,
+    /** [locationUnavailable] 时其实是正在搬到别的位置 */
+    val locationMoving: Boolean = false,
 ) {
     enum class Playability {
         PLAYABLE,
