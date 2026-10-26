@@ -176,7 +176,7 @@
     <string name="settings_network_bangumi_endpoint">Bangumi 連線方式</string>
     <string name="settings_network_bangumi_endpoint_description">2026 年 5 月起 Bangumi 在中國大陸被阻斷，API 也一樣不通。建議優先設置「代理」：應用直連 Bangumi 官方，不經過任何第三方。下面幾條線路按順序嘗試，前一條連不上用下一條。</string>
     <string name="settings_network_bangumi_route_origin">官方直連</string>
-    <string name="settings_network_bangumi_route_origin_description">直接連 Bangumi 官方。確定連不上時會自動關掉，之後不再先試它；網絡好了可以再打開。</string>
+    <string name="settings_network_bangumi_route_origin_description">直接連 Bangumi 官方。確定連不上時會問你要不要關掉，關了之後不再先試它；網絡好了可以再打開。</string>
     <string name="settings_network_bangumi_route_custom_description">%1$s · 你自己搭的反代，登入與收藏同步也走它。</string>
     <string name="settings_network_bangumi_route_ech">加密直連</string>
     <string name="settings_network_bangumi_route_ech_description">連的仍是 Bangumi 官方，只是把要連的網址藏進加密的握手裏，繞開按網址的攔截；登入與收藏同步照常走它。設了代理時不用它。</string>
@@ -196,6 +196,8 @@
     <string name="settings_network_bangumi_mirror_switch_message">你已登入 Bangumi。登入後的請求（收藏、進度、評分，以及登入後瀏覽條目）默認不經過第三方鏡像，只剩鏡像可用時都會失敗。\n\n選「允許並改用鏡像」後，你的 Bangumi 登入憑證、收藏與觀看進度都會經過鏡像伺服器，對方可以看到並使用你的帳號，由此產生的風險由你自行承擔。不想交出帳號的話，可以登出，只用鏡像瀏覽。</string>
     <string name="settings_network_bangumi_mirror_auto_title">連不上 Bangumi 官方</string>
     <string name="settings_network_bangumi_mirror_auto_message">現在連不上 Bangumi 官方，加密直連也不通，鏡像能用。你已登入，登入後的請求（收藏、進度，以及登入後瀏覽條目）默認不經過第三方鏡像，所以現在都會失敗。\n\n改用鏡像並允許登入經過鏡像後，你的 Bangumi 登入憑證、收藏與觀看進度都會經過鏡像伺服器，對方可以看到並使用你的帳號，由此產生的風險由你自行承擔。也可以登出，只用鏡像瀏覽；或者設置代理，直連官方。</string>
+    <string name="settings_adjust_skip_origin_message">剛才連不上 Bangumi 官方，是經「%1$s」連上的。要不要以後跳過官方、直接用它？這樣每次打開不用先等官方超時。以後可以在 設置 → 代理 → Bangumi 連線方式 裡改回來。</string>
+    <string name="settings_adjust_skip_origin_confirm">跳過官方</string>
     <string name="settings_network_bangumi_mirror_switch_allow">允許並改用鏡像</string>
     <string name="settings_network_bangumi_mirror_switch_logout">登出並改用鏡像</string>
     <string name="settings_network_bangumi_mirror_switch_later">暫不</string>

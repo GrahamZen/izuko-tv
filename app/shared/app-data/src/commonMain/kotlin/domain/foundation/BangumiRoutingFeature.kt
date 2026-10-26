@@ -88,7 +88,7 @@ class BangumiRoutingFeatureHandler(
      *
      * 记住多久由线路定 ([BangumiRoute.stickyMillis], 从换过去那一刻算, 期间请求再多也不续): 官方以外的线路会过期,
      * 官方回 5xx、网络抖一下这类临时故障换过去之后, 过期了就重新先试前面的线路, 能直连的人能自愈. 官方**连不上**则另有出路:
-     * 回报给 [onOriginUnreachable], 据此关掉「官方直连」, 路由里从此没有官方.
+     * 回报给 [onOriginUnreachable], 由用户决定要不要关掉「官方直连」(关了路由里就没有官方).
      */
     private data class Sticky(val signature: Int, val route: BangumiRoute, val at: Long)
 
@@ -132,6 +132,7 @@ class BangumiRoutingFeatureHandler(
 
     /** @return `null` = 这个请求不该由本特性处理, 调用方照常发 */
     private suspend fun Sender.handle(request: HttpRequestBuilder): HttpClientCall? {
+        if (request.attributes.contains(BangumiDirectToOrigin)) return null
         val routing = routing.first()
         // 数据里存着的线路地址 (见 BangumiRouting.knownRoutes) 先换回原站, 下面统一按路由走
         val originalHost = routing.originHostOf(request.url.host) ?: return null
@@ -300,10 +301,10 @@ class BangumiRoutingFeatureHandler(
     /** 进入本处理器时请求原本的超时; 试线路时改过之后, 换到下一条要恢复成这个. */
     private class Timeouts(val request: Long?, val connect: Long?, val socket: Long?)
 
-    private companion object {
+    internal companion object {
         /**
          * 还不知道一条线路通不通时, 试它的连接超时. 被墙的常见表现是 DNS 给一个不通的地址、TCP 一直连不上,
-         * 默认 30 秒的连接超时会让大陆用户第一次打开白等半分钟 (之后才换线路并关掉「官方直连」).
+         * 默认 30 秒的连接超时会让大陆用户第一次打开白等半分钟 (之后才换线路).
          * bgm.tv 在 Cloudflare 后面, 正常网络下连接在几百毫秒内完成, 3 秒连不上基本就是不通.
          */
         const val PROBE_CONNECT_MILLIS = 3_000L

@@ -96,6 +96,7 @@ import me.him188.ani.app.domain.foundation.BangumiEchFeatureHandler
 import me.him188.ani.app.domain.foundation.BangumiEchTransport
 import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
 import me.him188.ani.app.domain.foundation.BangumiMirrorConsentRequests
+import me.him188.ani.app.domain.foundation.BangumiOriginProbe
 import me.him188.ani.app.domain.foundation.BangumiMirrorListRepository
 import me.him188.ani.app.domain.foundation.BangumiRoute
 import me.him188.ani.app.domain.foundation.BangumiRoutingFeature
@@ -177,6 +178,9 @@ import me.him188.ani.app.domain.session.auth.BangumiOAuthRelayClient
 import me.him188.ani.app.domain.session.auth.BangumiWebLogin
 import me.him188.ani.app.domain.session.auth.createBangumiWebLoginClient
 import me.him188.ani.app.domain.settings.ProxyProvider
+import me.him188.ani.app.domain.settings.SettingAdjustment
+import me.him188.ani.app.domain.settings.SettingAdjustmentChoice
+import me.him188.ani.app.domain.settings.SettingAdjustments
 import me.him188.ani.app.domain.settings.SettingsBasedProxyProvider
 import me.him188.ani.app.domain.torrent.TorrentEngineType
 import me.him188.ani.app.domain.torrent.TorrentManager
@@ -339,6 +343,12 @@ private fun KoinApplication.otherModules(
         ).also { it.start() }
     }
     single<BangumiMirrorConsentRequests> { BangumiMirrorConsentRequests() }
+    // 应用自己改用户设置都经它告知或询问 (见 SettingAdjustments)
+    single<SettingAdjustments> { SettingAdjustments(coroutineScope) }
+    single<BangumiOriginProbe> { BangumiOriginProbe { get<HttpClientProvider>().get() } }
+    single<VideoEnhancementFallbackSetting>(createdAtStart = true) {
+        VideoEnhancementFallbackSetting(get(), get()).also { it.start(coroutineScope) }
+    }
     // 加密直连的配置与地址; 连接层 BangumiEchTransport 由支持的平台的模块提供 (安卓: ConscryptEchTransport)
     single<BangumiEchConfig> {
         // DoH 清单在第一次拉配置时才建 (建时就去仓库拉): 用不到加密直连的人不为它多发请求
@@ -366,7 +376,12 @@ private fun KoinApplication.otherModules(
                 if (workingRoute.thirdParty && loggedIn && !current.allowCredentialsViaMirror) {
                     get<BangumiMirrorConsentRequests>().request()
                 } else {
-                    settings.update { afterOriginUnreachable() }
+                    // 不替用户改: 问他要不要以后跳过官方. 弹之前再问一次官方, 回应了就是刚才整机断网 (见 BangumiOriginProbe)
+                    get<SettingAdjustments>().ask(
+                        SettingAdjustment.SkipBangumiOrigin(workingRoute.kind),
+                        listOf(SettingAdjustmentChoice("skip-origin") { settings.update { afterOriginUnreachable() } }),
+                        stillNeeded = { !get<BangumiOriginProbe>().answers() },
+                    )
                 }
             },
         )
