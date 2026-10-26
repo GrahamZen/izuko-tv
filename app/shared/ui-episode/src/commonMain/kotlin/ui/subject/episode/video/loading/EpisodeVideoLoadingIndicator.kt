@@ -45,6 +45,7 @@ import me.him188.ani.app.domain.player.downloadSpeedFlow
 import me.him188.ani.app.domain.player.httpErrorStatus
 import me.him188.ani.app.domain.player.isNetworkFailure
 import me.him188.ani.app.domain.player.isNotVideoResponse
+import me.him188.ani.app.domain.player.seekPendingFlow
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
 import me.him188.ani.app.ui.foundation.TextWithBorder
 import me.him188.ani.app.ui.lang.Lang
@@ -140,8 +141,9 @@ fun EpisodeVideoLoadingIndicator(
     val speed by remember(playerState) {
         playerState.downloadSpeedFlow()
     }.collectAsStateWithLifecycle(FileSize.Unspecified)
+    val seekPending by remember(playerState) { playerState.seekPendingFlow() }.collectAsStateWithLifecycle(false)
 
-    if (shouldShowVideoLoadingIndicator(videoLoadingState, state.isBuffering, state.mediaStatus is MediaStatus.Error)) {
+    if (shouldShowVideoLoadingIndicator(videoLoadingState, state.isBuffering || seekPending, state.mediaStatus is MediaStatus.Error)) {
         // 已缓冲了多少只在缓冲 (地址交给播放器之后) 时显示, 也只在这时订阅
         val bufferedAheadMillis = if (videoLoadingState is VideoLoadingState.Succeed) {
             val bufferedAheadFlow = remember(playerState) { playerState.bufferedAheadMillisFlow() }
