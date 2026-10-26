@@ -479,6 +479,7 @@ class SelectorMediaSource(
             episodeName = query.episodeName,
             freshnessProbe = freshnessProbe,
             subjectEpisodeSorts = subjectEpisodeSorts,
+            subjectEpisodeCount = query.mainEpisodeCountOrNull(),
         )
 
         val plan = SubjectSearchPlan.of(query)

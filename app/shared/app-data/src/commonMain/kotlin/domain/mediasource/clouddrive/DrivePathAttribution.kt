@@ -10,6 +10,7 @@
 package me.him188.ani.app.domain.mediasource.clouddrive
 
 import me.him188.ani.app.domain.mediasource.clouddrive.DriveSubjectIdentity.Naming
+import me.him188.ani.app.domain.mediasource.search.TitleForms
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 
@@ -18,18 +19,19 @@ import me.him188.ani.datasources.api.source.MediaFetchRequest
  * (见 [DriveSubjectMatcher.matchEpisodes]). 从文件往上, 第一个点名了某一部的那一层说了算:
  * - 名字 ([DriveSubjectIdentity.namingOf]): 本条目的名字或副标题是这一部, 别的作品的名字或副标题是别的部, 都有的说不清;
  *   名字点名的是别的部、却只写了本季 (第 2 季及以后) 的也算这一部: 后几季常拿第一季的名字加季起名 (「弦音 -风舞高中弓道部- 第二季」);
- * - 季与段: 只写了本季的 (条目的季见 [DriveSubjectSeason], 系列的第一部推不出季时当第一季) 是这一部;
- *   本条目是拆分季的一段时, 写着几段共有的季或拆分季的季名、又写了第几段 (「S04 Part2」「进击的巨人 S04 最终季 part1」) 的,
- *   本段是这一部, 别的段是别的部. 文件名里的段不认: 常是集名的一部分 (「The Final Chapters (Part 1)」).
+ *   点名这一部的名字与外层按年份是同名的别的版本的, 是那一版 ([DriveSubjectIdentity.datesOtherVersion]: 「Kanon [2002] / Kanon 06.mkv」);
+ *   系列的第一部: 没点名哪一部、写的年份是同系列别的作品的文件夹是那一部 ([DriveSubjectIdentity.datesOtherSeriesWork]);
+ * - 季与段 ([DriveSubjectSeason]): 只写了本季的是这一部; 本条目是拆分季的一段时, 写着几段共有的季或拆分季的季名、又写了第几段的
+ *   (「S04 Part2」「进击的巨人 S04 最终季 part1」), 本段是这一部, 别的段是别的部. 文件名里的段不认: 常是集名的一部分 (「The Final Chapters (Part 1)」).
  *
- * 点名这一部的那一层与文件之间隔着另一套编号的文件夹时那个名字不算 (说不清): 写了别的季、拆分季共有的季 (「第3季」里袭击篇与反击篇都在),
- * 或本条目集号以外的集号范围 (「1-40」「31-60」). 这类分享与文件夹按最新一部起名, 里面附着前几部
+ * 点名这一部的那一层与文件之间隔着另一套编号的文件夹时那个名字不算 (说不清): 写了别的季、拆分季共有的季 (「第3季」里袭击篇与反击篇都在)、
+ * 本条目集号以外的集号范围 (「1-40」「31-60」), 或写着同系列别的作品的年份 (「吊带袜天使 (2010)」). 这类分享与文件夹按最新一部起名, 里面附着前几部
  * (「…祸进谭… 更新EP48 / 1-40 / EP 01.mp4」「…京都动乱；第二季… / 第一季[24集全] / [01].mp4」). 最外层不算隔开: 标题常写着几季.
  */
 internal class DrivePathAttribution(
     private val identity: DriveSubjectIdentity,
+    private val season: DriveSubjectSeason,
     request: MediaFetchRequest,
-    subjectSeason: DriveSubjectSeason?,
 ) {
     enum class Attribution {
         OWN,
@@ -39,24 +41,15 @@ internal class DrivePathAttribution(
         UNCLEAR,
     }
 
-    /** 本条目的季; 推不出时为 null */
-    private val season: Int? = subjectSeason?.number ?: identity.seriesSeason ?: if (identity.laterWork) null else 1
-
-    /**
-     * 写了本季的名字点名别的部时也算这一部: 本季是第 2 季及以后、又不是拆分季 (几段共有一季). 第一季不算:
-     * 点名的那一部自己也是第一季 (「机动战士高达SEED … S01E01」).
-     */
-    private val seasonOverridesName = identity.split == null && (season ?: 1) >= 2
+    /** 写了本季的名字点名别的部时也算这一部: 本季是第 2 季及以后、又不是拆分季. 第一季不算: 点名的那一部自己也是第一季 (「机动战士高达SEED … S01E01」). */
+    private val seasonOverridesName = season.split == null && (season.ownNumber ?: 1) >= 2
 
     /** 拆分季的季名, 已归一化 */
-    private val splitBaseNames = identity.split?.baseNames.orEmpty().map(DriveNameParser::normalize).filter { it.length >= 2 }
-
-    private val normalEpisodes = request.episodes.filter { it.sort is EpisodeSort.Normal }.sortedBy { it.sort }
-    private val ownSorts = normalEpisodes.mapTo(HashSet()) { it.sort }
-    private val ownEps = normalEpisodes.mapNotNullTo(HashSet()) { it.ep }
+    private val splitBaseNames = season.split?.baseNames.orEmpty().map(TitleForms::compact).filter { it.length >= 2 }
 
     /** 本条目的集号所在的范围: 条目内序号与系列连续集号 */
-    private val ownRanges: List<IntRange> = listOf(normalEpisodes.mapNotNull { it.ep }, normalEpisodes.map { it.sort })
+    private val ownRanges: List<IntRange> = request.episodes.filter { it.sort is EpisodeSort.Normal }
+        .let { normal -> listOf(normal.mapNotNull { it.ep }, normal.map { it.sort }) }
         .map { sorts -> sorts.mapNotNull { (it as? EpisodeSort.Normal)?.number?.toInt() } }
         .filter { it.isNotEmpty() }
         .map { it.min()..it.max() }
@@ -73,49 +66,31 @@ internal class DrivePathAttribution(
                 Naming.OWN -> Naming.OWN
             }
             when (naming) {
-                Naming.OWN -> return if (separated) Attribution.UNCLEAR else Attribution.OWN
+                Naming.OWN -> return when {
+                    separated -> Attribution.UNCLEAR
+                    identity.datesOtherVersion(segments.drop(index)) -> Attribution.OTHER
+                    else -> Attribution.OWN
+                }
                 Naming.OTHER -> return Attribution.OTHER
                 Naming.SEVERAL -> return Attribution.UNCLEAR
-                Naming.NONE -> if (index in 1 until segments.lastIndex && separatesNumbering(segment)) separated = true
+                Naming.NONE -> if (index in 1 until segments.lastIndex) {
+                    if (identity.datesOtherSeriesWork(segment)) return Attribution.OTHER
+                    if (separatesNumbering(segment)) separated = true
+                }
             }
         }
         return Attribution.UNCLEAR
     }
 
-    /**
-     * 说不清是哪一部的文件, 集号 [episode] 是这一部的跨部连续编号 (系列连续集号: 「死神 千年血战篇 / 27.mkv」之于相克谭),
-     * 而且路径里离文件最近、提到这个系列的那一层点的是系列名 ([DriveSubjectIdentity.mentionOf]). 同一个分享里常附着系列的第一部
-     * (「死神系列动漫 TV版 / 1-30 / 027.mkv」是 2004 年 TV 版的第 27 集), 它从 1 编到几百, 与后几部的连续编号对得上, 不算.
-     * 集号也是这一部的条目内序号时分不清是哪一种编号, 只在所在文件夹按连续编号排 ([continuousFolder]: 里面有只能是连续编号的集号) 时算.
-     */
-    fun continuesSeries(fileName: String, folders: List<String>, episode: EpisodeSort, continuousFolder: Boolean): Boolean {
-        if (episode !in ownSorts || (episode in ownEps && !continuousFolder)) return false
-        return (listOf(fileName) + folders.asReversed()).firstNotNullOfOrNull { identity.mentionOf(it) } == true
-    }
-
-    /** 集号 [episode] 只能是这一部的跨部连续编号: 是系列连续集号, 不是条目内序号. 文件夹里有这样的集号, 这个文件夹就是按连续编号排的. */
-    fun isContinuous(episode: EpisodeSort): Boolean = episode in ownSorts && episode !in ownEps
-
-    /**
-     * 本条目是拆分季的一段, 文件按几段共有的那一季编号 (写的季 [fileSeason] 正是本季, 第 [seasonEpisode] 集): 落在本段 (前几段之后的
-     * [me.him188.ani.app.data.models.subject.SplitSeason.Part.episodeCount] 集) 里的是本段的哪一集; 不是本段的或认不出时为 null.
-     * 对应表把整部算一季接着排时 (Re:Zero 的 S1E26 起) 靠它认按季写的 `S02E05`.
-     */
-    fun splitSeasonEpisode(fileSeason: Int?, seasonEpisode: Int?): EpisodeSort? {
-        val split = identity.split ?: return null
-        if (fileSeason == null || seasonEpisode == null || fileSeason != season) return null
-        val index = seasonEpisode - split.previousPartsEpisodeCount
-        return normalEpisodes.getOrNull(index - 1)?.takeIf { index <= split.self.episodeCount }?.sort
-    }
-
     /** 名字没点名哪一部时, 按写的季与段: 只写了本季、本段的算这一部, 写了别的段的算别的部. */
     private fun numberingOf(segment: String, isFile: Boolean): Naming {
         val declared = declaredSeasonsOf(segment, isFile)
-        if (declared.isNotEmpty() && declared != setOfNotNull(season)) return Naming.NONE
-        val split = identity.splitPart ?: return if (declared.isNotEmpty()) Naming.OWN else Naming.NONE
-        if (isFile || (declared.isEmpty() && !namesSplit(segment))) return Naming.NONE
+        if (season.isOwn(declared)) return Naming.OWN
+        val split = season.split ?: return Naming.NONE
+        if (isFile || declared.isEmpty() && !namesSplit(segment)) return Naming.NONE
+        if (declared.isNotEmpty() && declared != setOfNotNull(season.ownNumber)) return Naming.NONE
         val part = partNumberOf(segment) ?: return Naming.NONE
-        return if (part == split) Naming.OWN else Naming.OTHER
+        return if (part == split.selfIndex + 1) Naming.OWN else Naming.OTHER
     }
 
     private fun declaredSeasonsOf(segment: String, isFile: Boolean): Set<Int> {
@@ -124,14 +99,16 @@ internal class DrivePathAttribution(
     }
 
     private fun namesSplit(segment: String): Boolean {
-        val normalized = DriveNameParser.normalize(segment)
+        val normalized = TitleForms.compact(segment)
         return splitBaseNames.any { it in normalized }
     }
 
-    /** 文件夹 [folder] 里是另一套编号: 写了别的季、拆分季共有的季, 或本条目集号以外的集号范围. */
+    /**
+     * 文件夹 [folder] 里是另一套编号: 写了别的季、拆分季共有的季、本条目集号以外的集号范围,
+     * 或写着同系列别的作品的年份 ([DriveSubjectIdentity.datesOtherWork]).
+     */
     private fun separatesNumbering(folder: String): Boolean {
-        val declared = DriveNameParser.declaredSeasons(folder)
-        if (declared.isNotEmpty() && (declared != setOfNotNull(season) || identity.split != null)) return true
+        if (season.separates(DriveNameParser.declaredSeasons(folder)) || identity.datesOtherWork(folder)) return true
         return EPISODE_RANGE.findAll(folder).any { match ->
             val (from, to) = match.destructured.let { (a, b) -> a.toInt() to b.toInt() }
             from < to && !(YEAR.matches(match.groupValues[1]) && YEAR.matches(match.groupValues[2])) &&
