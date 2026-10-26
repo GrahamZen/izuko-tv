@@ -87,7 +87,7 @@ import me.him188.ani.utils.httpdownloader.DownloadState
         EpisodeCollectionPendingOpEntity::class,
         RecommendationFeedEntity::class, // 6.1.x: 探索页推荐的结果缓存
     ],
-    version = 29,
+    version = 30,
     autoMigrations = [
         // 26 以前的库不升级, 打开时清空重建, 见 [OLDEST_UPGRADABLE_DATABASE_VERSION].
         // 26 -> 27: 新增 episode_collection_pending_op 表 (剧集看过状态的待同步操作, 见 [EpisodeCollectionPendingOpEntity]),
@@ -99,6 +99,8 @@ import me.him188.ani.utils.httpdownloader.DownloadState
         AutoMigration(from = 27, to = 28),
         // 28 -> 29: episode_collection 加 durationSeconds (Bangumi 记的这一集的时长, 可空; 纯加列). 旧行为空, 下次刷新分集时填上.
         AutoMigration(from = 28, to = 29),
+        // 29 -> 30: torrent_cache 与 http_cache_download_state 各加 location (缓存在哪个盘, 可空 = 内部存储; 纯加列), 见 MediaCacheLocations.
+        AutoMigration(from = 29, to = 30),
     ],
     exportSchema = true,
 )

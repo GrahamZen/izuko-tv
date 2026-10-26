@@ -11,10 +11,13 @@ package me.him188.ani.app.ui.main
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import me.him188.ani.app.domain.media.cache.location.MediaCacheLocations
 import me.him188.ani.app.domain.media.download.DownloadSpaceGuard
+import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.cache_paused_low_space
+import me.him188.ani.app.ui.lang.cache_paused_low_space_drive
 import me.him188.ani.datasources.api.topic.FileSize.Companion.bytes
 import org.jetbrains.compose.resources.getString
 
@@ -27,7 +30,18 @@ fun TvLowSpaceToasts() {
     val toaster = LocalToaster.current
     LaunchedEffect(toaster) {
         DownloadSpaceGuard.lowSpacePauses.collect { pause ->
-            toaster.toast(getString(Lang.cache_paused_low_space, pause.freeBytes.bytes.toString(), pause.paused))
+            val free = pause.freeBytes.bytes.toString()
+            val message = when (val location = pause.location) {
+                null -> getString(Lang.cache_paused_low_space, free, pause.paused)
+                // 外接盘满了: 说是哪个盘, 内部存储上的下载照常
+                else -> getString(Lang.cache_paused_low_space_drive, driveLabel(location), free, pause.paused)
+            }
+            toaster.toast(message)
         }
     }
 }
+
+/** 盘的名字 (系统给的), 列表里找不到时用卷 UUID */
+private fun driveLabel(location: String): String =
+    GlobalKoin.getOrNull<MediaCacheLocations>()?.locations?.value?.firstOrNull { it.id == location }?.label
+        ?.takeIf { it.isNotBlank() } ?: location

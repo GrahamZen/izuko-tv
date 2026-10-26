@@ -113,6 +113,34 @@ class RemoteTorrentDownloader(
         )
     }
 
+    override suspend fun startDownloadAt(
+        data: EncodedTorrentInfo,
+        saveDir: SystemPath,
+        parentCoroutineContext: CoroutineContext,
+    ): TorrentSession {
+        return RemoteTorrentSession(
+            fetchRemoteScope,
+            RetryRemoteObject(fetchRemoteScope) {
+                remote.callSuspendCancellable { cont ->
+                    startDownloadAt(
+                        data.toParceled(),
+                        saveDir.absolutePath,
+                        object : ContTorrentDownloaderStartDownload.Stub() {
+                            override fun resume(value: IRemoteTorrentSession?) {
+                                cont.resume(value)
+                            }
+
+                            override fun resumeWithException(exception: RemoteContinuationException?) {
+                                cont.resumeWithException(exception)
+                            }
+                        },
+                    )
+                }
+            },
+            connectivityAware,
+        )
+    }
+
     override fun getSaveDirForTorrent(data: EncodedTorrentInfo): SystemPath {
         val remotePath = remote.call { getSaveDirForTorrent(data.toParceled()) }
         return Path(remotePath).inSystem

@@ -6737,7 +6737,7 @@ private val CACHE_SCRIPT = """
       h += '<div class="now-status ready"><b>' + T('合集里还有 {0} 集没缓存', packIds.length) + '</b>' + (d.packTitle ? '<span>' + esc(d.packTitle) + '</span>' : '') + '</div>' +
         '<button type="button" class="ghost wide cache-packall" data-packall="' + packIds.join(',') + '">' + T('全部用合集缓存（{0} 集）', packIds.length) + '</button>';
     }
-    h += '<p class="hint">' + (d.free ? T('电视剩余空间') + ' ' + esc(d.free) + T('。') : '') +
+    h += '<p class="hint">' + (d.free ? esc(d.freeLabel || T('电视剩余空间')) + ' ' + esc(d.free) + T('。') : '') +
       T('勾选几集后点最下面的按钮自动缓存：有已缓存的合集先用合集，') + esc(d.autoHint || T('否则按你的数据源偏好自动挑')) +
       T('；也可以对某一集点「选资源」自己挑。') + '</p>';
     // 有没缓存的特别篇时才说全选的范围 (记在这台手机上, 见 inScope), 顺带说去哪改
@@ -7065,7 +7065,7 @@ private val CACHE_LIST_SCRIPT = """
     if (!d.ok) {
       h = '<p class="hint">' + esc(d.message) + '</p>';
     } else {
-      s = '<div class="card"><div class="cl-free">' + T('电视剩余空间') + ' <b>' + esc(d.free || T('未知')) + '</b>' +
+      s = '<div class="card"><div class="cl-free">' + esc(d.freeLabel || T('电视剩余空间')) + ' <b>' + esc(d.free || T('未知')) + '</b>' +
         (d.total ? '<small> ' + T('/ 共') + ' ' + esc(d.total) + '</small>' : '') + '</div>';
       if (d.count) s += '<div class="cl-line">' + T('{0} 集缓存，共 {1}', d.count, esc(d.used)) + '</div>';
       var run = [];

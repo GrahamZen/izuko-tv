@@ -103,6 +103,39 @@ class DownloadSpaceGuardTest {
         assertEquals(1, running.pauseCalls)
     }
 
+    @Test
+    fun `only the downloads on the nearly full drive are paused`() = runTest {
+        val internal = testDownload(1)
+        val onUsb = testDownload(2)
+        val onMissingDrive = testDownload(3)
+        val storage = DownloadTestStorage().apply {
+            listFlow.value = listOf(internal, OnLocation(onUsb, "usb"), OnLocation(onMissingDrive, "gone"))
+        }
+        val manager = MediaDownloadManager(listOf(storage), backgroundScope)
+        runCurrent()
+        val events = mutableListOf<DownloadSpaceGuard.LowSpacePause>()
+        backgroundScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            DownloadSpaceGuard.lowSpacePauses.collect { events += it }
+        }
+        val usbDir = Path("usb").inSystem
+        val roots = mapOf(null to dir, "usb" to usbDir)
+
+        val guard = DownloadSpaceGuard(
+            manager,
+            rootOf = { roots[it] },
+            scope = backgroundScope,
+            freeBytes = { if (it == usbDir) 512L shl 20 else 8L shl 30 },
+        )
+        assertEquals(1, guard.check())
+        runCurrent()
+        assertEquals(0, internal.pauseCalls)
+        assertEquals(1, onUsb.pauseCalls)
+        assertEquals(0, onMissingDrive.pauseCalls)
+        assertEquals(listOf(DownloadSpaceGuard.LowSpacePause(freeBytes = 512L shl 20, paused = 1, location = "usb")), events)
+    }
+
+    private class OnLocation(delegate: DownloadTestCache, override val locationId: String?) : MediaCache by delegate
+
     /** 读状态一直等不到结果, 像 torrent 服务断开时那样. */
     private class StuckStateCache(delegate: DownloadTestCache) : MediaCache by delegate {
         override val state: Flow<MediaCacheState> = flow { awaitCancellation() }
