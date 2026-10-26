@@ -23,12 +23,11 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
-import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import java.io.File
 
 /**
- * 网盘离线录放 ([DriveShareReplayTest], [DriveSeasonReplayTest]) 读的录好的数据, 目录 [dir] 里:
+ * 网盘离线录放 ([DriveSeasonReplayTest]) 读的录好的数据, 目录 [dir] 里:
  * - `cases.json`: `[{id, names, sort, ep, episodes: [{sort, ep}]}]`, names 按请求里的顺序 (中文名、原名、别名);
  * - `configs.json`: `{源名: DriveShareSearchConfig}`; `protocol.json`: 网盘协议 ([CloudDriveProtocol]);
  * - `sites.json`: `{请求地址: 回应正文 (失败为 null)}`;
@@ -79,24 +78,6 @@ internal class DriveReplayData(val dir: File) {
                 )
             }.toString(),
             Charsets.UTF_8,
-        )
-    }
-
-    fun requestOf(case: JsonObject): MediaFetchRequest {
-        val names = case["names"]!!.jsonArray.map { it.jsonPrimitive.content }
-        fun sort(value: JsonElement?) = EpisodeSort(value!!.jsonPrimitive.content)
-        return MediaFetchRequest(
-            subjectId = case["id"]!!.jsonPrimitive.content,
-            episodeId = "requested",
-            subjectNameCN = names.firstOrNull(),
-            subjectNames = names,
-            episodeSort = sort(case["sort"]),
-            episodeEp = sort(case["ep"]),
-            episodeName = "",
-            episodes = case["episodes"]!!.jsonArray.mapIndexed { index, episode ->
-                val o = episode.jsonObject
-                MediaFetchRequest.Episode("e$index", sort(o["sort"]), o["ep"]?.jsonPrimitive?.contentOrNull?.let(::EpisodeSort))
-            },
         )
     }
 

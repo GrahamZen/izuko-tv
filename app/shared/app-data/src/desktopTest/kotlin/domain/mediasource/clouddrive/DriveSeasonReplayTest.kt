@@ -50,7 +50,7 @@ class DriveSeasonReplayTest {
         val label = System.getenv("DRIVE_REPLAY_LABEL") ?: "run"
         val data = DriveReplayData(dir)
         val numbering = TmdbEpisodeNumbering.of { tmdbEpisodes[it] }
-        val otherWorks = OtherWorks { OtherWorkGuard.of(it, table) }
+        val identities = DriveSubjectIdentities { DriveSubjectIdentity.of(it, table) }
         val subjectsScope = CoroutineScope(SupervisorJob())
         val subjects = ReplaySubjects(table, tmdb = null, subjectsScope)
 
@@ -59,7 +59,7 @@ class DriveSeasonReplayTest {
                 val request = subjects.prepare(case).request
                 for ((site, config) in data.configs) {
                     val matches = DriveShareSearchEngine(
-                        config, data.shares, data.links, numbering = numbering, otherWorks = otherWorks, fetch = data.fetch,
+                        config, data.shares, data.links, numbering = numbering, identities = identities, fetch = data.fetch,
                     ).search(request)
                     add(
                         buildJsonObject {

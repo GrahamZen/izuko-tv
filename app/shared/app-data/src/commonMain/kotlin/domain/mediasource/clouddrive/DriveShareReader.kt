@@ -68,28 +68,28 @@ internal class DriveShareReader(
         return collectVideos(shareId, passcode, folderId, path, skipFolders)
     }
 
-    /** [request] 这个条目在网盘上按第几季找, 见 [DriveSubjectSeason]. [otherWork] 带着系列关系图推出的季. */
-    suspend fun subjectSeason(request: MediaFetchRequest, otherWork: OtherWorkGuard?): DriveSubjectSeason? =
-        DriveSubjectSeason.of(request, numbering.of(request), otherWork?.seriesSeason)
+    /** [request] 这个条目在网盘上按第几季找, 见 [DriveSubjectSeason]. [identity] 带着系列关系图推出的季. */
+    suspend fun subjectSeason(request: MediaFetchRequest, identity: DriveSubjectIdentity?): DriveSubjectSeason? =
+        DriveSubjectSeason.of(request, numbering.of(request), identity?.seriesSeason)
 
     /** 按季分好的一层里, [request] 这个条目不会出现在里面的文件夹, 见 [DriveSubjectMatcher.otherSeasonFolders]. */
-    suspend fun otherSeasonFolders(request: MediaFetchRequest, otherWork: OtherWorkGuard?): (List<String>) -> Set<String> =
-        DriveSubjectMatcher.otherSeasonFolders(subjectSeason(request, otherWork), numbering.of(request))
+    suspend fun otherSeasonFolders(request: MediaFetchRequest, identity: DriveSubjectIdentity?): (List<String>) -> Set<String> =
+        DriveSubjectMatcher.otherSeasonFolders(subjectSeason(request, identity), numbering.of(request))
 
     /**
      * 从 [videos] 里挑出 [request] 这个条目的剧集 (规则同自己网盘的数据源, 见 [DriveSubjectMatcher]).
      * [FoundShare.siteTitle] 放在最外层: 分享里没写季的文件, 按它 (例如「…第二季」) 认季.
-     * 给了 [otherWork] 时路径 (含站点标题) 是同系列别的作品的去掉 (自动搜到的分享才给, 用户添加的不给).
+     * 给了 [identity] 时按路径 (含站点标题) 认部 (自动搜到的分享才给, 用户添加的不给), 见 [DrivePathAttribution].
      */
     suspend fun match(
         request: MediaFetchRequest,
         share: FoundShare,
         videos: List<Entry>,
-        otherWork: OtherWorkGuard? = null,
+        identity: DriveSubjectIdentity? = null,
     ): List<DriveShareMatch> {
         val byFid = videos.associateBy { it.file.fid }
         val candidates = videos.map { DriveSubjectMatcher.Candidate(it.file, listOf(share.siteTitle) + it.folders) }
-        return DriveSubjectMatcher.matchEpisodes(request, candidates, numbering.of(request), otherWork = otherWork).mapNotNull { matched ->
+        return DriveSubjectMatcher.matchEpisodes(request, candidates, numbering.of(request), identity = identity).mapNotNull { matched ->
             val entry = byFid[matched.file.fid] ?: return@mapNotNull null
             DriveShareMatch(share, entry.file, entry.folders, matched.episode)
         }

@@ -67,8 +67,8 @@ class CloudDriveService internal constructor(
     httpClient: HttpClient,
     /** 按 TMDB 季集整理的文件换算成条目的集 (这个网盘的三种数据源共用) */
     internal val episodeNumbering: TmdbEpisodeNumbering = TmdbEpisodeNumbering.None,
-    /** 自动按名字找时排除同系列别的作品 (这个网盘的自己网盘搜索与分享搜索共用) */
-    internal val otherWorks: OtherWorks = OtherWorks.None,
+    /** 自动按名字找时按路径认部 (这个网盘的自己网盘搜索与分享搜索共用) */
+    internal val identities: DriveSubjectIdentities = DriveSubjectIdentities.None,
     /** 条目的播放线索 (见 [PlaybackLineage]): 三种数据源查询时先列线索里的文件夹 */
     private val playbackLineages: suspend (subjectId: Int) -> PlaybackLineage? = { null },
 ) {
@@ -172,7 +172,7 @@ class CloudDriveService internal constructor(
 
     // region 手动指定 (Web 控制台「从网盘挑」)
 
-    private val pickMatcher by lazy { DriveSubjectMatcher(browser, episodeNumbering, otherWorks) }
+    private val pickMatcher by lazy { DriveSubjectMatcher(browser, episodeNumbering, identities) }
 
     suspend fun picksOf(subjectId: Int): DriveSubjectPicks = currentAccount().subjectPicks[subjectId] ?: DriveSubjectPicks()
 
@@ -273,10 +273,7 @@ class CloudDriveService internal constructor(
         recentLock.withLock {
             for (match in matches) {
                 if (match.file.parentFid.isEmpty()) continue
-                val location = DriveShareLocation(
-                    match.share.shareId, match.share.passcode, match.share.siteTitle, match.file.parentFid, match.folders,
-                    partSearch = match.partSearch,
-                )
+                val location = DriveShareLocation(match.share.shareId, match.share.passcode, match.share.siteTitle, match.file.parentFid, match.folders)
                 val fileKey = shareKey(match.share.shareId, match.file.fid)
                 recentShareFolders.remove(fileKey)
                 recentShareFolders[fileKey] = location

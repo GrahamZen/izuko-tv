@@ -65,7 +65,7 @@ class CloudDriveRegistry(
     private val legacyPreferences: LegacyPreferences,
     tmdbSubjectMap: TmdbSubjectMapRepository?,
     parentCoroutineContext: CoroutineContext,
-    /** 系列关系图: 自动按名字找时排除同系列别的作品 (见 [OtherWorkGuard]) */
+    /** 系列关系图: 自动按名字找时按路径认部 (见 [DriveSubjectIdentity]) */
     seriesGraph: SeriesGraphTableRepository? = null,
     private val httpClient: () -> HttpClient = CloudDriveApi::createHttpClient,
     /** 分享搜索列出的分享文件夹存在哪 (见 [DriveShareSearchEngine]), 所有分享搜索源共用. */
@@ -74,7 +74,7 @@ class CloudDriveRegistry(
     private val playbackLineages: suspend (subjectId: Int) -> PlaybackLineage? = { null },
 ) {
     private val numbering = tmdbSubjectMap?.let { TmdbEpisodeNumbering.of(it) } ?: TmdbEpisodeNumbering.None
-    private val otherWorks = seriesGraph?.let { OtherWorks.of(it) } ?: OtherWorks.None
+    private val identities = seriesGraph?.let { DriveSubjectIdentities.of(it) } ?: DriveSubjectIdentities.None
 
     private val lock = SynchronizedObject()
     private val services = LinkedHashMap<String, CloudDriveService>()
@@ -117,7 +117,7 @@ class CloudDriveRegistry(
     /** 网盘 [protocol] 的服务, 没有就新建; 已有时换上这份协议 (订阅更新). */
     fun serviceFor(protocol: CloudDriveProtocol): CloudDriveService = synchronized(lock) {
         services[protocol.id]?.also { it.updateProtocol(protocol) }
-            ?: CloudDriveService(protocol, accounts, httpClient(), numbering, otherWorks, playbackLineages).also { services[protocol.id] = it }
+            ?: CloudDriveService(protocol, accounts, httpClient(), numbering, identities, playbackLineages).also { services[protocol.id] = it }
     }
 
     /** 已配置的网盘 [driveId]; 没有时为 null. */
