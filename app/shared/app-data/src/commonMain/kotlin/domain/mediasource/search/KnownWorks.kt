@@ -24,8 +24,8 @@ internal class KnownWorks(
     private val seriesIds: Set<Int>,
     private val ownNames: Set<String>,
 ) {
-    /** [segment] 写着的作品名里别的动画的名字, 已归一化 */
-    fun otherWorkNamesIn(segment: String): List<String> = TitleParts.namesIn(segment).filter { name ->
+    /** [segment] 写着的作品名 (拆开的与原样的, 见 [TitleParts.wholeNamesIn]) 里别的动画的名字, 已归一化 */
+    fun otherWorkNamesIn(segment: String): List<String> = (TitleParts.namesIn(segment) + TitleParts.wholeNamesIn(segment)).filter { name ->
         TitleForms.isDistinctive(name) && ownNames.none { name in it } &&
                 index.worksNamed(name).let { works -> works.isNotEmpty() && works.none { it.id in seriesIds } }
     }
