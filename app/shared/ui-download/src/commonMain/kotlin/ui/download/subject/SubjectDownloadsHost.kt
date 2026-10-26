@@ -45,6 +45,8 @@ internal fun SubjectDownloadsHost(
     val context = LocalContext.current
     val uiScope = rememberCoroutineScope()
     val permissionManager = remember { KoinPlatform.getKoin().get<PermissionManager>() }
+    // TV (fork): 提前准备选源背后的模糊背景, 见 LocalTvDownloadPickerPrewarm
+    LocalTvDownloadPickerPrewarm.current?.invoke(presenter.subjectId)
     val actions = SubjectDownloadActions(
         download = { episodeId ->
             if (presenter.requestDownload(episodeId)) {

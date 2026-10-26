@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.subject.details.layout
 
+import android.content.Context
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.fillMaxSize
@@ -34,6 +35,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.IntSize
+import com.github.panpf.sketch.Sketch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.him188.ani.app.ui.foundation.LocalSketch
@@ -75,25 +77,59 @@ internal fun TvDetailsBlurredBackdrop(
     var blurred by remember(url) { mutableStateOf<BlurredBackdrop?>(null) }
     LaunchedEffect(url, size, load, spec) {
         if (!load || size.width <= 0 || size.height <= 0 || blurred?.spec == spec) return@LaunchedEffect
-        val bitmap = TvNativeImages.fetchBlurredBackdrop(
-            sketch, context, url, size.width, size.height,
-            longEdgePx = spec.longEdgePx,
-            blurRadiusPx = spec.radiusPx,
-            // 竖版封面按原地址解: 清晰层铺的就是它, 下载缓存里已经有了
-            coverWidthPx = 0,
-            coverHeightPx = 0,
-        ) ?: return@LaunchedEffect
-        blurred = withContext(Dispatchers.Default) { BlurredBackdrop.of(bitmap, spec) }
+        blurred = loadTvBlurredBackdrop(sketch, context, url, size, spec) ?: return@LaunchedEffect
         loaded()
     }
-    val image = blurred
+    TvBlurredBackdropImage(
+        blurred,
+        alpha = alpha,
+        maskColor = maskColor,
+        textColor = textColor,
+        modifier = modifier.onSizeChanged { size = it },
+    )
+}
+
+/**
+ * 解一张整屏模糊背景小图并量好亮度 (详情页与缓存页选源背景共用; 地址、尺寸、程度相同就命中同一个内存缓存键).
+ * 竖版封面按原地址解: 清晰层铺的就是它, 下载缓存里已经有了. 解不出来时 null.
+ */
+internal suspend fun loadTvBlurredBackdrop(
+    sketch: Sketch,
+    context: Context,
+    url: String,
+    size: IntSize,
+    spec: TvBackdropBlurSpec,
+): BlurredBackdrop? {
+    val bitmap = TvNativeImages.fetchBlurredBackdrop(
+        sketch, context, url, size.width, size.height,
+        longEdgePx = spec.longEdgePx,
+        blurRadiusPx = spec.radiusPx,
+        coverWidthPx = 0,
+        coverHeightPx = 0,
+    ) ?: return null
+    return withContext(Dispatchers.Default) { BlurredBackdrop.of(bitmap, spec) }
+}
+
+/**
+ * 铺满的模糊背景: 按 [maskColor] 压暗, 深浅照 [textColor] 在图上最难看清那一处的对比度定 (见 tvBackdropMaskAlpha).
+ * [image] 为 null 时不画.
+ *
+ * @param alpha 不透明度, 绘制里读
+ */
+@Composable
+internal fun TvBlurredBackdropImage(
+    image: BlurredBackdrop?,
+    alpha: () -> Float,
+    maskColor: Color,
+    textColor: Color,
+    modifier: Modifier = Modifier,
+) {
     val maskAlpha = remember(image, maskColor, textColor) { image?.maskAlpha(maskColor, textColor) ?: 0f }
     Image(
         image?.bitmap ?: EMPTY_BITMAP,
         contentDescription = null,
         modifier = modifier
             .fillMaxSize()
-            .onSizeChanged { size = it }
             .graphicsLayer {
                 this.alpha = if (image == null) 0f else alpha()
                 // 只有一张图, 透明度逐笔乘就够, 不开离屏层
@@ -108,7 +144,7 @@ internal fun TvDetailsBlurredBackdrop(
 }
 
 /** 解好的模糊小图 (按 [spec] 解的) 与量好的亮度 (浅色字 / 深色字各自最难看清那一处, 见 tvBackdropWorstLuminance). */
-private class BlurredBackdrop(
+internal class BlurredBackdrop(
     val bitmap: ImageBitmap,
     val spec: TvBackdropBlurSpec,
     private val worstForLightText: Float,
