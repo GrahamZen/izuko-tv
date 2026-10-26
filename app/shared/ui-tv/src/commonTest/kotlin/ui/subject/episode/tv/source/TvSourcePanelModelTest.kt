@@ -298,7 +298,7 @@ class TvSourcePanelModelTest {
     }
 
     @Test
-    fun `the selected source stays in place when it ends without results and folds once another is selected`() {
+    fun `the source just resumed stays in place when it ends without results and others fold`() {
         val input = input().copy(
             sourceTypes = mapOf(
                 "web-b" to TvSourceType("rule", "Rule", 0),
@@ -307,14 +307,23 @@ class TvSourcePanelModelTest {
             ),
             sources = MediaSourceResultListPresentation(sources.list + sourceResult("web-z", MediaSourceKind.WEB)),
         )
-        // 选中的 web-z 查完 0 条 (焦点多半在它上面): 留在原处调暗, 不折, 不在焦点底下抽走
-        val selected = buildTvSourcePanel(input, TvSourceNav(railKey = TvSourceRailKeys.GROUP_ONLINE, sourceKey = "web:web-z"), strings)
+        // 刚按了「继续查」的 web-z 查完 0 条 (焦点多半在它上面): 留在原处调暗, 不折, 不在焦点底下抽走
+        val selected = buildTvSourcePanel(
+            input,
+            TvSourceNav(railKey = TvSourceRailKeys.GROUP_ONLINE, sourceKey = "web:web-z", keepInPlace = "web:web-z"),
+            strings,
+        )
         assertEquals(listOf("web:web-b", "web:web-a", "web:web-z"), selected.sources.map { it.id })
         assertEquals("web:web-z", selected.sourceKey)
         assertTrue(selected.sources.last().dimmed)
         // 换到别的源: 它折进最后一行
         val moved = buildTvSourcePanel(input, TvSourceNav(railKey = TvSourceRailKeys.GROUP_ONLINE, sourceKey = "web:web-a"), strings)
         assertEquals(listOf("web:web-b", "web:web-a", TvSourceRailKeys.EMPTY_SOURCES), moved.sources.map { it.id })
+        // 只是选中 (在展开的那段里走到它上面再收起): 照常折, 不挪到上面; 它在源那一栏里看不见, 右边也空着
+        val plain = buildTvSourcePanel(input, TvSourceNav(railKey = TvSourceRailKeys.GROUP_ONLINE, sourceKey = "web:web-z"), strings)
+        assertEquals(listOf("web:web-b", "web:web-a", TvSourceRailKeys.EMPTY_SOURCES), plain.sources.map { it.id })
+        assertTrue(plain.right.rows.isEmpty())
+        assertTrue(selected.right.rows.isNotEmpty())
         // 展开着时选中没结果的: 照旧排在下面那段, 不挪上去 (在那段里上下走时不来回跳)
         val expanded = buildTvSourcePanel(
             input,
@@ -348,10 +357,15 @@ class TvSourcePanelModelTest {
         assertTrue(empty.dimmed)
         assertFalse(content.sources.first().dimmed)
         assertEquals("2", content.rail.single { it.id == TvSourceRailKeys.GROUP_ONLINE }.trailing)
-        // 落在第一个有结果的源上; 没结果的进不去 (条目里上下跨源时跳过它)
+        // 落在源那一栏第一行; 没结果的没有能选的行
         assertEquals("web:web-b", content.sourceKey)
         assertEquals(setOf("web:web-b", "web:web-a"), content.enterableSources)
-        val pane = buildTvSourcePanel(input, TvSourceNav(railKey = TvSourceRailKeys.GROUP_ONLINE, sourceKey = "web:web-z"), strings)
+        // 展开着选中它: 右边写没有找到资源
+        val pane = buildTvSourcePanel(
+            input,
+            TvSourceNav(railKey = TvSourceRailKeys.GROUP_ONLINE, sourceKey = "web:web-z", showEmptySources = true),
+            strings,
+        )
         assertEquals(listOf("noResult"), pane.right.rows.map { it.title })
     }
 
