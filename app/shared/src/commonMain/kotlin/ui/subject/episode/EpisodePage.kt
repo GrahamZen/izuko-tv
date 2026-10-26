@@ -366,6 +366,7 @@ private fun EpisodeScreenContent(
         when (val page = pageState.value) {
             null -> {
                 // TODO: EpisodePage loading
+                EpisodePageLoadingExit()
             }
 
             else -> {

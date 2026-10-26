@@ -245,6 +245,7 @@
     <string name="subject_details_voice_actor_label">CV</string>
     <string name="subject_details_tv_title_logo_no_language">No language</string>
     <string name="subject_details_tv_title_logo_submitting">Submitting… Press Back to cancel</string>
+    <string name="subject_details_tv_title_logo_submitting_touch">Submitting…</string>
     <string name="subject_details_tv_title_logo_submitted">Submitted (#%1$d). Everyone gets it once approved</string>
     <string name="subject_details_tv_title_logo_not_listed_submitted">Submitted (#%1$d). Everyone gets it once the maintainer adds the image</string>
     <string name="subject_details_tv_title_logo_duplicate">Already reported (#%1$d), waiting for review</string>
