@@ -12,6 +12,7 @@ package me.him188.ani.app.domain.mediasource.clouddrive
 import me.him188.ani.app.data.models.subject.SplitSeasonDetector
 import me.him188.ani.app.data.network.SeriesGraphTable
 import me.him188.ani.app.data.network.SeriesNode
+import me.him188.ani.app.data.network.toSplitEntry
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 
@@ -76,11 +77,3 @@ private fun tvPrequelOf(subjectId: Int, table: SeriesGraphTable): SeriesNode? =
 
 private fun seasonNamedBy(node: SeriesNode): Int? =
     listOf(node.nameCn, node.name).firstNotNullOfOrNull { DriveNameParser.parseSubjectSeason(it) }
-
-private fun SeriesNode.toSplitEntry() = SplitSeasonDetector.Entry(
-    subjectId = id,
-    names = listOf(nameCn, name).filter { it.isNotBlank() },
-    firstSort = firstSort,
-    episodeCount = episodes ?: 0,
-    inlineSpecialCount = inlineSpecialCount,
-)
