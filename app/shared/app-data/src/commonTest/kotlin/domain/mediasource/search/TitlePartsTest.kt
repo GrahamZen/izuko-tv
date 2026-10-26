@@ -56,6 +56,13 @@ class TitlePartsTest {
     }
 
     @Test
+    fun `promotion words naming the drive brand are tags`() {
+        // 网盘的品牌名在源码里按码位写
+        val brand = "${Char(0x5938)}${Char(0x514B)}"
+        assertEquals(setOf("怪物"), TitleParts.namesIn("怪物 ${brand}网盘资源"))
+    }
+
+    @Test
     fun `whole names keep the season and the mixed scripts`() {
         val season = "[内嵌简中]（炸梦！第二季）BanG Dream! 2nd Season (2019)"
         assertEquals(setOf("炸梦", "bangdream"), TitleParts.namesIn(season))
