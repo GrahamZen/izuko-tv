@@ -464,27 +464,47 @@ private fun TvExplorationPageContent(
                 }
             }
         }
-    // 立即观看: 直接进播放页 —— 有观看进度接着播下一集, 没有则从第一集开始;
-    // 分集信息尚未加载到 (聚焦后异步拉取中) 时退化为进详情页, 保证点击总有响应
+    // 立即观看: 直接进播放页 —— 有观看进度接着播下一集, 没有则从第一集开始.
+    // 分集信息是卡片聚焦后才去拉的: 还没到 (触屏上点之前卡片没聚焦过, 遥控器上聚焦后马上按) 就当场取,
+    // 最多等 [TV_PLAY_INFO_BUDGET_MILLIS]; 取不到才进详情页, 保证点击总有响应
+    fun SubjectCollectionInfo.episodeToPlay(): Int? = progressInfo.nextEpisodeIdToPlay ?: episodes.firstOrNull()?.episodeId
     val navigateToPlay: (subjectId: Int, name: String, cover: String, source: String) -> Unit =
         { subjectId, name, cover, source ->
-            val info = infoCache[subjectId]
-            val episodeId = info?.progressInfo?.nextEpisodeIdToPlay
-                ?: info?.episodes?.firstOrNull()?.episodeId
-            if (episodeId != null) {
-                // 同 navigateToSubject: 转场期间本页还在收按键, 不锁就会连进两层
-                if (!navLocked) {
-                    Analytics.recordEvent(SubjectEnter) {
-                        put("source", source)
-                        put("subject_id", subjectId)
-                    }
-                    lockNavigationForTransition()
-                    navigator.navigateEpisodeDetails(subjectId, episodeId)
-                    // 这条路没有门控, 按键即导航, 锁的起点与转场起点本就重合
-                    unlockNavigationAfterTransition()
+            fun play(episodeId: Int) {
+                Analytics.recordEvent(SubjectEnter) {
+                    put("source", source)
+                    put("subject_id", subjectId)
                 }
-            } else {
-                navigateToSubject(subjectId, name, cover, source)
+                navigator.navigateEpisodeDetails(subjectId, episodeId)
+                unlockNavigationAfterTransition()
+            }
+            // 同 navigateToSubject: 转场期间本页还在收按键, 不锁就会连进两层
+            if (!navLocked) {
+                lockNavigationForTransition()
+                val known = (infoCache[subjectId] ?: TvHeroMediaCache.peekSubjectInfo(subjectId))?.episodeToPlay()
+                if (known != null) {
+                    // 按键即导航, 锁的起点与转场起点重合
+                    play(known)
+                } else {
+                    // 取的这段时间按返回 = 反悔 (见下方 BackHandler)
+                    pendingNav = scope.launch {
+                        val fetched = try {
+                            withTimeoutOrNull(TV_PLAY_INFO_BUDGET_MILLIS) { collectionRepo.subjectCollectionFlow(subjectId).first() }
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (_: Exception) {
+                            null
+                        }
+                        pendingNav = null
+                        val episodeId = fetched?.episodeToPlay()
+                        if (episodeId != null) {
+                            play(episodeId)
+                        } else {
+                            navLocked = false
+                            navigateToSubject(subjectId, name, cover, source)
+                        }
+                    }
+                }
             }
         }
     // 卡片长按弹出的收藏下拉 (复用详情页收藏按钮的 EditCollectionTypeDropDown). 当前收藏状态取自
@@ -1277,6 +1297,11 @@ internal class TvHeroFocusRequest(val button: TvHeroFocusButton)
  * 让开一会儿. 落到「新番时间表」上是立即拉.
  */
 private const val TV_EXPLORATION_SCHEDULE_PREFETCH_DELAY_MILLIS = 2_000L
+
+/**
+ * 「海报上按确定」选了直接播放、分集信息还没拉到时, 当场取最多等多久 (毫秒). 这段时间卡片上没有反馈, 再久就像没点上; 取不到进详情页.
+ */
+private const val TV_PLAY_INFO_BUDGET_MILLIS = 1_500L
 
 /**
  * 进页恢复"上次那张卡"最多等多久, 等不来就回 hero 按钮 (见进页落点那个 LaunchedEffect).
