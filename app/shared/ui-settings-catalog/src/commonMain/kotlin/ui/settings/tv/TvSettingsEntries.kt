@@ -249,6 +249,8 @@ import me.him188.ani.app.videoplayer.audio.AudioPassthroughMode
 import me.him188.ani.app.utils.formatSpeedValue
 import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.seconds
+import me.him188.ani.utils.platform.currentPlatform
+import me.him188.ani.utils.platform.isIos
 
 /** 电视设置页用到的几份设置. */
 object TvSettingKeys {
@@ -325,7 +327,8 @@ val TvSettingsCatalogEntries: List<TvSettingsCategory> = tvSettingsCatalog {
 
     section(Lang.settings_category_network_storage)
     category(SettingsTab.PROXY, Lang.settings_tab_proxy) { networkItems() }
-    category(SettingsTab.BT, Lang.settings_tab_bt) { btItems() }
+    // iOS 上不查 BT 源 (见 MediaSourceManager): 本机 BT 引擎与 PikPak 都用不上, 整类不列
+    category(SettingsTab.BT, Lang.settings_tab_bt, visible = { !currentPlatform().isIos() }) { btItems() }
     category(SettingsTab.STORAGE, Lang.settings_tab_storage) { storageItems() }
 
     section(Lang.settings_category_others)
