@@ -95,7 +95,6 @@ import me.him188.ani.app.domain.foundation.BangumiEchFeature
 import me.him188.ani.app.domain.foundation.BangumiEchFeatureHandler
 import me.him188.ani.app.domain.foundation.BangumiEchTransport
 import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
-import me.him188.ani.app.domain.foundation.BangumiMirrorConsentRequests
 import me.him188.ani.app.domain.foundation.BangumiOriginProbe
 import me.him188.ani.app.domain.foundation.BangumiMirrorListRepository
 import me.him188.ani.app.domain.foundation.BangumiRoute
@@ -342,7 +341,6 @@ private fun KoinApplication.otherModules(
             subjectMap = { id -> get<TmdbSubjectMapRepository>().lookup(id) },
         ).also { it.start() }
     }
-    single<BangumiMirrorConsentRequests> { BangumiMirrorConsentRequests() }
     // 应用自己改用户设置都经它告知或询问 (见 SettingAdjustments)
     single<SettingAdjustments> { SettingAdjustments(coroutineScope) }
     single<BangumiOriginProbe> { BangumiOriginProbe { get<HttpClientProvider>().get() } }
@@ -371,16 +369,29 @@ private fun KoinApplication.otherModules(
             onOriginUnreachable = { workingRoute ->
                 val current = settings.flow.first()
                 val loggedIn = get<TokenRepository>().session.first() is AccessTokenSession
-                // 通了的是第三方镜像 (前面能带凭证的线路都没通), 已登录而凭证不经过镜像: 关掉官方后登录与同步就断了,
-                // 不替用户改, 请界面问他 (见 BangumiMirrorConsent)
+                // 不替用户改, 问他; 弹之前再问一次官方, 回应了就是刚才整机断网, 不问 (见 BangumiOriginProbe)
+                val originDown: suspend () -> Boolean = { !get<BangumiOriginProbe>().answers() }
                 if (workingRoute.thirdParty && loggedIn && !current.allowCredentialsViaMirror) {
-                    get<BangumiMirrorConsentRequests>().request()
+                    // 通了的是第三方镜像 (前面能带凭证的线路都没通), 已登录而凭证不经过镜像: 光关掉官方, 登录与同步就断了 (见 BangumiMirrorConsent)
+                    get<SettingAdjustments>().ask(
+                        SettingAdjustment.SwitchBangumiToMirror,
+                        listOf(
+                            SettingAdjustmentChoice(SettingAdjustment.SwitchBangumiToMirror.ALLOW_CREDENTIALS) {
+                                settings.update { afterOriginUnreachable().copy(allowCredentialsViaMirror = true) }
+                            },
+                            SettingAdjustmentChoice(SettingAdjustment.SwitchBangumiToMirror.LOG_OUT) {
+                                get<UserRepository>().clearSelfInfo()
+                                settings.update { afterOriginUnreachable() }
+                            },
+                        ),
+                        stillNeeded = originDown,
+                    )
                 } else {
-                    // 不替用户改: 问他要不要以后跳过官方. 弹之前再问一次官方, 回应了就是刚才整机断网 (见 BangumiOriginProbe)
+                    // 问他要不要以后跳过官方
                     get<SettingAdjustments>().ask(
                         SettingAdjustment.SkipBangumiOrigin(workingRoute.kind),
                         listOf(SettingAdjustmentChoice("skip-origin") { settings.update { afterOriginUnreachable() } }),
-                        stillNeeded = { !get<BangumiOriginProbe>().answers() },
+                        stillNeeded = originDown,
                     )
                 }
             },

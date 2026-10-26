@@ -19,8 +19,8 @@ import me.him188.ani.utils.ktor.ScopedHttpClient
 /**
  * 镜像清单: 仓库根目录的 `bangumi-mirrors.json`, 内置一份兜底 (见 [RepoHostedList]).
  *
- * **为什么非得能远程更新**: 镜像域名的死亡率极高 —— 2026 年 5~8 月之间 `bgmmi.anibt.net` 与
- * `bangumi.rdd.moe` 停服、`bangumi.one` 被 TLS 阻断、`bangumi.lol` 被人拿下, `bangumi.pro` 又搬到了 `bangumi.vip`.
+ * **为什么非得能远程更新**: 镜像域名的死亡率极高 —— 2026 年 5~10 月之间 `bgmmi.anibt.net` 与
+ * `bangumi.rdd.moe` 停服、`bangumi.one` 被 TLS 阻断、`bangumi.lol` 被人拿下, `bangumi.pro` 搬到 `bangumi.vip` 又搬到了 `bangumi.lat`.
  * 发一版写死一个域名, 等它死了整个功能就跟着死, 而用户没法自己救.
  *
  * 清单本身也要能在大陆下载到, 都下载不到就用内置那份 —— 而**「自建地址」那一档永远不依赖这里的任何东西**,

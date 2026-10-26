@@ -374,7 +374,6 @@ fun TvEpisodeScreenContent(
     } else {
         null
     }
-    TvSeekPreviewFaultNotice()
 
     val progressSliderState = rememberMediaProgressSliderState(
         vm.player,
