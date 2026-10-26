@@ -373,7 +373,13 @@ class RuleMediaSource(
         return buildList {
             for (cache in caches) {
                 val episodes = cache.webEpisodeInfos
-                if (episodes.findMatchingEpisodeOrNull(probe.episodeSort, probe.episodeEp, probe.episodeName) == null) continue
+                // 同网页抓取数据源: 页面没有已上映的最新一集时, 有当前这一集、又只查这一集才照用, 否则整个重搜 (不跳过它只用别的页)
+                if (episodes.findMatchingEpisodeOrNull(probe.episodeSort, probe.episodeEp, probe.episodeName) == null &&
+                    (query.subjectEpisodeSorts != null ||
+                            episodes.findMatchingEpisodeOrNull(query.episodeSort, query.episodeEp, query.episodeName) == null)
+                ) {
+                    return null
+                }
                 addAll(selectorEngine.selectFilteredMedia(episodes, matchConfig, query, mediaSourceId, cache.webSubjectInfo.name))
             }
         }.takeIf { it.isNotEmpty() }
