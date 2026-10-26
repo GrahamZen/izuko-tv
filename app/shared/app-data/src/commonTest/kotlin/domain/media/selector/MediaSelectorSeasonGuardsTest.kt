@@ -12,11 +12,13 @@ package me.him188.ani.app.domain.media.selector
 import kotlinx.coroutines.flow.first
 import me.him188.ani.app.data.models.subject.SplitSeasonTestData
 import me.him188.ani.app.data.models.subject.SplitSeasonTestData.ReZero
+import me.him188.ani.app.data.network.SeriesGraphTable
 import me.him188.ani.app.domain.media.selector.testFramework.MediaSelectorTestSuite
 import me.him188.ani.app.domain.media.selector.testFramework.SimpleMediaSelectorTestSuite
 import me.him188.ani.app.domain.media.selector.testFramework.runSimpleMediaSelectorTestSuite
 import me.him188.ani.app.domain.mediasource.MediaListFilters
 import me.him188.ani.app.domain.mediasource.clouddrive.DriveMediaFolders
+import me.him188.ani.app.domain.mediasource.search.AnimeNames
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.datasources.api.topic.EpisodeRange
@@ -91,6 +93,40 @@ class MediaSelectorSeasonGuardsTest {
         assertPage(third, 1 to "excluded FromSeriesSeason")
         assertPage(first, 1 to "included FUZZY SORT")
         assertPage(merged, 1 to "included FUZZY SORT")
+    }
+
+    /** 在线源的条目页名写明是 OVA、剧场版而条目不是这一类: 页上的集不是本篇的这一集 (见 WebWorkKindCheck); 合集的名字不算. */
+    @Test
+    fun `pages naming another work kind are not this work for main episodes`() = runSimpleMediaSelectorTestSuite {
+        initSubject("辉夜大小姐想让我告白～天才们的恋爱头脑战～")
+        episodeCount(12)
+        val ova = addPage("辉夜大小姐想让我告白～天才们的恋爱头脑战～ OVA", 1..2)
+        val movie = addPage("辉夜大小姐想让我告白～天才们的恋爱头脑战～ 剧场版", 1..1, source = "web2")
+        val collection = addPage("辉夜大小姐想让我告白～天才们的恋爱头脑战～ TV+OVA", 1..14, source = "web3")
+
+        assertPage(ova, 1 to "excluded SubjectNameMismatch")
+        assertPage(movie, 1 to "excluded SubjectNameMismatch")
+        assertPage(collection, 1 to "included FUZZY SORT")
+    }
+
+    /** 条目本身是 OVA 而名字里不写: 按 Bangumi 记的类型 (名字表的「类型」列) 认, 「XX OVA」页就是这一部. */
+    @Test
+    fun `pages naming the work kind the subject itself is stay`() = runSimpleMediaSelectorTestSuite {
+        AnimeNames.source = {
+            SeriesGraphTable.parse(
+                "# bangumi-anime v1 max_id=900 dump=test\n822\tフリクリ\tFLCL\t2000-04-26\t6\tOVA\t\t\t\t\t\t".encodeToByteArray(),
+            )
+        }
+        try {
+            initSubject("FLCL")
+            subjectIdOf(822)
+            episodeCount(6)
+            val ova = addPage("特别的她 FLCL OVA", 1..6)
+
+            assertPage(ova, 1 to "included FUZZY SORT")
+        } finally {
+            AnimeNames.source = null
+        }
     }
 
     @Test
@@ -173,6 +209,11 @@ class MediaSelectorSeasonGuardsTest {
     // endregion
 
     // region 同一页上两种编号
+
+    private fun MediaSelectorTestSuite.subjectIdOf(id: Int) {
+        val context = preferenceApi.mediaSelectorContext.value
+        preferenceApi.mediaSelectorContext.value = context.copy(subjectInfo = context.subjectInfo?.copy(subjectId = id))
+    }
 
     private fun MediaSelectorTestSuite.episodeCount(count: Int) {
         val context = preferenceApi.mediaSelectorContext.value
