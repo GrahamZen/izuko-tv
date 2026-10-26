@@ -648,15 +648,17 @@ private fun TvActionPanelDialog(
                 },
             )
         }
-        // 退出恒在最后一颗: 下面按 lastIndex 定位默认焦点, 且危险动作不该夹在中间
-        add(
-            TvActionPanelAction(
-                Icons.Rounded.PowerSettingsNew,
-                stringResource(Lang.exit_app_title),
-                danger = true,
-                onClick = onExitApp,
-            ),
-        )
+        // 退出恒在最后一颗: 下面按 lastIndex 定位默认焦点, 且危险动作不该夹在中间. 触屏 (iPad) 上没有: 应用不能自己退出
+        if (!LocalTvTouchInputEnabled.current) {
+            add(
+                TvActionPanelAction(
+                    Icons.Rounded.PowerSettingsNew,
+                    stringResource(Lang.exit_app_title),
+                    danger = true,
+                    onClick = onExitApp,
+                ),
+            )
+        }
     }
     // 落点按入口的意图分 (见 TvActionPanelDefaultFocus): 主动打开面板时落最上面那个能按的东西,
     // 探索页 hero 上按返回时落「退出应用」——那一刻用户的意图就是走人.

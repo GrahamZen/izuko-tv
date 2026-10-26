@@ -801,6 +801,7 @@
     <string name="subject_details_voice_actor_label">配音</string>
     <string name="subject_details_tv_title_logo_no_language">未標語言</string>
     <string name="subject_details_tv_title_logo_submitting">正在提交… 按返回取消</string>
+    <string name="subject_details_tv_title_logo_submitting_touch">正在提交…</string>
     <string name="subject_details_tv_title_logo_submitted">已提交 (#%1$d)，審核通過後所有人換上</string>
     <string name="subject_details_tv_title_logo_not_listed_submitted">已提交 (#%1$d)，維護者補上圖後所有人換上</string>
     <string name="subject_details_tv_title_logo_duplicate">已經有人回報過 (#%1$d)，在等審核</string>

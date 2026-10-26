@@ -47,6 +47,7 @@ import me.him188.ani.app.ui.foundation.navigation.BackHandler
 import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
 import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
 import me.him188.ani.app.ui.foundation.widgets.AniTextButton
+import me.him188.ani.app.ui.foundation.widgets.BackNavigationIconButton
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_media_source_done
@@ -155,11 +156,14 @@ fun TouchSettingsPage(
     val content = built ?: lastBuilt.value
     val overlay by state.overlay.collectAsStateWithLifecycle()
     Box(modifier.fillMaxSize().background(AniThemeDefaults.pageContentBackgroundColor)) {
-        content?.let {
+        if (content != null) {
             TouchSettingsLayout(
-                it, state, initialTab != null,
+                content, state, initialTab != null,
                 embedded = { id -> if (id == SettingsTab.MEDIA_SOURCE.name) mediaSourcesEmbedded else legacySections[id] },
             )
+        } else {
+            // 第一次进来、文案还没读齐: 没有返回键的设备上先给一颗返回, 不然只能对着空页等
+            BackNavigationIconButton(navigator::popBackStack, Modifier.windowInsetsPadding(WindowInsets.safeDrawing).padding(8.dp))
         }
         when (val current = overlay) {
             is TvSettingsOverlay.Legacy -> TouchLegacySettingsCover(onClose = state::dismissOverlay) { legacy(current.tab) }

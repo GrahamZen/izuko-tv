@@ -69,6 +69,7 @@ import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.ui.foundation.AsyncImage
 import me.him188.ani.app.ui.foundation.lan.QrCodeImage
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
+import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.tvTitleLogoLightTransformation
 import me.him188.ani.app.ui.foundation.tv.rememberTvTitleLogoLanguage
 import me.him188.ani.app.ui.foundation.tv.tvLanguageDisplayName
@@ -118,6 +119,7 @@ import me.him188.ani.app.ui.lang.subject_details_tv_title_logo_not_listed_submit
 import me.him188.ani.app.ui.lang.subject_details_tv_title_logo_rate_limited
 import me.him188.ani.app.ui.lang.subject_details_tv_title_logo_submitted
 import me.him188.ani.app.ui.lang.subject_details_tv_title_logo_submitting
+import me.him188.ani.app.ui.lang.subject_details_tv_title_logo_submitting_touch
 import me.him188.ani.app.ui.lang.subject_details_tv_title_logo_text_option
 import me.him188.ani.app.ui.lang.subject_details_tv_title_logo_unreachable
 import org.jetbrains.compose.resources.stringResource
@@ -217,7 +219,13 @@ internal fun TvSubjectFeedbackDialog(
             Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 val pick = pending
                 when (val s = submit) {
-                    FeedbackSubmit.Submitting -> FeedbackStatus(stringResource(Lang.subject_details_tv_title_logo_submitting), progress = true)
+                    FeedbackSubmit.Submitting -> if (LocalTvTouchInputEnabled.current) {
+                        // 触屏没有返回键: 给一颗取消 (同按返回)
+                        FeedbackStatus(stringResource(Lang.subject_details_tv_title_logo_submitting_touch), progress = true)
+                        AniFocusActionButton(onClick = { back() }) { Text(stringResource(Lang.subject_details_tv_feedback_cancel)) }
+                    } else {
+                        FeedbackStatus(stringResource(Lang.subject_details_tv_title_logo_submitting), progress = true)
+                    }
                     is FeedbackSubmit.Done -> FeedbackDone(resultText(s.result, s.kind), onDismissRequest)
                     FeedbackSubmit.Idle -> when {
                         pick != null -> FeedbackConfirm(
