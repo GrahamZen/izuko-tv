@@ -77,6 +77,7 @@ import me.him188.ani.app.ui.download.LocalCachePopupOpen
 import me.him188.ani.app.ui.download.REFOCUS_FRAMES
 import me.him188.ani.app.ui.download.LocalCacheRowRefocus
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
+import me.him188.ani.app.ui.foundation.consumeHeldConfirmKey
 import me.him188.ani.app.ui.mediafetch.MediaSourceInfoProvider
 import org.jetbrains.compose.resources.stringResource
 
@@ -245,19 +246,22 @@ fun DownloadRow(
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        // TV (fork): 行尾只留"更多"一颗, 让每一行**只有一个焦点落点**, 且它跟上下
+                        // TV (fork): 行尾只留一颗 (TvDownloadRowAction), 让每一行**只有一个焦点落点**, 且它跟上下
                         // 各行下载按钮在同一列上 (中心 x 差 8px), 遥控器上下就是一条干净的单列.
-                        // 播放/暂停并没有丢, 都在下面那个菜单里 —— 多按一次确认键换来的是能按得到.
+                        // 按确定是主操作 (播放 / 暂停 / 继续), 按住确定弹出下面那个菜单.
                         if (!focusDriven) {
                             DownloadPrimaryAction(episode, onPlay = onPlay, onResume = onResume, onPause = onPause)
                         }
 
                         Box {
-                            IconButton(
+                            val moreModifier = Modifier
+                                .focusRequester(moreFocusRequester)
+                                .onFocusChanged { moreFocused = it.isFocused }
+                            if (focusDriven) {
+                                TvDownloadRowAction(episode, onPlay, onResume, onPause, onShowMenu = { showMenu = true }, modifier = moreModifier)
+                            } else IconButton(
                                 onClick = { showMenu = true },
-                                modifier = Modifier
-                                    .focusRequester(moreFocusRequester)
-                                    .onFocusChanged { moreFocused = it.isFocused },
+                                modifier = moreModifier,
                             ) {
                                 Icon(Icons.Rounded.MoreVert, stringResource(Lang.cache_management_more_actions))
                             }
@@ -284,6 +288,9 @@ fun DownloadRow(
                                     }
                                 },
                                 onDelete = { showConfirmDelete = true },
+                                // TV: 菜单是按住确定弹出来的, 吞掉那一次按住的余波; 行尾按钮上的那个操作不再重复
+                                modifier = if (focusDriven) Modifier.consumeHeldConfirmKey() else Modifier,
+                                omit = if (focusDriven) episode.tvPrimaryAction else null,
                             )
                         }
                     }

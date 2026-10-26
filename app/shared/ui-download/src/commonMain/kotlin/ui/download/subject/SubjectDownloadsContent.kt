@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Download
@@ -43,6 +42,8 @@ import androidx.compose.ui.unit.dp
 import me.him188.ani.app.ui.download.components.DownloadItem
 import me.him188.ani.app.ui.download.components.DownloadRow
 import me.him188.ani.app.ui.download.components.DownloadSelectionState
+import me.him188.ani.app.ui.download.rememberTvDownloadDetailGridState
+import me.him188.ani.app.ui.download.tvDownloadDetailItems
 import me.him188.ani.app.ui.foundation.LocalSubjectAppearanceSettings
 import me.him188.ani.app.ui.foundation.theme.stronglyWeaken
 import me.him188.ani.app.ui.lang.Lang
@@ -94,6 +95,8 @@ fun SubjectDownloadsContent(
     LazyVerticalGrid(
         columns = GridCells.Adaptive(480.dp),
         modifier = modifier,
+        // TV 缓存总页 (fork): 左栏按右直达这一部的某一集, 见 TvDownloadPanes
+        state = rememberTvDownloadDetailGridState(state),
         horizontalArrangement = Arrangement.spacedBy(24.dp),
         contentPadding = contentPadding,
     ) {
@@ -117,7 +120,8 @@ fun SubjectDownloadsContent(
                 Text(stringResource(Lang.downloads_empty), Modifier.padding(16.dp))
             }
         }
-        items(state.items, key = { it.key }, contentType = {
+        // TV 缓存总页 (fork): 整行示焦与按下效果同左栏卡片, 左栏按右直达某一行, 见 tvDownloadDetailItems
+        tvDownloadDetailItems(state.items, key = { it.key }, contentType = {
             when (it) {
                 is SubjectDownloadListItem.Episode -> "episode"
                 is SubjectDownloadListItem.Download -> "download"
