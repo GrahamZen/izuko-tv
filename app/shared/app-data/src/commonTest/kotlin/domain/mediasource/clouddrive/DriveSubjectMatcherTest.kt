@@ -11,6 +11,8 @@ package me.him188.ani.app.domain.mediasource.clouddrive
 
 import kotlinx.coroutines.test.runTest
 import me.him188.ani.app.domain.mediasource.search.TitleForms
+import me.him188.ani.app.domain.mediasource.search.TitleIdentities
+import me.him188.ani.app.domain.mediasource.search.TitleIdentity
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import kotlin.test.Test
@@ -318,9 +320,9 @@ class DriveSubjectMatcherTest {
         )
         val episodes = (1..23).map { MediaFetchRequest.Episode("e$it", EpisodeSort(24 + it), EpisodeSort(it)) }
         val numbering = TmdbEpisodeNumbering { request -> request.episodes.associate { (1 to it.sort.number!!.toInt()) to it.sort } }
-        val identity = DriveSubjectIdentity(ownNames = emptyList(), otherWorkNames = emptyList(), seriesSeason = 2, laterWork = true)
+        val identity = TitleIdentity(ownNames = emptyList(), otherWorkNames = emptyList(), seriesSeason = 2, laterWork = true)
 
-        val matched = DriveSubjectMatcher(browser, numbering, DriveSubjectIdentities { identity }).match(request(name, episodes = episodes))
+        val matched = DriveSubjectMatcher(browser, numbering, TitleIdentities { identity }).match(request(name, episodes = episodes))
         assertEquals(listOf("new@01", "abs@25"), matched.map { "${it.file.fid}@${it.episode}" })
         // 没有系列关系图时推不出是第二季: 照旧当第一季
         val fallback = DriveSubjectMatcher(browser, numbering).match(request(name, episodes = episodes))
@@ -344,11 +346,11 @@ class DriveSubjectMatcherTest {
         val episodes = (1..13).map { MediaFetchRequest.Episode("e$it", EpisodeSort(it)) }
         val numbering = TmdbEpisodeNumbering { request -> request.episodes.associate { (1 to it.sort.number!!.toInt()) to it.sort } }
         // 「piece」太泛, 不当副标题 (没有 parts); 认路径用条目全名
-        val identity = DriveSubjectIdentity(
+        val identity = TitleIdentity(
             ownNames = listOf(TitleForms.compact(name)), otherWorkNames = emptyList(), seriesSeason = 2, laterWork = true,
         )
 
-        val matched = DriveSubjectMatcher(browser, numbering, DriveSubjectIdentities { identity }).match(request(name, episodes = episodes))
+        val matched = DriveSubjectMatcher(browser, numbering, TitleIdentities { identity }).match(request(name, episodes = episodes))
         assertEquals(listOf("k9@09", "new@01", "tmdb@01"), matched.map { "${it.file.fid}@${it.episode}" }.sorted())
     }
 
@@ -390,9 +392,9 @@ class DriveSubjectMatcherTest {
             ownParts = listOf(TitleForms.compact("祸进谭")),
             otherParts = listOf("诀别谭", "相克谭").map(TitleForms::compact),
         )
-        val identity = DriveSubjectIdentity(ownNames = emptyList(), otherWorkNames = emptyList(), parts = parts)
+        val identity = TitleIdentity(ownNames = emptyList(), otherWorkNames = emptyList(), parts = parts)
 
-        val matched = DriveSubjectMatcher(browser, numbering, DriveSubjectIdentities { identity }).match(request(name, episodes = episodes))
+        val matched = DriveSubjectMatcher(browser, numbering, TitleIdentities { identity }).match(request(name, episodes = episodes))
         assertEquals(listOf("S01E41.mkv@41"), matched.map { it.summary() })
         // 路径没点名这一部时照旧按表: 不是这个条目
         val unnamed = DriveSubjectMatcher(browser, numbering).match(request(name, episodes = episodes))

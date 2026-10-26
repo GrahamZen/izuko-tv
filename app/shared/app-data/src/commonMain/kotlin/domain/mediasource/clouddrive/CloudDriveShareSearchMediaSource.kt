@@ -47,6 +47,8 @@ import me.him188.ani.app.domain.mediasource.search.SubjectSearchPlan
 import me.him188.ani.app.domain.foundation.overrideUserAgent
 import me.him188.ani.app.domain.foundation.sourceRequestUserAgent
 import me.him188.ani.app.domain.mediasource.search.TitleForms
+import me.him188.ani.app.domain.mediasource.search.TitleIdentities
+import me.him188.ani.app.domain.mediasource.search.TitleIdentity
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.paging.SinglePagePagedSource
@@ -162,8 +164,8 @@ internal class DriveShareSearchEngine(
     private val shares: DriveShareBrowser,
     internal val links: DriveShareLinks,
     numbering: TmdbEpisodeNumbering = TmdbEpisodeNumbering.None,
-    /** 搜到的分享、合集里的文件夹、播放线索里的分享文件夹与分享里的文件按名字认部 (见 [DriveSubjectIdentity]) */
-    private val identities: DriveSubjectIdentities = DriveSubjectIdentities.None,
+    /** 搜到的分享、合集里的文件夹、播放线索里的分享文件夹与分享里的文件按名字认部 (见 [TitleIdentity]) */
+    private val identities: TitleIdentities = TitleIdentities.None,
     /** 列播放线索里的分享文件夹 ([matchFolder]): 每次现列, 分享取消了、新集上传了马上就知道. 搜索用 [shares]. */
     folderShares: DriveShareBrowser = shares,
     /** 列出的分享文件夹另存一份在这里, 应用重启后不用重列 (见 [indexOf]). */
@@ -204,7 +206,7 @@ internal class DriveShareSearchEngine(
     /** 固定分享里对得上的文件夹; 每读完一个文件夹就交给 [deliver]. */
     private suspend fun searchFixedShares(
         request: MediaFetchRequest,
-        identity: DriveSubjectIdentity?,
+        identity: TitleIdentity?,
         deliver: suspend (List<DriveShareMatch>) -> Unit,
     ): List<DriveShareMatch> {
         val keywords = SubjectSearchPlan.of(request).keywords(KeywordStyle.literal(DriveSubjectMatcher.NAME_KEYWORDS)).primary
@@ -293,7 +295,8 @@ internal class DriveShareSearchEngine(
     /**
      * 站点搜到的分享; 每读完一个分享就把认出的剧集交给 [deliver]. 关键词来自搜索计划 ([SubjectSearchPlan.keywords], 按标题原样找的排法
      * [KeywordStyle.literal]), 这样走:
-     * 1. 条目名的主标题 (最多 [DriveShareSearchConfig.maxKeywords] 个): 前一个名字找到了分享就不再换名字搜, 这类站连着搜几次就会回 5xx.
+     * 1. 条目名的主标题 (最多 [DriveShareSearchConfig.maxKeywords] 个): 前一个名字搜到的分享里认出了剧集就不再换名字搜, 这类站连着搜几次就会回 5xx;
+     *    搜到了分享却一集都没认出 (都是别的作品、别的季) 时换下一个名字.
      *    一个名字原样搜不到时先换它的写法 ([KeywordKind.WRITING]: 去掉装饰符号、中日文之间的空格) 再搜, 然后才轮到下一个名字.
      * 2. 认出的剧集没覆盖条目的每一集时, 依次再搜副标题、系列名与别的叫法 (共 [MAX_WIDER_SEARCHES] 次, 覆盖了就停): 只写副标题
      *    (「辉夜大小姐想让我告白：究极浪漫」) 或系列名加季 (「物理魔法使马修第二季」) 的分享按条目名搜不到, 也常更全 (「京都动乱第二季 更46」).
@@ -302,7 +305,7 @@ internal class DriveShareSearchEngine(
      */
     private suspend fun searchSites(
         request: MediaFetchRequest,
-        identity: DriveSubjectIdentity?,
+        identity: TitleIdentity?,
         deliver: suspend (List<DriveShareMatch>) -> Unit,
     ) {
         val keywords = SubjectSearchPlan.of(request).keywords(
@@ -317,27 +320,30 @@ internal class DriveShareSearchEngine(
         val matches = ArrayList<DriveShareMatch>()
         var searches = 0
 
-        /** 搜 [keyword], 打开剧名对得上的分享; 搜到了没打开过的分享时为 true. */
-        suspend fun searchAndRead(keyword: SearchKeyword): Boolean {
+        /** 搜 [keyword], 打开剧名对得上的分享, 返回认出的剧集; 没搜到没打开过的分享时为 null. */
+        suspend fun searchAndRead(keyword: SearchKeyword): List<DriveShareMatch>? {
             // 网页站 (苹果 CMS 模板) 默认要求两次搜索隔 3 秒, 挨着搜只会拿到「系统提示」页
             if (searches++ > 0 && config.detailLinkSelector.isNotBlank()) delay(PAGE_SEARCH_INTERVAL)
             val found = searchSite(keyword, identity).filter { it.shareId !in opened }
-            if (found.isEmpty()) return false
+            if (found.isEmpty()) return null
             val selected = bySeason(found, season).take(config.maxShares.coerceAtLeast(1))
             opened += selected.map { it.shareId }
             logger.info { "Share search 「${keyword.keyword}」: opening ${selected.size} of ${found.size} shares" }
             val semaphore = Semaphore(SHARE_CONCURRENCY)
-            matches += coroutineScope {
+            val read = coroutineScope {
                 selected.map { share ->
                     async { semaphore.withPermit { matchShare(request, share, skipFolders, identity) }.also { deliver(it) } }
                 }.awaitAll().flatten()
             }
-            return true
+            matches += read
+            return read
         }
 
         names@ for (name in keywords.primary) {
             for (keyword in listOf(name) + keywords.writingsOf(name)) {
-                if (searchAndRead(keyword)) break@names
+                val read = searchAndRead(keyword) ?: continue
+                // 搜到的分享里一集都没认出时换下一个名字; 这个名字的别的写法多半搜到同一批分享, 不再试
+                if (read.isNotEmpty()) break@names else continue@names
             }
         }
         for (keyword in keywords.wider.take(MAX_WIDER_SEARCHES)) {
@@ -383,9 +389,9 @@ internal class DriveShareSearchEngine(
     /**
      * 搜一个关键词, 返回剧名对得上的结果里的全部分享链接: 按副标题搜的要同时有系列名与这一部的副标题 ([DriveSeriesParts.acceptsTitle]),
      * 别的要含着这个词 ([titleMatches]); 给了 [identity] 时剧名点名了别的作品的不要 (「机动战士高达SEED」不是「机动战士高达」,
-     * 见 [DriveSubjectIdentity.rejectsTitle]).
+     * 见 [TitleIdentity.rejectsTitle]).
      */
-    internal suspend fun searchSite(keyword: SearchKeyword, identity: DriveSubjectIdentity? = null): List<FoundShare> {
+    internal suspend fun searchSite(keyword: SearchKeyword, identity: TitleIdentity? = null): List<FoundShare> {
         val url = TextTemplate.expand(config.searchUrl, mapOf("keyword" to keyword.keyword)) { true }
         val bytes = fetch(url) ?: return emptyList()
         val parts = identity?.parts
@@ -447,7 +453,7 @@ internal class DriveShareSearchEngine(
         request: MediaFetchRequest,
         share: FoundShare,
         skipFolders: (List<String>) -> Set<String>,
-        identity: DriveSubjectIdentity?,
+        identity: TitleIdentity?,
     ): List<DriveShareMatch> {
         val videos = try {
             reader.read(share.shareId, share.passcode, skipFolders).videos

@@ -10,6 +10,7 @@
 package me.him188.ani.app.domain.mediasource.clouddrive
 
 import me.him188.ani.app.domain.mediasource.clouddrive.DrivePathAttribution.Attribution
+import me.him188.ani.app.domain.mediasource.search.TitleIdentity
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 
@@ -19,7 +20,7 @@ import me.him188.ani.datasources.api.source.MediaFetchRequest
  *    TMDB 把后来的作品单列成一部时 ([DriveSubjectSeason.tmdbOwnShow]) 只在路径点名了这一部时查表.
  * 2. 拆分季按几段共有的那一季编的集号 ([splitSeasonEpisode]): 对应表把整部算一季接着排时 (Re:Zero 的 S1E26 起) 靠它认按季写的 `S02E05`;
  *    路径点名了这一段、文件不写季的, 集号超出本段自己的编号时也按整季编号认 (「进击的巨人最终季 Part.2 / … - 26」).
- * 3. 系列里后来的作品 ([DriveSubjectIdentity.laterWork]) 路径说不清是不是这一部时, 只认这一部的跨部连续集号 ([continuesSeries]):
+ * 3. 系列里后来的作品 ([TitleIdentity.laterWork]) 路径说不清是不是这一部时, 只认这一部的跨部连续集号 ([continuesSeries]):
  *    整个系列的合集里各部都从 01 编起, 分不清的不要.
  * 4. 季的规则 (路径点名了这一部、系列的第一部、用户指定的文件夹), 条目的季见 [DriveSubjectSeason]:
  *    - 认出了季与集却不在对应表里: 按本季写的 (`S04E01`, TMDB 却把整部算一季接着排), 季正是条目的季才往下认.
@@ -35,7 +36,7 @@ internal class DriveEpisodeResolver(
     request: MediaFetchRequest,
     private val season: DriveSubjectSeason,
     private val tmdbEpisodes: Map<Pair<Int, Int>, EpisodeSort>?,
-    private val identity: DriveSubjectIdentity?,
+    private val identity: TitleIdentity?,
     private val trustFolders: Boolean = false,
 ) {
     sealed interface Resolved {
@@ -95,7 +96,7 @@ internal class DriveEpisodeResolver(
 
     /**
      * 集号 [episode] 是这一部的跨部连续编号 (系列连续集号: 「死神 千年血战篇 / 27.mkv」之于相克谭), 而且路径里离文件最近、提到这个系列的那一层
-     * 点的是系列名 ([DriveSubjectIdentity.mentionOf]): 同一个分享里常附着集号与它重叠的作品 (「死神系列动漫 TV版 / 1-30 / 027.mkv」是
+     * 点的是系列名 ([TitleIdentity.mentionOf]): 同一个分享里常附着集号与它重叠的作品 (「死神系列动漫 TV版 / 1-30 / 027.mkv」是
      * 2004 年 TV 版的第 27 集). 集号也是本条目序号时分不清是哪一种编号, 只在所在文件夹按连续编号排 ([continuousFolder]) 时算.
      */
     private fun continuesSeries(candidate: DriveSubjectMatcher.Candidate, episode: EpisodeSort, continuousFolder: Boolean): Boolean {

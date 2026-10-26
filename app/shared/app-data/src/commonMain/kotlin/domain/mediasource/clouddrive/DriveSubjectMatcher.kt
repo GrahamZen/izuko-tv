@@ -23,6 +23,8 @@ import me.him188.ani.app.domain.mediasource.search.KeywordStyle
 import me.him188.ani.app.domain.mediasource.search.SearchKeyword
 import me.him188.ani.app.domain.mediasource.search.SubjectSearchPlan
 import me.him188.ani.app.domain.mediasource.search.TitleForms
+import me.him188.ani.app.domain.mediasource.search.TitleIdentities
+import me.him188.ani.app.domain.mediasource.search.TitleIdentity
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import me.him188.ani.utils.logging.info
@@ -89,8 +91,8 @@ internal fun interface TmdbEpisodeNumbering {
 internal class DriveSubjectMatcher(
     private val browser: DriveBrowser,
     private val numbering: TmdbEpisodeNumbering = TmdbEpisodeNumbering.None,
-    /** 自动搜索 ([match]) 与播放线索里的文件夹 ([matchFolder]) 按路径认部 (见 [DriveSubjectIdentity]); 用户指定的文件夹不查 */
-    private val identities: DriveSubjectIdentities = DriveSubjectIdentities.None,
+    /** 自动搜索 ([match]) 与播放线索里的文件夹 ([matchFolder]) 按路径认部 (见 [TitleIdentity]); 用户指定的文件夹不查 */
+    private val identities: TitleIdentities = TitleIdentities.None,
 ) {
     class MatchedFile(
         val file: DriveFile,
@@ -310,7 +312,7 @@ internal class DriveSubjectMatcher(
             candidates: List<Candidate>,
             tmdbEpisodes: Map<Pair<Int, Int>, EpisodeSort>? = null,
             trustFolders: Boolean = false,
-            identity: DriveSubjectIdentity? = null,
+            identity: TitleIdentity? = null,
         ): List<MatchedFile> {
             val season = DriveSubjectSeason.of(request, tmdbEpisodes, identity)
             val attribution = identity?.let { DrivePathAttribution(it, season, request) }

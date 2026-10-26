@@ -14,6 +14,7 @@ import me.him188.ani.app.data.models.subject.SplitSeasonDetector
 import me.him188.ani.app.data.network.SeriesGraphTable
 import me.him188.ani.app.data.network.SeriesNode
 import me.him188.ani.app.data.network.toSplitEntry
+import me.him188.ani.app.domain.mediasource.search.TitleIdentity
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 
@@ -85,7 +86,7 @@ internal class DriveSubjectSeason(
          * @param tmdbEpisodes TMDB (季, 集) → 条目的集 (见 [TmdbEpisodeNumbering]), 没有对应表时为 null
          * @param identity 系列关系图里的位置 (推出的季、拆分季、是不是后来的作品); 用户指定的文件夹不给
          */
-        fun of(request: MediaFetchRequest, tmdbEpisodes: Map<Pair<Int, Int>, EpisodeSort>?, identity: DriveSubjectIdentity?): DriveSubjectSeason {
+        fun of(request: MediaFetchRequest, tmdbEpisodes: Map<Pair<Int, Int>, EpisodeSort>?, identity: TitleIdentity?): DriveSubjectSeason {
             val tmdbSeasons = tmdbEpisodes?.keys?.mapTo(HashSet()) { it.first }.orEmpty()
             val laterWork = identity?.laterWork == true
             fun season(number: Int?, declared: Boolean) = DriveSubjectSeason(

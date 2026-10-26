@@ -37,6 +37,7 @@ import me.him188.ani.app.domain.media.continuation.DriveFolderLineage
 import me.him188.ani.app.domain.media.continuation.DriveShareLineage
 import me.him188.ani.app.domain.media.continuation.PlaybackLineage
 import me.him188.ani.app.domain.media.probe.MediaStreamProbe
+import me.him188.ani.app.domain.mediasource.search.TitleIdentities
 import me.him188.ani.app.platform.PlaybackRequestHints
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.Media
@@ -68,7 +69,7 @@ class CloudDriveService internal constructor(
     /** 按 TMDB 季集整理的文件换算成条目的集 (这个网盘的三种数据源共用) */
     internal val episodeNumbering: TmdbEpisodeNumbering = TmdbEpisodeNumbering.None,
     /** 自动按名字找时按路径认部 (这个网盘的自己网盘搜索与分享搜索共用) */
-    internal val identities: DriveSubjectIdentities = DriveSubjectIdentities.None,
+    internal val identities: TitleIdentities = TitleIdentities.None,
     /** 条目的播放线索 (见 [PlaybackLineage]): 三种数据源查询时先列线索里的文件夹 */
     private val playbackLineages: suspend (subjectId: Int) -> PlaybackLineage? = { null },
 ) {

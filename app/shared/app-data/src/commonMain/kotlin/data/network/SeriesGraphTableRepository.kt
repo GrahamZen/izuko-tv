@@ -349,6 +349,12 @@ class SeriesGraphTable private constructor(
 
         /** 别名是第几列 (从 0 数) */
         private const val ALIASES_COLUMN = 11
+
+        /** 什么都答不了的表 (覆盖到 0, 哪个条目都是「表答不了」): 表还没读进来时只按名字认部用 */
+        internal val Empty: SeriesGraphTable by lazy {
+            SeriesGraphTable(HEADER_PREFIXES.last() + " max_id=0", 0, "", ByteArray(0), IntArray(0), IntArray(0))
+        }
+
         private val MAX_ID = Regex("""\bmax_id=(\d+)""")
         private val DUMP = Regex("""\bdump=(\S+)""")
         private const val NEWLINE = '\n'.code.toByte()

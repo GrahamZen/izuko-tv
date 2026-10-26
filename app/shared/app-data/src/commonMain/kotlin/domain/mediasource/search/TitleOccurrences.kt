@@ -7,14 +7,15 @@
  * https://github.com/open-ani/ani/blob/main/LICENSE
  */
 
-package me.him188.ani.app.domain.mediasource.clouddrive
+package me.him188.ani.app.domain.mediasource.search
 
-import me.him188.ani.app.domain.mediasource.search.TitleForms
+import me.him188.ani.app.domain.mediasource.clouddrive.DriveNameParser
+
 
 /**
  * 系列的第一部的名字后面接着标题的另一段 (「Sword Art Online Alicization」「Attack on Titan The Final Season」「刀剑神域 Extra Edition」):
  * 第一部的名字就是系列名, 这里只是更长的标题的开头, 那个标题是同系列别的作品的. 系列关系图只有别的作品的中文名与原名, 英文名、罗马音名对不上,
- * 靠这个认 (见 [DriveSubjectIdentity.namingOf]). 后来的作品的名字本身带着它的那一段, 不用这个 (罗马音写的本段「Zenpen」也会被当成别的标题).
+ * 靠这个认 (见 [TitleIdentity.namingOf]). 后来的作品的名字本身带着它的那一段, 不用这个 (罗马音写的本段「Zenpen」也会被当成别的标题).
  *
  * 名字后面隔着空格、点、下划线或连字符紧接着一个英文单词才算接着标题; 单词是格式标记 (`BDRip` `Season` `Part`…)、罗马数字的季、
  * 本条目英文名里的词 (「葬送的芙莉莲 Frieren」), 或后面紧跟数字 (`S01E01` `x265`) 时不算. 名字原样找不到 (繁简、全角写法不同) 时也不算.
@@ -22,7 +23,7 @@ import me.him188.ani.app.domain.mediasource.search.TitleForms
  *
  * @param names 本条目的名字 (原样). 太短、不拿来认名字的也要给: 它们的词也是本条目的词 (「特别的她 FLCL」的 FLCL)
  */
-internal class DriveTitleContinuation(names: List<String>) {
+internal class TitleOccurrences(names: List<String>) {
     private val patterns: Map<String, List<Regex>> = names.mapNotNull { name -> patternOf(name)?.let { TitleForms.compact(name) to it } }
         .groupBy({ it.first }, { it.second })
 
@@ -47,7 +48,7 @@ internal class DriveTitleContinuation(names: List<String>) {
     }
 
     /**
-     * 短名字 [name] (已归一化, 见 [DriveSubjectIdentity]) 在 [segment] 里单独成词地出现了一处: 前后都不挨着字母或汉字
+     * 短名字 [name] (已归一化, 见 [TitleIdentity]) 在 [segment] 里单独成词地出现了一处: 前后都不挨着字母或汉字
      * (「一杆青空」「怪物事变」「谷江玲音」「红辣椒俱乐部」都不算), 后面不是「：」接着副标题 (「怪物：丽兹·波顿的故事」),
      * 也不接着标题的另一段英文 (「AIR GEAR」). 挨着数字的算 (「2019怪物」「怪物01」), 挨着的是季、合集、类别这类标记的也算
      * (「虫师第一季」「红辣椒全集」「日漫间谍过家家」). 挨着的是本条目别的名字的也算; 汉字假名写的名字挨着英文字母的也算 (「NANA娜娜」),
