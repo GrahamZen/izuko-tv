@@ -39,6 +39,12 @@ data class MediaCacheSettings(
     /** 这一集有下载完的缓存时直接播, 不搜索别的数据源 (见 PlayCacheWithoutSearchingExtension) */
     val playCacheWithoutSearching: Boolean = false,
 
+    /**
+     * 新缓存放在哪个位置 (外接盘的卷 UUID, 见 MediaCacheLocations), `null` = 内部存储.
+     * 那个盘没接上或不能用时新缓存放内部存储, 这个值不清, 插回来接着用.
+     */
+    val defaultLocation: String? = null,
+
     @Suppress("PropertyName") @Transient val _placeholder: Int = 0,
 ) {
     companion object {
