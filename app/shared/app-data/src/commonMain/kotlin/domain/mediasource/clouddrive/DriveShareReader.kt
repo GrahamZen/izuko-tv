@@ -10,6 +10,7 @@
 package me.him188.ani.app.domain.mediasource.clouddrive
 
 import me.him188.ani.app.domain.media.ProbedMediaAvFeatures
+import me.him188.ani.app.domain.mediasource.search.TitleIdentity
 import me.him188.ani.datasources.api.DefaultMedia
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.MediaProperties
@@ -69,7 +70,7 @@ internal class DriveShareReader(
     }
 
     /** [request] 这个条目在网盘上按第几季找, 见 [DriveSubjectSeason]. [identity] 带着系列关系图里的位置. */
-    suspend fun subjectSeason(request: MediaFetchRequest, identity: DriveSubjectIdentity?): DriveSubjectSeason =
+    suspend fun subjectSeason(request: MediaFetchRequest, identity: TitleIdentity?): DriveSubjectSeason =
         DriveSubjectSeason.of(request, numbering.of(request), identity)
 
     /**
@@ -81,7 +82,7 @@ internal class DriveShareReader(
         request: MediaFetchRequest,
         share: FoundShare,
         videos: List<Entry>,
-        identity: DriveSubjectIdentity? = null,
+        identity: TitleIdentity? = null,
     ): List<DriveShareMatch> {
         val byFid = videos.associateBy { it.file.fid }
         val candidates = videos.map { DriveSubjectMatcher.Candidate(it.file, listOf(share.siteTitle) + it.folders) }

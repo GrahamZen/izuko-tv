@@ -7,7 +7,7 @@
  * https://github.com/open-ani/ani/blob/main/LICENSE
  */
 
-package me.him188.ani.app.domain.mediasource.clouddrive
+package me.him188.ani.app.domain.mediasource.search
 
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -15,18 +15,23 @@ import me.him188.ani.app.data.models.subject.SplitSeason
 import me.him188.ani.app.data.network.SeriesGraphTable
 import me.him188.ani.app.data.network.SeriesGraphTableRepository
 import me.him188.ani.app.data.network.SeriesNode
+import me.him188.ani.app.domain.mediasource.clouddrive.DriveNameParser
+import me.him188.ani.app.domain.mediasource.clouddrive.DrivePathAttribution
+import me.him188.ani.app.domain.mediasource.clouddrive.DriveSeriesParts
+import me.him188.ani.app.domain.mediasource.clouddrive.DriveSubjectMatcher
+import me.him188.ani.app.domain.mediasource.clouddrive.DriveSubjectSeason
+import me.him188.ani.app.domain.mediasource.clouddrive.seriesSeasonOf
+import me.him188.ani.app.domain.mediasource.clouddrive.seriesSplitSeasonOf
 import me.him188.ani.app.domain.mediasource.rss.firstAirDate
-import me.him188.ani.app.domain.mediasource.search.AnimeNameIndex
-import me.him188.ani.app.domain.mediasource.search.SubjectSearchPlan
-import me.him188.ani.app.domain.mediasource.search.TitleForms
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import kotlin.math.abs
 
 /**
- * 网盘上的一段名字 (分享站的标题、合集与分享里的文件夹名、文件名) 点名的是不是这一部. 自动认出来的地方都按它:
- * 分享站的标题 ([rejectsTitle])、固定合集与播放线索里的文件夹 ([namesOtherWork])、分享与自己网盘里的视频 ([DrivePathAttribution]);
- * 用户添加的分享、手挑的文件夹是用户指定给这个条目的, 不查.
+ * 一段名字 (分享站的标题、合集与分享里的文件夹名、文件名、网页上的条目名) 点名的是不是这一部. 自动认出来的地方都按它:
+ * 分享站的标题 ([rejectsTitle])、固定合集与播放线索里的文件夹 ([namesOtherWork])、分享与自己网盘里的视频 ([DrivePathAttribution])、
+ * 网页类站点上的条目名 ([rejectsPageTitle], 只用与系列无关的几条); 用户添加的分享、手挑的文件夹是用户指定给这个条目的, 不查.
+ * 整套步骤见 `docs/contributing/code/media/media-search.md`.
  *
  * 名字取自搜索计划 ([SubjectSearchPlan]), 与网页类数据源认部是同一组: [SubjectSearchPlan.ownNames] 是这一部的;
  * 别的作品是 [SubjectSearchPlan.otherWorkNames], 以及系列关系图里以本条目的主标题开头的 ([SeriesGraphTable.nodesContaining]:
@@ -35,14 +40,14 @@ import kotlin.math.abs
  * 「机动战士高达SEED」是 SEED; 「XX 第三季 (附第二季)」里有本条目同样长的名字, 不算别的作品.
  * 「系列名 + 副标题」的条目再按副标题认 ([DriveSeriesParts]): 只有这一部的副标题是这一部, 只有别的部的副标题是别的部, 都有的是几部合在一起.
  * 别的部的副标题出现在本条目自己的名字里的不算: 后几季常拿第一季的副标题当系列名 (「ツルネ ―風舞高校弓道部― 第2期」).
- * 系列的第一部的名字每一处后面都接着标题的另一段的 (「Sword Art Online Alicization」, 见 [DriveTitleContinuation]) 是同系列别的作品.
- * 太短的名字 (「AIR」「怪物」) 单独成词时才算点名这一部 ([DriveTitleContinuation.standsAlone]): 「AIR GEAR」「怪物事变」「谷江玲音」里的不算.
- * 系列以外的作品按名字相等认 ([DriveKnownWorks], 全部动画的名字表): 写着别的动画的名字的是那一部 (「一杆青空」之于 AIR),
+ * 系列的第一部的名字每一处后面都接着标题的另一段的 (「Sword Art Online Alicization」, 见 [TitleOccurrences]) 是同系列别的作品.
+ * 太短的名字 (「AIR」「怪物」) 单独成词时才算点名这一部 ([TitleOccurrences.standsAlone]): 「AIR GEAR」「怪物事变」「谷江玲音」里的不算.
+ * 系列以外的作品按名字相等认 ([KnownWorks], 全部动画的名字表): 写着别的动画的名字的是那一部 (「一杆青空」之于 AIR),
  * 同时写着本条目或这个系列的是几部的合集 (「咒术回战1-2季全+紫罗兰永恒花园全集」). 同名的别的版本 (旧版、重制) 只能按年份分:
  * 写着那一版开播的年份、没写本条目那年的是那一版 ([datesOtherVersion]). 系列的第一部的名字出现了、写的年份却都差一年以上的也是别的作品
  * ([isOtherYear]: 「红辣椒俱乐部 (2019)」之于 2006 年的红辣椒).
  */
-internal class DriveSubjectIdentity(
+internal class TitleIdentity(
     /** 本条目的名字, 已归一化 ([TitleForms.compact]); 太短、与系列名或别的作品同名的不在里面 */
     private val ownNames: List<String>,
     /** 别的作品的名字, 已归一化 */
@@ -69,13 +74,15 @@ internal class DriveSubjectIdentity(
     /** 系列关系图里本条目有前传: 别名写的季才算 (见 [DriveSubjectSeason.declaredIn]) */
     val hasPrequel: Boolean = false,
     /** 本条目的全部名字原样出现的样子: 认第一部的名字后面接着的标题 (后来的作品不查), 认 [weakNames] 是不是单独成词 */
-    private val titles: DriveTitleContinuation? = null,
-    /** 本条目太短的名字 ([TitleForms.isDistinctive]), 已归一化: 单独成词时才算点名这一部 ([DriveTitleContinuation.standsAlone]) */
+    private val titles: TitleOccurrences? = null,
+    /** 本条目太短的名字 ([TitleForms.isDistinctive]), 已归一化: 单独成词时才算点名这一部 ([TitleOccurrences.standsAlone]) */
     private val weakNames: List<String> = emptyList(),
     /** 系列以外认得的别的作品; 没有全部动画的名字索引时为 null */
-    private val knownWorks: DriveKnownWorks? = null,
+    private val knownWorks: KnownWorks? = null,
     /** 与本条目同名的别的版本 (旧版、重制) 开播的年份, 与本条目差不到一年的不在里面 */
     private val versionYears: Set<Int> = emptySet(),
+    /** 系列的第一部 (没有前传的) 的名字, 已归一化; 本条目自己是第一部时为空 */
+    private val firstWorkNames: List<String> = emptyList(),
 ) {
     /** 一段名字点名了哪一部. */
     enum class Naming {
@@ -92,8 +99,10 @@ internal class DriveSubjectIdentity(
         val normalized = TitleForms.compact(name)
         val ownHits = ownHitsIn(name, normalized)
         val otherHits = otherWorkNames.filter { it in normalized }
-        val continued = !laterWork && ownHits.isNotEmpty() && titles?.continuesEvery(name, ownHits) == true
-        val own = !continued && ownHits.any { hit -> otherHits.none { it.length > hit.length && hit in it } } ||
+        val continued = continuesOtherTitle(name, ownHits)
+        // 本条目的名字有一处不在更长的别的作品名里面就算点名了这一部: 「机动战士高达SEED」不是初代,
+        // 「机动战士高达 TV版 + 机动战士高达SEED」是两部
+        val own = !continued && ownHits.any { hit -> appearsOutside(normalized, hit, otherHits.filter { it.length > hit.length && hit in it }) } ||
                 parts?.ownParts?.any { it in normalized } == true
         val other = continued || otherHits.any { hit -> ownHits.none { it.length >= hit.length } } ||
                 parts?.otherParts?.any { it in normalized } == true
@@ -107,16 +116,45 @@ internal class DriveSubjectIdentity(
         }
     }
 
+    /** 名字 [name] 点名的是系列以外认得的作品 ([KnownWorks]), 没写本条目与这个系列 */
+    fun namesWorkOutsideSeries(name: String): Boolean {
+        val normalized = TitleForms.compact(name)
+        return namingByKnownWorks(name, normalized, ownHitsIn(name, normalized)) == Naming.OTHER
+    }
+
     /**
-     * 文件夹路径 [path] (从外到里) 是别的作品的: 从里往外第一个点名了某一部的名字点名的是别的部, 或点名这一部、外层写着同名的别的版本的年份
-     * ([datesOtherVersion]). 播放线索、固定合集里的文件夹用.
+     * 点名了别的部的名字 [name] 写着本季时能不能算这一部 (见 [DrivePathAttribution]). 季号只在已经认定的这个系列里算数:
+     * - 点名的是系列的第一部的能: 后几季常拿第一季的名字加季起名 (「弦音 -风舞高中弓道部- 第二季」);
+     * - 点名这一部、只是写着别的年份的能: 按系列整理的「Cyberpunk.Edgerunners.2022.S02」写的是第一季那年 (同名的别的版本另按 [datesOtherVersion] 认);
+     * - 系列以外认得的作品、同系列别的季与剧场版、别的部的副标题、第一部的名字接着别的标题的不能.
+     */
+    fun seasonCanOverride(name: String): Boolean {
+        if (namesWorkOutsideSeries(name)) return false
+        val normalized = TitleForms.compact(name)
+        val otherParts = parts?.otherParts.orEmpty().filter { it in normalized }
+        val others = otherWorkNames.filter { it in normalized }
+        if (others.isEmpty() && otherParts.isEmpty()) {
+            val ownHits = ownHitsIn(name, normalized)
+            return ownHits.isNotEmpty() && !continuesOtherTitle(name, ownHits)
+        }
+        fun ofFirstWork(part: String) = firstWorkNames.any { part in it }
+        return firstWorkNames.isNotEmpty() && others.all { it in firstWorkNames } && otherParts.all(::ofFirstWork)
+    }
+
+    /** 系列的第一部的名字 [ownHits] 在 [name] 里每一处后面都接着标题的另一段 (规则见 [TitleOccurrences.continuesEvery]) */
+    private fun continuesOtherTitle(name: String, ownHits: List<String>): Boolean =
+        !laterWork && ownHits.isNotEmpty() && titles?.continuesEvery(name, ownHits) == true
+
+    /**
+     * 文件夹路径 [path] (从外到里) 是别的作品的: 从里往外第一个点名了某一部的名字点名的是别的部, 或点名这一部、外层按年份是别的作品
+     * ([datesOtherVersion]、[datesOtherYearOutside]). 播放线索、固定合集里的文件夹用.
      */
     fun namesOtherWork(path: List<String>): Boolean {
         val inward = path.asReversed()
         for ((index, segment) in inward.withIndex()) {
             when (namingOf(segment)) {
                 Naming.NONE -> continue
-                Naming.OWN -> return datesOtherVersion(inward.drop(index))
+                Naming.OWN -> return datesOtherVersion(inward.drop(index)) || datesOtherYearOutside(inward.drop(index))
                 Naming.OTHER -> return true
                 Naming.SEVERAL -> return false
             }
@@ -184,9 +222,36 @@ internal class DriveSubjectIdentity(
         return false
     }
 
+    /**
+     * 系列的第一部: 路径 [segments] (从里往外) 的第一层点名这一部、没写年份, 外层第一个点名这一部又写了年份的名字写的是别的年份 ([isOtherYear]):
+     * 「怪物 / G 怪物 2024 / 怪物.E01.mp4」之于 2004 年的动画.
+     */
+    fun datesOtherYearOutside(segments: List<String>): Boolean {
+        if (airYear == null || laterWork || segments.isEmpty() || yearsIn(segments.first()).isNotEmpty()) return false
+        val dated = segments.drop(1).firstOrNull { segment ->
+            yearsIn(segment).isNotEmpty() && ownHitsIn(segment, TitleForms.compact(segment)).isNotEmpty()
+        } ?: return false
+        return isOtherYear(dated)
+    }
+
     /** 名字里写的开播年份; 日期 (上传、更新的「2025-04-02」「2025.06」) 与发行年份 (「2023 BDRip」) 不算 */
     private fun yearsIn(name: String): List<Int> =
         YEAR.findAll(RELEASE_YEAR.replace(DATE.replace(name, " "), " ")).map { it.value.toInt() }.toList()
+
+    /** [text] 里的 [name] 有一处不在 [longer] (含着 [name] 的更长的名字) 的任何一处里面 */
+    private fun appearsOutside(text: String, name: String, longer: List<String>): Boolean {
+        if (longer.isEmpty()) return true
+        val covered = longer.flatMap { occurrencesOf(text, it) }
+        return occurrencesOf(text, name).any { at -> covered.none { at.first >= it.first && at.last <= it.last } }
+    }
+
+    private fun occurrencesOf(text: String, name: String): List<IntRange> = buildList {
+        var start = text.indexOf(name)
+        while (start >= 0) {
+            add(start until start + name.length)
+            start = text.indexOf(name, start + 1)
+        }
+    }
 
     /** 名字 [name] (归一化后是 [normalized]) 里出现的本条目的名字: 太短的要单独成词 */
     private fun ownHitsIn(name: String, normalized: String): List<String> =
@@ -265,8 +330,14 @@ internal class DriveSubjectIdentity(
         /** 短名字归一化后至少几个字 */
         private const val MIN_WEAK_NAME_LENGTH = 2
 
+        /**
+         * 表还没读进来时只按请求里的名字认: 短名字要单独成词、请求带的同系列别的作品的名字、条目名写的季与开播年份照用;
+         * 系列关系图与名字表才认得出的 (系列走法、副标题、认得的别的作品、同名的别的版本) 不认.
+         */
+        fun namesOnly(request: MediaFetchRequest): TitleIdentity = of(request, SeriesGraphTable.Empty)
+
         /** @param index 全部动画的名字索引, 认系列以外的作品用; 不给时不认 */
-        fun of(request: MediaFetchRequest, table: SeriesGraphTable, index: AnimeNameIndex? = null): DriveSubjectIdentity {
+        fun of(request: MediaFetchRequest, table: SeriesGraphTable, index: AnimeNameIndex? = null): TitleIdentity {
             val subjectId = request.subjectId.toIntOrNull()
             val names = DriveSubjectMatcher.subjectNamesOf(request)
             val ownNode = subjectId?.let(table::nodeOf)
@@ -309,7 +380,7 @@ internal class DriveSubjectIdentity(
             /** 本条目与同系列的作品 */
             val seriesIds = subjectId?.let { DriveSeriesParts.seriesNodesOf(it, table) }.orEmpty().mapTo(HashSet()) { it.id } +
                     listOfNotNull(subjectId)
-            return DriveSubjectIdentity(
+            return TitleIdentity(
                 ownNames = ownNames,
                 otherWorkNames = others,
                 parts = parts,
@@ -321,9 +392,9 @@ internal class DriveSubjectIdentity(
                 otherWorkYears = otherWorkYears,
                 laterWork = laterWork,
                 hasPrequel = hasPrequel,
-                titles = DriveTitleContinuation(ownTitles),
+                titles = TitleOccurrences(ownTitles),
                 weakNames = weakNames.filter { it.length >= MIN_WEAK_NAME_LENGTH && it.any { ch -> !ch.isDigit() } },
-                knownWorks = index?.let { names -> DriveKnownWorks(names, seriesIds, own.toSet()) },
+                knownWorks = index?.let { names -> KnownWorks(names, seriesIds, own.toSet()) },
                 versionYears = index?.let { names ->
                     // 同系列的作品名字一样的是季 (「工作细胞」与「工作细胞！！」归一化后一样), 不是版本
                     ownTitles.flatMap(names::worksNamed)
@@ -331,31 +402,37 @@ internal class DriveSubjectIdentity(
                         .mapNotNullTo(HashSet()) { node -> node.airDate.takeIf { it.isValid }?.year }
                         .filterTo(HashSet()) { year -> airYear != null && abs(year - airYear) > 1 }
                 }.orEmpty(),
+                firstWorkNames = subjectId?.let { DriveSeriesParts.seriesNodesOf(it, table) }.orEmpty()
+                    .filter { node -> node.id != subjectId && table.edgesOf(node.id)?.prequels.isNullOrEmpty() }
+                    .flatMap { listOf(it.name, it.nameCn) }
+                    .map(TitleForms::compact)
+                    .filter { it.isNotEmpty() && it !in own }
+                    .distinct(),
             )
         }
 
-        /** 系列关系图里的作品 (有前传或续集): 名字里含着本条目主标题的只认这些, 系列以外的按名字相等认 ([DriveKnownWorks]) */
+        /** 系列关系图里的作品 (有前传或续集): 名字里含着本条目主标题的只认这些, 系列以外的按名字相等认 ([KnownWorks]) */
         private fun SeriesNode.inSeries(table: SeriesGraphTable): Boolean =
             table.edgesOf(id)?.let { it.prequels.isNotEmpty() || it.sequels.isNotEmpty() } == true
     }
 }
 
-/** 给查询请求算 [DriveSubjectIdentity]. 没有系列关系图时为 null (路径不查). */
-internal fun interface DriveSubjectIdentities {
-    suspend fun of(request: MediaFetchRequest): DriveSubjectIdentity?
+/** 给查询请求算 [TitleIdentity]. 没有系列关系图时为 null (路径不查). */
+internal fun interface TitleIdentities {
+    suspend fun of(request: MediaFetchRequest): TitleIdentity?
 
     companion object {
-        val None = DriveSubjectIdentities { null }
+        val None = TitleIdentities { null }
 
         /** 从系列关系图算; 同一个条目的几个数据源、几次切集共用, 记最近几个条目的结果. */
-        fun of(repository: SeriesGraphTableRepository): DriveSubjectIdentities {
+        fun of(repository: SeriesGraphTableRepository): TitleIdentities {
             val lock = Mutex()
-            val cache = LinkedHashMap<List<Any>, DriveSubjectIdentity>()
-            return DriveSubjectIdentities { request ->
-                val table = repository.current() ?: return@DriveSubjectIdentities null
+            val cache = LinkedHashMap<List<Any>, TitleIdentity>()
+            return TitleIdentities { request ->
+                val table = repository.current() ?: return@TitleIdentities null
                 val key = listOf(table.dump, table.allAnime, request.subjectId, request.subjectNames, request.nameHints)
                 lock.withLock {
-                    cache[key] ?: DriveSubjectIdentity.of(request, table, AnimeNameIndex.of(table)).also {
+                    cache[key] ?: TitleIdentity.of(request, table, AnimeNameIndex.of(table)).also {
                         cache[key] = it
                         while (cache.size > CACHE_SIZE) cache.remove(cache.keys.first())
                     }

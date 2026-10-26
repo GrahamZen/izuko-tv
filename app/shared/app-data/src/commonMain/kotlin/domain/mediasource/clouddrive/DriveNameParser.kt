@@ -11,6 +11,7 @@ package me.him188.ani.app.domain.mediasource.clouddrive
 
 import me.him188.ani.app.domain.mediasource.search.NotAnimeMarkers
 import me.him188.ani.app.domain.mediasource.search.TitleForms
+import me.him188.ani.app.domain.mediasource.search.TitleOccurrences
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.topic.isSingleEpisode
 import me.him188.ani.datasources.api.topic.titles.RawTitleParser
@@ -54,7 +55,7 @@ internal object DriveNameParser {
     fun titlePatterns(names: List<String>): List<Regex> = names
         .filter { name -> name.any(Char::isDigit) && name.any(Char::isLetter) }
         .distinct()
-        .mapNotNull { name -> DriveTitleContinuation.patternOf(name)?.let { Regex("""(?<![0-9])(?:${it.pattern})(?![0-9])""", it.options) } }
+        .mapNotNull { name -> TitleOccurrences.patternOf(name)?.let { Regex("""(?<![0-9])(?:${it.pattern})(?![0-9])""", it.options) } }
 
     fun parseFile(fileName: String): ParsedFile {
         // 编码、声道里的数字不是集号 (`H.265` `×265` `DDP5.1`)

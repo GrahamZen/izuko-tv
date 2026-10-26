@@ -13,6 +13,8 @@ import io.ktor.http.decodeURLQueryComponent
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import me.him188.ani.app.domain.mediasource.search.TitleForms
+import me.him188.ani.app.domain.mediasource.search.TitleIdentities
+import me.him188.ani.app.domain.mediasource.search.TitleIdentity
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import kotlin.test.Test
@@ -103,6 +105,20 @@ class CloudDriveShareSearchTest {
         val matched = engine(shares, urls = urls).search(request("没有这部", "葬送的芙莉莲", "Frieren"))
         assertEquals(listOf("s1e01", "s1e02"), matched.map { it.file.fid })
         assertEquals(2, urls.size)
+    }
+
+    @Test
+    fun `tries the next name when the shares found by the previous one have no episode of this work`() = runTest {
+        // 第一个名字搜到的分享里没有视频, 第二个名字搜到的有
+        val empty = mapOf(TestDrive.SHARE_ROOT to listOf(dir("root", "名字一 全集")), "root" to emptyList<DriveFile>())
+        val shares = shares(mapOf("share1" to share1, "empty" to empty))
+        val emptyResponse = """{"code":1,"list":[{"vod_name":"名字一 全集","vod_down_url":"测试网盘${'$'}https://share.drive.test/s/empty"}]}"""
+        val engine = DriveShareSearchEngine(config, shares, links) { url ->
+            (if ("wd=%E8%91%AC%E9%80%81" in url) siteResponse else emptyResponse).encodeToByteArray()
+        }
+        val matched = engine.search(request("名字一", "葬送的芙莉莲"))
+        assertEquals(listOf("s1e01", "s1e02"), matched.map { it.file.fid })
+        assertEquals(listOf("empty", "share1"), shares.openedIds)
     }
 
     @Test
@@ -230,8 +246,8 @@ class CloudDriveShareSearchTest {
                 "tv" to mapOf(TestDrive.SHARE_ROOT to listOf(video("tv01", "01.mp4"))),
             ),
         )
-        val identity = DriveSubjectIdentity(ownNames = listOf("机动战士高达"), otherWorkNames = listOf("机动战士高达seed"), airYear = 1979)
-        val engine = DriveShareSearchEngine(config, shares, links, identities = DriveSubjectIdentities { identity }) { response.encodeToByteArray() }
+        val identity = TitleIdentity(ownNames = listOf("机动战士高达"), otherWorkNames = listOf("机动战士高达seed"), airYear = 1979)
+        val engine = DriveShareSearchEngine(config, shares, links, identities = TitleIdentities { identity }) { response.encodeToByteArray() }
 
         val matched = engine.search(request("机动战士高达"))
 
@@ -242,8 +258,8 @@ class CloudDriveShareSearchTest {
     @Test
     fun `a lineage share folder of another work is dropped`() = runTest {
         val shares = shares(mapOf("seed" to mapOf("f" to listOf(video("seed01", "01.mp4")))))
-        val identity = DriveSubjectIdentity(ownNames = listOf("机动战士高达"), otherWorkNames = listOf("机动战士高达seed"), airYear = 1979)
-        val engine = DriveShareSearchEngine(config, shares, links, identities = DriveSubjectIdentities { identity }) { null }
+        val identity = TitleIdentity(ownNames = listOf("机动战士高达"), otherWorkNames = listOf("机动战士高达seed"), airYear = 1979)
+        val engine = DriveShareSearchEngine(config, shares, links, identities = TitleIdentities { identity }) { null }
         val seed = DriveShareLocation("seed", "", "机动战士高达SEED DESTINY HD重制 (2013)", "f", listOf("【动漫】机动战士高达SEED DESTINY HD重制 (2013)"))
 
         // null = 线索作废: 不再顺着它找; 也不去打开它

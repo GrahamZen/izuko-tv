@@ -49,14 +49,16 @@
 ### 搜索计划 (非 BT 数据源共用)
 
 - `SubjectSearchPlan`（`app/shared/app-data/.../domain/mediasource/search/SubjectSearchPlan.kt`）：由请求建，
-  `keywords(KeywordStyle)` 给关键词链 (按标题原样找的站点用 `KeywordStyle.literal`)，`identify` / `foundOwn` / `pagesToOpen` 认网页类站点上的条目是不是这一部；
-  网页、规则、JSON API、直连 API、网盘数据源都从这里取，见 [MediaSource](media-source.md#搜索计划)。名字的几种写法在同包的 `TitleForms`。
+  `keywords(KeywordStyle)` 给关键词链 (按标题原样找的站点用 `KeywordStyle.literal`)，`identify` / `foundOwn` / `pagesToOpen` 认网页类站点上的条目是不是这一部
+  (同选择器的名字规则在同文件的 `SelectorNameRules`)；网页、规则、JSON API、直连 API、网盘数据源都从这里取。整套步骤见[数据源搜索](media-search.md)。
+  名字的几种写法在同包的 `TitleForms`。
 - 全部动画的名字表 (同包)：`AnimeNameIndex` (名字 → 条目, 建在 `SeriesGraphTable` 上)、`TitleParts` (一段名字里写的作品名)、
   `AnimeNames` (网页认部取表的入口, app 启动时接到 `SeriesGraphTableRepository.loaded`)。
-- 网盘认部认集 (`domain/mediasource/clouddrive/`)：`DriveSubjectIdentity` (名字点名哪一部; 名字后面接着别的标题、短名字是否单独成词见 `DriveTitleContinuation`,
-  系列以外认得的作品见 `DriveKnownWorks`; 网页的条目名也经它的 `rejectsPageTitle`)、`DrivePathAttribution` (视频的路径点名哪一部)、
+- 认部 (同包)：`TitleIdentity` (一段名字点名了哪一部; 网盘的分享标题与路径、网页的条目名 `rejectsPageTitle` 都经它, `TitleIdentities` 按条目缓存)、
+  `TitleOccurrences` (名字原样出现的样子: 后面接着别的标题、短名字是否单独成词)、`KnownWorks` (系列以外认得的作品)。
+- 网盘认部认集 (`domain/mediasource/clouddrive/`)：`DrivePathAttribution` (视频的路径点名哪一部)、
   `DriveSubjectSeason` (条目按第几季找)、`DriveEpisodeResolver` (视频是哪一集)、`DriveSeriesParts` (系列名与副标题)，
-  由 `DriveSubjectMatcher.matchEpisodes` 串起来, 见 [MediaSource](media-source.md#网盘数据源)。
+  由 `DriveSubjectMatcher.matchEpisodes` 串起来, 见[数据源搜索](media-search.md)。
 - 请求里认部用的名字 `MediaFetchNameHints`（`datasource/api/.../source/MediaFetchNameHints.kt`）由 `fetchNameHintsOf`
   （`domain/media/fetch/FetchNameHints.kt`）与 `withRegionalNames` 填；「系列名 第N季」由 `seriesSeasons` / `withSeasonNames`
   （`data/network/SeriesSeasonNames.kt`）从系列索引推出，选择器的条目信息经 `withSeasonAliases` 带上同一组。

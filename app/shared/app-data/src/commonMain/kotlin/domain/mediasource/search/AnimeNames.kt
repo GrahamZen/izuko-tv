@@ -11,26 +11,26 @@ package me.him188.ani.app.domain.mediasource.search
 
 import me.him188.ani.app.data.network.SeriesGraphTable
 import me.him188.ani.app.data.network.SeriesGraphTableRepository
-import me.him188.ani.app.domain.mediasource.clouddrive.DriveSubjectIdentity
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import kotlin.concurrent.Volatile
 
 /**
  * 网页类数据源认部 ([SubjectSearchPlan.identify]) 用的全部动画的名字表. 请求 ([MediaFetchRequest]) 要能序列化, 带不了表, 所以从这里取:
- * app 启动时把 [source] 接到 [SeriesGraphTableRepository.loaded]; 没接上 (单测) 或表还没读进来时不用名字表认.
+ * app 启动时把 [source] 接到 [SeriesGraphTableRepository.loaded]; 没接上 (单测) 或表还没读进来时只按名字认 ([TitleIdentity.namesOnly]).
  */
 object AnimeNames {
     @Volatile
     var source: (() -> SeriesGraphTable?)? = null
 
     @Volatile
-    private var last: Pair<List<Any>, DriveSubjectIdentity>? = null
+    private var last: Pair<List<Any?>, TitleIdentity>? = null
 
-    /** 按名字表给 [request] 认部 ([DriveSubjectIdentity]); 一次查询的几个数据源共用 (记最近一个条目). 没有表时为 null. */
-    internal fun identityOf(request: MediaFetchRequest): DriveSubjectIdentity? {
-        val table = source?.invoke() ?: return null
-        val key = listOf(table.dump, table.size, request.subjectId, request.subjectNames, request.nameHints)
+    /** 按名字表给 [request] 认部 ([TitleIdentity]); 一次查询的几个数据源共用 (记最近一个条目). 没有表时只按名字认. */
+    internal fun identityOf(request: MediaFetchRequest): TitleIdentity {
+        val table = source?.invoke()
+        val key = listOf(table?.dump, table?.size, request.subjectId, request.subjectNames, request.nameHints)
         last?.takeIf { it.first == key }?.let { return it.second }
-        return DriveSubjectIdentity.of(request, table, AnimeNameIndex.of(table)).also { last = key to it }
+        val identity = if (table == null) TitleIdentity.namesOnly(request) else TitleIdentity.of(request, table, AnimeNameIndex.of(table))
+        return identity.also { last = key to it }
     }
 }
