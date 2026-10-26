@@ -9,7 +9,8 @@
 
 package me.him188.ani.app.domain.mediasource.clouddrive
 
-import me.him188.ani.app.domain.mediasource.toSimplifiedChinese
+import me.him188.ani.app.domain.mediasource.search.NotAnimeMarkers
+import me.him188.ani.app.domain.mediasource.search.TitleForms
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.topic.isSingleEpisode
 import me.him188.ani.datasources.api.topic.titles.RawTitleParser
@@ -37,10 +38,27 @@ internal object DriveNameParser {
          * 片头片尾、PV、预告之类的附加视频, 不算正片.
          */
         val isExtra: Boolean,
+        /**
+         * 集号写在集号的位置上 (`S01E03`、`第3集`、`EP03`、`[03]`、` - 03`); 只是名字里剩下的一个数字时为 false.
+         */
+        val anchored: Boolean = true,
     )
 
+    /**
+     * 去掉条目名里带数字的那几个 ([titlePatterns]) 后认季与集: 「秒速5厘米.2007.BD1080P」的 5 是名字的一部分, 不是集号.
+     */
+    fun parseFile(fileName: String, titles: List<Regex>): ParsedFile =
+        parseFile(titles.fold(fileName) { name, title -> title.replace(name, " ") })
+
+    /** 名字 [names] 里带数字的 (「秒速5厘米」「5 Centimeters per Second」「机动战士高达0079」) 原样出现的样子, 两头不挨着别的数字 */
+    fun titlePatterns(names: List<String>): List<Regex> = names
+        .filter { name -> name.any(Char::isDigit) && name.any(Char::isLetter) }
+        .distinct()
+        .mapNotNull { name -> DriveTitleContinuation.patternOf(name)?.let { Regex("""(?<![0-9])(?:${it.pattern})(?![0-9])""", it.options) } }
+
     fun parseFile(fileName: String): ParsedFile {
-        val name = removeExtension(fileName)
+        // 编码、声道里的数字不是集号 (`H.265` `×265` `DDP5.1`)
+        val name = CODEC.replace(removeExtension(fileName), " ")
         // 同名文件的副本后缀 (`02(1).mp4` 是第 2 集): 去掉后还认得出集号就按去掉的算, 否则括号里的数字可能就是集号 (`Title (03)`)
         COPY_SUFFIX.find(name)?.let { suffix ->
             parseName(name.removeRange(suffix.range)).takeIf { it.episode != null }?.let { return it }
@@ -65,8 +83,8 @@ internal object DriveNameParser {
             return ParsedFile(null, episodeSort(match.groupValues[1], match.groupValues[2]), false)
         }
         titleParserEpisode(name)?.let { return ParsedFile(null, it, false) }
-        bareNumberEpisode(name)?.let { return ParsedFile(null, it, false) }
-        bracketLeadingNumberEpisode(name)?.let { return ParsedFile(null, it, false) }
+        bareNumberEpisode(name)?.let { return ParsedFile(null, it, false, anchored = false) }
+        bracketLeadingNumberEpisode(name)?.let { return ParsedFile(null, it, false, anchored = false) }
         return ParsedFile(null, null, false)
     }
 
@@ -100,10 +118,10 @@ internal object DriveNameParser {
      * 用来给站点上的分享、BT 发布按季排先后与取舍; 不认标题末尾的数字.
      */
     fun declaredSeasons(name: String): Set<Int> = buildSet {
-        for (match in CHINESE_SEASON.findAll(name)) parseNumber(match.groupValues[1])?.let(::add)
+        for (match in TitleForms.CHINESE_SEASON.findAll(name)) parseNumber(match.groupValues[1])?.let(::add)
         for (match in SEASON_WORD.findAll(name)) add(match.groupValues[1].toInt())
-        for (match in ORDINAL_SEASON.findAll(name)) add(match.groupValues[1].toInt())
-        for (match in ROMAN_SEASON.findAll(name)) add(ROMAN_NUMERALS.getValue(match.groupValues[1]))
+        for (match in TitleForms.ORDINAL_SEASON.findAll(name)) add(match.groupValues[1].toInt())
+        for (match in TitleForms.ROMAN_SEASON.findAll(name)) add(ROMAN_NUMERALS.getValue(match.groupValues[1]))
         for (match in SEASON_CODE.findAll(name)) add(match.groupValues[1].toInt())
     }
 
@@ -112,47 +130,11 @@ internal object DriveNameParser {
      */
     fun parseSubjectSeason(subjectName: String): Int? = parseExplicitSeason(subjectName)
 
-    /**
-     * 去掉季标记与副标题后的主标题, 用作搜索关键词. 例如 `无职转生 第三季 ～到了异世界就拿出真本事～` 得到 `无职转生`.
-     */
-    fun baseTitle(subjectName: String): String {
-        var name = subjectName
-        for (regex in SEASON_MARKERS) {
-            val match = regex.find(name) ?: continue
-            val before = name.substring(0, match.range.first).trim()
-            name = if (before.length >= 2) before else name.removeRange(match.range)
-        }
-        // 副标题前面那段太短时 (`Re:ゼロから始める…` 的 `Re`) 不能单独当标题
-        val first = SUBTITLE_SEPARATOR.split(name).first()
-        val main = if (normalize(first).length >= 3) first else name
-        return main.trim().trim(*TRIM_CHARS)
-    }
-
-    /**
-     * 去掉季标记 (`第二季`, `Season 2`, `2nd Season`, `Ⅱ`), 其余原样保留.
-     */
-    fun withoutSeasonMarkers(name: String): String =
-        SEASON_MARKERS.fold(name) { acc, regex -> regex.replace(acc, " ") }
-
-    /**
-     * 用于比较的名字: 转简体、转小写, 只留字母数字与汉字假名.
-     * `Smoking.Behind.the.Supermarket` 与 `Smoking Behind the Supermarket` 得到同一个结果.
-     */
-    fun normalize(name: String): String =
-        name.toSimplifiedChinese().lowercase().filter { it.isLetterOrDigit() }
-
-    /**
-     * 名字里装饰用的符号换成空格, 字一个不删: 全角与长破折号 (`浪客剑心 －明治剑客浪漫谭－ 京都动乱`)、紧挨着中日文的半角连字符
-     * (`死神 千年血战篇-祸进谭`)、`【】『』「」`. 分享站按标题原样找, 标题里很少照抄这些符号.
-     * 英文里的 `:` `/` `-` 不动 (`Re:Zero`、`Fate/strange Fake`、`Kaguya-sama`): 标题里常原样写着.
-     */
-    fun withoutDecorations(name: String): String = DECORATION.replace(name, " ").replace(SPACES, " ").trim()
-
     private fun parseExplicitSeason(name: String, roman: Boolean = true): Int? {
-        CHINESE_SEASON.find(name)?.let { match -> parseNumber(match.groupValues[1])?.let { return it } }
-        ENGLISH_SEASON.find(name)?.let { return it.groupValues[1].toInt() }
-        ORDINAL_SEASON.find(name)?.let { return it.groupValues[1].toInt() }
-        if (roman) ROMAN_SEASON.find(name)?.let { return ROMAN_NUMERALS.getValue(it.groupValues[1]) }
+        TitleForms.CHINESE_SEASON.find(name)?.let { match -> parseNumber(match.groupValues[1])?.let { return it } }
+        TitleForms.ENGLISH_SEASON.find(name)?.let { return it.groupValues[1].toInt() }
+        TitleForms.ORDINAL_SEASON.find(name)?.let { return it.groupValues[1].toInt() }
+        if (roman) TitleForms.ROMAN_SEASON.find(name)?.let { return ROMAN_NUMERALS.getValue(it.groupValues[1]) }
         return null
     }
 
@@ -165,13 +147,21 @@ internal object DriveNameParser {
         .filterNot { NOT_SEASON_BEFORE_ROMAN.containsMatchIn(name.substring(0, it.range.first)) }
         .mapTo(HashSet()) { FOLDER_ROMAN_NUMERALS.getValue(it.value.trim()) }
 
-    /** 名字写明的作品类别. 条目本身不是这一类时, 网盘里写着它的文件夹与文件不是条目的正片 (见 [DriveSubjectMatcher.matchEpisodes]). */
-    enum class WorkKind { MOVIE, SPIN_OFF, OVA }
+    /**
+     * 名字写明的作品类别. 条目本身不是这一类时, 网盘里写着它的文件夹与文件不是条目的正片 (见 [DriveSubjectMatcher.matchEpisodes]).
+     * [inCollections]: 合集的名字 ([isCollectionName]) 写着它也算. 剧场版、外传、OVA、真人版常与正片放在一个合集里; 短剧不是动画,
+     * 不与动画放在一起 (分享站上的「短剧更新汇总」列着几十部短剧, 条目名常是其中一部名字的一段: 「新婚夜和夫君间谍过家家」).
+     */
+    enum class WorkKind(val inCollections: Boolean = false) { MOVIE, SPIN_OFF, OVA, LIVE_ACTION, SHORT_DRAMA(inCollections = true) }
 
-    fun workKindsOf(name: String): Set<WorkKind> = buildSet {
+    fun workKindsOf(text: String): Set<WorkKind> = buildSet {
+        // 分享里常在字间插竖线防屏蔽 (「海丨贼丨王丨真丨人丨版」)
+        val name = OBFUSCATION.replace(text, "")
         if (MOVIE_MARKER.containsMatchIn(name)) add(WorkKind.MOVIE)
         if (SPIN_OFF_MARKER.containsMatchIn(name)) add(WorkKind.SPIN_OFF)
         if (OVA_MARKER.containsMatchIn(name)) add(WorkKind.OVA)
+        if (NotAnimeMarkers.isLiveAction(name)) add(WorkKind.LIVE_ACTION)
+        if (NotAnimeMarkers.isShortDrama(name)) add(WorkKind.SHORT_DRAMA)
     }
 
     /** 合集的名字 (「TV+剧场版」「1-4季全」「XX 系列合集」): 写着剧场版也可能装着正片. */
@@ -243,11 +233,6 @@ internal object DriveNameParser {
                 """|预告|花絮|片头曲?|片尾曲?|特典映像|映像特典""",
     )
 
-    // `第2部分` 是同一季的下半, 不是季
-    private val CHINESE_SEASON = Regex("""第\s*([0-9]{1,2}|[一二两三四五六七八九十]{1,3})\s*[季期部](?!分)""")
-    private val ENGLISH_SEASON = Regex("""(?i)(?<![a-z])season[ ._-]*(\d{1,2})(?![0-9])""")
-    private val ORDINAL_SEASON = Regex("""(?i)(?<![0-9])(\d{1,2})(?:st|nd|rd|th)[ ._-]*season""")
-    private val ROMAN_SEASON = Regex("""(?<![A-Za-z])(Ⅱ|Ⅲ|Ⅳ|Ⅴ|Ⅵ|III|II)(?![A-Za-z])""")
 
     private val FOLDER_ROMAN_NUMERALS = mapOf(
         "Ⅰ" to 1, "Ⅱ" to 2, "Ⅲ" to 3, "Ⅳ" to 4, "Ⅴ" to 5, "Ⅵ" to 6,
@@ -259,10 +244,11 @@ internal object DriveNameParser {
     private val MOVIE_MARKER = Regex("""剧场版|劇場版|电影版|電影版|映画|gekijou-?ban|(?<![A-Za-z])movie(?![A-Za-z])""", RegexOption.IGNORE_CASE)
     private val SPIN_OFF_MARKER = Regex("""外传|外傳|(?<![A-Za-z])gaiden(?![A-Za-z])""", RegexOption.IGNORE_CASE)
     private val OVA_MARKER = Regex("""(?<![A-Za-z])(?:OVA|OAD)(?![A-Za-z])""", RegexOption.IGNORE_CASE)
+    private val OBFUSCATION = Regex("""(?<=\p{L})[丨｜](?=\p{L})""")
     private val COLLECTION = Regex("""合集|全集|全季|系列|[+＋&＆]|附|\d\s*[-~～至]\s*\d""")
     private val FOLDER_SEASON_CODE = Regex("""(?<![A-Za-z0-9])[Ss](\d{1,2})(?![0-9Ee])""")
 
-    /** 标题里的 `Season 3`. 与 [ENGLISH_SEASON] 不同, 不跨过 ` - `: 发布标题里 `2nd Season - 01` 的 01 是集号. */
+    /** 标题里的 `Season 3`. 与 [TitleForms.ENGLISH_SEASON] 不同, 不跨过 ` - `: 发布标题里 `2nd Season - 01` 的 01 是集号. */
     private val SEASON_WORD = Regex("""(?i)(?<![a-z])season[ ._]?(\d{1,2})(?![0-9])""")
 
     /** 标题里的 `S03` 或 `S03E01` 的季. */
@@ -270,8 +256,8 @@ internal object DriveNameParser {
 
     private val SINGLE_SEASON_MARKERS = listOf(
         Regex("""第\s*([0-9]{1,2}|[一二两三四五六七八九十]{1,3})\s*[季期](?!分)"""),
-        ENGLISH_SEASON,
-        ORDINAL_SEASON,
+        TitleForms.ENGLISH_SEASON,
+        TitleForms.ORDINAL_SEASON,
         FOLDER_SEASON_CODE,
     )
 
@@ -280,13 +266,14 @@ internal object DriveNameParser {
 
     private val TRAILING_DIGIT_AFTER_CJK = Regex("""[一-鿿]\s*([2-9])$""")
 
-    private val SEASON_MARKERS = listOf(CHINESE_SEASON, ENGLISH_SEASON, ORDINAL_SEASON, ROMAN_SEASON)
-    private val SUBTITLE_SEPARATOR = Regex("""\s*[～~:：｜|]\s*|\s+[-–—]\s+""")
-    private val TRIM_CHARS = charArrayOf(' ', '-', '_', '.', '·', '!', '！', '?', '？')
 
+    /** 视频编码、音频编码与声道 */
+    private val CODEC = Regex(
+        """(?<![0-9])(?:[HhXx]\.?|×)26[45](?![0-9])""" +
+                """|(?<![A-Za-z0-9])(?:AV1|VP9|(?:DDP?|EAC3|AC3|AAC|DTS(?:-HD)?(?:[ .]?MA)?|TrueHD|FLAC|Atmos)[ .]?[2-7]\.[01](?:ch)?|[2-7]\.[01][ .]?ch)(?![0-9])""",
+        RegexOption.IGNORE_CASE,
+    )
     private val COPY_SUFFIX = Regex("""\s*[(（]\d{1,2}[)）]$""")
-    private val DECORATION = Regex("""[－—–]|(?<=[一-鿿ぁ-ヿ\s])-|-(?=[一-鿿ぁ-ヿ])|[【】『』「」]""")
-    private val SPACES = Regex("""\s+""")
     private val BRACKETED = Regex("""\[[^\]]*]|【[^】]*】|\([^)]*\)|（[^）]*）""")
     private val STANDALONE_NUMBER = Regex("""(?<![0-9A-Za-z])(\d{1,3})(?:[vV]\d)?(?![0-9A-Za-z])""")
 
