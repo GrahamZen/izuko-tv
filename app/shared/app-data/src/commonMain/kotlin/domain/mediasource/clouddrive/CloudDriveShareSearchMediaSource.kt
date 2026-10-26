@@ -40,9 +40,13 @@ import me.him188.ani.app.domain.mediasource.directapi.ResponseFormat
 import me.him188.ani.app.domain.mediasource.directapi.parseResponse
 import me.him188.ani.app.domain.mediasource.directapi.selectByPath
 import me.him188.ani.app.domain.mediasource.directapi.stringByPath
+import me.him188.ani.app.domain.mediasource.search.KeywordKind
+import me.him188.ani.app.domain.mediasource.search.KeywordStyle
+import me.him188.ani.app.domain.mediasource.search.SearchKeyword
 import me.him188.ani.app.domain.mediasource.search.SubjectSearchPlan
 import me.him188.ani.app.domain.foundation.overrideUserAgent
 import me.him188.ani.app.domain.foundation.sourceRequestUserAgent
+import me.him188.ani.app.domain.mediasource.search.TitleForms
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.paging.SinglePagePagedSource
@@ -50,7 +54,6 @@ import me.him188.ani.datasources.api.paging.SizedSource
 import me.him188.ani.datasources.api.source.ConnectionStatus
 import me.him188.ani.datasources.api.source.FactoryId
 import me.him188.ani.datasources.api.source.MatchKind
-import me.him188.ani.datasources.api.source.MediaFetchNameHints
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import me.him188.ani.datasources.api.source.MediaMatch
 import me.him188.ani.datasources.api.source.MediaSource
@@ -204,9 +207,8 @@ internal class DriveShareSearchEngine(
         identity: DriveSubjectIdentity?,
         deliver: suspend (List<DriveShareMatch>) -> Unit,
     ): List<DriveShareMatch> {
-        val keywords = DriveSubjectMatcher.keywordsOf(DriveSubjectMatcher.subjectNamesOf(request))
-            .map { DriveNameParser.normalize(it) }
-            .filter { it.length >= 2 }
+        val keywords = SubjectSearchPlan.of(request).keywords(KeywordStyle.literal(DriveSubjectMatcher.NAME_KEYWORDS)).primary
+            .map { TitleForms.compact(it.keyword) }
         if (keywords.isEmpty()) return emptyList()
         val semaphore = Semaphore(SHARE_CONCURRENCY)
         val indexed = coroutineScope {
@@ -226,7 +228,7 @@ internal class DriveShareSearchEngine(
             hits.any { (other, outer) -> other.shareId == link.shareId && outer !== folder && folder.path.size > outer.path.size && folder.path.take(outer.path.size) == outer.path }
         }.take(MAX_FIXED_FOLDERS)
         logger.info { "Fixed shares: ${selected.size} folders for ${keywords.first()}: ${selected.map { it.second.path.joinToString("/") }}" }
-        val skipFolders = reader.otherSeasonFolders(request, identity)
+        val skipFolders = reader.subjectSeason(request, identity).otherSeasonFolders()
         return coroutineScope {
             selected.map { (link, folder) ->
                 async {
@@ -289,11 +291,11 @@ internal class DriveShareSearchEngine(
     // region 站点搜索
 
     /**
-     * 站点搜到的分享; 每读完一个分享就把认出的剧集交给 [deliver]. 关键词依次试:
-     * 1. 条目名 (主标题, 最多 [DriveShareSearchConfig.maxKeywords] 个): 前一个名字找到了分享就不再换名字搜, 这类站连着搜几次就会回 5xx.
-     *    站点按标题原样找: 原样搜不到时先去掉装饰符号 ([DriveNameParser.withoutDecorations]), 再去掉中日文之间的空格
-     *    ([SubjectSearchPlan.withoutSpacesBetweenCjk]: 「继 怪怪守护神」搜不到「继怪怪守护神」), 然后才轮到下一个名字.
-     * 2. 认出的剧集没覆盖条目的每一集时, 再搜这一部的副标题与系列名 (共 [MAX_WIDER_SEARCHES] 次, 覆盖了就停): 只写副标题
+     * 站点搜到的分享; 每读完一个分享就把认出的剧集交给 [deliver]. 关键词来自搜索计划 ([SubjectSearchPlan.keywords], 按标题原样找的排法
+     * [KeywordStyle.literal]), 这样走:
+     * 1. 条目名的主标题 (最多 [DriveShareSearchConfig.maxKeywords] 个): 前一个名字找到了分享就不再换名字搜, 这类站连着搜几次就会回 5xx.
+     *    一个名字原样搜不到时先换它的写法 ([KeywordKind.WRITING]: 去掉装饰符号、中日文之间的空格) 再搜, 然后才轮到下一个名字.
+     * 2. 认出的剧集没覆盖条目的每一集时, 依次再搜副标题、系列名与别的叫法 (共 [MAX_WIDER_SEARCHES] 次, 覆盖了就停): 只写副标题
      *    (「辉夜大小姐想让我告白：究极浪漫」) 或系列名加季 (「物理魔法使马修第二季」) 的分享按条目名搜不到, 也常更全 (「京都动乱第二季 更46」).
      *    这样搜到的多是整个系列的合集, 里面的文件照样按路径认部 ([DrivePathAttribution]), 认不出是这一部的不要.
      * 每个词搜到的分享按站点剧名写的季排先后 ([bySeason]), 打开前 [DriveShareSearchConfig.maxShares] 个; 打开过的分享不再打开.
@@ -303,23 +305,27 @@ internal class DriveShareSearchEngine(
         identity: DriveSubjectIdentity?,
         deliver: suspend (List<DriveShareMatch>) -> Unit,
     ) {
-        val names = DriveSubjectMatcher.keywordsOf(DriveSubjectMatcher.subjectNamesOf(request)).take(config.maxKeywords.coerceAtLeast(1))
-        if (names.isEmpty() || config.searchUrl.isBlank()) return
-        val season = reader.subjectSeason(request, identity)?.number ?: 1
-        val skipFolders = reader.otherSeasonFolders(request, identity)
+        val keywords = SubjectSearchPlan.of(request).keywords(
+            KeywordStyle.literal(config.maxKeywords.coerceAtLeast(1)),
+            subtitles = identity?.parts?.keywords.orEmpty(),
+        )
+        if (keywords.primary.isEmpty() || config.searchUrl.isBlank()) return
+        val subjectSeason = reader.subjectSeason(request, identity)
+        val season = subjectSeason.matchingNumber
+        val skipFolders = subjectSeason.otherSeasonFolders()
         val opened = HashSet<String>()
         val matches = ArrayList<DriveShareMatch>()
         var searches = 0
 
-        /** 搜 [keyword], 打开剧名对得上 ([accepts]) 的分享; 搜到了没打开过的分享时为 true. */
-        suspend fun searchAndRead(keyword: String, accepts: (String) -> Boolean): Boolean {
+        /** 搜 [keyword], 打开剧名对得上的分享; 搜到了没打开过的分享时为 true. */
+        suspend fun searchAndRead(keyword: SearchKeyword): Boolean {
             // 网页站 (苹果 CMS 模板) 默认要求两次搜索隔 3 秒, 挨着搜只会拿到「系统提示」页
             if (searches++ > 0 && config.detailLinkSelector.isNotBlank()) delay(PAGE_SEARCH_INTERVAL)
-            val found = searchSite(keyword, identity, accepts).filter { it.shareId !in opened }
+            val found = searchSite(keyword, identity).filter { it.shareId !in opened }
             if (found.isEmpty()) return false
             val selected = bySeason(found, season).take(config.maxShares.coerceAtLeast(1))
             opened += selected.map { it.shareId }
-            logger.info { "Share search 「$keyword」: opening ${selected.size} of ${found.size} shares" }
+            logger.info { "Share search 「${keyword.keyword}」: opening ${selected.size} of ${found.size} shares" }
             val semaphore = Semaphore(SHARE_CONCURRENCY)
             matches += coroutineScope {
                 selected.map { share ->
@@ -329,30 +335,15 @@ internal class DriveShareSearchEngine(
             return true
         }
 
-        names@ for (name in names) {
-            val plain = DriveNameParser.withoutDecorations(name)
-            for (attempt in listOf(name, plain, SubjectSearchPlan.withoutSpacesBetweenCjk(plain)).distinct()) {
-                if (searchAndRead(attempt, keywordMatcher(name))) break@names
+        names@ for (name in keywords.primary) {
+            for (keyword in listOf(name) + keywords.writingsOf(name)) {
+                if (searchAndRead(keyword)) break@names
             }
         }
-        val searchedNames = names.mapTo(HashSet()) { DriveNameParser.normalize(it) }
-        val wider = widerKeywords(request, identity)
-            .filter { (keyword, _) -> DriveNameParser.normalize(keyword) !in searchedNames }
-            .take(MAX_WIDER_SEARCHES)
-        for ((keyword, accepts) in wider) {
+        for (keyword in keywords.wider.take(MAX_WIDER_SEARCHES)) {
             if (coversAllEpisodes(matches, request)) break
-            searchAndRead(keyword, accepts)
+            searchAndRead(keyword)
         }
-    }
-
-    /**
-     * 条目名搜完还没覆盖每一集时再搜的词, 依次: 第一个副标题 (剧名要同时有系列名与这一部的副标题, 见 [DriveSeriesParts.acceptsTitle])、
-     * 最长的系列名 ([MediaFetchNameHints.seriesNames])、其余副标题.
-     */
-    private fun widerKeywords(request: MediaFetchRequest, identity: DriveSubjectIdentity?): List<Pair<String, (String) -> Boolean>> {
-        val subtitles = identity?.parts?.let { parts -> parts.keywords.map { it to parts::acceptsTitle } }.orEmpty()
-        val series = request.nameHints.seriesNames.maxByOrNull { it.length }?.let { listOf(it to keywordMatcher(it)) }.orEmpty()
-        return subtitles.take(1) + series + subtitles.drop(1)
     }
 
     /** [matches] 覆盖了条目的每一集正片 (sort 或 ep 对得上). */
@@ -375,7 +366,7 @@ internal class DriveShareSearchEngine(
         val share = FoundShare(location.shareId, location.passcode, location.siteTitle)
         val videos = try {
             folderReader.readFolder(
-                location.shareId, location.passcode, location.folderId, location.path, reader.otherSeasonFolders(request, identity),
+                location.shareId, location.passcode, location.folderId, location.path, reader.subjectSeason(request, identity).otherSeasonFolders(),
             )
         } catch (e: CancellationException) {
             throw e
@@ -390,20 +381,20 @@ internal class DriveShareSearchEngine(
     }
 
     /**
-     * 搜一个关键词, 返回剧名对得上 ([accepts]) 的结果里的全部分享链接. 给了 [identity] 时剧名点名了别的作品的不要
-     * (「机动战士高达SEED」不是「机动战士高达」, 见 [DriveSubjectIdentity.rejectsTitle]).
+     * 搜一个关键词, 返回剧名对得上的结果里的全部分享链接: 按副标题搜的要同时有系列名与这一部的副标题 ([DriveSeriesParts.acceptsTitle]),
+     * 别的要含着这个词 ([titleMatches]); 给了 [identity] 时剧名点名了别的作品的不要 (「机动战士高达SEED」不是「机动战士高达」,
+     * 见 [DriveSubjectIdentity.rejectsTitle]).
      */
-    internal suspend fun searchSite(
-        keyword: String,
-        identity: DriveSubjectIdentity? = null,
-        accepts: (String) -> Boolean = keywordMatcher(keyword),
-    ): List<FoundShare> {
-        val url = TextTemplate.expand(config.searchUrl, mapOf("keyword" to keyword)) { true }
+    internal suspend fun searchSite(keyword: SearchKeyword, identity: DriveSubjectIdentity? = null): List<FoundShare> {
+        val url = TextTemplate.expand(config.searchUrl, mapOf("keyword" to keyword.keyword)) { true }
         val bytes = fetch(url) ?: return emptyList()
+        val parts = identity?.parts
+        val normalizedKeyword = TitleForms.compact(keyword.keyword)
         val rejected = mutableListOf<String>()
         fun acceptsTitle(title: String): Boolean {
-            if (!accepts(title)) return false
-            if (identity?.rejectsTitle(title) == true) {
+            val matches = if (keyword.kind == KeywordKind.SUBTITLE && parts != null) parts.acceptsTitle(title) else titleMatches(title, normalizedKeyword)
+            if (!matches) return false
+            if (identity?.rejectsTitle(title, keyword.keyword) == true) {
                 rejected += title
                 return false
             }
@@ -415,7 +406,7 @@ internal class DriveShareSearchEngine(
             searchApi(bytes, ::acceptsTitle)
         }
         if (rejected.isNotEmpty()) {
-            logger.info { "Share search: ${rejected.size} titles of other works dropped for $keyword, e.g. ${rejected.take(LOGGED_REJECTED)}" }
+            logger.info { "Share search: ${rejected.size} titles of other works dropped for ${keyword.keyword}, e.g. ${rejected.take(LOGGED_REJECTED)}" }
         }
         return found
     }
@@ -482,7 +473,7 @@ internal class DriveShareSearchEngine(
         /** 日志里列几个被当成别的作品去掉的标题 */
         private const val LOGGED_REJECTED = 3
 
-        /** 条目名搜完还没覆盖每一集时, 最多再按副标题、系列名搜几次 */
+        /** 条目名搜完还没覆盖每一集时, 最多再按副标题、系列名、别的叫法搜几次 */
         private const val MAX_WIDER_SEARCHES = 3
 
         /** 搜索结果是网页时, 最多打开几个详情页. */
@@ -508,7 +499,7 @@ internal class DriveShareSearchEngine(
         private val WORD_SEPARATOR = Regex("""[\s\[\]【】()（）\-_.·・/!！:：,，]+""")
 
         /** 合集里的文件夹名去掉前面的序号与画质标记后归一化, 用来认「完全同名」. */
-        fun folderTitle(folderName: String): String = DriveNameParser.normalize(FOLDER_LEADING_TAGS.replace(folderName, ""))
+        fun folderTitle(folderName: String): String = TitleForms.compact(FOLDER_LEADING_TAGS.replace(folderName, ""))
 
         /**
          * 合集里的文件夹是不是这个番: 番名不短时同 [titleMatches]; 短的 (不到 4 个字, 如「日常」「Air」) 只认整个词,
@@ -517,13 +508,7 @@ internal class DriveShareSearchEngine(
         fun folderMatches(folderName: String, normalizedKeyword: String): Boolean {
             if (normalizedKeyword.length >= 4) return titleMatches(folderName, normalizedKeyword)
             return folderTitle(folderName) == normalizedKeyword ||
-                    WORD_SEPARATOR.split(folderName).any { DriveNameParser.normalize(it) == normalizedKeyword }
-        }
-
-        /** 剧名对得上关键词 [keyword] ([titleMatches]). */
-        fun keywordMatcher(keyword: String): (String) -> Boolean {
-            val normalized = DriveNameParser.normalize(keyword)
-            return { title -> titleMatches(title, normalized) }
+                    WORD_SEPARATOR.split(folderName).any { TitleForms.compact(it) == normalizedKeyword }
         }
 
         /**
@@ -532,9 +517,9 @@ internal class DriveShareSearchEngine(
          */
         fun titleMatches(title: String, normalizedKeyword: String): Boolean {
             if (normalizedKeyword.length < 2) return false
-            val normalizedTitle = DriveNameParser.normalize(title)
+            val normalizedTitle = TitleForms.compact(title)
             if (normalizedTitle.contains(normalizedKeyword)) return true
-            val base = DriveNameParser.normalize(DriveNameParser.baseTitle(title))
+            val base = TitleForms.compact(TitleForms.mainTitle(title))
             return base.length >= 2 && normalizedKeyword.contains(base)
         }
 

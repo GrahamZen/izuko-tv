@@ -12,6 +12,7 @@ package me.him188.ani.app.domain.mediasource.clouddrive
 import io.ktor.http.decodeURLQueryComponent
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
+import me.him188.ani.app.domain.mediasource.search.TitleForms
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import kotlin.test.Test
@@ -229,7 +230,7 @@ class CloudDriveShareSearchTest {
                 "tv" to mapOf(TestDrive.SHARE_ROOT to listOf(video("tv01", "01.mp4"))),
             ),
         )
-        val identity = DriveSubjectIdentity(ownNames = listOf("机动战士高达"), otherWorkNames = listOf("机动战士高达seed"), firstWorkAirYear = 1979)
+        val identity = DriveSubjectIdentity(ownNames = listOf("机动战士高达"), otherWorkNames = listOf("机动战士高达seed"), airYear = 1979)
         val engine = DriveShareSearchEngine(config, shares, links, identities = DriveSubjectIdentities { identity }) { response.encodeToByteArray() }
 
         val matched = engine.search(request("机动战士高达"))
@@ -241,7 +242,7 @@ class CloudDriveShareSearchTest {
     @Test
     fun `a lineage share folder of another work is dropped`() = runTest {
         val shares = shares(mapOf("seed" to mapOf("f" to listOf(video("seed01", "01.mp4")))))
-        val identity = DriveSubjectIdentity(ownNames = listOf("机动战士高达"), otherWorkNames = listOf("机动战士高达seed"), firstWorkAirYear = 1979)
+        val identity = DriveSubjectIdentity(ownNames = listOf("机动战士高达"), otherWorkNames = listOf("机动战士高达seed"), airYear = 1979)
         val engine = DriveShareSearchEngine(config, shares, links, identities = DriveSubjectIdentities { identity }) { null }
         val seed = DriveShareLocation("seed", "", "机动战士高达SEED DESTINY HD重制 (2013)", "f", listOf("【动漫】机动战士高达SEED DESTINY HD重制 (2013)"))
 
@@ -252,7 +253,7 @@ class CloudDriveShareSearchTest {
 
     @Test
     fun `title matching`() {
-        val keyword = DriveNameParser.normalize("葬送的芙莉莲")
+        val keyword = TitleForms.compact("葬送的芙莉莲")
         assertTrue(DriveShareSearchEngine.titleMatches("葬送的芙莉莲第二季", keyword))
         assertTrue(DriveShareSearchEngine.titleMatches("葬送的芙莉莲", keyword))
         assertFalse(DriveShareSearchEngine.titleMatches("别的番", keyword))
@@ -376,7 +377,7 @@ class CloudDriveShareSearchTest {
 
     @Test
     fun `folder title drops leading index and quality tags`() {
-        val frieren = DriveNameParser.normalize("葬送的芙莉莲")
+        val frieren = TitleForms.compact("葬送的芙莉莲")
         assertEquals(frieren, DriveShareSearchEngine.folderTitle("A 4k 葬送的芙莉莲"))
         assertEquals(frieren, DriveShareSearchEngine.folderTitle("1080p 葬送的芙莉莲"))
         assertTrue(DriveShareSearchEngine.folderMatches("A 4k 葬送的芙莉莲", frieren))
@@ -384,11 +385,11 @@ class CloudDriveShareSearchTest {
         assertTrue(DriveShareSearchEngine.folderMatches("葬送的芙莉莲 第二季", frieren))
         assertFalse(DriveShareSearchEngine.folderMatches("别的番", frieren))
         // 短番名只认整个词
-        val nichijou = DriveNameParser.normalize("日常")
+        val nichijou = TitleForms.compact("日常")
         assertTrue(DriveShareSearchEngine.folderMatches("日常", nichijou))
         assertTrue(DriveShareSearchEngine.folderMatches("[TV] 日常 BD", nichijou))
         assertFalse(DriveShareSearchEngine.folderMatches("男子高中生的日常", nichijou))
-        val air = DriveNameParser.normalize("Air")
+        val air = TitleForms.compact("Air")
         assertTrue(DriveShareSearchEngine.folderMatches("[2005] AIR 1080p", air))
         assertFalse(DriveShareSearchEngine.folderMatches("Fairy Tail", air))
     }
