@@ -90,7 +90,7 @@ data class VideoEnhancementFallbackEvent(
 )
 
 /**
- * 增强控制器自己关掉增强之后在这里报一次; 页面据此把「默认画质增强」写回关闭并提示 (电视: ui-tv 的 `TvVideoEnhancementFallback`).
+ * 增强控制器自己关掉增强之后在这里报一次; 应用据此把「默认画质增强」写回关闭并告知用户 (`VideoEnhancementFallbackSetting`).
  */
 object VideoEnhancementFallback {
     private val _events = MutableSharedFlow<VideoEnhancementFallbackEvent>(extraBufferCapacity = 1)
