@@ -431,7 +431,7 @@ private class LocalHlsProxySession private constructor(
         val path = request.path
         val segment = synchronized(routesLock) { segmentRoutes[path] }
         if (segment != null) {
-            serveSegment(segment, request, output)
+            diagServeSegment(segment.index, request, output) { serveSegment(segment, request, it) }
             return
         }
         val content = try {

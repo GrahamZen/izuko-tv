@@ -44,6 +44,7 @@ actual fun VideoPlayer(
     check(player is AVKitMediampPlayer) { "MediampPlayer in iOS must be AVKitMediampPlayer, but got $player" }
 
     val avPlayer = player.impl
+    IpadPlayerItemLogDiag(avPlayer)
     val aspectRatioMode by produceState(AspectRatioMode.FIT) {
         val feature = player.features[VideoAspectRatio.Key] ?: return@produceState
         feature.mode.collect { value = it }
