@@ -48,8 +48,8 @@ data class EpisodeInfo(
     val imageMedium: String? = null,
     /** TMDB 原尺寸剧照 (通常 1920×1080) 的公开 CDN 直链. 没有剧照时为 `null`. */
     val imageLarge: String? = null,
-//    /** 服务器解析的时长，无法解析时为 `0` */
-//    val durationSeconds: Int? = null
+    /** Bangumi 记的这一集的时长 (秒); 没填为 `null`. 选源时用它认出时长对不上的资源 (同名的剧场版、真人电影、短剧) */
+    val durationSeconds: Int? = null,
 ) {
     override fun toString(): String {
         return "EpisodeInfo(episodeId=$episodeId, nameCn='$nameCn', sort=$sort)"

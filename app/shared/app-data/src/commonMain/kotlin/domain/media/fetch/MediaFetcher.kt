@@ -149,6 +149,7 @@ fun MediaFetchRequest.Companion.create(
                 ep = it.ep,
                 name = it.displayName,
                 airDate = it.airDate,
+                durationSeconds = it.durationSeconds,
             )
         },
         fallbackSearchKeywords = computeFallbackSearchKeywords(
