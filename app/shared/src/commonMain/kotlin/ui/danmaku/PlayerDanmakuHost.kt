@@ -18,7 +18,10 @@ import kotlinx.coroutines.withContext
 import me.him188.ani.danmaku.ui.DanmakuHost
 import me.him188.ani.danmaku.ui.DanmakuHostState
 import me.him188.ani.danmaku.ui.DanmakuPresentation
+import me.him188.ani.utils.platform.currentPlatform
+import me.him188.ani.utils.platform.isAndroid
 import org.openani.mediamp.MediampPlayer
+import kotlin.coroutines.EmptyCoroutineContext
 
 /**
  * A [DanmakuHost] that is connected with the [player].
@@ -37,9 +40,10 @@ fun PlayerDanmakuHost(
             danmakuHostState.setPaused(!it.isPlaying)
         }
     }
-    // 在后台收: 每条弹幕的排版与生成图都在调用方线程做, 只有放进轨道那一步切回主线程 (见 DanmakuHostState.trySend)
+    // 安卓上在后台收: 每条弹幕的排版与生成图都在调用方线程做, 只有放进轨道那一步切回主线程 (见 DanmakuHostState.trySend).
+    // iOS / 桌面的文字排版是 Skia 的, 它的段落样式缓存不能多线程同时用 (后台量弹幕与主线程排界面文字撞上就抛 ConcurrentModificationException), 留在主线程
     LaunchedEffect(danmakuEvent, danmakuHostState) {
-        withContext(Dispatchers.Default) {
+        withContext(if (currentPlatform().isAndroid()) Dispatchers.Default else EmptyCoroutineContext) {
         danmakuEvent.collect { event ->
             when (event) {
                 is UIDanmakuEvent.Add -> {
