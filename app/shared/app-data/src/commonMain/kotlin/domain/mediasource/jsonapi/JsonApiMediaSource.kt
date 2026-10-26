@@ -30,6 +30,10 @@ import me.him188.ani.app.domain.mediasource.codec.DontForgetToRegisterCodec
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceArguments
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceTier
 import me.him188.ani.app.domain.mediasource.keywordSearchChain
+import me.him188.ani.app.domain.mediasource.search.SiteSearchMemory
+import me.him188.ani.app.domain.mediasource.search.SubjectMatch
+import me.him188.ani.app.domain.mediasource.search.SubjectSearchPlan
+import me.him188.ani.app.domain.mediasource.search.keywordStyle
 import me.him188.ani.app.domain.mediasource.latestAiredEpisode
 import me.him188.ani.app.domain.mediasource.rememberedKeywords
 import me.him188.ani.app.domain.mediasource.web.SelectorSearchConfig
@@ -427,18 +431,18 @@ class JsonApiMediaSource(
         val freshnessProbe = query.latestAiredEpisode()?.let { Probe(it.sort, it.ep, it.name) }
             ?: Probe(query.episodeSort, query.episodeEp, query.episodeName)
 
-        val primary = query.subjectNames.take(autoMatch.searchUseSubjectNamesCount.coerceAtLeast(1))
-        val fallback = distinctFallbackKeywords(primary, query.fallbackSearchKeywords)
-        val remembered = repository.rememberedKeywords(subjectId, mediaSourceId, primary + fallback, logger)
+        val plan = SubjectSearchPlan.of(query)
+        val keywords = plan.keywords(autoMatch.keywordStyle(), mediaSourceId)
+        val remembered = repository.rememberedKeywords(subjectId, mediaSourceId, keywords.primaryNames + keywords.fallbackNames, logger)
         return keywordSearchChain(
-            primary, fallback, remembered,
+            keywords.primaryNames, keywords.fallbackNames, remembered,
             requestInterval = searchConfig.requestInterval,
-            matches = { media -> media.any { it.subjectNameMatches(filterContext) } },
+            matches = plan::foundOwn,
         ) { name ->
             searchFromCacheOrNull(subjectId, name, freshnessProbe, filterContext)
                 ?: run {
                     beforeOnlineSearch()
-                    searchOnline(subjectId, name, filterContext)
+                    searchOnline(subjectId, name, keywords.keywordOf(name), plan, freshnessProbe, filterContext)
                 }
         }.map { MediaMatch(it, MatchKind.FUZZY) }
     }
@@ -446,25 +450,30 @@ class JsonApiMediaSource(
     private class Probe(val episodeSort: EpisodeSort, val episodeEp: EpisodeSort?, val episodeName: String?)
 
     /**
-     * 搜索一个关键词, 取所有名字能对上请求条目的条目的全部剧集. 名字对不上的条目选择器也会排除, 不值得为它们请求剧集.
-     * 结果写入搜索缓存.
+     * 向站点搜 [keyword] (搜索计划改写好的词), 取可能是这一部的条目 ([SubjectSearchPlan.pagesToOpen], 站点给的别名也看) 的全部剧集.
+     * 不是这一部的条目选择器也会排除, 不值得为它们请求剧集. 结果写入搜索缓存; 站点回应先查跨条目共用的记忆 ([SiteSearchMemory]).
      */
     private suspend fun searchOnline(
         subjectId: Int?,
         subjectName: String,
+        keyword: String,
+        plan: SubjectSearchPlan,
+        probe: Probe,
         filterContext: MediaListFilterContext,
     ): List<DefaultMedia> {
-        val autoMatch = searchConfig.autoMatch
-        val keyword = MediaSourceEngineHelpers.getSearchKeyword(
-            subjectName, autoMatch.searchRemoveSpecial, autoMatch.searchUseOnlyFirstWord,
-        )
-        val subjects = searchSubjectsOnline(keyword)
-            .let { if (autoMatch.preferShorterName) it.sortedBy { s -> s.name.length } else it }
-            .mapNotNull { subject -> subject.withMatchingName(filterContext) }
+        val ttl = searchConfig.searchCacheTtl
+        val found = repository.siteMemory.searchResults(mediaSourceId, keyword, ttl) { searchSubjectsOnline(keyword) }.orEmpty()
+        val subjects = plan.pagesToOpen(found.map { it.withJudgedName(plan) }, searchConfig.autoMatch.preferShorterName) { it.name }
         return buildList {
             for (subject in subjects) {
                 val channels = try {
-                    loadChannels(subject)
+                    repository.siteMemory.page(
+                        mediaSourceId, subject.url, ttl,
+                        isFresh = { channels ->
+                            channels.flatMap { it.episodes }.map { it.toWebSearchEpisodeInfo() }
+                                .findMatchingEpisodeOrNull(probe.episodeSort, probe.episodeEp, probe.episodeName) != null
+                        },
+                    ) { loadChannels(subject) }.orEmpty()
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: RepositoryException) {
@@ -554,40 +563,16 @@ class JsonApiMediaSource(
     }
 
     /**
-     * 条目名或任一别名对上请求的条目名时, 返回以对上的名字为 [JsonApiSubjectInfo.name] 的条目; 都对不上为 `null`.
+     * 条目名与站点给的别名里最像这一部的 ([SubjectSearchPlan.identify]: 是这一部的先, 说不准的次之) 作 [JsonApiSubjectInfo.name] 的条目.
      *
-     * 资源与搜索缓存都用对上的名字: 选择器下游用同一判据按资源的条目名过滤, 保留站点标题会让只有别名对上的条目在那里被排除.
+     * 资源与搜索缓存都用这个名字: 选择器下游用同一判据按资源的条目名过滤, 保留站点标题会让只有别名对上的条目在那里被排除.
      */
-    private fun JsonApiSubjectInfo.withMatchingName(context: MediaListFilterContext): JsonApiSubjectInfo? {
-        val matched = (listOf(name) + aliases).firstOrNull { candidate ->
-            with(context) { MediaListFilters.ContainsSubjectName.applyOn(subjectNameCandidate(candidate)) }
-        } ?: return null
-        return if (matched == name) this else copy(name = matched)
-    }
-
-    private fun DefaultMedia.subjectNameMatches(context: MediaListFilterContext): Boolean = with(context) {
-        val media = this@subjectNameMatches
-        MediaListFilters.ContainsSubjectName.applyOn(
-            object : MediaListFilter.Candidate by media.asCandidate() {
-                override val subjectName: String get() = media.properties.subjectName ?: media.originalTitle
-            },
-        )
-    }
-
-    /**
-     * 回退关键词里去掉归一化后与主关键词或彼此相同的, 保持原顺序.
-     */
-    private fun distinctFallbackKeywords(primary: List<String>, fallback: List<String>): List<String> {
-        val autoMatch = searchConfig.autoMatch
-        fun normalize(name: String) = MediaSourceEngineHelpers.getSearchKeyword(
-            name, autoMatch.searchRemoveSpecial, autoMatch.searchUseOnlyFirstWord,
-        ).trim().lowercase()
-
-        val seen = primary.mapTo(HashSet()) { normalize(it) }
-        return fallback.filter { name ->
-            val keyword = normalize(name)
-            keyword.isNotEmpty() && seen.add(keyword)
-        }
+    private fun JsonApiSubjectInfo.withJudgedName(plan: SubjectSearchPlan): JsonApiSubjectInfo {
+        val candidates = listOf(name) + aliases
+        val best = candidates.firstOrNull { plan.identify(it) == SubjectMatch.OWN }
+            ?: candidates.firstOrNull { plan.identify(it) == SubjectMatch.MAYBE }
+            ?: return this
+        return if (best == name) this else copy(name = best)
     }
 
     // endregion
