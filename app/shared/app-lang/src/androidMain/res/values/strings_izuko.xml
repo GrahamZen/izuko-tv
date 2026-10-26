@@ -76,6 +76,7 @@
     <string name="settings_player_audio_passthrough_always">Always</string>
     <string name="settings_player_audio_passthrough_off">Off</string>
     <string name="player_disk_cache_hint">Turn on &quot;Save videos while playing&quot; to seek back without waiting</string>
+    <string name="player_video_enhancement_auto_off">This device can’t keep up with video enhancement, so it has been turned off</string>
     <string name="player_buffer_wait_start">Buffering %1$d s of this cloud drive video before playing, so it does not stall right after starting</string>
     <string name="player_buffer_wait_stall">The download is slower than this video’s bitrate, buffering %1$d s before resuming</string>
     <string name="player_buffer_wait_stall_again">The download keeps falling behind this video’s bitrate (stalled %2$d times), buffering %1$d s before resuming</string>
