@@ -28,17 +28,33 @@ import org.koin.core.component.KoinComponent
  *   已经搜得到的源不受影响. 排在系列名前面的话, 简体站会先用台湾的系列名命中第一季而不再试「XX 第二季」.
  * - 名字比对: 作为条目别名交给选择器, 站点上的繁体条目名才认得出是这一部; 同时把别的季的港台名字交给选择器的系列信息,
  *   别季的繁体页面才会按「是系列里别的季」排除 (只差季号的长名字模糊匹配率能过线, 光有别名会把第一季的页面当成本季).
+ *   查询请求认部用的名字 ([MediaFetchRequest.nameHints]) 带上同样的两组, 数据源与选择器按同一组名字认站点上的条目.
  *
  * TMDB 的剧集按整个系列登记, 译名是系列名, 而 Bangumi 一季一个条目, 所以按条目自己名字里的季号补上.
  * 表里没有这个条目 (或设置里关了 TMDB 图片、表从没下载过) 时什么都不加.
  */
 
-/** 查询请求的回退关键词末尾接上港台译名 (见 [regionalSearchName]). */
-internal suspend fun KoinComponent.withRegionalNames(request: MediaFetchRequest): MediaFetchRequest {
+/** 查询请求的回退关键词末尾接上港台译名 (见 [regionalSearchName]), 认部用的名字带上港台的本季与别季名字. */
+internal suspend fun KoinComponent.withRegionalNames(request: MediaFetchRequest, seriesInfo: SubjectSeriesInfo?): MediaFetchRequest {
     val entry = lookupMapEntry(request.subjectId.toIntOrNull() ?: return request) ?: return request
-    val name = regionalSearchName(entry, request.subjectNames) ?: return request
-    if (name in request.fallbackSearchKeywords) return request
-    return request.copy(fallbackSearchKeywords = request.fallbackSearchKeywords + name)
+    return withRegionalNames(request, entry, seriesInfo)
+}
+
+/** [withRegionalNames] 查到对应表之后的部分. 名字取 [MediaFetchRequest.nameHints] 里条目服务的 (同选择器), 不取用户改过的搜索名. */
+internal fun withRegionalNames(request: MediaFetchRequest, entry: TmdbSubjectMapEntry, seriesInfo: SubjectSeriesInfo?): MediaFetchRequest {
+    val hints = request.nameHints
+    val names = hints.ownNames.ifEmpty { request.subjectNames }
+    val aliases = regionalSubjectAliases(entry, names, seriesInfo?.seasonSort ?: 1)
+    val series = seriesInfo?.let { regionalSeriesNames(entry, names, it).series }.orEmpty()
+    val withHints = request.copy(
+        nameHints = hints.copy(
+            ownNames = (hints.ownNames + aliases).distinct(),
+            otherWorkNames = (hints.otherWorkNames + series).distinct(),
+        ),
+    )
+    val name = regionalSearchName(entry, request.subjectNames) ?: return withHints
+    if (name in request.fallbackSearchKeywords) return withHints
+    return withHints.copy(fallbackSearchKeywords = request.fallbackSearchKeywords + name)
 }
 
 /** 交给选择器的条目信息带上港台译名作别名 (见 [regionalSubjectAliases]). */

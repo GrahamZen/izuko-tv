@@ -9,6 +9,9 @@
 
 package me.him188.ani.app.domain.mediasource.clouddrive
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
@@ -18,12 +21,14 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import me.him188.ani.app.data.network.SeriesGraphTable
+import me.him188.ani.app.domain.mediasource.search.ReplaySubjects
 import java.io.File
 import kotlin.test.Test
 
 /**
  * 网盘认季认集的离线录放: 在录好的数据 (格式见 [DriveReplayData]) 上用真的搜索引擎 ([DriveShareSearchEngine])、
  * TMDB 对应表与系列关系图跑每一部的每个源, 把认出的文件全部写进 `season-<标签>.json`. 改规则前后各跑一次, 比两份文件.
+ * 查询请求照开播时的样子建 ([ReplaySubjects]: 带系列关系推出的认部名字).
  * 设 `DRIVE_REPLAY_DIR` (录下的数据)、`DRIVE_SERIES_GRAPH` (bgm-series-graph.tsv)、`DRIVE_TMDB_MAP` (bangumi-tmdb-map 的 bgm-tmdb.tsv)
  * 才跑, `DRIVE_REPLAY_LABEL` 是输出的标签 (默认 `run`). 缺的站点请求与分享目录写进 `missing.json`, 录了再跑.
  */
@@ -46,10 +51,12 @@ class DriveSeasonReplayTest {
         val data = DriveReplayData(dir)
         val numbering = TmdbEpisodeNumbering.of { tmdbEpisodes[it] }
         val otherWorks = OtherWorks { OtherWorkGuard.of(it, table) }
+        val subjectsScope = CoroutineScope(SupervisorJob())
+        val subjects = ReplaySubjects(table, tmdb = null, subjectsScope)
 
         val result = buildJsonArray {
             for (case in data.cases) {
-                val request = data.requestOf(case)
+                val request = subjects.prepare(case).request
                 for ((site, config) in data.configs) {
                     val matches = DriveShareSearchEngine(
                         config, data.shares, data.links, numbering = numbering, otherWorks = otherWorks, fetch = data.fetch,
@@ -68,6 +75,7 @@ class DriveSeasonReplayTest {
                 }
             }
         }
+        subjectsScope.cancel()
         File(dir, "season-$label.json").writeText(result.toString(), Charsets.UTF_8)
         data.writeMissing()
         val (sites, shares) = data.missingCount
