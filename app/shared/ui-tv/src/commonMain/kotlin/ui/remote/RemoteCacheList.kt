@@ -36,6 +36,8 @@ import me.him188.ani.app.domain.media.download.MediaDownloadManager
 import me.him188.ani.app.domain.media.cache.MediaCacheState
 import me.him188.ani.app.domain.media.cache.engine.TorrentEngineAccess
 import me.him188.ani.app.domain.media.cache.engine.TorrentMediaCacheEngine
+import me.him188.ani.app.domain.media.cache.location.MediaCacheLocations
+import me.him188.ani.app.domain.media.cache.location.UnavailableMediaCache
 import me.him188.ani.app.domain.media.cache.storage.MediaSaveDirProvider
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
 import me.him188.ani.app.navigation.AniNavigator
@@ -47,6 +49,7 @@ import me.him188.ani.datasources.api.topic.isSingleEpisode
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
+import me.him188.ani.utils.io.absolutePath
 import org.koin.mp.KoinPlatform
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -168,6 +171,12 @@ internal object RemoteCacheList {
         val torrentTimedOut = AtomicBoolean(false)
         val rows = caches.map { cache ->
             async {
+                // 所在的盘没接上: 占位记录, 没有可读的状态
+                if (cache.isLocationUnavailable) {
+                    val back = withTimeoutOrNull(FLOW_TIMEOUT) { (cache as? UnavailableMediaCache)?.reconnected?.first() } == true
+                    val text = if (back) tr("盘已接上，正在恢复") else tr("所在的盘没接上")
+                    return@async Row(cache, null, MediaCache.FileStats.Unspecified, false, offlineText = text)
+                }
                 if (cache.needsTorrentService && skipReason != null) {
                     return@async Row(cache, null, MediaCache.FileStats.Unspecified, false, offlineText = skipReason)
                 }
@@ -321,9 +330,10 @@ internal object RemoteCacheList {
             // 系统限制了 Ani 后台运行: 有没下完的 BT 缓存时提前说, 免得用户切走以后才发现停了 (见 isBackgroundRestricted)
             if (rows.any { it.cache.needsTorrentService } && TvRemoteControl.tvBackgroundRestricted()) put("bgRestricted", true)
             if (space != null) {
-                put("free", space.first.bytes.toString())
-                put("total", space.second.bytes.toString())
-                if (pending > space.first) put("lowSpace", true)
+                put("free", space.free.bytes.toString())
+                put("total", space.total.bytes.toString())
+                space.drive?.let { put("freeLabel", tr("{0} 剩余空间", it)) }
+                if (pending > space.free) put("lowSpace", true)
             }
             put("used", used.bytes.toString())
             if (pending > 0) put("pending", pending.bytes.toString())
@@ -430,13 +440,22 @@ internal object RemoteCacheList {
         return null
     }
 
+    /** 新缓存会放的盘的剩余与总字节数; [drive] 是外接盘的名字, 内部存储为 null */
+    internal class Space(val free: Long, val total: Long, val drive: String?)
+
     /**
-     * 缓存目录所在分区的 (剩余, 总) 字节数; 取不到为 null. 还没缓存过时目录可能还不存在, 而 `usableSpace` 对不存在的路径
-     * 返回 0 —— 往上找第一个存在的目录.
+     * 新缓存会放的那个盘 (设置「缓存位置」选的盘接着时是它, 否则内部存储) 的空间; 取不到为 null. 还没缓存过时目录可能还不存在,
+     * 而 `usableSpace` 对不存在的路径返回 0 —— 往上找第一个存在的目录.
      */
-    internal fun freeSpace(): Pair<Long, Long>? = runCatching {
-        val dir = generateSequence(File(saveDirProvider.saveDir)) { it.parentFile }.firstOrNull { it.exists() }
-        dir?.takeIf { it.totalSpace > 0 }?.let { it.usableSpace to it.totalSpace }
+    internal fun freeSpace(): Space? = runCatching {
+        val locations = KoinPlatform.getKoin().getOrNull<MediaCacheLocations>()
+        val target = locations?.let { l ->
+            val id = runBlocking { withTimeoutOrNull(2.seconds) { l.locationForNewCache() } } ?: return@let null
+            l.locations.value.firstOrNull { it.id == id }
+        }
+        val root = target?.root?.absolutePath ?: saveDirProvider.saveDir
+        val dir = generateSequence(File(root)) { it.parentFile }.firstOrNull { it.exists() }
+        dir?.takeIf { it.totalSpace > 0 }?.let { Space(it.usableSpace, it.totalSpace, target?.label?.takeIf { l -> l.isNotBlank() }) }
     }.getOrNull()
 
     // ============================ 操作 ============================

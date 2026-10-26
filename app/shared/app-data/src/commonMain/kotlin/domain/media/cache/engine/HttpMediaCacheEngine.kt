@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
@@ -70,6 +71,11 @@ import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 import org.openani.mediamp.source.SeekableInputMediaData
 import org.openani.mediamp.source.UriMediaData
+import me.him188.ani.app.domain.media.cache.location.InternalOnlyMediaCacheLocations
+import me.him188.ani.app.domain.media.cache.location.MediaCacheLocations
+import me.him188.ani.app.domain.media.cache.location.UnavailableMediaCache
+import me.him188.ani.app.domain.media.cache.location.isConnected
+import me.him188.ani.utils.httpdownloader.DownloadLocationUnavailableException
 import kotlin.coroutines.CoroutineContext
 import kotlin.time.Duration.Companion.seconds
 
@@ -79,6 +85,8 @@ class HttpMediaCacheEngine(
     private val mediaResolver: MediaResolver,
     private val mediaSourceId: String,
     private val dao: HttpCacheDownloadStateDao,
+    /** 缓存可以放在哪些位置; 任务的文件放在 [DownloadState.location] 那个位置的 [MEDIA_CACHE_DIR] 下 */
+    private val locations: MediaCacheLocations = InternalOnlyMediaCacheLocations(saveDir.inSystem),
 ) : MediaCacheEngine {
     /** 网盘视频旁边的外挂字幕随缓存存到本地, 见 [CacheSidecarSubtitles] */
     private val sidecarSubtitles = CacheSidecarSubtitles(saveDir)
@@ -132,12 +140,24 @@ class HttpMediaCacheEngine(
         logger.info { "Restarting cache '${origin.mediaId}'" }
         val downloadId = restoredHttpDownloadId(origin, metadata)
 
+        // 文件所在的盘没接上: 占着位置, 不恢复下载 (不然会被记成失败)
+        val known = downloader.getState(downloadId) ?: dao.getById(downloadId)
+        if (known != null && dirOfOrNull(known.location) == null) {
+            logger.info { "Location ${known.location} of $downloadId is not available, restoring it as unavailable" }
+            // 盘刚拔掉时任务可能还在跑: 停下 (记成暂停, 不是失败), 插回来恢复时接着下
+            if (downloadId in downloader.getActiveDownloadIds()) downloader.pause(downloadId)
+            return UnavailableMediaCache(origin, metadata, known.location.orEmpty(), locations.isConnected(known.location)) {
+                downloader.remove(downloadId)
+                dao.deleteById(downloadId)
+            }
+        }
+
         // 注意, getState 一般不会返回 null, 除非 downloader 的 persistent datastore 出问题了 (例如文件损坏).
         if (downloader.getState(downloadId) != null) {
             downloader.resume(downloadId) // ignore result.
             // Task already exists
             logger.info { "Resumed download $downloadId" }
-            return HttpMediaCache(origin, downloadId, metadata)
+            return HttpMediaCache(origin, downloadId, metadata, known?.location)
         }
 
         val persistentState = dao.getById(downloadId) ?: kotlin.run {
@@ -149,9 +169,10 @@ class HttpMediaCacheEngine(
         downloader.downloadWithId(
             downloadId = downloadId,
             persistentState.url,
-            options = DownloadOptions(headers = persistentState.requestHeaders),
+            // 在记下的位置上重建 (不跟着现在的默认位置走)
+            options = DownloadOptions(headers = persistentState.requestHeaders, location = persistentState.location),
         )
-        return HttpMediaCache(origin, downloadId, metadata)
+        return HttpMediaCache(origin, downloadId, metadata, persistentState.location)
     }
 
     override suspend fun createCache(
@@ -171,7 +192,9 @@ class HttpMediaCacheEngine(
 
             is UriMediaData -> {
                 val downloadId = httpDownloadId(origin, metadata)
-                val options = DownloadOptions(headers = mediaData.headers)
+                val location = locations.locationForNewCache()
+                logger.info { "New download $downloadId is on location ${location ?: "internal"}" }
+                val options = DownloadOptions(headers = mediaData.headers, location = location)
                 val state = downloader.downloadWithId(
                     downloadId = downloadId,
                     mediaData.uri,
@@ -189,10 +212,18 @@ class HttpMediaCacheEngine(
                     origin,
                     downloadId,
                     metadata,
+                    location,
                 )
             }
         }
     }
+
+    /** [location] 位置上放在线源缓存的目录 (见 [DownloadState.location]); 那个盘没接上时为 `null` */
+    private fun dirOfOrNull(location: String?): Path? =
+        if (location == null) saveDir else locations.rootOf(location)?.let { Path(it.absolutePath, MEDIA_CACHE_DIR) }
+
+    private fun dirOf(location: String?): Path =
+        dirOfOrNull(location) ?: throw DownloadLocationUnavailableException(location.orEmpty())
 
     /**
      * 新建任务的标识, 由 mediaId, subjectId 与 episodeId 共同决定: 合集资源各集有独立的任务与文件.
@@ -218,16 +249,24 @@ class HttpMediaCacheEngine(
         if (!(SystemFileSystem.exists(saveDir))) return
 
 
+        fun MutableSet<String>.addFilesOf(state: DownloadState) {
+            val dir = dirOfOrNull(state.location) ?: return
+            add(Path(dir, state.relativeOutputPath).inSystem.absolutePath)
+            add(Path(dir, state.relativeSegmentCacheDir).inSystem.absolutePath)
+        }
         val allowedAbsolute = buildSet {
             for (mediaCache in all.filterIsInstance<HttpMediaCache>()) {
-                downloader.getState(mediaCache.downloadId)?.let { state ->
-                    add(Path(saveDir, state.relativeOutputPath).inSystem.absolutePath)
-                    add(Path(saveDir, state.relativeSegmentCacheDir).inSystem.absolutePath)
-                }
+                downloader.getState(mediaCache.downloadId)?.let { addFilesOf(it) }
             }
+            // 外接盘上的按全部记录算, 不只这次恢复出来的: 恢复时盘还没接上的记录是占位, 盘随后接上时它的文件也不能当成没人用
+            dao.getAll().first().filter { it.location != null }.forEach { addFilesOf(it) }
         }
         withContext(Dispatchers.IO_) {
-            val saves = SystemFileSystem.list(saveDir)
+            // 只扫接着的盘: 没接上的盘上的缓存是占位, 它的文件这时也扫不到
+            val dirs = listOf(saveDir) + locations.locations.value.mapNotNull { location ->
+                location.id?.let { dirOfOrNull(it) }?.takeIf { SystemFileSystem.exists(it) }
+            }
+            val saves = dirs.flatMap { SystemFileSystem.list(it) }
             for (save in saves) {
                 val myPath = save.inSystem.absolutePath
                 if (allowedAbsolute.none {
@@ -245,6 +284,8 @@ class HttpMediaCacheEngine(
         override val origin: Media,
         internal val downloadId: DownloadId,
         override val metadata: MediaCacheMetadata,
+        /** 文件在哪个位置, 见 [DownloadState.location] */
+        override val locationId: String? = null,
     ) : MediaCache {
         // 同 [canPlay]: 状态只有四档, 每段完成都重发一遍会让缓存列表整屏跟着重组
         override val state: Flow<MediaCacheState> =
@@ -279,7 +320,7 @@ class HttpMediaCacheEngine(
                 emit(Progress.Unspecified)
                 return@flow
             }
-            val output = Path(saveDir, state.finalOutputRelativePath()).inSystem
+            val output = Path(dirOf(state.location), state.finalOutputRelativePath()).inSystem
             while (true) {
                 val written = if (output.exists()) output.length() else 0L
                 emit(estimateMergeProgress(written, state.downloadedBytes))
@@ -353,7 +394,7 @@ class HttpMediaCacheEngine(
                         origin,
                         cacheMediaSourceId = mediaSourceId,
                         download = ResourceLocation.LocalFile(
-                            Path(saveDir, state.finalOutputRelativePath()).inSystem.absolutePath,
+                            Path(dirOf(state.location), state.finalOutputRelativePath()).inSystem.absolutePath,
                             state.toFileType(),
                             originalUri = state.url,
                         ),
@@ -368,7 +409,7 @@ class HttpMediaCacheEngine(
                 DownloadStatus.COMPLETED -> {
                     val actualFileSize = withContext(Dispatchers.IO_) {
                         try {
-                            Path(saveDir, state.relativeOutputPath).inSystem.actualSize().bytes
+                            Path(dirOf(state.location), state.relativeOutputPath).inSystem.actualSize().bytes
                         } catch (_: Exception) {
                             FileSize.Unspecified
                         }
@@ -377,7 +418,7 @@ class HttpMediaCacheEngine(
                         origin,
                         cacheMediaSourceId = mediaSourceId,
                         download = ResourceLocation.LocalFile(
-                            Path(saveDir, state.relativeOutputPath).inSystem.absolutePath,
+                            Path(dirOf(state.location), state.relativeOutputPath).inSystem.absolutePath,
                             state.toFileType(),
                             originalUri = state.url,
                         ),
@@ -439,12 +480,17 @@ class HttpMediaCacheEngine(
 
     private suspend fun deleteDownloadFiles(state: DownloadState) {
         withContext(Dispatchers.IO_) {
-            val outputPath = Path(saveDir, state.relativeOutputPath).inSystem
+            val dir = dirOfOrNull(state.location) ?: run {
+                // 盘没接上: 文件留在盘上, 下次带着这个盘启动时由清扫回收
+                logger.warn { "Location ${state.location} of ${state.downloadId} is not available, leaving its files" }
+                return@withContext
+            }
+            val outputPath = Path(dir, state.relativeOutputPath).inSystem
             if (outputPath.exists()) {
                 outputPath.delete()
             }
 
-            val cacheDir = Path(saveDir, state.relativeSegmentCacheDir).inSystem
+            val cacheDir = Path(dir, state.relativeSegmentCacheDir).inSystem
             if (cacheDir.exists()) {
                 cacheDir.deleteRecursively()
             }

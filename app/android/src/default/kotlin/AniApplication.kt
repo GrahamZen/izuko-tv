@@ -36,7 +36,7 @@ import me.him188.ani.app.domain.media.cache.engine.MediaCacheEngineKey
 import me.him188.ani.app.domain.foundation.HttpClientProvider
 import me.him188.ani.app.domain.foundation.ScopedHttpClientUserAgent
 import me.him188.ani.app.domain.foundation.get
-import me.him188.ani.app.domain.media.cache.storage.MediaSaveDirProvider
+import me.him188.ani.app.domain.media.cache.location.MediaCacheLocations
 import me.him188.ani.app.domain.torrent.service.AniTorrentService
 import me.him188.ani.app.domain.torrent.service.PikPakCacheServiceController
 import me.him188.ani.app.domain.torrent.service.TorrentServiceConnectionManager
@@ -147,12 +147,12 @@ class AniApplication : Application() {
 
         val anitorrentTorrents: MutableStateFlow<Flow<List<TorrentCacheInfoEntity>>?> = MutableStateFlow(null)
         val anitorrentEpisodes: MutableStateFlow<Flow<List<TorrentCacheEpisodeEntity>>?> = MutableStateFlow(null)
-        val mediaCacheBaseSaveDir: MutableStateFlow<File?> = MutableStateFlow(null)
+        val mediaCacheLocations: MutableStateFlow<MediaCacheLocations?> = MutableStateFlow(null)
         val connectionManager = TorrentServiceConnectionManager(
             this,
             serviceTorrentsFlow = anitorrentTorrents,
             serviceEpisodesFlow = anitorrentEpisodes,
-            mediaCacheBaseSaveDirFlow = mediaCacheBaseSaveDir,
+            mediaCacheLocationsFlow = mediaCacheLocations,
             startServiceImpl = ::startAniTorrentService,
             stopServiceImpl = ::stopService,
             processLifecycle = ProcessLifecycleOwner.get().lifecycle,
@@ -210,7 +210,7 @@ class AniApplication : Application() {
             torrentCacheInfoDao.getAllEpisodes(),
             anitorrentMediaIds,
         ) { entities, ids -> entities.filter { it.mediaId in ids } }
-        mediaCacheBaseSaveDir.value = File(koin.get<MediaSaveDirProvider>().saveDir)
+        mediaCacheLocations.value = koin.get<MediaCacheLocations>()
         // 27 以下 BT 引擎跑在应用进程内, 没有独立进程服务可连, 不启动这个循环 (否则它会去起服务).
         if (supportsTorrentServiceProcess) {
             connectionManager.launchCheckLoop()
