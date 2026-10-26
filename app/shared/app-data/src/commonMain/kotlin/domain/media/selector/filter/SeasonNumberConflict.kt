@@ -72,12 +72,18 @@ internal class SeasonNumberConflict private constructor(
             compute(context).also { last = context to it }
         }
 
-        private fun compute(context: MediaSelectorContext): SeasonNumberConflict? {
-            val selfNames = context.subjectInfo?.allNames.orEmpty()
+        private fun compute(context: MediaSelectorContext): SeasonNumberConflict? =
+            of(context.subjectInfo?.allNames.orEmpty(), context.subjectSeriesInfo?.seriesSubjectNamesWithoutSelf.orEmpty())
+
+        /**
+         * 由当前条目的名字与别名 [selfNames]、系列里别的条目的名字 [seriesNames] 算 (同选择器, 数据源判断站点上的条目时用).
+         * 当前条目没写季号、或推不出别的季时为 `null`.
+         */
+        fun of(selfNames: Collection<String>, seriesNames: Collection<String>): SeasonNumberConflict? {
             val self = selfNames.flatMapTo(HashSet()) { subjectSeasonNumbersOf(it) }
             if (self.isEmpty()) return null
             val others = HashSet<Int>()
-            for (name in context.subjectSeriesInfo?.seriesSubjectNamesWithoutSelf.orEmpty()) {
+            for (name in seriesNames) {
                 val numbers = seasonNumbersOf(name)
                 if (numbers.isEmpty()) others += 1 else others += numbers
             }

@@ -9,14 +9,16 @@
 
 package me.him188.ani.app.domain.mediasource.web
 
+import me.him188.ani.app.domain.mediasource.search.KeywordStyle
+import me.him188.ani.app.domain.mediasource.search.SubjectSearchPlan
+import me.him188.ani.datasources.api.EpisodeSort
+import me.him188.ani.datasources.api.source.MediaFetchRequest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class WeakSearchKeywordTest {
-    private val config = SelectorSearchConfig(searchUrl = "https://example.com/search?wd={keyword}")
-
     @Test
     fun `short latin words are weak`() {
         for (keyword in listOf("to", "Re", "one", "86")) assertTrue(isWeakSearchKeyword(keyword), keyword)
@@ -26,16 +28,23 @@ class WeakSearchKeywordTest {
     @Test
     fun `fallback cut down to a short latin word is dropped`() {
         // 「更多 出包王女」的系列基础名: 中文名「出包王女」, 第一季原名「To LOVEる -とらぶる-」取首词只剩「To」
-        val fallback = listOf("出包王女", "To LOVEる -とらぶる-", "NEW GAME!")
+        val request = MediaFetchRequest(
+            subjectId = "1",
+            episodeId = "1",
+            subjectNames = listOf("更多 出包王女"),
+            episodeSort = EpisodeSort(1),
+            episodeName = "",
+            fallbackSearchKeywords = listOf("出包王女", "To LOVEる -とらぶる-", "NEW GAME!"),
+        )
+        val plan = SubjectSearchPlan.of(request)
         assertEquals(
-            listOf("出包王女"),
-            config.distinctFallbackKeywords(primary = listOf("更多 出包王女"), fallback = fallback),
+            listOf("出包王女", "更多出包王女"),
+            plan.keywords(KeywordStyle(onlyFirstWord = true, removeSpecial = true, primaryCount = 1)).fallbackNames,
         )
         // 不取首词时是整个名字, 照搜
         assertEquals(
-            fallback,
-            config.copy(autoMatch = SelectorAutoMatchConfig(searchUseOnlyFirstWord = false))
-                .distinctFallbackKeywords(primary = listOf("更多 出包王女"), fallback = fallback),
+            listOf("出包王女", "To LOVEる -とらぶる-", "NEW GAME!", "更多出包王女"),
+            plan.keywords(KeywordStyle(onlyFirstWord = false, removeSpecial = true, primaryCount = 1)).fallbackNames,
         )
     }
 }
