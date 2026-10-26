@@ -43,6 +43,8 @@ class MediaCacheLocationRefresher(
                     coroutineScope {
                         for (storage in storages()) {
                             if (storage !is AbstractDataStoreMediaCacheStorage) continue
+                            // 下完的缓存恢复一次就不再管, 外接盘上的这次要按盘在不在重新恢复
+                            storage.forgetRestoredLocalFiles { it.locationId != null }
                             launch {
                                 try {
                                     storage.refreshCache()

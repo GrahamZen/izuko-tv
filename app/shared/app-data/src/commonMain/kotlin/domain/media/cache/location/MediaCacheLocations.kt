@@ -56,6 +56,12 @@ interface MediaCacheLocations {
 
     /** 重新列一遍 (剩余空间这类会变的值), 打开设置页时用 */
     suspend fun refresh() {}
+
+    /**
+     * 正在搬到别的位置的缓存 (键见 [MediaCacheMoveUnit.key], 由 [MediaCacheMover] 维护): 搬的期间存储恢复它们时给占位,
+     * 不开下载、不读写文件.
+     */
+    val moving: MutableStateFlow<Set<String>>
 }
 
 /** [id] 位置此刻是否接着 */
@@ -68,4 +74,6 @@ class InternalOnlyMediaCacheLocations(root: SystemPath, label: String = "") : Me
         MutableStateFlow(listOf(MediaCacheLocation(id = null, label = label, root = root)))
 
     override suspend fun locationForNewCache(): String? = null
+
+    override val moving: MutableStateFlow<Set<String>> = MutableStateFlow(emptySet())
 }

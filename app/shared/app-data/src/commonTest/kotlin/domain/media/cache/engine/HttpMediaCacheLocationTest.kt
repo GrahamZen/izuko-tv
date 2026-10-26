@@ -10,17 +10,24 @@
 package me.him188.ani.app.domain.media.cache.engine
 
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
+import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 import kotlinx.io.files.SystemTemporaryDirectory
 import me.him188.ani.app.data.persistent.database.dao.HttpCacheDownloadStateDao
 import me.him188.ani.app.domain.media.TestMediaList
 import me.him188.ani.app.domain.media.cache.MediaCacheState
+import me.him188.ani.app.data.persistent.MemoryDataStore
+import me.him188.ani.app.domain.media.cache.location.MediaCacheMover
 import me.him188.ani.app.domain.media.cache.location.TestMediaCacheLocations
+import me.him188.ani.app.domain.media.cache.storage.HttpMediaCacheStorage
+import me.him188.ani.app.domain.media.cache.storage.MediaCacheSave
 import me.him188.ani.app.domain.media.cache.location.UnavailableMediaCache
 import me.him188.ani.app.domain.media.player.data.MediaDataProvider
 import me.him188.ani.app.domain.media.resolver.EpisodeMetadata
@@ -48,6 +55,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlin.random.Random
+import kotlin.time.Duration
 
 /**
  * 网页缓存放在外接盘上 (见 [me.him188.ani.app.domain.media.cache.location.MediaCacheLocations]): 新任务放到选的位置,
@@ -161,6 +169,48 @@ class HttpMediaCacheLocationTest {
         }
     }
 
+    @Test
+    fun `a finished download moves to another drive and its record follows`() = runTest {
+        val root = Path(SystemTemporaryDirectory, "http-location-move-${Random.nextLong().toULong()}")
+        try {
+            val internalDir = Path(root, "internal", "web-m3u").also { SystemFileSystem.createDirectories(it) }
+            val downloader = LocationFakeDownloader()
+            val engine = engine(downloader, saveDir = internalDir)
+            engine.createCache(media, metadata, episodeMetadata(), backgroundScope.coroutineContext)
+            val id = downloader.states.keys.single()
+            val state = downloader.states.getValue(id).copy(status = DownloadStatus.COMPLETED)
+            downloader.states[id] = state
+            val source = Path(internalDir, state.relativeOutputPath)
+            SystemFileSystem.sink(source).buffered().use { it.write(ByteArray(4096) { b -> b.toByte() }) }
+            val storage = HttpMediaCacheStorage(
+                mediaSourceId = "test-storage",
+                store = MemoryDataStore(listOf(MediaCacheSave(media, metadata, MediaCacheEngineKey.WebM3u))),
+                dao = daoOf(downloader),
+                httpEngine = engine,
+                displayName = "Test",
+                parentCoroutineContext = backgroundScope.coroutineContext,
+            )
+            storage.restorePersistedCaches()
+            locations.connect("usb", Path(root, "usb").inSystem)
+            val mover = MediaCacheMover(
+                locations, { listOf(storage) }, isPlayingSubject = { false }, scope = backgroundScope, settleDelay = Duration.ZERO,
+            )
+
+            val result = backgroundScope.async(start = CoroutineStart.UNDISPATCHED) { mover.finished.first() }
+            assertTrue(mover.start("usb"))
+
+            assertEquals(MediaCacheMover.Result("usb", moved = 1, failed = 0, skipped = 0, stopReason = null), result.await())
+            assertEquals("usb", downloader.states.getValue(id).location)
+            val moved = Path(root, "usb", HttpMediaCacheEngine.MEDIA_CACHE_DIR, state.relativeOutputPath)
+            assertEquals(4096L, SystemFileSystem.metadataOrNull(moved)?.size)
+            assertFalse(SystemFileSystem.exists(source), "the old copy was kept")
+            assertEquals("usb", storage.listFlow.value.single().locationId)
+            storage.close()
+        } finally {
+            SystemFileSystem.deleteRecursively(root)
+        }
+    }
+
     private fun episodeMetadata() = EpisodeMetadata("Episode 1", EpisodeSort(1), EpisodeSort(1))
 
     private fun engine(downloader: LocationFakeDownloader, saveDir: Path = Path("/internal/web-m3u")) = HttpMediaCacheEngine(
@@ -174,25 +224,28 @@ class HttpMediaCacheLocationTest {
                 }
         },
         "test-storage",
-        object : HttpCacheDownloadStateDao {
-            override fun getAll() = flowOf(downloader.states.values.toList())
-            override suspend fun upsert(state: DownloadState) {
-                downloader.states[state.downloadId] = state
-            }
-
-            override suspend fun updateStatus(id: DownloadId, status: DownloadStatus) = Unit
-            override suspend fun deleteAll() {
-                downloader.states.clear()
-            }
-
-            override suspend fun deleteById(id: DownloadId) {
-                downloader.states.remove(id)
-            }
-
-            override suspend fun getById(id: DownloadId) = downloader.states[id]
-        },
+        daoOf(downloader),
         locations = locations,
     )
+
+    /** 记录就是 [downloader] 里的任务 (同真实的: 下载器改了状态即落库) */
+    private fun daoOf(downloader: LocationFakeDownloader) = object : HttpCacheDownloadStateDao {
+        override fun getAll() = flowOf(downloader.states.values.toList())
+        override suspend fun upsert(state: DownloadState) {
+            downloader.states[state.downloadId] = state
+        }
+
+        override suspend fun updateStatus(id: DownloadId, status: DownloadStatus) = Unit
+        override suspend fun deleteAll() {
+            downloader.states.clear()
+        }
+
+        override suspend fun deleteById(id: DownloadId) {
+            downloader.states.remove(id)
+        }
+
+        override suspend fun getById(id: DownloadId) = downloader.states[id]
+    }
 }
 
 /** 内存里的 downloader, 记下任务的位置与被要求恢复 / 暂停的任务. */
@@ -235,5 +288,11 @@ private class LocationFakeDownloader : HttpDownloader {
     override suspend fun remove(downloadId: DownloadId) = states.remove(downloadId) != null
     override suspend fun getState(downloadId: DownloadId) = states[downloadId]
     override suspend fun getAllStates() = states.values.toList()
+    override suspend fun relocate(downloadId: DownloadId, location: String?): Boolean {
+        val state = states[downloadId] ?: return false
+        states[downloadId] = state.copy(location = location)
+        return true
+    }
+
     override fun close() = Unit
 }

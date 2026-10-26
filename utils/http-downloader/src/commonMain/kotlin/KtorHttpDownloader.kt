@@ -604,6 +604,14 @@ open class KtorHttpDownloader(
         }
     }
 
+    override suspend fun relocate(downloadId: DownloadId, location: String?): Boolean {
+        val entry = stateMutex.withLock { _downloadStatesFlow.value[downloadId] } ?: return false
+        if (entry.job?.isActive == true) return false
+        updateState(downloadId) { it.copy(location = location) }
+        logger.info { "Download $downloadId is now on location ${location ?: "internal"}" }
+        return true
+    }
+
     override fun close() {
         logger.info { "Closing KtorHttpDownloader." }
         scope.launch(NonCancellable + CoroutineName("M3u8Downloader.close")) {
