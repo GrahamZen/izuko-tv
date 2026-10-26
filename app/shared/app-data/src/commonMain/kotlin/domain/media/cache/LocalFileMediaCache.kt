@@ -50,6 +50,8 @@ class LocalFileMediaCache(
     val file: SystemPath,
     uploadedSize: FileSize = 0.bytes,
     private val backedMediaSourceId: String = MediaDownloadManager.LOCAL_FS_MEDIA_SOURCE_ID,
+    /** 文件在哪个位置 (见 [MediaCache.locationId]) */
+    override val locationId: String? = null,
     /**
      * 删除的快速逻辑阶段, 见 [MediaCache.deletePersistedRows]. 保证在 [onCloseAndDeleteFiles]
      * 之前恰好执行一次.

@@ -64,9 +64,10 @@ internal fun TvSettingsItemsBuilder.cacheLocationItem() {
             TvText.Join(listOf(tvText(Lang.settings_storage_cache_location_description)) + unusable, separator = "\n")
         },
     )
+    cacheMoveItem()
 }
 
-private fun MediaCacheLocation.nameText(): TvText =
+internal fun MediaCacheLocation.nameText(): TvText =
     if (id == null || label.isBlank()) tvText(Lang.settings_storage_cache_location_internal) else tvText(label)
 
 private fun MediaCacheLocationChoice.labelText(): TvText =

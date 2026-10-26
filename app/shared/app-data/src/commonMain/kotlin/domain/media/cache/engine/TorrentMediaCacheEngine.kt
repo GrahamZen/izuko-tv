@@ -50,6 +50,7 @@ import me.him188.ani.app.domain.media.cache.LocalFileMediaCache
 import me.him188.ani.app.domain.media.cache.MediaCache
 import me.him188.ani.app.domain.media.cache.MediaCacheState
 import me.him188.ani.app.domain.media.cache.location.InternalOnlyMediaCacheLocations
+import me.him188.ani.app.domain.media.cache.location.MediaCacheEngineMover
 import me.him188.ani.app.domain.media.cache.location.MediaCacheLocations
 import me.him188.ani.app.domain.media.cache.location.UnavailableMediaCache
 import me.him188.ani.app.domain.media.cache.location.isConnected
@@ -120,6 +121,11 @@ class TorrentMediaCacheEngine(
     /** 缓存可以放在哪些位置; 种子记录的目录 ([TorrentCacheInfoEntity.relativeDir]) 相对它所在位置的根目录 */
     private val locations: MediaCacheLocations = InternalOnlyMediaCacheLocations(Path(baseSaveDirProvider.saveDir).inSystem),
 ) : MediaCacheEngine, AutoCloseable {
+    /** 把缓存搬到别的位置 (见 MediaCacheMover) */
+    internal val mover: MediaCacheEngineMover by lazy {
+        TorrentCacheMover(dao, locations, engineKey.isCloud, { torrentEngine.saveDir }, { baseSaveDirProvider.saveDir })
+    }
+
     companion object {
         private val logger = logger<TorrentMediaCacheEngine>()
         private val unspecifiedFileStatsFlow = flowOf(MediaCache.FileStats.Unspecified)
@@ -618,10 +624,11 @@ class TorrentMediaCacheEngine(
         }
         val data = torrent.torrentData
 
-        // 种子所在的盘没接上: 占着位置, 不碰引擎与文件 —— 找不到文件不等于丢了, 不能当成没下完去重新开种子
-        if (torrentDirOf(torrent) == null) {
-            logger.info { "Location ${torrent.location} of ${origin.mediaId} is not available, restoring it as unavailable" }
-            return UnavailableMediaCache(origin, metadata, torrent.location.orEmpty(), locations.isConnected(torrent.location)) {
+        // 种子所在的盘没接上或正在搬走 (见 TorrentCacheMover): 占着位置, 不碰引擎与文件 —— 找不到文件不等于丢了, 不能当成没下完去重新开种子
+        val moving = torrentMoveKey(torrent.relativeDir) in locations.moving.value
+        if (moving || torrentDirOf(torrent) == null) {
+            logger.info { "Location ${torrent.location} of ${origin.mediaId} is not available (moving: $moving), restoring it as unavailable" }
+            return UnavailableMediaCache(origin, metadata, torrent.location, locations.isConnected(torrent.location), moving) {
                 deleteEpisodeRecord(origin.mediaId, metadata.episodeId)
             }
         }
@@ -630,7 +637,7 @@ class TorrentMediaCacheEngine(
         val record = getOrMigrateEpisodeRecord(origin, metadata, torrent)
         val localFile = record?.let { resolveCompletedFile(torrent, it) }
         if (localFile != null) {
-            return LocalFileMediaCache(origin, metadata, localFile) { file ->
+            return LocalFileMediaCache(origin, metadata, localFile, locationId = torrent.location) { file ->
                 @OptIn(DelicateCoroutinesApi::class)
                 GlobalScope.launch {
                     try {
@@ -895,7 +902,8 @@ class TorrentMediaCacheEngine(
             val allowedAbsolute = buildSet {
                 dao.batchGet(all.map { it.origin.mediaId }).forEach {
                     torrentDirOf(it)?.let { dir -> add(dir.absolutePath) }
-                    add(downloader.getSaveDirForTorrent(EncodedTorrentInfo.createRaw(it.torrentData)).absolutePath)
+                    // 引擎按种子算出的目录在内部存储上; 放在别的位置 (或已经搬走) 的种子不占它
+                    if (it.location == null) add(downloader.getSaveDirForTorrent(EncodedTorrentInfo.createRaw(it.torrentData)).absolutePath)
                 }
             }
 

@@ -59,6 +59,7 @@ import me.him188.ani.app.ui.lang.cache_episode_download_failed
 import me.him188.ani.app.ui.lang.cache_episode_pause_download
 import me.him188.ani.app.ui.lang.cache_episode_resume_download
 import me.him188.ani.app.ui.lang.cache_episode_status_awaiting_bt_service
+import me.him188.ani.app.ui.lang.cache_episode_status_location_moving
 import me.him188.ani.app.ui.lang.cache_episode_status_location_reconnected
 import me.him188.ani.app.ui.lang.cache_episode_status_location_unavailable
 import me.him188.ani.app.ui.lang.cache_episode_status_merging
@@ -331,8 +332,11 @@ fun DownloadRow(
                         val statusText = when {
                             // 占位记录的状态是失败, 但没坏: 盘插回来就能接着用
                             episode.locationUnavailable -> stringResource(
-                                if (episode.locationReconnected) Lang.cache_episode_status_location_reconnected
-                                else Lang.cache_episode_status_location_unavailable,
+                                when {
+                                    episode.locationMoving -> Lang.cache_episode_status_location_moving
+                                    episode.locationReconnected -> Lang.cache_episode_status_location_reconnected
+                                    else -> Lang.cache_episode_status_location_unavailable
+                                },
                             )
                             episode.isFailed -> stringResource(Lang.cache_episode_download_failed)
                             // 停着是因为正在播这一集, 不是用户暂停的: 说清楚, 播完会自己接着下

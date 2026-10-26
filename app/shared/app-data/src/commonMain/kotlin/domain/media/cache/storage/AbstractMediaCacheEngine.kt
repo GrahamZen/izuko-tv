@@ -79,6 +79,15 @@ abstract class AbstractDataStoreMediaCacheStorage(
      */
     private val restoredLocalFileMediaCacheKeys = MutableStateFlow(persistentSetOf<MediaCacheKey>())
 
+    /**
+     * 让已恢复的 [LocalFileMediaCache] 里 [predicate] 选中的那些在下次 [refreshCache] 时重新恢复 (平时它们恢复一次就不再管):
+     * 它们的文件所在的盘拔掉了或挪走了 (见 MediaCacheLocations).
+     */
+    fun forgetRestoredLocalFiles(predicate: (MediaCache) -> Boolean) {
+        val keys = listFlow.value.filter { it is LocalFileMediaCache && predicate(it) }.mapTo(HashSet()) { it.mediaCacheKey }
+        if (keys.isNotEmpty()) restoredLocalFileMediaCacheKeys.update { removeAll(keys) }
+    }
+
     open suspend fun refreshCache(): List<MediaCache> {
         val allRecovered = MutableStateFlow(persistentListOf<MediaCache>())
         val metadataFlowSnapshot = metadataFlow.first()
