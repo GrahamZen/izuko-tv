@@ -39,7 +39,6 @@ import kotlinx.coroutines.flow.map
 import me.him188.ani.app.domain.media.cache.MediaCache
 import me.him188.ani.app.domain.media.download.MediaDownloadManager
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
-import me.him188.ani.app.ui.download.ForcedDarkTheme
 import me.him188.ani.app.ui.foundation.AbstractViewModel
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
@@ -112,14 +111,12 @@ fun MediaCacheDetailsScreen(
     windowInsets: WindowInsets = ScaffoldDefaults.contentWindowInsets,
 ) {
     val screenState by vm.screenStateFlow.collectAsStateWithLifecycle()
-    ForcedDarkTheme {
-        MediaCacheDetailsScreen(
-            state = screenState,
-            navigationIcon = navigationIcon,
-            modifier = modifier,
-            windowInsets = windowInsets,
-        )
-    }
+    MediaCacheDetailsScreen(
+        state = screenState,
+        navigationIcon = navigationIcon,
+        modifier = modifier,
+        windowInsets = windowInsets,
+    )
 }
 
 private val logger = logger<MediaCacheDetailsPageViewModel>()
