@@ -952,7 +952,7 @@ private fun part6() = listOf(
     RemoteText("中国大陆连不上 Bangumi 官方时，推荐优先设置上面的代理：直连官方，不经过任何第三方。下面几条线路按顺序尝试，前一条连不上用下一条。", "If Bangumi can't be reached (for example in mainland China), setting up the proxy above is recommended: the app connects to Bangumi directly without any third party. The routes below are tried in order; when one can't connect, the next one is used.", "中國大陸連不上 Bangumi 官方時，推薦優先設置上面的代理：直連官方，不經過任何第三方。下面幾條線路按順序嘗試，前一條連不上用下一條。", "中國大陸連不上 Bangumi 官方時，建議優先設定上面的代理：直連官方，不經過任何第三方。下面幾條線路依序嘗試，前一條連不上用下一條。"),
     RemoteText("、", ", ", "、", "、"),
     RemoteText("官方直连", "Official site", "官方直連", "官方直連"),
-    RemoteText("确定连不上时会自动关掉，之后不再先试它；网络好了可以再打开。", "Turned off automatically once it proves unreachable, so later requests skip it. Turn it back on when your network allows.", "確定連不上時會自動關掉，之後不再先試它；網絡好了可以再打開。", "確定連不上時會自動關閉，之後不再先試它；網路好了可以再開啟。"),
+    RemoteText("确定连不上时会问你要不要关掉，关了之后不再先试它；网络好了可以再打开。", "If it proves unreachable, you’ll be asked whether to turn it off so later requests skip it. Turn it back on when your network allows.", "確定連不上時會問你要不要關掉，關了之後不再先試它；網絡好了可以再打開。", "確定連不上時會問你要不要關閉，關了之後不再先試它；網路好了可以再開啟。"),
     RemoteText("我自己的镜像", "My own mirror", "我自己的鏡像", "我自己的鏡像"),
     RemoteText("加密直连", "Encrypted direct", "加密直連", "加密直連"),
     RemoteText("连的仍是 Bangumi 官方，只是把要连的网址藏进加密的握手里，绕开按网址的拦截；登录与收藏同步照常走它。设了代理时不用它。", "Still the official Bangumi site, but which site you connect to is hidden in an encrypted handshake, getting past address-based blocking. Sign-in and collection sync work as usual. Not used while a proxy is set.", "連的仍是 Bangumi 官方，只是把要連的網址藏進加密的握手裏，繞開按網址的攔截；登錄與收藏同步照常走它。設了代理時不用它。", "連的仍是 Bangumi 官方，只是把要連的網址藏進加密的握手裡，繞開按網址的攔截；登入與收藏同步照常走它。設了代理時不用它。"),
