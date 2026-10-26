@@ -20,6 +20,9 @@ import me.him188.ani.app.domain.mediasource.clouddrive.DriveSeriesTestData.separ
 import me.him188.ani.app.domain.mediasource.clouddrive.DriveSeriesTestData.soloLeveling2
 import me.him188.ani.app.domain.mediasource.clouddrive.DriveSeriesTestData.table
 import me.him188.ani.app.data.network.SeriesGraphTable
+import me.him188.ani.app.domain.mediasource.search.AnimeNameIndex
+import me.him188.ani.app.domain.mediasource.search.TitleIdentities
+import me.him188.ani.app.domain.mediasource.search.TitleIdentity
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.source.MediaFetchNameHints
 import me.him188.ani.datasources.api.source.MediaFetchRequest
@@ -41,7 +44,7 @@ class DrivePathAttributionTest {
         graph: SeriesGraphTable = table,
     ): Int? {
         val candidate = DriveSubjectMatcher.Candidate(video("f", fileName), listOf(siteTitle) + folders)
-        val identity = DriveSubjectIdentity.of(request, graph)
+        val identity = TitleIdentity.of(request, graph)
         return DriveSubjectMatcher.matchEpisodes(request, listOf(candidate), tmdbEpisodes, identity = identity)
             .singleOrNull()?.episode?.number?.toInt()
     }
@@ -91,7 +94,7 @@ class DrivePathAttributionTest {
         val second = DriveSeriesTestData.request(443428, listOf("【我推的孩子】 第二季"), 12, 13)
             .copy(nameHints = MediaFetchNameHints(seriesNames = listOf("【我推的孩子】")))
         val candidates = listOf(5, 12, 20).map { DriveSubjectMatcher.Candidate(video("e$it", "[Ygm] Oshi no Ko [$it].mkv"), listOf(title) + folders) }
-        val matched = DriveSubjectMatcher.matchEpisodes(second, candidates, identity = DriveSubjectIdentity.of(second, table))
+        val matched = DriveSubjectMatcher.matchEpisodes(second, candidates, identity = TitleIdentity.of(second, table))
         assertEquals(listOf(12, 20), matched.map { it.episode.number?.toInt() })
     }
 
@@ -107,7 +110,7 @@ class DrivePathAttributionTest {
             ).joinToString("\n").encodeToByteArray(),
         )!!
         val firstHalf = DriveSeriesTestData.request(278826, listOf("Re：从零开始的异世界生活 第二季"), 26, 13)
-        val identity = DriveSubjectIdentity.of(firstHalf, table)
+        val identity = TitleIdentity.of(firstHalf, table)
         fun episodeOf(fileName: String) = DriveSubjectMatcher.matchEpisodes(
             firstHalf,
             listOf(DriveSubjectMatcher.Candidate(video("f", fileName), listOf("《Re：从零开始的异世界生活》(2020)[第2季][全25集]", "18826"))),
@@ -144,13 +147,62 @@ class DrivePathAttributionTest {
         val second = DriveSeriesTestData.request(396988, listOf("弦音 -连结的一射-", "ツルネ －つながりの一射－"), 1, 13)
         val tmdb = tmdb(second, season = 2, firstEpisode = 1)
         fun episodeOf(folders: List<String>, fileName: String) = DriveSubjectMatcher.matchEpisodes(
-            second, listOf(DriveSubjectMatcher.Candidate(video("f", fileName), folders)), tmdb, identity = DriveSubjectIdentity.of(second, table),
+            second, listOf(DriveSubjectMatcher.Candidate(video("f", fileName), folders)), tmdb, identity = TitleIdentity.of(second, table),
         ).singleOrNull()?.episode?.number?.toInt()
         val title = "弦音 -风舞高中弓道部- 第二季 ツルネ －つながりの一射－ (2023)"
         assertEquals(10, episodeOf(listOf(title), "弦音 -风舞高中弓道部-.Tsurune.S02E10.2023.1080p.WEB-DL.mkv"))
         assertEquals(12, episodeOf(listOf(title, "2023弦音-风舞高中弓道部-第二季"), "12.mp4"))
         // 第一季的
         assertNull(episodeOf(listOf("弦音 -风舞高中弓道部-"), "弦音 -风舞高中弓道部-.Tsurune.S01E10.2018.1080p.WEB-DL.mkv"))
+    }
+
+    @Test
+    fun `a season number does not vouch for a work outside the series`() {
+        val table = SeriesGraphTable.parse(
+            listOf(
+                "# bangumi-anime v1 max_id=714439 dump=dump-2026-10-20.210332Z.zip | 列: …",
+                "228378\tツルネ ―風舞高校弓道部―\t弦音 -风舞高中弓道部-\t2018-10-22\t13\tTV\t\t\t396988\t\t\t",
+                "396988\tツルネ －つながりの一射－\t弦音 -连结的一射-\t2023-01-04\t13\tTV\t\t228378\t\t\t\t",
+                "329906\tSPY×FAMILY\t间谍过家家\t2022-04-09\t25\tTV\t\t\t\t\t\t",
+            ).joinToString("\n").encodeToByteArray(),
+        )!!
+        val second = DriveSeriesTestData.request(396988, listOf("弦音 -连结的一射-", "ツルネ －つながりの一射－"), 1, 13)
+        val identity = TitleIdentity.of(second, table, AnimeNameIndex.of(table))
+        val tmdb = tmdb(second, season = 2, firstEpisode = 1)
+        fun episodeOf(folders: List<String>, fileName: String) = DriveSubjectMatcher.matchEpisodes(
+            second, listOf(DriveSubjectMatcher.Candidate(video("f", fileName), folders)), tmdb, identity = identity,
+        ).singleOrNull()?.episode?.number?.toInt()
+        // 季号只在这个系列里算数: 外层点名的是系列以外的作品
+        assertNull(episodeOf(listOf("动漫合集", "间谍过家家 第二季"), "S02E01.mkv"))
+        assertNull(episodeOf(listOf("动漫合集", "间谍过家家 第二季"), "间谍过家家 第二季 S02E01.mkv"))
+        // 系列的第一部的名字加本季照旧是这一部; 外层没点名哪一部的也照旧
+        assertEquals(1, episodeOf(listOf("动漫合集", "弦音 -风舞高中弓道部- 第二季"), "S02E01.mkv"))
+        assertEquals(1, episodeOf(listOf("动漫合集", "第二季"), "S02E01.mkv"))
+    }
+
+    @Test
+    fun `a season number vouches for this work named with the year of the first season`() {
+        // 表里两季之间没有边; 按系列整理的文件名写着第一季那年
+        val table = SeriesGraphTable.parse(
+            listOf(
+                "# bangumi-anime v1 max_id=714439 dump=dump-2026-10-20.210332Z.zip | 列: …",
+                "309311\tCyberpunk: Edgerunners\t赛博朋克：边缘行者\t2022-09-13\t10\tWEB\t\t\t\t\t\t",
+                "513878\tCyberpunk: Edgerunners 2\t赛博朋克：边缘行者 2\t2026-10-20\t10\tWEB\t\t\t\t\t\t",
+            ).joinToString("\n").encodeToByteArray(),
+        )!!
+        val second = DriveSeriesTestData.request(513878, listOf("赛博朋克：边缘行者 2", "Cyberpunk: Edgerunners 2"), 1, 10)
+        val tmdb = tmdb(second, season = 2, firstEpisode = 1)
+        fun episodeOf(folders: List<String>, fileName: String) = DriveSubjectMatcher.matchEpisodes(
+            second, listOf(DriveSubjectMatcher.Candidate(video("f", fileName), folders)), tmdb,
+            identity = TitleIdentity.of(second, table, AnimeNameIndex.of(table)),
+        ).singleOrNull()?.episode?.number?.toInt()
+        assertEquals(
+            9,
+            episodeOf(
+                listOf("赛博朋克：边缘行者 第二季（2026）4K", "Cyberpunk.Edgerunners.2022.S02.2160p.NF.WEB-DL"),
+                "Cyberpunk.Edgerunners.2022.S02E09.2160p.NF.WEB-DL.mkv",
+            ),
+        )
     }
 
     @Test
@@ -220,7 +272,7 @@ class DrivePathAttributionTest {
         )
         val engine = DriveShareSearchEngine(
             DriveShareSearchConfig(), shares, DriveShareLinks(TestDrive.protocol),
-            identities = DriveSubjectIdentities { DriveSubjectIdentity.of(it, table) },
+            identities = TitleIdentities { TitleIdentity.of(it, table) },
         ) { null }
         val folder = DriveShareLocation("mix", "", "死神 千年血战篇  诀别谭+相克谭+死神全集 4K", "c", listOf("死神 千年血战篇"))
         assertEquals(listOf("c15"), engine.matchFolder(separation, folder)?.map { it.file.fid })

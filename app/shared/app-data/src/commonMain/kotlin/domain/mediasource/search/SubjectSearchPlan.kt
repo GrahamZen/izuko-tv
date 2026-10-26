@@ -29,7 +29,7 @@ import me.him188.ani.utils.logging.logger
  * - 拿什么词搜、按什么顺序 ([keywords]): 各源只按自己的写法 ([KeywordStyle]) 把名字改成站点上的搜索词;
  *   按标题原样找的站点 (网盘分享站、网盘的按名字搜, [KeywordStyle.literalTitles]) 另有一套排法;
  * - 网页类站点上的条目 (页名) 是不是这一部 ([identify]): 关键词链搜到这一部才停 ([foundOwn]), 自动匹配只打开可能是这一部的条目 ([pagesToOpen]).
- *   网盘的分享标题与路径杂乱, 按同一组名字另外认 (`DriveSubjectIdentity`).
+ *   网盘的分享标题与路径杂乱, 按同一组名字另外认 (`TitleIdentity`).
  *
  * 认部的判据与选择器过滤 WEB 资源的名称规则相同 (`MediaSelectorFilterSortAlgorithm`: 名字对得上, 不是系列里别的季), 名字也是同一组:
  * 搜索名加上请求带的 [MediaFetchNameHints.ownNames] (条目服务上的全部名字、港台译名、系列关系推出的「系列名 第N季」).
@@ -47,7 +47,7 @@ class SubjectSearchPlan private constructor(private val request: MediaFetchReque
     /** 同系列别的作品的名字 ([MediaFetchNameHints.otherWorkNames]) */
     val otherWorkNames: List<String> get() = hints.otherWorkNames
 
-    private val identity = SubjectIdentity(
+    private val nameRules = SelectorNameRules(
         ownNames, hints.otherWorkNames, hints.splitSeason,
         seriesNumbered = request.episodes.any { it.ep != null && it.ep != it.sort } ||
             (request.episodeEp != null && request.episodeEp != request.episodeSort),
@@ -152,15 +152,15 @@ class SubjectSearchPlan private constructor(private val request: MediaFetchReque
         .filter { MediaListFilters.specialContains(name, it) && !MediaListFilters.specialEquals(name, it) }
         .maxByOrNull { it.length }
 
-    /** 全部动画的名字表认部 ([AnimeNames]); 没有表时为 null */
-    private val names by lazy { AnimeNames.identityOf(request) }
+    /** 按全部动画的名字表认部 ([AnimeNames]); 每次现取, 表在搜索中途读进来时后面的页就用上 */
+    private val names: TitleIdentity get() = AnimeNames.identityOf(request)
 
     /**
      * 站点上叫 [name] 的条目 (页名、分享标题) 与这一部的关系, 见 [SubjectMatch].
-     * 名字表认出是别的作品、或只含着本条目太短的名字的不是 ([me.him188.ani.app.domain.mediasource.clouddrive.DriveSubjectIdentity.rejectsPageTitle]).
+     * 名字表认出是别的作品、或只含着本条目太短的名字的不是 ([TitleIdentity.rejectsPageTitle]).
      */
     fun identify(name: String): SubjectMatch =
-        if (names?.rejectsPageTitle(name) == true) SubjectMatch.OTHER else identity.identify(name)
+        if (names.rejectsPageTitle(name)) SubjectMatch.OTHER else nameRules.identify(name)
 
     /** 搜到的资源里有这一部的 (资源的条目名是站点上的页名): 关键词链搜到这里就不再试回退关键词. */
     fun foundOwn(media: List<DefaultMedia>): Boolean =
@@ -311,7 +311,7 @@ enum class SubjectMatch {
  * 写明是真人作品或短剧 ([NotAnimeMarkers]) 的不是;
  * 剩下的名字对得上 ([MediaListFilters.ContainsSubjectName]) 才是. 拆分季的一段 ([splitSeason]) 不判别季, 名字对不上的也说不准.
  */
-internal class SubjectIdentity(
+internal class SelectorNameRules(
     private val ownNames: List<String>,
     otherNames: List<String>,
     private val splitSeason: Boolean,
