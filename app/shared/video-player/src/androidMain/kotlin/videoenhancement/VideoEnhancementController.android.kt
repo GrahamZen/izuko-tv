@@ -21,6 +21,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
+import me.him188.ani.utils.logging.warn
 import org.openani.mediamp.MediampPlayer
 import kotlin.coroutines.CoroutineContext
 import kotlin.time.Duration.Companion.seconds
@@ -53,8 +54,9 @@ internal class ExoPlayerVideoEnhancementController(
     private var appliedScaler: DesktopStyleLanczosSharpEffect? = null
 
     /**
-     * 增强开着期间的帧率/丢帧采样 (只记日志, 不改行为)。加这个是为了判断"能播但卡"卡在哪:
+     * 增强开着期间的帧率/丢帧采样。用来判断"能播但卡"卡在哪:
      * 解码器实付帧数涨得慢 = GL 那几级 shader 吃不消; 丢帧多而实付正常 = 提交慢/显示端跟不上。
+     * 实付帧数持续不到片源一半时自己关掉增强 (见 [VideoEnhancementPerformanceProbe])。
      */
     private var statsJob: Job? = null
 
@@ -115,7 +117,7 @@ internal class ExoPlayerVideoEnhancementController(
     }
 
     /**
-     * 每 [statsInterval] 记一次解码器的实付/丢帧计数, 折算成 fps。只记日志。
+     * 每 [statsInterval] 记一次解码器的实付/丢帧计数, 折算成 fps; 设备算不过来时关掉增强 ([fallBackForPerformance])。
      */
     private fun startStatsSampler(mode: VideoEnhancementMode) {
         statsJob?.cancel()
@@ -123,6 +125,7 @@ internal class ExoPlayerVideoEnhancementController(
         statsJob = scope.launch {
             var lastRendered = 0
             var lastDropped = 0
+            val performance = VideoEnhancementPerformanceProbe(exoPlayer)
             while (isActive) {
                 delay(statsInterval)
                 val counters = exoPlayer.videoDecoderCounters ?: continue
@@ -132,7 +135,9 @@ internal class ExoPlayerVideoEnhancementController(
                 val droppedDelta = dropped - lastDropped
                 lastRendered = rendered
                 lastDropped = dropped
-                val fps = renderedDelta * 1000.0 / statsInterval.inWholeMilliseconds
+                val tooSlow = performance.isTooSlow(renderedDelta)
+                // 按实际隔了多久折算: 显卡吃满时这条线程也慢, 名义 2 秒的间隔会拖到三四秒
+                val fps = renderedDelta * 1000.0 / performance.lastWindowMillis.coerceAtLeast(1)
                 // 计数器只能在播放线程读 (上面几行), 但写日志不能留在这条线程上: [scope] 绑的是
                 // player.mainDispatcher, 而 logback 是同步写文件的 —— 每 2 秒在播放线程做一次
                 // 文件 I/O, 那是在给"排查卡顿"的工具本身制造卡顿。取完数就换线程再打。
@@ -146,8 +151,25 @@ internal class ExoPlayerVideoEnhancementController(
                             "state=$state playWhenReady=$playWhenReady"
                     }
                 }
+                if (tooSlow) {
+                    fallBackForPerformance(mode, fps.toFloat(), performance.contentFrameRate)
+                    return@launch
+                }
             }
         }
+    }
+
+    /**
+     * 设备算不过来 (见 [VideoEnhancementPerformanceJudge]): 当场清掉效果, 报给页面写回设置并提示.
+     * 管线仍是 GL 合成 (同一个播放器回不到解码器直连), 但判得出来的这类设备卡在着色器上, 直通一层不费什么;
+     * 写回关闭之后下次进播放页就不建效果图了.
+     */
+    private suspend fun fallBackForPerformance(mode: VideoEnhancementMode, fps: Float, contentFps: Float) {
+        withContext(Dispatchers.IO) {
+            logger.warn { "Video enhancement too slow on this device (mode=$mode, $fps fps, content ${contentFps} fps), turning it off" }
+        }
+        setMode(VideoEnhancementMode.OFF)
+        VideoEnhancementFallback.report(VideoEnhancementFallbackEvent(mode, fps, contentFps))
     }
 
     override fun restore() {
