@@ -19,7 +19,15 @@ package me.him188.ani.app.domain.mediasource.search
  */
 internal object TitleParts {
     /** [text] 写着的作品名 (已归一化, 去重); 一个都拆不出时为空. */
-    fun namesIn(text: String): Set<String> {
+    fun namesIn(text: String): Set<String> = names(text, whole = false)
+
+    /**
+     * [text] 写着的作品名的原样写法: 同 [namesIn], 但不去掉季、不按文字切开. 名字本身带着季或几种文字的
+     * (「BanG Dream! 2nd Season」「BanG Dream! ガルパ☆ピコ」) 拆开后与谁都不相等, 认别的作品时也按这份比.
+     */
+    fun wholeNamesIn(text: String): Set<String> = names(text, whole = true)
+
+    private fun names(text: String, whole: Boolean): Set<String> {
         val body = withoutPromotion(text)
         val pieces = ArrayList<String>()
         // 括号里的各算一段, 括号外剩下的也算一段
@@ -30,8 +38,8 @@ internal object TitleParts {
         pieces += outside
         return pieces.asSequence()
             .flatMap { it.split(JOINER) }
-            .flatMap { splitByScript(it) }
-            .map { TitleForms.compact(withoutTags(it)) }
+            .flatMap { if (whole) listOf(it) else splitByScript(it) }
+            .map { TitleForms.compact(withoutTags(it, keepSeasons = whole)) }
             .filter { it.length >= MIN_NAME_LENGTH && it.any { ch -> !ch.isDigit() } }
             .toCollection(LinkedHashSet())
     }
@@ -77,9 +85,9 @@ internal object TitleParts {
 
     private fun Char.isCjk() = this in '一'..'鿿' || this in '㐀'..'䶿'
 
-    private fun withoutTags(text: String): String {
+    private fun withoutTags(text: String, keepSeasons: Boolean = false): String {
         var s = text
-        for (tag in TAGS) s = tag.replace(s, " ")
+        for (tag in TAGS) if (!(keepSeasons && tag === SEASON)) s = tag.replace(s, " ")
         return LEADING_INDEX.replace(s.trim(), "")
     }
 
@@ -100,15 +108,17 @@ internal object TitleParts {
     /** 作品名前面的序号与画质标记 (`J 4k 间谍过家家`, `01.`, `1.刀剑神域`) */
     private val LEADING_INDEX = Regex("""^(?:[A-Za-z]\s+|\d{1,3}[.、\s]+|[248]k\s+)+""", RegexOption.IGNORE_CASE)
 
+    /** 季、部、段 */
+    private val SEASON = Regex(
+        """第\s*[0-9一二两三四五六七八九十]{1,3}\s*[季期部]|(?<![a-z])s\d{1,2}(?:\s*[-~～]\s*s?\d{1,2})?(?![0-9])|(?<![a-z])season\s*\d{1,2}(?![0-9])""" +
+            """|\d{1,2}(?:st|nd|rd|th)\s*season|全\s*\d{1,2}\s*季|\d{1,2}\s*季全|[0-9一二两三四五]{1,2}\s*[-~～至]\s*[0-9一二两三四五]{1,2}\s*季""",
+        RegexOption.IGNORE_CASE,
+    )
+
     private val TAGS = listOf(
         // 年份与年份范围
         Regex("""(?<![0-9])(?:19|20)\d\d(?:\s*[-~～至]\s*(?:19|20)?\d\d)?年?(?![0-9])"""),
-        // 季、部、段
-        Regex(
-            """第\s*[0-9一二两三四五六七八九十]{1,3}\s*[季期部]|(?<![a-z])s\d{1,2}(?:\s*[-~～]\s*s?\d{1,2})?(?![0-9])|(?<![a-z])season\s*\d{1,2}(?![0-9])""" +
-                """|\d{1,2}(?:st|nd|rd|th)\s*season|全\s*\d{1,2}\s*季|\d{1,2}\s*季全|[0-9一二两三四五]{1,2}\s*[-~～至]\s*[0-9一二两三四五]{1,2}\s*季""",
-            RegexOption.IGNORE_CASE,
-        ),
+        SEASON,
         // 集数与范围
         Regex(
             """全\s*\d{1,4}\s*[集话話]|\d{1,4}\s*[集话話]全|共\s*\d{1,4}\s*[集话話]|更新?至\s*\d{1,4}\s*[集话話]?|(?:第\s*)?\d{1,4}\s*[集话話]""" +
