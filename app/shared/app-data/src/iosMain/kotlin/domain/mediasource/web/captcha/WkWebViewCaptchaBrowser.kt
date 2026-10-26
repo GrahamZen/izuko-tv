@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import me.him188.ani.app.domain.mediasource.web.APPLE_WEBVIEW_USER_AGENT
 import me.him188.ani.app.domain.mediasource.web.LoadedPage
 import platform.CoreGraphics.CGRectMake
 import platform.Foundation.NSError
@@ -61,7 +62,7 @@ object WkWebViewCaptchaBrowserFactory : CaptchaBrowserFactory {
 private class WkWebViewCaptchaBrowser(userAgent: String?) : CaptchaBrowser {
     // 数据源大多不指定 UA: 给 WKWebView 定一个已知的, 过盾拿到的 cf_clearance 才能配着同一个 UA 给 HTTP 请求用
     // (WKWebView 的默认 UA 读不出来, 留空的话 HTTP 侧照旧用自己的 UA, 带着这个 cookie 也一直被挡)
-    override val userAgent: String = userAgent ?: IOS_BROWSER_USER_AGENT
+    override val userAgent: String = userAgent ?: APPLE_WEBVIEW_USER_AGENT
 
     private val webView = WKWebView(
         frame = CGRectMake(0.0, 0.0, 1000.0, 1000.0),
@@ -200,7 +201,3 @@ private class WkWebViewCaptchaBrowser(userAgent: String?) : CaptchaBrowser {
 }
 
 private const val PAGE_HTML_SCRIPT = "document.documentElement.outerHTML"
-
-/** 数据源没指定 UA 时浏览器用的: iPad 上 Safari 默认报的桌面版 (与页面里 navigator.platform 的 MacIntel 对得上). */
-private const val IOS_BROWSER_USER_AGENT =
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"

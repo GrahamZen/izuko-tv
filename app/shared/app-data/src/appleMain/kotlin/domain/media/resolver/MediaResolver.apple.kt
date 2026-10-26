@@ -19,6 +19,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.media.player.data.MediaDataProvider
+import me.him188.ani.app.domain.mediasource.web.appleWebViewUserAgentFor
 import me.him188.ani.app.domain.player.toLogText
 import me.him188.ani.app.platform.Context
 import me.him188.ani.datasources.api.Media
@@ -100,33 +101,51 @@ class IosWebMediaResolver(
         }
         logger.info { "Final config: ${config.toLogText()}" }
 
-        var video: WebVideo? = null
-        reportResolveAttempt(timeoutMillis)
-        withContext(Dispatchers.Default) {
-            withContext(Dispatchers.Main) { extractor }.getVideoResourceUrl(
-                context = this@IosWebMediaResolver.iosContext,
-                pageUrl = media.download.uri,
-                config = config,
-            ) {
-                when (val result = match(it)) {
-                    WebVideoMatcher.MatchResult.Continue -> WebViewVideoExtractor.Instruction.Continue
-                    is WebVideoMatcher.MatchResult.Matched -> {
-                        video = result.video
-                        WebViewVideoExtractor.Instruction.FoundResource
+        // 嗅探到的先试一下, 不能放的记下来重新嗅 (见 SniffedVideoCheck); 最后一轮抓到的不试
+        val rejected = mutableSetOf<String>()
+        var matchedVideo: WebVideo? = null
+        for (round in 0 until MAX_SNIFF_ROUNDS) {
+            var video: WebVideo? = null
+            var videoUrl: String? = null
+            reportResolveAttempt(timeoutMillis)
+            withContext(Dispatchers.Default) {
+                withContext(Dispatchers.Main) { extractor }.getVideoResourceUrl(
+                    context = this@IosWebMediaResolver.iosContext,
+                    pageUrl = media.download.uri,
+                    config = config,
+                ) {
+                    if (it in rejected) return@getVideoResourceUrl WebViewVideoExtractor.Instruction.Continue
+                    when (val result = match(it)) {
+                        WebVideoMatcher.MatchResult.Continue -> WebViewVideoExtractor.Instruction.Continue
+                        // 换了个写法报上来的同一个视频 (框架页参数里的、直接的) 也不算
+                        is WebVideoMatcher.MatchResult.Matched -> if (result.video.m3u8Url in rejected) {
+                            WebViewVideoExtractor.Instruction.Continue
+                        } else {
+                            video = result.video
+                            videoUrl = it
+                            WebViewVideoExtractor.Instruction.FoundResource
+                        }
+
+                        WebVideoMatcher.MatchResult.LoadPage -> WebViewVideoExtractor.Instruction.LoadPage
+                        null -> WebViewVideoExtractor.Instruction.Continue
                     }
-
-                    WebVideoMatcher.MatchResult.LoadPage -> WebViewVideoExtractor.Instruction.LoadPage
-                    null -> WebViewVideoExtractor.Instruction.Continue
                 }
-            }
-        } ?: throw MediaResolutionException(ResolutionFailures.NO_MATCHING_RESOURCE)
+            } ?: throw MediaResolutionException(ResolutionFailures.NO_MATCHING_RESOURCE)
 
-        val matchedVideo = video ?: error("getVideoResourceUrl completed but no video found")
+            val found = video ?: error("getVideoResourceUrl completed but no video found")
+            if (round == MAX_SNIFF_ROUNDS - 1 || sniffedVideoUsable(found, round)) {
+                matchedVideo = found
+                break
+            }
+            videoUrl?.let { rejected += it }
+            rejected += found.m3u8Url
+        }
+        val chosen = matchedVideo ?: error("sniff rounds ended without a video")
 
         return HttpStreamingMediaDataProvider(
-            matchedVideo.m3u8Url,
+            chosen.m3u8Url,
             media.originalTitle,
-            matchedVideo.headers,
+            chosen.headers,
             media.extraFiles.toMediampMediaExtraFiles(),
         )
     }
@@ -293,11 +312,9 @@ class IosWebViewVideoExtractor(
 
         suspend fun run(): WebResource? {
             logger.info { "Starting webview for $pageUrl" }
-            webView.setCustomUserAgent(
-                config.userAgent
-                    ?: ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) " +
-                            "Chrome/58.0.3029.110 Safari/537.3"),
-            )
+            val userAgent = appleWebViewUserAgentFor(config.userAgent)
+            logger.info { "WebView UA: $userAgent" }
+            webView.setCustomUserAgent(userAgent)
 
             try {
                 // Set cookies from config
@@ -323,6 +340,7 @@ class IosWebViewVideoExtractor(
         }
 
         private val handledUrls = mutableSetOf<String>()
+        private val cloudflareBlock by lazy { CloudflareBlockRetry(webView, pageUrl) }
 
         fun handleInterceptedUrl(url: String): WKNavigationActionPolicy? {
             return try {
@@ -349,6 +367,7 @@ class IosWebViewVideoExtractor(
                 return WKNavigationActionPolicy.WKNavigationActionPolicyAllow
             }
             handledUrls.add(url)
+            if (cloudflareBlock.onResource(url)) return WKNavigationActionPolicy.WKNavigationActionPolicyAllow
 
             logger.info { "Processing url: $url" }
             val instruction = resourceMatcher(url)
