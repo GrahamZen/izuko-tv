@@ -49,6 +49,8 @@ internal fun DownloadSnapshot.toDownloadItem(
         mergeProgress = mergeProgress ?: Progress.Unspecified,
         awaitingTorrentService = awaitingTorrentService,
         waitingForPlayback = waitingForPlayback,
+        locationUnavailable = locationUnavailable,
+        locationReconnected = locationReconnected,
     )
 }
 

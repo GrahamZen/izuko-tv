@@ -117,12 +117,29 @@ class AniDatabaseMigrationTest {
     }
 
     @Test
+    fun `MIG-13 v29 to v30 adds the cache location columns and keeps rows`() {
+        val helper = createHelper()
+        helper.createDatabase(29).use { connection ->
+            connection.execSQL("INSERT INTO `torrent_cache` (`mediaId`, `torrentData`, `relativeDir`) VALUES ('m1', X'01', 'pieces/1')")
+        }
+        helper.runMigrationsAndValidate(30, emptyList()).use { connection ->
+            assertContains(connection.columnNames("torrent_cache"), "location")
+            assertContains(connection.columnNames("http_cache_download_state"), "location")
+            connection.prepare("SELECT `relativeDir`, `location` FROM `torrent_cache` WHERE `mediaId` = 'm1'").use { statement ->
+                assertTrue(statement.step())
+                assertEquals("pieces/1", statement.getText(0))
+                assertTrue(statement.isNull(1)) // 旧缓存都在内部存储
+            }
+        }
+    }
+
+    @Test
     fun `shipped v26 to v29 databases open with every row kept`() {
         for (version in listOf(26, 27, 28, 29)) {
             Files.deleteIfExists(databasePath)
             createHelper().createDatabase(version).use { it.insertUserData() }
             openLikeTheApp { connection ->
-                assertEquals(29, connection.userVersion(), "from v$version")
+                assertEquals(30, connection.userVersion(), "from v$version")
                 for ((table, count) in USER_DATA_ROWS) {
                     assertEquals(count, connection.count(table), "$table from v$version")
                 }
@@ -145,7 +162,7 @@ class AniDatabaseMigrationTest {
                 connection.execSQL("INSERT INTO `search_history` (`content`) VALUES ('old')")
             }
             openLikeTheApp { connection ->
-                assertEquals(29, connection.userVersion(), "from v$version")
+                assertEquals(30, connection.userVersion(), "from v$version")
                 assertEquals(0, connection.count("search_history"), "from v$version")
                 assertContains(connection.tableNames(), "torrent_cache_episode")
             }
@@ -154,12 +171,12 @@ class AniDatabaseMigrationTest {
 
     @Test
     fun `a database from a newer version is recreated`() {
-        createHelper().createDatabase(29).use { connection ->
+        createHelper().createDatabase(30).use { connection ->
             connection.insertUserData()
-            connection.execSQL("PRAGMA user_version = 30")
+            connection.execSQL("PRAGMA user_version = 31")
         }
         openLikeTheApp { connection ->
-            assertEquals(29, connection.userVersion())
+            assertEquals(30, connection.userVersion())
             assertEquals(0, connection.count("search_history"))
         }
     }

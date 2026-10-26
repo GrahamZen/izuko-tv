@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import me.him188.ani.app.domain.media.cache.MediaCache
 import me.him188.ani.app.domain.media.cache.MediaCacheState
 import me.him188.ani.datasources.api.topic.FileSize.Companion.bytes
 import me.him188.ani.utils.io.SystemPath
@@ -30,7 +31,8 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * 缓存目录所在分区快满时暂停全部正在进行的下载, 并经 [lowSpacePauses] 交给界面提示.
+ * 缓存所在的盘快满时暂停那个盘上正在进行的下载, 并经 [lowSpacePauses] 交给界面提示. 各盘分开算 (缓存可以放在外接盘上,
+ * 见 [MediaCache.locationId]): 一个盘满了不影响别的盘上的下载.
  *
  * 下载不会因为空间不够自己停下, 会一直写到分区只剩几百 KB. 那时系统和别的应用写不进数据库, 会被判定损坏而删掉
  * (电视的节目数据库就这样没过), 删缓存的记录也写不进去, 重启后被删的缓存又回来. 所以剩余空间低于 [lowSpaceBytes]
@@ -42,7 +44,8 @@ import kotlin.time.Duration.Companion.seconds
  */
 class DownloadSpaceGuard(
     private val downloadManager: MediaDownloadManager,
-    private val saveDir: () -> SystemPath,
+    /** 位置 ([MediaCache.locationId]) 的缓存根目录; 那个盘没接上时为 `null`, 不管 */
+    private val rootOf: (location: String?) -> SystemPath?,
     private val scope: CoroutineScope,
     private val freeBytes: (SystemPath) -> Long? = { it.usableSpace() },
     private val lowSpaceBytes: Long = LOW_SPACE_BYTES,
@@ -63,13 +66,28 @@ class DownloadSpaceGuard(
         }
     }
 
-    /** 有下载在进行而空间不足时全部暂停, 返回暂停了几个. */
+    /** 空间不足的盘上有下载在进行时暂停它们, 返回一共暂停了几个. */
     internal suspend fun check(): Int {
-        val free = freeBytes(saveDir()) ?: return 0
-        if (free >= lowSpaceBytes) return 0
-        val running = downloadManager.downloads.value.filter { stateOf(it) == MediaCacheState.IN_PROGRESS }
+        val downloads = downloadManager.downloads.value
+        // 先只看剩余空间 (便宜), 空间都够时不去读各下载的状态
+        val lowFree = downloads.mapTo(LinkedHashSet()) { it.cache.locationId }
+            .mapNotNull { location ->
+                val free = rootOf(location)?.let(freeBytes) ?: return@mapNotNull null
+                if (free < lowSpaceBytes) location to free else null
+            }
+            .toMap()
+        if (lowFree.isEmpty()) return 0
+        var paused = 0
+        for ((location, free) in lowFree) {
+            paused += pauseRunning(downloads.filter { it.cache.locationId == location }, location, free)
+        }
+        return paused
+    }
+
+    private suspend fun pauseRunning(downloads: List<MediaDownload>, location: String?, free: Long): Int {
+        val running = downloads.filter { stateOf(it) == MediaCacheState.IN_PROGRESS }
         if (running.isEmpty()) return 0
-        logger.warn { "Only ${free.bytes} left for caches, pausing ${running.size} downloads" }
+        logger.warn { "Only ${free.bytes} left on location ${location ?: "internal"}, pausing ${running.size} downloads" }
         for (download in running) {
             try {
                 if (withTimeoutOrNull(STATE_TIMEOUT) { download.pause() } == null) {
@@ -81,7 +99,7 @@ class DownloadSpaceGuard(
                 logger.warn(e) { "Failed to pause download ${download.id} for low storage" }
             }
         }
-        _lowSpacePauses.tryEmit(LowSpacePause(freeBytes = free, paused = running.size))
+        _lowSpacePauses.tryEmit(LowSpacePause(freeBytes = free, paused = running.size, location = location))
         return running.size
     }
 
@@ -95,8 +113,8 @@ class DownloadSpaceGuard(
         null
     }
 
-    /** 因空间不足暂停了 [paused] 个下载, 当时缓存目录所在分区还剩 [freeBytes] 字节. */
-    data class LowSpacePause(val freeBytes: Long, val paused: Int)
+    /** 因空间不足暂停了 [location] 这个位置上的 [paused] 个下载, 那个盘当时还剩 [freeBytes] 字节. */
+    data class LowSpacePause(val freeBytes: Long, val paused: Int, val location: String? = null)
 
     companion object {
         /** 剩余空间低于它就暂停. 下得最快时 (十几 MB/s) 两次检查之间写进去的远小于它. */

@@ -71,6 +71,10 @@ data class DownloadItem(
      * 正在播放同一集, 停着等播放结束 (见 [me.him188.ani.app.domain.media.download.MediaDownloadManager.waitingForPlayback]).
      */
     val waitingForPlayback: Boolean = false,
+    /** 所在的盘没接上 (见 [me.him188.ani.app.domain.media.cache.MediaCache.isLocationUnavailable]), 插回来接着用 */
+    val locationUnavailable: Boolean = false,
+    /** [locationUnavailable] 时盘已经接回来, 正在重新恢复 (BT 要先校验盘上的数据) */
+    val locationReconnected: Boolean = false,
 ) {
     enum class Playability {
         PLAYABLE,
