@@ -34,8 +34,9 @@ import kotlin.time.Duration.Companion.seconds
  * 这样的资源页面名与这一集相同, 内容却是同名的剧场版、真人电影或总集篇 (「辉夜大小姐想让我告白：天才们的恋爱头脑战」页面上
  * 唯一一条「1080P」是 2019 年的真人电影); 网页源打开前不知道时长, 只能在这里认. 网盘的时长列文件时就有, 选源时已经去掉.
  *
- * 换的是这一条, 不是这个源: 不当作播放失败 (不记数据源的失败), 只排除这一条与同一个源里同名的其它线路
- * (同一页的另一条线路是同一部片子), 先在同一个源里挑 (这个源多半有正确的那一集), 没有再按平常的顺序换别的源.
+ * 换的是这一条, 不是这个源: 不当作播放失败 (不记数据源的失败), 只排除这一条. 资源不带条目页的地址, 同一个源里同名的线路
+ * 不一定出自同一页 (站点上同名的 TV 版与剧场版各有一页), 一起排除会丢掉对的; 同一页别的线路也不对时, 开播后同样会被认出来再换.
+ * 先在同一个源里挑 (这个源多半有正确的那一集), 没有再按平常的顺序换别的源.
  * 用户手选的、回放手动查找记住的线路 ([SelectOrigin.MANUAL] / [SelectOrigin.BROWSE_MEMORY]) 不查. 这一集的时长不知道时不查.
  *
  * @param episodeId 正在播的这一集
@@ -73,16 +74,13 @@ internal suspend fun PlayerLoadErrorHandler.observeEpisodeDurationMismatch(
     }
 }
 
-/** 排除 [wrong] 与同一个源里同名的线路, 先在 [wrong] 的源里挑, 没有再按平常的顺序换. */
+/** 排除 [wrong], 先在它的源里挑, 没有再按平常的顺序换. */
 internal suspend fun PlayerLoadErrorHandler.switchFromWrongEpisode(
     session: MediaFetchSession,
     selector: MediaSelector,
     wrong: Media,
     sourceTiers: MediaSelectorSourceTiers,
 ) {
-    selector.filteredCandidatesMedia.first()
-        .filter { it.mediaSourceId == wrong.mediaSourceId && it.originalTitle == wrong.originalTitle }
-        .forEach { blacklist(it.mediaId) }
     blacklist(wrong.mediaId)
     val result = MediaAutoSelector(selector).select(
         session,

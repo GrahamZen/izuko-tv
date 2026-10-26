@@ -28,7 +28,7 @@ import kotlin.time.Duration.Companion.seconds
 @DisabledOnNative // ContextParameters crashes on Native, 同 PlayerLoadErrorHandlerTest
 class EpisodeDurationMismatchTest {
     @Test
-    fun `a wrong duration switches to the right episode of the same source`() = runFetchMediaSelectorTestSuite {
+    fun `a wrong duration excludes only that resource and switches within the same source`() = runFetchMediaSelectorTestSuite {
         initSubject("test")
         val (_, session, sources) = configureFetchSession {
             object {
@@ -36,12 +36,11 @@ class EpisodeDurationMismatchTest {
                 val other by web { tier = 0 }
             }
         }
-        // 同一页上两条线路都是同名的真人电影, 这个源另有正确的第 1 集
+        // 这个源上同名的两页: 真人电影的一条线路, 与 TV 版的一条线路 (是对的)
         val movie = media(kind = WEB, subjectName = initApi.subjectName, originalTitle = "辉夜 1080P", alliance = "简中")
-        val movieOtherLine = media(kind = WEB, subjectName = initApi.subjectName, originalTitle = "辉夜 1080P", alliance = "DB")
-        val episode = media(kind = WEB, subjectName = initApi.subjectName, originalTitle = "辉夜 01")
+        val sameNameTv = media(kind = WEB, subjectName = initApi.subjectName, originalTitle = "辉夜 1080P", alliance = "DB")
         val elsewhere = media(kind = WEB, subjectName = initApi.subjectName)
-        sources.girigiri.complete(movie, movieOtherLine, episode)
+        sources.girigiri.complete(movie, sameNameTv)
         sources.other.complete(elsewhere)
         testScope().runCurrent()
         val selected = selector.filteredCandidatesMedia.first().single { it.mediaId == movie.mediaId }
@@ -53,9 +52,9 @@ class EpisodeDurationMismatchTest {
         testScope().runCurrent()
 
         assertEquals(true, job.isCompleted)
-        assertEquals(episode.mediaId, selector.selected.value?.mediaId)
-        // 只排除这部片子的线路, 不动这个源的其它资源
-        assertEquals(setOf(movie.mediaId, movieOtherLine.mediaId), handler.blacklistedMedia)
+        // 只排除这一条: 同名的线路不一定出自同一页, 先在这个源里换
+        assertEquals(sameNameTv.mediaId, selector.selected.value?.mediaId)
+        assertEquals(setOf(movie.mediaId), handler.blacklistedMedia)
     }
 
     context(scope: TestScope)
