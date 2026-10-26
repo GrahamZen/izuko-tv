@@ -11,13 +11,13 @@ package me.him188.ani.app.ui.subject.episode.tv.source
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
-import me.him188.ani.app.ui.foundation.widgets.LocalToaster
-import me.him188.ani.app.ui.lang.Lang
-import me.him188.ani.app.ui.lang.tv_source_search_paused_for_stutter
+import me.him188.ani.app.domain.settings.SettingAdjustment
+import me.him188.ani.app.domain.settings.SettingAdjustments
+import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.ui.subject.episode.EpisodeViewModel
-import org.jetbrains.compose.resources.stringResource
 
 /**
  * 播放哨兵 (TvPlaybackSentinel) 判出「搜索导致画面卡顿」时报到这里 (见 PerfPlaybackAnalysis.searchBlamed), 播放页的 [TvSearchStutterGuard] 收.
@@ -40,15 +40,14 @@ internal object TvSearchStutter {
 
 /**
  * 播放页上挂一个: 播放时搜索导致画面卡顿, 设置「完整搜索」没选过的改成「只手动」并当场暂停搜索 (见 [EpisodeViewModel.onSearchCausedStutter]),
- * 改了就提示一句 (可在设置里改回).
+ * 改了就经 [SettingAdjustments] 告知一声 (可在设置里改回).
  */
 @Composable
 fun TvSearchStutterGuard(vm: EpisodeViewModel) {
-    val toaster = LocalToaster.current
-    val message = stringResource(Lang.tv_source_search_paused_for_stutter)
+    val adjustments = remember { GlobalKoin.get<SettingAdjustments>() }
     LaunchedEffect(vm) {
         TvSearchStutter.events.collect {
-            if (vm.onSearchCausedStutter()) toaster.toast(message)
+            if (vm.onSearchCausedStutter()) adjustments.notify(SettingAdjustment.FullSearchStutter)
         }
     }
 }

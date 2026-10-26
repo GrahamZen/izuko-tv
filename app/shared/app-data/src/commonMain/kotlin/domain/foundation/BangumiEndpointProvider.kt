@@ -42,7 +42,7 @@ class BangumiEndpointProvider(
      */
     proxyInUse: Flow<Boolean> = flowOf(false),
     /**
-     * 确定官方连不上时调用, 参数是通了的那条线路. 由它决定怎么改设置 (关掉「官方直连」, 或先请界面问用户),
+     * 确定官方连不上时调用, 参数是通了的那条线路. 由它请界面问用户要不要改设置 (关掉「官方直连」等), 不替用户改,
      * 见 [reportOriginUnreachable].
      */
     private val onOriginUnreachable: suspend (workingRoute: BangumiRoute) -> Unit = {},
