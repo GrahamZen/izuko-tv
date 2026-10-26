@@ -15,6 +15,7 @@ import kotlinx.coroutines.withContext
 import me.him188.ani.app.data.persistent.database.dao.WebSearchSessionCacheDao
 import me.him188.ani.app.data.persistent.database.dao.WebSearchSessionCacheEntity
 import me.him188.ani.app.data.repository.Repository
+import me.him188.ani.app.domain.mediasource.search.SiteSearchMemory
 import me.him188.ani.app.domain.mediasource.web.WebSearchEpisodeInfo
 import me.him188.ani.app.domain.mediasource.web.WebSearchSubjectInfo
 import me.him188.ani.datasources.api.EpisodeSort
@@ -50,6 +51,9 @@ class SelectorMediaSourceEpisodeCacheRepository(
 
     private suspend fun userTtl(): Duration = userTtlFlow.first()
 
+    /** 跨条目共用的站点回应记忆, 有效期同缓存行, 随手动重新查询清空 (见 [SiteSearchMemory]). */
+    val siteMemory = SiteSearchMemory { sourceTtl -> minOf(sourceTtl, userTtl()) }
+
     suspend fun addCache(
         requesterSubjectId: Int?,
         mediaSourceId: String,
@@ -81,6 +85,7 @@ class SelectorMediaSourceEpisodeCacheRepository(
      * 清除该条目在所有数据源上的缓存.
      */
     suspend fun clearByRequestedSubject(requesterSubjectId: Int) = withContext(defaultDispatcher) {
+        siteMemory.clear()
         dao.deleteByRequestedSubject(requesterSubjectId)
     }
 
@@ -91,6 +96,7 @@ class SelectorMediaSourceEpisodeCacheRepository(
         requesterSubjectId: Int,
         mediaSourceId: String,
     ) = withContext(defaultDispatcher) {
+        siteMemory.clear()
         dao.deleteByRequestedSubjectAndSource(requesterSubjectId, mediaSourceId)
     }
 

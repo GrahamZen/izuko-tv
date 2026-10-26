@@ -23,6 +23,7 @@ import kotlinx.serialization.json.Json
 import me.him188.ani.app.domain.foundation.overrideUserAgent
 import me.him188.ani.app.domain.foundation.sourceRequestUserAgent
 import me.him188.ani.app.domain.mediasource.TextTemplate
+import me.him188.ani.app.domain.mediasource.search.SubjectSearchPlan
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import me.him188.ani.datasources.api.source.direct.DirectLink
@@ -109,7 +110,10 @@ internal class DirectApiEngine(
     private suspend fun searchSubject(request: MediaFetchRequest, bangumiSubjectId: String): ResolvedSubject? {
         val subject = config.subject
         var fallback: ResolvedSubject? = null
-        for (name in request.subjectNames.filter { it.isNotBlank() }.take(subject.maxNames.coerceAtLeast(1))) {
+        // 条目的名字都没找到时再用系列名 (搜索计划): 只在校验 bangumi 条目 id 时用, 宽的词搜出的第一季才不会被当成这一部
+        val names = request.subjectNames.filter { it.isNotBlank() }.take(subject.maxNames.coerceAtLeast(1))
+        val seriesNames = if (subject.verify != null) SubjectSearchPlan.of(request).seriesNames.take(1) else emptyList()
+        for (name in (names + seriesNames).distinct()) {
             val variables = baseVariables() + mapOf("subjectName" to name, "bangumiSubjectId" to bangumiSubjectId)
             val items = fetchItems(subject.request, variables)
             for (item in items.take(subject.maxCandidates.coerceAtLeast(1))) {
