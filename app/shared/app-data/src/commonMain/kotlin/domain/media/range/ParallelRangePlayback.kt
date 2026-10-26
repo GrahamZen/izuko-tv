@@ -15,18 +15,29 @@ import io.ktor.client.plugins.timeout
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.header
 import io.ktor.client.request.prepareGet
+import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.readRawBytes
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.Url
+import io.ktor.utils.io.readAvailable
 import kotlinx.atomicfu.atomic
+import kotlinx.atomicfu.locks.SynchronizedObject
+import kotlinx.atomicfu.locks.synchronized
+import kotlinx.atomicfu.update
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
@@ -118,6 +129,17 @@ internal class ParallelRangeProxySession private constructor(
     private val chunkSize = chunkSizeFor(connections)
     private val firstChunkSize = firstChunkSizeFor(connections, chunkSize)
     private val requestCount = atomic(0)
+    private val activeRequests = atomic(0)
+
+    /** 每条连接最近拉块的速度 (字节/秒, 含首字节的等待), 0 = 还没测到. 定块多大用 (见 [chunkCap]). */
+    private val laneSpeed = atomic(0L)
+
+    /** 读前窗口在后台拉, 不跟着哪个请求停; 会话关掉时一起停. */
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO_)
+
+    /** 读前窗口, 最近用过的在前 (见 [readAheadFor]). */
+    private val readAheads = ArrayDeque<ReadAhead>()
+    private val readAheadLock = SynchronizedObject()
 
     /** 各通道实际拿到几个不同的客户端 (应当等于 [connections]). */
     internal val laneClients: Int get() = lanes.distinctClients
@@ -147,7 +169,11 @@ internal class ParallelRangeProxySession private constructor(
             return
         }
         val length = range.last - range.first + 1
-        logger.info { "[RangeProxy] #$id 第 $n 个请求: Range ${rangeHeader ?: "(无)"} → 回 ${range.first}-${range.last} (${length.mib()} MiB)" }
+        val others = activeRequests.value
+        logger.info {
+            "[RangeProxy] #$id 第 $n 个请求: Range ${rangeHeader ?: "(无)"} → 回 ${range.first}-${range.last} (${length.mib()} MiB)" +
+                if (others > 0) ", 同时还有 $others 个请求在送" else ""
+        }
         val head = buildString {
             if (rangeHeader != null) {
                 append("HTTP/1.1 206 Partial Content\r\n")
@@ -161,46 +187,77 @@ internal class ParallelRangeProxySession private constructor(
             append("Connection: close\r\n\r\n")
         }
         sink.write(head.encodeToByteArray())
-        stream(n, range, sink)
+        activeRequests.incrementAndGet()
+        try {
+            stream(n, range, sink)
+        } finally {
+            activeRequests.decrementAndGet()
+        }
     }
 
     /**
-     * 把 [range] 拆成块 ([planChunks]) 分给各通道同时拉, 按顺序送给播放器. 同时在拉与拉好没送的块最多 [connections] 个 (内存不超过路数 × 最大块).
-     * 播放器断开 (跳转、换源) 时写入抛异常, 没送的块随之取消, 通道空出来给新的请求.
+     * 先从读前窗口 ([readAheadFor]) 送盖得住的开头, 剩下的拆成块 ([planChunks]) 分给各通道同时拉, 按顺序送给播放器.
+     * 同时在拉与拉好没送的块最多 [connections] 个 (内存不超过路数 × 最大块).
+     * 排在最前的那块拉到多少就送多少 (不等整块拉完): 画面不用一块一块地等, 播放器断开 (跳转、换源) 时下一次写入就发现,
+     * 这个请求在拉的块随之取消, 通道马上空出来给新的请求 —— 不然要等手上那块拉完写不出去才知道, 期间通道全被播放器不要了的数据占着.
      */
     private suspend fun stream(n: Int, range: LongRange, sink: HlsProxyResponseSink) {
         val started = TimeSource.Monotonic.markNow()
         val progress = StreamProgress(n)
         var firstByteMillis = -1L
+        var fromReadAhead = 0L
+        suspend fun send(bytes: ByteArray) {
+            val waitedPlayer = TimeSource.Monotonic.markNow()
+            sink.write(bytes)
+            progress.playerMillis += waitedPlayer.elapsedNow().inWholeMilliseconds
+            if (firstByteMillis < 0) firstByteMillis = started.elapsedNow().inWholeMilliseconds
+            progress.sent += bytes.size
+        }
         try {
-            coroutineScope {
-                val permits = Semaphore(connections)
-                val pending = Channel<Deferred<ByteArray>>(Channel.UNLIMITED)
-                launch {
-                    for (part in planChunks(range.first, range.last, connections, firstChunkSize, chunkSize)) {
-                        permits.acquire()
-                        pending.send(async { fetch(part) })
+            var position = range.first
+            // 跨过窗口边界时接着从下一个窗口答 (剩下的还小就再开一个); 窗口那段拉不下来时停下, 剩下的照常拉
+            while (position <= range.last) {
+                val ahead = readAheadFor(n, position..range.last) ?: break
+                val waited = TimeSource.Monotonic.markNow()
+                val playerBefore = progress.playerMillis
+                val next = ahead.serve(position..range.last) { send(it) }
+                progress.networkMillis += waited.elapsedNow().inWholeMilliseconds - (progress.playerMillis - playerBefore)
+                fromReadAhead += next - position
+                if (next == position) break
+                position = next
+            }
+            if (position <= range.last) {
+                coroutineScope {
+                    val permits = Semaphore(connections)
+                    val pending = Channel<Chunk>(Channel.UNLIMITED)
+                    launch {
+                        for (part in planChunks(position, range.last, connections, firstChunkSize, ::chunkCap)) {
+                            permits.acquire()
+                            val chunk = Chunk(part)
+                            launch { fetch(chunk) }
+                            pending.send(chunk)
+                        }
+                        pending.close()
                     }
-                    pending.close()
-                }
-                for (chunk in pending) {
-                    // 卡的时候分得清是网盘慢 (等块) 还是播放器缓冲够了暂时不读 (等写入)
-                    val waitedNetwork = TimeSource.Monotonic.markNow()
-                    val bytes = chunk.await()
-                    progress.networkMillis += waitedNetwork.elapsedNow().inWholeMilliseconds
-                    val waitedPlayer = TimeSource.Monotonic.markNow()
-                    sink.write(bytes)
-                    progress.playerMillis += waitedPlayer.elapsedNow().inWholeMilliseconds
-                    if (firstByteMillis < 0) firstByteMillis = started.elapsedNow().inWholeMilliseconds
-                    progress.sent += bytes.size
-                    permits.release()
-                    progress.maybeLog(inFlight = connections - permits.availablePermits)
+                    for (chunk in pending) {
+                        while (true) {
+                            // 卡的时候分得清是网盘慢 (等块) 还是播放器缓冲够了暂时不读 (等写入)
+                            val waitedNetwork = TimeSource.Monotonic.markNow()
+                            val piece = chunk.pieces.receiveCatching()
+                            progress.networkMillis += waitedNetwork.elapsedNow().inWholeMilliseconds
+                            val bytes = piece.getOrNull() ?: (piece.exceptionOrNull()?.let { throw it } ?: break)
+                            send(bytes)
+                            progress.maybeLog(inFlight = connections - permits.availablePermits)
+                        }
+                        permits.release()
+                    }
                 }
             }
             val millis = started.elapsedNow().inWholeMilliseconds
             logger.info {
-                "[RangeProxy] #$id 第 $n 个请求送完 ${range.first}-${range.last}: ${progress.sent.mib()} MiB, 首块 ${firstByteMillis}ms, " +
-                    "用时 ${millis}ms, 平均 ${progress.sent * 1000 / millis.coerceAtLeast(1) / 1024} KiB/s, " +
+                "[RangeProxy] #$id 第 $n 个请求送完 ${range.first}-${range.last}: ${progress.sent.mib()} MiB" +
+                    (if (fromReadAhead > 0) " (读前窗口里的 ${fromReadAhead / 1024} KiB)" else "") +
+                    ", 首块 ${firstByteMillis}ms, 用时 ${millis}ms, 平均 ${progress.sent * 1000 / millis.coerceAtLeast(1) / 1024} KiB/s, " +
                     "等网盘 ${progress.networkMillis}ms、等播放器 ${progress.playerMillis}ms"
             }
         } catch (e: CancellationException) {
@@ -231,7 +288,8 @@ internal class ParallelRangeProxySession private constructor(
             val bytes = sent - lastSent
             logger.info {
                 "[RangeProxy] #$id 第 $n 个请求进行中: 已送 ${sent.mib()} MiB, 这 ${interval / 1000} 秒 ${bytes * 1000 / interval / 1024} KiB/s, " +
-                    "等网盘 ${networkMillis - lastNetworkMillis}ms、等播放器 ${playerMillis - lastPlayerMillis}ms, 在拉 $inFlight 块"
+                    "等网盘 ${networkMillis - lastNetworkMillis}ms、等播放器 ${playerMillis - lastPlayerMillis}ms, 在拉 $inFlight 块, " +
+                    "每条连接 ${laneSpeed.value / 1024} KiB/s、块上限 ${chunkCap() / 1024} KiB"
             }
             lastLog = TimeSource.Monotonic.markNow()
             lastSent = sent
@@ -240,27 +298,55 @@ internal class ParallelRangeProxySession private constructor(
         }
     }
 
-    /** 拉一块: 借一条空着的通道, 网络出错重试 [MAX_RETRIES] 次 (网盘回 4xx 不重试, 直链多半过期了). */
-    private suspend fun fetch(part: LongRange): ByteArray {
+    /** 长请求的一块: 拉到的按到达顺序放进 [Chunk.pieces], 拉完关掉; 拉不下来时带着原因关掉 (送到这块时抛出). */
+    private suspend fun fetch(chunk: Chunk) {
+        try {
+            fetchPart(chunk.part, urgent = false) { chunk.pieces.send(it) }
+            chunk.pieces.close()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            chunk.pieces.close(e)
+        }
+    }
+
+    /**
+     * 拉 [part], 拉到多少交给 [onBytes] 多少. 借一条空着的通道 ([urgent] 的排在前面), 网络出错从断开处接着重试 [MAX_RETRIES] 次
+     * (网盘回 4xx 不重试, 直链多半过期了); 要它的已经停了 (播放器断开、窗口被挤掉) 就不重试. 拉不下来时抛出.
+     */
+    private suspend fun fetchPart(part: LongRange, urgent: Boolean, onBytes: suspend (ByteArray) -> Unit) {
+        var from = part.first
         var attempt = 0
         while (true) {
-            val client = lanes.take()
+            val client = lanes.take(urgent)
             val started = TimeSource.Monotonic.markNow()
+            val before = from
             try {
-                val bytes = client.fetchRange(url, headers, part)
-                val millis = started.elapsedNow().inWholeMilliseconds
-                if (millis >= SLOW_CHUNK_LOG_MILLIS) logger.info { "[RangeProxy] #$id 块 ${part.first}-${part.last} 拉了 ${millis}ms" }
-                return bytes
+                client.fetchRange(url, headers, from..part.last) { bytes ->
+                    onBytes(bytes)
+                    from += bytes.size
+                    if (!urgent && from <= part.last && lanes.shouldYield()) throw LaneYield()
+                }
+                val elapsed = started.elapsedNow()
+                recordSpeed(from - before, elapsed.inWholeMilliseconds)
+                if (elapsed.inWholeMilliseconds >= SLOW_CHUNK_LOG_MILLIS) {
+                    logger.info { "[RangeProxy] #$id 块 ${part.first}-${part.last} 拉了 ${elapsed.inWholeMilliseconds}ms" }
+                }
+                return
             } catch (e: CancellationException) {
                 throw e
+            } catch (_: LaneYield) {
+                // 让给急用的: 不算重试, 还回通道 (finally) 后重新排队, 从断开处接着拉
+                continue
             } catch (e: Throwable) {
+                currentCoroutineContext().ensureActive()
                 val status = (e as? ResponseException)?.response?.status?.value
                 if (attempt >= MAX_RETRIES || status in 400..499) {
                     logger.warn { "[RangeProxy] #$id 块 ${part.first}-${part.last} 拉不下来 (试了 ${attempt + 1} 次): ${describe(e)}" }
                     throw e
                 }
                 attempt++
-                logger.info { "[RangeProxy] #$id 块 ${part.first}-${part.last} 第 $attempt 次重试: ${describe(e)}" }
+                logger.info { "[RangeProxy] #$id 块 ${part.first}-${part.last} 第 $attempt 次重试 (从 $from 接着拉): ${describe(e)}" }
             } finally {
                 lanes.give(client)
             }
@@ -268,9 +354,144 @@ internal class ParallelRangeProxySession private constructor(
         }
     }
 
+    /** 不急的拉取把通道让给急用的 (见 [Lanes.shouldYield]). */
+    private class LaneYield : Exception()
+
+    /** 一块拉到的字节, 一段一段 (随网络到达). */
+    private class Chunk(val part: LongRange) {
+        val pieces = Channel<ByteArray>(Channel.UNLIMITED)
+    }
+
+    /**
+     * 盖住 [range] 开头的读前窗口. 没有的话, 小请求 (不超过 [READ_AHEAD_TRIGGER_BYTES]) 开一个新的, 大请求不开.
+     * 顺着读到窗口后半截时, 接着把紧挨着的下一截也开始拉: 跳转后播放器一段接一段地要好几 MiB 才开播, 下一截在它读这一截时就在路上.
+     */
+    private fun readAheadFor(n: Int, range: LongRange): ReadAhead? = synchronized(readAheadLock) {
+        readAheads.firstOrNull { range.first in it.window }?.let { hit ->
+            readAheads.remove(hit)
+            readAheads.addFirst(hit)
+            val next = hit.window.last + 1
+            val inSecondHalf = range.first - hit.window.first >= (hit.window.last - hit.window.first + 1) / 2
+            if (inSecondHalf && next < totalLength && readAheads.none { next in it.window }) {
+                openReadAhead(n, next, minLength = 1, verb = "接着开")
+            }
+            return hit
+        }
+        val length = range.last - range.first + 1
+        if (length > READ_AHEAD_TRIGGER_BYTES) return null
+        openReadAhead(n, range.first, minLength = length, verb = "开")
+    }
+
+    /**
+     * 从 [start] 开一个读前窗口, 至少 [minLength]. 不和已有的重叠 (碰到后面的窗口就截止在它前面, 那段数据已经有了).
+     * 跳到片尾附近时播放器在几 MiB 里跳着读, 中间还会插一段别处的, 所以留最多 [MAX_READ_AHEADS] 个、合计不超过 [READ_AHEAD_TOTAL_BYTES],
+     * 挤掉最久没用的 —— 只留一两个的话互相挤掉, 同一段一遍遍重拉. 持着 [readAheadLock] 调.
+     */
+    private fun openReadAhead(n: Int, start: Long, minLength: Long, verb: String): ReadAhead {
+        val pieceSize = readAheadPieceSize()
+        val bytes = (pieceSize * connections).coerceIn(READ_AHEAD_MIN_BYTES, READ_AHEAD_MAX_BYTES).coerceAtLeast(minLength)
+        val nextWindowStart = readAheads.minOfOrNull { if (it.window.first > start) it.window.first else Long.MAX_VALUE } ?: Long.MAX_VALUE
+        val window = start..minOf(totalLength - 1, start + bytes - 1, nextWindowStart - 1)
+        val ahead = ReadAhead(window, pieceSize)
+        readAheads.addFirst(ahead)
+        while (readAheads.size > MAX_READ_AHEADS || readAheads.sumOf { it.window.last - it.window.first + 1 } > READ_AHEAD_TOTAL_BYTES) {
+            readAheads.removeLast().cancel()
+        }
+        logger.info {
+            "[RangeProxy] #$id 第 $n 个请求${verb}读前窗口 ${window.first}-${window.last} " +
+                "(${(window.last - window.first + 1) / 1024} KiB, 每段 ${pieceSize / 1024} KiB)"
+        }
+        return ahead
+    }
+
+    /** 读前窗口每段多大: 按每条连接的速度约 [READ_AHEAD_PIECE_MILLIS] 拉完, 夹在 [MIN_READ_AHEAD_PIECE]..[MAX_READ_AHEAD_PIECE]; 还没测到速度时取最小. */
+    private fun readAheadPieceSize(): Long {
+        val speed = laneSpeed.value
+        if (speed <= 0) return MIN_READ_AHEAD_PIECE
+        return (speed * READ_AHEAD_PIECE_MILLIS / 1000).coerceIn(MIN_READ_AHEAD_PIECE, MAX_READ_AHEAD_PIECE)
+    }
+
+    /**
+     * 读前窗口: 跳转后播放器先一段接一段地要几十 KiB, 读完才开播. 每段单连接拉, 都要等一次首字节、再按单连接的速度传, 串起来就是好几秒.
+     * 第一段来时把从它开始的一截 ([window]) 切成小段, 借急用的通道 (排在长请求的块前面) 一起拉进内存, 后面落在这一截里的请求直接从这里答.
+     */
+    private inner class ReadAhead(val window: LongRange, pieceSize: Long) {
+        private val job = SupervisorJob(scope.coroutineContext[Job])
+        private val parts = planChunks(window.first, window.last, connections, pieceSize, pieceSize).toList()
+        // 当场跑到借通道那一步 (UNDISPATCHED): 按段的顺序排队, 播放器先要的那几段先拿到通道
+        private val data = parts.map { part ->
+            scope.async(job, start = CoroutineStart.UNDISPATCHED) {
+                val bytes = ByteArray((part.last - part.first + 1).toInt())
+                var filled = 0
+                fetchPart(part, urgent = true) { piece ->
+                    piece.copyInto(bytes, filled)
+                    filled += piece.size
+                }
+                bytes
+            }
+        }
+
+        init {
+            val started = TimeSource.Monotonic.markNow()
+            scope.launch(job) {
+                val failed = data.count { runCatching { it.await() }.isFailure }
+                // 被挤掉的不记
+                currentCoroutineContext().ensureActive()
+                logger.info {
+                    "[RangeProxy] #$id 读前窗口 ${window.first}-${window.last} 拉完: ${started.elapsedNow().inWholeMilliseconds}ms" +
+                        if (failed > 0) ", ${failed} 段没拉下来" else ""
+                }
+            }
+        }
+
+        /**
+         * 从 [range] 开头起送出落在窗口里的部分, 返回下一个没送的位置. 窗口那段拉不下来、或窗口已被挤掉时就停在那里, 剩下的由调用方照常拉.
+         */
+        suspend fun serve(range: LongRange, send: suspend (ByteArray) -> Unit): Long {
+            val end = minOf(range.last, window.last)
+            var position = range.first
+            for ((index, part) in parts.withIndex()) {
+                if (part.last < position) continue
+                if (part.first > end) break
+                val bytes = try {
+                    data[index].await()
+                } catch (e: CancellationException) {
+                    currentCoroutineContext().ensureActive()
+                    return position
+                } catch (e: Throwable) {
+                    return position
+                }
+                val upTo = minOf(end, part.last)
+                send(bytes.copyOfRange((position - part.first).toInt(), (upTo - part.first + 1).toInt()))
+                position = upTo + 1
+            }
+            return position
+        }
+
+        fun cancel() = job.cancel()
+    }
+
+    /** 记一块的速度 (平滑: 新的占三成). 太小的块首字节的等待占大头, 不算. */
+    private fun recordSpeed(bytes: Long, millis: Long) {
+        if (bytes < MIN_SPEED_SAMPLE_BYTES) return
+        val sample = bytes * 1000 / millis.coerceAtLeast(1)
+        laneSpeed.update { old -> if (old == 0L) sample else (old * 7 + sample * 3) / 10 }
+    }
+
+    /**
+     * 一块最大多大: 按每条连接的速度, 让一块约 [CHUNK_TARGET_MILLIS] 拉完, 夹在 [MIN_FIRST_CHUNK_SIZE]..[chunkSize].
+     * 块越大请求越少, 但一条通道被一块占着越久: 慢的网盘 (每条连接几十 KB/s) 上 1 MiB 一块要 20 秒, 其间新来的请求 (播放器跳转时一起发的小请求) 都得等.
+     */
+    private fun chunkCap(): Long {
+        val speed = laneSpeed.value
+        if (speed <= 0) return chunkSize
+        return (speed * CHUNK_TARGET_MILLIS / 1000).coerceIn(MIN_FIRST_CHUNK_SIZE, chunkSize)
+    }
+
     override fun close() {
         logger.info { "[RangeProxy] #$id 关闭 (共答了 ${requestCount.value} 个请求)" }
         server.close()
+        scope.cancel()
         lanes.close()
     }
 
@@ -289,6 +510,20 @@ internal class ParallelRangeProxySession private constructor(
 
         /** 通道客户端的「每个主机的并发上限」从这里起编号 (只用来让各通道拿到不同的客户端, 见 [createOrNull]). */
         private const val LANE_CLIENT_KEY_BASE = 4096
+
+        /** 一块大约拉多久 (见 [chunkCap]); 测速不算比这还小的块 (见 [recordSpeed]). */
+        private const val CHUNK_TARGET_MILLIS = 5_000L
+        private const val MIN_SPEED_SAMPLE_BYTES = 128L * 1024
+
+        /** 读前窗口 (见 [ReadAhead]): 多小的请求才开; 窗口多大 (每段 × 路数, 夹在这两个之间); 每段约拉多久、多大; 最多留几个、合计多大. */
+        private const val READ_AHEAD_TRIGGER_BYTES = 1024L * 1024
+        private const val READ_AHEAD_MIN_BYTES = 1024L * 1024
+        private const val READ_AHEAD_MAX_BYTES = 4L * 1024 * 1024
+        private const val READ_AHEAD_PIECE_MILLIS = 500L
+        private const val MIN_READ_AHEAD_PIECE = 32L * 1024
+        private const val MAX_READ_AHEAD_PIECE = 256L * 1024
+        private const val MAX_READ_AHEADS = 8
+        private const val READ_AHEAD_TOTAL_BYTES = 12L * 1024 * 1024
 
         private const val MAX_RETRIES = 3
         private const val RETRY_DELAY_MILLIS = 300L
@@ -345,20 +580,73 @@ internal class ParallelRangeProxySession private constructor(
 
 /**
  * 各条通道: 每条一个借来的独立客户端, 一次只拉一块. 整次播放一直借着 (还回去客户端就关了, 连接跟着断, 下一块又要重新握手).
+ * 空出来的通道先给急用的 (读前窗口), 再按先来后到给长请求的块.
  */
 @OptIn(UnsafeScopedHttpClientApi::class)
 private class Lanes(private val scoped: List<ScopedHttpClient>) : AutoCloseable {
     private val tickets = scoped.map { it.borrow() }
-    private val idle = Channel<HttpClient>(tickets.size).apply { tickets.forEach { trySend(it.client) } }
+    private val lock = SynchronizedObject()
+    private val free = ArrayDeque(tickets.map { it.client })
+
+    /** 排队等通道的: 每个一格的信箱, 交到手上就放进去. */
+    private val urgentWaiters = ArrayDeque<Channel<HttpClient>>()
+    private val waiters = ArrayDeque<Channel<HttpClient>>()
     private val closed = atomic(false)
+
+    /** 已经答应让出、还没交到急用的手上的通道数 (见 [shouldYield]). */
+    private var yielding = 0
 
     /** 实际有几个不同的客户端 (日志里核对: 应当等于通道数, 不然几条通道共用一条连接). */
     val distinctClients: Int = tickets.map { it.client }.distinct().size
 
-    suspend fun take(): HttpClient = idle.receive()
+    /** 借一条通道, 没有空的就排队 ([urgent] 排在不急的前面). 会话关了抛出. */
+    suspend fun take(urgent: Boolean = false): HttpClient {
+        val mailbox = synchronized(lock) {
+            check(!closed.value) { "lanes closed" }
+            free.removeFirstOrNull()?.let { return it }
+            Channel<HttpClient>(1).also { (if (urgent) urgentWaiters else waiters).addLast(it) }
+        }
+        try {
+            return mailbox.receive()
+        } catch (e: Throwable) {
+            synchronized(lock) {
+                urgentWaiters.remove(mailbox)
+                waiters.remove(mailbox)
+            }
+            mailbox.close()
+            // 不等了的那一刻刚好交到手上的, 还回去
+            mailbox.tryReceive().getOrNull()?.let(::give)
+            throw e
+        }
+    }
 
     fun give(client: HttpClient) {
-        idle.trySend(client)
+        while (true) {
+            val mailbox = synchronized(lock) {
+                urgentWaiters.removeFirstOrNull()?.also { if (yielding > 0) yielding-- }
+                    ?: waiters.removeFirstOrNull()
+                    ?: run {
+                        if (!closed.value) free.addLast(client)
+                        return
+                    }
+            }
+            // 已经不等了的信箱是关着的, 交给下一个
+            if (mailbox.trySend(client).isSuccess) return
+        }
+    }
+
+    /**
+     * 不急的拉取每读一段问一次: 有急用的在等 (通道都占着才会等) 时让出手上这条, 每个在等的只换一条, 返回 true 的那个要马上还回通道.
+     * 长请求的一块要拉好几秒 (慢的网盘每条连接几十 KB/s), 不让的话急用的得等到哪块拉完.
+     */
+    fun shouldYield(): Boolean = synchronized(lock) {
+        if (yielding > urgentWaiters.size) yielding = urgentWaiters.size
+        if (urgentWaiters.size > yielding) {
+            yielding++
+            true
+        } else {
+            false
+        }
     }
 
     /** 要开头 [PROBE_BYTES] 个字节; 回的不是 206 (网盘不认范围请求) 时返回 null. */
@@ -389,7 +677,13 @@ private class Lanes(private val scoped: List<ScopedHttpClient>) : AutoCloseable 
 
     override fun close() {
         if (!closed.compareAndSet(expect = false, update = true)) return
-        idle.close()
+        val stranded = synchronized(lock) {
+            (urgentWaiters + waiters).also {
+                urgentWaiters.clear()
+                waiters.clear()
+            }
+        }
+        stranded.forEach { it.close() }
         scoped.zip(tickets).forEach { (client, ticket) -> client.returnClient(ticket) }
     }
 
@@ -401,20 +695,39 @@ private class Lanes(private val scoped: List<ScopedHttpClient>) : AutoCloseable 
     }
 }
 
-/** 要 [part] 这一段: 必须回 206 且长度对得上. 流式取, 网盘没按范围回 (整个文件) 时不读正文. */
-private suspend fun HttpClient.fetchRange(url: String, headers: Map<String, String>, part: LongRange): ByteArray {
+/**
+ * 要 [part] 这一段, 拉到多少就交给 [onBytes] 多少: 必须回 206 且长度对得上. 网盘没按范围回 (整个文件) 时不读正文;
+ * 中途断了抛出, 已经交出去的不收回 (调用方从断开处接着要).
+ */
+private suspend fun HttpClient.fetchRange(
+    url: String,
+    headers: Map<String, String>,
+    part: LongRange,
+    onBytes: suspend (ByteArray) -> Unit,
+) {
     val expected = part.last - part.first + 1
-    return prepareGet(url) {
+    prepareGet(url) {
         resolverHeaders(headers)
         header(HttpHeaders.Range, "bytes=${part.first}-${part.last}")
         chunkTimeouts()
     }.execute { response ->
         check(response.status == HttpStatusCode.PartialContent) { "网盘没按范围回: ${response.status}" }
-        val bytes = response.readRawBytes()
-        check(bytes.size.toLong() == expected) { "只回了 ${bytes.size} / $expected 字节" }
-        bytes
+        val channel = response.bodyAsChannel()
+        val buffer = ByteArray(PIECE_BYTES)
+        var received = 0L
+        while (received < expected) {
+            val read = channel.readAvailable(buffer, 0, minOf(PIECE_BYTES.toLong(), expected - received).toInt())
+            if (read < 0) break
+            if (read == 0) continue
+            onBytes(buffer.copyOf(read))
+            received += read
+        }
+        check(received == expected) { "只回了 $received / $expected 字节" }
     }
 }
+
+/** 拉块时一次最多读多少 (边拉边送的粒度). */
+private const val PIECE_BYTES = 64 * 1024
 
 /**
  * 带上解析器给的请求头. Cookie 原样发 ([rawCookieHeader]): 客户端的 Cookie 插件会把它重新编码一遍, 网盘登录 Cookie 里的 base64 与百分号编码的值
@@ -439,12 +752,16 @@ private fun HttpRequestBuilder.chunkTimeouts() {
  * 从 [start] 到 [endInclusive] 怎么拆块: 头一轮 ([connections] 块) 每块 [firstChunkSize], 之后每轮翻倍, 到 [chunkSize] 为止 (同安卓 ParallelRangeReader).
  * 跳到没下过的位置要等多久, 除了首字节几乎就看头一块多大; 后面的块大, 请求少.
  */
-internal fun planChunks(start: Long, endInclusive: Long, connections: Int, firstChunkSize: Long, chunkSize: Long): Sequence<LongRange> = sequence {
+internal fun planChunks(start: Long, endInclusive: Long, connections: Int, firstChunkSize: Long, chunkSize: Long): Sequence<LongRange> =
+    planChunks(start, endInclusive, connections, firstChunkSize) { chunkSize }
+
+/** 同上, 块的上限每块现取 ([chunkCap], 随测到的速度变). 序列是惰性的, 取下一块时才算. */
+internal fun planChunks(start: Long, endInclusive: Long, connections: Int, firstChunkSize: Long, chunkCap: () -> Long): Sequence<LongRange> = sequence {
     var position = start
     var index = 0
     while (position <= endInclusive) {
         val round = (index / connections.coerceAtLeast(1)).coerceAtMost(MAX_RAMP_ROUNDS)
-        val size = minOf(chunkSize, firstChunkSize shl round)
+        val size = minOf(chunkCap(), firstChunkSize shl round)
         val last = minOf(endInclusive, position + size - 1)
         yield(position..last)
         position = last + 1
