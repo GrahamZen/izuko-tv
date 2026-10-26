@@ -181,6 +181,28 @@ class DrivePathAttributionTest {
     }
 
     @Test
+    fun `a folder written with the whole name of a work outside the series is that work`() {
+        // 按这一部起名的合集分享里附着同品牌别的作品: 名字本身带着季或几种文字, 拆开后对不上名字表
+        val table = SeriesGraphTable.parse(
+            listOf(
+                "# bangumi-anime v1 max_id=714439 dump=dump-2026-10-20.210332Z.zip | 列: …",
+                "246429\tBanG Dream! 2nd Season\tBanG Dream! 第二季\t2019-01-03\t13\tTV\t\t\t\t\t\t",
+                "246431\tBanG Dream! ガルパ☆ピコ\tBanG Dream! 少女乐团派对！☆PICO\t2018-07-05\t26\tTV\t\t\t\t\t\t",
+                "454684\tBanG Dream! Ave Mujica\t\t2025-01-03\t13\tTV\t\t\t\t\t\t颂乐人偶|BanG Dream! 颂乐人偶",
+            ).joinToString("\n").encodeToByteArray(),
+        )!!
+        val request = DriveSeriesTestData.request(454684, listOf("BanG Dream! Ave Mujica", "颂乐人偶"), 1, 13)
+        val identity = TitleIdentity.of(request, table, AnimeNameIndex.of(table))
+        fun episodeOf(folders: List<String>, fileName: String) = DriveSubjectMatcher.matchEpisodes(
+            request, listOf(DriveSubjectMatcher.Candidate(video("f", fileName), folders)), identity = identity,
+        ).singleOrNull()?.episode?.number?.toInt()
+        val share = "《炸梦！颂乐人偶 12集全》"
+        assertNull(episodeOf(listOf(share, "[内嵌简中]（炸梦！少女乐团派对☆PICO）BanG Dream! ガルパ☆ピコ (2018)[26集全]"), "[Airota][BanG Dream!☆PICO][01][720P].mp4"))
+        assertNull(episodeOf(listOf(share, "[内嵌简中]（炸梦！第二季）BanG Dream! 2nd Season (2019)"), "[Sakurato.sub] BanG Dream! [01][CHS][720P].mp4"))
+        assertEquals(9, episodeOf(listOf(share, "（炸梦！S乐人｜偶）BanG Dream!Ave Mujica(2025)[12集全]"), "BanG.Dream.Ave.Mujica.S01E09.2025.1080p.WEB-DL.mkv"))
+    }
+
+    @Test
     fun `a season number vouches for this work named with the year of the first season`() {
         // 表里两季之间没有边; 按系列整理的文件名写着第一季那年
         val table = SeriesGraphTable.parse(
