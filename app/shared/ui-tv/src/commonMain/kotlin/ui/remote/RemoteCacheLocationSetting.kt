@@ -16,8 +16,10 @@ import me.him188.ani.app.domain.media.cache.location.MediaCacheLocation
 import me.him188.ani.app.domain.media.cache.location.MediaCacheLocationChoice
 import me.him188.ani.app.domain.media.cache.location.MediaCacheLocationProblem
 import me.him188.ani.app.domain.media.cache.location.MediaCacheLocations
+import me.him188.ani.app.domain.media.cache.location.MediaCacheMover
 import me.him188.ani.app.domain.media.cache.location.mediaCacheLocationChoices
 import me.him188.ani.app.ui.lang.Lang
+import me.him188.ani.app.ui.lang.cache_move_started
 import me.him188.ani.app.ui.lang.settings_storage_cache_location
 import me.him188.ani.app.ui.lang.settings_storage_cache_location_description
 import me.him188.ani.app.ui.lang.settings_storage_cache_location_disconnected
@@ -25,13 +27,18 @@ import me.him188.ani.app.ui.lang.settings_storage_cache_location_fat32
 import me.him188.ani.app.ui.lang.settings_storage_cache_location_internal
 import me.him188.ani.app.ui.lang.settings_storage_cache_location_read_only
 import me.him188.ani.app.ui.lang.settings_storage_cache_location_space
+import me.him188.ani.app.ui.lang.settings_storage_cache_move_nothing
+import me.him188.ani.app.ui.lang.settings_storage_cache_move_pending
+import me.him188.ani.app.ui.lang.settings_storage_cache_move_progress
+import me.him188.ani.app.ui.lang.settings_storage_cache_move_target_unavailable
 import me.him188.ani.datasources.api.topic.FileSize.Companion.bytes
 import org.jetbrains.compose.resources.getString
 import org.koin.mp.KoinPlatform
 
 /**
- * 「缓存位置」卡片, 同电视设置页「存储」里那一项: 下拉现列此刻接着、能用的盘 (带剩余空间), 不能用的盘在卡片状态里说为什么.
- * 文案都用设置页的, 不用补网页译文.
+ * 「缓存位置」卡片, 同电视设置页「存储」里那两项: 下拉现列此刻接着、能用的盘 (带剩余空间), 不能用的盘在卡片状态里说为什么;
+ * 状态里还有搬家的进度或别的位置上还有多少缓存, 第二个按钮把已有缓存搬到选的盘 (见 [MediaCacheMover]).
+ * 文案都用设置页的, 不用补网页译文 (按钮文字除外).
  */
 internal object RemoteCacheLocationSetting {
     val spec = RemoteSettingSpec(
@@ -43,7 +50,13 @@ internal object RemoteCacheLocationSetting {
         description = Lang.settings_storage_cache_location_description,
         editor = RemoteSettingEditor.Options { options() },
         status = { status() },
+        action = RemoteSettingAction("把已有缓存移到这里") { startMove() },
     )
+
+    private fun mover(): MediaCacheMover? = KoinPlatform.getKoin().getOrNull()
+
+    private suspend fun selected(): String? =
+        KoinPlatform.getKoin().get<SettingsRepository>().mediaCacheSettings.flow.first().defaultLocation
 
     /** 没有这项实现的平台只有内部存储 */
     private fun locations(): MediaCacheLocations? = KoinPlatform.getKoin().getOrNull()
@@ -52,7 +65,7 @@ internal object RemoteCacheLocationSetting {
         val locations = locations()
             ?: return listOf(RemoteSettingEditor.Options.Option(null, getString(Lang.settings_storage_cache_location_internal)))
         locations.refresh()
-        val selected = KoinPlatform.getKoin().get<SettingsRepository>().mediaCacheSettings.flow.first().defaultLocation
+        val selected = selected()
         return mediaCacheLocationChoices(locations.locations.value, selected).map { choice ->
             RemoteSettingEditor.Options.Option(choice.id, labelOf(choice))
         }
@@ -66,7 +79,33 @@ internal object RemoteCacheLocationSetting {
                 MediaCacheLocationProblem.READ_ONLY -> getString(Lang.settings_storage_cache_location_read_only, nameOf(location))
             }
         }
-        return unusable.takeIf { it.isNotEmpty() }?.joinToString("\n")
+        return (unusable + listOfNotNull(moveStatus())).takeIf { it.isNotEmpty() }?.joinToString("\n")
+    }
+
+    /** 搬家的进度, 没在搬时别的位置上还有多少缓存 (都在这里时不说) */
+    private suspend fun moveStatus(): String? {
+        val mover = mover() ?: return null
+        mover.progress.value?.let { p ->
+            return getString(
+                Lang.settings_storage_cache_move_progress,
+                p.done + p.failed + p.skipped, p.total, p.bytesDone.bytes.toString(), p.bytesTotal.bytes.toString(),
+            )
+        }
+        val pending = mover.pending(selected())
+        if (pending.units == 0) return null
+        return getString(Lang.settings_storage_cache_move_pending, pending.units, pending.bytes.bytes.toString())
+    }
+
+    private suspend fun startMove(): String {
+        val mover = mover() ?: return getString(Lang.settings_storage_cache_move_nothing)
+        mover.progress.value?.let { return moveStatus().orEmpty() }
+        val target = selected()
+        val location = locations()?.locations?.value?.firstOrNull { it.id == target }
+        if (location == null || location.unusable != null) return getString(Lang.settings_storage_cache_move_target_unavailable)
+        val pending = mover.pending(target)
+        if (pending.units == 0) return getString(Lang.settings_storage_cache_move_nothing)
+        mover.start(target)
+        return getString(Lang.cache_move_started, pending.units, pending.bytes.bytes.toString())
     }
 
     private suspend fun labelOf(choice: MediaCacheLocationChoice): String {

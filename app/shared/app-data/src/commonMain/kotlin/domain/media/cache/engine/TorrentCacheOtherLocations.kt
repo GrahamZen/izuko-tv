@@ -56,7 +56,7 @@ internal suspend fun TorrentCacheInfoDao.deleteUnusedTorrentDirsOnOtherLocations
 }
 
 /** 放种子目录的那一层相对根目录的路径 (内部存储上是引擎目录下的 pieces, 见 AnitorrentTorrentDownloader) */
-private fun piecesRelativeDir(engineDir: String, baseSaveDir: String): String? {
+internal fun piecesRelativeDir(engineDir: String, baseSaveDir: String): String? {
     val relative = engineDir.substringAfter(baseSaveDir)
     if (relative == engineDir) {
         logger.warn { "Engine dir $engineDir is not under $baseSaveDir, skipping other locations" }

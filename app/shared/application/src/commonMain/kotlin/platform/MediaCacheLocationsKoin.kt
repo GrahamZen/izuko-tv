@@ -15,8 +15,10 @@ import me.him188.ani.app.domain.media.cache.engine.HttpMediaCacheEngine
 import me.him188.ani.app.domain.media.cache.location.InternalOnlyMediaCacheLocations
 import me.him188.ani.app.domain.media.cache.location.MediaCacheLocationRefresher
 import me.him188.ani.app.domain.media.cache.location.MediaCacheLocations
+import me.him188.ani.app.domain.media.cache.location.MediaCacheMover
 import me.him188.ani.app.domain.media.cache.storage.MediaSaveDirProvider
 import me.him188.ani.app.domain.media.download.MediaDownloadManager
+import me.him188.ani.app.domain.media.player.PlaybackActivity
 import me.him188.ani.utils.io.absolutePath
 import me.him188.ani.utils.io.inSystem
 import me.him188.ani.utils.io.resolve
@@ -32,7 +34,7 @@ internal fun Scope.mediaCacheLocations(): MediaCacheLocations =
 internal fun MediaCacheLocations.httpCacheDirOf(location: String): Path? =
     rootOf(location)?.let { Path(it.absolutePath).resolve(HttpMediaCacheEngine.MEDIA_CACHE_DIR) }
 
-/** 盘插拔时让各存储重新恢复缓存 (见 [MediaCacheLocationRefresher]) */
+/** 盘插拔时让各存储重新恢复缓存 (见 [MediaCacheLocationRefresher]); 把已有缓存搬到别的位置 (见 [MediaCacheMover]) */
 internal fun Module.mediaCacheLocationRefresher(coroutineScope: CoroutineScope) {
     single(createdAtStart = true) {
         MediaCacheLocationRefresher(
@@ -40,5 +42,13 @@ internal fun Module.mediaCacheLocationRefresher(coroutineScope: CoroutineScope) 
             storages = { get<MediaDownloadManager>().storages },
             scope = coroutineScope,
         ).also { it.start() }
+    }
+    single {
+        MediaCacheMover(
+            locations = mediaCacheLocations(),
+            storages = { get<MediaDownloadManager>().storages },
+            isPlayingSubject = { subjectId -> get<PlaybackActivity>().currentValue?.subjectId?.toString() == subjectId },
+            scope = coroutineScope,
+        )
     }
 }

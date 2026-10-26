@@ -945,6 +945,18 @@ class KtorHttpDownloaderTest {
     }
 
     @Test
+    fun `location - relocate changes the location of a stopped download only`() = testScope.runTest {
+        val running = downloader.download("https://example.com/stalled.m3u8")
+        assertFalse(downloader.relocate(running, "usb"), "a running download must not be relocated")
+        assertNull(downloader.getState(running)?.location)
+
+        downloader.pause(running)
+        assertTrue(downloader.relocate(running, "usb"))
+        assertEquals("usb", downloader.getState(running)?.location)
+        assertFalse(downloader.relocate(DownloadId("missing"), "usb"))
+    }
+
+    @Test
     fun `location - a download whose drive is still there fails as usual`() = testScope.runTest {
         fileSystem.createDirectories(usbRoot)
         val usbDownloader = createLocationDownloader()

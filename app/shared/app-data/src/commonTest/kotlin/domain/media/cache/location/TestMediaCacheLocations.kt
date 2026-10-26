@@ -21,6 +21,8 @@ internal class TestMediaCacheLocations(internalRoot: SystemPath) : MediaCacheLoc
 
     override suspend fun locationForNewCache(): String? = forNewCache
 
+    override val moving: MutableStateFlow<Set<String>> = MutableStateFlow(emptySet())
+
     fun connect(id: String, root: SystemPath, unusable: MediaCacheLocationProblem? = null) {
         locations.value = locations.value.filter { it.id != id } + MediaCacheLocation(id = id, label = id, root = root, unusable = unusable)
     }
