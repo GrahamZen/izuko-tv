@@ -10,7 +10,9 @@
 package me.him188.ani.app.domain.mediasource.clouddrive
 
 import me.him188.ani.app.data.network.SeriesGraphTable
+import me.him188.ani.app.domain.mediasource.clouddrive.DriveSubjectIdentity.Naming
 import me.him188.ani.datasources.api.EpisodeSort
+import me.him188.ani.datasources.api.source.MediaFetchNameHints
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -18,10 +20,9 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * 同系列别的作品 ([OtherWorkGuard]): 标题、文件夹路径里含有系列关系图里一部更长的已知番名时不是这一部. 标题按分享站的真实写法.
- * 宿主单测不做繁简转换, 都用简体.
+ * 网盘上的名字点名了哪一部 ([DriveSubjectIdentity]). 标题按分享站的真实写法. 宿主单测不做繁简转换, 都用简体.
  */
-class OtherWorkGuardTest {
+class DriveSubjectIdentityTest {
     private val table = SeriesGraphTable.parse(
         listOf(
             "# bangumi-series-graph v1 max_id=600000 dump=dump-2026-10-13.210353Z.zip | 列: …",
@@ -38,15 +39,16 @@ class OtherWorkGuardTest {
         ).joinToString("\n").encodeToByteArray(),
     )!!
 
-    private fun request(subjectId: Int, vararg names: String) = MediaFetchRequest(
+    private fun request(subjectId: Int, vararg names: String, hints: MediaFetchNameHints = MediaFetchNameHints.Empty) = MediaFetchRequest(
         subjectId = subjectId.toString(),
         episodeId = "1",
         subjectNames = names.toList(),
         episodeSort = EpisodeSort(1),
         episodeName = "",
+        nameHints = hints,
     )
 
-    private val gundam = OtherWorkGuard.of(request(50, "机动战士高达", "機動戦士ガンダム", "机动战士高达0079"), table)
+    private val gundam = DriveSubjectIdentity.of(request(50, "机动战士高达", "機動戦士ガンダム", "机动战士高达0079"), table)
 
     @Test
     fun `finds the entries whose names contain a fragment`() {
@@ -76,20 +78,22 @@ class OtherWorkGuardTest {
         // 重制版写的是重制那年
         assertFalse(gundam.rejectsTitle("机动战士高达 HD重制 2008"))
         // 路径只看名字, 不看年份
-        assertFalse(gundam.isOtherWork("[2023 BDRip] 机动战士高达/01.mkv"))
+        assertFalse(gundam.namesOtherWork(listOf("[2023 BDRip] 机动战士高达")))
     }
 
     @Test
     fun `a later season keeps collections named after the first season`() {
-        val frieren2 = OtherWorkGuard.of(request(515759, "葬送的芙莉莲 第二季", "葬送のフリーレン 第2期"), table)
+        val frieren2 = DriveSubjectIdentity.of(request(515759, "葬送的芙莉莲 第二季", "葬送のフリーレン 第2期"), table)
         assertFalse(frieren2.rejectsTitle("葬送的芙莉莲(2023)1080p 两季全"))
         assertFalse(frieren2.rejectsTitle("葬送的芙莉莲 第二季 (2026) 1080P CR 全10集"))
         assertFalse(frieren2.rejectsTitle("葬送的芙莉莲"))
+        assertTrue(frieren2.laterWork)
+        assertFalse(gundam.laterWork)
     }
 
     @Test
     fun `another season is rejected unless the title also names this season`() {
-        val spy3 = OtherWorkGuard.of(request(498378, "间谍过家家 第三季", "SPY×FAMILY Season 3"), table)
+        val spy3 = DriveSubjectIdentity.of(request(498378, "间谍过家家 第三季", "SPY×FAMILY Season 3"), table)
         assertTrue(spy3.rejectsTitle("间谍过家家第二季"))
         assertFalse(spy3.rejectsTitle("间谍过家家 第三季 附间谍过家家第二季"))
         assertFalse(spy3.rejectsTitle("间谍过家家 全3季.共50集+剧场版 简日特效字幕 2022-2025"))
@@ -97,10 +101,34 @@ class OtherWorkGuardTest {
     }
 
     @Test
+    fun `the nearest folder that names a work decides`() {
+        // 系列合集里按作品分的文件夹
+        assertTrue(gundam.namesOtherWork(listOf("机动战士高达 全系列", "机动战士高达SEED")))
+        assertFalse(gundam.namesOtherWork(listOf("机动战士高达SEED 附初代", "机动战士高达 TV版")))
+    }
+
+    @Test
+    fun `names from the request hints count for a subject outside the table`() {
+        val hints = MediaFetchNameHints(
+            ownNames = listOf("某部番 第二季", "某部番2"),
+            seriesNames = listOf("某部番"),
+            otherWorkNames = listOf("某部番", "某部番 剧场版"),
+        )
+        val sequel = DriveSubjectIdentity.of(request(999, "某部番 第二季", hints = hints), table)
+        assertEquals(Naming.OWN, sequel.namingOf("某部番2 更新至05"))
+        assertEquals(Naming.OTHER, sequel.namingOf("某部番 剧场版"))
+        // 系列名谁也不点名
+        assertEquals(Naming.NONE, sequel.namingOf("某部番"))
+        assertTrue(sequel.laterWork)
+        assertEquals(true, sequel.mentionOf("某部番 全集"))
+    }
+
+    @Test
     fun `a subject not in the table rejects nothing by name`() {
-        val unknown = OtherWorkGuard.of(request(999, "某部番"), table)
+        val unknown = DriveSubjectIdentity.of(request(999, "某部番"), table)
         assertEquals(emptyList(), unknown.otherWorkNames)
         assertFalse(unknown.rejectsTitle("某部番SEED"))
+        assertFalse(unknown.laterWork)
     }
 
     @Test
@@ -113,7 +141,7 @@ class OtherWorkGuardTest {
             DriveSubjectMatcher.Candidate(video("tv01", "01.mkv"), listOf("机动战士高达 TV版")),
         )
         val request = request(50, "机动战士高达")
-        val matched = DriveSubjectMatcher.matchEpisodes(request, candidates, otherWork = gundam)
+        val matched = DriveSubjectMatcher.matchEpisodes(request, candidates, identity = gundam)
         assertEquals(listOf("tv01"), matched.map { it.file.fid })
         // 不给 (用户指定的文件夹) 时照旧
         assertEquals(2, DriveSubjectMatcher.matchEpisodes(request, candidates).size)

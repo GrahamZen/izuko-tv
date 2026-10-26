@@ -94,7 +94,7 @@ class CloudDriveMediaSource(
     override val location: MediaSourceLocation get() = MediaSourceLocation.Online
     override val info: MediaSourceInfo = infoOf(arguments)
 
-    private val matcher = DriveSubjectMatcher(service.browser, service.episodeNumbering, service.otherWorks)
+    private val matcher = DriveSubjectMatcher(service.browser, service.episodeNumbering, service.identities)
 
     override suspend fun checkConnection(): ConnectionStatus {
         if (!service.account.first().isLoggedIn) return ConnectionStatus.FAILED

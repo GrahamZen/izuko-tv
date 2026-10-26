@@ -177,8 +177,6 @@ internal class DriveShareMatch(
     /** 分享里从根到文件所在文件夹的名字 (不含站点剧名). */
     val folders: List<String>,
     val episode: EpisodeSort,
-    /** 补搜来的 (见 [DriveSharePartSearch]) */
-    val partSearch: Boolean = false,
 )
 
 /** 这个文件是不是 [request] 要的这一集 (集号按条目内的序号或系列绝对集号). */
