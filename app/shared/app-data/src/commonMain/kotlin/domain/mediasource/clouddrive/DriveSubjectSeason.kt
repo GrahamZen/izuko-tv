@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.domain.mediasource.clouddrive
 
+import me.him188.ani.app.data.models.subject.SplitSeason
 import me.him188.ani.app.data.models.subject.SplitSeasonDetector
 import me.him188.ani.app.data.network.SeriesGraphTable
 import me.him188.ani.app.data.network.SeriesNode
@@ -20,22 +21,18 @@ import me.him188.ani.datasources.api.source.MediaFetchRequest
  * 网盘上按第几季找这个条目: 认季 ([DriveSubjectMatcher.matchEpisodes])、按季剪枝 ([DriveSubjectMatcher.otherSeasonFolders])
  * 与站点搜到的分享排先后都按它.
  *
- * - 条目名 (中文名、原名、别名) 写明的季, [declared] 为 true. 第 N 季 (N ≥ 2) 时不写季的文件只认系列绝对集号, 见 matchEpisodes 的季规则.
+ * - 条目名写明的季 ([declaredIn]), [declared] 为 true. 第 N 季 (N ≥ 2) 时不写季的文件只认系列绝对集号, 见 matchEpisodes 的季规则.
  * - 条目名没写季时推出来的, [declared] 为 false: 只去掉写明是别的季的文件, 不写季的照留 (「进击的巨人 最终季 Part.2 / 01.mp4」).
  *   1. TMDB 对应表里这个条目的集全在同一季, 而且是第 2 季及以后 (「赛博朋克：边缘行者 2」是 S2; 特别篇的 S0 不算).
  *      表里记成第 1 季接着编号的续作很多 (咒术回战第二季是 S1E25 起), 说明不了网盘上写第几季, 不推.
  *   2. 系列关系图推出的季 ([seriesSeasonOf]; 「浪客剑心 京都动乱」TMDB 记成 S1E25 起, 网盘上写「第二季」).
  *      只在条目有 TMDB 逐集对位时用: 按 TMDB 整理的 `S01E25` 先按表认, 推出来的季只管按季写的文件.
- *      TMDB 把条目单列成一部 (本篇从 S1E1 起, [tmdbOwnShow]) 时, 网盘上的「S1」两种意思都有: 按 TMDB 整理的是这一部自己的第一季
- *      (「堀与宫村 -piece- (2023) S01」), 按系列整理的是系列的第一季 (「堀与宫村 S1」与「堀与宫村 S2」并排), 见 matchEpisodes.
  *
  * 都推不出来时没有 ([of] 返回 null), 当第一季或只有一季.
  */
 internal class DriveSubjectSeason(
     val number: Int,
     val declared: Boolean,
-    /** 季是系列关系图推出来的, 而 TMDB 把这个条目单列成一部 (本篇从 S1E1 起) */
-    val tmdbOwnShow: Boolean = false,
 ) {
     override fun toString(): String = if (declared) "$number" else "$number (inferred)"
 
@@ -45,14 +42,25 @@ internal class DriveSubjectSeason(
          * @param seriesSeason 系列关系图推出的季 ([seriesSeasonOf])
          */
         fun of(request: MediaFetchRequest, tmdbEpisodes: Map<Pair<Int, Int>, EpisodeSort>?, seriesSeason: Int?): DriveSubjectSeason? {
-            DriveSubjectMatcher.subjectNamesOf(request).firstNotNullOfOrNull { DriveNameParser.parseSubjectSeason(it) }
-                ?.let { return DriveSubjectSeason(it, declared = true) }
+            declaredIn(DriveSubjectMatcher.subjectNamesOf(request))?.let { return DriveSubjectSeason(it, declared = true) }
             if (tmdbEpisodes == null) return null
             val tmdbSeason = tmdbEpisodes.keys.mapTo(HashSet()) { it.first }.minus(0).singleOrNull()
             tmdbSeason?.takeIf { it >= 2 }?.let { return DriveSubjectSeason(it, declared = false) }
             val number = seriesSeason?.takeIf { it >= 2 } ?: return null
-            return DriveSubjectSeason(number, declared = false, tmdbOwnShow = (1 to 1) in tmdbEpisodes)
+            return DriveSubjectSeason(number, declared = false)
         }
+
+        /**
+         * 条目名 [names] (中文名、原名在前, 后面是别名) 写明的季: 中文名或原名写了的按它; 都没写时别名写的季只有一个才算.
+         * 别名里的季常是别的说法 (刀剑神域「War of Underworld 2nd Season」是异界战争的第二部分, 另一个别名写「第三季 第3部分」).
+         */
+        fun declaredIn(names: List<String>): Int? {
+            names.take(PRIMARY_NAMES).firstNotNullOfOrNull { DriveNameParser.parseSubjectSeason(it) }?.let { return it }
+            return names.drop(PRIMARY_NAMES).mapNotNullTo(HashSet()) { DriveNameParser.parseSubjectSeason(it) }.singleOrNull()
+        }
+
+        /** 中文名与原名 */
+        private const val PRIMARY_NAMES = 2
     }
 }
 
@@ -70,10 +78,27 @@ internal fun seriesSeasonOf(subjectId: Int?, table: SeriesGraphTable): Int? {
     return prequelSeason + 1
 }
 
+/**
+ * 系列关系图里条目 [subjectId] 所在的拆分季 ([SplitSeasonDetector]: 一季拆成「第2部分」「Part.2」, 集号接着编).
+ * 不是拆分季、不是 TV、不在表里时为 null.
+ */
+internal fun seriesSplitSeasonOf(subjectId: Int?, table: SeriesGraphTable): SplitSeason? {
+    val self = subjectId?.let(table::nodeOf)?.takeIf { it.isTv } ?: return null
+    val before = generateSequence(self) { tvPrequelOf(it.id, table) }.drop(1).take(MAX_SPLIT_NEIGHBORS).toList().asReversed()
+    val after = generateSequence(self) { tvSequelOf(it.id, table) }.drop(1).take(MAX_SPLIT_NEIGHBORS).toList()
+    return SplitSeasonDetector.detect(self.id, (before + self + after).map { it.toSplitEntry() })
+}
+
+/** 找拆分季时前后各看几部 TV. */
+private const val MAX_SPLIT_NEIGHBORS = 4
+
 private val SeriesNode.isTv: Boolean get() = "TV" in metaTags
 
 private fun tvPrequelOf(subjectId: Int, table: SeriesGraphTable): SeriesNode? =
     table.edgesOf(subjectId)?.prequels.orEmpty().filter { it.isTv }.maxByOrNull { it.airDate }
+
+private fun tvSequelOf(subjectId: Int, table: SeriesGraphTable): SeriesNode? =
+    table.edgesOf(subjectId)?.sequels.orEmpty().filter { it.isTv }.minByOrNull { it.airDate }
 
 private fun seasonNamedBy(node: SeriesNode): Int? =
     listOf(node.nameCn, node.name).firstNotNullOfOrNull { DriveNameParser.parseSubjectSeason(it) }
