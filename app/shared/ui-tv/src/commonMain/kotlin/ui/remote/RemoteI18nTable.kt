@@ -127,6 +127,8 @@ private fun part1() = listOf(
     RemoteText("下载失败", "Download failed", "下載失敗", "下載失敗"),
     RemoteText("所在的盘没接上", "Drive not connected", "所在的磁碟未連接", "所在的磁碟未連接"),
     RemoteText("盘已接上，正在恢复", "Drive connected, restoring", "磁碟已連接，正在恢復", "磁碟已連接，正在恢復"),
+    RemoteText("正在移动到其他盘", "Moving to another drive", "正在移到其他磁碟", "正在移到其他磁碟"),
+    RemoteText("把已有缓存移到这里", "Move existing downloads here", "把已有緩存移到這裏", "把已有快取移到這裡"),
     RemoteText("已暂停 {0}%", "Paused {0}%", "已暫停 {0}%", "已暫停 {0}%"),
     RemoteText("正在播放，稍后继续 {0}%", "Paused while playing {0}%", "正在播放，稍後繼續 {0}%", "正在播放，稍後繼續 {0}%"),
     RemoteText("合并中", "Merging", "合併中", "合併中"),

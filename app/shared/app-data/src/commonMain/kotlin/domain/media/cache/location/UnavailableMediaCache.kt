@@ -32,9 +32,12 @@ import me.him188.ani.utils.logging.logger
 class UnavailableMediaCache(
     override val origin: Media,
     override val metadata: MediaCacheMetadata,
-    val location: String,
+    /** 缓存原来所在的位置, `null` = 内部存储 (只有搬家时会是它) */
+    val location: String?,
     /** 盘又接上了: 存储正在重新恢复它 (BT 要先校验盘上的数据, 可能要一两分钟), 恢复完就换成真的缓存 */
     val reconnected: Flow<Boolean> = flowOf(false),
+    /** 不是盘没接上, 是正在搬到别的位置 (见 [MediaCacheMover]); 搬完换成真的缓存 */
+    val moving: Boolean = false,
     private val deleteRows: suspend () -> Unit,
 ) : MediaCache {
     override val state: Flow<MediaCacheState> = flowOf(MediaCacheState.FAILED)
