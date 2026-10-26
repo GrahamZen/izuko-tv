@@ -28,6 +28,7 @@ import me.him188.ani.app.domain.media.TestMediaList
 import me.him188.ani.app.domain.media.resolver.MediaResolver
 import me.him188.ani.app.domain.media.resolver.TestUniversalMediaResolver
 import me.him188.ani.app.domain.player.SeekPreviewDecoderFault
+import me.him188.ani.app.domain.settings.SettingAdjustment
 import me.him188.ani.utils.coroutines.childScope
 import org.openani.mediamp.PlaybackErrorCode
 import org.openani.mediamp.PlaybackException
@@ -35,7 +36,6 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNull
 
 /**
  * 拖动预览换输出弄坏了解码器之后: 拖动预览改成画在全屏上、提示一次; 同一轮里接着出的解码错误不重复改、不重复提示;
@@ -44,6 +44,7 @@ import kotlin.test.assertNull
 class SeekPreviewDecoderFaultExtensionTest : AbstractPlayerExtensionTest() {
     private var alreadyFullScreen = false
     private var switchCalls = 0
+    private val notices = mutableListOf<SettingAdjustment>()
 
     @BeforeTest
     fun setUp() {
@@ -71,12 +72,16 @@ class SeekPreviewDecoderFaultExtensionTest : AbstractPlayerExtensionTest() {
         val suite = EpisodePlayerTestSuite(this, testScope)
         suite.registerComponent<MediaResolver> { TestUniversalMediaResolver }
         val factory = EpisodePlayerExtensionFactory { context, _ ->
-            SeekPreviewDecoderFaultExtension(context) {
-                switchCalls++
-                val switched = !alreadyFullScreen
-                alreadyFullScreen = true
-                switched
-            }
+            SeekPreviewDecoderFaultExtension(
+                context,
+                switchToFullScreen = {
+                    switchCalls++
+                    val switched = !alreadyFullScreen
+                    alreadyFullScreen = true
+                    switched
+                },
+                notify = { notices += it },
+            )
         }
         val state = suite.createState(listOf(factory))
         state.onUIReady()
@@ -102,15 +107,14 @@ class SeekPreviewDecoderFaultExtensionTest : AbstractPlayerExtensionTest() {
         suite.player.injectError(decodingFailed())
         advanceUntilIdle()
         assertEquals(1, switchCalls)
-        assertEquals(SeekPreviewDecoderFault.Reason.DECODER_ERROR, SeekPreviewDecoderFault.notice.value)
-        SeekPreviewDecoderFault.consumeNotice() // 页面提示过了
+        assertEquals(listOf<SettingAdjustment>(SettingAdjustment.SeekPreviewOnFullScreen(afterCrash = false)), notices)
 
         // 同一轮里重载后又坏了: 不再改设置, 也不再提示
         loadSelectedMedia(suite, state)
         suite.player.injectError(decodingFailed())
         advanceUntilIdle()
         assertEquals(1, switchCalls)
-        assertNull(SeekPreviewDecoderFault.notice.value)
+        assertEquals(1, notices.size)
 
         testScope.cancel()
     }
@@ -121,15 +125,14 @@ class SeekPreviewDecoderFaultExtensionTest : AbstractPlayerExtensionTest() {
         val (testScope, _, _) = createCase()
         advanceUntilIdle()
         assertEquals(1, switchCalls)
-        assertEquals(SeekPreviewDecoderFault.Reason.CRASHED, SeekPreviewDecoderFault.notice.value)
+        assertEquals(listOf<SettingAdjustment>(SettingAdjustment.SeekPreviewOnFullScreen(afterCrash = true)), notices)
         testScope.cancel()
 
         // 只处理一次: 再打开播放页不再改
-        SeekPreviewDecoderFault.consumeNotice()
         val (secondScope, _, _) = createCase()
         advanceUntilIdle()
         assertEquals(1, switchCalls)
-        assertNull(SeekPreviewDecoderFault.notice.value)
+        assertEquals(1, notices.size)
         secondScope.cancel()
     }
 
@@ -144,7 +147,7 @@ class SeekPreviewDecoderFaultExtensionTest : AbstractPlayerExtensionTest() {
         suite.player.injectError(decodingFailed())
         advanceUntilIdle()
         assertEquals(1, switchCalls)
-        assertNull(SeekPreviewDecoderFault.notice.value)
+        assertEquals(emptyList(), notices)
 
         testScope.cancel()
     }
