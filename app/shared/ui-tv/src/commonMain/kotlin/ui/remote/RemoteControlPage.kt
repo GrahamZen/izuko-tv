@@ -6028,7 +6028,7 @@ private val SETTINGS_SCRIPT = """
     bgmBox.innerHTML = '<form class="card set-card"><div class="set-title">' + T('Bangumi 连接方式') + '</div>' +
       '<p class="hint">' + T('中国大陆连不上 Bangumi 官方时，推荐优先设置上面的代理：直连官方，不经过任何第三方。下面几条线路按顺序尝试，前一条连不上用下一条。') + '</p>' +
       '<input type="hidden" name="routes" value="1">' +
-      route('origin', T('官方直连'), T('确定连不上时会自动关掉，之后不再先试它；网络好了可以再打开。')) +
+      route('origin', T('官方直连'), T('确定连不上时会问你要不要关掉，关了之后不再先试它；网络好了可以再打开。')) +
       route('custom', T('我自己的镜像'), '', '<div class="bgm-custom"' + (r.custom ? '' : ' hidden') + '>' +
         '<label class="f"><span>' + T('镜像地址') + '</span><input type="text" name="custom" inputmode="url" autocomplete="off" spellcheck="false" value="' +
         esc(b.custom) + '" placeholder="bangumi.example.com"><em>' +

@@ -44,7 +44,7 @@ sealed class BangumiRoute {
     /**
      * 请求落在这条线路上之后记住多久 (毫秒); `null` = 一直记着, 直到路由变了.
      * 官方以外的都会过期: 一次网络抖动落到后面线路上的人, 过一阵重新先试前面的线路, 不会一直留在后面.
-     * 官方确定连不上另有出路 (调度回报后关掉官方, 见 [BangumiRoutingFeatureHandler]), 不靠粘性.
+     * 官方确定连不上另有出路 (调度回报后问用户要不要关掉官方, 见 [BangumiRoutingFeatureHandler]), 不靠粘性.
      */
     open val stickyMillis: Long? get() = FALLBACK_STICKY_MILLIS
 

@@ -85,6 +85,7 @@ import me.him188.ani.app.ui.main.TvAdjustWindows
 import me.him188.ani.app.ui.main.TvLowSpaceToasts
 import me.him188.ani.app.ui.main.TvMarkedDoneCacheDeletionToasts
 import me.him188.ani.app.ui.main.TvMirrorConsentHost
+import me.him188.ani.app.ui.main.TvSettingAdjustmentHost
 import me.him188.ani.app.ui.main.TvQuickActionMenu
 import me.him188.ani.app.ui.main.LocalTvStartupLogo
 import me.him188.ani.app.ui.main.TvStartupLogo
@@ -450,6 +451,8 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         TvWhatsNewHost()
         // 官方连不上、要自动改用镜像而用户登录着: 先问他 (见 BangumiMirrorConsent)
         TvMirrorConsentHost()
+        // 应用自己改用户设置时告知或询问 (见 SettingAdjustments)
+        TvSettingAdjustmentHost()
         // 本地用户改成 Bangumi 用户后登录了: 问留下的本地收藏合并到账号还是删掉 (只在首页上弹, 见 TvPendingCollectionsHost)
         TvPendingCollectionsHost(onMainPage = {
             startupLogo?.visible != true && runCatching { aniNavigator.backStack.lastOrNull() }.getOrNull() is NavRoutes.Main
