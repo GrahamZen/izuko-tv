@@ -10,8 +10,6 @@
 package me.him188.ani.app.domain.player
 
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.getAndUpdate
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeMark
@@ -42,22 +40,6 @@ object SeekPreviewDecoderFault {
     private val faultStarted = MutableStateFlow<TimeMark?>(null)
 
     private val crashedInPreviousRun = MutableStateFlow(false)
-    private val _notice = MutableStateFlow<Reason?>(null)
-
-    /** 拖动预览为什么自动改成了画在全屏上. */
-    enum class Reason {
-        /** 换输出之后解码出错 ([isFault]) */
-        DECODER_ERROR,
-
-        /** 上一次运行在小画面预览时原生崩溃 ([recordCrashInPreviousRun]) */
-        CRASHED,
-    }
-
-    /**
-     * 拖动预览自动改成画在全屏上了、还没提示的原因: 页面提示一次后 [consumeNotice].
-     * 上次闪退的那种在打开播放页时就改了, 那时提示的界面可能还没出来, 所以留着等它来取.
-     */
-    val notice: StateFlow<Reason?> = _notice.asStateFlow()
 
     /** 拖动预览刚换过主播放器的视频输出 (换到小画面上、换回全屏、或小画面没了). */
     fun markOutputSwitched() {
@@ -81,15 +63,6 @@ object SeekPreviewDecoderFault {
         return true
     }
 
-    internal fun notifySwitchedToFullScreen(reason: Reason) {
-        _notice.value = reason
-    }
-
-    /** 页面已经提示过 [notice]. */
-    fun consumeNotice() {
-        _notice.value = null
-    }
-
     /** 上一次运行在小画面预览时原生崩溃了 (安卓端启动时认出). 打开播放页时由 `SeekPreviewDecoderFaultExtension` 处理, 见 [consumeCrashInPreviousRun]. */
     fun recordCrashInPreviousRun() {
         crashedInPreviousRun.value = true
@@ -102,7 +75,6 @@ object SeekPreviewDecoderFault {
         lastSwitch.value = null
         faultStarted.value = null
         crashedInPreviousRun.value = false
-        _notice.value = null
     }
 
     private fun TimeMark?.isWithin(millis: Long): Boolean = this != null && elapsedNow().inWholeMilliseconds <= millis

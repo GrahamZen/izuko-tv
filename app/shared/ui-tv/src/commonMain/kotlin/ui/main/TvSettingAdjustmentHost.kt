@@ -26,12 +26,17 @@ import me.him188.ani.app.domain.settings.SettingAdjustments
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.lang.Lang
+import me.him188.ani.app.ui.lang.player_seek_preview_crashed_switched_to_full_screen
+import me.him188.ani.app.ui.lang.player_seek_preview_switched_to_full_screen
 import me.him188.ani.app.ui.lang.player_video_enhancement_auto_off
 import me.him188.ani.app.ui.lang.settings_adjust_skip_origin_confirm
 import me.him188.ani.app.ui.lang.settings_adjust_skip_origin_message
 import me.him188.ani.app.ui.lang.settings_network_bangumi_custom
+import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror_auto_message
 import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror_auto_title
+import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror_switch_allow
 import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror_switch_later
+import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror_switch_logout
 import me.him188.ani.app.ui.lang.settings_network_bangumi_route_ech
 import me.him188.ani.app.ui.lang.settings_network_bangumi_route_mirrors
 import me.him188.ani.app.ui.lang.settings_network_bangumi_route_origin
@@ -84,7 +89,11 @@ fun TvSettingAdjustmentHost() {
 private fun noticeText(adjustment: SettingAdjustment): StringResource? = when (adjustment) {
     SettingAdjustment.VideoEnhancementTooSlow -> Lang.player_video_enhancement_auto_off
     SettingAdjustment.FullSearchStutter -> Lang.tv_source_search_paused_for_stutter
-    is SettingAdjustment.SkipBangumiOrigin -> null
+    is SettingAdjustment.SeekPreviewOnFullScreen ->
+        if (adjustment.afterCrash) Lang.player_seek_preview_crashed_switched_to_full_screen
+        else Lang.player_seek_preview_switched_to_full_screen
+
+    is SettingAdjustment.SkipBangumiOrigin, SettingAdjustment.SwitchBangumiToMirror -> null
 }
 
 /** 询问的弹窗; [onAnswer] 的参数 `null` = 「暂不」. */
@@ -105,8 +114,24 @@ private fun SettingAdjustmentDialog(
             )
         }
 
+        SettingAdjustment.SwitchBangumiToMirror -> {
+            val allow = stringResource(Lang.settings_network_bangumi_mirror_switch_allow)
+            val logOut = stringResource(Lang.settings_network_bangumi_mirror_switch_logout)
+            SettingChoiceDialog(
+                title = stringResource(Lang.settings_network_bangumi_mirror_auto_title),
+                message = stringResource(Lang.settings_network_bangumi_mirror_auto_message),
+                actions = question.choices.map { choice ->
+                    val text = if (choice.id == SettingAdjustment.SwitchBangumiToMirror.ALLOW_CREDENTIALS) allow else logOut
+                    SettingChoiceDialogAction(text) { onAnswer(choice) }
+                },
+                cancel = stringResource(Lang.settings_network_bangumi_mirror_switch_later),
+                onDismissRequest = { onAnswer(null) },
+                heightFraction = 0.75f,
+            )
+        }
+
         // 只告知的情形不弹询问 (宿主里直接放掉)
-        SettingAdjustment.VideoEnhancementTooSlow, SettingAdjustment.FullSearchStutter -> Unit
+        SettingAdjustment.VideoEnhancementTooSlow, SettingAdjustment.FullSearchStutter, is SettingAdjustment.SeekPreviewOnFullScreen -> Unit
     }
 }
 

@@ -230,21 +230,22 @@ class BangumiEndpointProvider(
 /**
  * 内置的镜像清单 —— **只是兜底**.
  *
- * 镜像域名的死亡率极高 (2026 年 5~8 月: `bgmmi.anibt.net` 与 `bangumi.rdd.moe` 停服,
- * `bangumi.one` 被 TLS 阻断, `bangumi.lol` 被人拿下, `bangumi.pro` 搬到 `bangumi.vip`), 所以真正的清单要在
+ * 镜像域名的死亡率极高 (2026 年 5~10 月: `bgmmi.anibt.net` 与 `bangumi.rdd.moe` 停服,
+ * `bangumi.one` 被 TLS 阻断, `bangumi.lol` 被人拿下, `bangumi.pro` 搬到 `bangumi.vip` 又搬到 `bangumi.lat`), 所以真正的清单要在
  * 运行期拉取 —— 见 `BangumiMirrorListRepository`. 这里这份只在"还没拉到过"时用.
  */
 object BangumiMirrorList {
     /**
      * 排在前面的先试.
      *
-     * `bangumi.vip`: Mirrox (Rust, MIT, `github.com/mirrox-dev/mirrox`) 搭的整族通配反代,
-     * 原先的 `bangumi.pro` 现在把请求 301 到这里. 2026-09-23 实测带 token 的 p1 请求全部 200.
+     * `bangumi.lat`: Mirrox (Rust, MIT, `github.com/mirrox-dev/mirrox`) 搭的整族通配反代,
+     * 原先的 `bangumi.pro` 与 `bangumi.vip` 现在都把请求 301 到这里. 2026-10-26 实测带 token 的 v0 与 p1 请求都是 200.
      * **它会改写响应体** —— API 返回的封面地址直接就是镜像域名, 所以换了 API 域名等于图床也一起换了;
      * 这些地址随数据存进本地, 请求时会先换回原站再按当前设置走 (见 [BangumiRouting.knownRoutes]).
      *
      * 清单里必须写**跳转之后**的域名: 跨域名跳转时 Ktor 会去掉 `Authorization` 头, 写旧域名的话
      * 匿名浏览照常 (跟着跳过去), 带凭证的请求却在新域名上收到 401.
+     * 搬走的旧域名留在后面: 本地存着的封面地址还是旧域名, 认得出才换得回原站.
      */
-    val BUNDLED = listOf("bangumi.vip")
+    val BUNDLED = listOf("bangumi.lat", "bangumi.vip")
 }

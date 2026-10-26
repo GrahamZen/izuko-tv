@@ -38,9 +38,24 @@ sealed interface SettingAdjustment {
         override val key: String get() = "full-search-stutter"
     }
 
+    /** 告知: 拖动预览换输出弄坏了这台设备的解码器 ([afterCrash] = 上次在小画面预览时闪退), 已改成画在全屏上. */
+    data class SeekPreviewOnFullScreen(val afterCrash: Boolean) : SettingAdjustment {
+        override val key: String get() = "seek-preview-full-screen"
+    }
+
     /** 询问: 连不上 Bangumi 官方, 经 [workingRoute] 连上了; 要不要以后跳过官方. */
     data class SkipBangumiOrigin(val workingRoute: BangumiRouteKind) : SettingAdjustment {
         override val key: String get() = "skip-bangumi-origin"
+    }
+
+    /**
+     * 询问: 连不上 Bangumi 官方, 只有第三方镜像通, 而用户已登录、凭证又不经过镜像 (见 `BangumiMirrorConsent`):
+     * 允许凭证经过镜像并改用镜像 ([ALLOW_CREDENTIALS]) / 退出登录再改用镜像 ([LOG_OUT]) / 暂不.
+     */
+    data object SwitchBangumiToMirror : SettingAdjustment {
+        override val key: String get() = "switch-bangumi-to-mirror"
+        const val ALLOW_CREDENTIALS = "allow-credentials"
+        const val LOG_OUT = "log-out"
     }
 }
 

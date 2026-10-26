@@ -15,12 +15,10 @@ import me.him188.ani.app.data.models.preference.BangumiRouteKind
 import me.him188.ani.app.domain.foundation.BangumiMirrorConsent.Question
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 /**
- * 已登录的人改成只剩第三方镜像前要不要问 ([BangumiMirrorConsent]), 以及自动切换时的询问口子 ([BangumiMirrorConsentRequests]).
+ * 已登录的人改成只剩第三方镜像前要不要问 ([BangumiMirrorConsent]). 自动切换时的询问经 SettingAdjustments.
  *
  * 用旧版的「连接方式」造设置 (见 [BangumiEndpointSettings.mode]): 「用镜像」= 关掉官方, 开着加密直连与镜像.
  * 平台不支持加密直连时就只剩镜像, 与旧版一样要问; 支持的话凭证走加密直连, 不用问.
@@ -94,20 +92,5 @@ class BangumiMirrorConsentTest {
         // 地址没填好等于没开
         val broken = target.copy(customBaseUrl = "not a host")
         assertEquals(Question.SwitchToMirror, BangumiMirrorConsent.check(auto, broken, loggedIn = true, echAvailable = false))
-    }
-
-    @Test
-    fun `询问口子 — 选了暂不这次运行不再问`() {
-        val requests = BangumiMirrorConsentRequests()
-        requests.request()
-        assertTrue(requests.pending.value)
-        requests.resolve(declined = false)
-        assertFalse(requests.pending.value)
-
-        requests.request()
-        assertTrue(requests.pending.value)
-        requests.resolve(declined = true)
-        requests.request()
-        assertFalse(requests.pending.value)
     }
 }
