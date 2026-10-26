@@ -330,6 +330,10 @@ data class TvSourceNav(
     val showExcluded: Boolean = false,
     /** 源那一栏里查完没结果的源展开着 (默认折成最后一行「没有结果的 N 个」). */
     val showEmptySources: Boolean = false,
+    /**
+     * 刚按了「继续查」的源 (`web:` + 实例 id): 焦点多半就在它上面, 它查完没结果也留在原处, 不折; 换到别的源 / 别的组、开关「没有结果」就不留了.
+     */
+    val keepInPlace: String? = null,
     val frozenOrder: List<String>? = null,
 )
 
@@ -827,11 +831,11 @@ fun buildTvSourcePanel(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvS
     }
     val sourceKey = source?.let { TvSourceRailKeys.web(it.instanceId) }
     // 源那一栏: 有结果的 (与还在查、要处理的) 按设置里的顺序在前, 查完没结果的折成最后一行, 展开了跟在它后面.
-    // 收着时选中的那个 (焦点多半就在它上面, 如刚按了「继续查」) 查完没结果也留在原处, 换到别的源后再折 —— 不在焦点底下抽走一行.
-    // 展开着的不用: 没结果的都看得见, 选中的照旧排在下面那段 (挪上去的话, 在下面那段里上下走一次它就跳一次)
-    val keepSelected = source?.instanceId?.takeUnless { nav.showEmptySources }
+    // 刚按了「继续查」的那个 (焦点多半就在它上面) 查完没结果也留在原处, 换到别的源后再折 —— 不在焦点底下抽走一行 (见 [TvSourceNav.keepInPlace]).
+    // 只留这一种: 在展开的那段里选中没结果的源再收起, 它照常折回去, 不挪到上面
+    val keep = sourceKey?.takeIf { it == nav.keepInPlace && !nav.showEmptySources }
     val sources = if (group != null && group.sources.size > 1) {
-        val (empty, rest) = group.sources.partition { input.isEmptySource(it, strings) && it.instanceId != keepSelected }
+        val (empty, rest) = group.sources.partition { input.isEmptySource(it, strings) && TvSourceRailKeys.web(it.instanceId) != keep }
         fun row(source: WebSource) = webRailRow(source, playing = playingWebSource?.instanceId == source.instanceId, input, strings)
         buildList {
             rest.forEach { add(row(it)) }
@@ -852,9 +856,11 @@ fun buildTvSourcePanel(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvS
         emptyList()
     }
 
+    // 选中的源折进了「没有结果的 N 个」、源那一栏里看不见它 (在展开的那段里选中再收起): 右边空着, 不把它的「没有找到资源」挂在顶上
+    val sourceHidden = sources.isNotEmpty() && sources.none { it.id == sourceKey }
     val right = when {
         railKey == null -> TvSourceRight(key = "empty")
-        source != null && sourceKey != null -> webPane(sourceKey, source, input, strings, nav)
+        source != null && sourceKey != null -> if (sourceHidden) TvSourceRight(key = sourceKey) else webPane(sourceKey, source, input, strings, nav)
         group != null -> TvSourceRight(key = railKey)
         railKey == TvSourceRailKeys.BT -> btPane(input, nav, strings)
         railKey == TvSourceRailKeys.DOWNLOADS -> downloadsPane(input, strings)
