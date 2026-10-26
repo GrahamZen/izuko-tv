@@ -9,12 +9,8 @@
 
 package me.him188.ani.app.domain.foundation
 
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import me.him188.ani.app.data.models.preference.BangumiEndpointSettings
 import me.him188.ani.app.data.models.preference.BangumiRouteKind
-import kotlin.concurrent.Volatile
 
 /**
  * 已登录的人改成「只剩第三方镜像」之前要他点头.
@@ -55,29 +51,4 @@ object BangumiMirrorConsent {
                 !isEnabled(BangumiRouteKind.ORIGIN) &&
                 !(isEnabled(BangumiRouteKind.CUSTOM) && customRoot != null) &&
                 !(isEnabled(BangumiRouteKind.ECH) && echAvailable)
-}
-
-/**
- * 「官方连不上时用镜像」要自动改成「用镜像」、却需要用户点头时 (见 [BangumiMirrorConsent]), 由这里请界面问他.
- *
- * 选了「暂不」这次运行就不再问: 镜像的粘性过期后请求还会再报一次官方连不上, 不能每半小时弹一次.
- */
-class BangumiMirrorConsentRequests {
-    private val _pending = MutableStateFlow(false)
-
-    /** 有一个待回答的询问. */
-    val pending: StateFlow<Boolean> = _pending.asStateFlow()
-
-    @Volatile
-    private var declined = false
-
-    fun request() {
-        if (!declined) _pending.value = true
-    }
-
-    /** 界面问完了; [declined] = 用户选了「暂不」. */
-    fun resolve(declined: Boolean) {
-        if (declined) this.declined = true
-        _pending.value = false
-    }
 }

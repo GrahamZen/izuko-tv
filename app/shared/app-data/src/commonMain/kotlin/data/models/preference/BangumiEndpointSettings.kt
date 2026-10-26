@@ -68,7 +68,7 @@ data class BangumiEndpointSettings(
     val customRoot: String? get() = BangumiMirrorHosts.normalizeMirrorRoot(customBaseUrl)
 
     /**
-     * 确定官方连不上之后的设置: 关掉「官方直连」, 之后的请求不再先吃一次官方的连接超时, 直到用户手动打开.
+     * 确定官方连不上、用户同意跳过官方之后的设置: 关掉「官方直连」, 之后的请求不再先吃一次官方的连接超时, 直到用户手动打开.
      * 只开着官方 (用户选了只连官方) 时不动: 那是他明确要的.
      */
     fun afterOriginUnreachable(): BangumiEndpointSettings {
@@ -92,7 +92,7 @@ enum class BangumiRouteKind(
     val id: String,
     val enabledByDefault: Boolean,
 ) {
-    /** bangumi 官方地址. 确定连不上时自动关掉 (见 [BangumiEndpointSettings.afterOriginUnreachable]). */
+    /** bangumi 官方地址. 确定连不上时问用户要不要关掉 (见 [BangumiEndpointSettings.afterOriginUnreachable]). */
     ORIGIN("origin", true),
 
     /**
@@ -119,7 +119,7 @@ enum class BangumiRouteKind(
  * 自建地址不动: 那是用户自己填的.
  */
 enum class BangumiConnectionPreset {
-    /** 官方优先, 连不上自动换加密直连或镜像 (确定连不上后关掉官方). */
+    /** 官方优先, 连不上自动换加密直连或镜像 (确定连不上后问用户要不要关掉官方). */
     AUTO,
 
     /** 不连官方 (测出来连不上): 加密直连与镜像. */
