@@ -31,7 +31,9 @@ import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
 import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.navigation.BackHandler
 import me.him188.ani.app.ui.mediafetch.MediaSelectorState
+import me.him188.ani.app.ui.mediafetch.mergeAutoMatchSources
 import me.him188.ani.app.ui.mediafetch.rememberTestMediaSelectorState
+import me.him188.ani.app.ui.mediaselect.selector.EmptyWebSourcesNote
 import me.him188.ani.app.ui.mediaselect.selector.MediaSelectorWebSourcesColumn
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.utils.platform.annotations.TestOnly
@@ -57,11 +59,14 @@ fun AutoMatchPage(
     scrollable: Boolean = true,
 ) {
     val presentation by state.presentationFlow.collectAsStateWithLifecycle()
+    // 补上选择器不列的 (见 AutoMatchExtras)
+    val extras by state.autoMatchExtras.collectAsStateWithLifecycle()
+    val webSources = mergeAutoMatchSources(presentation.webSources, extras)
     val scope = rememberCoroutineScope()
     val bottomPadding = if (LocalPlatform.current.isMobile()) 0.dp else 8.dp
 
     var openedSourceId by rememberSaveable { mutableStateOf<String?>(null) }
-    val openedSource = openedSourceId?.let { id -> presentation.webSources.find { it.instanceId == id } }
+    val openedSource = openedSourceId?.let { id -> webSources.find { it.instanceId == id } }
     BackHandler(enabled = openedSource != null) { openedSourceId = null }
     if (openedSource != null) {
         SourceResourcesPage(
@@ -76,9 +81,9 @@ fun AutoMatchPage(
     }
 
     MediaSelectorWebSourcesColumn(
-        presentation.webSources,
-        selectedSource = { presentation.selectedWebSource },
-        selectedChannel = { presentation.selectedWebSourceChannel },
+        webSources,
+        selectedSource = { webSources.find { source -> source.channels.any { it.original == presentation.selected } } },
+        selectedChannel = { webSources.firstNotNullOfOrNull { source -> source.channels.find { it.original == presentation.selected } } },
         onSelect = { _, channel ->
             channel.original?.let { onClickItem(it) }
         },
@@ -93,6 +98,7 @@ fun AutoMatchPage(
         onRequestManualSearch = onRequestManualSearch,
         onOpenSource = { openedSourceId = it.instanceId },
         header = { AutoMatchCachedRow(autoMatchCachedItems(presentation.filteredCandidates), presentation.selected, onClickItem, Modifier.fillMaxWidth()) },
+        footer = { EmptyWebSourcesNote(extras.emptySources.filter { empty -> webSources.none { it.instanceId == empty.instanceId } }) },
         modifier = modifier
             .testTag(AutoMatchPageTestTags.ROOT)
             .padding(bottom = bottomPadding)
