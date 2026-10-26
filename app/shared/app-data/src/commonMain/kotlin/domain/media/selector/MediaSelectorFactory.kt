@@ -28,6 +28,8 @@ import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.flow.combine
 import me.him188.ani.app.domain.media.fetch.MediaFetchSession
 import me.him188.ani.app.domain.media.fetch.withRequestedNumbers
+import me.him188.ani.app.domain.media.fetch.seriesInfoOrNullFlow
+import me.him188.ani.app.domain.media.fetch.withSeasonAliases
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 
 /**
@@ -83,7 +85,8 @@ interface MediaSelectorFactory {
                             list.map { it.mediaSourceId }
                         },
                         subjectRelationsRepository.subjectSeriesInfoFlow(subjectId),
-                        subjectCollectionRepository.subjectCollectionFlow(subjectId).retryAsSelectorInput("subject $subjectId").map { it.subjectInfo },
+                        subjectCollectionRepository.subjectCollectionFlow(subjectId).retryAsSelectorInput("subject $subjectId").map { it.subjectInfo }
+                            .combine(subjectRelationsRepository.seriesInfoOrNullFlow(subjectId)) { info, series -> info.withSeasonAliases(series) },
                         episodeCollectionRepository.episodeCollectionInfoFlow(subjectId, episodeId).retryAsSelectorInput("episode $episodeId")
                             .map { it.episodeInfo }.let { episodeInfo ->
                             if (fetchRequest == null) episodeInfo else combine(episodeInfo, fetchRequest) { info, request -> info.withRequestedNumbers(request) }

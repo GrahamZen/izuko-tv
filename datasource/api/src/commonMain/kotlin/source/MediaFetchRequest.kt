@@ -97,6 +97,8 @@ data class MediaFetchRequest(
      * 自己按条目对上文件、没有站点标题可用的数据源 (网盘、媒体服务器) 用它标资源的条目名: 选择器判「条目名不匹配」只认条目服务的名字.
      */
     val catalogSubjectName: String? = null,
+    /** 认站点条目用的名字, 见 [MediaFetchNameHints]. */
+    val nameHints: MediaFetchNameHints = MediaFetchNameHints.Empty,
 ) {
     /**
      * 两个请求是否查询同一个条目: 条目 ID, 名称与剧集列表相同, 忽略仅作提示的当前剧集字段.
@@ -107,6 +109,7 @@ data class MediaFetchRequest(
                 subjectNameCN == other.subjectNameCN &&
                 subjectNames == other.subjectNames &&
                 fallbackSearchKeywords == other.fallbackSearchKeywords &&
+                nameHints == other.nameHints &&
                 episodes == other.episodes &&
                 seasonEpisodeCount == other.seasonEpisodeCount
 

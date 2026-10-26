@@ -46,9 +46,19 @@
 - 本地缓存以数据源形式暴露：`MediaCacheStorageSource`
   （`app/shared/app-data/.../domain/media/cache/storage/MediaCacheStorage.kt`）。
 
+### 搜索计划 (非 BT 数据源共用)
+
+- `SubjectSearchPlan`（`app/shared/app-data/.../domain/mediasource/search/SubjectSearchPlan.kt`）：由请求建，
+  `keywords(KeywordStyle)` 给关键词链，`identify` / `foundOwn` / `pagesToOpen` 认站点上的条目是不是这一部；
+  网页、规则、JSON API、直连 API 数据源都从这里取，见 [MediaSource](media-source.md#搜索计划)。
+- 请求里认部用的名字 `MediaFetchNameHints`（`datasource/api/.../source/MediaFetchNameHints.kt`）由 `fetchNameHintsOf`
+  （`domain/media/fetch/FetchNameHints.kt`）与 `withRegionalNames` 填；「系列名 第N季」由 `seriesSeasons` / `withSeasonNames`
+  （`data/network/SeriesSeasonNames.kt`）从系列索引推出，选择器的条目信息经 `withSeasonAliases` 带上同一组。
+- `SiteSearchMemory`（同包）：站点回应跨条目共用的内存记忆，挂在 `SelectorMediaSourceEpisodeCacheRepository.siteMemory`。
+
 ### Selector 数据源查询/解析管线
 
-1. `SelectorMediaSource.fetch(...)`
+1. `SelectorMediaSource.fetch(...)`：关键词链（搜索计划 + `keywordSearchChain`）
 2. `DefaultSelectorMediaSourceEngine.search(...)`
 3. `searchSubjects(...)`
 4. `selectSubjects(...)`
@@ -68,9 +78,9 @@
 
 ### JSON API 数据源查询/解析管线
 
-1. `JsonApiMediaSource.fetch(...)`：关键字链（`keywordSearchChain`，与 Selector 源共用）
+1. `JsonApiMediaSource.fetch(...)`：关键字链（搜索计划 + `keywordSearchChain`，与 Selector 源共用）
 2. `searchSubjectsOnline(...)`：搜索阶段请求，`JsonApiMediaSourceEngine.parseSubjects(...)`
-3. 按条目名过滤后对每个条目 `loadChannels(...)`：剧集阶段请求，`parseChannels(...)` 按线路格式展开
+3. 只对可能是这一部的条目（`SubjectSearchPlan.pagesToOpen`）`loadChannels(...)`：剧集阶段请求，`parseChannels(...)` 按线路格式展开
 4. `selectMedia(...)` 按集号筛选，`createMedia(...)` 产出 `download = ResourceLocation.WebVideo(..., apiParameters)`
 5. 播放时 `JsonApiMediaSource.resolveApiVideo(...)`：播放阶段请求，`parseVideo(...)` 按线路挑候选；剧集列表自带地址的站点改为重取列表读这一集的地址
 

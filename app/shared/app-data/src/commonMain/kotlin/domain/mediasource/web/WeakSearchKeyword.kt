@@ -10,9 +10,8 @@
 package me.him188.ani.app.domain.mediasource.web
 
 /**
- * 归一化后的回退关键词只剩一个很短的英文 / 数字词时不拿去搜: 「To LOVEる -とらぶる-」取首词是「To」,
- * 「NEW GAME!」是「NEW」. 站点按子串搜, 这种词能命中一大片无关的番, 每个还要打开条目页取剧集.
- * 主关键词不经过这里.
+ * 取首词后只剩一个很短的英文 / 数字词: 「To LOVEる -とらぶる-」取首词是「To」, 「NEW GAME!」是「NEW」.
+ * 站点按子串搜, 这种词能命中一大片无关的番. 回退关键词这样的不拿去搜, 主关键词这样时用整个名字 (见 `SubjectSearchPlan.keywords`).
  */
 internal fun isWeakSearchKeyword(keyword: String): Boolean =
     keyword.length <= WEAK_KEYWORD_MAX_LENGTH && keyword.all { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' }
