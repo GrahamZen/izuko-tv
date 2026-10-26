@@ -109,6 +109,8 @@ data class SelectorSearchQuery(
      * 为 `null` 时退化成只产出 [episodeSort] 那一集 (长番, 见 `SelectorMediaSource.fetch`).
      */
     val subjectEpisodeSorts: Set<EpisodeSort>? = null,
+    /** 条目的正片集数, 不知道时为 null: 多集的番里没写集号的一条不认作第 1 集 (见 [matchingEpisodeSortFor]) */
+    val subjectEpisodeCount: Int? = null,
 )
 
 /**
@@ -311,7 +313,7 @@ abstract class SelectorMediaSourceEngine {
         return episodeList.mapNotNull { info ->
             // 有的站点把 `javascript:` 占位按钮也列进剧集里. WebVideo 只收 http/https, 否则抛异常让整个源作废: 只跳过这一集.
             if (!info.playUrl.startsWith("https://") && !info.playUrl.startsWith("http://")) return@mapNotNull null
-            val episodeSort = episodeList.matchingEpisodeSortOf(info, query.episodeSort, query.episodeEp, query.episodeName)
+            val episodeSort = episodeList.matchingEpisodeSortOf(info, query.episodeSort, query.episodeEp, query.episodeName, query.subjectEpisodeCount)
                 ?: return@mapNotNull null
             if (!keep(episodeSort)) return@mapNotNull null
             createMedia(info, episodeSort, config, mediaSourceId, subjectName, parser)

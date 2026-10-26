@@ -20,6 +20,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import me.him188.ani.app.domain.mediasource.search.TitleForms
 
 /**
  * 「系列名 + 副标题」的条目在系列里的叫法 ([DriveSeriesParts]), 与条目名搜不全时按副标题搜分享站.
@@ -44,7 +45,7 @@ class DriveSeriesPartsTest {
     @Test
     fun `series names and subtitles of the other parts are known`() {
         val conflict = assertNotNull(parts(457326))
-        assertEquals(DriveNameParser.normalize("死神 千年血战篇"), conflict.seriesNames.first())
+        assertEquals(TitleForms.compact("死神 千年血战篇"), conflict.seriesNames.first())
         assertTrue("诀别谭" in conflict.otherParts && "祸进谭" in conflict.otherParts)
     }
 
@@ -84,12 +85,30 @@ class DriveSeriesPartsTest {
     }
 
     @Test
-    fun `the first work and subjects outside the table have no subtitle`() {
+    fun `the first work and subjects outside the table have no subtitle of their own`() {
         assertNull(parts(1600)) // 名字就是系列名
-        assertNull(parts(302286))
+        // 自己没有副标题时只有别的部的
+        val tybw = assertNotNull(parts(302286))
+        assertEquals(emptyList(), tybw.keywords)
+        assertTrue("诀别谭" in tybw.otherParts)
         assertNull(parts(999999))
         // 第二季与第一季只差一个「?」: 副标题第一季也有, 不能拿来认是哪一季
-        assertNull(parts(293049))
+        assertEquals(emptyList(), parts(293049)?.ownParts.orEmpty())
+    }
+
+    @Test
+    fun `a subject is not the series name of works named after it`() {
+        // 前传的名字以整个条目名开头, 条目名不是系列名
+        val table = SeriesGraphTable.parse(
+            listOf(
+                "# bangumi-series-graph v1 max_id=714439 dump=dump-2026-10-20.210332Z.zip | 列: …",
+                "402128\tFate/strange Fake -Whispers of Dawn-\t命运-奇异赝品 黎明低语\t2023-07-02\t1\tTV\t\t\t443831\t\t",
+                "443831\tFate/strange Fake\tFate/strange Fake\t2026-01-03\t13\tTV\t\t402128\t\t\t",
+            ).joinToString("\n").encodeToByteArray(),
+        )!!
+        assertNull(DriveSeriesParts.of(443831, table))
+        val request = DriveSeriesTestData.request(443831, listOf("Fate/strange Fake", "命运-奇异赝品"), 1, 13)
+        assertEquals(DriveSubjectIdentity.Naming.OWN, DriveSubjectIdentity.of(request, table).namingOf("Fate Strange Fake"))
     }
 
     @Test

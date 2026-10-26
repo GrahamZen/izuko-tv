@@ -22,6 +22,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
+import me.him188.ani.app.domain.mediasource.search.TitleForms
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
@@ -64,10 +65,10 @@ internal class DriveLibraryIndex(
 
     /** 名字含 [keyword] 的文件与文件夹 (文件夹在前), 最多 [MAX_RESULTS] 个. */
     suspend fun search(keyword: String): List<DriveFile> {
-        val wanted = DriveNameParser.normalize(keyword)
+        val wanted = TitleForms.compact(keyword)
         if (wanted.isEmpty()) return emptyList()
         return entries()
-            .filter { DriveNameParser.normalize(it.fileName).contains(wanted) }
+            .filter { TitleForms.compact(it.fileName).contains(wanted) }
             .sortedByDescending { it.dir }
             .take(MAX_RESULTS)
     }

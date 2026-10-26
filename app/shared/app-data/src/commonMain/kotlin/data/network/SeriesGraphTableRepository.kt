@@ -103,6 +103,9 @@ class SeriesGraphTableRepository(
         return table.value
     }
 
+    /** 已经读进来的表, 不等; 还没有时为 `null`. */
+    fun loaded(): SeriesGraphTable? = table.value
+
     private suspend fun loadLocal(): SeriesGraphTable? = withContext(Dispatchers.IO_) {
         if (tableFile.exists()) SeriesGraphTable.parse(tableFile.readBytes()) else null
     }
@@ -166,6 +169,11 @@ class SeriesGraphTableRepository(
                 failures += "$url: stale (max_id ${parsed.maxId} < ${current.maxId})"
                 continue
             }
+            // 全部动画的表取不到、退到只有系列关系的那张时, 不拿它换掉本机已有的全部动画的表
+            if (current != null && current.allAnime && !parsed.allAnime) {
+                failures += "$url: series graph only"
+                continue
+            }
             writeTableFile(bytes)
             cache.updateData { SeriesGraphTableCache(etag = etag, source = url, checkedAt = currentTimeMillis()) }
             table.value = parsed
@@ -183,10 +191,13 @@ class SeriesGraphTableRepository(
 
     private companion object {
         const val REPOSITORY = "GrahamZen/bangumi-sequel-seasons"
-        const val PATH = "bgm-series-graph.tsv"
 
-        /** 下载入口, 按顺序试; 顺序的理由见 [GitHubFileSources]. */
-        val TABLE_URLS = GitHubFileSources.urls(REPOSITORY, PATH)
+        /** 全部动画的表 (带别名); 取不到时退到只有系列关系的那张 ([SERIES_GRAPH_PATH]) */
+        const val ANIME_PATH = "bgm-anime.tsv"
+        const val SERIES_GRAPH_PATH = "bgm-series-graph.tsv"
+
+        /** 下载入口, 按顺序试; 同一张表的各入口的顺序见 [GitHubFileSources]. */
+        val TABLE_URLS = GitHubFileSources.urls(REPOSITORY, ANIME_PATH) + GitHubFileSources.urls(REPOSITORY, SERIES_GRAPH_PATH)
 
         /** 多久重新检查一次. 表随 Bangumi 的导出每周变一次, 每天看一眼就够 (多数时候是 304). */
         val REFRESH_INTERVAL = 20.hours
@@ -212,13 +223,16 @@ data class SeriesGraphTableCache(
 }
 
 /**
- * `bgm-series-graph.tsv` 读进来的样子. 首行表头 `# bangumi-series-graph v1 max_id=<导出里最大的动画条目 id> dump=<导出文件名> …`,
+ * `bgm-anime.tsv` (全部动画) 或 `bgm-series-graph.tsv` (只有有前传或续集的) 读进来的样子. 首行表头
+ * `# bangumi-anime v1` 或 `# bangumi-series-graph v1`, 带 `max_id=<导出里最大的动画条目 id> dump=<导出文件名> …`,
  * 其后一行一个条目 (制表符分隔): `bgm_id, 原名, 中文名, 首播日, 本篇集数, 类型, nsfw, 前传, 续集`, 前传 / 续集是逗号分隔的 id,
- * 即 `/p1/subjects/{id}/relations` 那一页 (只看动画, 前 [SERIES_RELATIONS_PAGE_SIZE] 条) 里的前传与续集.
+ * 即 `/p1/subjects/{id}/relations` 那一页 (只看动画, 前 [SERIES_RELATIONS_PAGE_SIZE] 条) 里的前传与续集;
+ * 全部动画的表最后多一列别名 (`|` 分隔, 见 [namesOf]).
  *
- * 原文整份留在内存里, 查到哪一行才拆哪一行 (同 [TmdbSubjectMapIndex]): 九千多个节点全拆成对象要多占几 MB.
+ * 原文整份留在内存里, 查到哪一行才拆哪一行 (同 [TmdbSubjectMapIndex]): 三万多个节点全拆成对象要多占十几 MB.
  */
 class SeriesGraphTable private constructor(
+    private val header: String,
     /** 表覆盖到的最大条目 id. 比它新的条目出表时还没有, 表里查不到不等于没有关系. */
     val maxId: Int,
     /** 出表用的 Bangumi 导出 */
@@ -230,6 +244,9 @@ class SeriesGraphTable private constructor(
     private val lineStarts: IntArray,
 ) {
     val size: Int get() = ids.size
+
+    /** 收了全部动画 (`bgm-anime.tsv`, 带别名); 只有有前传或续集的 (`bgm-series-graph.tsv`) 为 `false` */
+    val allAnime: Boolean get() = header.startsWith(ANIME_HEADER)
 
     /** 表里的全部条目 id, 升序. */
     internal val subjectIds: List<Int> get() = ids.asList()
@@ -250,9 +267,25 @@ class SeriesGraphTable private constructor(
     /** 表里这个条目的节点; 不在表里为 `null`. */
     fun nodeOf(subjectId: Int): SeriesNode? = rowOf(subjectId)?.node
 
+    /** 这个条目的全部名字: 原名、中文名与别名 (全部动画的表才有别名); 不在表里为空. */
+    fun namesOf(subjectId: Int): List<String> = rowOf(subjectId)?.names.orEmpty()
+
+    /** 逐行给出条目 id 与它的全部名字 (同 [namesOf]), 建名字索引用. */
+    fun forEachNames(block: (subjectId: Int, names: List<String>) -> Unit) {
+        for (index in ids.indices) {
+            val start = lineStarts[index]
+            var end = start
+            while (end < bytes.size && bytes[end] != NEWLINE) end++
+            if (end > start && bytes[end - 1] == CARRIAGE_RETURN) end--
+            val fields = bytes.decodeToString(start, end).split('\t')
+            if (fields.size < 3) continue
+            block(ids[index], namesIn(fields))
+        }
+    }
+
     /**
-     * 原名或中文名里原样含有 [fragment] 的条目. 整表的字节扫一遍, 只拆命中的那几行 (同 [rowOf], 不把九千多行都拆成对象);
-     * 用来找名字以某部番为前缀的别的作品.
+     * 原名、中文名或别名里原样含有 [fragment] 的条目. 整表的字节扫一遍, 只拆命中的那几行 (同 [rowOf], 不把几万行都拆成对象);
+     * 用来找名字里含着某部番的名字的别的作品.
      */
     fun nodesContaining(fragment: String): List<SeriesNode> {
         val needle = fragment.encodeToByteArray()
@@ -271,8 +304,8 @@ class SeriesGraphTable private constructor(
                 }
 
                 TAB -> tabs++
-                else -> if (tabs in 1..2 && bytes[pos] == needle[0] && matchesAt(pos, needle)) {
-                    // 第 2、3 列 (原名、中文名) 里命中: 记下行首的 id, 这一行余下的不再看
+                else -> if ((tabs in 1..2 || tabs == ALIASES_COLUMN) && bytes[pos] == needle[0] && matchesAt(pos, needle)) {
+                    // 原名、中文名、别名几列里命中: 记下行首的 id, 这一行余下的不再看
                     idAt(lineStart)?.let(found::add)
                     while (pos < bytes.size && bytes[pos] != NEWLINE) pos++
                     continue
@@ -298,7 +331,7 @@ class SeriesGraphTable private constructor(
         return if (i > lineStart && id <= Int.MAX_VALUE) id.toInt() else null
     }
 
-    internal class Row(val node: SeriesNode, val prequels: List<Int>, val sequels: List<Int>)
+    internal class Row(val node: SeriesNode, val prequels: List<Int>, val sequels: List<Int>, val names: List<String>)
 
     private fun rowOf(subjectId: Int): Row? {
         val index = ids.binarySearch(subjectId)
@@ -311,7 +344,11 @@ class SeriesGraphTable private constructor(
     }
 
     companion object {
-        private const val HEADER_PREFIX = "# bangumi-series-graph v1"
+        private const val ANIME_HEADER = "# bangumi-anime v1"
+        private val HEADER_PREFIXES = listOf(ANIME_HEADER, "# bangumi-series-graph v1")
+
+        /** 别名是第几列 (从 0 数) */
+        private const val ALIASES_COLUMN = 11
         private val MAX_ID = Regex("""\bmax_id=(\d+)""")
         private val DUMP = Regex("""\bdump=(\S+)""")
         private const val NEWLINE = '\n'.code.toByte()
@@ -323,7 +360,7 @@ class SeriesGraphTable private constructor(
             var headerEnd = 0
             while (headerEnd < bytes.size && bytes[headerEnd] != NEWLINE) headerEnd++
             val header = bytes.decodeToString(0, headerEnd).trimEnd('\r')
-            if (!header.startsWith(HEADER_PREFIX)) return null
+            if (HEADER_PREFIXES.none(header::startsWith)) return null
             val maxId = MAX_ID.find(header)?.groupValues?.get(1)?.toIntOrNull() ?: return null
             val dump = DUMP.find(header)?.groupValues?.get(1).orEmpty()
 
@@ -362,12 +399,12 @@ class SeriesGraphTable private constructor(
                     starts += offset
                 }
             }
-            return SeriesGraphTable(maxId, dump, bytes, ids.toIntArray(), starts.toIntArray())
+            return SeriesGraphTable(header, maxId, dump, bytes, ids.toIntArray(), starts.toIntArray())
         }
 
         /**
          * 一行: 前 9 列与客户端从 `/p1/subjects/{id}/relations` 构造的节点逐项对应 (没有封面); 第 10、11 列是本篇第一集的 sort
-         * (空 = 1) 与本篇中间的特别篇数 (空 = 0), 没有这两列的旧表当作不知道. 格式不对为 `null`.
+         * (空 = 1) 与本篇中间的特别篇数 (空 = 0), 没有这两列的旧表当作不知道; 第 12 列是别名. 格式不对为 `null`.
          */
         internal fun parseRow(line: String): Row? {
             val fields = line.split('\t')
@@ -386,8 +423,12 @@ class SeriesGraphTable private constructor(
                 firstSort = if (episodes != null && fields.size > 9) fields[9].toIntOrNull() ?: 1 else null,
                 inlineSpecialCount = fields.getOrNull(10)?.toIntOrNull() ?: 0,
             )
-            return Row(node, fields[7].toIdList(), fields[8].toIdList())
+            return Row(node, fields[7].toIdList(), fields[8].toIdList(), namesIn(fields))
         }
+
+        /** 一行的原名、中文名与别名, 去掉空的与重复的 */
+        private fun namesIn(fields: List<String>): List<String> =
+            (listOf(fields[1], fields[2]) + fields.getOrNull(ALIASES_COLUMN).orEmpty().split('|')).filter { it.isNotBlank() }.distinct()
 
         private fun String.toIdList(): List<Int> = if (isEmpty()) emptyList() else split(',').mapNotNull { it.trim().toIntOrNull() }
     }
