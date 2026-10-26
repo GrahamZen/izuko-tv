@@ -42,10 +42,12 @@ import kotlinx.coroutines.withContext
 import me.him188.ani.app.data.persistent.database.dao.TorrentCacheEpisodeEntity
 import me.him188.ani.app.data.persistent.database.dao.TorrentCacheInfoEntity
 import me.him188.ani.app.domain.media.cache.engine.TorrentEngineAccess
+import me.him188.ani.app.domain.media.cache.location.MediaCacheLocations
 import me.him188.ani.app.domain.media.cache.engine.UnsafeTorrentEngineAccessApi
 import me.him188.ani.app.domain.torrent.IRemoteAniTorrentEngine
 import me.him188.ani.utils.coroutines.childScope
 import me.him188.ani.utils.coroutines.update
+import me.him188.ani.utils.io.absolutePath
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
@@ -79,7 +81,7 @@ class TorrentServiceConnectionManager(
     // Only rows the service must download; PikPak runs in-process and is filtered out by the caller.
     private val serviceTorrentsFlow: StateFlow<Flow<List<TorrentCacheInfoEntity>>?>,
     private val serviceEpisodesFlow: StateFlow<Flow<List<TorrentCacheEpisodeEntity>>?>,
-    private val mediaCacheBaseSaveDirFlow: StateFlow<File?>,
+    private val mediaCacheLocationsFlow: StateFlow<MediaCacheLocations?>,
     startServiceImpl: () -> ComponentName?,
     private val stopServiceImpl: () -> Unit,
     private val processLifecycle: Lifecycle,
@@ -218,9 +220,11 @@ class TorrentServiceConnectionManager(
         torrents: List<TorrentCacheInfoEntity>,
         episodes: List<TorrentCacheEpisodeEntity>,
     ): Boolean {
-        val baseSaveDir = mediaCacheBaseSaveDirFlow.value ?: return true
+        val locations = mediaCacheLocationsFlow.value ?: return true
         val episodesByMedia = episodes.groupBy { it.mediaId }
         torrents.forEach { torrent ->
+            // 盘没接上的种子下不了, 不为它留着服务
+            val baseSaveDir = locations.rootOf(torrent.location)?.let { File(it.absolutePath) } ?: return@forEach
             val records = episodesByMedia[torrent.mediaId]
             if (records == null) {
                 if (!isFileCompleted(baseSaveDir, torrent.relativeDir, torrent.completed, torrent.pathInTorrent)) return false

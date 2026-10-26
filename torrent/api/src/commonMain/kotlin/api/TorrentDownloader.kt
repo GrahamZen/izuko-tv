@@ -81,6 +81,15 @@ interface TorrentDownloader : AutoCloseable {
         parentCoroutineContext: CoroutineContext = EmptyCoroutineContext,
     ): TorrentSession
 
+    /**
+     * 同 [startDownload], 数据放在 [saveDir] (缓存放在别的盘上时). 不按种子分目录的引擎忽略 [saveDir].
+     */
+    suspend fun startDownloadAt(
+        data: EncodedTorrentInfo,
+        saveDir: SystemPath,
+        parentCoroutineContext: CoroutineContext = EmptyCoroutineContext,
+    ): TorrentSession = startDownload(data, parentCoroutineContext)
+
     fun getSaveDirForTorrent(
         data: EncodedTorrentInfo,
     ): SystemPath

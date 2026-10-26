@@ -19,4 +19,26 @@ BT 资源由 BT 引擎处理（Anitorrent），HTTP 和 HLS 资源由下载器 `
 `torrent_cache` 上的完成状态与文件路径列只用于恢复没有剧集行的旧记录（数据库版本 24 之前创建的缓存）：
 恢复时按记录的剧集判断旧行的文件是否属于该集，是则沿用，否则重新从种子中选择文件，并补建剧集行。
 
+## 缓存位置
+
+缓存可以放在内部存储或外接盘上（`domain/media/cache/location/`）。`MediaCacheLocations` 列出此刻接着的位置
+（`MediaCacheLocation`：内部存储的 `id` 为 `null`，外接盘为系统给这个卷的 UUID），并给出新缓存的位置
+（`MediaCacheSettings.defaultLocation` 选的盘接着且能用时是它，否则是内部存储）。安卓实现 `AndroidMediaCacheLocations`
+只用各盘上本应用的私有目录（`getExternalFilesDirs`），不用申请权限，原生库能直接按路径读写；卸载应用时系统会一起删掉。
+FAT32（单个文件最大 4 GB）与只读的盘不能放新缓存。没有平台实现时只有内部存储（`InternalOnlyMediaCacheLocations`）。
+
+- 各位置根目录下的布局相同（`anitorrent/pieces/<种子>`、`web-m3u/…`）。每条缓存只记它在哪个位置：BT 记在
+  `torrent_cache.location`，网页缓存记在 `http_cache_download_state.location`（数据库版本 30 起；为空 = 内部存储，旧缓存都是）。
+  换默认位置不影响已有的缓存。
+- 一个种子只放一个位置：同一种子的其他剧集、别的数据源缓存的同一种子，都跟着已有的种子行。内部存储上的种子目录由引擎决定，
+  别的位置上的经 `TorrentDownloader.startDownloadAt` 指定。网盘引擎（PikPak）的文件只放内部存储。
+- 盘没接上时，恢复记录得到 `UnavailableMediaCache` 占位：不能播，暂停 / 继续不做什么，选源时不出现；删除只删记录，
+  文件等下次带着这个盘启动时由清扫回收。绝不能把「盘不在」当成「文件丢了」去删记录或重新下载。
+- 盘插拔时 `MediaCacheLocationRefresher` 让各存储重新恢复：拔掉的换成占位（网页缓存还在跑的任务先暂停），插回来的换回真的缓存。
+  网页缓存下载出错时如果它所在的盘已经不在，记成暂停而不是失败，插回来后接着下。
+- 启动清扫外接盘上的种子目录时，归属按数据库里的全部种子记录算（不只这次恢复出来的），恢复时盘还没接上的记录的目录不会被删。
+- `DownloadSpaceGuard` 按位置分别检查剩余空间，只暂停快满的那个盘上的下载。
+- 设置入口：电视设置页「存储 → 缓存位置」（`TvSettingsEntriesCacheLocation`），Web 控制台的同名卡片（`RemoteCacheLocationSetting`），
+  两边用同一份选项（`mediaCacheLocationChoices`）。
+
 [//]: # (TODO： 缓存)

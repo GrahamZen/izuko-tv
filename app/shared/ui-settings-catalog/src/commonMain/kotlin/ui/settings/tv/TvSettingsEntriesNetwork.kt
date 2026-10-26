@@ -627,6 +627,7 @@ internal fun TvSettingsItemsBuilder.storageItems() {
             },
         )
     }
+    cacheLocationItem()
     val mediaCache = keys.mediaCache
     choice(
         mediaCache, Lang.settings_storage_danmaku_cache_strategy_title,

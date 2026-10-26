@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.shareIn
 import me.him188.ani.app.domain.media.cache.MediaCache
+import me.him188.ani.app.domain.media.cache.location.UnavailableMediaCache
 import me.him188.ani.app.domain.media.cache.MediaCacheState
 import me.him188.ani.app.domain.media.cache.engine.MediaCacheEngineKey
 import me.him188.ani.app.domain.media.cache.storage.MediaCacheStorage
@@ -84,6 +85,10 @@ data class DownloadSnapshot(
      * 正在播放同一集, 停着等播放结束再接着下. 见 [MediaDownloadManager.waitingForPlayback].
      */
     val waitingForPlayback: Boolean = false,
+    /** 所在的盘没接上 (见 [MediaCache.isLocationUnavailable]): 记录还在, 盘插回来接着用 */
+    val locationUnavailable: Boolean = false,
+    /** 盘已经接回来, 正在重新恢复 (见 [UnavailableMediaCache.reconnected]) */
+    val locationReconnected: Boolean = false,
 ) {
     val isBusy: Boolean get() = operation != null
     val isMerging: Boolean get() = mergeProgress != null
@@ -96,6 +101,7 @@ private data class DownloadPhase(
     val mergeProgress: Progress?,
     val awaitingTorrentService: Boolean,
     val waitingForPlayback: Boolean,
+    val locationReconnected: Boolean,
 )
 
 /**
@@ -139,8 +145,9 @@ class MediaDownload internal constructor(
                 cache.mergeProgress,
                 cache.isAwaitingTorrentService,
                 waitingForPlayback.map { id in it }.distinctUntilChanged(),
-            ) { mergeProgress, awaitingService, waiting ->
-                DownloadPhase(mergeProgress, awaitingService, waiting)
+                (cache as? UnavailableMediaCache)?.reconnected ?: flowOf(false),
+            ) { mergeProgress, awaitingService, waiting, reconnected ->
+                DownloadPhase(mergeProgress, awaitingService, waiting, reconnected)
             }
             emitAll(
                 combine(
@@ -164,6 +171,8 @@ class MediaDownload internal constructor(
                         mergeProgress = phase.mergeProgress,
                         awaitingTorrentService = phase.awaitingTorrentService,
                         waitingForPlayback = phase.waitingForPlayback,
+                        locationUnavailable = cache.isLocationUnavailable,
+                        locationReconnected = phase.locationReconnected,
                     )
                 },
             )

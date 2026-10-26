@@ -19,6 +19,8 @@ import me.him188.ani.app.data.persistent.database.dao.createMemoryTorrentCacheIn
 import me.him188.ani.app.domain.media.cache.engine.AlwaysUseTorrentEngineAccess
 import me.him188.ani.app.domain.media.cache.engine.MediaCacheEngineKey
 import me.him188.ani.app.domain.media.cache.engine.TorrentMediaCacheEngine
+import me.him188.ani.app.domain.media.cache.location.InternalOnlyMediaCacheLocations
+import me.him188.ani.app.domain.media.cache.location.MediaCacheLocations
 import me.him188.ani.app.domain.media.cache.storage.MediaCacheSave
 import me.him188.ani.app.domain.media.cache.storage.MediaSaveDirProvider
 import me.him188.ani.app.domain.media.createTestDefaultMedia
@@ -97,9 +99,13 @@ abstract class AbstractTorrentMediaCacheEngineTest {
     protected fun TestScope.createEngine(
         engine: TorrentEngine = createTestAnitorrentEngine(coroutineContext),
         onDownloadStarted: suspend (session: AnitorrentDownloadSession) -> Unit = {},
+        locations: MediaCacheLocations? = null,
     ): TorrentMediaCacheEngine {
         this.coroutineContext.job.invokeOnCompletion {
             client.close()
+        }
+        val saveDirProvider = object : MediaSaveDirProvider {
+            override val saveDir: String = dir.absolutePath
         }
         return TorrentMediaCacheEngine(
             CACHE_MEDIA_SOURCE_ID,
@@ -108,10 +114,9 @@ abstract class AbstractTorrentMediaCacheEngineTest {
             engineAccess = AlwaysUseTorrentEngineAccess,
             dao = torrentInfoDatabase,
             flowDispatcher = coroutineContext[ContinuationInterceptor]!!,
-            baseSaveDirProvider = object : MediaSaveDirProvider {
-                override val saveDir: String = dir.absolutePath
-            },
+            baseSaveDirProvider = saveDirProvider,
             onDownloadStarted = { onDownloadStarted(it as AnitorrentDownloadSession) },
+            locations = locations ?: InternalOnlyMediaCacheLocations(dir.toKtPath().inSystem),
         ).also { cacheEngine = it }
     }
 }

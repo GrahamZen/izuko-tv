@@ -19,6 +19,9 @@ interface IRemoteTorrentDownloader {
     IDisposableHandle fetchTorrent(in String uri, int timeoutSeconds, in ContTorrentDownloaderFetchTorrent cont);
     
     IDisposableHandle startDownload(in PEncodedTorrentInfo data, in ContTorrentDownloaderStartDownload cont);
+
+    // 数据放在 saveDir (缓存放在别的盘上时)
+    IDisposableHandle startDownloadAt(in PEncodedTorrentInfo data, String saveDir, in ContTorrentDownloaderStartDownload cont);
     
     String getSaveDirForTorrent(in PEncodedTorrentInfo data);
     

@@ -126,6 +126,29 @@ class TorrentDownloaderProxy(
     }
 
     @RequiresApi(Build.VERSION_CODES.O_MR1)
+    override fun startDownloadAt(
+        data: PEncodedTorrentInfo?,
+        saveDir: String?,
+        cont: ContTorrentDownloaderStartDownload?
+    ): IDisposableHandle? {
+        if (data == null || saveDir == null || cont == null) return null
+
+        val job = scope.launch(
+            CoroutineExceptionHandler { _, throwable ->
+                if (!connectivityAware.isConnected) return@CoroutineExceptionHandler
+                cont.resumeWithException(throwable.toRemoteContinuationException())
+            } + Dispatchers.IO_,
+        ) {
+            val info = withContext(Dispatchers.IO_) { data.toEncodedTorrentInfo() }
+            val result = delegate.startDownloadAt(info, Path(saveDir).inSystem)
+            if (!connectivityAware.isConnected) return@launch
+            cont.resume(TorrentSessionProxy(result, connectivityAware, scope.coroutineContext))
+        }
+
+        return DisposableHandleProxy { job.cancel() }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.O_MR1)
     override fun getSaveDirForTorrent(data: PEncodedTorrentInfo?): String? {
         if (data == null) return null
 
