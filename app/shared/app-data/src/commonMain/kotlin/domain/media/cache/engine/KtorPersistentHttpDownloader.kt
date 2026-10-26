@@ -49,6 +49,7 @@ class KtorPersistentHttpDownloader(
     m3u8Parser: M3u8Parser = DefaultM3u8Parser,
     scope: CoroutineScope,
     throughputGate: DownloadThroughputGate? = null,
+    locationRoot: (location: String) -> Path? = { null },
 ) : KtorHttpDownloader(
     client = client,
     fileSystem = fileSystem,
@@ -58,6 +59,7 @@ class KtorPersistentHttpDownloader(
     parentScope = scope,
     ioDispatcher = ioDispatcher,
     throughputGate = throughputGate,
+    locationRoot = locationRoot,
 ) {
     override suspend fun init() {
         super.init()

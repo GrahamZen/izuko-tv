@@ -32,6 +32,8 @@ import me.him188.ani.app.domain.media.cache.engine.AlwaysUseTorrentEngineAccess
 import me.him188.ani.app.domain.media.cache.engine.HttpMediaCacheEngine
 import me.him188.ani.app.domain.media.cache.engine.TorrentEngineAccess
 import me.him188.ani.app.domain.media.cache.engine.TorrentMediaCacheEngine
+import me.him188.ani.app.domain.media.cache.location.AndroidMediaCacheLocations
+import me.him188.ani.app.domain.media.cache.location.MediaCacheLocations
 import me.him188.ani.app.domain.media.cache.storage.MediaSaveDirProvider
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
 import me.him188.ani.app.domain.media.resolver.AndroidWebMediaResolver
@@ -187,7 +189,16 @@ fun getAndroidModules(
             downloader = get<HttpDownloader>(),
             saveDir = saveDir,
             mediaResolver = get<MediaResolver>(),
+            locations = get(),
         )
+    }
+    single<MediaCacheLocations> {
+        AndroidMediaCacheLocations(
+            androidContext(),
+            primaryRoot = Path(get<MediaSaveDirProvider>().saveDir).inSystem,
+            selectedLocation = get<SettingsRepository>().mediaCacheSettings.flow.map { it.defaultLocation },
+            scope = coroutineScope,
+        ).also { it.start() }
     }
 
     factory<MediaResolver> {

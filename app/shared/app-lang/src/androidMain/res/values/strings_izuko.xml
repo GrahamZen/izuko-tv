@@ -623,6 +623,8 @@
     <string name="cache_management_delete_summary_item">%1$s (%2$d)</string>
     <string name="cache_episode_status_merging">Merging</string>
     <string name="cache_episode_status_awaiting_bt_service">Waiting for BT service to start</string>
+    <string name="cache_episode_status_location_unavailable">Drive not connected</string>
+    <string name="cache_episode_status_location_reconnected">Drive connected, restoring</string>
     <!-- 正在播放同一集, 缓存停着等播放结束 -->
     <string name="cache_episode_status_waiting_for_playback">Paused while this episode plays</string>
     <!-- 标记看过后删除缓存 (设置 - 存储), 删的时候弹的提示 -->
@@ -630,8 +632,17 @@
     <string name="settings_storage_delete_cache_when_done_description">When you mark a show as Watched from a collection menu, delete all of its cached episodes on this device. Only manual marking does this</string>
     <string name="settings_storage_play_cache_without_searching">Play downloads without searching</string>
     <string name="settings_storage_play_cache_without_searching_description">When this episode is fully downloaded, play it right away without searching other sources. Searching starts if the download fails to play, and opening the source panel still searches</string>
+    <string name="settings_storage_cache_location">Download location</string>
+    <string name="settings_storage_cache_location_description">Where new downloads are saved. Existing downloads stay where they are. While an external drive is unplugged, its downloads can’t be played and new downloads go to internal storage. Uninstalling the app deletes downloads on every drive</string>
+    <string name="settings_storage_cache_location_internal">Internal storage</string>
+    <string name="settings_storage_cache_location_space">%1$s free of %2$s</string>
+    <string name="settings_storage_cache_location_disconnected">Drive not connected</string>
+    <string name="settings_storage_cache_location_disconnected_description">New downloads go to internal storage until this drive is plugged back in</string>
+    <string name="settings_storage_cache_location_fat32">%1$s is formatted as FAT32, which can’t hold files over 4 GB. Reformat it as exFAT on a computer to use it</string>
+    <string name="settings_storage_cache_location_read_only">%1$s is read-only on this device (NTFS drives often are). Reformat it as exFAT on a computer to use it</string>
     <string name="cache_deleted_when_done">Deleted %2$d cached episodes of “%1$s”</string>
     <string name="cache_paused_low_space">Only %1$s of storage left. Paused %2$d cache downloads, free up some space before resuming</string>
+    <string name="cache_paused_low_space_drive">%1$s has only %2$s left. Paused %3$d cache downloads on it, free up some space before resuming</string>
     <string name="cache_deleted_when_done_playing">Deleted %2$d cached episodes of “%1$s”. The episode now playing is deleted after you leave the player</string>
     <string name="cache_deleted_when_done_after_playback">The cache of “%1$s” is deleted after you leave the player</string>
     <string name="subject_details_nav_home">Home</string>

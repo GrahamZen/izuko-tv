@@ -709,6 +709,7 @@ private fun KoinApplication.otherModules(
                 scope = coroutineScope,
                 // 播放时按缓冲余量给播放让路
                 throughputGate = get<PlaybackActivity>().let { activity -> PlaybackYieldingGate(activity.current) { activity.currentValue } },
+                locationRoot = mediaCacheLocations().let { locations -> { locations.httpCacheDirOf(it) } },
             )
         }
 
@@ -747,6 +748,7 @@ private fun KoinApplication.otherModules(
                                     engineAccess = if (isPikPak) AlwaysUseTorrentEngineAccess else get(),
                                     dao = deviceDatabase.torrentCacheInfoDao(),
                                     baseSaveDirProvider = get(),
+                                    locations = mediaCacheLocations(),
                                 ),
                                 displayName = "LocalTorrent",
                                 parentCoroutineContext = coroutineScope.childScopeContext(),
@@ -774,9 +776,10 @@ private fun KoinApplication.otherModules(
         }
         // 缓存目录快满时暂停全部下载, 见 DownloadSpaceGuard
         single(createdAtStart = true) {
-            val saveDirs = get<MediaSaveDirProvider>()
-            DownloadSpaceGuard(get(), saveDir = { Path(saveDirs.saveDir).inSystem }, scope = coroutineScope).also { it.start() }
+            val locations = mediaCacheLocations()
+            DownloadSpaceGuard(get(), rootOf = { locations.rootOf(it) }, scope = coroutineScope).also { it.start() }
         }
+        mediaCacheLocationRefresher(coroutineScope)
     } else {
         single<MediaDownloadManager> {
             MediaDownloadManager(

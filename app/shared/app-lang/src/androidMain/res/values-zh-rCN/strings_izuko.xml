@@ -623,6 +623,8 @@
     <string name="cache_management_delete_summary_item">%1$s（%2$d 项）</string>
     <string name="cache_episode_status_merging">合并中</string>
     <string name="cache_episode_status_awaiting_bt_service">等待 BT 服务启动</string>
+    <string name="cache_episode_status_location_unavailable">所在的盘没接上</string>
+    <string name="cache_episode_status_location_reconnected">盘已接上，正在恢复</string>
     <!-- 正在播放同一集, 缓存停着等播放结束 -->
     <string name="cache_episode_status_waiting_for_playback">正在播放，稍后继续</string>
     <!-- 标记看过后删除缓存 (设置 - 存储), 删的时候弹的提示 -->
@@ -630,8 +632,17 @@
     <string name="settings_storage_delete_cache_when_done_description">在收藏菜单里把一部番标成「看过」时，删除它在本机的全部缓存。只在手动标记时删除</string>
     <string name="settings_storage_play_cache_without_searching">有缓存时直接播，不搜索数据源</string>
     <string name="settings_storage_play_cache_without_searching_description">这一集有下载完的缓存时直接播放，不去搜索其他数据源；缓存播不了时再开始搜索，打开选源面板照常搜索</string>
+    <string name="settings_storage_cache_location">缓存位置</string>
+    <string name="settings_storage_cache_location_description">新的缓存下载到哪里。已有的缓存留在原来的位置；外接盘拔掉期间，它上面的缓存不能播放，新缓存放内部存储。卸载应用会删除所有盘上的缓存</string>
+    <string name="settings_storage_cache_location_internal">内部存储</string>
+    <string name="settings_storage_cache_location_space">可用 %1$s，共 %2$s</string>
+    <string name="settings_storage_cache_location_disconnected">未连接的盘</string>
+    <string name="settings_storage_cache_location_disconnected_description">插回来之前，新缓存放内部存储</string>
+    <string name="settings_storage_cache_location_fat32">%1$s 是 FAT32 格式，单个文件最大 4 GB，放不下缓存。在电脑上格式化成 exFAT 后可以用</string>
+    <string name="settings_storage_cache_location_read_only">%1$s 在这台设备上只能读（NTFS 格式的盘常这样），放不了缓存。在电脑上格式化成 exFAT 后可以用</string>
     <string name="cache_deleted_when_done">已删除「%1$s」的 %2$d 集缓存</string>
     <string name="cache_paused_low_space">存储空间只剩 %1$s，已暂停 %2$d 个缓存下载。删掉一些缓存腾出空间后再继续</string>
+    <string name="cache_paused_low_space_drive">%1$s 只剩 %2$s，已暂停这个盘上的 %3$d 个缓存下载。删掉一些缓存腾出空间后再继续</string>
     <string name="cache_deleted_when_done_playing">已删除「%1$s」的 %2$d 集缓存，正在播放的这一集退出播放后删除</string>
     <string name="cache_deleted_when_done_after_playback">「%1$s」的缓存将在退出播放后删除</string>
     <string name="subject_details_nav_home">主页</string>

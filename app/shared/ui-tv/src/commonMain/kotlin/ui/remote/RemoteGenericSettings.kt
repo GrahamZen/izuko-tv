@@ -149,6 +149,7 @@ internal object RemoteSettingsCatalog {
             description = Lang.remote_settings_peer_client_rules_description,
             editor = RemoteSettingEditor.Lines(accepts = ::isRegex, invalidMessage = "这一行不是有效的正则表达式：{0}"),
         ),
+        RemoteCacheLocationSetting.spec,
     )
 
     /**
@@ -208,6 +209,16 @@ internal sealed interface RemoteSettingEditor {
     data class Choice(val labels: Map<String, StringResource> = emptyMap()) : RemoteSettingEditor {
         override val type: String get() = "choice"
     }
+
+    /**
+     * 选项现算的下拉 (如缓存位置: 此刻接着哪些盘), 改了立即保存. 字段是可空的文字, 选项值 `null` 在网页上是空串.
+     * 只收此刻列出的选项.
+     */
+    class Options(val options: suspend () -> List<Option>) : RemoteSettingEditor {
+        override val type: String get() = "choice"
+
+        class Option(val value: String?, val label: String)
+    }
 }
 
 /** 设置卡片上的第二个按钮 (如「立即更新」): [label] 是按钮文字 (简体原文, 走网页译文表), 按下运行 [run], 返回给网页的提示. */
@@ -265,6 +276,7 @@ internal class RemoteSettingSpec<T>(
             }
             val declared = editor ?: return inferred
             if (declared is RemoteSettingEditor.Lines && d.kind == PrimitiveKind.STRING) return declared // 按行拼起来的字符串
+            if (declared is RemoteSettingEditor.Options && d.kind == PrimitiveKind.STRING) return declared
             require(declared::class == inferred::class) { "$key: 字段 $fieldName 是 ${d.serialName}, 不能用 ${declared.type} 改" }
             return declared
         }
@@ -321,19 +333,27 @@ internal object RemoteGenericSettings {
         // 多行一律给网页列表: 按行拼起来存的字符串在这里拆开
         val value = if (editor is RemoteSettingEditor.Lines && stored is JsonPrimitive && stored.isString) {
             JsonArray(splitLines(stored.content, splitCommas = false).map(::JsonPrimitive))
+        } else if (editor is RemoteSettingEditor.Options && stored is JsonNull) {
+            JsonPrimitive("")
         } else {
             stored
         }
         val title = getString(spec.title)
         val description = spec.description?.let { getString(it) }
         val placeholder = spec.placeholder?.let { getString(it) }
-        val status = spec.status?.invoke()
-        val choices = (editor as? RemoteSettingEditor.Choice)?.let { choice ->
-            val d = spec.fieldDescriptor
-            (0 until d.elementsCount).map { d.getElementName(it) }.map { name ->
-                name to (choice.labels[name]?.let { getString(it) } ?: name)
+        val choices = when (editor) {
+            is RemoteSettingEditor.Choice -> {
+                val d = spec.fieldDescriptor
+                (0 until d.elementsCount).map { d.getElementName(it) }.map { name ->
+                    name to (editor.labels[name]?.let { getString(it) } ?: name)
+                }
             }
+
+            is RemoteSettingEditor.Options -> editor.options().map { (it.value ?: "") to it.label }
+            else -> null
         }
+        // 在选项之后算: 现算选项时可能刚重新读过 (如缓存位置重列了一遍盘), 状态要跟它一致
+        val status = spec.status?.invoke()
         return buildJsonObject {
             put("key", spec.key)
             put("title", title)
@@ -380,6 +400,10 @@ internal object RemoteGenericSettings {
     }
 
     private suspend fun <T> setTyped(spec: RemoteSettingSpec<T>, repository: SettingsRepository, raw: String): JsonObject {
+        val editor = spec.resolvedEditor
+        if (editor is RemoteSettingEditor.Options && editor.options().none { (it.value ?: "") == raw }) {
+            return result(false, tr("没有这个选项：{0}", raw))
+        }
         val element = when (val parsed = parse(spec, raw)) {
             is Parsed.Value -> parsed.element
             is Parsed.Error -> return result(false, parsed.message)
@@ -414,6 +438,9 @@ internal object RemoteGenericSettings {
                 val names = (0 until d.elementsCount).map { d.getElementName(it) }
                 if (raw in names) Parsed.Value(JsonPrimitive(raw)) else Parsed.Error(tr("没有这个选项：{0}", raw))
             }
+
+            // 是不是此刻列出的选项在 setTyped 里查 (要现算选项)
+            is RemoteSettingEditor.Options -> Parsed.Value(if (raw.isEmpty()) JsonNull else JsonPrimitive(raw))
         }
     }
 

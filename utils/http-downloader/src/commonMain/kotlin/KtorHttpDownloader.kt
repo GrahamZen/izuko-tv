@@ -111,9 +111,33 @@ open class KtorHttpDownloader(
     private val ioDispatcher: CoroutineContext = Dispatchers.IO_,
     /** 所有下载共用的吞吐闸门 (例如播放时给播放让路), 见 [DownloadThroughputGate]; `null` 表示不管. */
     private val throughputGate: DownloadThroughputGate? = null,
+    /** 位置 ([DownloadState.location]) 的根目录; 那个位置现在没接上时为 `null`. 没有位置的任务用 [baseSaveDir] */
+    private val locationRoot: (location: String) -> Path? = { null },
 ) : HttpDownloader {
 
     protected val scope = parentScope.childScope()
+
+    /** [location] 位置现在的根目录, 没接上时为 `null` */
+    protected fun rootOfOrNull(location: String?): Path? = if (location == null) baseSaveDir else locationRoot(location)
+
+    /**
+     * 下载出错时它所在的盘已经不在 (没接上, 或根目录已经读不到 —— 直接拔掉时写入先失败, 系统的卸载通知后到):
+     * 记成暂停而不是失败, 盘插回来后缓存层重新恢复时接着下. 返回是否这样处理了.
+     */
+    private suspend fun pauseIfLocationGone(downloadId: DownloadId, cause: Throwable): Boolean {
+        val location = getState(downloadId)?.location ?: return false
+        val root = rootOfOrNull(location)
+        if (root != null && fileSystem.exists(root)) return false
+        logger.warn { "Download $downloadId stopped because its location $location is gone, pausing it: $cause" }
+        updateState(downloadId) { it.copy(status = PAUSED, timestamp = clock.now().toEpochMilliseconds()) }
+        clearSegmentFailure(downloadId)
+        emitProgress(downloadId)
+        return true
+    }
+
+    /** 同 [rootOfOrNull], 没接上时抛 [DownloadLocationUnavailableException] */
+    protected fun rootOf(location: String?): Path =
+        rootOfOrNull(location) ?: throw DownloadLocationUnavailableException(location.orEmpty())
 
     private val _progressFlow = MutableSharedFlow<DownloadProgress>(
         replay = 1,
@@ -231,7 +255,7 @@ open class KtorHttpDownloader(
                 return existingEntry.state
             }
             val segmentCacheDir = ("segments_" + downloadId.value)
-                .also { fileSystem.createDirectories(baseSaveDir.resolve(it)) }
+                .also { fileSystem.createDirectories(rootOf(options.location).resolve(it)) }
             val initialState = DownloadState(
                 downloadId = downloadId,
                 url = url,
@@ -244,6 +268,7 @@ open class KtorHttpDownloader(
                 relativeSegmentCacheDir = segmentCacheDir,
                 mediaType = mediaType,
                 requestHeaders = options.headers,
+                location = options.location,
             )
             _downloadStatesFlow.update {
                 put(downloadId, DownloadEntry(job = null, state = initialState))
@@ -289,6 +314,7 @@ open class KtorHttpDownloader(
                 logger.info { "Download cancelled for $downloadId" }
                 throw e
             } catch (e: Throwable) {
+                if (pauseIfLocationGone(downloadId, e)) return@launch
                 logger.error(e) { "Download failed for $downloadId" }
                 updateState(downloadId) {
                     it.copy(
@@ -340,6 +366,12 @@ open class KtorHttpDownloader(
             return true
         }
 
+        if (rootOfOrNull(st.location) == null) {
+            // 盘没接上: 不开始, 状态不动 (不记成失败), 插回来后由缓存层重新恢复
+            logger.info { "Not resuming $downloadId: its location ${st.location} is not available" }
+            return false
+        }
+
         logger.info { "Resuming $downloadId with status=${st.status}" }
 
         // 恢复时只知道请求头 (选项不落库), 统一在这里构造一次, 免得各处各自 new 一个
@@ -379,6 +411,7 @@ open class KtorHttpDownloader(
                 logger.info { "Download cancelled while resumed for $downloadId" }
                 throw e
             } catch (t: Throwable) {
+                if (pauseIfLocationGone(downloadId, t)) return@launch
                 logger.info { "Resumed download failed for $downloadId: ${t.message}" }
                 updateState(downloadId) {
                     it.copy(
@@ -617,8 +650,9 @@ open class KtorHttpDownloader(
                     logger.info { "Resolving M3U8 media playlist for $downloadId" }
                     val resolvedPlaylist = resolveM3u8MediaPlaylist(url, options)
 
-                    val segmentCacheDir = getState(downloadId)?.relativeSegmentCacheDir ?: return false
-                    persistResolvedMediaPlaylist(baseSaveDir.resolve(segmentCacheDir), resolvedPlaylist)
+                    val current = getState(downloadId) ?: return false
+                    val segmentCacheDir = current.relativeSegmentCacheDir
+                    persistResolvedMediaPlaylist(rootOf(current.location).resolve(segmentCacheDir), resolvedPlaylist)
                     resolvedPlaylist.playlist.toSegments { Path(segmentCacheDir).resolve(it).toString() }
                 }
 
@@ -701,7 +735,7 @@ open class KtorHttpDownloader(
         snapshot: DownloadState,
         requestOptions: DownloadOptions,
     ) {
-        val cacheDir = baseSaveDir.resolve(snapshot.relativeSegmentCacheDir)
+        val cacheDir = rootOf(snapshot.location).resolve(snapshot.relativeSegmentCacheDir)
         val keyPaths = snapshot.buildHlsKeyRelativePaths()
         snapshot.orderedUniqueEncryptionKeys().forEach { encryption ->
             val relativeKeyPath = keyPaths[encryption.keyUri]
@@ -796,9 +830,9 @@ open class KtorHttpDownloader(
         url: String,
         options: DownloadOptions,
     ): List<SegmentInfo> {
-        val cacheDir = baseSaveDir.resolve(
-            getState(downloadId)?.relativeSegmentCacheDir ?: error("Cache dir not found"),
-        )
+        val state = getState(downloadId) ?: error("Cache dir not found")
+        val root = rootOf(state.location)
+        val cacheDir = root.resolve(state.relativeSegmentCacheDir)
 
         val rangeProbe = probeRangeSupport(url, options)
 
@@ -811,7 +845,7 @@ open class KtorHttpDownloader(
                     isDownloaded = false,
                     byteSize = -1,
                     relativeTempFilePath = cacheDir.resolve("0.part").inSystem.absolutePath
-                        .substringAfter(baseSaveDir.inSystem.absolutePath),
+                        .substringAfter(root.inSystem.absolutePath),
                     rangeStart = null,
                     rangeEnd = null,
                 ),
@@ -826,7 +860,7 @@ open class KtorHttpDownloader(
                     isDownloaded = false,
                     byteSize = contentLength, // might be -1 if unknown
                     relativeTempFilePath = cacheDir.resolve("0.part").inSystem.absolutePath
-                        .substringAfter(baseSaveDir.inSystem.absolutePath),
+                        .substringAfter(root.inSystem.absolutePath),
                     rangeStart = null,
                     rangeEnd = null,
                 ),
@@ -844,7 +878,7 @@ open class KtorHttpDownloader(
                     isDownloaded = false,
                     byteSize = contentLength,
                     relativeTempFilePath = cacheDir.resolve("0.part").inSystem.absolutePath
-                        .substringAfter(baseSaveDir.inSystem.absolutePath),
+                        .substringAfter(root.inSystem.absolutePath),
                     rangeStart = 0,
                     rangeEnd = contentLength - 1,
                 ),
@@ -864,7 +898,7 @@ open class KtorHttpDownloader(
                     isDownloaded = false,
                     byteSize = (end - start + 1),
                     relativeTempFilePath = cacheDir.resolve("$index.part").inSystem.absolutePath
-                        .substringAfter(baseSaveDir.inSystem.absolutePath),
+                        .substringAfter(root.inSystem.absolutePath),
                     rangeStart = start,
                     rangeEnd = end,
                 ),
@@ -922,6 +956,7 @@ open class KtorHttpDownloader(
         segmentInfo: SegmentInfo,
         options: DownloadOptions,
         rateLimiter: ByteRateLimiter? = null,
+        root: Path = baseSaveDir,
         onReceived: (bytes: Long) -> Unit = {},
     ): Long {
         // If we have a range, add it to the request headers.
@@ -937,7 +972,7 @@ open class KtorHttpDownloader(
             // ByteArray. 当服务器不支持 range 请求时 segment 没有大小上限, 一个几百 MB 的视频
             // 会直接撑爆堆内存.
             statement.execute { response ->
-                val segmentPath = baseSaveDir.resolve(segmentInfo.relativeTempFilePath)
+                val segmentPath = root.resolve(segmentInfo.relativeTempFilePath)
                 withContext(ioDispatcher) {
                     fileSystem.createDirectories(
                         segmentPath.parent ?: error("Parent dir not found for segmentInfo: $segmentInfo"),
@@ -1005,6 +1040,7 @@ open class KtorHttpDownloader(
     @OptIn(DelicateCoroutinesApi::class, ExperimentalAtomicApi::class)
     protected suspend fun downloadSegments(downloadId: DownloadId, options: DownloadOptions) {
         val snapshot = getState(downloadId) ?: return
+        val root = rootOf(snapshot.location)
         if (snapshot.segments.isEmpty()) {
             logger.info { "No segments to download for $downloadId" }
             return
@@ -1045,7 +1081,7 @@ open class KtorHttpDownloader(
                             // 重试、单次封顶 30 秒, 一条彻底失效的分段能占着名额四十多分钟 ——
                             // 六条这样的分段 (名额总数) 就让全应用的缓存下载一起停摆.
                             globalSegmentLimit.withPermit {
-                                downloadSingleSegment(seg, requestOptions, rateLimiter) { bytes ->
+                                downloadSingleSegment(seg, requestOptions, rateLimiter, root) { bytes ->
                                     received += bytes
                                     addInFlightBytes(downloadId, bytes)
                                 }
@@ -1091,9 +1127,10 @@ open class KtorHttpDownloader(
         // 拼接与下载共用同一个吞吐上限选项 (设了才限)
         val mergeRateLimiter = options.maxBytesPerSecond
             ?.let { ByteRateLimiter(it * MERGE_RATE_MULTIPLIER) { clock.now().toEpochMilliseconds() } }
-        val cacheDir = baseSaveDir.resolve(st.relativeSegmentCacheDir)
+        val root = rootOf(st.location)
+        val cacheDir = root.resolve(st.relativeSegmentCacheDir)
         val finalOutputRelativePath = st.finalOutputRelativePath()
-        val finalOutput = baseSaveDir.resolve(finalOutputRelativePath)
+        val finalOutput = root.resolve(finalOutputRelativePath)
 
         when (st.mediaType) {
             MediaType.M3U8 -> mergeM3u8Segments(st, cacheDir, finalOutput)
@@ -1109,7 +1146,7 @@ open class KtorHttpDownloader(
 
         // remove segment files
         st.segments.forEach { seg ->
-            fileSystem.delete(baseSaveDir.resolve(seg.relativeTempFilePath))
+            fileSystem.delete(root.resolve(seg.relativeTempFilePath))
         }
         if (st.mediaType == MediaType.M3U8) {
             cleanupHlsArtifacts(st, cacheDir)
@@ -1137,9 +1174,10 @@ open class KtorHttpDownloader(
         finalOutput: Path,
         rateLimiter: ByteRateLimiter?,
     ) {
+        val root = rootOf(st.location)
         openSink(finalOutput, SYNC_EVERY_BYTES_MERGE).buffered().use { out ->
             st.segments.sortedBy { it.index }.forEach { seg ->
-                fileSystem.source(baseSaveDir.resolve(seg.relativeTempFilePath)).buffered().use { input ->
+                fileSystem.source(root.resolve(seg.relativeTempFilePath)).buffered().use { input ->
                     if (rateLimiter == null) {
                         input.copyTo(out)
                     } else {
@@ -1299,12 +1337,17 @@ open class KtorHttpDownloader(
     }
 
     private suspend fun deleteDownloadArtifacts(state: DownloadState) = withContext(ioDispatcher) {
-        val outputPath = baseSaveDir.resolve(state.relativeOutputPath)
+        val root = rootOfOrNull(state.location) ?: run {
+            // 盘没接上: 文件留在盘上, 下次带着这个盘启动时由清扫回收
+            logger.warn { "Location ${state.location} of ${state.downloadId} is not available, leaving its files" }
+            return@withContext
+        }
+        val outputPath = root.resolve(state.relativeOutputPath)
         if (outputPath.inSystem.exists()) {
             fileSystem.delete(outputPath)
         }
 
-        val cacheDir = baseSaveDir.resolve(state.relativeSegmentCacheDir)
+        val cacheDir = root.resolve(state.relativeSegmentCacheDir)
         if (cacheDir.inSystem.exists()) {
             fileSystem.deleteRecursively(cacheDir)
         }
@@ -1484,6 +1527,10 @@ open class KtorHttpDownloader(
 }
 
 private class M3u8Exception(val errorCode: DownloadErrorCode) : Exception()
+
+/** 任务的文件所在的位置现在没接上 (外接盘拔了), 见 [DownloadState.location] */
+class DownloadLocationUnavailableException(val location: String) :
+    IllegalStateException("Download location $location is not available")
 
 private fun M3u8Playlist.MediaPlaylist.toSegments(resolveSegmentPath: (String) -> String): List<SegmentInfo> {
     return segments.mapIndexed { i, seg ->
