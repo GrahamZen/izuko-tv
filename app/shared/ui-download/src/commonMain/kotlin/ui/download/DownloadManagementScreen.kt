@@ -87,6 +87,7 @@ import me.him188.ani.app.ui.download.components.DownloadSelectionFloatingToolbar
 import me.him188.ani.app.ui.download.components.DownloadSelectionState
 import me.him188.ani.app.ui.download.components.SubjectDownloadGroup
 import me.him188.ani.app.ui.download.components.SubjectDownloadGroupCard
+import me.him188.ani.app.ui.download.components.TvDownloadPrimaryAction
 import me.him188.ani.app.ui.download.components.TestCacheGroupSates
 import me.him188.ani.app.ui.download.components.createTestMediaStats
 import me.him188.ani.app.ui.download.components.rememberDownloadFilterAndSortState
@@ -323,6 +324,8 @@ fun DownloadManagementScreen(
     val currentViewingGroup = remember(state.groups, currentViewingGroupKey) {
         state.groups.firstOrNull { it.key == currentViewingGroupKey }
     }
+    // TV (fork): 进页落点、右栏跟着左栏焦点换、按右直达分集, 见 TvDownloadPanes
+    val tvPanes = rememberTvDownloadPanes(filteredGroups, state.isLoading, currentViewingGroupKey, currentViewingGroup) { currentViewingGroupKey = it }
 
     // 全选的作用范围: 单栏详情下仅为当前条目的缓存, 否则为全部可见缓存.
     val selectAllScopeEntries = if (isSinglePaneDetailVisible) {
@@ -356,7 +359,7 @@ fun DownloadManagementScreen(
     val tasker = rememberAsyncHandler()
 
     Scaffold(
-        modifier = modifier,
+        modifier = modifier.tvDownloadPage(tvPanes),
         topBar = {
             DownloadManagementTopBar(
                 selectionMode = selectionState.inSelection,
@@ -441,12 +444,15 @@ fun DownloadManagementScreen(
                     listBottomPadding = listBottomPadding,
                     paneExtraPadding = paneExtraPadding,
                     highlightSelectedGroupKey = if (isSinglePane) null else currentViewingGroupKey,
+                    tvPanes = tvPanes,
                     onClickGroup = { group ->
                         // 单栏 (手机) 下 scaffold 会以前进导航方式全屏展示详情栏, 并支持返回.
                         currentViewingGroupKey = group.key
                         tasker.launch {
                             navigator.navigateTo(ListDetailPaneScaffoldRole.Detail)
                         }
+                        // TV (fork): 确定与按右一样进右栏的分集
+                        tvPanes?.enterDetail(group)
                     },
                     onToggleGroupSelection = { group ->
                         selectionState.toggleSelection(*group.entries.map { it.id }.toTypedArray())
@@ -466,10 +472,11 @@ fun DownloadManagementScreen(
                         .then(
                             if (isSinglePane) Modifier.nestedScroll(scrollBehavior.nestedScrollConnection) else Modifier,
                         )
-                        .fillMaxSize(),
+                        .fillMaxSize()
+                        .tvDownloadDetailPane(tvPanes),
                 ) {
                     if (detailPaneContent != null) {
-                        detailPaneContent(currentViewingGroup, selectionState)
+                        ProvideTvDownloadPanes(tvPanes) { detailPaneContent(currentViewingGroup, selectionState) }
                     } else {
                         DefaultDownloadGroupDetailPane(
                             group = currentViewingGroup,
@@ -535,6 +542,7 @@ private fun PaneScope.DownloadGroupCardsList(
     listBottomPadding: PaddingValues,
     paneExtraPadding: Dp,
     highlightSelectedGroupKey: String?,
+    tvPanes: TvDownloadPanes?,
     onClickGroup: (SubjectDownloadGroup) -> Unit,
     onToggleGroupSelection: (SubjectDownloadGroup) -> Unit,
     onEnterGroupSelection: (SubjectDownloadGroup) -> Unit,
@@ -601,7 +609,7 @@ private fun PaneScope.DownloadGroupCardsList(
                     Modifier.fillMaxWidth()
                 } else {
                     Modifier.padding(horizontal = 8.dp).fillMaxWidth()
-                },
+                }.tvDownloadGroupCard(tvPanes, group),
                 showChevron = isSinglePane,
                 shape = if (isSinglePane) RectangleShape else MaterialTheme.shapes.large,
             )
@@ -883,6 +891,8 @@ internal fun DownloadActionDropdown(
     onViewDetail: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     offset: DpOffset = DpOffset.Zero,
+    /** TV (fork): 行尾按钮已经是这个操作 (见 TvDownloadRowAction), 菜单里不再放. */
+    omit: TvDownloadPrimaryAction? = null,
 ) {
     val toaster = LocalToaster.current
     val resumeDownloadText = stringResource(Lang.cache_episode_resume_download)
@@ -898,7 +908,7 @@ internal fun DownloadActionDropdown(
         offset = offset,
     ) {
         if (!episode.isFinished) {
-            if (episode.isPaused) {
+            if (episode.isPaused && omit != TvDownloadPrimaryAction.Resume) {
                 AniDropdownMenuItem(
                     text = { Text(resumeDownloadText) },
                     enabled = !episode.isBusy,
@@ -908,7 +918,7 @@ internal fun DownloadActionDropdown(
                         onDismiss()
                     },
                 )
-            } else if (!episode.isFailed) {
+            } else if (!episode.isPaused && !episode.isFailed && omit != TvDownloadPrimaryAction.Pause) {
                 AniDropdownMenuItem(
                     text = { Text(pauseDownloadText) },
                     enabled = !episode.isBusy,
@@ -920,7 +930,7 @@ internal fun DownloadActionDropdown(
                 )
             }
         }
-        if (!episode.isFailed) {
+        if (!episode.isFailed && omit != TvDownloadPrimaryAction.Play) {
             AniDropdownMenuItem(
                 text = { Text(playText) },
                 leadingIcon = { Icon(Icons.Rounded.PlayArrow, null) },
