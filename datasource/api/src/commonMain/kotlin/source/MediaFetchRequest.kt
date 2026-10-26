@@ -138,6 +138,8 @@ data class MediaFetchRequest(
          * 上映日期, 未知时为 [PackedDate.Invalid].
          */
         val airDate: PackedDate = PackedDate.Invalid,
+        /** 条目服务记的时长 (秒), 未知时为 `null`. 时长差得离谱的资源不是这一集 (同名的剧场版、真人电影、短剧) */
+        val durationSeconds: Int? = null,
     )
 
     companion object

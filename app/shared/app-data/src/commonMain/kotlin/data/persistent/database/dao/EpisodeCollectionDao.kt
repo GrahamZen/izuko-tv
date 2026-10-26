@@ -85,6 +85,9 @@ data class EpisodeCollectionEntity(
     /** TMDB 原尺寸剧照的公开直链, 见 [me.him188.ani.app.data.models.episode.EpisodeInfo.imageLarge]. */
     val imageLarge: String? = null,
 
+    /** Bangumi 记的时长 (秒), 见 [me.him188.ani.app.data.models.episode.EpisodeInfo.durationSeconds]. */
+    val durationSeconds: Int? = null,
+
     val selfCollectionType: UnifiedCollectionType,
 
     /**
