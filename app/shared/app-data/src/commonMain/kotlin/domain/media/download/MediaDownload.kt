@@ -89,6 +89,8 @@ data class DownloadSnapshot(
     val locationUnavailable: Boolean = false,
     /** 盘已经接回来, 正在重新恢复 (见 [UnavailableMediaCache.reconnected]) */
     val locationReconnected: Boolean = false,
+    /** 正在搬到别的位置 (见 [UnavailableMediaCache.moving]) */
+    val locationMoving: Boolean = false,
 ) {
     val isBusy: Boolean get() = operation != null
     val isMerging: Boolean get() = mergeProgress != null
@@ -173,6 +175,7 @@ class MediaDownload internal constructor(
                         waitingForPlayback = phase.waitingForPlayback,
                         locationUnavailable = cache.isLocationUnavailable,
                         locationReconnected = phase.locationReconnected,
+                        locationMoving = (cache as? UnavailableMediaCache)?.moving == true,
                     )
                 },
             )

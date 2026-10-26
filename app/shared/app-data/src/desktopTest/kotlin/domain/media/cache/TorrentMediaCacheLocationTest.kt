@@ -9,17 +9,27 @@
 
 package me.him188.ani.app.domain.media.cache
 
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest as runCoroutineTest
+import kotlinx.coroutines.withContext
 import me.him188.ani.app.data.persistent.database.dao.TorrentCacheEpisodeEntity
 import me.him188.ani.app.data.persistent.database.dao.TorrentCacheInfoEntity
 import me.him188.ani.app.domain.media.cache.engine.TorrentMediaCacheEngine
+import me.him188.ani.app.domain.media.cache.location.MOVING_SUFFIX
+import me.him188.ani.app.domain.media.cache.location.MediaCacheLocationRefresher
+import me.him188.ani.app.domain.media.cache.location.MediaCacheMoveAbortedException
+import me.him188.ani.app.domain.media.cache.location.MediaCacheMover
 import me.him188.ani.app.domain.media.cache.location.TestMediaCacheLocations
 import me.him188.ani.app.domain.media.cache.location.UnavailableMediaCache
+import me.him188.ani.app.domain.media.cache.storage.MediaCacheSave
 import me.him188.ani.app.domain.media.cache.storage.TorrentMediaCacheStorage
 import me.him188.ani.app.domain.media.resolver.EpisodeMetadata
 import me.him188.ani.app.torrent.anitorrent.test.TestAnitorrentTorrentDownloader
@@ -32,11 +42,13 @@ import me.him188.ani.utils.io.toKtPath
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -51,7 +63,8 @@ class TorrentMediaCacheLocationTest : AbstractTorrentMediaCacheEngineTest() {
 
     private val storages = mutableListOf<TorrentMediaCacheStorage>()
     private val usbRoot: File get() = File(dir, "usb-drive").apply { mkdirs() }
-    private val locations by lazy { TestMediaCacheLocations(File(dir, "internal-root").toKtPath().inSystem) }
+    // 内部存储的根目录同引擎的 (产品里两者是同一个目录)
+    private val locations by lazy { TestMediaCacheLocations(dir.toKtPath().inSystem) }
 
     /** 存储的协程挂在测试的作用域下, 测试体结束前关掉, 不然 runTest 一直等它们 */
     private fun runTest(testBody: suspend TestScope.() -> Unit) = runCoroutineTest(timeout = 10.seconds) {
@@ -142,6 +155,159 @@ class TorrentMediaCacheLocationTest : AbstractTorrentMediaCacheEngineTest() {
         val restored = assertIs<LocalFileMediaCache>(cacheEngine.restore(testMedia, metadata("1"), coroutineContext))
 
         assertEquals(file.absolutePath, File(restored.file.absolutePath).absolutePath)
+    }
+
+    @Test
+    fun `a completed episode on a drive becomes a placeholder while the drive is unplugged`() = runTest {
+        locations.connect("usb", usbRoot.toKtPath().inSystem)
+        insertRows(location = "usb", completed = true)
+        File(usbRoot, "torrent-dir/$PATH_IN_TORRENT").apply {
+            parentFile.mkdirs()
+            writeBytes(ByteArray(FILE_SIZE.toInt()))
+        }
+        metadataStore.updateData { listOf(MediaCacheSave(testMedia, metadata("1"), CacheEngineKey)) }
+        val storage = createStorage()
+        storage.restorePersistedCaches()
+        advanceUntilIdle()
+        assertIs<LocalFileMediaCache>(storage.listFlow.value.single())
+        MediaCacheLocationRefresher(locations, { listOf(storage) }, backgroundScope).start()
+        runCurrent() // 刷新器在 backgroundScope 里, advanceUntilIdle 不跑它, 先让它订阅上
+
+        locations.disconnect("usb")
+        awaitReal { storage.listFlow.value.singleOrNull() is UnavailableMediaCache }
+        assertIs<UnavailableMediaCache>(storage.listFlow.value.single())
+
+        locations.connect("usb", usbRoot.toKtPath().inSystem)
+        awaitReal { storage.listFlow.value.singleOrNull() is LocalFileMediaCache }
+        assertIs<LocalFileMediaCache>(storage.listFlow.value.single())
+    }
+
+    /** 等 [condition] 成立, 最多 [timeout] 真实时间: 恢复里有一段在真实的 IO 线程上, 在 IO 线程上等, 测试调度器照常跑 */
+    private suspend fun awaitReal(timeout: Duration = 3.seconds, condition: () -> Boolean) {
+        val deadline = System.nanoTime() + timeout.inWholeNanoseconds
+        while (!condition() && System.nanoTime() < deadline) withContext(Dispatchers.IO) { Thread.sleep(10) }
+    }
+
+    @Test
+    fun `a completed torrent moves to another drive with its records`() = runTest {
+        val torrentDir = setUpPackOnInternal(completed = true)
+        val storage = createStorage()
+        storage.restorePersistedCaches()
+        awaitReal { storage.listFlow.value.singleOrNull() is LocalFileMediaCache }
+        locations.connect("usb", usbRoot.toKtPath().inSystem)
+
+        val result = moveAllTo("usb", storage)
+
+        assertEquals(MediaCacheMover.Result("usb", moved = 1, failed = 0, skipped = 0, stopReason = null), result)
+        assertEquals("usb", torrentInfoDatabase.get(testMedia.mediaId)?.location)
+        assertTrue(File(usbRoot, "pieces/abc/$PATH_IN_TORRENT").exists())
+        assertTrue(File(usbRoot, "pieces/abc/fastresume").exists(), "a finished torrent keeps its resume data")
+        assertFalse(torrentDir.exists(), "the old copy was kept")
+        awaitReal { (storage.listFlow.value.singleOrNull() as? LocalFileMediaCache)?.locationId == "usb" }
+        val restored = assertIs<LocalFileMediaCache>(storage.listFlow.value.single())
+        assertEquals(File(usbRoot, "pieces/abc/$PATH_IN_TORRENT").absolutePath, File(restored.file.absolutePath).absolutePath)
+    }
+
+    @Test
+    fun `an unfinished torrent moves without its resume data`() = runTest {
+        setUpPackOnInternal(completed = false)
+        // 不走启动恢复: 测试里的种子数据打不开, 恢复失败后启动清扫会把目录当成没人用收掉
+        val storage = createStorage()
+        locations.connect("usb", usbRoot.toKtPath().inSystem)
+
+        val result = moveAllTo("usb", storage)
+
+        assertEquals(1, result.moved)
+        assertEquals("usb", torrentInfoDatabase.get(testMedia.mediaId)?.location)
+        assertTrue(File(usbRoot, "pieces/abc/$PATH_IN_TORRENT").exists())
+        assertFalse(File(usbRoot, "pieces/abc/fastresume").exists(), "an unfinished torrent must be checked again at the new place")
+    }
+
+    @Test
+    fun `a torrent of the playing subject is skipped`() = runTest {
+        val torrentDir = setUpPackOnInternal(completed = true)
+        val storage = createStorage()
+        storage.restorePersistedCaches()
+        awaitReal { storage.listFlow.value.singleOrNull() is LocalFileMediaCache }
+        locations.connect("usb", usbRoot.toKtPath().inSystem)
+
+        val result = moveAllTo("usb", storage, playingSubject = "1")
+
+        assertEquals(MediaCacheMover.Result("usb", moved = 0, failed = 0, skipped = 1, stopReason = null), result)
+        assertNull(torrentInfoDatabase.get(testMedia.mediaId)?.location)
+        assertTrue(torrentDir.exists())
+    }
+
+    @Test
+    fun `moving stops when the target drive does not have enough space`() = runTest {
+        val torrentDir = setUpPackOnInternal(completed = true)
+        val storage = createStorage()
+        storage.restorePersistedCaches()
+        awaitReal { storage.listFlow.value.singleOrNull() is LocalFileMediaCache }
+        locations.connect("usb", usbRoot.toKtPath().inSystem)
+
+        val result = moveAllTo("usb", storage, freeBytes = 1024)
+
+        assertEquals(MediaCacheMover.StopReason.NOT_ENOUGH_SPACE, result.stopReason)
+        assertEquals(0, result.moved)
+        assertNull(torrentInfoDatabase.get(testMedia.mediaId)?.location)
+        assertTrue(torrentDir.exists())
+        assertFalse(File(usbRoot, "pieces/abc").exists())
+    }
+
+    @Test
+    fun `a torrent whose records are deleted while moving is not moved`() = runTest {
+        val torrentDir = setUpPackOnInternal(completed = true)
+        createEngine(createTestAnitorrentEngine(backgroundScope.coroutineContext), locations = locations)
+        locations.connect("usb", usbRoot.toKtPath().inSystem)
+        val unit = cacheEngine.mover.units().single()
+
+        torrentInfoDatabase.deleteEpisode(testMedia.mediaId, "1")
+        torrentInfoDatabase.deleteByMediaId(testMedia.mediaId)
+
+        assertFailsWith<MediaCacheMoveAbortedException> { cacheEngine.mover.move(unit, "usb") {} }
+        assertTrue(torrentDir.exists(), "the source must stay")
+        assertFalse(File(usbRoot, "pieces/abc").exists(), "the copy at the target was kept")
+        assertFalse(File(usbRoot, "pieces/abc$MOVING_SUFFIX").exists())
+    }
+
+    /** 内部存储上一个种子目录 `pieces/abc` (含一集与续传数据), 记录与存储的元数据都准备好 */
+    private suspend fun setUpPackOnInternal(completed: Boolean): File {
+        val relativeDir = File.separator + "pieces" + File.separator + "abc"
+        torrentInfoDatabase.upsert(TorrentCacheInfoEntity(mediaId = testMedia.mediaId, torrentData = byteArrayOf(0), relativeDir = relativeDir))
+        torrentInfoDatabase.upsertEpisode(
+            TorrentCacheEpisodeEntity(
+                mediaId = testMedia.mediaId,
+                episodeId = "1",
+                completed = completed,
+                pathInTorrent = PATH_IN_TORRENT,
+                downloadSize = FILE_SIZE,
+            ),
+        )
+        val torrentDir = File(dir, "pieces/abc").apply { mkdirs() }
+        File(torrentDir, PATH_IN_TORRENT).writeBytes(ByteArray(if (completed) FILE_SIZE.toInt() else FILE_SIZE.toInt() / 2))
+        File(torrentDir, "fastresume").writeBytes(byteArrayOf(1, 2, 3))
+        metadataStore.updateData { listOf(MediaCacheSave(testMedia, metadata("1"), CacheEngineKey)) }
+        return torrentDir
+    }
+
+    private suspend fun TestScope.moveAllTo(
+        target: String?,
+        storage: TorrentMediaCacheStorage,
+        playingSubject: String? = null,
+        freeBytes: Long? = null,
+    ): MediaCacheMover.Result {
+        val mover = MediaCacheMover(
+            locations,
+            { listOf(storage) },
+            isPlayingSubject = { it == playingSubject },
+            scope = backgroundScope,
+            settleDelay = Duration.ZERO,
+            freeBytes = { freeBytes },
+        )
+        val result = backgroundScope.async(start = CoroutineStart.UNDISPATCHED) { mover.finished.first() }
+        assertTrue(mover.start(target))
+        return result.await()
     }
 
     @Test
