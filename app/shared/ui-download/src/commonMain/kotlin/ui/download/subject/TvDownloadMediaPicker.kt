@@ -54,6 +54,12 @@ class TvDownloadMediaPickerArgs(
 
 val LocalTvDownloadMediaPickerVariant = staticCompositionLocalOf<TvDownloadMediaPickerVariant?> { null }
 
+/**
+ * 缓存页 (单独的条目缓存页与缓存总页的右栏) 打开时调用, 参数是条目 id: 让 TV 包提前准备这一部的选源要用的东西 (选源背后的模糊背景图),
+ * 按下载时不用再等. 没注入 (手机 / 桌面) 时什么都不做.
+ */
+val LocalTvDownloadPickerPrewarm = staticCompositionLocalOf<(@Composable (subjectId: Int) -> Unit)?> { null }
+
 /** 选源步骤交给注入的 [variant]: 选源状态的取法同底部弹窗里的 DownloadMediaPicker. */
 @Composable
 internal fun TvDownloadMediaPicker(
