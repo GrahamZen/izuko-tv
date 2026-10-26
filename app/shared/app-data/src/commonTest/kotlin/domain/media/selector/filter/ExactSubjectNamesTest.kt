@@ -58,6 +58,24 @@ class ExactSubjectNamesTest {
     }
 
     @Test
+    fun `the same season written another way is exact`() {
+        val edgerunners = ExactSubjectNames(listOf("赛博朋克：边缘行者 2", "Cyberpunk: Edgerunners 2"), simplify)
+        assertTrue(edgerunners.matches("赛博朋克：边缘行者 第二季"))
+        assertTrue(edgerunners.matches("赛博朋克：边缘行者第二季"))
+        assertTrue(edgerunners.matches("Cyberpunk: Edgerunners Season 2"))
+        // 别的季、系列名不同、只写了系列名的仍是模糊
+        assertFalse(edgerunners.matches("赛博朋克：边缘行者 第三季"))
+        assertFalse(edgerunners.matches("赛博朋克 第二季"))
+        assertFalse(edgerunners.matches("赛博朋克：边缘行者"))
+        // 页名末尾的数字多是集号, 不当季号
+        val explicit = ExactSubjectNames(listOf("间谍过家家 第二季"), simplify)
+        assertTrue(explicit.matches("间谍过家家 Season 2"))
+        assertFalse(explicit.matches("间谍过家家 2"))
+        // 第一季的名字不写季号, 不按季号认
+        assertFalse(ExactSubjectNames(listOf("间谍过家家"), simplify).matches("间谍过家家 第一季"))
+    }
+
+    @Test
     fun `a subject without names matches nothing`() {
         assertFalse(ExactSubjectNames(emptyList(), simplify).matches("死神"))
         assertFalse(ExactSubjectNames(listOf(""), simplify).matches(""))

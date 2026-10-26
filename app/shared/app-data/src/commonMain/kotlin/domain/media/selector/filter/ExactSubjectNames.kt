@@ -19,7 +19,9 @@ import me.him188.ani.app.domain.mediasource.toSimplifiedChinese
  * - 发布标题常把几种语言的名字用「/」并列 (「Bleach Sennen Kessenhen / BLEACH 死神 千年血戰篇-禍進譚-」), 分开各自比;
  * - 繁体转成简体再比;
  * - 开头多出的英文词出现在本条目别的名字里时去掉再比 (「BLEACH 死神 千年血战篇」对中文名「死神 千年血战篇」,
- *   「BLEACH」出自日文名).
+ *   「BLEACH」出自日文名);
+ * - 季号的写法: 条目名写了季号的 (Bangumi 的「赛博朋克：边缘行者 2」), 页名写同一季、去掉季号后系列名相同的也算
+ *   (「赛博朋克：边缘行者 第二季」, 见 [SeasonNumberConflict.subjectSeasonOf] / [SeasonNumberConflict.pageSeasonOf]).
  *
  * 去掉这些之后仍要与某个名字整个相等 (忽略空白、标点与大小写, 同 [MediaListFilters.normalizeForCompare]).
  */
@@ -29,6 +31,9 @@ internal class ExactSubjectNames(
 ) {
     private val keys: Set<String> = names.mapTo(HashSet()) { key(it) }.apply { remove("") }
 
+    /** 本条目写了季号的名字: 去掉季号后的系列名与季号 */
+    private val seasonKeys: Set<Pair<String, Int>> = names.mapNotNullTo(HashSet()) { SeasonNumberConflict.subjectSeasonOf(simplify(it)) }
+
     /** 本条目各名字里的英文词 (小写) */
     private val words: Set<String> = names.flatMapTo(HashSet()) { name ->
         name.split(WHITESPACE).filter { it.matches(ASCII_WORD) }.map { it.lowercase() }
@@ -37,7 +42,9 @@ internal class ExactSubjectNames(
     fun matches(mediaSubjectName: String): Boolean {
         if (keys.isEmpty()) return false
         return mediaSubjectName.split(NAME_SEPARATOR).any { part ->
-            withoutLeadingKnownWords(part.trim()).any { key(it) in keys }
+            withoutLeadingKnownWords(part.trim()).any { name ->
+                key(name) in keys || seasonKeys.isNotEmpty() && SeasonNumberConflict.pageSeasonOf(simplify(name)) in seasonKeys
+            }
         }
     }
 

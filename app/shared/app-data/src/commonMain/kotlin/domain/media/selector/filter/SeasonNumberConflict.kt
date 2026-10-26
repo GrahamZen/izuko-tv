@@ -75,6 +75,31 @@ internal class SeasonNumberConflict private constructor(
         private fun compute(context: MediaSelectorContext): SeasonNumberConflict? =
             of(context.subjectInfo?.allNames.orEmpty(), context.subjectSeriesInfo?.seriesSubjectNamesWithoutSelf.orEmpty())
 
+        private var lastFirstWork: Pair<MediaSelectorContext, SeasonNumberConflict?>? = null
+
+        /**
+         * 系列的第一部 (系列主线上排第一、有续集) 名字没写季号或只写了第 1 季: 它就是第 1 季, 页名只写了第二季及以后的是后面的季
+         * (「辉夜大小姐想让我告白～天才们的恋爱头脑战～ 第二季」之于第一季). 后面各季在 Bangumi 上的名字常不写季号
+         * (「辉夜大小姐想让我告白？～天才们的恋爱头脑战～」), [of] 从系列名推不出它们用过哪些季号, 第一部这样认.
+         * 不是第一部、或名字写了别的季号时为 `null`.
+         */
+        fun firstWorkOf(context: MediaSelectorContext): SeasonNumberConflict? = synchronized(lock) {
+            lastFirstWork?.takeIf { it.first === context }?.let { return it.second }
+            val series = context.subjectSeriesInfo
+            val selfNames = context.subjectInfo?.allNames.orEmpty()
+            val conflict = if (series == null || series.seasonSort != 1 || series.sequelSubjectNames.isEmpty() ||
+                selfNames.isEmpty() || selfNames.any { name -> subjectSeasonNumbersOf(name).any { it != 1 } }
+            ) {
+                null
+            } else {
+                SeasonNumberConflict(setOf(1), (2..MAX_SEASON).toSet(), emptySet())
+            }
+            conflict.also { lastFirstWork = context to it }
+        }
+
+        /** 第一部认别季时算到第几季 */
+        private const val MAX_SEASON = 20
+
         /**
          * 由当前条目的名字与别名 [selfNames]、系列里别的条目的名字 [seriesNames] 算 (同选择器, 数据源判断站点上的条目时用).
          * 当前条目没写季号、或推不出别的季时为 `null`.
@@ -112,6 +137,22 @@ internal class SeasonNumberConflict private constructor(
             val numbers = seasonNumbersOf(name)
             val trailing = TRAILING_SEASON.find(name)?.groupValues?.get(1)?.toIntOrNull() ?: return numbers
             return numbers + trailing
+        }
+
+        /** 条目名 [name] 写的唯一一个季号与去掉季号后的系列名 ([seasonlessNameOrNull]); 没写或写了几季时为 `null`. */
+        fun subjectSeasonOf(name: String): Pair<String, Int>? {
+            val number = subjectSeasonNumbersOf(name).singleOrNull() ?: return null
+            return seasonlessNameOrNull(name)?.let { it to number }
+        }
+
+        /**
+         * 页名 [name] 写明的唯一一个季号与去掉季号后的系列名 (规范化同 [seasonlessNameOrNull]); 末尾的数字不算季号 (页名末尾的数字多是集号).
+         * 没写或写了几季时为 `null`.
+         */
+        fun pageSeasonOf(name: String): Pair<String, Int>? {
+            val number = seasonNumbersOf(name).singleOrNull() ?: return null
+            val stripped = SEASON_LABELS.filter { it !== TRAILING_SEASON }.fold(name) { acc, label -> label.replace(acc, " ") }
+            return MediaListFilters.nameForSeasonlessCompare(stripped).takeIf { it.isNotEmpty() }?.let { it to number }
         }
 
         /** 条目名去掉季号后的系列名 (按 [MediaListFilters.nameForSeasonlessCompare] 规范化); 名字没写季号时为 `null`. */

@@ -388,6 +388,9 @@ class MediaSelectorFilterSortAlgorithm {
                     }
                 }
                 // seriesSubjectNamesWithoutSelf 包括了 sequel, 所以我们不需要再考虑 sequel 了. 
+                if (media.kind == MediaSourceKind.WEB && SeasonNumberConflict.firstWorkOf(context)?.isOtherSeason(mediaSubjectName) == true) {
+                    return exclude(MediaExclusionReason.FromSeriesSeason)
+                }
             }
         } else {
             // 不可以拿到条目名称, 只做保守排除
