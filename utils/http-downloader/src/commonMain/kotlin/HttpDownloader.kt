@@ -225,6 +225,11 @@ data class DownloadState(
     @field:TypeConverters(StringMapConverter::class)
     val requestHeaders: Map<String, String>,
     val mediaType: MediaType,
+    /**
+     * 文件放在哪个位置 (缓存可以放在外接盘上), [relativeOutputPath] 与 [relativeSegmentCacheDir] 相对那个位置的根目录.
+     * `null` = 下载器的默认根目录 (数据库版本 29 之前的任务都在这里).
+     */
+    val location: String? = null,
 )
 
 @Serializable
@@ -286,6 +291,8 @@ data class DownloadOptions(
      * m3u8 合并用的是 ffmpeg 的 -readrate, 与本项无关.
      */
     val maxBytesPerSecond: Long? = null,
+    /** 新任务的文件放在哪个位置, 见 [DownloadState.location]; 只在新建任务时用, 已有任务沿用记下的位置 */
+    val location: String? = null,
 )
 
 /**

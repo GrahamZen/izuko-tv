@@ -102,6 +102,14 @@ interface MediaCache {
     val isAwaitingTorrentService: Flow<Boolean>
         get() = flowOf(false)
 
+    /** 缓存所在的盘没接上 (见 [me.him188.ani.app.domain.media.cache.location.UnavailableMediaCache]) */
+    val isLocationUnavailable: Boolean
+        get() = false
+
+    /** 缓存放在哪个位置 (见 [me.him188.ani.app.domain.media.cache.location.MediaCacheLocation.id]), `null` = 内部存储 */
+    val locationId: String?
+        get() = null
+
     /**
      * Returns the [CachedMedia] instance for this cache.
      * The instance is cached so this function will immediately return the cached instance after the first successful call.

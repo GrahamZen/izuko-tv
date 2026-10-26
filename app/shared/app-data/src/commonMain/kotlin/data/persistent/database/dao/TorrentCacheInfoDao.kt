@@ -74,6 +74,11 @@ data class TorrentCacheInfoEntity(
      */
     @ColumnInfo(defaultValue = "0")
     val uploadSize: Long = 0,
+    /**
+     * 种子目录在哪个位置 ([me.him188.ani.app.domain.media.cache.location.MediaCacheLocation.id]),
+     * [relativeDir] 相对那个位置的根目录. `null` = 内部存储 (数据库版本 29 之前的记录都在这里).
+     */
+    val location: String? = null,
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -88,6 +93,7 @@ data class TorrentCacheInfoEntity(
         if (!torrentData.contentEquals(other.torrentData)) return false
         if (relativeDir != other.relativeDir) return false
         if (pathInTorrent != other.pathInTorrent) return false
+        if (location != other.location) return false
 
         return true
     }
@@ -100,6 +106,7 @@ data class TorrentCacheInfoEntity(
         result = 31 * result + torrentData.contentHashCode()
         result = 31 * result + relativeDir.hashCode()
         result = 31 * result + pathInTorrent.hashCode()
+        result = 31 * result + location.hashCode()
         return result
     }
 }

@@ -867,6 +867,98 @@ class KtorHttpDownloaderTest {
     }
 
     // ----------------------------------------------------
+    // Locations (缓存放在外接盘上)
+    // ----------------------------------------------------
+
+    private var usbConnected = true
+    private val usbRoot get() = Path(tempDir, "usb")
+
+    /** 「usb」位置在 [usbRoot], [usbConnected] 为 false 时当作盘没接上 */
+    private fun createLocationDownloader() = object : KtorHttpDownloader(
+        client = mockClient.asScopedHttpClient(),
+        fileSystem = fileSystem,
+        clock = mockClock,
+        baseSaveDir = Path(tempDir),
+        parentScope = CoroutineScope(SupervisorJob() + testDispatcher),
+        ioDispatcher = testDispatcher,
+        locationRoot = { if (it == "usb" && usbConnected) usbRoot else null },
+    ) {
+        override suspend fun executeFfmpeg(args: List<String>): FFmpegResult = FFmpegResult(exitCode = 0)
+    }
+
+    @Test
+    fun `location - files of a download go under its location`() = testScope.runTest {
+        fileSystem.createDirectories(usbRoot)
+        val usbDownloader = createLocationDownloader()
+        try {
+            val downloadId = DownloadId("on-usb")
+            usbDownloader.downloadWithId(downloadId, "https://example.com/sample.mp4", DownloadOptions(location = "usb"))
+            usbDownloader.joinDownload(downloadId)
+
+            val state = assertNotNull(usbDownloader.getState(downloadId))
+            assertEquals(DownloadStatus.COMPLETED, state.status)
+            assertEquals("usb", state.location)
+            assertTrue(fileSystem.exists(Path(usbRoot, "on-usb.mp4")))
+            assertFalse(fileSystem.exists(Path(tempDir, "on-usb.mp4")))
+            assertFalse(fileSystem.exists(Path(usbRoot, "segments_on-usb")))
+        } finally {
+            usbDownloader.close()
+        }
+    }
+
+    @Test
+    fun `location - resume does nothing while the drive is not connected`() = testScope.runTest {
+        fileSystem.createDirectories(usbRoot)
+        val usbDownloader = createLocationDownloader()
+        try {
+            val downloadId = usbDownloader.download("https://example.com/sample.mp4", DownloadOptions(location = "usb"))
+            usbDownloader.pause(downloadId)
+
+            usbConnected = false
+            assertFalse(usbDownloader.resume(downloadId))
+            assertEquals(DownloadStatus.PAUSED, usbDownloader.getState(downloadId)?.status)
+
+            usbConnected = true
+            assertTrue(usbDownloader.resume(downloadId))
+            usbDownloader.joinDownload(downloadId)
+            assertEquals(DownloadStatus.COMPLETED, usbDownloader.getState(downloadId)?.status)
+        } finally {
+            usbDownloader.close()
+        }
+    }
+
+    @Test
+    fun `location - a download that fails after its drive is gone is paused instead of failed`() = testScope.runTest {
+        fileSystem.createDirectories(usbRoot)
+        val usbDownloader = createLocationDownloader()
+        try {
+            val downloadId = usbDownloader.download("https://example.com/bad-segments.m3u8", DownloadOptions(location = "usb"))
+            usbConnected = false
+            usbDownloader.joinDownload(downloadId)
+
+            val state = assertNotNull(usbDownloader.getState(downloadId))
+            assertEquals(DownloadStatus.PAUSED, state.status)
+            assertNull(state.error)
+        } finally {
+            usbDownloader.close()
+        }
+    }
+
+    @Test
+    fun `location - a download whose drive is still there fails as usual`() = testScope.runTest {
+        fileSystem.createDirectories(usbRoot)
+        val usbDownloader = createLocationDownloader()
+        try {
+            val downloadId = usbDownloader.download("https://example.com/bad-segments.m3u8", DownloadOptions(location = "usb"))
+            usbDownloader.joinDownload(downloadId)
+
+            assertEquals(DownloadStatus.FAILED, usbDownloader.getState(downloadId)?.status)
+        } finally {
+            usbDownloader.close()
+        }
+    }
+
+    // ----------------------------------------------------
     // Regular media file tests (MP4, MKV)
     // ----------------------------------------------------
 
