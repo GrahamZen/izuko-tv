@@ -51,6 +51,7 @@ internal fun DownloadSnapshot.toDownloadItem(
         waitingForPlayback = waitingForPlayback,
         locationUnavailable = locationUnavailable,
         locationReconnected = locationReconnected,
+        locationMoving = locationMoving,
     )
 }
 

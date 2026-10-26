@@ -627,6 +627,7 @@
     <string name="cache_episode_status_awaiting_bt_service">Waiting for BT service to start</string>
     <string name="cache_episode_status_location_unavailable">Drive not connected</string>
     <string name="cache_episode_status_location_reconnected">Drive connected, restoring</string>
+    <string name="cache_episode_status_location_moving">Moving to another drive</string>
     <!-- 正在播放同一集, 缓存停着等播放结束 -->
     <string name="cache_episode_status_waiting_for_playback">Paused while this episode plays</string>
     <!-- 标记看过后删除缓存 (设置 - 存储), 删的时候弹的提示 -->
@@ -642,6 +643,25 @@
     <string name="settings_storage_cache_location_disconnected_description">New downloads go to internal storage until this drive is plugged back in</string>
     <string name="settings_storage_cache_location_fat32">%1$s is formatted as FAT32, which can’t hold files over 4 GB. Reformat it as exFAT on a computer to use it</string>
     <string name="settings_storage_cache_location_read_only">%1$s is read-only on this device (NTFS drives often are). Reformat it as exFAT on a computer to use it</string>
+    <string name="settings_storage_cache_move">Move existing downloads</string>
+    <string name="settings_storage_cache_move_description">Move downloads saved elsewhere to the drive chosen in Download location. While moving they pause and can’t be played; the show that is playing is skipped. Unfinished BT downloads are checked again after moving</string>
+    <string name="settings_storage_cache_move_pending">%1$d elsewhere · %2$s</string>
+    <string name="settings_storage_cache_move_none">All here</string>
+    <string name="settings_storage_cache_move_progress">Moving %1$d/%2$d · %3$s / %4$s</string>
+    <string name="settings_storage_cache_move_confirm_title">Move %1$d downloads to %2$s?</string>
+    <string name="settings_storage_cache_move_confirm_text">%1$s in total. Moving runs in the background: you can leave this page, and you’ll be told when it’s done. While moving they pause and can’t be played; the show that is playing is skipped.</string>
+    <string name="settings_storage_cache_move_confirm">Move</string>
+    <string name="settings_storage_cache_move_stop_title">Stop moving?</string>
+    <string name="settings_storage_cache_move_stop_text">Downloads already moved stay at the new place; the one being moved goes back.</string>
+    <string name="settings_storage_cache_move_stop">Stop</string>
+    <string name="settings_storage_cache_move_nothing">Nothing to move</string>
+    <string name="settings_storage_cache_move_target_unavailable">The drive chosen in Download location can’t be used now</string>
+    <string name="cache_move_started">Moving %1$d downloads (%2$s). You can leave this page; you’ll be told when it’s done</string>
+    <string name="cache_move_done">Moved %1$d downloads to %2$s</string>
+    <string name="cache_move_summary">Moving finished: %1$d moved, %2$d failed, %3$d skipped because they were playing</string>
+    <string name="cache_move_stopped_space">%1$s is running out of space, stopped after moving %2$d downloads</string>
+    <string name="cache_move_stopped_unavailable">%1$s can’t be used now, nothing was moved</string>
+    <string name="cache_move_cancelled">Stopped moving; %1$d downloads already moved stay at the new place</string>
     <string name="cache_deleted_when_done">Deleted %2$d cached episodes of “%1$s”</string>
     <string name="cache_paused_low_space">Only %1$s of storage left. Paused %2$d cache downloads, free up some space before resuming</string>
     <string name="cache_paused_low_space_drive">%1$s has only %2$s left. Paused %3$d cache downloads on it, free up some space before resuming</string>
