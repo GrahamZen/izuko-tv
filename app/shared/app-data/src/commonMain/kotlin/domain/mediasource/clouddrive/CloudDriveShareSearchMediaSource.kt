@@ -29,6 +29,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.io.IOException
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import me.him188.ani.app.domain.media.fetch.SelfLimitedMediaSource
@@ -47,6 +48,8 @@ import me.him188.ani.app.domain.mediasource.search.SubjectSearchPlan
 import me.him188.ani.app.domain.foundation.overrideUserAgent
 import me.him188.ani.app.domain.foundation.sourceRequestUserAgent
 import me.him188.ani.app.domain.mediasource.search.TitleForms
+import me.him188.ani.app.domain.mediasource.search.TitleIdentities
+import me.him188.ani.app.domain.mediasource.search.TitleIdentity
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.paging.SinglePagePagedSource
@@ -154,6 +157,9 @@ object CloudDriveShareSearchMediaSourceCodec : DefaultMediaSourceCodec<CloudDriv
     CloudDriveShareSearchArguments.serializer(),
 )
 
+/** 分享站点本身出错 (5xx、连不上、连接被重置、超时), 不是这个词搜不到. 见 [DriveShareSearchEngine.searchSites]. */
+internal class ShareSiteUnavailableException(url: String, cause: Throwable) : Exception("Share site unavailable: $url", cause)
+
 /**
  * 按 [DriveShareSearchConfig] 查固定的分享、搜站点、打开分享、对出剧集. 不含任何站点或网盘特有的逻辑.
  */
@@ -162,15 +168,15 @@ internal class DriveShareSearchEngine(
     private val shares: DriveShareBrowser,
     internal val links: DriveShareLinks,
     numbering: TmdbEpisodeNumbering = TmdbEpisodeNumbering.None,
-    /** 搜到的分享、合集里的文件夹、播放线索里的分享文件夹与分享里的文件按名字认部 (见 [DriveSubjectIdentity]) */
-    private val identities: DriveSubjectIdentities = DriveSubjectIdentities.None,
+    /** 搜到的分享、合集里的文件夹、播放线索里的分享文件夹与分享里的文件按名字认部 (见 [TitleIdentity]) */
+    private val identities: TitleIdentities = TitleIdentities.None,
     /** 列播放线索里的分享文件夹 ([matchFolder]): 每次现列, 分享取消了、新集上传了马上就知道. 搜索用 [shares]. */
     folderShares: DriveShareBrowser = shares,
     /** 列出的分享文件夹另存一份在这里, 应用重启后不用重列 (见 [indexOf]). */
     private val indexStore: DriveShareIndexStore = DriveShareIndexStore.None,
     /** 墙上时间 (毫秒): 存下来的索引跨重启比新旧. */
     private val now: () -> Long = { currentTimeMillis() },
-    /** 请求站点搜索接口; 失败返回 null. */
+    /** 请求站点搜索接口; 失败返回 null, 站点本身出错 (5xx、连不上) 时抛 [ShareSiteUnavailableException]. */
     private val fetch: suspend (url: String) -> ByteArray?,
 ) {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
@@ -204,7 +210,7 @@ internal class DriveShareSearchEngine(
     /** 固定分享里对得上的文件夹; 每读完一个文件夹就交给 [deliver]. */
     private suspend fun searchFixedShares(
         request: MediaFetchRequest,
-        identity: DriveSubjectIdentity?,
+        identity: TitleIdentity?,
         deliver: suspend (List<DriveShareMatch>) -> Unit,
     ): List<DriveShareMatch> {
         val keywords = SubjectSearchPlan.of(request).keywords(KeywordStyle.literal(DriveSubjectMatcher.NAME_KEYWORDS)).primary
@@ -293,16 +299,19 @@ internal class DriveShareSearchEngine(
     /**
      * 站点搜到的分享; 每读完一个分享就把认出的剧集交给 [deliver]. 关键词来自搜索计划 ([SubjectSearchPlan.keywords], 按标题原样找的排法
      * [KeywordStyle.literal]), 这样走:
-     * 1. 条目名的主标题 (最多 [DriveShareSearchConfig.maxKeywords] 个): 前一个名字找到了分享就不再换名字搜, 这类站连着搜几次就会回 5xx.
+     * 1. 条目名的主标题 (最多 [DriveShareSearchConfig.maxKeywords] 个): 认出的剧集覆盖了条目的每一集就不再换名字搜, 这类站连着搜几次就会回 5xx;
+     *    搜到了分享却一集都没认出 (都是别的作品、别的季), 或认出的只是其中几集 (一个分享只收了一段) 时换下一个名字.
      *    一个名字原样搜不到时先换它的写法 ([KeywordKind.WRITING]: 去掉装饰符号、中日文之间的空格) 再搜, 然后才轮到下一个名字.
      * 2. 认出的剧集没覆盖条目的每一集时, 依次再搜副标题、系列名与别的叫法 (共 [MAX_WIDER_SEARCHES] 次, 覆盖了就停): 只写副标题
      *    (「辉夜大小姐想让我告白：究极浪漫」) 或系列名加季 (「物理魔法使马修第二季」) 的分享按条目名搜不到, 也常更全 (「京都动乱第二季 更46」).
      *    这样搜到的多是整个系列的合集, 里面的文件照样按路径认部 ([DrivePathAttribution]), 认不出是这一部的不要.
      * 每个词搜到的分享按站点剧名写的季排先后 ([bySeason]), 打开前 [DriveShareSearchConfig.maxShares] 个; 打开过的分享不再打开.
+     * 站点本身连着 [MAX_SITE_FAILURES] 次出错 ([ShareSiteUnavailableException]: 5xx、连不上、连接被重置) 就不再换词搜: 换了词也连不上,
+     * 每次还要白等搜索间隔与超时. 中间回过一次 (哪怕什么都没搜到) 就重新数.
      */
     private suspend fun searchSites(
         request: MediaFetchRequest,
-        identity: DriveSubjectIdentity?,
+        identity: TitleIdentity?,
         deliver: suspend (List<DriveShareMatch>) -> Unit,
     ) {
         val keywords = SubjectSearchPlan.of(request).keywords(
@@ -316,32 +325,47 @@ internal class DriveShareSearchEngine(
         val opened = HashSet<String>()
         val matches = ArrayList<DriveShareMatch>()
         var searches = 0
+        var siteFailures = 0
 
-        /** 搜 [keyword], 打开剧名对得上的分享; 搜到了没打开过的分享时为 true. */
-        suspend fun searchAndRead(keyword: SearchKeyword): Boolean {
+        fun siteDown(): Boolean = (siteFailures >= MAX_SITE_FAILURES).also { down ->
+            if (down) logger.info { "Share search: site failed $siteFailures times in a row, not trying the other keywords" }
+        }
+
+        /** 搜 [keyword], 打开剧名对得上的分享, 返回认出的剧集; 没搜到没打开过的分享 (或站点出错) 时为 null. */
+        suspend fun searchAndRead(keyword: SearchKeyword): List<DriveShareMatch>? {
             // 网页站 (苹果 CMS 模板) 默认要求两次搜索隔 3 秒, 挨着搜只会拿到「系统提示」页
             if (searches++ > 0 && config.detailLinkSelector.isNotBlank()) delay(PAGE_SEARCH_INTERVAL)
-            val found = searchSite(keyword, identity).filter { it.shareId !in opened }
-            if (found.isEmpty()) return false
+            val found = try {
+                searchSite(keyword, identity)
+            } catch (e: ShareSiteUnavailableException) {
+                siteFailures++
+                return null
+            }.filter { it.shareId !in opened }
+            siteFailures = 0
+            if (found.isEmpty()) return null
             val selected = bySeason(found, season).take(config.maxShares.coerceAtLeast(1))
             opened += selected.map { it.shareId }
             logger.info { "Share search 「${keyword.keyword}」: opening ${selected.size} of ${found.size} shares" }
             val semaphore = Semaphore(SHARE_CONCURRENCY)
-            matches += coroutineScope {
+            val read = coroutineScope {
                 selected.map { share ->
                     async { semaphore.withPermit { matchShare(request, share, skipFolders, identity) }.also { deliver(it) } }
                 }.awaitAll().flatten()
             }
-            return true
+            matches += read
+            return read
         }
 
         names@ for (name in keywords.primary) {
             for (keyword in listOf(name) + keywords.writingsOf(name)) {
-                if (searchAndRead(keyword)) break@names
+                if (siteDown()) return
+                searchAndRead(keyword) ?: continue
+                // 认出的还没覆盖每一集时换下一个名字; 这个名字的别的写法多半搜到同一批分享, 不再试
+                if (matches.isNotEmpty() && coversAllEpisodes(matches, request)) break@names else continue@names
             }
         }
         for (keyword in keywords.wider.take(MAX_WIDER_SEARCHES)) {
-            if (coversAllEpisodes(matches, request)) break
+            if (coversAllEpisodes(matches, request) || siteDown()) break
             searchAndRead(keyword)
         }
     }
@@ -383,9 +407,9 @@ internal class DriveShareSearchEngine(
     /**
      * 搜一个关键词, 返回剧名对得上的结果里的全部分享链接: 按副标题搜的要同时有系列名与这一部的副标题 ([DriveSeriesParts.acceptsTitle]),
      * 别的要含着这个词 ([titleMatches]); 给了 [identity] 时剧名点名了别的作品的不要 (「机动战士高达SEED」不是「机动战士高达」,
-     * 见 [DriveSubjectIdentity.rejectsTitle]).
+     * 见 [TitleIdentity.rejectsTitle]).
      */
-    internal suspend fun searchSite(keyword: SearchKeyword, identity: DriveSubjectIdentity? = null): List<FoundShare> {
+    internal suspend fun searchSite(keyword: SearchKeyword, identity: TitleIdentity? = null): List<FoundShare> {
         val url = TextTemplate.expand(config.searchUrl, mapOf("keyword" to keyword.keyword)) { true }
         val bytes = fetch(url) ?: return emptyList()
         val parts = identity?.parts
@@ -438,7 +462,12 @@ internal class DriveShareSearchEngine(
             "Share search page 「$title」: ${pageLinks.size} links ${pageLinks.take(3)}, opening ${pages.size}"
         }
         return pages.flatMap { (href, title) ->
-            val page = fetch(href) ?: return@flatMap emptyList()
+            // 详情页出错只跳过这一页 (搜索页回了, 站点在)
+            val page = try {
+                fetch(href)
+            } catch (e: ShareSiteUnavailableException) {
+                null
+            } ?: return@flatMap emptyList()
             links.extract(page.decodeToString()).map { link -> FoundShare(link.shareId, link.passcode, title) }
         }.distinctBy { it.shareId }
     }
@@ -447,7 +476,7 @@ internal class DriveShareSearchEngine(
         request: MediaFetchRequest,
         share: FoundShare,
         skipFolders: (List<String>) -> Set<String>,
-        identity: DriveSubjectIdentity?,
+        identity: TitleIdentity?,
     ): List<DriveShareMatch> {
         val videos = try {
             reader.read(share.shareId, share.passcode, skipFolders).videos
@@ -478,6 +507,9 @@ internal class DriveShareSearchEngine(
 
         /** 搜索结果是网页时, 最多打开几个详情页. */
         private const val MAX_DETAIL_PAGES = 3
+
+        /** 站点本身连着出错几次就不再换词搜 (见 [searchSites]) */
+        private const val MAX_SITE_FAILURES = 2
 
         private val PAGE_SEARCH_INTERVAL = 3.5.seconds
 
@@ -598,7 +630,11 @@ class CloudDriveShareSearchMediaSource(
         if (!drive.account.first().isLoggedIn || !engine.isConfigured) return ConnectionStatus.FAILED
         val url = TextTemplate.expand(arguments.config.searchUrl, mapOf("keyword" to "test")) { true }
         if (url.isBlank()) return ConnectionStatus.SUCCESS
-        return if (fetchBytes(url) != null) ConnectionStatus.SUCCESS else ConnectionStatus.FAILED
+        return try {
+            if (fetchBytes(url) != null) ConnectionStatus.SUCCESS else ConnectionStatus.FAILED
+        } catch (e: ShareSiteUnavailableException) {
+            ConnectionStatus.FAILED
+        }
     }
 
     /**
@@ -671,7 +707,11 @@ class CloudDriveShareSearchMediaSource(
     } catch (e: ResponseException) {
         // 异常消息里带着整个出错页面, 只记状态码
         logger.warn { "Request failed: $url: HTTP ${e.response.status.value}" }
-        null
+        if (e.response.status.value >= 500) throw ShareSiteUnavailableException(url, e) else null
+    } catch (e: IOException) {
+        // 连不上、连接被重置、超时
+        logger.warn { "Request failed: $url: $e" }
+        throw ShareSiteUnavailableException(url, e)
     } catch (e: Exception) {
         logger.warn { "Request failed: $url: $e" }
         null

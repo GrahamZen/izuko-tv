@@ -61,8 +61,8 @@ class SubjectSearchPlanTest {
     @Test
     fun `first word sources search the series name instead of a one character first word`() {
         val keywords = SubjectSearchPlan.of(tsuguTsugumomo).keywords(firstWord)
-        // 首词「继」搜什么都中; 系列名的首词才是要的. 去掉空格的全名最后才试 (站点写「继怪怪守护神」)
-        assertEquals(listOf("怪怪守护神") to listOf("つぐもも", "继怪怪守护神"), keywords.keywords())
+        // 首词「继」搜什么都中; 系列名的首词才是要的. 被换下的整个名字接着试, 去掉空格的全名最后才试 (站点写「继怪怪守护神」)
+        assertEquals(listOf("怪怪守护神") to listOf("つぐもも", "继 怪怪守护神", "继怪怪守护神"), keywords.keywords())
         // 搜索缓存按名字记: 主关键词记在系列名下
         assertEquals("怪怪守护神", keywords.primary.single().name)
     }
@@ -77,14 +77,55 @@ class SubjectSearchPlanTest {
     }
 
     @Test
-    fun `without a series name a weak first word gives way to the whole name`() {
+    fun `without a series name a weak first word gives way to the main segment and the whole name follows`() {
         val keywords = SubjectSearchPlan.of(request(listOf("继 怪怪守护神"))).keywords(firstWord)
-        assertEquals(listOf("继 怪怪守护神") to listOf("继怪怪守护神"), keywords.keywords())
+        assertEquals(listOf("怪怪守护神") to listOf("继 怪怪守护神", "继怪怪守护神"), keywords.keywords())
+    }
+
+    @Test
+    fun `the main segment prefers chinese or japanese and takes latin only from mixed names`() {
+        fun primary(name: String) = SubjectSearchPlan.of(request(listOf(name))).keywords(firstWord).primary.single().keyword
+        // 站点按连续的字找: 去掉符号的整个名字「C3 魔方少女」对不上站上的「C3-魔方少女-」, 主体一段对得上
+        assertEquals("魔方少女", primary("C3 -魔方少女-"))
+        assertEquals("光之美少女", primary("Go! Princess 光之美少女"))
+        assertEquals("ayakashi", primary("怪 ～ayakashi ～"))
+        assertEquals("KARAS", primary("鸦 -KARAS-"))
+        // 全是英文的名字切出来的多是常用词 (「GAME」), 照旧用整个名字
+        assertEquals("NEW GAME", primary("NEW GAME!"))
     }
 
     @Test
     fun `a short name that is the whole name is still searched`() {
         assertEquals(listOf("K") to emptyList<String>(), SubjectSearchPlan.of(request(listOf("K"))).keywords(firstWord).keywords())
+    }
+
+    @Test
+    fun `a name too short to search well tries the other names after it`() {
+        // 站上常叫「青空 AIR」「Air」, 搜「AIR」出来一大片别的番
+        val keywords = SubjectSearchPlan.of(request(listOf("AIR", "青空", "翼人"))).keywords(firstWord)
+        assertEquals(listOf("AIR") to listOf("青空", "翼人"), keywords.keywords())
+        assertEquals(listOf("AIR") to listOf("青空", "翼人"), SubjectSearchPlan.of(request(listOf("AIR", "青空", "翼人"))).keywords(fullName).keywords())
+    }
+
+    @Test
+    fun `other names are not searched when the name is good enough`() {
+        val keywords = SubjectSearchPlan.of(request(listOf("葬送的芙莉莲", "葬送のフリーレン"))).keywords(firstWord)
+        assertEquals(listOf("葬送的芙莉莲") to emptyList<String>(), keywords.keywords())
+    }
+
+    @Test
+    fun `a name replaced by the series name is searched whole with its space`() {
+        // 搜「浪客剑心」出来的是一大片 2023 版的单集, 站上的「浪客剑心 追忆篇」要用整个名字搜; 连写的「浪客剑心追忆篇」对不上
+        val keywords = SubjectSearchPlan.of(
+            request(listOf("浪客剑心 追忆篇"), otherNames = listOf("浪客剑心"), seriesNames = listOf("浪客剑心")),
+        ).keywords(firstWord)
+        assertEquals(listOf("浪客剑心") to listOf("浪客剑心 追忆篇", "浪客剑心追忆篇"), keywords.keywords())
+    }
+
+    @Test
+    fun `spaces left by removed symbols are merged`() {
+        val keywords = SubjectSearchPlan.of(request(listOf("怪 ～ayakashi ～"))).keywords(fullName)
+        assertEquals(listOf("怪 ayakashi"), keywords.primary.map { it.keyword })
     }
 
     @Test
@@ -108,7 +149,7 @@ class SubjectSearchPlanTest {
         val keywords = SubjectSearchPlan.of(
             request(names, otherNames = listOf("出包王女"), seriesNames = listOf("出包王女")),
         ).keywords(firstWord)
-        assertEquals(listOf("出包王女") to listOf("出包王女第2季", "更多", "更多出包王女"), keywords.keywords())
+        assertEquals(listOf("出包王女") to listOf("出包王女第2季", "更多 出包王女", "更多出包王女"), keywords.keywords())
     }
 
     @Test
