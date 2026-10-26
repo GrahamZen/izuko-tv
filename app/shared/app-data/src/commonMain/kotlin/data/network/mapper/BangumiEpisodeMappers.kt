@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.data.network.mapper
 
+import me.him188.ani.app.data.models.episode.EpisodeDurations
 import me.him188.ani.app.data.persistent.database.dao.EpisodeCollectionEntity
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.EpisodeType
@@ -46,6 +47,7 @@ internal fun BangumiEpisode.toEntity(
         // v0 对没有话数的分集 (特别篇之类) 给 0, Ani 那边是 null. 保持 null.
         ep = ep?.takeIf { it.toString() != "0" }?.let { EpisodeSort(it, episodeType) },
         sortNumber = sort.toString().toFloatOrNull() ?: 0f,
+        durationSeconds = durationSeconds?.takeIf { it > 0 } ?: EpisodeDurations.parse(duration),
         selfCollectionType = collectionType,
         lastFetched = lastFetched,
     )
