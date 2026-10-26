@@ -19,6 +19,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import me.him188.ani.app.data.models.episode.EpisodeCollectionInfo
+import me.him188.ani.app.data.models.episode.EpisodeDurations
 import me.him188.ani.app.data.models.episode.EpisodeInfo
 import me.him188.ani.app.data.repository.episode.toEpisodeCollectionInfo
 import me.him188.ani.app.data.network.mapper.toEntity
@@ -267,7 +268,7 @@ internal fun BangumiEpisode.toEpisodeInfo(): EpisodeInfo {
 //        disc = this.disc,
         sort = EpisodeSort(this.sort, getEpisodeTypeByBangumiCode(this.type)),
         ep = EpisodeSort(this.ep ?: BigNum.ONE, getEpisodeTypeByBangumiCode(this.type)),
-//        durationSeconds = this.durationSeconds
+        durationSeconds = this.durationSeconds?.takeIf { it > 0 } ?: EpisodeDurations.parse(this.duration),
     )
 }
 
@@ -284,6 +285,7 @@ internal fun BangumiEpisodeDetail.toEpisodeInfo(): EpisodeInfo {
         desc = desc,
 //        disc = disc,
         ep = EpisodeSort(this.ep ?: BigNum.ONE, this.type.toEpisodeType()),
+        durationSeconds = EpisodeDurations.parse(duration),
     )
 }
 

@@ -415,6 +415,7 @@ fun EpisodeCollectionInfo.toEntity(
         ep = episodeInfo.ep,
         imageMedium = episodeInfo.imageMedium,
         imageLarge = episodeInfo.imageLarge,
+        durationSeconds = episodeInfo.durationSeconds,
         selfCollectionType = collectionType,
         lastFetched = lastFetched,
     )
@@ -439,6 +440,7 @@ private fun EpisodeCollectionEntity.toEpisodeInfo(): EpisodeInfo {
         ep = this.ep,
         imageMedium = this.imageMedium,
         imageLarge = this.imageLarge,
+        durationSeconds = this.durationSeconds,
     )
 }
 
