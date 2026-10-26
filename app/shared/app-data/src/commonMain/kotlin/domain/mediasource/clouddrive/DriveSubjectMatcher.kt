@@ -15,9 +15,14 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import me.him188.ani.app.data.models.episode.EpisodeDurations
 import me.him188.ani.app.data.network.TmdbEpisodeMap
 import me.him188.ani.app.data.network.TmdbSubjectMapRepository
 import me.him188.ani.app.domain.mediasource.clouddrive.DrivePathAttribution.Attribution
+import me.him188.ani.app.domain.mediasource.search.KeywordStyle
+import me.him188.ani.app.domain.mediasource.search.SearchKeyword
+import me.him188.ani.app.domain.mediasource.search.SubjectSearchPlan
+import me.him188.ani.app.domain.mediasource.search.TitleForms
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import me.him188.ani.utils.logging.info
@@ -68,31 +73,18 @@ internal fun interface TmdbEpisodeNumbering {
 /**
  * 把条目对到网盘里的视频文件.
  *
- * 1. 用条目的每个名字 (中文名、原名、别名, 去掉季标记与副标题) 搜索. 英文别名很重要: 剧集发布的文件夹常常只有英文名.
+ * 1. 关键词来自搜索计划 ([SubjectSearchPlan.keywords], 按标题原样找的排法 [KeywordStyle.literal]): 条目每个名字的主标题
+ *    (中文名、原名、别名, 去掉季标记与副标题) 一起搜; 英文别名很重要, 剧集发布的文件夹常常只有英文名. 都没搜到相关的文件时,
+ *    依次再搜别的写法、副标题、系列名与别的叫法 (最多 [MAX_FALLBACK_SEARCHES] 次), 搜到为止.
  * 2. 服务端的匹配比较宽 (英文按词), 所以再在本地核对: 归一化后的文件或文件夹名要包含关键词.
  * 3. 搜到的文件夹往下展开几层 (网盘搜索常只返回命中的文件夹本身, 里面的文件名不含关键词时不会单独返回).
- * 4. 从文件名解析集号, 从文件名 (没写时取最近一层写了季的文件夹) 解析季, 与条目的季 ([DriveSubjectSeason]) 对不上的去掉.
- *    只有一集的条目 (剧场版) 文件名里多半没有集号, 认不出集号的正片就当作那一集.
- *    认出了季与集 (`S02E05`, 或「Season 1」文件夹里的 `12.mkv`) 而条目在对应表里有逐集对位 ([TmdbEpisodeNumbering]) 时,
- *    按表换算成条目的集, 不看下面的季规则; 表里没有这个季集时, 季正是条目的季 (TMDB 把整部算一季接着排, 文件按本季写成 `S04E01`)
- *    就照下面的季规则认, 否则不是这个条目. 文件名自己写的季要与条目的季相同; 文件夹给的季在条目推不出季时当第一季比.
- * 5. 展开文件夹时, 按季分好的一层里不是这个条目的季的文件夹 (见 [otherSeasonFolders]) 不往下列:
+ * 4. 展开文件夹时, 按季分好的一层里不是这个条目的季的文件夹 (见 [DriveSubjectSeason.otherSeasonFolders]) 不往下列:
  *    里面没写季的视频认的都是那一季, 最后也会按季去掉.
- * 6. 文件夹或文件名写明是剧场版、外传、OVA ([DriveNameParser.workKindsOf]) 而条目不是这一类的不要: 整个系列的合集里
- *    它们的视频也从 01 编起. 写着「TV+剧场版」「1-4季」这类合集名的文件夹不算.
- * 7. 自动找到的视频先看路径点名的是哪一部 ([DrivePathAttribution]): 点名别的部的不要. 系列里后来的作品
- *    ([DriveSubjectIdentity.laterWork]) 说不清是不是这一部时只认集号上的证据: 对应表里对得上的 `S几E几`
- *    (TMDB 把条目单列成一部、从 S1E1 起时网盘上的「S1」多半是系列的第一季, 路径点名了这一部才查表)、拆分季按共有的季编的集号
- *    ([DrivePathAttribution.splitSeasonEpisode]), 以及这一部的跨部连续集号 ([DrivePathAttribution.continuesSeries]);
- *    整个系列的合集里各部都从 01 编起, 分不清的不要.
- * 8. 网盘把系列里的一段当成单独一部、从这一段起编季 (「死神 千年血战篇 -祸进谭-」分享里的 `S01E41`, TMDB 记成 S2E41):
- *    路径点名了这一部、集号又正是这一部的系列连续集号 (bangumi 的 sort 与 ep 不同) 时, 按季对不上的也照集号认.
- *
- * 季的规则 (条目的季见 [DriveSubjectSeason]):
- * - 推不出季 (第一季或只有一季): 文件写明是第 2 季及以后的去掉, 其余保留.
- * - 条目名写明是第 N 季 (N ≥ 2): 文件或文件夹写明是第 N 季的保留, 写明别的季的去掉;
- *   都没写的, 只有集号等于条目某一集的系列绝对集号时保留 —— 否则第一季文件夹里的 `03.mp4` 会被当成第 N 季第 3 集.
- * - 推出来是第 N 季 (条目名没写): 写明别的季的去掉, 写明第 N 季与都没写的保留 (「进击的巨人 最终季 Part.2 / 01.mp4」).
+ * 5. 每个视频 ([matchEpisodes]): 自动找到的先看路径点名的是哪一部 ([DrivePathAttribution]), 点名别的部的不要; 再看作品类别,
+ *    写明是剧场版、外传、OVA ([DriveNameParser.workKindsOf]) 而条目不是这一类的不要 (整个系列的合集里它们的视频也从 01 编起,
+ *    「TV+剧场版」「1-4季」这类合集名不算), 真人版、短剧一律不要; 最后从文件名解析集号, 按 [DriveEpisodeResolver] 认是哪一集.
+ *    只有一集的条目 (剧场版) 文件名里多半没有集号, 认不出集号的正片就当作那一集.
+ *    网盘给的视频时长与认出的那一集 (条目服务记的时长) 差得离谱的不要 ([EpisodeDurations]): 短剧、同名的剧场版.
  */
 internal class DriveSubjectMatcher(
     private val browser: DriveBrowser,
@@ -110,18 +102,26 @@ internal class DriveSubjectMatcher(
     )
 
     suspend fun match(request: MediaFetchRequest): List<MatchedFile> {
-        val keywords = keywordsOf(subjectNamesOf(request))
-        if (keywords.isEmpty()) return emptyList()
-
-        val hits = searchAll(keywords)
-        val tmdbEpisodes = numbering.of(request)
         val identity = identities.of(request)
-        val subjectSeason = DriveSubjectSeason.of(request, tmdbEpisodes, identity?.seriesSeason)
-        val candidates = collectCandidates(hits, otherSeasonFolders(subjectSeason, tmdbEpisodes))
+        val keywords = SubjectSearchPlan.of(request).keywords(KeywordStyle.literal(NAME_KEYWORDS), subtitles = identity?.parts?.keywords.orEmpty())
+        if (keywords.primary.isEmpty()) return emptyList()
+
+        var hits = searchAll(keywords.primary)
+        if (hits.none { it.isRelevant }) {
+            for (keyword in keywords.fallback.take(MAX_FALLBACK_SEARCHES)) {
+                hits = hits + searchAll(listOf(keyword), failOnError = false)
+                if (hits.any { it.isRelevant }) break
+            }
+        }
+        val tmdbEpisodes = numbering.of(request)
+        val candidates = collectCandidates(hits, DriveSubjectSeason.of(request, tmdbEpisodes, identity).otherSeasonFolders())
         return matchEpisodes(request, candidates, tmdbEpisodes, identity = identity)
     }
 
-    private class Hit(val keyword: String, val file: DriveFile)
+    /** 搜 [keyword] 搜到的文件或文件夹. 名字包含关键词 (比较写法) 的才算相关 ([isRelevant]): 服务端的匹配比较宽. */
+    private class Hit(val keyword: SearchKeyword, val file: DriveFile) {
+        val isRelevant: Boolean get() = TitleForms.compact(keyword.keyword) in TitleForms.compact(file.fileName)
+    }
 
     /**
      * 用户指定「这个条目就在这个文件夹里」时: 把文件夹 (往下 [MAX_DEPTH] 层) 里的视频按文件名认集, 不按条目名认季
@@ -153,9 +153,8 @@ internal class DriveSubjectMatcher(
             return null
         }
         val tmdbEpisodes = numbering.of(request)
-        val subjectSeason = DriveSubjectSeason.of(request, tmdbEpisodes, identity?.seriesSeason)
         val candidates = try {
-            listCandidates(folderId, path, otherSeasonFolders(subjectSeason, tmdbEpisodes))
+            listCandidates(folderId, path, DriveSubjectSeason.of(request, tmdbEpisodes, identity).otherSeasonFolders())
         } catch (e: CancellationException) {
             throw e
         } catch (e: CloudDriveAuthException) {
@@ -194,13 +193,14 @@ internal class DriveSubjectMatcher(
      */
     class Candidate(val file: DriveFile, val folders: List<String>)
 
-    private suspend fun searchAll(keywords: List<String>): List<Hit> = coroutineScope {
+    /** 一起搜 [keywords]. 登录失效等错误要报给用户, 不能当成「没搜到」: [failOnError] 时一个都没搜成功就抛出第一个错误. */
+    private suspend fun searchAll(keywords: List<SearchKeyword>, failOnError: Boolean = true): List<Hit> = coroutineScope {
         val semaphore = Semaphore(SEARCH_CONCURRENCY)
         val results = keywords.map { keyword ->
             async {
                 semaphore.withPermit {
                     try {
-                        Result.success(browser.search(keyword).map { Hit(keyword, it) })
+                        Result.success(browser.search(keyword.keyword).map { Hit(keyword, it) })
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Throwable) {
@@ -209,17 +209,15 @@ internal class DriveSubjectMatcher(
                 }
             }
         }.awaitAll()
-        // 登录失效等错误要报给用户, 不能当成"没搜到"; 只要有一个关键词搜成功, 就用已有的结果
-        if (results.all { it.isFailure }) throw results.first().exceptionOrNull()!!
+        // 只要有一个关键词搜成功, 就用已有的结果
+        if (failOnError && results.all { it.isFailure }) throw results.first().exceptionOrNull()!!
         results.flatMap { it.getOrNull().orEmpty() }
     }
 
     private suspend fun collectCandidates(hits: List<Hit>, skipFolders: (List<String>) -> Set<String>): List<Candidate> {
-        val relevant = hits.filter { hit ->
-            DriveNameParser.normalize(hit.file.fileName).contains(DriveNameParser.normalize(hit.keyword))
-        }
+        val relevant = hits.filter { it.isRelevant }
         logger.info {
-            hits.groupBy { it.keyword }.entries.joinToString("; ", prefix = "Cloud drive search: ") { (keyword, list) ->
+            hits.groupBy { it.keyword.keyword }.entries.joinToString("; ", prefix = "Cloud drive search: ") { (keyword, list) ->
                 val kept = list.filter { it in relevant }
                 "「$keyword」 ${list.size} hits, ${kept.size} kept " +
                         kept.take(LOGGED_NAMES).joinToString(prefix = "[", postfix = "]") { (if (it.file.dir) "dir:" else "") + it.file.fileName } +
@@ -274,7 +272,12 @@ internal class DriveSubjectMatcher(
         private val logger = logger<DriveSubjectMatcher>()
 
         private const val SEARCH_CONCURRENCY = 3
-        private const val MAX_KEYWORDS = 8
+
+        /** 按名字找时最多用几个名字的主标题 (自己网盘的搜索、固定合集里对文件夹名) */
+        const val NAME_KEYWORDS = 8
+
+        /** 名字都没搜到相关的文件时, 最多再搜几个回退关键词 */
+        private const val MAX_FALLBACK_SEARCHES = 3
         private const val MAX_MATCHED_FOLDERS = 6
         private const val MAX_LISTED_FOLDERS = 40
         private const val MAX_DEPTH = 2
@@ -296,10 +299,10 @@ internal class DriveSubjectMatcher(
                 .distinct()
 
         /**
-         * 从候选文件里挑出这个条目的剧集: 文件名认得出集号、不是花絮、不是太小的样片, 季也对得上 (规则见类说明).
+         * 从候选文件里挑出这个条目的剧集: 认部、作品类别、集号 (见类说明第 5 条), 不是花絮、不是太小的样片.
          *
          * @param tmdbEpisodes TMDB (季, 集) → 条目的集 (见 [TmdbEpisodeNumbering]); null = 表里没有, 只按条目名认季
-         * @param trustFolders 候选来自用户指定的文件夹: 不再按条目的季认 (对应表照样用)
+         * @param trustFolders 候选来自用户指定的文件夹: 不按路径认部、不查作品类别, 也不按条目的季认 (对应表照样用)
          * @param identity 按路径认部 ([DrivePathAttribution]); 自动按名字找时才给. 也带着系列关系图推出的季 (认季用)
          */
         fun matchEpisodes(
@@ -309,19 +312,12 @@ internal class DriveSubjectMatcher(
             trustFolders: Boolean = false,
             identity: DriveSubjectIdentity? = null,
         ): List<MatchedFile> {
-            val subjectSeason = DriveSubjectSeason.of(request, tmdbEpisodes, identity?.seriesSeason)
-            val attribution = identity?.let { DrivePathAttribution(it, request, subjectSeason) }
-            // TMDB 把后来的作品单列成一部 (本篇从 S1E1 起): 网盘上的「S1」两种意思都有, 按 TMDB 整理的是这一部自己的第一季
-            // (「堀与宫村 -piece- (2023) S01」), 按系列整理的是系列的第一季 (「堀与宫村 S1」与「堀与宫村 S2」并排)
-            val tmdbOwnShow = identity?.laterWork == true && tmdbEpisodes?.containsKey(1 to 1) == true
-            val absoluteSorts = request.episodes
-                .filter { episode -> episode.ep != null && episode.ep != episode.sort }
-                .map { it.sort }
-                .toSet()
+            val season = DriveSubjectSeason.of(request, tmdbEpisodes, identity)
+            val attribution = identity?.let { DrivePathAttribution(it, season, request) }
+            val resolver = DriveEpisodeResolver(request, season, tmdbEpisodes, identity, trustFolders)
+            val kinds = KindCheck(request, trustFolders)
+            val durations = request.episodes.takeUnless { trustFolders }.orEmpty().associate { it.sort to it.durationSeconds }
             val onlyEpisode = request.episodes.singleOrNull()?.sort
-            // 剧场版、外传、OVA 的文件夹与文件 (合集名除外) 不是条目的正片; 条目本身是这一类、或只有一集 (剧场版条目) 时不查
-            val ownKinds = subjectNamesOf(request).flatMapTo(HashSet()) { DriveNameParser.workKindsOf(it) }
-            val checkKinds = !trustFolders && request.episodes.size != 1
 
             // 没对上的按原因记几个例子, 搜到了却一集都没有时看得出卡在哪
             val dropped = LinkedHashMap<String, MutableList<String>>()
@@ -330,54 +326,32 @@ internal class DriveSubjectMatcher(
                 return null
             }
 
-            val parsedFiles = candidates.associateWith { DriveNameParser.parseFile(it.file.fileName) }
-            // 有只能是跨部连续编号的集号的文件夹按连续编号排: 里面也是本条目序号的集号 (「我推的孩子」第二季的 12) 照连续编号认
-            val continuousFolders = if (attribution == null) emptySet() else {
-                parsedFiles.filter { (_, parsed) -> parsed.episode?.let(attribution::isContinuous) == true }.keys.mapTo(HashSet()) { it.folders }
-            }
-
+            val titles = DriveNameParser.titlePatterns(SubjectSearchPlan.of(request).ownNames)
+            val parsedFiles = candidates.associateWith { DriveNameParser.parseFile(it.file.fileName, titles) }
+            // 只有一集的条目: 文件夹里只有这一个视频时, 名字里剩下的数字不是集号 (「酷漫404」)
+            val videosIn = candidates.groupingBy { it.folders }.eachCount()
+            val continuousFolders = resolver.continuousFolders(parsedFiles)
             val matched = candidates.mapNotNull { candidate ->
                 val named = attribution?.attribute(candidate.file.fileName, candidate.folders)
                 if (named == Attribution.OTHER) return@mapNotNull drop("other work", candidate)
-                if (checkKinds && (otherKindsOf(candidate) - ownKinds).isNotEmpty()) return@mapNotNull drop("other kind", candidate)
+                if (kinds.rejects(candidate)) return@mapNotNull drop("other kind", candidate)
                 val parsed = parsedFiles.getValue(candidate)
                 if (parsed.isExtra) return@mapNotNull drop("extra", candidate)
-                val episode = parsed.episode ?: onlyEpisode ?: return@mapNotNull drop("no episode number", candidate)
+                val episode = parsed.episode?.takeUnless { onlyEpisode != null && !parsed.anchored && videosIn[candidate.folders] == 1 }
+                    ?: onlyEpisode ?: return@mapNotNull drop("no episode number", candidate)
                 if (candidate.file.size in 1 until MIN_VIDEO_SIZE) return@mapNotNull drop("too small", candidate)
-                val fileEpisode = (parsed.episode as? EpisodeSort.Normal)?.number?.takeIf { it % 1f == 0f }?.toInt()
-                val season = parsed.season
-                    ?: candidate.folders.asReversed().firstNotNullOfOrNull { DriveNameParser.parseFolderSeason(it) }
-                // 认出了季与集 (按 TMDB 整理的 `S02E05`, 或「Season 1」文件夹里的 `12.mkv`): 表里写着它是条目的哪一集就用哪一集, 不再按季规则认.
-                // TMDB 把后来的作品单列成一部时只在路径点名了这一部时查表
-                val seasonInTmdb = !tmdbOwnShow || named == Attribution.OWN
-                if (tmdbEpisodes != null && season != null && fileEpisode != null && seasonInTmdb) {
-                    tmdbEpisodes[season to fileEpisode]?.let { return@mapNotNull MatchedFile(candidate.file, candidate.folders, it) }
-                }
-                attribution?.splitSeasonEpisode(season, fileEpisode)?.let { return@mapNotNull MatchedFile(candidate.file, candidate.folders, it) }
-                if (attribution != null && named == Attribution.UNCLEAR && identity?.laterWork == true) {
-                    // 后来的作品, 路径说不清是不是这一部: 只认跨部连续集号 (特别篇的 `S00E31` 不是)
-                    val continuousFolder = candidate.folders in continuousFolders
-                    if (parsed.season != 0 && attribution.continuesSeries(candidate.file.fileName, candidate.folders, episode, continuousFolder)) {
-                        return@mapNotNull MatchedFile(candidate.file, candidate.folders, episode)
+                when (val resolved = resolver.resolve(candidate, parsed, episode, named, candidate.folders in continuousFolders)) {
+                    is DriveEpisodeResolver.Resolved.Episode -> {
+                        val expected = durations[resolved.sort]
+                        if (EpisodeDurations.isMismatch(candidate.file.durationSeconds.toLong(), expected)) {
+                            drop("duration ${candidate.file.durationSeconds}s, episode ${expected}s", candidate)
+                        } else {
+                            MatchedFile(candidate.file, candidate.folders, resolved.sort)
+                        }
                     }
-                    return@mapNotNull drop("not named as this subject", candidate)
+
+                    is DriveEpisodeResolver.Resolved.Dropped -> drop(resolved.reason, candidate)
                 }
-                // 网盘把系列里的一段当成单独一部、从这一段起编季: 路径点名了这一部、集号又正是它的系列连续集号, 季对不上也照集号认
-                val continuesOwnPart = episode in absoluteSorts && named == Attribution.OWN
-                if (tmdbEpisodes != null && season != null && fileEpisode != null && seasonInTmdb) {
-                    // 表里查不到: 按本季写的 (`S04E01`, TMDB 却把整部算一季接着排), 季正是条目的季就照季规则认. 文件名自己写的季要与条目的季相同,
-                    // 条目推不出季时就不是这个条目 (天降之物f 的 `S01E01`); 文件夹给的季在条目推不出季时当第一季比: 拆出来的后半常放在第一季的文件夹里从 01 编
-                    val expected = if (parsed.season != null) subjectSeason?.number else subjectSeason?.number ?: 1
-                    if (season != expected && !(trustFolders && parsed.season == null)) {
-                        if (continuesOwnPart) return@mapNotNull MatchedFile(candidate.file, candidate.folders, episode)
-                        return@mapNotNull drop("S${season}E$fileEpisode not in this subject", candidate)
-                    }
-                }
-                if (!trustFolders && !seasonMatches(season, subjectSeason, episode, absoluteSorts)) {
-                    if (continuesOwnPart) return@mapNotNull MatchedFile(candidate.file, candidate.folders, episode)
-                    return@mapNotNull drop("season $season, wanted ${subjectSeason ?: 1}", candidate)
-                }
-                MatchedFile(candidate.file, candidate.folders, episode)
             }
             if (candidates.isNotEmpty()) {
                 logger.info {
@@ -390,59 +364,25 @@ internal class DriveSubjectMatcher(
             return matched
         }
 
-        /** 候选的文件夹 (合集名不算) 与文件名写明的作品类别. */
-        private fun otherKindsOf(candidate: Candidate): Set<DriveNameParser.WorkKind> =
-            (candidate.folders.filterNot(DriveNameParser::isCollectionName) + candidate.file.fileName)
-                .flatMapTo(HashSet()) { DriveNameParser.workKindsOf(it) }
-
         /**
-         * 这个条目的剧集可能写在哪些季里: 条目的季 ([DriveSubjectSeason], 推不出来当第 1 季), 以及对应表里这个条目用到的 TMDB 季
-         * (按 TMDB 整理的网盘把它写成那一季, 如 TMDB 把整部算一季时的 `S01E78`).
+         * 作品类别: 候选的文件夹 (合集名只算 [DriveNameParser.WorkKind.inCollections] 的) 与文件名写明了条目不是的那一类.
+         * 真人版、短剧一律不要; 剧场版、外传、OVA 在条目本身是这一类、只有一集 (剧场版条目的名字里常不写剧场版) 或候选来自用户指定的文件夹时不查.
          */
-        fun seasonsOf(subjectSeason: DriveSubjectSeason?, tmdbEpisodes: Map<Pair<Int, Int>, EpisodeSort>?): Set<Int> =
-            setOf(subjectSeason?.number ?: 1) + tmdbEpisodes?.keys?.map { it.first }.orEmpty()
-
-        /**
-         * 一层文件夹里不必往下列的那些: 这一层按季分好了 (至少两个文件夹各只写了一个季、且季不同), 其中季不是这个条目会写的季
-         * ([seasonsOf]) 的. 按季分好的文件夹装的就是那一季, 里面没写季的视频最后也会按季去掉.
-         * 只有一个文件夹写了季时不跳: 常是上传者的总标题 (「…第二季」), 里面可能连前几季一起放.
-         * 名字拿不准的 (见 [DriveNameParser.singleDeclaredSeason]) 当没写季.
-         */
-        fun otherSeasonFolders(subjectSeason: DriveSubjectSeason?, tmdbEpisodes: Map<Pair<Int, Int>, EpisodeSort>?): (List<String>) -> Set<String> {
-            val seasons = seasonsOf(subjectSeason, tmdbEpisodes)
-            return { names ->
-                val declared = names.associateWith { DriveNameParser.singleDeclaredSeason(it) }
-                if (declared.values.filterNotNull().distinct().size < 2) emptySet()
-                else declared.filterValues { it != null && it !in seasons }.keys
+        private class KindCheck(request: MediaFetchRequest, trustFolders: Boolean) {
+            private val ownKinds = subjectNamesOf(request).flatMapTo(HashSet()) { DriveNameParser.workKindsOf(it) }
+            private val checked = when {
+                trustFolders -> emptySet()
+                request.episodes.size != 1 -> DriveNameParser.WorkKind.entries.toSet()
+                else -> setOf(DriveNameParser.WorkKind.LIVE_ACTION, DriveNameParser.WorkKind.SHORT_DRAMA)
             }
-        }
 
-        private fun seasonMatches(
-            fileSeason: Int?,
-            subjectSeason: DriveSubjectSeason?,
-            episode: EpisodeSort,
-            absoluteSorts: Set<EpisodeSort>,
-        ): Boolean {
-            val target = subjectSeason?.number ?: 1
-            if (target == 1) return fileSeason == null || fileSeason == 1
-            if (fileSeason != null) return fileSeason == target
-            // 不写季的: 条目名写明了季的只认系列绝对集号, 推出来的季照留
-            return subjectSeason?.declared != true || episode in absoluteSorts
-        }
-
-        /**
-         * 每个名字取主标题作关键词, 按归一化结果去重. 太短的关键词 (归一化后不到 2 个字) 会搜出一堆无关文件, 不用.
-         */
-        fun keywordsOf(names: List<String>): List<String> {
-            val seen = HashSet<String>()
-            return names.asSequence()
-                .map { DriveNameParser.baseTitle(it) }
-                .filter { keyword ->
-                    val normalized = DriveNameParser.normalize(keyword)
-                    normalized.length >= 2 && seen.add(normalized)
+            fun rejects(candidate: Candidate): Boolean {
+                val folderKinds = candidate.folders.flatMap { folder ->
+                    val collection = DriveNameParser.isCollectionName(folder)
+                    DriveNameParser.workKindsOf(folder).filter { it.inCollections || !collection }
                 }
-                .take(MAX_KEYWORDS)
-                .toList()
+                return (folderKinds + DriveNameParser.workKindsOf(candidate.file.fileName)).any { it in checked && it !in ownKinds }
+            }
         }
     }
 }
