@@ -187,7 +187,7 @@ class TvSourcePanelState(
     /** 胶囊行换到 [key]: 换了组时源那一栏按落点规则重新落 (正在播的 → 这一组上次停的 → 第一个有结果的). */
     fun onRailFocused(key: String) {
         nav.update {
-            if (it.railKey == key) it else it.copy(railKey = key, sourceKey = null, drill = null, frozenOrder = null, showExcluded = false)
+            if (it.railKey == key) it else it.copy(railKey = key, sourceKey = null, drill = null, frozenOrder = null, showExcluded = false, keepInPlace = null)
         }
         if (key == TvSourceRailKeys.MANUAL) manual?.searchIfNeeded()
     }
@@ -200,7 +200,11 @@ class TvSourcePanelState(
         val groups = content.value?.sourceGroups.orEmpty()
         nav.update {
             when {
-                sourceKey != null -> if (it.railKey == railKey && it.sourceKey == sourceKey) it else it.copy(railKey = railKey, sourceKey = sourceKey)
+                sourceKey != null -> if (it.railKey == railKey && it.sourceKey == sourceKey) {
+                    it
+                } else {
+                    it.copy(railKey = railKey, sourceKey = sourceKey, keepInPlace = it.keepInPlace?.takeIf { key -> key == sourceKey })
+                }
                 it.railKey == railKey || it.railKey?.let { key -> groups[key] } == railKey -> it
                 else -> it.copy(railKey = railKey)
             }
@@ -220,6 +224,7 @@ class TvSourcePanelState(
                     drill = null,
                     frozenOrder = null,
                     showExcluded = false,
+                    keepInPlace = it.keepInPlace?.takeIf { key -> key == sourceKey },
                 )
             }
         }
@@ -267,7 +272,11 @@ class TvSourcePanelState(
     fun perform(action: TvSourceAction) {
         when (action) {
             is TvSourceAction.Play -> host.pick(action.media)
-            is TvSourceAction.RestartSource -> host.restartSource(action.instanceId)
+            is TvSourceAction.RestartSource -> {
+                // 刚放开的源查完没结果也留在原处 (焦点就在它上面), 见 TvSourceNav.keepInPlace
+                nav.update { it.copy(keepInPlace = TvSourceRailKeys.web(action.instanceId)) }
+                host.restartSource(action.instanceId)
+            }
             is TvSourceAction.ResolveCaptcha -> scope.launch { selector.resolveCaptcha(action.instanceId) }
             is TvSourceAction.LoginDrive -> driveLogin.value = action.driveId
             TvSourceAction.Refresh -> host.refresh()
@@ -277,7 +286,7 @@ class TvSourcePanelState(
             TvSourceAction.OpenSettings -> host.openSettings()
             TvSourceAction.ToggleEpisodeFilter -> selector.btFilterState.episodeFilterEnabled.update { !it }
             TvSourceAction.ToggleExcluded -> nav.update { it.copy(showExcluded = !it.showExcluded, frozenOrder = null) }
-            TvSourceAction.ToggleEmptySources -> nav.update { it.copy(showEmptySources = !it.showEmptySources) }
+            TvSourceAction.ToggleEmptySources -> nav.update { it.copy(showEmptySources = !it.showEmptySources, keepInPlace = null) }
             is TvSourceAction.Open -> nav.update { it.copy(drill = action.drill, frozenOrder = null) }
             TvSourceAction.OpenFilter -> filterOpen.value = true
             is TvSourceAction.ShowDetails -> detailsTarget.value = action
