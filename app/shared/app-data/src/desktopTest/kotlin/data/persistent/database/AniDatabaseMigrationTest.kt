@@ -100,12 +100,29 @@ class AniDatabaseMigrationTest {
     }
 
     @Test
-    fun `shipped v26 v27 and v28 databases open with every row kept`() {
-        for (version in listOf(26, 27, 28)) {
+    fun `MIG-12 v28 to v29 adds the episode duration column and keeps rows`() {
+        val helper = createHelper()
+        helper.createDatabase(28).use { connection ->
+            connection.execSQL(SUBJECT_COLLECTION_INSERT)
+            connection.execSQL(EPISODE_COLLECTION_INSERT)
+        }
+        helper.runMigrationsAndValidate(29, emptyList()).use { connection ->
+            assertContains(connection.columnNames("episode_collection"), "durationSeconds")
+            connection.prepare("SELECT `nameCn`, `durationSeconds` FROM `episode_collection` WHERE `episodeId` = 10").use { statement ->
+                assertTrue(statement.step())
+                assertEquals("ep", statement.getText(0))
+                assertTrue(statement.isNull(1))
+            }
+        }
+    }
+
+    @Test
+    fun `shipped v26 to v29 databases open with every row kept`() {
+        for (version in listOf(26, 27, 28, 29)) {
             Files.deleteIfExists(databasePath)
             createHelper().createDatabase(version).use { it.insertUserData() }
             openLikeTheApp { connection ->
-                assertEquals(28, connection.userVersion(), "from v$version")
+                assertEquals(29, connection.userVersion(), "from v$version")
                 for ((table, count) in USER_DATA_ROWS) {
                     assertEquals(count, connection.count(table), "$table from v$version")
                 }
@@ -128,7 +145,7 @@ class AniDatabaseMigrationTest {
                 connection.execSQL("INSERT INTO `search_history` (`content`) VALUES ('old')")
             }
             openLikeTheApp { connection ->
-                assertEquals(28, connection.userVersion(), "from v$version")
+                assertEquals(29, connection.userVersion(), "from v$version")
                 assertEquals(0, connection.count("search_history"), "from v$version")
                 assertContains(connection.tableNames(), "torrent_cache_episode")
             }
@@ -137,12 +154,12 @@ class AniDatabaseMigrationTest {
 
     @Test
     fun `a database from a newer version is recreated`() {
-        createHelper().createDatabase(28).use { connection ->
+        createHelper().createDatabase(29).use { connection ->
             connection.insertUserData()
-            connection.execSQL("PRAGMA user_version = 29")
+            connection.execSQL("PRAGMA user_version = 30")
         }
         openLikeTheApp { connection ->
-            assertEquals(28, connection.userVersion())
+            assertEquals(29, connection.userVersion())
             assertEquals(0, connection.count("search_history"))
         }
     }
@@ -166,6 +183,11 @@ class AniDatabaseMigrationTest {
         "torrent_cache" to 1L,
         "torrent_cache_episode" to 1L,
     )
+
+    /** v26 起 episode_collection 必填的列 (属于 [SUBJECT_COLLECTION_INSERT] 的条目) */
+    private val EPISODE_COLLECTION_INSERT =
+        "INSERT INTO `episode_collection` (`subjectId`, `episodeId`, `episodeType`, `name`, `nameCn`, `airDate`, `comment`, " +
+                "`desc`, `sort`, `ep`, `selfCollectionType`, `lastFetched`) VALUES (1, 10, 'MainStory', 'n', 'ep', 0, 0, '', '1', '1', 'WISH', 0)"
 
     /** v26 起 subject_collection 必填的列; 其余列都有默认值或可空 */
     private val SUBJECT_COLLECTION_INSERT =

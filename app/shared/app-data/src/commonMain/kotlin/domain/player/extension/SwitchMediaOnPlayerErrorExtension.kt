@@ -143,6 +143,8 @@ class SwitchMediaOnPlayerErrorExtension(
 
                             // 太短的视频播完 (公告、广告片) 也当作这个源失败, 见 observeShortMediaEnd
                             launch { handler.observeShortMediaEnd(context.player, mediaFetchSessionFlow) }
+                            // 自动选中的资源时长与这一集对不上 (同名的剧场版、真人电影) 时换一条, 见 observeEpisodeDurationMismatch
+                            launch { handler.observeEpisodeDurationMismatch(context.player, mediaFetchSessionFlow, episodeId) { getSourceTiersUseCase().first() } }
                         }
                     }
             }
@@ -366,6 +368,9 @@ internal class PlayerLoadErrorHandler(
         // 这张表整个会话只增不减, 拉错一条就少一个能用的源 —— 出问题时要能从日志看出是谁拉黑的
         logger.info { "Blacklisted media $mediaId, ${blacklistedMediaIds.size} blacklisted in this session" }
     }
+
+    /** 本次会话拉黑的资源, 换源时不选 */
+    internal val blacklistedMedia: Set<String> get() = blacklistedMediaIds
 
     suspend fun observeMediaSelectorBlacklist(
         mediaSelectorFlow: Flow<MediaSelector>
