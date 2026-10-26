@@ -33,6 +33,7 @@ import me.him188.ani.app.data.network.SubjectSeriesIndexService
 import me.him188.ani.app.data.network.sortsSpanSeriesOf
 import me.him188.ani.app.data.network.splitSeasonOf
 import me.him188.ani.app.data.network.toSubjectRelations
+import me.him188.ani.app.data.network.withSeasonNames
 import me.him188.ani.app.data.network.BatchSubjectRelations
 import me.him188.ani.app.data.network.mapper.orBangumiPlaceholder
 import me.him188.ani.app.data.network.SubjectService
@@ -127,6 +128,7 @@ class DefaultSubjectRelationsRepository(
         val relations = index.toSubjectRelations().copy(splitSeason = index.splitSeasonOf(requestingSubject))
         SubjectSeriesInfo.compute(requestingSubject.copy(relations = relations))
             .copy(sortsSpanSeries = index.sortsSpanSeriesOf(requestingSubject))
+            .withSeasonNames(index, subjectId, requestingSubject.subjectInfo.allNames)
     }.flowOn(defaultDispatcher)
 
 //    override fun subjectSequelSubjectNamesFlow(subjectId: Int): Flow<Set<String>> {

@@ -205,6 +205,10 @@ Sealed class [`MaybeExcludedMedia`][MaybeExcludedMedia] 表示一个可能被排
 **条目名匹配**：资源的条目名精确等于系列中其他季度的名称时，以
 `MediaExclusionReason.FromSeriesSeason` / `FromSequelSeason` 排除；WEB 资源还要求条目名包含条目的某个名称，
 或与之足够相似（把季号挪到末尾后再比一次），否则以 `MediaExclusionReason.SubjectNameMismatch` 排除。
+条目的名称里有系列关系推出的「系列名 第N季」（`SubjectSeriesInfo.seasonAliases`，见 `seriesSeasons`：第一部 TV 是第 1 季，
+之后名字写了季的按写的、只比第一部多一两个字的（「继 怪怪守护神」「某科学的超电磁炮S」）算下一季，带篇名的就不往下推），
+系列中其他季度的名称里也有它们各自的这个名字：Bangumi 不一定登了「怪怪守护神 第2期」这种别名，站点给第二季起名「怪怪守护神第二季」，
+有了它本季的页面才对得上，第一季也才会把第二季的页面按季号排除。数据源认站点条目用的是同一组名字（[搜索计划](media-source.md#搜索计划)）。
 
 站点把整个系列放在一个不带季号的条目下、按系列内序号连续编集时（站内“凡人修仙传”的第 159 集即
 “凡人修仙传 第四季”的第 35 集），资源的条目名比不出季度，此时以**系列内序号**认领：当前剧集的

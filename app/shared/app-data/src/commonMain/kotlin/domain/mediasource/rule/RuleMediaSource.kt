@@ -26,19 +26,10 @@ import kotlinx.atomicfu.locks.SynchronizedObject
 import kotlinx.atomicfu.locks.synchronized
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asFlow
-import kotlinx.coroutines.flow.emitAll
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import me.him188.ani.app.data.repository.media.SelectorMediaSourceEpisodeCacheRepository
 import me.him188.ani.app.domain.media.fetch.wholeSubjectEpisodeSortsOrNull
-import me.him188.ani.app.domain.mediasource.MediaListFilter
-import me.him188.ani.app.domain.mediasource.MediaListFilterContext
-import me.him188.ani.app.domain.mediasource.MediaListFilters
-import me.him188.ani.app.domain.mediasource.MediaSourceEngineHelpers
-import me.him188.ani.app.domain.mediasource.asCandidate
 import me.him188.ani.app.domain.mediasource.latestAiredEpisode
 import me.him188.ani.app.domain.mediasource.codec.DefaultMediaSourceCodec
 import me.him188.ani.app.domain.mediasource.codec.DontForgetToRegisterCodec
@@ -60,14 +51,15 @@ import me.him188.ani.app.domain.mediasource.web.SolveRequest
 import me.him188.ani.app.domain.mediasource.web.WebCaptchaKind
 import me.him188.ani.app.domain.mediasource.web.WebSearchEpisodeInfo
 import me.him188.ani.app.domain.mediasource.web.WebSearchSubjectInfo
-import me.him188.ani.app.domain.mediasource.web.asCandidate
+import me.him188.ani.app.domain.mediasource.keywordSearchChain
+import me.him188.ani.app.domain.mediasource.rememberedKeywords
+import me.him188.ani.app.domain.mediasource.search.SiteSearchMemory
+import me.him188.ani.app.domain.mediasource.search.SubjectSearchPlan
+import me.him188.ani.app.domain.mediasource.search.keywordStyle
 import me.him188.ani.app.domain.mediasource.web.captcha.WebSessionManager
-import me.him188.ani.app.domain.mediasource.web.distinctFallbackKeywords
 import me.him188.ani.app.domain.mediasource.web.findMatchingEpisodeOrNull
 import me.him188.ani.app.domain.mediasource.web.format.SelectorChannelFormat
 import me.him188.ani.app.domain.mediasource.web.format.parseOrNull
-import me.him188.ani.app.domain.mediasource.web.orderSubjectsForAutoMatch
-import me.him188.ani.app.domain.mediasource.web.toFilterContext
 import me.him188.ani.datasources.api.DefaultMedia
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.Media
@@ -106,6 +98,7 @@ import me.him188.ani.utils.platform.currentTimeMillis
 import kotlin.concurrent.atomics.AtomicLong
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
@@ -350,51 +343,19 @@ class RuleMediaSource(
             subjectEpisodeSorts = subjectEpisodeSorts,
         )
 
-        val primary = query.subjectNames.take(rule.autoMatch.searchUseSubjectNamesCount.coerceAtLeast(1))
-        val fallback = matchConfig.distinctFallbackKeywords(primary, query.fallbackSearchKeywords)
-        val filterContext = MediaListFilterContext(
-            subjectNames = allSubjectNames,
-            episodeSort = query.episodeSort,
-            episodeEp = query.episodeEp,
-            episodeName = query.episodeName,
-        )
-        return searchChain(primary, fallback, subjectId, ::searchQuery) { media ->
-            media.anySubjectNameMatches(filterContext)
+        // 关键词与什么时候停同网页抓取数据源 (搜索计划); 两次搜索之间的间隔由 searchOnline 按规则自己等
+        val plan = SubjectSearchPlan.of(query)
+        val keywords = plan.keywords(rule.autoMatch.keywordStyle(), mediaSourceId)
+        val remembered = repository.rememberedKeywords(subjectId, mediaSourceId, keywords.primaryNames + keywords.fallbackNames, logger)
+        return keywordSearchChain(
+            keywords.primaryNames, keywords.fallbackNames, remembered,
+            requestInterval = Duration.ZERO,
+            matches = plan::foundOwn,
+        ) { name ->
+            val searchQuery = searchQuery(name)
+            searchFromCacheOrNull(searchQuery, subjectId)
+                ?: searchOnlineUnlessRecentlyEmpty(searchQuery, keywords.keywordOf(name), plan, subjectId)
         }.map { MediaMatch(it, MatchKind.FUZZY) }
-    }
-
-    /**
-     * 关键词链, 规则与网页抓取数据源相同: [primary] 每个都搜; 它们都没搜到名字能对上的条目时再依次试 [fallback], 搜到为止.
-     * 命中搜索缓存的关键词不发请求.
-     */
-    private fun searchChain(
-        primary: List<String>,
-        fallback: List<String>,
-        subjectId: Int?,
-        query: (name: String) -> SelectorSearchQuery,
-        matches: (List<DefaultMedia>) -> Boolean,
-    ): SizedSource<DefaultMedia> {
-        val finishedState = MutableStateFlow(false)
-        val totalSizeState = MutableStateFlow<Int?>(null)
-        return object : SizedSource<DefaultMedia> {
-            override val results = flow {
-                var total = 0
-                var matched = false
-                val primarySet = primary.toHashSet()
-                for (name in primary + fallback) {
-                    if (matched && name !in primarySet) break
-                    val searchQuery = query(name)
-                    val media = searchFromCacheOrNull(searchQuery, subjectId) ?: searchOnlineUnlessRecentlyEmpty(searchQuery, subjectId)
-                    if (!matched && matches(media)) matched = true
-                    total += media.size
-                    emitAll(media.asFlow())
-                }
-                totalSizeState.value = total
-                finishedState.value = true
-            }
-            override val finished = finishedState
-            override val totalSize = totalSizeState
-        }
     }
 
     private suspend fun searchFromCacheOrNull(query: SelectorSearchQuery, subjectId: Int?): List<DefaultMedia>? {
@@ -423,30 +384,47 @@ class RuleMediaSource(
     private val recentlyEmpty = HashMap<String, Long>()
     private val recentlyEmptyLock = SynchronizedObject()
 
-    private suspend fun searchOnlineUnlessRecentlyEmpty(query: SelectorSearchQuery, subjectId: Int?): List<DefaultMedia> {
+    private suspend fun searchOnlineUnlessRecentlyEmpty(
+        query: SelectorSearchQuery,
+        keyword: String,
+        plan: SubjectSearchPlan,
+        subjectId: Int?,
+    ): List<DefaultMedia> {
         val name = query.subjectName
         val now = currentTimeMillis()
         val searchedAt = synchronized(recentlyEmptyLock) { recentlyEmpty[name] }
         if (searchedAt != null && now - searchedAt < rule.searchCacheTtlMillis) return emptyList()
-        return searchOnline(query, subjectId).also { media ->
+        return searchOnline(query, keyword, plan, subjectId).also { media ->
             if (media.isEmpty()) synchronized(recentlyEmptyLock) { recentlyEmpty[name] = now }
         }
     }
 
-    private suspend fun searchOnline(query: SelectorSearchQuery, subjectId: Int?): List<DefaultMedia> {
-        delayUntilNextAllowedSearch()
-        val keyword = MediaSourceEngineHelpers.getSearchKeyword(
-            query.subjectName,
-            rule.autoMatch.searchRemoveSpecial,
-            rule.autoMatch.searchUseOnlyFirstWord,
-        )
-        val subjects = engine.search(keyword).map { it.toSubjectInfo() }
+    /**
+     * 向站点搜 [keyword] (搜索计划改写好的词), 打开可能是这一部的条目 ([SubjectSearchPlan.pagesToOpen], 最多 [RuleConfig.maxSubjects] 个).
+     * 站点回应先查跨条目共用的记忆 ([SiteSearchMemory]).
+     */
+    private suspend fun searchOnline(
+        query: SelectorSearchQuery,
+        keyword: String,
+        plan: SubjectSearchPlan,
+        subjectId: Int?,
+    ): List<DefaultMedia> {
+        val ttl = rule.searchCacheTtlMillis.milliseconds
+        val subjects = repository.siteMemory.searchResults(mediaSourceId, keyword, ttl) {
+            delayUntilNextAllowedSearch()
+            engine.search(keyword).map { it.toSubjectInfo() }
+        }.orEmpty()
         logger.info { "RuleMediaSource '$mediaSourceId': search '$keyword' -> ${subjects.size} subjects" }
-        val ordered = matchConfig.orderRuleSubjects(subjects, query).take(rule.maxSubjects.coerceAtLeast(1))
+        val ordered = plan.pagesToOpen(subjects, matchConfig.autoMatch.preferShorterName) { it.name }
+            .take(rule.maxSubjects.coerceAtLeast(1))
+        val probe = query.freshnessProbe ?: SelectorEpisodeProbe(query.episodeSort, query.episodeEp, query.episodeName)
         return buildList {
             for (subject in ordered) {
                 val episodes = try {
-                    episodesOf(subject.fullUrl)
+                    repository.siteMemory.page(
+                        mediaSourceId, subject.fullUrl, ttl,
+                        isFresh = { it.findMatchingEpisodeOrNull(probe.episodeSort, probe.episodeEp, probe.episodeName) != null },
+                    ) { episodesOf(subject.fullUrl) }.orEmpty()
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: BlockedException) {
@@ -633,33 +611,3 @@ private suspend fun HttpResponse.toRuleResponse() = RuleHttpResponse(
         .map { it.substringBefore(';').trim() }
         .filter { it.substringBefore('=', "").isNotBlank() },
 )
-
-/**
- * 自动匹配时打开条目页的顺序: 名字对得上请求条目的在前 (其中按 [orderSubjectsForAutoMatch], 「短名字优先」只在这些里面排),
- * 对不上的在后, 保持站点给的顺序. 有的站的搜索结果固定是一整页 (100 条), 按相关度排, 后面是只沾一两个字的;
- * 不先按名字挑的话, 全部按名字长短排会把最短的那几个无关条目排到最前面, 只开前 [RuleConfig.maxSubjects] 个就全开错了.
- * 名字的判据与选择器过滤 WEB 资源的一致 (见 [anySubjectNameMatches]).
- */
-internal fun SelectorSearchConfig.orderRuleSubjects(
-    subjects: List<WebSearchSubjectInfo>,
-    query: SelectorSearchQuery,
-): List<WebSearchSubjectInfo> {
-    val context = query.toFilterContext()
-    val (matching, others) = subjects.partition { subject ->
-        with(context) { MediaListFilters.ContainsSubjectName.applyOn(subject.asCandidate()) }
-    }
-    return orderSubjectsForAutoMatch(matching) + others
-}
-
-/**
- * 结果里是否有条目名能对上请求条目的. 判据与选择器过滤 WEB 资源的一致, 所以这里认为对上的, 选择器不会以名字不符为由排除.
- */
-private fun List<DefaultMedia>.anySubjectNameMatches(context: MediaListFilterContext): Boolean = with(context) {
-    any { media ->
-        MediaListFilters.ContainsSubjectName.applyOn(
-            object : MediaListFilter.Candidate by media.asCandidate() {
-                override val subjectName: String get() = media.properties.subjectName ?: media.originalTitle
-            },
-        )
-    }
-}

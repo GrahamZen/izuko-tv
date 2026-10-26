@@ -157,6 +157,7 @@ fun MediaFetchRequest.Companion.create(
         ),
         seasonEpisodeCount = seriesInfo?.splitSeason.seasonEpisodeCount(),
         catalogSubjectName = subject.nameCnOrName,
+        nameHints = fetchNameHintsOf(subject, seriesInfo),
     )
 }
 
