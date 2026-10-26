@@ -60,6 +60,7 @@ import me.him188.ani.app.domain.mediasource.web.captcha.WebSessionManager
 import me.him188.ani.app.domain.mediasource.web.findMatchingEpisodeOrNull
 import me.him188.ani.app.domain.mediasource.web.format.SelectorChannelFormat
 import me.him188.ani.app.domain.mediasource.web.format.parseOrNull
+import me.him188.ani.app.domain.mediasource.web.mainEpisodeCountOrNull
 import me.him188.ani.datasources.api.DefaultMedia
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.Media
@@ -341,6 +342,7 @@ class RuleMediaSource(
             episodeName = query.episodeName,
             freshnessProbe = freshnessProbe,
             subjectEpisodeSorts = subjectEpisodeSorts,
+            subjectEpisodeCount = query.mainEpisodeCountOrNull(),
         )
 
         // 关键词与什么时候停同网页抓取数据源 (搜索计划); 两次搜索之间的间隔由 searchOnline 按规则自己等

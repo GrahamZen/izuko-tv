@@ -38,9 +38,10 @@ class DrivePathAttributionTest {
         folders: List<String>,
         fileName: String,
         tmdbEpisodes: Map<Pair<Int, Int>, EpisodeSort>? = null,
+        graph: SeriesGraphTable = table,
     ): Int? {
         val candidate = DriveSubjectMatcher.Candidate(video("f", fileName), listOf(siteTitle) + folders)
-        val identity = DriveSubjectIdentity.of(request, table)
+        val identity = DriveSubjectIdentity.of(request, graph)
         return DriveSubjectMatcher.matchEpisodes(request, listOf(candidate), tmdbEpisodes, identity = identity)
             .singleOrNull()?.episode?.number?.toInt()
     }
@@ -225,5 +226,83 @@ class DrivePathAttributionTest {
         assertEquals(listOf("c15"), engine.matchFolder(separation, folder)?.map { it.file.fid })
         // 站点标题只点名了这一部: 系列名文件夹里的都当这一部的
         assertEquals(listOf("c15", "c2"), engine.matchFolder(separation, folder.copy(siteTitle = "死神 千年血战篇-诀别谭-"))?.map { it.file.fid }?.sorted())
+    }
+
+    private fun graph(vararg rows: String) = SeriesGraphTable.parse((listOf("# bangumi-series-graph v1 max_id=714439 dump=dump-2026-10-20.210332Z.zip | 列: …") + rows).joinToString("\n").encodeToByteArray())!!
+
+    @Test
+    fun `a later work knows the subtitles of the other works even without its own`() {
+        val graph = graph(
+            "235128\tジョジョの奇妙な冒険 黄金の風\tJOJO的奇妙冒险 黄金之风\t2018-10-05\t39\tTV\t\t\t332261\t\t",
+            "332261\tジョジョの奇妙な冒険 ストーンオーシャン\tJOJO的奇妙冒险 石之海\t2022-01-07\t12\tTV\t\t235128\t375913\t\t",
+            "375913\tジョジョの奇妙な冒険 ストーンオーシャン 第2クール\tJOJO的奇妙冒险 石之海 第2部分\t2022-10-07\t12\tTV\t\t332261\t\t13\t",
+        )
+        val part2 = DriveSeriesTestData.request(375913, listOf("JOJO的奇妙冒险 石之海 第2部分", "ジョジョの奇妙な冒険 ストーンオーシャン 第2クール"), 13, 12)
+        val tmdb = tmdb(part2, season = 5, firstEpisode = 13)
+        // 上传者把黄金之风标成 S5, 对应表也对得上: 文件夹点名了黄金之风, 不是这一部
+        val goldenWind = listOf("S5 黄金之风 (2018.10)", "[悠哈璃羽字幕社&诸神字幕组][01-39][BDRIP 1920x1080]")
+        assertNull(episodeOf(part2, "JOJO的奇妙冒险", goldenWind, "[Kamigami][JoJo Bizarre Adventure - Golden Wind][24][BDRIP].mp4", tmdb, graph))
+        assertEquals(23, episodeOf(part2, "JOJO的奇妙冒险", listOf("05.JOJO的奇妙冒险 石之海"), "[VCB-Studio] JoJo Bizarre Adventure - Stone Ocean [23][Ma10p_1080p].mkv", tmdb, graph))
+    }
+
+    @Test
+    fun `a folder dated in the year of another work does not vouch for the files under it`() {
+        val graph = graph(
+            "8402\tPanty & Stocking with Garterbelt\t吊带袜天使\t2010-10-01\t13\tTV\t\t\t390555\t\t",
+            "390555\tNew PANTY & STOCKING with GARTERBELT\t新 吊带袜天使\t2025-07-09\t13\tTV\t\t8402\t\t\t",
+        )
+        val sequel = DriveSeriesTestData.request(390555, listOf("新 吊带袜天使", "New PANTY & STOCKING with GARTERBELT"), 1, 13)
+        // TMDB 把新作单列成一部: 2010 年那部的 `S01E05` 也对得上
+        val tmdb = tmdb(sequel, season = 1, firstEpisode = 1)
+        val title = "《新·吊带袜天使(2025)》"
+        val folder = "New.PANTY.&.STOCKING.with.GARTERBELT.S01.2025.1080p.AMZN.WEB-DL"
+        assertNull(episodeOf(sequel, title, listOf(folder, "吊带袜天使 (2010)"), "Panty.and.Stocking.with.Garterbelt.S01E05.2010.1080p.BluRay.mkv", tmdb, graph))
+        assertEquals(5, episodeOf(sequel, title, listOf(folder), "New.PANTY.&.STOCKING.with.GARTERBELT.S01E05.2025.1080p.AMZN.WEB-DL.mkv", tmdb, graph))
+    }
+
+    @Test
+    fun `numbers of the whole season under a folder naming this part map to this part`() {
+        val part2 = DriveSeriesTestData.request(331752, listOf("进击的巨人 最终季 Part.2", "進撃の巨人 The Final Season Part.2"), 76, 12)
+        val folder = listOf("进击的巨人最终季 Part.2 【Spade】4K 2160P 内嵌简日字幕 全12集")
+        assertEquals(85, episodeOf(part2, "进击的巨人全季4K典藏版+OVA", folder, "[SRENIX] Attack on Titan The Final Season - 26 [BD HEVC 2160P FLAC].mkv"))
+        // 本段自己的编号照旧
+        assertEquals(3, episodeOf(part2, "进击的巨人全季4K典藏版+OVA", folder, "03.mkv"))
+    }
+
+    @Test
+    fun `live action is never this subject`() {
+        val finale = DriveSeriesTestData.request(415779, listOf("进击的巨人 最终季 完结篇 后篇"), 1, 1)
+        val title = "进击的巨人 最终季 完结篇 后篇（2023）"
+        assertNull(episodeOf(finale, title, listOf("进击的巨人【全系列】", "进击的巨人 真人版"), "巨人真人版：前篇.mp4"))
+        assertEquals(1, episodeOf(finale, title, listOf("进击的巨人【全系列】", "进击的巨人 最终季 完结篇 后篇"), "进击的巨人.最终季 完结篇 后篇.官方中字.mp4"))
+    }
+
+    @Test
+    fun `short dramas are never this subject even under a collection name`() {
+        val spy = DriveSeriesTestData.request(329906, listOf("间谍过家家", "SPY×FAMILY"), 1, 12, ep = 6)
+        // 列着几十部短剧的分享, 条目名是其中一部名字的一段
+        val digest = "9月3日短剧更新汇总（17）179.系统要我死，我偏要活到大结局（66集）180.新婚夜和夫君间谍过家家（66集）181.骨哨声起（80集）"
+        assertNull(episodeOf(spy, digest, listOf("01.潮起幸得同行（73集）（1080P）"), "第06集.mp4"))
+        assertNull(episodeOf(spy, "动漫+短剧合集", listOf("新婚夜和夫君间谍过家家（66集）"), "第06集.mp4"))
+        assertEquals(6, episodeOf(spy, "间谍过家家 TV+剧场版", listOf("间谍过家家"), "第06集.mp4"))
+    }
+
+    @Test
+    fun `a name continued by another part of a title names another work of the series`() {
+        val sao = DriveSeriesTestData.request(23686, listOf("刀剑神域", "ソードアート・オンライン", "SAO", "Sword Art Online"), 1, 25)
+        val title = "刀剑神域全系列+剧场版"
+        assertNull(episodeOf(sao, title, listOf("DJ.刀剑神域", "刀剑神域 Alicization"), "01.地底世界.mp4"))
+        assertNull(episodeOf(sao, title, listOf("DJ.刀剑神域", "刀剑神域 Extra Edition"), "[P1]1.mp4"))
+        assertEquals(1, episodeOf(sao, title, listOf("DJ.刀剑神域", "刀剑神域"), "01.剑的世界.mp4"))
+        val collection = listOf("501-600", "D 4k 刀剑神域", "4.刀剑神域 爱丽丝篇")
+        assertNull(episodeOf(sao, "D 4k 刀剑神域", collection, "[Ygm&Kgm] Sword Art Online Alicization [01][Ma10p_2160p][x265_flac_aac_ass].mkv"))
+        assertEquals(
+            1,
+            episodeOf(sao, "D 4k 刀剑神域", listOf("501-600", "D 4k 刀剑神域", "1.刀剑神域 第一季"), "[Ygm&Kgm] Sword Art Online [01][Ma10p_2160p][x265_flac_ass].mkv"),
+        )
+        val titan = DriveSeriesTestData.request(55770, listOf("进击的巨人", "進撃の巨人", "Attack on Titan", "Shingeki no Kyojin"), 1, 25)
+        val folders = listOf("进击的巨人 全季+OVA  4K 高码", "5.The Final Season -Part1")
+        assertNull(episodeOf(titan, "【收藏版】进击的巨人 全季 4K 高码 + OVA 中日硬字幕", folders, "[SRENIX] Attack on Titan The Final Season - 01 [BD HEVC 2160P FLAC].mkv"))
+        assertEquals(1, episodeOf(titan, "进击的巨人", listOf("Attack.on.Titan.S01.2013.1080p.DSNP.WEB-DL"), "Attack.on.Titan.S01E01.2013.1080p.DSNP.WEB-DL.H.264.AAC.mkv"))
     }
 }
