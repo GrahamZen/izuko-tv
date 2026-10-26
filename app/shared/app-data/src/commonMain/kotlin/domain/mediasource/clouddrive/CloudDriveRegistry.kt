@@ -34,6 +34,8 @@ import me.him188.ani.app.data.repository.media.MediaSourceInstanceRepository
 import me.him188.ani.app.data.repository.user.Settings
 import me.him188.ani.app.domain.media.continuation.PlaybackLineage
 import me.him188.ani.app.domain.mediasource.instance.MediaSourceSave
+import me.him188.ani.app.domain.mediasource.search.TitleIdentities
+import me.him188.ani.app.domain.mediasource.search.TitleIdentity
 import me.him188.ani.datasources.api.source.MediaSourceConfig
 import me.him188.ani.datasources.api.source.deserializeArgumentsOrNull
 import me.him188.ani.datasources.api.source.serializeArguments
@@ -65,7 +67,7 @@ class CloudDriveRegistry(
     private val legacyPreferences: LegacyPreferences,
     tmdbSubjectMap: TmdbSubjectMapRepository?,
     parentCoroutineContext: CoroutineContext,
-    /** 系列关系图: 自动按名字找时按路径认部 (见 [DriveSubjectIdentity]) */
+    /** 系列关系图: 自动按名字找时按路径认部 (见 [TitleIdentity]) */
     seriesGraph: SeriesGraphTableRepository? = null,
     private val httpClient: () -> HttpClient = CloudDriveApi::createHttpClient,
     /** 分享搜索列出的分享文件夹存在哪 (见 [DriveShareSearchEngine]), 所有分享搜索源共用. */
@@ -74,7 +76,7 @@ class CloudDriveRegistry(
     private val playbackLineages: suspend (subjectId: Int) -> PlaybackLineage? = { null },
 ) {
     private val numbering = tmdbSubjectMap?.let { TmdbEpisodeNumbering.of(it) } ?: TmdbEpisodeNumbering.None
-    private val identities = seriesGraph?.let { DriveSubjectIdentities.of(it) } ?: DriveSubjectIdentities.None
+    private val identities = seriesGraph?.let { TitleIdentities.of(it) } ?: TitleIdentities.None
 
     private val lock = SynchronizedObject()
     private val services = LinkedHashMap<String, CloudDriveService>()

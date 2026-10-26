@@ -21,6 +21,8 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import me.him188.ani.app.domain.mediasource.search.TitleForms
+import me.him188.ani.app.domain.mediasource.search.TitleIdentities
+import me.him188.ani.app.domain.mediasource.search.TitleIdentity
 
 /**
  * 「系列名 + 副标题」的条目在系列里的叫法 ([DriveSeriesParts]), 与条目名搜不全时按副标题搜分享站.
@@ -108,7 +110,7 @@ class DriveSeriesPartsTest {
         )!!
         assertNull(DriveSeriesParts.of(443831, table))
         val request = DriveSeriesTestData.request(443831, listOf("Fate/strange Fake", "命运-奇异赝品"), 1, 13)
-        assertEquals(DriveSubjectIdentity.Naming.OWN, DriveSubjectIdentity.of(request, table).namingOf("Fate Strange Fake"))
+        assertEquals(TitleIdentity.Naming.OWN, TitleIdentity.of(request, table).namingOf("Fate Strange Fake"))
     }
 
     @Test
@@ -163,7 +165,7 @@ class DriveSeriesPartsTest {
      * (`mix`: 只有诀别谭的几集; `full`: 诀别谭全 13 集).
      */
     private fun engine(urls: MutableList<String>, primaryShare: String? = null) =
-        DriveShareSearchEngine(config, shares, links, identities = DriveSubjectIdentities { DriveSubjectIdentity.of(it, table) }) { url ->
+        DriveShareSearchEngine(config, shares, links, identities = TitleIdentities { TitleIdentity.of(it, table) }) { url ->
             val keyword = url.substringAfter("wd=").decodeURLQueryComponent()
             urls += keyword
             when {

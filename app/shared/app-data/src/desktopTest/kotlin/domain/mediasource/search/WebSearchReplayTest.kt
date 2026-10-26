@@ -40,6 +40,7 @@ import me.him188.ani.app.domain.media.selector.MaybeExcludedMedia
 import me.him188.ani.app.domain.media.selector.MediaSelectorContext
 import me.him188.ani.app.domain.media.selector.filter.MediaSelectorFilterSortAlgorithm
 import me.him188.ani.app.domain.mediasource.rule.RuleMediaSource
+import me.him188.ani.app.domain.mediasource.web.InMemoryWebSearchSessionCacheDao
 import me.him188.ani.app.domain.mediasource.web.NoopWebSearchSessionCacheDao
 import me.him188.ani.app.domain.mediasource.web.PageEvaluator
 import me.him188.ani.app.domain.mediasource.web.SelectorMediaSource
@@ -54,6 +55,7 @@ import me.him188.ani.utils.ktor.asScopedHttpClient
 import java.io.File
 import kotlin.test.Test
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
 
 /**
@@ -62,7 +64,7 @@ import kotlin.time.Duration.Companion.minutes
  *
  * 设 `WEB_REPLAY_DIR` (数据目录)、`WEB_REPLAY_GRAPH` (全部动画的表 bgm-anime.tsv 或系列关系图 bgm-series-graph.tsv)、`WEB_REPLAY_TMDB` (bangumi-tmdb-map 的 bgm-tmdb.tsv) 才跑;
  * `WEB_REPLAY_LABEL` 是输出的标签 (默认 `run`), `WEB_REPLAY_RECORD=1` 时没录过的请求现场发出去录下 (站点的请求间隔照常),
- * 不录时没录过的请求失败并写进 `missing.json`. `WEB_REPLAY_CASES` 只跑这几部 (逗号分隔的条目 id). 数据目录里:
+ * 不录时没录过的请求失败并写进 `missing.json`. `WEB_REPLAY_CASES` 只跑这几部 (逗号分隔的条目 id); `WEB_REPLAY_HOT=1` 时每部每个源用同一份搜索缓存连查两次, 第二次的结果写进 `result-<标签>-hot.json`, `WEB_REPLAY_NO_TABLE=1` 时认部当作名字表还没读进来. 数据目录里:
  * - `cases.json`: 样例 (格式见 [ReplaySubjects]);
  * - `sources/` 下每个 `.json`: Web 控制台导出的数据源 (`{json: "{factoryId, arguments}"}`);
  * - `responses/`: 录下的站点回应 (见 [WebReplayHttp]).
@@ -83,8 +85,9 @@ class WebSearchReplayTest {
         val label = System.getenv("WEB_REPLAY_LABEL") ?: "run"
         val record = System.getenv("WEB_REPLAY_RECORD") == "1"
         val only = System.getenv("WEB_REPLAY_CASES")?.split(',')?.mapNotNull { it.trim().toIntOrNull() }?.toSet()
-        // 同 app: 网页认部用全部动画的名字表
-        AnimeNames.source = { table }
+        // 同 app: 网页认部用全部动画的名字表; WEB_REPLAY_NO_TABLE=1 时当作表还没读进来 (建请求照旧用表, 同 app 里系列信息另取)
+        val noTable = System.getenv("WEB_REPLAY_NO_TABLE") == "1"
+        AnimeNames.source = { table.takeUnless { noTable } }
 
         val http = WebReplayHttp(File(dir, "responses"), record)
         val sources = File(dir, "sources").listFiles { f -> f.extension == "json" }.orEmpty().sortedBy { it.name }.map { file ->
@@ -106,26 +109,46 @@ class WebSearchReplayTest {
         val subjects = ReplaySubjects(table, tmdb, indexScope)
         // 每跑完一部记一行 (源 请求数/留下的资源数), 跑得久时看进度
         val progress = File(dir, "progress-$label.txt").apply { writeText("") }
+        val hot = System.getenv("WEB_REPLAY_HOT") == "1"
+        val hotRows = mutableListOf<JsonObject>()
         val result = buildJsonArray {
             for (case in cases) {
                 val prepared = subjects.prepare(case)
-                val rows = sources.map { source -> async { runSource(source, prepared, http) } }.awaitAll()
-                rows.forEach { add(it) }
+                val rows = sources.map { source ->
+                    async {
+                        if (!hot) return@async runSource(source, prepared, http, noCache()) to null
+                        // 同一份搜索缓存连查两次: 第二次走缓存那条路, 结果应与第一次一样
+                        val repository = SelectorMediaSourceEpisodeCacheRepository(InMemoryWebSearchSessionCacheDao(), flowOf(1.hours))
+                        runSource(source, prepared, http, repository) to runSource(source, prepared, http, repository)
+                    }
+                }.awaitAll()
+                rows.forEach { (cold, second) ->
+                    add(cold)
+                    second?.let(hotRows::add)
+                }
                 progress.appendText(
                     "${prepared.id} ${prepared.name}: " +
-                        rows.joinToString { it["source"]!!.jsonPrimitive.content + " " + it["requests"]!!.jsonArray.size + "/" + it["included"]!!.jsonArray.size } + "\n",
+                        rows.joinToString { (cold, _) -> cold["source"]!!.jsonPrimitive.content + " " + cold["requests"]!!.jsonArray.size + "/" + cold["included"]!!.jsonArray.size } + "\n",
                     Charsets.UTF_8,
                 )
             }
         }
         indexScope.cancel()
         File(dir, "result-$label.json").writeText(result.toString(), Charsets.UTF_8)
+        if (hot) File(dir, "result-$label-hot.json").writeText(JsonArray(hotRows).toString(), Charsets.UTF_8)
         File(dir, "missing.json").writeText(buildJsonArray { http.missing.sorted().forEach { add(JsonPrimitive(it)) } }.toString(), Charsets.UTF_8)
         AnimeNames.source = null
         println("web replay ($label): ${result.size} 条 (部 × 源), 缺 ${http.missing.size} 个请求")
     }
 
-    private suspend fun runSource(source: Source, prepared: ReplaySubjects.Prepared, http: WebReplayHttp): JsonObject {
+    private fun noCache() = SelectorMediaSourceEpisodeCacheRepository(NoopWebSearchSessionCacheDao, flowOf(Duration.ZERO))
+
+    private suspend fun runSource(
+        source: Source,
+        prepared: ReplaySubjects.Prepared,
+        http: WebReplayHttp,
+        repository: SelectorMediaSourceEpisodeCacheRepository,
+    ): JsonObject {
         val log = mutableListOf<String>()
         val client = HttpClient(http.engine(log)).asScopedHttpClient()
         val scope = CoroutineScope(SupervisorJob())
@@ -137,7 +160,6 @@ class WebSearchReplayTest {
             client = client,
             backgroundScope = scope,
         )
-        val repository = SelectorMediaSourceEpisodeCacheRepository(NoopWebSearchSessionCacheDao, flowOf(Duration.ZERO))
         val config = MediaSourceConfig(serializedArguments = source.arguments)
         val mediaSource: MediaSource = when (source.factoryId) {
             "web-selector" -> SelectorMediaSource(source.id, config, repository, client = client, sessionManager = sessionManager)
