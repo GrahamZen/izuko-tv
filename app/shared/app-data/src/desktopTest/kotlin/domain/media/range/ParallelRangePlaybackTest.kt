@@ -37,12 +37,13 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource
 
 /**
  * 网盘原文件经本机代理多连接播放 (iOS 用的那套代理): 播放器要的那一段由几条连接同时拉、按顺序送; 请求头照带, 提示不外发;
- * 网盘不认范围请求时不走代理; 播放器断开后没送的块不再拉.
+ * 网盘不认范围请求时不走代理; 播放器断开后没送的块不再拉; 跳转后的小请求从读前窗口答, 不排在长请求的块后面.
  */
 class ParallelRangePlaybackTest {
     private val file = ByteArray(2 * 1024 * 1024) { (it * 31 % 251).toByte() }
@@ -210,6 +211,47 @@ class ParallelRangePlaybackTest {
     }
 
     @Test
+    fun `player disconnecting frees the connections before the chunks finish`() = runTest {
+        // 每条连接 64 KiB/s, 8 路: 头一轮每块 256 KiB (4 秒), 读完头一轮时第二轮的块刚开始拉 (还要好几秒).
+        // 这时断开得马上停, 不能等手上那块拉完写不出去才发现 (那期间通道全被播放器不要了的数据占着)
+        val connections = 8
+        val content = ByteArray(8 * 1024 * 1024) { (it * 31 % 251).toByte() }
+        val origin = RangeOrigin(content, bytesPerSecond = 64 * 1024)
+        val provider = DefaultHttpClientProvider(NoProxyProvider, backgroundScope)
+        val result = withContext(Dispatchers.Default) { playback(provider).prepare(hinted("${origin.baseUrl}/v/file", connections)) }
+        try {
+            assertNotNull(result)
+            val firstRound = ParallelRangeProxySession.firstChunkSizeFor(connections, ParallelRangeProxySession.chunkSizeFor(connections)) * connections
+            withContext(Dispatchers.IO) {
+                val connection = URI(result.data.uri).toURL().openConnection() as HttpURLConnection
+                connection.inputStream.use { input -> input.readNBytes(firstRound.toInt()) }
+                connection.disconnect()
+                val started = TimeSource.Monotonic.markNow()
+                while (origin.active.get() > 0 && started.elapsedNow() < 2.seconds) Thread.sleep(50)
+            }
+            assertEquals(0, origin.active.get(), "断开 2 秒后还有 ${origin.active.get()} 个连接在拉")
+        } finally {
+            result?.session?.close()
+            provider.forceReleaseAll()
+            origin.close()
+        }
+    }
+
+    @Test
+    fun `chunk size follows the cap as it changes`() {
+        var cap = 1024L * 1024
+        val chunks = planChunks(0, 10L * 1024 * 1024, connections = 2, firstChunkSize = 64 * 1024) { cap }.iterator()
+        val sizes = mutableListOf<Long>()
+        repeat(8) {
+            if (it == 6) cap = 100L * 1024
+            val chunk = chunks.next()
+            sizes += chunk.last - chunk.first + 1
+        }
+        // 64, 64, 128, 128, 256, 256 KiB 往上翻倍; 上限降到 100 KiB 后立刻按新的上限
+        assertEquals(listOf(64L, 64, 128, 128, 256, 256, 100, 100).map { it * 1024 }, sizes)
+    }
+
+    @Test
     fun `chunks cover the range and grow round by round`() {
         val chunks = planChunks(100, 100 + 10L * 1024 * 1024, connections = 4, firstChunkSize = 64 * 1024, chunkSize = 1024 * 1024).toList()
         assertEquals(100, chunks.first().first)
@@ -241,6 +283,123 @@ class ParallelRangePlaybackTest {
         assertEquals("video/webm", MediaFormat.sniff(ByteArray(4), "https://x/a.webm?t=1", "application/octet-stream").mimeType)
     }
 
+    /** 跳转后播放器那样一段接一段地要 [count] 个 [size] 字节 (从 [start] 起), 每段核对内容; 返回总共用了多久. */
+    private fun sequentialSmallReads(uri: String, content: ByteArray, start: Int, size: Int = 64 * 1024, count: Int = 4): Duration {
+        val started = TimeSource.Monotonic.markNow()
+        repeat(count) { index ->
+            val from = start + index * size
+            val (status, _, body) = get(uri, "bytes=$from-${from + size - 1}")
+            assertEquals(206, status)
+            assertContentEquals(content.copyOfRange(from, from + size), body)
+        }
+        return started.elapsedNow()
+    }
+
+    @Test
+    fun `small reads after a seek come from one parallel read ahead`() = runTest {
+        // 每条连接 64 KiB/s、首字节等 300ms: 单连接一段 64 KiB 要 1.3 秒, 4 段串着要 5 秒多
+        val content = ByteArray(4 * 1024 * 1024) { (it * 31 % 251).toByte() }
+        val origin = RangeOrigin(content, bytesPerSecond = 64 * 1024, firstByteDelayMillis = 300)
+        val provider = DefaultHttpClientProvider(NoProxyProvider, backgroundScope)
+        val result = withContext(Dispatchers.Default) { playback(provider).prepare(hinted("${origin.baseUrl}/v/file")) }
+        try {
+            assertNotNull(result)
+            val elapsed = withContext(Dispatchers.IO) { sequentialSmallReads(result.data.uri, content, start = 1_000_000) }
+            assertTrue(elapsed < 2.5.seconds, "4 段用了 $elapsed")
+        } finally {
+            result?.session?.close()
+            provider.forceReleaseAll()
+            origin.close()
+        }
+    }
+
+    @Test
+    fun `small reads do not wait for chunks of a long read`() = runTest {
+        // 长请求的头一轮每块 256 KiB, 每条连接 64 KiB/s 要 4 秒; 通道全被它占着时, 跳转后的小请求不能等到这些块拉完
+        val content = ByteArray(8 * 1024 * 1024) { (it * 31 % 251).toByte() }
+        val origin = RangeOrigin(content, bytesPerSecond = 64 * 1024, firstByteDelayMillis = 300)
+        val provider = DefaultHttpClientProvider(NoProxyProvider, backgroundScope)
+        val result = withContext(Dispatchers.Default) { playback(provider).prepare(hinted("${origin.baseUrl}/v/file")) }
+        val longRead = AtomicBoolean(true)
+        try {
+            assertNotNull(result)
+            val reader = thread(isDaemon = true) {
+                val connection = URI(result.data.uri).toURL().openConnection() as HttpURLConnection
+                try {
+                    connection.inputStream.use { input ->
+                        val buffer = ByteArray(8192)
+                        while (longRead.get() && input.read(buffer) >= 0) Unit
+                    }
+                } catch (_: Exception) {
+                    // 会话关了
+                } finally {
+                    connection.disconnect()
+                }
+            }
+            val elapsed = withContext(Dispatchers.IO) {
+                Thread.sleep(1500)
+                sequentialSmallReads(result.data.uri, content, start = 6_000_000)
+            }
+            longRead.set(false)
+            reader.join(5000)
+            assertTrue(elapsed < 3.seconds, "4 段用了 $elapsed")
+        } finally {
+            longRead.set(false)
+            result?.session?.close()
+            provider.forceReleaseAll()
+            origin.close()
+        }
+    }
+
+    @Test
+    fun `reading back and forth between places keeps every read ahead`() = runTest {
+        // 跳到片尾附近时播放器在两处之间来回读, 中间还插一段别处的; 三处的窗口都得留着, 回头再读时不用再向网盘要
+        val content = ByteArray(16 * 1024 * 1024) { (it * 31 % 251).toByte() }
+        val origin = RangeOrigin(content, bytesPerSecond = 1024 * 1024)
+        val provider = DefaultHttpClientProvider(NoProxyProvider, backgroundScope)
+        val result = withContext(Dispatchers.Default) { playback(provider).prepare(hinted("${origin.baseUrl}/v/file")) }
+        try {
+            assertNotNull(result)
+            val places = listOf(12_000_000, 13_500_000, 2_000_000)
+            withContext(Dispatchers.IO) {
+                for (place in places) sequentialSmallReads(result.data.uri, content, start = place, count = 1)
+                // 等三个窗口都拉完
+                val started = TimeSource.Monotonic.markNow()
+                while (origin.active.get() > 0 && started.elapsedNow() < 10.seconds) Thread.sleep(50)
+                val requestsBefore = origin.requests.get()
+                for (place in places) sequentialSmallReads(result.data.uri, content, start = place + 64 * 1024, count = 2)
+                assertEquals(requestsBefore, origin.requests.get(), "回头再读时又向网盘要了")
+            }
+        } finally {
+            result?.session?.close()
+            provider.forceReleaseAll()
+            origin.close()
+        }
+    }
+
+    @Test
+    fun `reads crossing the read ahead get the rest from the origin`() = runTest {
+        val content = ByteArray(4 * 1024 * 1024) { (it * 31 % 251).toByte() }
+        val origin = RangeOrigin(content, bytesPerSecond = 512 * 1024)
+        val provider = DefaultHttpClientProvider(NoProxyProvider, backgroundScope)
+        val result = withContext(Dispatchers.Default) { playback(provider).prepare(hinted("${origin.baseUrl}/v/file")) }
+        try {
+            assertNotNull(result)
+            withContext(Dispatchers.IO) {
+                // 小请求开窗口; 从窗口里开始、越过窗口的长请求; 窗口外的小请求再开一个; 回到第一个窗口里
+                for ((from, to) in listOf(100_000 to 165_535, 500_000 to 2_600_000, 3_000_000 to 3_010_000, 200_000 to 300_000)) {
+                    val (status, _, body) = get(result.data.uri, "bytes=$from-$to")
+                    assertEquals(206, status)
+                    assertContentEquals(content.copyOfRange(from, to + 1), body, "bytes=$from-$to")
+                }
+            }
+        } finally {
+            result?.session?.close()
+            provider.forceReleaseAll()
+            origin.close()
+        }
+    }
+
     /**
      * 假网盘: 每个连接一个线程, 认 Range (除非 [ignoreRange]), 每个连接限速 [bytesPerSecond] (0 = 不限), 记下同时最多几个连接.
      * 要求带 [requiredHeader] 时没带的回 403.
@@ -252,6 +411,8 @@ class ParallelRangePlaybackTest {
         private val requiredHeader: Pair<String, String>? = null,
         /** 只认这一个 UA (出现两个或不同都不行), 且不能带 JSON 的 Accept, 不然回 412. */
         private val strictUserAgent: String? = null,
+        /** 每个请求等这么久才回 (网盘的首字节要等几百毫秒到两秒多). */
+        private val firstByteDelayMillis: Long = 0,
     ) : AutoCloseable {
         private val closed = AtomicBoolean(false)
         private val serverSocket = ServerSocket(0, 200, InetAddress.getByName("127.0.0.1"))
@@ -293,6 +454,7 @@ class ParallelRangePlaybackTest {
                         if (name == "user-agent") userAgents += value
                     }
                     seenHeaderNames += headers.keys
+                    if (firstByteDelayMillis > 0) Thread.sleep(firstByteDelayMillis)
                     val output = socket.getOutputStream()
                     if (strictUserAgent != null && (userAgents != listOf(strictUserAgent) || headers["accept"]?.contains("json") == true)) {
                         output.write("HTTP/1.1 412 Precondition Failed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray())
