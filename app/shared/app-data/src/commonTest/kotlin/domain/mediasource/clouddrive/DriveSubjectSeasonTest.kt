@@ -10,6 +10,7 @@
 package me.him188.ani.app.domain.mediasource.clouddrive
 
 import me.him188.ani.app.data.network.SeriesGraphTable
+import me.him188.ani.app.domain.mediasource.search.TitleIdentity
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import kotlin.test.Test
@@ -33,7 +34,7 @@ class DriveSubjectSeasonTest {
 
     /** 系列关系图推出第 [seriesSeason] 季的后来的作品 */
     private fun laterWork(seriesSeason: Int? = null) =
-        DriveSubjectIdentity(ownNames = emptyList(), otherWorkNames = emptyList(), seriesSeason = seriesSeason, laterWork = true)
+        TitleIdentity(ownNames = emptyList(), otherWorkNames = emptyList(), seriesSeason = seriesSeason, laterWork = true)
 
     @Test
     fun `a season written in the name wins`() {

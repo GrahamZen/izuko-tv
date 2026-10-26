@@ -7,11 +7,12 @@
  * https://github.com/open-ani/ani/blob/main/LICENSE
  */
 
-package me.him188.ani.app.domain.mediasource.clouddrive
+package me.him188.ani.app.domain.mediasource.search
 
 import me.him188.ani.app.data.network.SeriesGraphTable
-import me.him188.ani.app.domain.mediasource.search.AnimeNameIndex
-import me.him188.ani.app.domain.mediasource.clouddrive.DriveSubjectIdentity.Naming
+import me.him188.ani.app.domain.mediasource.clouddrive.DriveSubjectMatcher
+import me.him188.ani.app.domain.mediasource.clouddrive.video
+import me.him188.ani.app.domain.mediasource.search.TitleIdentity.Naming
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.source.MediaFetchNameHints
 import me.him188.ani.datasources.api.source.MediaFetchRequest
@@ -21,9 +22,9 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * 网盘上的名字点名了哪一部 ([DriveSubjectIdentity]). 标题按分享站的真实写法. 宿主单测不做繁简转换, 都用简体.
+ * 网盘上的名字点名了哪一部 ([TitleIdentity]). 标题按分享站的真实写法. 宿主单测不做繁简转换, 都用简体.
  */
-class DriveSubjectIdentityTest {
+class TitleIdentityTest {
     private val table = SeriesGraphTable.parse(
         listOf(
             "# bangumi-series-graph v1 max_id=600000 dump=dump-2026-10-13.210353Z.zip | 列: …",
@@ -49,7 +50,7 @@ class DriveSubjectIdentityTest {
         nameHints = hints,
     )
 
-    private val gundam = DriveSubjectIdentity.of(request(50, "机动战士高达", "機動戦士ガンダム", "机动战士高达0079"), table)
+    private val gundam = TitleIdentity.of(request(50, "机动战士高达", "機動戦士ガンダム", "机动战士高达0079"), table)
 
     @Test
     fun `finds the entries whose names contain a fragment`() {
@@ -84,7 +85,7 @@ class DriveSubjectIdentityTest {
 
     @Test
     fun `a later season keeps collections named after the first season`() {
-        val frieren2 = DriveSubjectIdentity.of(request(515759, "葬送的芙莉莲 第二季", "葬送のフリーレン 第2期"), table)
+        val frieren2 = TitleIdentity.of(request(515759, "葬送的芙莉莲 第二季", "葬送のフリーレン 第2期"), table)
         assertFalse(frieren2.rejectsTitle("葬送的芙莉莲(2023)1080p 两季全"))
         assertFalse(frieren2.rejectsTitle("葬送的芙莉莲 第二季 (2026) 1080P CR 全10集"))
         assertFalse(frieren2.rejectsTitle("葬送的芙莉莲"))
@@ -94,7 +95,7 @@ class DriveSubjectIdentityTest {
 
     @Test
     fun `titles of short dramas are rejected even when a name in them contains the subject name`() {
-        val spy = DriveSubjectIdentity.of(request(329906, "间谍过家家", "SPY×FAMILY"), table)
+        val spy = TitleIdentity.of(request(329906, "间谍过家家", "SPY×FAMILY"), table)
         val digest = "9月3日短剧更新汇总（17）180.新婚夜和夫君间谍过家家（66集）181.骨哨声起（80集）"
         assertEquals(Naming.OWN, spy.namingOf(digest))
         assertTrue(spy.rejectsTitle(digest))
@@ -103,7 +104,7 @@ class DriveSubjectIdentityTest {
 
     @Test
     fun `another season is rejected unless the title also names this season`() {
-        val spy3 = DriveSubjectIdentity.of(request(498378, "间谍过家家 第三季", "SPY×FAMILY Season 3"), table)
+        val spy3 = TitleIdentity.of(request(498378, "间谍过家家 第三季", "SPY×FAMILY Season 3"), table)
         assertTrue(spy3.rejectsTitle("间谍过家家第二季"))
         assertFalse(spy3.rejectsTitle("间谍过家家 第三季 附间谍过家家第二季"))
         assertFalse(spy3.rejectsTitle("间谍过家家 全3季.共50集+剧场版 简日特效字幕 2022-2025"))
@@ -118,13 +119,21 @@ class DriveSubjectIdentityTest {
     }
 
     @Test
+    fun `a name written apart from a longer name of another work still names this work`() {
+        // 最长的名字只压住同一处的短名字: 别处单独写着的本条目名字照样算
+        assertEquals(Naming.SEVERAL, gundam.namingOf("机动战士高达 TV版 + 机动战士高达SEED"))
+        assertFalse(gundam.rejectsTitle("机动战士高达 TV版 + 机动战士高达SEED"))
+        assertEquals(Naming.OTHER, gundam.namingOf("机动战士高达SEED 全50集"))
+    }
+
+    @Test
     fun `names from the request hints count for a subject outside the table`() {
         val hints = MediaFetchNameHints(
             ownNames = listOf("某部番 第二季", "某部番2"),
             seriesNames = listOf("某部番"),
             otherWorkNames = listOf("某部番", "某部番 剧场版"),
         )
-        val sequel = DriveSubjectIdentity.of(request(999, "某部番 第二季", hints = hints), table)
+        val sequel = TitleIdentity.of(request(999, "某部番 第二季", hints = hints), table)
         assertEquals(Naming.OWN, sequel.namingOf("某部番2 更新至05"))
         assertEquals(Naming.OTHER, sequel.namingOf("某部番 剧场版"))
         // 系列名谁也不点名
@@ -135,7 +144,7 @@ class DriveSubjectIdentityTest {
 
     @Test
     fun `a subject not in the table rejects nothing by name`() {
-        val unknown = DriveSubjectIdentity.of(request(999, "某部番"), table)
+        val unknown = TitleIdentity.of(request(999, "某部番"), table)
         assertEquals(emptyList(), unknown.otherWorkNames)
         assertFalse(unknown.rejectsTitle("某部番SEED"))
         assertFalse(unknown.laterWork)
@@ -180,18 +189,18 @@ class DriveSubjectIdentityTest {
 
     @Test
     fun `a short name names this work only standing alone`() {
-        val air = DriveSubjectIdentity.of(request(234, "AIR"), animeTable, names)
+        val air = TitleIdentity.of(request(234, "AIR"), animeTable, names)
         assertEquals(Naming.OWN, air.namingOf("AIR 2005 TV全集"))
         assertEquals(Naming.OWN, air.namingOf("[KTXP][AIR][01][BIG5].mkv"))
         assertEquals(Naming.NONE, air.namingOf("杀死Air（91集）"))
-        val monster = DriveSubjectIdentity.of(request(1111, "怪物", "MONSTER"), animeTable, names)
+        val monster = TitleIdentity.of(request(1111, "怪物", "MONSTER"), animeTable, names)
         assertEquals(Naming.OWN, monster.namingOf("2004怪物 全74集"))
         assertEquals(Naming.NONE, monster.namingOf("谷江怪物 写真"))
     }
 
     @Test
     fun `share titles found by a short name must name this work`() {
-        val air = DriveSubjectIdentity.of(request(234, "AIR"), animeTable, names)
+        val air = TitleIdentity.of(request(234, "AIR"), animeTable, names)
         assertTrue(air.rejectsTitle("杀死Air（91集）", keyword = "AIR"))
         assertFalse(air.rejectsTitle("AIR 2005 TV全集", keyword = "AIR"))
         assertFalse(air.rejectsTitle("杀死Air（91集）"))
@@ -199,32 +208,32 @@ class DriveSubjectIdentityTest {
 
     @Test
     fun `known works outside the series are other works`() {
-        val air = DriveSubjectIdentity.of(request(234, "AIR"), animeTable, names)
+        val air = TitleIdentity.of(request(234, "AIR"), animeTable, names)
         assertEquals(Naming.OTHER, air.namingOf("一杆青空 全13集 1080P"))
         assertEquals(Naming.OTHER, air.namingOf("AIR GEAR 飞轮少年 全25集"))
-        val monster = DriveSubjectIdentity.of(request(1111, "怪物", "MONSTER"), animeTable, names)
+        val monster = TitleIdentity.of(request(1111, "怪物", "MONSTER"), animeTable, names)
         assertEquals(Naming.OTHER, monster.namingOf("怪物事变 第一季"))
         assertEquals(Naming.OTHER, monster.namingOf("Monster Hunter Stories"))
         // 本条目的名字只出现在别的作品的名字里
-        val reZero = DriveSubjectIdentity.of(request(140001, "Re：从零开始的异世界生活"), animeTable, names)
+        val reZero = TitleIdentity.of(request(140001, "Re：从零开始的异世界生活"), animeTable, names)
         assertEquals(Naming.OTHER, reZero.namingOf("Re：从零开始的异世界生活 新编集版 第01集.mp4"))
         assertEquals(Naming.OWN, reZero.namingOf("Re：从零开始的异世界生活 第01集.mp4"))
     }
 
     @Test
     fun `known works written with this work are collections of several`() {
-        val jujutsu = DriveSubjectIdentity.of(request(294993, "咒术回战"), animeTable, names)
+        val jujutsu = TitleIdentity.of(request(294993, "咒术回战"), animeTable, names)
         assertEquals(Naming.SEVERAL, jujutsu.namingOf("咒术回战1-2季全+影版.8.8分 紫罗兰永恒花园·全集+剧场版"))
         assertEquals(Naming.OTHER, jujutsu.namingOf("紫罗兰永恒花园·全集+剧场版"))
         // 本条目也叫这个名字 (表里的别名) 的不算别的作品
-        val kanon = DriveSubjectIdentity.of(request(1230, "Kanon"), animeTable, names)
+        val kanon = TitleIdentity.of(request(1230, "Kanon"), animeTable, names)
         assertEquals(Naming.NONE, kanon.namingOf("雪之少女"))
         assertEquals(Naming.OWN, kanon.namingOf("Kanon（雪之少女）全24集"))
     }
 
     @Test
     fun `versions with the same name are told apart by year`() {
-        val kanon = DriveSubjectIdentity.of(request(1230, "Kanon"), animeTable, names)
+        val kanon = TitleIdentity.of(request(1230, "Kanon"), animeTable, names)
         assertEquals(Naming.OTHER, kanon.namingOf("Kanon [2002][伊藤尚往_东映动画][540p][DVDrip]"))
         assertTrue(kanon.namesOtherWork(listOf("Kanon（雪之少女）全集", "Kanon [2002][东映动画]", "[ReinForce] Kanon 06")))
         assertFalse(kanon.namesOtherWork(listOf("Kanon（雪之少女）全集", "Kanon [2006][京都动画]", "Kanon 2006 EP06")))
@@ -233,11 +242,16 @@ class DriveSubjectIdentityTest {
 
     @Test
     fun `the first work is not named by its name with years far from its own`() {
-        val paprika = DriveSubjectIdentity.of(request(841, "红辣椒"), animeTable, names)
+        val paprika = TitleIdentity.of(request(841, "红辣椒"), animeTable, names)
         assertEquals(Naming.OTHER, paprika.namingOf("红辣椒俱乐部 (2019) 4K"))
         assertEquals(Naming.OWN, paprika.namingOf("红辣椒 (2006) 1080P"))
         // 上传、更新的日期不是年份
         assertEquals(Naming.OWN, paprika.namingOf("红辣椒【2025-04-02】"))
+        // 点名这一部而没写年份的, 外层第一个点名这一部又写了年份的说了算
+        assertTrue(paprika.namesOtherWork(listOf("红辣椒", "G 红辣椒 2024", "红辣椒.E01.HD1080P")))
+        assertFalse(paprika.namesOtherWork(listOf("红辣椒 (2006)", "红辣椒.E01.HD1080P")))
+        assertFalse(paprika.namesOtherWork(listOf("2024年新番", "红辣椒.E01.HD1080P")))
+        assertFalse(paprika.namesOtherWork(listOf("G 红辣椒 2024", "红辣椒 2006 1080P")))
     }
 
     @Test
@@ -250,18 +264,33 @@ class DriveSubjectIdentityTest {
     }
 
     @Test
+    fun `without a table only the checks needing the table are skipped`() {
+        val air = TitleIdentity.namesOnly(request(234, "青空", "AIR"))
+        // 短名字要单独成词照查
+        assertTrue(air.rejectsPageTitle("一杆青空"))
+        assertTrue(air.rejectsPageTitle("Fairy Pawg Mother Episode 2"))
+        assertFalse(air.rejectsPageTitle("【POPGO】AIR 全12话"))
+        val monster = TitleIdentity.namesOnly(request(1111, "怪物", "MONSTER"))
+        assertTrue(monster.rejectsPageTitle("怪物事变"))
+        assertFalse(monster.rejectsPageTitle("怪物 MONSTER"))
+        // 认得的别的作品要名字表: 有表时是几部的合集, 没表时不认
+        val jujutsu = TitleIdentity.namesOnly(request(294993, "咒术回战"))
+        assertFalse(jujutsu.rejectsPageTitle("紫罗兰永恒花园·全集+剧场版"))
+    }
+
+    @Test
     fun `page titles of known works or with a short name inside a longer word are not this work`() {
-        val air = DriveSubjectIdentity.of(request(234, "AIR"), animeTable, names)
+        val air = TitleIdentity.of(request(234, "AIR"), animeTable, names)
         assertTrue(air.rejectsPageTitle("Fairy Pawg Mother Episode 2"))
         assertTrue(air.rejectsPageTitle("【Dymy】飞轮少年 AIR GEAR【繁體】"))
         assertTrue(air.rejectsPageTitle("一杆青空"))
         assertFalse(air.rejectsPageTitle("AIR"))
         assertFalse(air.rejectsPageTitle("【POPGO】AIR 全12话"))
-        val monster = DriveSubjectIdentity.of(request(1111, "怪物", "MONSTER"), animeTable, names)
+        val monster = TitleIdentity.of(request(1111, "怪物", "MONSTER"), animeTable, names)
         assertTrue(monster.rejectsPageTitle("怪物事变"))
         assertFalse(monster.rejectsPageTitle("怪物 MONSTER"))
         // 站点标的年份常不对, 网页不按年份认
-        val paprika = DriveSubjectIdentity.of(request(841, "红辣椒"), animeTable, names)
+        val paprika = TitleIdentity.of(request(841, "红辣椒"), animeTable, names)
         assertFalse(paprika.rejectsPageTitle("【2000新番】红辣椒"))
     }
 
