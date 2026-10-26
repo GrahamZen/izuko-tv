@@ -386,7 +386,6 @@ private suspend fun switchBangumiRoute(env: TvSettingsEnv, kind: BangumiRouteKin
     env.show(
         TvSettingsOverlay.Dialog { dismiss ->
             MirrorSwitchConsentDialog(
-                automatic = false,
                 onAllow = {
                     dismiss()
                     tvSettingsWriteScope.launch { settings.update { target.copy(allowCredentialsViaMirror = true) } }

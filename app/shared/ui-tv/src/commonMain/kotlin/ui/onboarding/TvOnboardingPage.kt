@@ -279,7 +279,6 @@ fun TvOnboardingPage(
             }
         }
         MirrorSwitchConsentDialog(
-            automatic = false,
             onAllow = { choose(allowCredentials = true, logoutFirst = false) },
             onLogoutAndSwitch = { choose(allowCredentials = null, logoutFirst = true) },
             onDismissRequest = { askMirror = null },
