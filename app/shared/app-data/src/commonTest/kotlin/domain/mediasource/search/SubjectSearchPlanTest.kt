@@ -158,10 +158,46 @@ class SubjectSearchPlanTest {
     }
 
     @Test
-    fun `spaces are removed only between chinese or japanese characters`() {
-        assertEquals("继怪怪守护神", SubjectSearchPlan.withoutSpacesBetweenCjk("继 怪怪守护神"))
-        assertEquals("BLEACH 千年血戦篇", SubjectSearchPlan.withoutSpacesBetweenCjk("BLEACH 千年血戦篇"))
-        assertEquals("つぐもも第2期", SubjectSearchPlan.withoutSpacesBetweenCjk("つぐもも 第2期"))
-        assertEquals("Re:Zero kara", SubjectSearchPlan.withoutSpacesBetweenCjk("Re:Zero kara"))
+    fun `sites matching titles literally search main titles then other writings subtitles and the series`() {
+        val separation = request(
+            names = listOf("死神 千年血战篇-诀别谭-", "BLEACH 千年血戦篇-訣別譚-", "死神 千年血战篇 诀别谭"),
+            seriesNames = listOf("死神 千年血战篇", "死神"),
+        )
+        val keywords = SubjectSearchPlan.of(separation).keywords(KeywordStyle.literal(3), subtitles = listOf("诀别谭", "訣別譚"))
+        // 主标题的比较写法相同的只留一个
+        assertEquals(listOf("死神 千年血战篇-诀别谭", "BLEACH 千年血戦篇-訣別譚"), keywords.primary.map { it.keyword })
+        // 同一个名字的另外写法紧跟着它试
+        assertEquals(listOf("死神 千年血战篇 诀别谭", "死神千年血战篇诀别谭"), keywords.writingsOf(keywords.primary.first()).map { it.keyword })
+        // 第一个副标题、最长的系列名、其余副标题
+        assertEquals(listOf("诀别谭", "死神 千年血战篇", "訣別譚"), keywords.wider.map { it.keyword })
+        assertEquals(listOf(KeywordKind.SUBTITLE, KeywordKind.SERIES, KeywordKind.SUBTITLE), keywords.wider.map { it.kind })
+    }
+
+    @Test
+    fun `literal keywords drop main titles that are too short or already searched`() {
+        val frieren = request(names = listOf("葬送的芙莉莲 第二季", "葬送のフリーレン 第2期", "葬送的芙莉莲", "A"), seriesNames = listOf("葬送的芙莉莲"))
+        val keywords = SubjectSearchPlan.of(frieren).keywords(KeywordStyle.literal(8))
+        assertEquals(listOf("葬送的芙莉莲", "葬送のフリーレン"), keywords.primary.map { it.keyword })
+        // 系列名就是主标题, 不再搜
+        assertEquals(emptyList(), keywords.wider.map { it.keyword })
+    }
+
+    @Test
+    fun `literal keywords beyond the names must be distinctive`() {
+        // 港台译名「夜曲」也是别的番的名字: 按标题原样找的站点不拿它搜
+        val night = request(names = listOf("彻夜之歌 第二季", "よふかしのうた 第2期"))
+            .copy(fallbackSearchKeywords = listOf("夜曲", "夜曲 第二季", "彻夜之歌 第二季"))
+        val keywords = SubjectSearchPlan.of(night).keywords(KeywordStyle.literal(2))
+        assertEquals(listOf("彻夜之歌", "よふかしのうた"), keywords.primary.map { it.keyword })
+        assertEquals(emptyList(), keywords.wider.map { it.keyword })
+    }
+
+    @Test
+    fun `live action pages are not this subject unless the subject itself is`() {
+        val plan = SubjectSearchPlan.of(request(names = listOf("辉夜大小姐想让我告白～天才们的恋爱头脑战～", "辉夜大小姐想让我告白：天才们的恋爱头脑战")))
+        assertEquals(SubjectMatch.OTHER, plan.identify("【2019日影】辉夜大小姐想让我告白：天才们的恋爱头脑战【平野紫耀】"))
+        assertEquals(SubjectMatch.OWN, plan.identify("辉夜大小姐想让我告白：天才们的恋爱头脑战"))
+        val liveAction = SubjectSearchPlan.of(request(names = listOf("进击的巨人 真人版")))
+        assertEquals(SubjectMatch.OWN, liveAction.identify("进击的巨人 真人版"))
     }
 }

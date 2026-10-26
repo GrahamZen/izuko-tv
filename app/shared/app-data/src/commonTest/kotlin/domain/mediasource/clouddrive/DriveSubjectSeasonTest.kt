@@ -14,8 +14,10 @@ import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class DriveSubjectSeasonTest {
     private fun request(vararg names: String) = MediaFetchRequest(
@@ -29,16 +31,20 @@ class DriveSubjectSeasonTest {
     private fun tmdb(season: Int, vararg more: Pair<Int, Int>) =
         (listOf(season to 1) + more).associateWith { EpisodeSort(it.second) }
 
+    /** 系列关系图推出第 [seriesSeason] 季的后来的作品 */
+    private fun laterWork(seriesSeason: Int? = null) =
+        DriveSubjectIdentity(ownNames = emptyList(), otherWorkNames = emptyList(), seriesSeason = seriesSeason, laterWork = true)
+
     @Test
     fun `a season written in the name wins`() {
-        val season = assertNotNull(DriveSubjectSeason.of(request("小书痴的下克上 第四季"), tmdb(2), seriesSeason = 3))
+        val season = DriveSubjectSeason.of(request("小书痴的下克上 第四季"), tmdb(2), laterWork(seriesSeason = 3))
         assertEquals(4, season.number)
         assertEquals(true, season.declared)
     }
 
     @Test
     fun `a TMDB season after the first is inferred`() {
-        val season = assertNotNull(DriveSubjectSeason.of(request("赛博朋克：边缘行者 2"), tmdb(2, 0 to 3), seriesSeason = null))
+        val season = DriveSubjectSeason.of(request("赛博朋克：边缘行者 2"), tmdb(2, 0 to 3), laterWork())
         assertEquals(2, season.number)
         assertEquals(false, season.declared)
     }
@@ -46,15 +52,38 @@ class DriveSubjectSeasonTest {
     @Test
     fun `sequels TMDB numbers on from season 1 fall back to the series graph`() {
         // 浪客剑心 京都动乱: TMDB 记成 S1E25 起
-        assertEquals(2, DriveSubjectSeason.of(request("浪客剑心 京都动乱"), tmdb(1), seriesSeason = 2)?.number)
-        assertNull(DriveSubjectSeason.of(request("间谍过家家 第2部分"), tmdb(1), seriesSeason = null))
+        assertEquals(2, DriveSubjectSeason.of(request("浪客剑心 京都动乱"), tmdb(1), laterWork(seriesSeason = 2)).number)
+        assertNull(DriveSubjectSeason.of(request("间谍过家家 第2部分"), tmdb(1), laterWork()).number)
         // 跨了两季的说明不了是哪一季
-        assertNull(DriveSubjectSeason.of(request("某番"), tmdb(1, 2 to 1), seriesSeason = null))
+        assertNull(DriveSubjectSeason.of(request("某番"), tmdb(1, 2 to 1), laterWork()).number)
     }
 
     @Test
     fun `the series graph alone is not used without a TMDB episode map`() {
-        assertNull(DriveSubjectSeason.of(request("鬼灭之刃 柱合会议 蝶屋敷篇"), tmdbEpisodes = null, seriesSeason = 4))
+        assertNull(DriveSubjectSeason.of(request("鬼灭之刃 柱合会议 蝶屋敷篇"), tmdbEpisodes = null, laterWork(seriesSeason = 4)).number)
+    }
+
+    @Test
+    fun `an unknown season counts as the first for the first work only`() {
+        val first = DriveSubjectSeason.of(request("某番"), tmdbEpisodes = null, identity = null)
+        assertEquals(1, first.ownNumber)
+        assertEquals(1, first.matchingNumber)
+        val later = DriveSubjectSeason.of(request("某番 新篇"), tmdbEpisodes = null, laterWork())
+        assertNull(later.ownNumber)
+        // 认集时照样当第一季比
+        assertEquals(1, later.matchingNumber)
+        // 写了哪一季都说不清, 都算另一套编号
+        assertTrue(later.separates(setOf(1)))
+        assertFalse(later.isOwn(setOf(1)))
+    }
+
+    @Test
+    fun `folders of other seasons are skipped only in a layer split by season`() {
+        val second = DriveSubjectSeason.of(request("某番 第二季"), tmdbEpisodes = null, laterWork())
+        val skip = second.otherSeasonFolders()
+        assertEquals(setOf("第一季"), skip(listOf("第一季", "第二季", "特典")))
+        // 只有一个文件夹写了季: 常是总标题, 里面可能连前几季一起放
+        assertEquals(emptySet(), skip(listOf("第一季", "特典")))
     }
 
     /**

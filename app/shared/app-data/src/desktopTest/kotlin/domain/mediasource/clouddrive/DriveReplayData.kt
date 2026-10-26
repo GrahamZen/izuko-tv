@@ -18,6 +18,7 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -31,7 +32,7 @@ import java.io.File
  * - `cases.json`: `[{id, names, sort, ep, episodes: [{sort, ep}]}]`, names 按请求里的顺序 (中文名、原名、别名);
  * - `configs.json`: `{源名: DriveShareSearchConfig}`; `protocol.json`: 网盘协议 ([CloudDriveProtocol]);
  * - `sites.json`: `{请求地址: 回应正文 (失败为 null)}`;
- * - `shares.json`: `{分享 id: {title, unavailable, folders: {文件夹 id: [{fid, name, dir, size, video, token}]}}}`.
+ * - `shares.json`: `{分享 id: {title, unavailable, folders: {文件夹 id: [{fid, name, dir, size, video, token, duration}]}}}` (duration: 网盘给的秒数, 早先录的没有).
  * 数据里还没有的站点请求与分享目录记下来, [writeMissing] 写进 `missing.json`, 录了再跑, 直到没有缺的.
  */
 internal class DriveReplayData(val dir: File) {
@@ -114,8 +115,9 @@ internal class DriveReplayData(val dir: File) {
                     parentFid = folderId,
                     dir = o["dir"]?.jsonPrimitive?.booleanOrNull == true,
                     size = o["size"]?.jsonPrimitive?.longOrNull ?: 0,
-                    isVideo = o["video"]?.jsonPrimitive?.booleanOrNull == true,
+                    isVideo = o["video"]?.jsonPrimitive?.booleanOrNull == true && !CloudDriveApi.isNotVideoFileName(o["name"]!!.jsonPrimitive.content),
                     shareToken = if (o["token"]?.jsonPrimitive?.booleanOrNull == true) "t" else "",
+                    durationSeconds = o["duration"]?.jsonPrimitive?.intOrNull ?: 0,
                 )
             }
         }
