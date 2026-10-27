@@ -257,6 +257,41 @@ class TvSourcePanelViewTest {
     }
 
     @Test
+    fun `the entries fold away on the empty sources row and come back on a source`() {
+        fun listAlpha() = (rowView("line:0")?.parent as? View)?.alpha
+        val toggle = TvSourceRow(
+            id = TvSourceRailKeys.EMPTY_SOURCES,
+            style = TvSourceRowStyle.Rail,
+            title = "收起没有结果的 1 个",
+            dimmed = true,
+            action = TvSourceAction.ToggleEmptySources,
+        )
+        val sources = listOf(source("web:a1"), source("web:a2"), toggle, source("web:a3"))
+        showOnColumn(groupContent(sources = sources, sourceKey = "web:a2", enterable = setOf("web:a1", "web:a2")))
+        host.waitUntil("条目出来 (透明度 ${listAlpha()})") { listAlpha() == 1f }
+        host.press(KeyEvent.KEYCODE_DPAD_DOWN)
+        waitFocus(TvSourceRailKeys.EMPTY_SOURCES)
+        // 那一行不是源: 右边收着, 源那一栏也不标显示的是哪个
+        host.waitUntil("收起 (透明度 ${listAlpha()})") { listAlpha() == 0f }
+        assertFalse(host.onMain { rowView("web:a2")!!.active })
+        // 回到右边本来就是的那个源: 当场出
+        host.press(KeyEvent.KEYCODE_DPAD_UP)
+        waitFocus("web:a2")
+        host.waitUntil("又出来 (透明度 ${listAlpha()})") { listAlpha() == 1f }
+        // 挪到另一个源: 上一个源的条目先不出, 等它那一屏到了再出
+        host.press(KeyEvent.KEYCODE_DPAD_DOWN)
+        waitFocus(TvSourceRailKeys.EMPTY_SOURCES)
+        host.press(KeyEvent.KEYCODE_DPAD_DOWN)
+        waitFocus("web:a3")
+        assertEquals(0f, host.onMain { listAlpha() }, "还是 web:a2 的条目: 不出")
+        // 描边直接在焦点下的 web:a3 上, 原来选中的 web:a2 不闪一下
+        assertTrue(host.onMain { rowView("web:a3")!!.active })
+        assertFalse(host.onMain { rowView("web:a2")!!.active })
+        show(groupContent(sources = sources, sourceKey = "web:a3", enterable = setOf("web:a1", "web:a2")), entry = false)
+        host.waitUntil("web:a3 那一屏到了才出 (透明度 ${listAlpha()})") { listAlpha() == 1f }
+    }
+
+    @Test
     fun `opening without anything playing lands on the selected group pill`() {
         show(flatContent())
         waitFocus(GROUP_B)
