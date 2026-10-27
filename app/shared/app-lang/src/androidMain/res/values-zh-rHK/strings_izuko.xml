@@ -470,6 +470,15 @@
     <string name="cache_move_stopped_space">「%1$s」剩餘空間不夠，移好 %2$d 條後停下了</string>
     <string name="cache_move_stopped_unavailable">「%1$s」現在不能用，沒有移動</string>
     <string name="cache_move_cancelled">已停止移動，移好的 %1$d 條留在新位置</string>
+    <string name="tv_background_task_cache_move">正在把緩存移到「%1$s」</string>
+    <string name="tv_background_task_cache_move_hint">長按在設定裏查看</string>
+    <string name="tv_background_task_profile_import">正在導入「%1$s」的收藏</string>
+    <string name="tv_background_task_profile_import_waiting">Bangumi 限流，稍後自動繼續</string>
+    <string name="tv_background_task_device_migration">正在從舊電視搬資料</string>
+    <string name="tv_background_task_next">按確定看下一個（%1$d/%2$d）</string>
+    <string name="tv_background_task_cache_move_stop">停止移動緩存</string>
+    <string name="tv_background_task_device_migration_stop">停止搬資料</string>
+    <string name="tv_background_task_device_migration_stopped">已停止從舊電視搬資料，這部電視上什麼都沒改</string>
     <string name="cache_deleted_when_done">已刪除「%1$s」的 %2$d 集緩存</string>
     <string name="cache_paused_low_space">儲存空間只剩 %1$s，已暫停 %2$d 個緩存下載。刪除部分緩存騰出空間後再繼續</string>
     <string name="cache_paused_low_space_drive">%1$s 只剩 %2$s，已暫停這個磁碟上的 %3$d 個緩存下載。刪除一些緩存騰出空間後再繼續</string>

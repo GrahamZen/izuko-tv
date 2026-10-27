@@ -663,6 +663,15 @@
     <string name="cache_move_stopped_space">%1$s is running out of space, stopped after moving %2$d downloads</string>
     <string name="cache_move_stopped_unavailable">%1$s can’t be used now, nothing was moved</string>
     <string name="cache_move_cancelled">Stopped moving; %1$d downloads already moved stay at the new place</string>
+    <string name="tv_background_task_cache_move">Moving downloads to %1$s</string>
+    <string name="tv_background_task_cache_move_hint">Hold OK to view it in Settings</string>
+    <string name="tv_background_task_profile_import">Importing the collections of %1$s</string>
+    <string name="tv_background_task_profile_import_waiting">Rate limited by Bangumi, resuming shortly</string>
+    <string name="tv_background_task_device_migration">Moving data from the old TV</string>
+    <string name="tv_background_task_next">Press OK for the next task (%1$d/%2$d)</string>
+    <string name="tv_background_task_cache_move_stop">Stop moving downloads</string>
+    <string name="tv_background_task_device_migration_stop">Stop moving data</string>
+    <string name="tv_background_task_device_migration_stopped">Stopped moving data from the old TV. Nothing on this TV was changed</string>
     <string name="cache_deleted_when_done">Deleted %2$d cached episodes of “%1$s”</string>
     <string name="cache_paused_low_space">Only %1$s of storage left. Paused %2$d cache downloads, free up some space before resuming</string>
     <string name="cache_paused_low_space_drive">%1$s has only %2$s left. Paused %3$d cache downloads on it, free up some space before resuming</string>

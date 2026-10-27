@@ -760,6 +760,14 @@ private fun TvActionPanelDialog(
                     .tvFocusNavSignal(focus)
                     .padding(horizontal = 24.dp, vertical = 20.dp),
             ) {
+                // 后台在跑的任务 (搬缓存、导入收藏、换电视) 放在最上面, 离开那一页也看得到进度 (见 TvBackgroundTasks)
+                TvBackgroundTaskSlot(
+                    rememberTvBackgroundTasks(openCacheMove = { onDismissRequest(); navigator.navigateSettings(SettingsTab.STORAGE) }),
+                    onFocused = { label, danger -> focusedLabel = label; focusedDanger = danger },
+                    onFocusedRowGone = { focus.request(TvActionPanelFocus.Card) },
+                    // 每一块按「下」都回卡片主体: ✕ 正下方是卡片的 ✕, 空间搜索会落到它上面
+                    partModifier = Modifier.tvFocusLink(focus, down = TvActionPanelFocus.Card),
+                )
                 // 顶上这一块**三态**, 三者同宽同高同圆角 —— 面板尺寸恒定, 圆钮那排的位置不随
                 // 上面是什么上下跳 (遥控器上位置就是肌肉记忆):
                 //
