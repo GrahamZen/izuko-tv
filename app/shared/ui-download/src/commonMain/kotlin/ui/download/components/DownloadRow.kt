@@ -61,6 +61,7 @@ import me.him188.ani.app.ui.lang.cache_episode_resume_download
 import me.him188.ani.app.ui.lang.cache_episode_status_awaiting_bt_service
 import me.him188.ani.app.ui.lang.cache_episode_status_location_moving
 import me.him188.ani.app.ui.lang.cache_episode_status_location_reconnected
+import me.him188.ani.app.ui.lang.cache_episode_status_location_access_lost
 import me.him188.ani.app.ui.lang.cache_episode_status_location_unavailable
 import me.him188.ani.app.ui.lang.cache_episode_status_merging
 import me.him188.ani.app.ui.lang.cache_episode_status_paused
@@ -341,6 +342,7 @@ fun DownloadRow(
                             episode.locationUnavailable -> stringResource(
                                 when {
                                     episode.locationMoving -> Lang.cache_episode_status_location_moving
+                                    episode.locationAccessLost -> Lang.cache_episode_status_location_access_lost
                                     episode.locationReconnected -> Lang.cache_episode_status_location_reconnected
                                     else -> Lang.cache_episode_status_location_unavailable
                                 },
