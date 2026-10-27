@@ -150,6 +150,7 @@ internal object RemoteSettingsCatalog {
             editor = RemoteSettingEditor.Lines(accepts = ::isRegex, invalidMessage = "这一行不是有效的正则表达式：{0}"),
         ),
         RemoteCacheLocationSetting.spec,
+        RemoteMediaLibrarySetting.spec,
     )
 
     /**
@@ -244,6 +245,10 @@ internal class RemoteSettingSpec<T>(
     val status: (suspend () -> String?)? = null,
     /** 卡片上「保存」旁边的第二个按钮, 见 [RemoteSettingAction]. */
     val action: RemoteSettingAction? = null,
+    /** 存之前看一眼新值 (已按字段类型解析好): 返回一句提示时不存, 网页弹这句 (如片库没有权限时打不开). */
+    val check: (suspend (JsonElement) -> String?)? = null,
+    /** 存好之后接着做的事 (如打开片库时一并关掉「标记看过后删除缓存」), 返回的一句接在「已保存」后面. */
+    val onSaved: (suspend (JsonElement) -> String?)? = null,
 ) {
     private val path: List<String> get() = fieldName.split('.')
 
@@ -408,8 +413,10 @@ internal object RemoteGenericSettings {
             is Parsed.Value -> parsed.element
             is Parsed.Error -> return result(false, parsed.message)
         }
+        spec.check?.invoke(element)?.let { return result(false, it) }
         spec.settings(repository).update { spec.write(this, element) }
-        return result(true, tr("已保存「{0}」", getString(spec.title)))
+        val saved = tr("已保存「{0}」", getString(spec.title))
+        return result(true, spec.onSaved?.invoke(element)?.let { "$saved\n$it" } ?: saved)
     }
 
     sealed interface Parsed {

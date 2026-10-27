@@ -52,6 +52,7 @@ internal fun DownloadSnapshot.toDownloadItem(
         locationUnavailable = locationUnavailable,
         locationReconnected = locationReconnected,
         locationMoving = locationMoving,
+        locationAccessLost = locationAccessLost,
     )
 }
 

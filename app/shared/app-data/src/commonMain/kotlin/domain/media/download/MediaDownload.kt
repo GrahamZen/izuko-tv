@@ -91,6 +91,8 @@ data class DownloadSnapshot(
     val locationReconnected: Boolean = false,
     /** 正在搬到别的位置 (见 [UnavailableMediaCache.moving]) */
     val locationMoving: Boolean = false,
+    /** 没有权限读那里了 (见 [UnavailableMediaCache.accessLost]) */
+    val locationAccessLost: Boolean = false,
 ) {
     val isBusy: Boolean get() = operation != null
     val isMerging: Boolean get() = mergeProgress != null
@@ -176,6 +178,7 @@ class MediaDownload internal constructor(
                         locationUnavailable = cache.isLocationUnavailable,
                         locationReconnected = phase.locationReconnected,
                         locationMoving = (cache as? UnavailableMediaCache)?.moving == true,
+                        locationAccessLost = (cache as? UnavailableMediaCache)?.accessLost == true,
                     )
                 },
             )
