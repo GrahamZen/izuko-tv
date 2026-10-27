@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.domain.mediasource
 
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.TestScope
@@ -90,6 +91,28 @@ class KeywordSearchChainTest {
         source.results.toList()
 
         assertEquals(listOf("C"), recorder.searched.map { it.first })
+    }
+
+    @Test
+    fun `media handed over early are sent once and before the keyword finishes`() = runTest {
+        val sent = mutableListOf<String>()
+        val source = keywordSearchChain(
+            primary = listOf("A"), fallback = emptyList(), remembered = emptyList(),
+            requestInterval = 1.seconds,
+            matches = matches("A"),
+            emitPagesEarly = true,
+        ) {
+            // 第一页先交出, 再开第二页 (要等站点回应)
+            emitEarly(listOf(media("A")))
+            delay(1.seconds)
+            sent += "page 2 opened"
+            listOf(media("A"), media("A2"))
+        }
+
+        source.results.collect { sent += it.properties.subjectName!! }
+
+        assertEquals(listOf("A", "page 2 opened", "A2"), sent)
+        assertEquals(2, source.totalSize.first())
     }
 
     @Test

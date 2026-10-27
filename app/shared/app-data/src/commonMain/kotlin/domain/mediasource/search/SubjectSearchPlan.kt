@@ -14,6 +14,8 @@ import me.him188.ani.app.domain.mediasource.MediaListFilter
 import me.him188.ani.app.domain.mediasource.MediaListFilterContext
 import me.him188.ani.app.domain.mediasource.MediaListFilters
 import me.him188.ani.app.domain.mediasource.MediaSourceEngineHelpers
+import me.him188.ani.app.domain.mediasource.clouddrive.DriveNameParser
+import me.him188.ani.app.domain.mediasource.clouddrive.DriveSubjectSeason
 import me.him188.ani.app.domain.mediasource.web.SelectorAutoMatchConfig
 import me.him188.ani.app.domain.mediasource.web.isWeakSearchKeyword
 import me.him188.ani.datasources.api.DefaultMedia
@@ -168,9 +170,18 @@ class SubjectSearchPlan private constructor(private val request: MediaFetchReque
 
     /**
      * 自动匹配要打开的站点条目: 是这一部的在前 ([preferShorterName] 时其中名字短的在前, 搜「第一季」时不先开「第二季」), 说不准的随后 (保持站点的顺序),
-     * 不是的不开 (选择器反正会排除, 打开只是多发请求).
+     * 不是的不开 (选择器反正会排除, 打开只是多发请求). 名字写明是别的季的排到最后: 照样打开, 只是不挡在这一季的页前面
+     * (几页同时开时, 这一季的页先到就能先选).
      */
-    fun <T> pagesToOpen(pages: List<T>, preferShorterName: Boolean, nameOf: (T) -> String): List<T> {
+    fun <T> pagesToOpen(pages: List<T>, preferShorterName: Boolean, nameOf: (T) -> String): List<T> =
+        ownSeasonFirst(judgedPagesToOpen(pages, preferShorterName, nameOf), nameOf)
+
+    private fun <T> ownSeasonFirst(pages: List<T>, nameOf: (T) -> String): List<T> {
+        val season = DriveSubjectSeason.declaredIn(ownNames, aliases = false) ?: 1
+        return pages.sortedBy { page -> DriveNameParser.parseSubjectSeason(nameOf(page)).let { it != null && it != season } }
+    }
+
+    private fun <T> judgedPagesToOpen(pages: List<T>, preferShorterName: Boolean, nameOf: (T) -> String): List<T> {
         val judged = pages.map { it to identify(nameOf(it)) }
         val own = judged.filter { it.second == SubjectMatch.OWN }.map { it.first }
             .let { list -> if (preferShorterName) list.sortedBy { nameOf(it).length } else list }
