@@ -21,7 +21,6 @@ import me.him188.ani.app.domain.media.cache.location.MediaCacheLocation
 import me.him188.ani.utils.io.SystemPath
 import me.him188.ani.utils.io.absolutePath
 import me.him188.ani.utils.io.inSystem
-import me.him188.ani.utils.io.resolve
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 
@@ -37,14 +36,14 @@ class AndroidMediaLibraryAccess(private val context: Context) : MediaLibraryAcce
 
     override fun isGranted(): Boolean = isSupported && Environment.isExternalStorageManager()
 
-    override fun libraryRootOf(location: MediaCacheLocation): SystemPath? {
+    override fun volumeRootOf(location: MediaCacheLocation): SystemPath? {
         val volumeRoot = if (location.id == null) {
             @Suppress("DEPRECATION")
             Environment.getExternalStorageDirectory().absolutePath
         } else {
             location.root.absolutePath.substringBefore(APP_DIR_MARKER, missingDelimiterValue = "").takeIf { it.isNotEmpty() }
         } ?: return null
-        return Path(volumeRoot).inSystem.resolve(MediaLibraryAccess.LIBRARY_DIR_NAME)
+        return Path(volumeRoot).inSystem
     }
 
     override fun openGrantPage(): MediaLibraryAccess.GrantPage? {

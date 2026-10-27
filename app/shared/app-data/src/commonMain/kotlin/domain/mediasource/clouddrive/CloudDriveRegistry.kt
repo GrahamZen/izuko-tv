@@ -74,6 +74,8 @@ class CloudDriveRegistry(
     val shareIndexStore: DriveShareIndexStore = DriveShareIndexStore.None,
     /** 条目的播放线索 (见 [PlaybackLineage]): 三种网盘数据源查询时先列线索里的文件夹 */
     private val playbackLineages: suspend (subjectId: Int) -> PlaybackLineage? = { null },
+    /** 本地文件夹数据源能读的盘 (见 [LocalFolderDrive]) */
+    private val localFolderRoots: LocalFolderRoots = LocalFolderRoots.None,
 ) {
     private val numbering = tmdbSubjectMap?.let { TmdbEpisodeNumbering.of(it) } ?: TmdbEpisodeNumbering.None
     private val identities = seriesGraph?.let { TitleIdentities.of(it) } ?: TitleIdentities.None
@@ -119,7 +121,7 @@ class CloudDriveRegistry(
     /** 网盘 [protocol] 的服务, 没有就新建; 已有时换上这份协议 (订阅更新). */
     fun serviceFor(protocol: CloudDriveProtocol): CloudDriveService = synchronized(lock) {
         services[protocol.id]?.also { it.updateProtocol(protocol) }
-            ?: CloudDriveService(protocol, accounts, httpClient(), numbering, identities, playbackLineages).also { services[protocol.id] = it }
+            ?: CloudDriveService(protocol, accounts, httpClient(), numbering, identities, playbackLineages, localFolderRoots).also { services[protocol.id] = it }
     }
 
     /** 已配置的网盘 [driveId]; 没有时为 null. */

@@ -62,6 +62,12 @@ WebDAV 列目录不给画面高度与时长：`cloud-drive` 给出候选前读�
 补上，才标得对分辨率、显示得出码率；结果按文件记在账号里只读一次。只等当前这一集的（最多 1 秒），其余各集在后台读；
 条目级查询切集不再查，后来才读到的由 `DriveVideoInfoRefresh` 记下，切集复用查询时让这个源重查一次。
 
+协议的 `type` 是 `local` 时是设备上的文件夹（内部存储、U 盘、移动硬盘，见 `LocalFolderDrive`）：`LocalFolderClient` 直接读盘，
+根是此刻接着的各块盘（`LocalFolderRoots`，安卓上取缓存位置的各块盘、要「所有文件访问」，同片库），盘根下的 `Android/` 与片库不列；
+直链是 `file://` 地址，`CloudDriveMediaResolver` 交给播放器的是本地文件（`SystemFileMediaDataProvider`），旁边的外挂字幕同样。
+不用登录（账号里没有登录信息时 `CloudDriveService.account` 给一个只有名字的账号）。同 WebDAV 在 Web 控制台添加、在媒体文件夹的索引里按番名找；
+没选媒体文件夹时从各块盘的根目录往下建索引。不读文件头补画质。
+
 网盘按名字找条目（搜什么词、搜到的分享与路径点名的是哪一部、视频是这一部的哪一集）与网页类数据源走同一套步骤，见[数据源搜索](media-search.md)。
 改这些规则用离线录放比改前改后的结果（`DriveSeasonReplayTest`，见[数据源搜索](media-search.md#验证)）。
 
