@@ -28,6 +28,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.Serializable
 import me.him188.ani.app.domain.foundation.GitHubFileSources
+import me.him188.ani.app.domain.mediasource.search.AnimeNames
 import me.him188.ani.datasources.api.PackedDate
 import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.io.SystemPath
@@ -82,6 +83,7 @@ class SeriesGraphTableRepository(
             if (loaded != null) {
                 logger.info { "series graph table loaded: ${loaded.size} entries (${loaded.dump})" }
                 firstCheckDone.complete(Unit)
+                AnimeNames.prewarm(loaded)
             }
             withContext(Dispatchers.IO_) { obsoleteFiles.forEach { it.delete() } }
             while (true) {
@@ -178,6 +180,7 @@ class SeriesGraphTableRepository(
             cache.updateData { SeriesGraphTableCache(etag = etag, source = url, checkedAt = currentTimeMillis()) }
             table.value = parsed
             logger.info { "series graph table updated from $url: ${parsed.size} entries (${parsed.dump})" }
+            AnimeNames.prewarm(parsed)
             return
         }
         logger.info { "series graph table: no usable source (${failures.joinToString()}), keeping ${table.value?.size ?: 0} entries" }
@@ -287,33 +290,46 @@ class SeriesGraphTable private constructor(
      * 原名、中文名或别名里原样含有 [fragment] 的条目. 整表的字节扫一遍, 只拆命中的那几行 (同 [rowOf], 不把几万行都拆成对象);
      * 用来找名字里含着某部番的名字的别的作品.
      */
-    fun nodesContaining(fragment: String): List<SeriesNode> {
-        val needle = fragment.encodeToByteArray()
-        if (needle.isEmpty()) return emptyList()
-        val found = LinkedHashSet<Int>()
+    fun nodesContaining(fragment: String): List<SeriesNode> = nodesContainingAny(listOf(fragment))[fragment].orEmpty()
+
+    /**
+     * 同 [nodesContaining], 几个片段一起找: 整表只扫一遍 (认部时一部番常有好几个主标题要找, 逐个扫在电视上是认部最慢的一步),
+     * 每个片段各自的结果按表里的顺序.
+     */
+    fun nodesContainingAny(fragments: Collection<String>): Map<String, List<SeriesNode>> {
+        val pairs = fragments.distinct().map { it to it.encodeToByteArray() }.filter { it.second.isNotEmpty() }
+        if (pairs.isEmpty()) return emptyMap()
+        // 最内层每个字节都要走一遍: 用数组, 不在循环里拆 Pair、建迭代器
+        val needles = Array(pairs.size) { pairs[it].second }
+        val found = Array(pairs.size) { LinkedHashSet<Int>() }
+        val firstBytes = BooleanArray(256)
+        for (needle in needles) firstBytes[needle[0].toInt() and 0xFF] = true
+        val shortest = needles.minOf { it.size }
         var lineStart = 0
         while (lineStart < bytes.size && bytes[lineStart] != NEWLINE) lineStart++ // 跳过表头
         lineStart++
         var pos = lineStart
         var tabs = 0
-        while (pos <= bytes.size - needle.size) {
-            when (bytes[pos]) {
+        while (pos <= bytes.size - shortest) {
+            val byte = bytes[pos]
+            when (byte) {
                 NEWLINE -> {
                     lineStart = pos + 1
                     tabs = 0
                 }
 
                 TAB -> tabs++
-                else -> if ((tabs in 1..2 || tabs == ALIASES_COLUMN) && bytes[pos] == needle[0] && matchesAt(pos, needle)) {
-                    // 原名、中文名、别名几列里命中: 记下行首的 id, 这一行余下的不再看
-                    idAt(lineStart)?.let(found::add)
-                    while (pos < bytes.size && bytes[pos] != NEWLINE) pos++
-                    continue
+                // 原名、中文名、别名几列里命中: 记下行首的 id
+                else -> if ((tabs in 1..2 || tabs == ALIASES_COLUMN) && firstBytes[byte.toInt() and 0xFF]) {
+                    for (i in needles.indices) {
+                        val needle = needles[i]
+                        if (needle[0] == byte && pos + needle.size <= bytes.size && matchesAt(pos, needle)) idAt(lineStart)?.let(found[i]::add)
+                    }
                 }
             }
             pos++
         }
-        return found.mapNotNull { rowOf(it)?.node }
+        return pairs.indices.associate { i -> pairs[i].first to found[i].mapNotNull { rowOf(it)?.node } }
     }
 
     private fun matchesAt(pos: Int, needle: ByteArray): Boolean {

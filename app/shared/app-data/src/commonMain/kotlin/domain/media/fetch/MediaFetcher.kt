@@ -55,6 +55,7 @@ import me.him188.ani.app.data.repository.RepositorySubjectNotAccessibleException
 import me.him188.ani.app.data.repository.RepositoryUnknownException
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveAuthException
 import me.him188.ani.app.domain.mediasource.instance.MediaSourceInstance
+import me.him188.ani.app.domain.mediasource.search.AnimeNames
 import me.him188.ani.app.domain.mediasource.web.BlockReason
 import me.him188.ani.app.domain.mediasource.web.BlockedException
 import me.him188.ani.app.platform.currentAniBuildConfig
@@ -66,6 +67,7 @@ import me.him188.ani.datasources.api.source.MediaSource
 import me.him188.ani.datasources.api.source.MediaSourceInfo
 import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.datasources.api.source.toStringMultiline
+import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.coroutines.cancellableCoroutineScope
 import me.him188.ani.utils.coroutines.flows.flowOfEmptyList
 import me.him188.ani.utils.logging.error
@@ -503,6 +505,9 @@ class MediaSourceMediaFetcher(
             request.take(1) // 只采用第一个, as per described in [fetch]
                 .onEach {
                     logger.info { "MediaFetchSessionImpl pagedSources creating, request: \n${it.toStringMultiline()}" }
+                    // 各数据源开页前都要认部: 拿到请求就在后台先算 (同一份结果大家共用), 不等第一个源搜到结果再现算.
+                    // 放在 IO 线程: 电视上要算一两百毫秒, 占着 Default 的一个线程会让各源起步的协程排队
+                    CoroutineScope(Dispatchers.IO_).launch { AnimeNames.awaitIdentityOf(it) }
                 }
                 .shareIn(CoroutineScope(flowContext), started = SharingStarted.Lazily, replay = 1) // only 
                 .take(1) // 只采用 replayCache, 让后面 flow 能完结
@@ -540,7 +545,7 @@ class MediaSourceMediaFetcher(
             if (mediaSourceResults.isEmpty()) {
                 return@run flowOfEmptyList()
             }
-            combine(mediaSourceResults.map { it.results }) { lists ->
+            SourceStartOrder.combineInOrder(mediaSourceResults.map { it.results }, SourceStartOrder.of(mediaSourceResults)) { lists ->
                 lists.asSequence().flatten().toList()
             }.map { list ->
                 list.distinctBy { it.mediaId } // distinct globally by id, just to be safe
