@@ -171,6 +171,8 @@ data class MediaSelectorSourceTiers(
      * @since 4.9
      */
     val channelTiers: Map<String, Map<String, MediaSourceTier>> = emptyMap(),
+    /** 解析资源时可能要用 WebView 嗅探的数据源, 自动选源只拿它们兜底, 见 [me.him188.ani.app.domain.media.fetch.WebViewSources]. */
+    val webViewSources: Set<String> = emptySet(),
     val fallback: (mediaSourceId: String) -> MediaSourceTier = { MediaSourceTier.Fallback },
 ) {
     operator fun get(mediaSourceId: String): MediaSourceTier {
