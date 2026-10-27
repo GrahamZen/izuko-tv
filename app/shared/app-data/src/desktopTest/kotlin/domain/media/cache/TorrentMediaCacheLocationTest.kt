@@ -15,6 +15,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
@@ -335,6 +336,32 @@ class TorrentMediaCacheLocationTest : AbstractTorrentMediaCacheEngineTest() {
 
         assertFalse(orphan.exists(), "an unused directory on the drive was kept")
         assertTrue(owned.exists(), "a directory of a record on the drive was deleted")
+    }
+
+    @Test
+    fun `the startup sweep waits until a move in progress has updated its records`() = runTest {
+        locations.connect("usb", usbRoot.toKtPath().inSystem)
+        createEngine(createTestAnitorrentEngine(backgroundScope.coroutineContext), locations = locations)
+        File(dir, "pieces").mkdirs() // 引擎目录存在才会清扫
+        // 搬到一半: 盘上的新目录已经改好名, 记录还没改到盘上
+        val moved = File(usbRoot, "pieces/abc").apply { mkdirs() }
+        locations.moveLock.lock()
+        val sweep = backgroundScope.launch { cacheEngine.deleteUnusedCaches(emptyList()) }
+        runCurrent()
+        awaitReal(1.seconds) { !moved.exists() }
+        assertTrue(moved.exists(), "the sweep deleted a directory that was being moved")
+
+        torrentInfoDatabase.upsert(
+            TorrentCacheInfoEntity(
+                mediaId = testMedia.mediaId,
+                torrentData = byteArrayOf(0),
+                relativeDir = File.separator + "pieces" + File.separator + "abc",
+                location = "usb",
+            ),
+        )
+        locations.moveLock.unlock()
+        sweep.join()
+        assertTrue(moved.exists(), "the sweep deleted the moved directory after its record was updated")
     }
 
     private suspend fun downloader() = torrentEngine.getDownloader() as TestAnitorrentTorrentDownloader
