@@ -15,8 +15,11 @@ import android.widget.FrameLayout
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -39,10 +42,13 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 /**
  * 动作面板顶上的后台任务那一格 ([TvBackgroundTaskSlot]): 任务本身 | ✕ 两块, 左右在块之间走, 哪一块按下都回卡片;
- * 任务本身按确定换下一个、到头回第一个, 长按打开; ✕ 停下任务, 聚焦着的那块没了时另一块接住, 都不能聚焦就交回卡片.
+ * 任务本身有任务就能聚焦, 按确定换下一个、到头回第一个, 长按打开; ✕ 停下任务, 有任务能停就一直占着那一列, 停不了的点不动;
+ * ✕ 按不了时焦点交给任务本身, 任务都结束了交回卡片.
  */
 class TvBackgroundTaskSlotTest {
     private val host = TvNativeTestHost()
@@ -52,6 +58,7 @@ class TvBackgroundTaskSlotTest {
     private var label: String? = null
     private var labelDanger = false
     private var cardFocused = false
+    private var cardEndFocused = false
     private var opened = 0
     private var stopped = 0
 
@@ -80,8 +87,11 @@ class TvBackgroundTaskSlotTest {
                         onFocusedRowGone = { card.requestFocus() },
                         partModifier = Modifier.focusProperties { down = card },
                     )
-                    // 同面板里的播放卡片: 与格子同宽, 在它正下方
-                    Box(Modifier.fillMaxWidth().height(80.dp).focusRequester(card).onFocusChanged { cardFocused = it.isFocused }.focusable())
+                    // 同面板里的播放卡片: 与格子同宽, 在它正下方; 主体之外右端还有一块能聚焦的 (面板里是关掉会话 / 在后台准备)
+                    Row(Modifier.fillMaxWidth().height(80.dp)) {
+                        Box(Modifier.weight(1f).fillMaxHeight().focusRequester(card).onFocusChanged { cardFocused = it.isFocused }.focusable())
+                        Box(Modifier.width(56.dp).fillMaxHeight().onFocusChanged { cardEndFocused = it.isFocused }.focusable())
+                    }
                 }
             }
         }
@@ -148,6 +158,26 @@ class TvBackgroundTaskSlotTest {
     }
 
     @Test
+    fun `the stop column stays while a task that cannot stop is shown`() {
+        setTasks(move, import)
+        focusPart(TV_BACKGROUND_TASK_TAG_BODY)
+        host.press(KeyEvent.KEYCODE_DPAD_CENTER)
+        assertShown("导入收藏")
+        assertTrue(host.onMain { nodes().any { it.config.getOrNull(SemanticsProperties.TestTag) == TV_BACKGROUND_TASK_TAG_STOP } }, "✕ 那一列还在")
+        host.waitUntil("停不了的任务, ✕ 标成不可用") { stopDisabled() }
+        host.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+        host.instrumentation.waitForIdleSync()
+        assertFalse(host.onMain { cardEndFocused || cardFocused }, "✕ 按不了时按右不动, 不落到下面卡片右端那块上")
+        assertFocused(TV_BACKGROUND_TASK_TAG_BODY)
+        host.press(KeyEvent.KEYCODE_DPAD_CENTER)
+        assertShown("搬缓存")
+        host.waitUntil("切回能停的任务, ✕ 恢复可用") { !stopDisabled() }
+        host.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+        assertFocused(TV_BACKGROUND_TASK_TAG_STOP)
+        assertEquals(0, host.onMain { stopped })
+    }
+
+    @Test
     fun `down goes to the card from every part`() {
         setTasks(move, import)
         for (tag in listOf(TV_BACKGROUND_TASK_TAG_BODY, TV_BACKGROUND_TASK_TAG_STOP)) {
@@ -169,12 +199,17 @@ class TvBackgroundTaskSlotTest {
         assertShown("换电视")
         assertFocused(TV_BACKGROUND_TASK_TAG_STOP)
 
-        // 换电视进了写入阶段 (停不了): ✕ 没了, 任务本身接住 (不止一个任务, 能按确定看下一个)
+        // 换电视进了写入阶段 (停不了): 一个能停的都没有了, ✕ 那一列不画, 任务本身接住
         setTasks(TvBackgroundTask("migration", "换电视", null, null), import)
         assertFocused(TV_BACKGROUND_TASK_TAG_BODY)
 
-        // 只剩导入收藏 (打不开也停不了): 格子里没有能聚焦的, 交回卡片
+        // 只剩导入收藏 (打不开也停不了): 焦点仍在任务本身
         setTasks(import)
+        assertShown("导入收藏")
+        assertFocused(TV_BACKGROUND_TASK_TAG_BODY)
+
+        // 任务都结束了: 交回卡片
+        setTasks()
         host.waitUntil("交回卡片") { cardFocused }
     }
 
@@ -187,11 +222,24 @@ class TvBackgroundTaskSlotTest {
     }
 
     @Test
-    fun `a single task that can neither open nor stop takes no focus`() {
+    fun `a single task that can neither open nor stop still takes focus and shows its name`() {
         setTasks(import)
         host.press(KeyEvent.KEYCODE_DPAD_UP)
+        assertFocused(TV_BACKGROUND_TASK_TAG_BODY)
+        host.waitUntil("标签行写任务名") { label == "导入收藏" }
+        host.press(KeyEvent.KEYCODE_DPAD_CENTER)
         host.instrumentation.waitForIdleSync()
-        assertEquals(true, host.onMain { cardFocused })
+        assertShown("导入收藏")
+        assertFocused(TV_BACKGROUND_TASK_TAG_BODY)
+    }
+
+    @Test
+    fun `from the card focus lands on the task rather than on the stop button`() {
+        setTasks(migration)
+        host.press(KeyEvent.KEYCODE_DPAD_UP)
+        assertFocused(TV_BACKGROUND_TASK_TAG_BODY)
+        host.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+        assertFocused(TV_BACKGROUND_TASK_TAG_STOP)
     }
 
     /** 换任务列表, 等格子按新列表画好 (重组在下一帧, 主线程空闲时不一定画好了; 没画好就按键, 上面还没有能聚焦的东西). */
@@ -243,6 +291,11 @@ class TvBackgroundTaskSlotTest {
         val titles = setOf(move.title, import.title, migration.title)
         return nodes().flatMap { it.texts() }.filter { it in titles }
     }
+
+    /** ✕ 那一块在语义树里标着不可用 (clickable(enabled = false)). */
+    private fun stopDisabled(): Boolean =
+        nodes().first { it.config.getOrNull(SemanticsProperties.TestTag) == TV_BACKGROUND_TASK_TAG_STOP }
+            .config.getOrNull(SemanticsProperties.Disabled) != null
 
     /** 持焦的那一块的 testTag; 焦点不在格子里时为 null. */
     private fun focusedTag(): String? =
