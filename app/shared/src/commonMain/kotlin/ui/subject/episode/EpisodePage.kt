@@ -134,6 +134,7 @@ import me.him188.ani.app.ui.foundation.layout.isHeightCompact
 import me.him188.ani.app.ui.foundation.layout.isWidthAtLeastExpanded
 import me.him188.ani.app.ui.foundation.layout.isWidthAtLeastMedium
 import me.him188.ani.app.ui.foundation.layout.isWidthCompact
+import me.him188.ani.app.ui.foundation.layout.rememberFullscreenStatusBarReserve
 import me.him188.ani.app.ui.foundation.layout.setRequestFullScreen
 import me.him188.ani.app.ui.foundation.layout.setSystemBarVisible
 import me.him188.ani.app.ui.foundation.layout.setSystemBarsVisible
@@ -993,14 +994,15 @@ fun EpisodeScreenContentPhoneScaffold(
  *
  * iOS 横屏下 [WindowInsets.systemBars] 在左右两侧对称地报告 safe area, 这个值同时为刘海和屏幕圆角预留,
  * 只避开刘海一侧会让对侧的按钮压进圆角而难以点中, 所以水平方向照系统的值用.
- * 顶部和 home indicator 的高度不需要, 带上会让控件离上下边缘过远.
+ * 顶部只留状态栏的高度 (iPad 上控件唤出时状态栏跟着出来, 见 [rememberFullscreenStatusBarReserve]),
+ * 不带刘海与 home indicator 的高度, 带上会让控件离上下边缘过远.
  *
  * 其他平台保持 [default] 不变.
  */
 @Composable
 private fun fullscreenVideoWindowInsets(default: WindowInsets): WindowInsets {
     return if (LocalPlatform.current.isIos()) {
-        WindowInsets.systemBars.only(WindowInsetsSides.Horizontal)
+        WindowInsets.systemBars.only(WindowInsetsSides.Horizontal).union(rememberFullscreenStatusBarReserve())
     } else {
         default
     }

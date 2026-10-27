@@ -68,6 +68,7 @@ struct ContentView: View {
 	var body: some View {
 		ComposeView(app: app)
 			.ignoresSafeArea(.all)
+			.modifier(SystemBarsModifier())
 		// .ignoresSafeArea(.keyboard)
 	}
 }
@@ -77,6 +78,16 @@ class SwiftBridgeImpl : ISwiftBridge {
 		return receiver.navigationController
 	}
 	
+	func setSystemBarsHidden(statusBar: Bool, homeIndicator: Bool) {
+		let state = SystemBarsState.shared
+		if state.statusBarHidden != statusBar {
+			withAnimation(.easeInOut(duration: 0.25)) { state.statusBarHidden = statusBar }
+		}
+		if state.homeIndicatorHidden != homeIndicator {
+			state.homeIndicatorHidden = homeIndicator
+		}
+	}
+
 	func setDeviceOrientation(uiViewController: UIViewController, fullscreen: Bool) {
 		// Get a UIWindowScene from the PlatformWindowMP if available
 		
@@ -129,6 +140,28 @@ class SwiftBridgeImpl : ISwiftBridge {
 				// Allow the device to lock as normal
 				UIApplication.shared.isIdleTimerDisabled = false
 			}
+		}
+	}
+}
+
+/// 状态栏与主屏指示条藏不藏. 最外层是 SwiftUI 的窗口, 这两样认 SwiftUI 的修饰符; Kotlin 经 SwiftBridge.setSystemBarsHidden 改 (见 IosSystemBars).
+final class SystemBarsState: ObservableObject {
+	static let shared = SystemBarsState()
+	@Published var statusBarHidden = false
+	@Published var homeIndicatorHidden = false
+}
+
+private struct SystemBarsModifier: ViewModifier {
+	@ObservedObject private var state = SystemBarsState.shared
+
+	@ViewBuilder
+	func body(content: Content) -> some View {
+		if #available(iOS 16.0, *) {
+			content
+				.statusBarHidden(state.statusBarHidden)
+				.persistentSystemOverlays(state.homeIndicatorHidden ? .hidden : .automatic)
+		} else {
+			content.statusBarHidden(state.statusBarHidden)
 		}
 	}
 }

@@ -41,6 +41,7 @@ actual fun Context.setSystemBarVisible(window: PlatformWindowMP, visible: Boolea
 
         MainViewControllerPropertyProvider.prefersHomeIndicatorAutoHidden = !visible
         window.uiViewController.setNeedsUpdateOfHomeIndicatorAutoHidden()
+        IosSystemBars.setFullscreen(!visible)
     }
 }
 
