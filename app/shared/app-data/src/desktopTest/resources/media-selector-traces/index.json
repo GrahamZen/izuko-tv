@@ -54,7 +54,7 @@
     "recordedMediaId": "media-83719f0cb8303cd5fcee16e1",
     "expectedMediaId": "media-83719f0cb8303cd5fcee16e1",
     "expectedSourceName": "稀饭动漫",
-    "earliestMillis": 2851,
+    "earliestMillis": 2845,
     "latestMillis": 2953,
     "expectedMatch": "EXACT",
     "expectedTier": 0
@@ -94,7 +94,7 @@
     "recordedMediaId": "media-c2b34c5ffad4ea7f104f9196",
     "expectedMediaId": "media-c2b34c5ffad4ea7f104f9196",
     "expectedSourceName": "稀饭动漫",
-    "earliestMillis": 1399,
+    "earliestMillis": 1398,
     "latestMillis": 1500,
     "expectedMatch": "EXACT",
     "expectedTier": 0
@@ -104,7 +104,7 @@
     "recordedMediaId": "media-92769adf69077552c8cfdde2",
     "expectedMediaId": "media-92769adf69077552c8cfdde2",
     "expectedSourceName": "嘀嗒影视",
-    "earliestMillis": 1169,
+    "earliestMillis": 1167,
     "latestMillis": 1270,
     "expectedMatch": "EXACT",
     "expectedTier": 0
