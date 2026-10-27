@@ -20,6 +20,7 @@ import me.him188.ani.app.data.models.fold
 import me.him188.ani.app.data.models.runApiRequest
 import me.him188.ani.app.data.repository.media.SelectorMediaSourceEpisodeCacheRepository
 import me.him188.ani.app.domain.media.fetch.wholeSubjectEpisodeSortsOrNull
+import me.him188.ani.app.domain.mediasource.KeywordSearchScope
 import me.him188.ani.app.domain.mediasource.MediaSourceEngineHelpers
 import me.him188.ani.app.domain.mediasource.codec.DefaultMediaSourceCodec
 import me.him188.ani.app.domain.mediasource.codec.DontForgetToRegisterCodec
@@ -400,6 +401,8 @@ class SelectorMediaSource(
         plan: SubjectSearchPlan,
         mediaSourceId: String,
         subjectId: Int?,
+        /** 每开完一个条目页就经它先交出这一页的资源 (见 [KeywordSearchScope.emitEarly]) */
+        scope: KeywordSearchScope? = null,
     ): List<DefaultMedia> = withContext(Dispatchers.Default) {
         val searchUrl = buildSearchUrl(keyword)
         val originalSubjects = repository.siteMemory.searchResults(mediaSourceId, searchUrl, searchConfig.searchCacheTtl) {
@@ -442,6 +445,7 @@ class SelectorMediaSource(
                     mediaSourceId,
                     subjectName = subjectInfo.name,
                 )
+                scope?.emitEarly(selected)
                 // 这一页没有要的那一集 (还没更新) 时也留一条这个条目的资源: 关键词链靠产出的资源判断这个关键词搜到了名字对得上的条目
                 // (见 searchChain), 一条都没有就会接着用别的关键词再搜. 这条集号对不上, 选源时照常被排除.
                 addAll(
@@ -484,6 +488,7 @@ class SelectorMediaSource(
             keywords.primaryNames, keywords.fallbackNames, remembered,
             requestInterval = searchConfig.requestInterval,
             matches = plan::foundOwn,
+            emitPagesEarly = true,
         ) { name ->
             val searchQuery = searchQuery(name)
             // 搜索缓存: 上一次真实搜索已把条目页面的全部剧集写入缓存 (addCache).
@@ -492,7 +497,7 @@ class SelectorMediaSource(
             engine.searchFromCacheOrNull(searchConfig, searchQuery, mediaSourceId, subjectId)
                 ?: run {
                     beforeOnlineSearch()
-                    engine.searchOnline(searchConfig, searchQuery, keywords.keywordOf(name), plan, mediaSourceId, subjectId)
+                    engine.searchOnline(searchConfig, searchQuery, keywords.keywordOf(name), plan, mediaSourceId, subjectId, scope = this@keywordSearchChain)
                 }
         }.map { MediaMatch(it, MatchKind.FUZZY) }
     }

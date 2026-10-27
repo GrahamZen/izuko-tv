@@ -12,9 +12,10 @@ package me.him188.ani.app.domain.mediasource
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asFlow
-import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import me.him188.ani.app.data.repository.media.SelectorMediaSourceEpisodeCacheRepository
 import me.him188.ani.datasources.api.DefaultMedia
 import me.him188.ani.datasources.api.EpisodeSort
@@ -34,6 +35,12 @@ interface KeywordSearchScope {
      * 向站点发起搜索前调用. 本条链里已经向站点发起过搜索时, 先等待请求间隔; 命中缓存的搜索不调用它, 也就不等待.
      */
     suspend fun beforeOnlineSearch()
+
+    /**
+     * 这个词还没搜完时先交出已经拿到的一部分资源 (一个条目页的), 之后这个词的搜索结果里同一个资源不再发.
+     * [keywordSearchChain] 的 `emitPagesEarly` 关着时不做事, 资源照旧等这个词搜完一起发.
+     */
+    suspend fun emitEarly(media: List<DefaultMedia>) {}
 }
 
 /**
@@ -48,6 +55,7 @@ interface KeywordSearchScope {
  * (由 [search] 通过 [KeywordSearchScope.beforeOnlineSearch] 触发); 命中搜索缓存的不发请求也不等待.
  *
  * @param matches 一次搜索的结果里是否有名字能对上请求条目的.
+ * @param emitPagesEarly 为 true 时 [search] 可以经 [KeywordSearchScope.emitEarly] 先发出一个词的部分资源 (网页类数据源每开完一个条目页交一次, 开播时不用等这个词的页全部开完)
  * @param search 搜索一个关键词, 返回该关键词搜到的全部资源. 先查缓存, 未命中时调用 [KeywordSearchScope.beforeOnlineSearch] 再向站点请求.
  */
 fun keywordSearchChain(
@@ -56,26 +64,38 @@ fun keywordSearchChain(
     remembered: List<String>,
     requestInterval: Duration,
     matches: (List<DefaultMedia>) -> Boolean,
+    emitPagesEarly: Boolean = false,
     search: suspend KeywordSearchScope.(keyword: String) -> List<DefaultMedia>,
 ): SizedSource<DefaultMedia> {
     val finishedState = MutableStateFlow(false)
     val totalSizeState = MutableStateFlow<Int?>(null)
     return object : SizedSource<DefaultMedia> {
-        override val results: Flow<DefaultMedia> = flow {
+        suspend fun searchAll(send: suspend (DefaultMedia) -> Unit) {
             var total = 0
             var matched = false
+            // 这个词已经提前发出的资源 (见 KeywordSearchScope.emitEarly); 几个条目页同时取时会同时来交, 要锁着
+            val sentEarly = HashSet<String>()
+            val sentEarlyLock = Mutex()
             val scope = object : KeywordSearchScope {
                 private var searchedOnline = false
                 override suspend fun beforeOnlineSearch() {
                     if (searchedOnline) delay(requestInterval)
                     searchedOnline = true
                 }
+
+                override suspend fun emitEarly(media: List<DefaultMedia>) {
+                    if (!emitPagesEarly) return
+                    sentEarlyLock.withLock {
+                        for (item in media) if (sentEarly.add(item.mediaId)) send(item)
+                    }
+                }
             }
             suspend fun searchAndEmit(name: String) {
+                sentEarly.clear()
                 val media = scope.search(name)
                 if (!matched && matches(media)) matched = true
                 total += media.size
-                emitAll(media.asFlow())
+                for (item in media) if (item.mediaId !in sentEarly) send(item)
             }
 
             val primarySet = primary.toHashSet()
@@ -92,6 +112,10 @@ fun keywordSearchChain(
             totalSizeState.value = total
             finishedState.value = true
         }
+
+        // 提前发出的资源从站点源开页的线程里来, 要用 channelFlow
+        override val results: Flow<DefaultMedia> =
+            if (emitPagesEarly) channelFlow { searchAll { send(it) } } else flow { searchAll { emit(it) } }
         override val finished: Flow<Boolean> get() = finishedState
         override val totalSize: Flow<Int?> get() = totalSizeState
     }

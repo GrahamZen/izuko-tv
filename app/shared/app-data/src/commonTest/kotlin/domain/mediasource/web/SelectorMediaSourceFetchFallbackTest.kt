@@ -230,7 +230,8 @@ class SelectorMediaSourceFetchFallbackTest {
 
         val subjects = source.fetchSubjectNames(longSeries(1))
         assertEquals(listOf("出包王女"), site.searchKeywords)
-        assertEquals(listOf("出包王女", "出包王女第二季", "出包王女 Darkness", "出包王女Darkness 第二季"), subjects)
+        // 名字写明是别的季的页排在后面开 (见 SubjectSearchPlan.pagesToOpen)
+        assertEquals(listOf("出包王女", "出包王女 Darkness", "出包王女第二季", "出包王女Darkness 第二季"), subjects)
     }
 
     /**
