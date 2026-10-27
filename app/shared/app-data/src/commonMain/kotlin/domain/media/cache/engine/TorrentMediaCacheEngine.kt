@@ -899,23 +899,26 @@ class TorrentMediaCacheEngine(
         engineAccess.withServiceRequest("TorrentMediaCacheEngine#$this-deleteUnusedCaches") {
             val downloader = torrentEngine.getDownloader()
 
-            val allowedAbsolute = buildSet {
-                dao.batchGet(all.map { it.origin.mediaId }).forEach {
-                    torrentDirOf(it)?.let { dir -> add(dir.absolutePath) }
-                    // 引擎按种子算出的目录在内部存储上; 放在别的位置 (或已经搬走) 的种子不占它
-                    if (it.location == null) add(downloader.getSaveDirForTorrent(EncodedTorrentInfo.createRaw(it.torrentData)).absolutePath)
-                }
-            }
-
-            withContext(Dispatchers.IO_) {
-                val saves = downloader.listSaves()
-                for (save in saves) {
-                    if (save.absolutePath !in allowedAbsolute) {
-                        logger.warn { "本地种子缓存文件未找到匹配的 MediaCache, 已释放 ${save.actualSize().bytes}: ${save.absolutePath}" }
-                        save.deleteRecursively()
+            // 等正在搬的那一份改完记录再按记录认归属 (见 MediaCacheLocations.moveLock): 下面读的都是拿到锁之后的记录
+            locations.moveLock.withLock {
+                val allowedAbsolute = buildSet {
+                    dao.batchGet(all.map { it.origin.mediaId }).forEach {
+                        torrentDirOf(it)?.let { dir -> add(dir.absolutePath) }
+                        // 引擎按种子算出的目录在内部存储上; 放在别的位置 (或已经搬走) 的种子不占它
+                        if (it.location == null) add(downloader.getSaveDirForTorrent(EncodedTorrentInfo.createRaw(it.torrentData)).absolutePath)
                     }
                 }
-                if (!engineKey.isCloud) dao.deleteUnusedTorrentDirsOnOtherLocations(locations, torrentEngine.saveDir, baseSaveDirProvider.saveDir)
+
+                withContext(Dispatchers.IO_) {
+                    val saves = downloader.listSaves()
+                    for (save in saves) {
+                        if (save.absolutePath !in allowedAbsolute) {
+                            logger.warn { "本地种子缓存文件未找到匹配的 MediaCache, 已释放 ${save.actualSize().bytes}: ${save.absolutePath}" }
+                            save.deleteRecursively()
+                        }
+                    }
+                    if (!engineKey.isCloud) dao.deleteUnusedTorrentDirsOnOtherLocations(locations, torrentEngine.saveDir, baseSaveDirProvider.saveDir)
+                }
             }
         }
     }
