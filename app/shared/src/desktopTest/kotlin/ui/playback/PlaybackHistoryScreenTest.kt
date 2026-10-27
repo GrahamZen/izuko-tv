@@ -9,13 +9,20 @@
 
 package me.him188.ani.app.ui.playback
 
+import androidx.compose.ui.InternalComposeUiApi
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performKeyPress
+import androidx.compose.ui.test.requestFocus
 import kotlinx.coroutines.runBlocking
+import me.him188.ani.app.ui.foundation.LONG_PRESS_MIN_HOLD
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
 import me.him188.ani.app.ui.framework.runAniComposeUiTest
 import me.him188.ani.app.ui.lang.Lang
@@ -92,6 +99,44 @@ class PlaybackHistoryScreenTest {
         runOnIdle {
             assertEquals(listOf(1, 2), deletedIds)
         }
+    }
+
+    @OptIn(InternalComposeUiApi::class)
+    @Test
+    fun `holding confirm on a history opens its subject and a short press still plays it`() = runAniComposeUiTest {
+        var played = emptyList<Int>()
+        var opened = emptyList<Int>()
+        setContent {
+            ProvideCompositionLocalsForPreview {
+                PlaybackHistoryScreen(
+                    histories = listOf(testHistory()),
+                    onNavigateBack = {},
+                    onOpenHistory = { played = played + it.episodeId },
+                    onDelete = {},
+                    onOpenSubject = { opened = opened + it.subjectId!! },
+                )
+            }
+        }
+        val item = onNodeWithTag("${PlaybackHistoryTestTags.ITEM_PREFIX}1")
+        item.requestFocus()
+
+        item.performKeyPress(KeyEvent(Key.DirectionCenter, KeyEventType.KeyDown))
+        item.performKeyPress(KeyEvent(Key.DirectionCenter, KeyEventType.KeyUp))
+        runOnIdle {
+            assertEquals(listOf(1), played)
+            assertEquals(emptyList(), opened)
+        }
+
+        // 按住: 第二发 KeyDown 且距按下够久才算长按 (见 tvLongPressKey); 不进多选
+        item.performKeyPress(KeyEvent(Key.DirectionCenter, KeyEventType.KeyDown))
+        Thread.sleep(LONG_PRESS_MIN_HOLD.inWholeMilliseconds + 100)
+        item.performKeyPress(KeyEvent(Key.DirectionCenter, KeyEventType.KeyDown))
+        item.performKeyPress(KeyEvent(Key.DirectionCenter, KeyEventType.KeyUp))
+        runOnIdle {
+            assertEquals(listOf(100), opened)
+            assertEquals(listOf(1), played)
+        }
+        onNodeWithText(runBlocking { getString(Lang.playback_history_selected_count, 1) }).assertDoesNotExist()
     }
 
     private fun testHistory(

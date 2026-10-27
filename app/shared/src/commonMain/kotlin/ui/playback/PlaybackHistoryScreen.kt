@@ -91,6 +91,7 @@ import me.him188.ani.app.ui.foundation.navigation.BackHandler
 import me.him188.ani.app.ui.foundation.rememberAsyncHandler
 import me.him188.ani.app.ui.foundation.rememberCurrentTopAppBarContainerColor
 import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
+import me.him188.ani.app.ui.foundation.tvLongPressKey
 import me.him188.ani.app.ui.foundation.widgets.PullToRefreshBox
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.cache_subject_cancel
@@ -152,6 +153,8 @@ fun PlaybackHistoryScreen(
     modifier: Modifier = Modifier,
     navigationIcon: @Composable () -> Unit = {},
     windowInsets: WindowInsets = AniWindowInsets.forPageContent(),
+    /** TV (fork): 遥控器长按一条打开这部番的详情页 */
+    onOpenSubject: ((PlaybackHistoryUiItem) -> Unit)? = null,
 ) {
     val histories by vm.stateFlow.collectAsStateWithLifecycle()
 
@@ -163,6 +166,7 @@ fun PlaybackHistoryScreen(
         modifier = modifier,
         navigationIcon = navigationIcon,
         windowInsets = windowInsets,
+        onOpenSubject = onOpenSubject,
     )
 }
 
@@ -176,6 +180,8 @@ fun PlaybackHistoryScreen(
     modifier: Modifier = Modifier,
     navigationIcon: @Composable () -> Unit = {},
     windowInsets: WindowInsets = AniWindowInsets.forPageContent(),
+    /** TV (fork): 遥控器长按一条打开这部番的详情页 (遥控器不再长按进多选, 多选点顶栏的按钮; 触屏长按照旧进多选) */
+    onOpenSubject: ((PlaybackHistoryUiItem) -> Unit)? = null,
 ) {
     val appBarColors = AniThemeDefaults.topAppBarColors()
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
@@ -277,7 +283,13 @@ fun PlaybackHistoryScreen(
                                 selectionMode = true
                                 selectedEpisodeIds = selectedEpisodeIds + history.episodeId
                             },
-                            modifier = Modifier.widthIn(max = 960.dp).fillMaxWidth(),
+                            modifier = Modifier.widthIn(max = 960.dp).fillMaxWidth()
+                                // TV (fork): 确认键整个接管 —— 短按照旧播放, 长按进详情页, 不再进多选 (多选点顶栏的按钮);
+                                // 只放按下那一发的话 combinedClickable 自己也认遥控器长按, 两个长按会一起触发
+                                .then(
+                                    if (onOpenSubject == null || inSelection) Modifier
+                                    else Modifier.tvLongPressKey(onLongPress = { onOpenSubject(history) }, onShortPress = { onOpenHistory(history) }),
+                                ),
                         )
                     }
                 }
