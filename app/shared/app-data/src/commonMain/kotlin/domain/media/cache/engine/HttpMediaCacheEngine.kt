@@ -259,31 +259,34 @@ class HttpMediaCacheEngine(
             add(Path(dir, state.relativeOutputPath).inSystem.absolutePath)
             add(Path(dir, state.relativeSegmentCacheDir).inSystem.absolutePath)
         }
-        val allowedAbsolute = buildSet {
-            for (mediaCache in all.filterIsInstance<HttpMediaCache>()) {
-                downloader.getState(mediaCache.downloadId)?.let { addFilesOf(it) }
+        // 等正在搬的那一份改完记录再按记录认归属 (见 MediaCacheLocations.moveLock): 下面读的都是拿到锁之后的记录,
+        // 也不会碰到正在复制的 .izuko-moving (它在下面一律当垃圾删)
+        locations.moveLock.withLock {
+            val allowedAbsolute = buildSet {
+                for (mediaCache in all.filterIsInstance<HttpMediaCache>()) {
+                    downloader.getState(mediaCache.downloadId)?.let { addFilesOf(it) }
+                }
+                // 外接盘上的按全部记录算, 不只这次恢复出来的: 恢复时盘还没接上的记录是占位, 盘随后接上时它的文件也不能当成没人用
+                dao.getAll().first().filter { it.location != null }.forEach { addFilesOf(it) }
             }
-            // 外接盘上的按全部记录算, 不只这次恢复出来的: 恢复时盘还没接上的记录是占位, 盘随后接上时它的文件也不能当成没人用
-            dao.getAll().first().filter { it.location != null }.forEach { addFilesOf(it) }
-        }
-        withContext(Dispatchers.IO_) {
-            // 只扫接着的盘: 没接上的盘上的缓存是占位, 它的文件这时也扫不到
-            val dirs = listOf(saveDir) + locations.locations.value.mapNotNull { location ->
-                location.id?.let { dirOfOrNull(it) }?.takeIf { SystemFileSystem.exists(it) }
-            }
-            val saves = dirs.flatMap { SystemFileSystem.list(it) }
-            for (save in saves) {
-                val myPath = save.inSystem.absolutePath
-                // 搬到一半留下的 (见 HttpCacheMover) 名字以记录里的文件名开头, 不能按前缀算作有主
-                if (myPath.endsWith(MOVING_SUFFIX) || allowedAbsolute.none {
-                        myPath.startsWith(it)
-                    }) {
-                    logger.warn { "本地 WEB 缓存文件未找到匹配的 MediaCache, 已释放 ${save.inSystem.actualSize().bytes}: ${save.inSystem.absolutePath}" }
-                    SystemFileSystem.deleteRecursively(save)
+            withContext(Dispatchers.IO_) {
+                // 只扫接着的盘: 没接上的盘上的缓存是占位, 它的文件这时也扫不到
+                val dirs = listOf(saveDir) + locations.locations.value.mapNotNull { location ->
+                    location.id?.let { dirOfOrNull(it) }?.takeIf { SystemFileSystem.exists(it) }
+                }
+                val saves = dirs.flatMap { SystemFileSystem.list(it) }
+                for (save in saves) {
+                    val myPath = save.inSystem.absolutePath
+                    // 搬到一半留下的 (见 HttpCacheMover) 名字以记录里的文件名开头, 不能按前缀算作有主
+                    if (myPath.endsWith(MOVING_SUFFIX) || allowedAbsolute.none {
+                            myPath.startsWith(it)
+                        }) {
+                        logger.warn { "本地 WEB 缓存文件未找到匹配的 MediaCache, 已释放 ${save.inSystem.actualSize().bytes}: ${save.inSystem.absolutePath}" }
+                        SystemFileSystem.deleteRecursively(save)
+                    }
                 }
             }
         }
-
     }
 
     inner class HttpMediaCache(
