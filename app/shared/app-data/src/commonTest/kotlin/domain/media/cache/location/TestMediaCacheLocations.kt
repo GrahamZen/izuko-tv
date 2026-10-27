@@ -10,6 +10,7 @@
 package me.him188.ani.app.domain.media.cache.location
 
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.sync.Mutex
 import me.him188.ani.utils.io.SystemPath
 
 /** 测试用的缓存位置: 内部存储在 [internalRoot], 外接盘用 [connect] / [disconnect] 插拔. */
@@ -22,6 +23,8 @@ internal class TestMediaCacheLocations(internalRoot: SystemPath) : MediaCacheLoc
     override suspend fun locationForNewCache(): String? = forNewCache
 
     override val moving: MutableStateFlow<Set<String>> = MutableStateFlow(emptySet())
+
+    override val moveLock: Mutex = Mutex()
 
     fun connect(id: String, root: SystemPath, unusable: MediaCacheLocationProblem? = null) {
         locations.value = locations.value.filter { it.id != id } + MediaCacheLocation(id = id, label = id, root = root, unusable = unusable)

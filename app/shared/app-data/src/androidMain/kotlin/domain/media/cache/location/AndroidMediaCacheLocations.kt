@@ -60,6 +60,8 @@ class AndroidMediaCacheLocations(
 
     override val moving: MutableStateFlow<Set<String>> = MutableStateFlow(emptySet())
 
+    override val moveLock: Mutex = Mutex()
+
     fun start() {
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_MEDIA_MOUNTED)
