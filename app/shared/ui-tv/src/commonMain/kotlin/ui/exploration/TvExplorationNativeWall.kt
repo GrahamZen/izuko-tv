@@ -75,7 +75,9 @@ import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallScale
 import me.him188.ani.app.ui.foundation.tv.LocalTvScrollActivity
 import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.TV_FULLSCREEN_BACKDROP_DIM_ALPHA
+import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_COLUMN_SPACING
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_HERO_SPLIT_BAND
+import me.him188.ani.app.ui.foundation.tv.TvFocusRing
 import me.him188.ani.app.ui.foundation.tv.TvHeroMediaPipelineState
 import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
 import me.him188.ani.app.ui.foundation.tv.TvNextEpisodeMedia
@@ -396,7 +398,14 @@ internal fun TvExplorationNativeWall(
     val heroBlur = heroEnabled && wallBlur != TvBackdropBlurLevel.None
     val blurSpec = tvBackdropBlurSpec(wallBlur)
     // 铺着模糊背景时卡片的字照 vibrancy 画 (深色主题, 见 TvNativeWallStyle.labelVibrancy); 继续观看的卡画没看几集的角标 (见 tvProgressCardLine)
-    val style = rememberTvNativeWallStyle(cardWidth, metrics.columns, labelVibrancy = heroBlur, countBadge = true, fixedAnchor = fixedAnchor)
+    val style = rememberTvNativeWallStyle(
+        cardWidth,
+        metrics.columns,
+        columnSpacing = if (fixedAnchor) TV_EXPLORE_FIXED_ANCHOR_COLUMN_SPACING else TV_POSTER_WALL_COLUMN_SPACING,
+        labelVibrancy = heroBlur,
+        countBadge = true,
+        fixedAnchor = fixedAnchor,
+    )
     val ringStyle = rememberTvNativeAnchorRingStyle(style)
     val textStyle = rememberTvNativeHeroTextStyle(titleMaxLines = 1, lineSpacing = 10.dp)
     val buttonStyle = rememberTvNativeHeroButtonStyle()
@@ -767,6 +776,12 @@ internal fun tvSummaryFirstSentence(summary: String, minChars: Int = 12): String
         from = end
     }
 }
+
+/**
+ * 固定焦点版式的列距: 卡片之间露出 10dp (同 9 月那版固定焦点). 卡片不放大, 用不着海报墙给放大留的那段距离;
+ * 卡格两边各含一道聚焦框空隙, 这里扣掉. 与其他卡片尺寸一样跟着海报墙大小缩放.
+ */
+private val TV_EXPLORE_FIXED_ANCHOR_COLUMN_SPACING = 10.dp - TvFocusRing.Gap * 2
 
 private val TV_SENTENCE_ENDS = charArrayOf('。', '！', '？', '!', '?')
 private const val TV_SENTENCE_CLOSERS = "」』”’）)】"
