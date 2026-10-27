@@ -35,7 +35,7 @@ flowchart TD
 | 3 | 搜：站点的条目页、分享、网盘文件 | 各数据源 |
 | 4 | 认部：搜到的条目名、分享标题、路径点名的是不是这一部 | `TitleIdentity`（名字表 `AnimeNameIndex`），网页另有 `SelectorNameRules` |
 | 5 | 认集 | 网页 `WebSearchEpisodeMatching`；网盘 `DriveSubjectSeason`、`DriveNameParser`、`DriveEpisodeResolver` |
-| 6 | 否决：作品类别、时长 | `NotAnimeMarkers`、`DriveNameParser.workKindsOf`、`EpisodeDurations` |
+| 6 | 否决：作品类别、时长 | `NotAnimeMarkers`、`WorkKinds`、`EpisodeDurations` |
 | 7 | 过滤、排序、自动选 | [MediaSelector](media-selector.md) |
 | 8 | 开播后核对片长 | `EpisodeDurationMismatch` |
 
@@ -188,6 +188,7 @@ flowchart TD
 | 5 年份 | ✓ | ✓ | 不用（站点标的年份常不对：「【2000新番】真实之泪」） |
 | 按短名字搜到的要点名这一部 | ✓ | | |
 | 不是动画（见[否决](#否决)） | 短剧 | ✓ | ✓ |
+| 剧场版、外传、OVA（见[否决](#否决)） | | ✓ | ✓（本篇的集，在选择器里） |
 
 **网页的条目名**（`SubjectSearchPlan.identify`；`pagesToOpen` 按它开页，`foundOwn` 按它决定关键词链停不停）：
 
@@ -242,8 +243,12 @@ flowchart TD
 - **作品类别**：
   - 真人版、真人剧、日剧日影、年份电影（只认括号里的标签，标题本身可能含着这些字）与短剧（`NotAnimeMarkers`）不是这一部，条目自己就是的除外；
     网页的条目名、网盘的路径都查；分享站标题写着短剧的不打开（「短剧更新汇总」列着几十部短剧，条目名常是其中一部名字的一段）。
-  - 网盘另看剧场版、外传、OVA（`DriveNameParser.workKindsOf`）：写明是这一类而条目不是的不要；「TV+剧场版」「1-4季」这类合集名写着的不算，
-    只有一集的条目不查；短剧连合集名写着也不要。字间插了竖线的（「海丨贼丨王丨真丨人丨版」）去掉竖线再认。
+  - 剧场版、外传、OVA（`WorkKinds`，网盘与网页共用）：写明是这一类而条目不是的不要。条目自己的类别是名字里写着的，加上 Bangumi 记的类型
+    （名字表、系列关系图的「类型」列，`WorkKinds.ofCategory`：「FLCL」名字里不写，它本身是 OVA）；条目本身是 OVA 时，网盘文件名里的 OVA 标记
+    也不当「附带的番外」（「[OVA] FLCL 03」是正片）；
+    「TV+剧场版」「1-4季」这类合集名写着的不算，只有一集的条目不查；短剧连合集名写着也不要。字间插了竖线的（「海丨贼丨王丨真丨人丨版」）去掉竖线再认。
+    网盘查路径上的文件夹与文件；网页在选择器里查条目页名（`WebWorkKindCheck`），只在要的是本篇的集时查：
+    「XX OVA」页上的第 01 集按集号会对上本篇第 1 集，而特别篇的集常就在这种页上，所以页照开。
 - **时长**：网盘列目录给了视频时长时，认出是哪一集之后与这一集的时长差太多的（不到四成或超过两倍半：短剧、同名的剧场版）不要（`EpisodeDurations`）；
   时长不知道的照旧，用户手挑的文件夹不查。网页的资源开播才知道片长，见[开播后核对片长](#开播后核对片长)。
 

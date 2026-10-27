@@ -391,6 +391,9 @@ class MediaSelectorFilterSortAlgorithm {
                 if (media.kind == MediaSourceKind.WEB && SeasonNumberConflict.firstWorkOf(context)?.isOtherSeason(mediaSubjectName) == true) {
                     return exclude(MediaExclusionReason.FromSeriesSeason)
                 }
+                if (media.kind == MediaSourceKind.WEB && WebWorkKindCheck.rejects(mediaSubjectName, context)) {
+                    return exclude(MediaExclusionReason.SubjectNameMismatch)
+                }
             }
         } else {
             // 不可以拿到条目名称, 只做保守排除

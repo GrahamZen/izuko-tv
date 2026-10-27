@@ -203,6 +203,25 @@ class DrivePathAttributionTest {
     }
 
     @Test
+    fun `files naming the work kind the subject itself is are this work`() {
+        // 条目本身是 OVA 而名字里不写: 按 Bangumi 记的类型 (名字表的「类型」列) 认
+        val table = SeriesGraphTable.parse(
+            listOf(
+                "# bangumi-anime v1 max_id=900 dump=test | 列: …",
+                "822\tフリクリ\tFLCL\t2000-04-26\t6\tOVA\t\t\t\t\t\t",
+            ).joinToString("\n").encodeToByteArray(),
+        )!!
+        val request = DriveSeriesTestData.request(822, listOf("FLCL", "フリクリ"), 1, 6)
+        val identity = TitleIdentity.of(request, table, AnimeNameIndex.of(table))
+        fun episodeOf(folders: List<String>, fileName: String) = DriveSubjectMatcher.matchEpisodes(
+            request, listOf(DriveSubjectMatcher.Candidate(video("f", fileName), folders)), identity = identity,
+        ).singleOrNull()?.episode?.number?.toInt()
+        assertEquals(2, episodeOf(listOf("FLCL OVA 全6话"), "FLCL 02.mkv"))
+        // 文件名里的 OVA 标记也不当「附带的番外」
+        assertEquals(3, episodeOf(listOf("FLCL"), "[OVA] FLCL 03.mkv"))
+    }
+
+    @Test
     fun `a season number vouches for this work named with the year of the first season`() {
         // 表里两季之间没有边; 按系列整理的文件名写着第一季那年
         val table = SeriesGraphTable.parse(

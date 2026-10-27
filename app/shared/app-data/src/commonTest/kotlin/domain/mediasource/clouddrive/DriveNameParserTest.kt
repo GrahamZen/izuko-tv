@@ -9,6 +9,8 @@
 
 package me.him188.ani.app.domain.mediasource.clouddrive
 
+import me.him188.ani.app.domain.mediasource.search.WorkKind
+import me.him188.ani.app.domain.mediasource.search.WorkKinds
 import me.him188.ani.datasources.api.EpisodeSort
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -158,16 +160,16 @@ class DriveNameParserTest {
 
     @Test
     fun `work kinds`() {
-        assertEquals(setOf(DriveNameParser.WorkKind.MOVIE), DriveNameParser.workKindsOf("剧场版 -俄里翁之箭-"))
-        assertEquals(setOf(DriveNameParser.WorkKind.MOVIE), DriveNameParser.workKindsOf("[JYFanSub][Gekijouban Danmachi - Orion no Ya][01][GB][1080P][MP4].mp4"))
-        assertEquals(setOf(DriveNameParser.WorkKind.SPIN_OFF), DriveNameParser.workKindsOf("在地下城寻求邂逅是否搞错了什么 外传 剑姬神圣谭"))
-        assertEquals(setOf(DriveNameParser.WorkKind.OVA), DriveNameParser.workKindsOf("在地下城寻求邂逅是否搞错了什么 第二季 OVA"))
-        assertEquals(emptySet(), DriveNameParser.workKindsOf("在地下城寻求邂逅是否搞错了什么 IV"))
-        assertEquals(emptySet(), DriveNameParser.workKindsOf("Movies and Novas"))
-        assertEquals(setOf(DriveNameParser.WorkKind.SHORT_DRAMA), DriveNameParser.workKindsOf("9月3日短剧更新汇总（17）180.新婚夜和夫君间谍过家家（66集）"))
-        assertTrue(DriveNameParser.isCollectionName("在地下城寻求邂逅是否搞错了什么 TV+剧场版"))
-        assertTrue(DriveNameParser.isCollectionName("在地下城寻求邂逅是否搞错了什么 1-4季全 1080P"))
-        assertFalse(DriveNameParser.isCollectionName("剧场版 -俄里翁之箭-"))
+        assertEquals(setOf(WorkKind.MOVIE), WorkKinds.of("剧场版 -俄里翁之箭-"))
+        assertEquals(setOf(WorkKind.MOVIE), WorkKinds.of("[JYFanSub][Gekijouban Danmachi - Orion no Ya][01][GB][1080P][MP4].mp4"))
+        assertEquals(setOf(WorkKind.SPIN_OFF), WorkKinds.of("在地下城寻求邂逅是否搞错了什么 外传 剑姬神圣谭"))
+        assertEquals(setOf(WorkKind.OVA), WorkKinds.of("在地下城寻求邂逅是否搞错了什么 第二季 OVA"))
+        assertEquals(emptySet(), WorkKinds.of("在地下城寻求邂逅是否搞错了什么 IV"))
+        assertEquals(emptySet(), WorkKinds.of("Movies and Novas"))
+        assertEquals(setOf(WorkKind.SHORT_DRAMA), WorkKinds.of("9月3日短剧更新汇总（17）180.新婚夜和夫君间谍过家家（66集）"))
+        assertTrue(WorkKinds.isCollectionName("在地下城寻求邂逅是否搞错了什么 TV+剧场版"))
+        assertTrue(WorkKinds.isCollectionName("在地下城寻求邂逅是否搞错了什么 1-4季全 1080P"))
+        assertFalse(WorkKinds.isCollectionName("剧场版 -俄里翁之箭-"))
     }
 
     @Test
@@ -219,6 +221,6 @@ class DriveNameParserTest {
 
     @Test
     fun `kind markers split by bars count`() {
-        assertEquals(setOf(DriveNameParser.WorkKind.LIVE_ACTION), DriveNameParser.workKindsOf("H）海丨贼丨王丨真丨人丨版（2023）"))
+        assertEquals(setOf(WorkKind.LIVE_ACTION), WorkKinds.of("H）海丨贼丨王丨真丨人丨版（2023）"))
     }
 }

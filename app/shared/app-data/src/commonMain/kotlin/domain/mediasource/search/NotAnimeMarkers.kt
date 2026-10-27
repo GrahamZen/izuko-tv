@@ -12,7 +12,7 @@ package me.him188.ani.app.domain.mediasource.search
 import me.him188.ani.app.domain.mediasource.clouddrive.DriveNameParser
 
 /**
- * 名字写明不是动画: 真人作品、短剧. 网盘 (`DriveNameParser.workKindsOf`) 与网页类数据源 ([SelectorNameRules]) 共用;
+ * 名字写明不是动画: 真人作品、短剧. 作品类别 ([WorkKinds]) 与网页类数据源 ([SelectorNameRules]) 共用;
  * 条目自己的名字也写着的 (真人版条目) 由用的地方放过.
  *
  * 「真人版」「実写版」这类版本词在名字里哪儿都算. 「日剧」「日影」「2024电影」这类分类词只认括号里的标签
