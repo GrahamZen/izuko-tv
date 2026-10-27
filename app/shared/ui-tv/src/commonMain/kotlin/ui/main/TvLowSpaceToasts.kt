@@ -22,6 +22,8 @@ import me.him188.ani.app.ui.lang.cache_move_done
 import me.him188.ani.app.ui.lang.cache_move_stopped_space
 import me.him188.ani.app.ui.lang.cache_move_stopped_unavailable
 import me.him188.ani.app.ui.lang.cache_move_summary
+import me.him188.ani.app.ui.lang.cache_move_waiting
+import me.him188.ani.app.ui.lang.cache_move_waiting_failed
 import me.him188.ani.app.ui.lang.cache_paused_low_space
 import me.him188.ani.app.ui.lang.cache_paused_low_space_drive
 import me.him188.ani.app.ui.lang.settings_storage_cache_location_internal
@@ -58,10 +60,12 @@ private suspend fun moveResultText(result: MediaCacheMover.Result): String {
         MediaCacheMover.StopReason.TARGET_UNAVAILABLE -> getString(Lang.cache_move_stopped_unavailable, name)
         MediaCacheMover.StopReason.NOT_ENOUGH_SPACE -> getString(Lang.cache_move_stopped_space, name, result.moved)
         MediaCacheMover.StopReason.CANCELLED -> getString(Lang.cache_move_cancelled, result.moved)
-        null -> if (result.failed == 0 && result.skipped == 0) {
-            getString(Lang.cache_move_done, result.moved, name)
-        } else {
-            getString(Lang.cache_move_summary, result.moved, result.failed, result.skipped)
+        // 有在播先不搬的: 还没完, 剩下的在动作面板顶上等着 (见 TvBackgroundTasks)
+        null -> when {
+            result.skipped > 0 && result.failed > 0 -> getString(Lang.cache_move_waiting_failed, result.moved, result.failed, result.skipped)
+            result.skipped > 0 -> getString(Lang.cache_move_waiting, result.moved, result.skipped)
+            result.failed > 0 -> getString(Lang.cache_move_summary, result.moved, result.failed)
+            else -> getString(Lang.cache_move_done, result.moved, name)
         }
     }
 }

@@ -478,6 +478,7 @@ private fun TvExitAppDialog(
  *   切 tab 与聚焦轮播主按钮分别由主壳和探索页看着标志接力完成.
  * @param refreshHost 当前页注册的强制刷新动作 (没人注册就不显示「刷新本页」).
  * @param adjustHost 当前页注册的「调整本页」圆钮 (海报墙大小 / 标签顺序, 见 [TvPageAdjustHost]).
+ * @param focusTasks 打开时焦点落在顶上的后台任务那一格 (应用替用户打开、让他看刚开始的那件事时, 见 TvActionPanelRequests)
  */
 @Composable
 fun TvQuickActionMenu(
@@ -489,6 +490,7 @@ fun TvQuickActionMenu(
     onGoHome: () -> Unit,
     onExitApp: () -> Unit,
     onDismissRequest: () -> Unit,
+    focusTasks: Boolean = false,
 ) {
     TvActionPanelDialog(
         navigator = navigator,
@@ -502,7 +504,7 @@ fun TvQuickActionMenu(
         onGoHome = onGoHome,
         onExitApp = onExitApp,
         onDismissRequest = onDismissRequest,
-        defaultFocus = TvActionPanelDefaultFocus.CARD,
+        defaultFocus = if (focusTasks) TvActionPanelDefaultFocus.TASKS else TvActionPanelDefaultFocus.CARD,
     )
 }
 
@@ -521,17 +523,27 @@ private enum class TvActionPanelDefaultFocus {
 
     /** 探索页 hero 上按返回 (意图就是走人): 落最后一颗「退出应用」, 见 [TvExitAppDialog]. */
     EXIT,
+
+    /**
+     * 应用替用户打开, 让他看刚开始的后台任务 (如引导里按「完成」开始移动缓存): 落顶上的任务那一格. 不落卡片 ——
+     * 刚按完「完成」又多按一下确定的话, 落在卡片上就进播放页了; 落在任务上至多换到下一个任务.
+     * 打开那一刻没有任务时同 [CARD].
+     */
+    TASKS,
 }
 
 /**
  * 动作面板里的具名焦点位置 (见 [TvFocusScope]).
  *
- * 只给**当得起目标**的四个位置命名: 卡片那一块、圆钮那排的首尾两颗、连通行末尾的刷新钮.
+ * 只给**当得起目标**的五个位置命名: 卡片那一块、后台任务那一格的任务本身、圆钮那排的首尾两颗、连通行末尾的刷新钮.
  * 中间那些圆钮不是任何方向重定向或程序化送焦的目标, 不必命名 —— 到它们靠默认的空间搜索.
  */
 private enum class TvActionPanelFocus : TvFocusKey {
     /** 卡片那一块 (正在播放 / 接下来播放 / 占位卡三态共用一个 key: 接力的目标是这一块, 不分哪一态). */
     Card,
+
+    /** 顶上后台任务那一格的任务本身 (见 [TvBackgroundTaskSlot]) */
+    Task,
     FirstCapsule,
     LastCapsule,
     Refresh,
@@ -653,9 +665,14 @@ private fun TvActionPanelDialog(
     // (见 TvUpNextStore) —— 数据晚到几帧再改落点, 用户看到的就是"焦点自己跳走了". 晚到的那次
     // 只补卡片内容, 落点不动 (卡片仍能按"上"聚上去).
     val cardActionableAtOpen = remember { session != null || TvUpNextStore.target != null }
-    val cardIsDefault = defaultFocus == TvActionPanelDefaultFocus.CARD && cardActionableAtOpen
+    // 后台任务那一格, 面板上下都读它 (落点、渲染); 「继续」(搬缓存等停播时) 关的就是这里的会话
+    val backgroundTasks = rememberTvBackgroundTasks(closePlayer = if (session != null) ({ playback.close() }) else null)
+    val tasksAtOpen = remember { backgroundTasks.isNotEmpty() }
+    val tasksAreDefault = defaultFocus == TvActionPanelDefaultFocus.TASKS && tasksAtOpen
+    val cardIsDefault = (defaultFocus == TvActionPanelDefaultFocus.CARD || defaultFocus == TvActionPanelDefaultFocus.TASKS && !tasksAtOpen) &&
+        cardActionableAtOpen
     val focusIndex = when {
-        cardIsDefault -> -1
+        tasksAreDefault || cardIsDefault -> -1
         defaultFocus == TvActionPanelDefaultFocus.EXIT -> actions.lastIndex
         else -> 0
     }
@@ -667,6 +684,7 @@ private fun TvActionPanelDialog(
     // 别名到卡片/首颗/末颗圆钮上, 另外三个 alt* 顶替没被别名到的那些位置 —— 绕的就是"一个节点上
     // 不能挂两个 requester"。改成按 key 声明之后每个节点恒有且只有一个 key, 这套别名不再需要。
     val initialKey = when {
+        tasksAreDefault -> TvActionPanelFocus.Task
         cardIsDefault -> TvActionPanelFocus.Card
         focusIndex == 0 -> TvActionPanelFocus.FirstCapsule
         else -> TvActionPanelFocus.LastCapsule
@@ -762,11 +780,12 @@ private fun TvActionPanelDialog(
             ) {
                 // 后台在跑的任务 (搬缓存、导入收藏、换电视) 放在最上面, 离开那一页也看得到进度 (见 TvBackgroundTasks)
                 TvBackgroundTaskSlot(
-                    rememberTvBackgroundTasks(openCacheMove = { onDismissRequest(); navigator.navigateSettings(SettingsTab.STORAGE) }),
+                    backgroundTasks,
                     onFocused = { label, danger -> focusedLabel = label; focusedDanger = danger },
                     onFocusedRowGone = { focus.request(TvActionPanelFocus.Card) },
                     // 每一块按「下」都回卡片主体: ✕ 正下方是卡片的 ✕, 空间搜索会落到它上面
                     partModifier = Modifier.tvFocusLink(focus, down = TvActionPanelFocus.Card),
+                    bodyModifier = Modifier.tvFocusAnchor(focus, TvActionPanelFocus.Task),
                 )
                 // 顶上这一块**三态**, 三者同宽同高同圆角 —— 面板尺寸恒定, 圆钮那排的位置不随
                 // 上面是什么上下跳 (遥控器上位置就是肌肉记忆):

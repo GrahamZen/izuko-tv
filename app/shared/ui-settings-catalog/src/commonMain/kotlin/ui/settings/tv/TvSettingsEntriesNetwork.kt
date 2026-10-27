@@ -98,8 +98,6 @@ import me.him188.ani.app.ui.lang.settings_storage_danmaku_cache_strategy_descrip
 import me.him188.ani.app.ui.lang.settings_storage_danmaku_cache_strategy_description_cache_on_media_cache
 import me.him188.ani.app.ui.lang.settings_storage_danmaku_cache_strategy_description_do_not_cache
 import me.him188.ani.app.ui.lang.settings_storage_danmaku_cache_strategy_title
-import me.him188.ani.app.ui.lang.settings_storage_delete_cache_when_done
-import me.him188.ani.app.ui.lang.settings_storage_delete_cache_when_done_description
 import me.him188.ani.app.ui.lang.settings_storage_image_cache
 import me.him188.ani.app.ui.lang.settings_storage_image_cache_cleared
 import me.him188.ani.app.ui.lang.settings_storage_image_cache_usage
@@ -654,11 +652,7 @@ internal fun TvSettingsItemsBuilder.storageItems() {
             )
         },
     )
-    toggle(
-        mediaCache, Lang.settings_storage_delete_cache_when_done, Lang.settings_storage_delete_cache_when_done_description,
-        read = { it.deleteWhenMarkedDone },
-        write = { copy(deleteWhenMarkedDone = it) },
-    )
+    deleteCacheWhenDoneItem()
     toggle(
         mediaCache, Lang.settings_storage_play_cache_without_searching, Lang.settings_storage_play_cache_without_searching_description,
         read = { it.playCacheWithoutSearching },

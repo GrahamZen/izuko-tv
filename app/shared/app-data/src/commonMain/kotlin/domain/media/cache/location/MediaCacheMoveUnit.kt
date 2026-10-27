@@ -15,6 +15,7 @@ import kotlinx.io.Buffer
 import kotlinx.io.IOException
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
+import kotlinx.serialization.Serializable
 import me.him188.ani.app.domain.media.cache.MediaCache
 import me.him188.ani.utils.io.WriteBackCounter
 import me.him188.ani.utils.io.inSystem
@@ -26,6 +27,7 @@ import me.him188.ani.utils.io.syncFileContents
  * @property key 在 [MediaCacheLocations.moving] 里登记用的键, 引擎恢复缓存时按它认出正在搬的
  * @property location 现在所在的位置, `null` = 内部存储
  * @property matches 存储列表里哪些缓存属于它 (认在播的、搬前搬后重新恢复)
+ * @property libraryPublic 片库里的视频才有: 在公开的片库 (`true`, 卸载保留) 还是应用目录里的片库 (`false`); 下载的缓存为 `null`
  */
 class MediaCacheMoveUnit(
     val key: String,
@@ -33,7 +35,19 @@ class MediaCacheMoveUnit(
     val bytes: Long,
     val label: String,
     val matches: (MediaCache) -> Boolean,
-)
+    val libraryPublic: Boolean? = null,
+) {
+    /** 已经在 [target] 了 (不用搬) */
+    fun isAt(target: MediaCacheMoveTarget): Boolean =
+        location == target.location && (libraryPublic == null || target.libraryPublic == null || libraryPublic == target.libraryPublic)
+}
+
+/**
+ * 搬到哪: 位置 ([location], `null` = 内部存储), 以及片库里的视频放进公开的片库还是应用目录里的片库 ([libraryPublic];
+ * `null` = 各自照旧). 下载的缓存只看位置.
+ */
+@Serializable
+data class MediaCacheMoveTarget(val location: String?, val libraryPublic: Boolean? = null)
 
 /**
  * 一种缓存引擎的搬法. 只管文件与记录: 搬之前让缓存停下、搬完重新恢复由 [MediaCacheMover] 做.
@@ -47,6 +61,13 @@ interface MediaCacheEngineMover {
      * 改记录之前出错或被取消时把目标处复制了的清掉再抛出, 记录与原文件都不动.
      */
     suspend fun move(unit: MediaCacheMoveUnit, target: String?, onCopied: (bytes: Long) -> Unit): List<Path>
+
+    /** 同上, 搬到 [target]; 只看位置的引擎不用管片库那一半 */
+    suspend fun move(unit: MediaCacheMoveUnit, target: MediaCacheMoveTarget, onCopied: (bytes: Long) -> Unit): List<Path> =
+        move(unit, target.location, onCopied)
+
+    /** 原处的文件 ([move] 返回的) 删掉之后收拾原处, 如片库删掉空了的条目文件夹 */
+    suspend fun afterSourcesDeleted(sources: List<Path>) {}
 }
 
 /** 搬的时候缓存记录被删了 (用户在占位上按了删除): 不再搬, 目标处复制了的清掉 */

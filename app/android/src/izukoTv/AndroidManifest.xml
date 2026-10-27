@@ -25,6 +25,11 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <!-- 播放中卡住缓冲时日志里记 Wi-Fi 信号与协商速率 (普通权限, 安装时自动授予), 见 RebufferDiagnostics -->
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- 片库 (设置「存储 → 片库」, 默认关) 放在各盘根目录下 Izuko/, 要「所有文件访问」: 只声明不会生效, 用户在系统设置里给
+         (索尼这类没有专用授权页的: 应用信息 → 权限 → 文件和媒体 → 允许管理所有文件), 或用 adb appops; 见 AndroidMediaLibraryAccess -->
+    <uses-permission
+            android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+            tools:ignore="ScopedStorage" />
 
     <!-- 不声明为必需: 同一个包也允许装在带触摸屏的设备上 -->
     <uses-feature

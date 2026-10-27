@@ -38,6 +38,8 @@ class UnavailableMediaCache(
     val reconnected: Flow<Boolean> = flowOf(false),
     /** 不是盘没接上, 是正在搬到别的位置 (见 [MediaCacheMover]); 搬完换成真的缓存 */
     val moving: Boolean = false,
+    /** 不是盘没接上, 是没有权限读那里了 (片库的「所有文件访问」被关掉, 见 LibraryMediaCacheStorage); 重新给权限后换回真的缓存 */
+    val accessLost: Boolean = false,
     private val deleteRows: suspend () -> Unit,
 ) : MediaCache {
     override val state: Flow<MediaCacheState> = flowOf(MediaCacheState.FAILED)

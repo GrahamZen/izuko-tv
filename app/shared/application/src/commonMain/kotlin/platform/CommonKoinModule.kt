@@ -795,6 +795,7 @@ private fun KoinApplication.otherModules(
                             coroutineScope.childScopeContext(),
                         ),
                     )
+                    add(mediaLibraryStorage(id, metadataStore, getContext().files.dataDir.resolve("media-library-index.json"), coroutineScope.childScopeContext()))
                 },
                 backgroundScope = coroutineScope.childScope(),
                 playbackActivity = get(),
@@ -805,7 +806,7 @@ private fun KoinApplication.otherModules(
             val locations = mediaCacheLocations()
             DownloadSpaceGuard(get(), rootOf = { locations.rootOf(it) }, scope = coroutineScope).also { it.start() }
         }
-        mediaCacheLocationRefresher(coroutineScope)
+        mediaCacheLocationRefresher(coroutineScope) { getContext().files.dataDir.resolve("cache-move-waiting.json") }
     } else {
         single<MediaDownloadManager> {
             MediaDownloadManager(
