@@ -835,6 +835,7 @@ private fun KoinApplication.otherModules(
             seriesGraph = get<SeriesGraphTableRepository>(),
             shareIndexStore = DriveShareIndexFileStore(getContext().files.cacheDir.resolve("drive-share-indexes.json"), coroutineScope.childScopeContext()),
             playbackLineages = { get<PlaybackLineageRepository>().lineageOf(it) },
+            localFolderRoots = localFolderRoots(),
         )
     }
     single<EpisodeCacheRecords> { EpisodeCacheRecords.of(getContext().dataStores.mediaCacheMetadataStore) }
