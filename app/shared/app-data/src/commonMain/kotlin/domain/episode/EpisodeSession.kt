@@ -103,7 +103,11 @@ class EpisodeSession(
             if (fetchSessions == null) createMediaFetchSelectBundleFlowUseCase(infoBundleFlow)
             else createMediaFetchSelectBundleFlowUseCase(infoBundleFlow, fetchSessions)
             ).shareIn(sessionScope, sharingStarted, replay = 1)
-    // TODO: 2025/1/4 test fetchSelectFlow changes only when infoBundleFlow's value equality changes 
+
+    init {
+        startSearchEarly()
+    }
+    // TODO: 2025/1/4 test fetchSelectFlow changes only when infoBundleFlow's value equality changes
 
     /**
      * A cold flow that emits `true` when media sources are loading.

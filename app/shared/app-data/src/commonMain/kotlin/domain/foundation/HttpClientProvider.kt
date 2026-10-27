@@ -161,6 +161,7 @@ class DefaultHttpClientProvider(
         newInstance = { createClient(it.features, it.proxyConfig) },
         onRelease = { it.close() },
     )
+    private val lingering = LingeringReferences(pool, backgroundScope, HTTP_CLIENT_LINGER)
 
     private val proxyListeningStarted = atomic(false)
     private var proxyListeningJob: Job? = null
@@ -291,6 +292,7 @@ class DefaultHttpClientProvider(
         @UnsafeScopedHttpClientApi
         override fun returnClient(ticket: Ticket) {
             check(ticket is TicketImpl) { "Ticket must be an instance of TicketImpl. Do not implement the Ticket interface. Do not use delegation (`by`) keyword for this type." }
+            lingering.retain(ticket.matrix, ticket.client)
             return pool.release(ticket.matrix, ticket.client)
         }
 
@@ -316,6 +318,7 @@ class DefaultHttpClientProvider(
         proxyListeningJob?.cancelAndJoin()
         proxyListeningJob = null
         @OptIn(TestOnly::class)
+        lingering.forget()
         pool.forceReleaseAll()
     }
 }
