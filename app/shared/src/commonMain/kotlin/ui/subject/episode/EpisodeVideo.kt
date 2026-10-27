@@ -93,7 +93,9 @@ import me.him188.ani.app.ui.foundation.icons.SubtitleGear
 import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.input.LocalActiveInputSource
 import me.him188.ani.app.ui.foundation.interaction.WindowDragArea
+import me.him188.ani.app.ui.foundation.layout.FullscreenStatusBarFollowsControlsEffect
 import me.him188.ani.app.ui.foundation.layout.currentWindowAdaptiveInfo1
+import me.him188.ani.app.ui.foundation.layout.statusBarShownWithPlayerControls
 import me.him188.ani.app.ui.foundation.rememberDebugSettingsViewModel
 import me.him188.ani.app.ui.foundation.theme.AniTheme
 import me.him188.ani.app.ui.lang.Lang
@@ -262,6 +264,7 @@ internal fun EpisodeVideoImpl(
     // Don't rememberSavable. 页面重建后都回到默认状态
     // 锁定按钮只在 expanded 时显示, 离开 expanded 时必须解锁, 否则无法再解除
     var isLocked by remember(expanded) { mutableStateOf(false) }
+    FullscreenStatusBarFollowsControlsEffect { playerControllerState.visibility.topBar && !isLocked }
     var showPlayerStats by remember { mutableStateOf(false) }
     val playerStats by rememberPlayerStatsState(playerState)
     val sheetsController = rememberVideoSideSheetsController<EpisodeVideoSideSheetPage>()
@@ -353,7 +356,7 @@ internal fun EpisodeVideoImpl(
                     )
                 }
             },
-            centerOverlay = if (expanded && LocalPlatform.current.isMobile()) {
+            centerOverlay = if (expanded && LocalPlatform.current.isMobile() && !statusBarShownWithPlayerControls()) {
                 { SystemTime() }
             } else {
                 {}
