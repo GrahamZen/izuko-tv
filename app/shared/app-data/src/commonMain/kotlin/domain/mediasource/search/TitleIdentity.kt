@@ -15,7 +15,6 @@ import me.him188.ani.app.data.models.subject.SplitSeason
 import me.him188.ani.app.data.network.SeriesGraphTable
 import me.him188.ani.app.data.network.SeriesGraphTableRepository
 import me.him188.ani.app.data.network.SeriesNode
-import me.him188.ani.app.domain.mediasource.clouddrive.DriveNameParser
 import me.him188.ani.app.domain.mediasource.clouddrive.DrivePathAttribution
 import me.him188.ani.app.domain.mediasource.clouddrive.DriveSeriesParts
 import me.him188.ani.app.domain.mediasource.clouddrive.DriveSubjectMatcher
@@ -83,6 +82,8 @@ internal class TitleIdentity(
     private val versionYears: Set<Int> = emptySet(),
     /** 系列的第一部 (没有前传的) 的名字, 已归一化; 本条目自己是第一部时为空 */
     private val firstWorkNames: List<String> = emptyList(),
+    /** Bangumi 记的这一部的类型对应的作品类别 ([WorkKinds.ofCategory]); 表里没有这一部时为空 */
+    val ownCategoryKinds: Set<WorkKind> = emptySet(),
 ) {
     /** 一段名字点名了哪一部. */
     enum class Naming {
@@ -282,13 +283,13 @@ internal class TitleIdentity(
     }
 
     /**
-     * 分享站的标题是别的作品的: 名字点名了别的部, 年份不对, 或写明是短剧 ([DriveNameParser.WorkKind.SHORT_DRAMA]).
+     * 分享站的标题是别的作品的: 名字点名了别的部, 年份不对, 或写明是短剧 ([WorkKind.SHORT_DRAMA]).
      * 按太短的名字 ([weakNames]) 搜到的 ([keyword]) 还得点名这一部: 「杀死Air（91集）」只是含着这几个字.
      */
     fun rejectsTitle(title: String, keyword: String? = null): Boolean {
         val naming = namingOf(title)
         return naming == Naming.OTHER || naming == Naming.NONE && keyword != null && TitleForms.compact(keyword) in weakNames ||
-                isOtherYear(title) || DriveNameParser.WorkKind.SHORT_DRAMA in DriveNameParser.workKindsOf(title)
+                isOtherYear(title) || WorkKind.SHORT_DRAMA in WorkKinds.of(title)
     }
 
     companion object {
@@ -402,6 +403,7 @@ internal class TitleIdentity(
                         .mapNotNullTo(HashSet()) { node -> node.airDate.takeIf { it.isValid }?.year }
                         .filterTo(HashSet()) { year -> airYear != null && abs(year - airYear) > 1 }
                 }.orEmpty(),
+                ownCategoryKinds = WorkKinds.ofCategory(ownNode?.metaTags.orEmpty()),
                 firstWorkNames = subjectId?.let { DriveSeriesParts.seriesNodesOf(it, table) }.orEmpty()
                     .filter { node -> node.id != subjectId && table.edgesOf(node.id)?.prequels.isNullOrEmpty() }
                     .flatMap { listOf(it.name, it.nameCn) }
