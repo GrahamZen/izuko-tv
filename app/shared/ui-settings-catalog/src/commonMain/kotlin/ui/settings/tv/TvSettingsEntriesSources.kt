@@ -295,7 +295,8 @@ internal fun TvSettingsItemsBuilder.mediaSourceItems() {
     entries(
         listOf(keys.drives, keys.driveQr, touchPage),
         entries = { v ->
-            val drives = v[keys.drives].orEmpty()
+            // 本地文件夹不用登录, 在控制台里管, 这里不列
+            val drives = v[keys.drives].orEmpty().filterNot { it.service.protocol.isLocalFolder }
             if (v[touchPage] == true) drives.filter { it.service.protocol.supportsPasswordLogin } else drives
         },
         key = { it.service.driveId },

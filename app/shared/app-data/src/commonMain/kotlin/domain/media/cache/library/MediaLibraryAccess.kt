@@ -11,6 +11,7 @@ package me.him188.ani.app.domain.media.cache.library
 
 import me.him188.ani.app.domain.media.cache.location.MediaCacheLocation
 import me.him188.ani.utils.io.SystemPath
+import me.him188.ani.utils.io.resolve
 
 /**
  * 片库能不能用、放在哪, 由平台提供. 片库在应用私有目录之外 (卸载、清除数据都不删), 安卓上要「所有文件访问」:
@@ -24,8 +25,11 @@ interface MediaLibraryAccess {
     /** 片库要的权限此刻开着 (用户在系统设置里开的, 或用 adb 开的, 都算) */
     fun isGranted(): Boolean
 
+    /** [location] 位置所在那块盘的根目录 (本地文件夹数据源也从这里列); 推不出来时为 `null` */
+    fun volumeRootOf(location: MediaCacheLocation): SystemPath?
+
     /** [location] 位置上片库的根目录 (那块盘的根目录下 [LIBRARY_DIR_NAME]); 推不出来时为 `null` */
-    fun libraryRootOf(location: MediaCacheLocation): SystemPath?
+    fun libraryRootOf(location: MediaCacheLocation): SystemPath? = volumeRootOf(location)?.resolve(LIBRARY_DIR_NAME)
 
     /** 打开系统里给这个权限的页面, 返回打开的是哪一种; 一个入口都没有时为 `null` (用 [adbGrantCommand]) */
     fun openGrantPage(): GrantPage? = null
