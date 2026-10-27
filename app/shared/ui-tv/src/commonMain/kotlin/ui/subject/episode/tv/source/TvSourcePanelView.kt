@@ -369,10 +369,16 @@ class TvSourcePanelView(
     /**
      * 胶囊行下面收着哪些 (见 [updateBranchCollapse]): 焦点在表头上 (刚打开时停在「正在播放」) 时都收着, 只露胶囊行 —— 少挡画面;
      * 在分类胶囊上展开那一项, 焦点留在胶囊上: 没有源那一栏的出它的列表, 有的只出源那一栏 (右边的条目收着, 这一栏也不标显示的是哪个源),
-     * 进了这一栏或条目全部淡入.
+     * 进了这一栏或条目全部淡入. 源那一栏里停在「没有结果的 N 个」上 (不是源) 时右边也收着.
      */
     private var branchCollapsed = false
     private var columnCollapsed = false
+
+    /**
+     * 从「没有结果的 N 个」挪到了另一个源上, 右边还是上一个源的: 先不淡入 (不把上一个源的内容亮一下), 等这个源那一屏到了再出
+     * (见 [revealBranch]); 那一屏没换 (又回到了原来那个源) 就当场出 (见 [onColumnRowFocused]).
+     */
+    private var branchAwaitingSource = false
 
     /** 正在落到 [groupMemory] 记的地方 (见 [landAt]): 焦点停在面板自己身上, 内容到了落到下面三个之一 (不在了落第一个). */
     private var pendingGroupLanding = false
@@ -910,7 +916,7 @@ class TvSourcePanelView(
     }
 
     private fun onColumnRowFocused(row: TvSourceRow) {
-        // 最后那一行「没有结果的 N 个」不是源: 右边照旧是上一个源的
+        // 最后那一行「没有结果的 N 个」不是源: 不换右边, 右边收着 (见 updateBranchCollapse)
         if (row.id == TvSourceRailKeys.EMPTY_SOURCES) {
             reportRegion()
             return
@@ -920,6 +926,12 @@ class TvSourcePanelView(
         reportRegion()
         sourceCommitPending = true
         if (!verticalHeld) commitSource()
+        // 等的那一屏不用换了 (又回到了右边本来就是的那个源): 当场出
+        if (branchAwaitingSource && row.id == content?.sourceKey && !branchEntering && !branchHidden) {
+            branchAwaitingSource = false
+            branchAnimator?.cancel()
+            branchAnimator = fadeIn(branchViews)
+        }
     }
 
     /** 把胶囊行选中的那颗 ([focusedRailKey]) 换过去: 下面的内容跟着换. 左右键按着时等松手再调. */
@@ -1888,6 +1900,7 @@ class TvSourcePanelView(
         if (listAdapter.itemCount > 0 && list.childCount == 0) return // 行还没排出来
         branchEntering = false
         branchHidden = false
+        branchAwaitingSource = false
         branchAnimator?.cancel()
         // 收着 (焦点在表头上, 或在有源那一栏的胶囊上): 排好了也不出来, 进了这一栏或条目再淡入 (见 updateBranchCollapse)
         if (branchCollapsed) return
@@ -1909,13 +1922,22 @@ class TvSourcePanelView(
                 columnAnimator = fadeIn(arrayOf(column))
             }
         }
-        val collapse = region == Region.HEADER || (columnShown && region == Region.RAIL)
+        val onEmptySources = region == Region.COLUMN && (findFocus() as? TvSourceRowView)?.row?.id == TvSourceRailKeys.EMPTY_SOURCES
+        val collapse = region == Region.HEADER || (columnShown && region == Region.RAIL) || onEmptySources
         if (collapse == branchCollapsed) return
         branchCollapsed = collapse
-        columnAdapter.activeId = if (collapse) null else selectedSourceKey()
+        branchAwaitingSource = false
+        // 从「没有结果的 N 个」回到某个源上: 直接描焦点下的这个 (它马上就是选中的), 不先描一下原来选中的那个
+        columnAdapter.activeId = when {
+            collapse -> null
+            region == Region.COLUMN -> focusedSourceKey ?: selectedSourceKey()
+            else -> selectedSourceKey()
+        }
         branchAnimator?.cancel()
         if (collapse) {
             for (view in branchViews) view.alpha = 0f
+        } else if (region == Region.COLUMN && focusedSourceKey != null && focusedSourceKey != content?.sourceKey) {
+            branchAwaitingSource = true
         } else if (!branchEntering && !branchHidden) {
             branchAnimator = fadeIn(branchViews)
         }
