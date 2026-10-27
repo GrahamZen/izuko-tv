@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
@@ -185,9 +186,12 @@ class MediaCacheMover(
             storage.refreshCache()
             delay(settleDelay)
             var copied = 0L
-            sources = entry.mover.move(unit, target) { bytes ->
-                copied += bytes
-                onProgress(copied)
+            // 复制到改完记录之间不让启动清扫插进来 (见 MediaCacheLocations.moveLock); 不包住上面的 refreshCache: 启动清扫持着存储锁等这把锁
+            sources = locations.moveLock.withLock {
+                entry.mover.move(unit, target) { bytes ->
+                    copied += bytes
+                    onProgress(copied)
+                }
             }
             logger.info { "Moved ${unit.key} from ${unit.location ?: "internal"} to ${target ?: "internal"}" }
             return true
