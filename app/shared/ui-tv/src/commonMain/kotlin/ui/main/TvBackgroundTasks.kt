@@ -176,16 +176,16 @@ internal fun rememberTvBackgroundTasks(openCacheMove: () -> Unit): List<TvBackgr
  * 后台任务那一格 (动作面板最上面, 卡片上方), 没有任务时什么都不画. 同时只显示一个任务, 几个任务一起跑时也占这一格、高度不变
  * (同 iOS 的小组件叠放): 名字右边一排小圆点说一共几个、这是第几个. 照播放卡片的样子分成横排的两块 (同一块玻璃、同一个圆角):
  *
- * - 任务本身 (名字、进度): 按确定换到下一个 (最后一个之后回到第一个), 长按打开 ([TvBackgroundTask.open]);
- *   不止一个任务或能打开时才吃焦点;
- * - 右端 ✕, 能停 ([TvBackgroundTask.stop]) 才有: 按下去就停, 不再确认 (同播放卡片的 ✕).
+ * - 任务本身 (名字、进度): 按确定换到下一个 (最后一个之后回到第一个), 长按打开 ([TvBackgroundTask.open]).
+ *   有任务就吃焦点: 从卡片按上永远先落在这里, 不会一上来就停在 ✕ 上; 只有一个打不开的任务时按确定没反应, 标签行写它的名字;
+ * - 右端 ✕: 按下去就停, 不再确认 (同播放卡片的 ✕). 有任务能停 ([TvBackgroundTask.stop]) 就一直占着这一列, 切换时任务那块不跟着变宽变窄;
+ *   显示的那个停不了时 ✕ 变淡、不吃焦点、点不动. 一个能停的都没有时不画这一列 (同播放卡片的占位卡不画永远灰着的 ✕).
  *
  * 左右键在两块之间走, 哪一块都按「下」回播放卡片 (由 [partModifier] 接上), 按「上」不动.
- * 一块能吃焦点的都没有时 (只有一个打不开、停不了的任务) 整格不吃焦点.
- * 显示的那个结束时换到相邻那个 (见 [tvBackgroundTaskShownIndex]); 聚焦着的那块跟着没了时, 另一块能聚焦就接住, 不能就交回面板.
+ * 显示的那个结束时换到相邻那个 (见 [tvBackgroundTaskShownIndex]); 焦点在 ✕ 上而它变得按不了时交给任务本身, 任务都结束了交回面板.
  *
  * @param onFocused 某块聚焦时 (聚焦着换了显示的任务也算), 面板底下标签行写的字, 以及要不要用错误色 (✕ 那块)
- * @param onFocusedRowGone 聚焦着时整格没有能聚焦的了: 节点没了 Compose 不会自动改派焦点, 由面板接回卡片上
+ * @param onFocusedRowGone 聚焦着时任务都结束了 (整格没了): 节点没了 Compose 不会自动改派焦点, 由面板接回卡片上
  * @param partModifier 加在每一块能聚焦的上面: 面板用它把「下」接到卡片
  */
 @Composable
@@ -209,13 +209,14 @@ internal fun TvBackgroundTaskSlot(
     }
 
     val multiple = tasks.size > 1
+    val stopColumn = tasks.any { it.stop != null }
     val parts = buildSet {
-        if (multiple || task?.open != null) add(TvBackgroundTaskPart.Body)
+        if (task != null) add(TvBackgroundTaskPart.Body)
         if (task?.stop != null) add(TvBackgroundTaskPart.Stop)
     }
     var focusedPart by remember { mutableStateOf<TvBackgroundTaskPart?>(null) }
     val requesters = remember { TvBackgroundTaskPart.entries.associateWith { FocusRequester() } }
-    // 聚焦着的那块没了 (显示的任务停了 / 换了 / 只剩一个): 另一块能聚焦就接住, 都不能就交回面板.
+    // 聚焦着的那块没了 (✕ 随显示的任务换了 / 停了而按不了, 或者任务都结束了): 任务本身还在就接住, 不在就交回面板.
     // 放在组合作用域里起的协程中: 焦点被清掉的回调随时会到、把 focusedPart 清掉, 跟着条件进出组合的 LaunchedEffect 可能还没跑就被取消
     val scope = rememberCoroutineScope()
     if (focusedPart != null && focusedPart !in parts) {
@@ -227,7 +228,7 @@ internal fun TvBackgroundTaskSlot(
             }
         }
     }
-    // 任务本身聚焦时: 有几个就说按确定看下一个, 能打开就说长按去哪, 都没有 (不会聚焦) 时退回名字
+    // 任务本身聚焦时: 有几个就说按确定看下一个, 能打开就说长按去哪, 都没有时 (只有一个打不开的) 写名字
     val nextLabel = if (multiple) stringResource(Lang.tv_background_task_next, index + 1, tasks.size) else null
     val label = when (focusedPart) {
         TvBackgroundTaskPart.Body -> task?.let { t -> listOfNotNull(nextLabel, t.hint).joinToString(" · ").ifEmpty { t.title } to false }
@@ -274,7 +275,8 @@ internal fun TvBackgroundTaskSlot(
                 .weight(1f)
                 .fillMaxHeight()
                 .part(TvBackgroundTaskPart.Body, TV_BACKGROUND_TASK_TAG_BODY)
-                .focusProperties { canFocus = TvBackgroundTaskPart.Body in parts }
+                // ✕ 按不了时按右不动: 同一行右边没有能去的, 空间搜索会落到右下方播放卡片右端那块上
+                .focusProperties { if (TvBackgroundTaskPart.Stop !in parts) right = FocusRequester.Cancel }
                 .background(bodyContainer)
                 // 遥控器: 短按换下一个, 按住打开; 确认键由它认领, 不落到下面的 combinedClickable 上
                 .tvLongPressKey(onLongPress = { task.open?.invoke() }, onShortPress = showNext)
@@ -323,10 +325,11 @@ internal fun TvBackgroundTaskSlot(
                 }
             }
         }
-        if (TvBackgroundTaskPart.Stop in parts) {
+        if (stopColumn) {
             TvBackgroundTaskStopButton(
                 contentDescription = task.stopLabel,
                 focused = focusedPart == TvBackgroundTaskPart.Stop,
+                enabled = TvBackgroundTaskPart.Stop in parts,
                 Modifier.part(TvBackgroundTaskPart.Stop, TV_BACKGROUND_TASK_TAG_STOP),
             ) { task.stop?.invoke() }
         }
@@ -369,6 +372,8 @@ private fun TvBackgroundTaskDots(count: Int, current: Int) {
 private fun TvBackgroundTaskStopButton(
     contentDescription: String?,
     focused: Boolean,
+    /** 显示的那个停不了: 变淡、不吃焦点、点不动 (同 TV 上灰掉的按钮选不中的惯例) */
+    enabled: Boolean,
     modifier: Modifier,
     onClick: () -> Unit,
 ) {
@@ -379,13 +384,23 @@ private fun TvBackgroundTaskStopButton(
             .fillMaxHeight()
             .background(container)
             .tvTouchFocusOnTap()
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick),
+            // enabled = false 时 clickable 自己就不吃焦点, 也点不动
+            .clickable(
+                enabled = enabled,
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            ),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
             Icons.Rounded.Close,
             contentDescription = contentDescription,
-            tint = if (focused) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onSurfaceVariant,
+            tint = when {
+                focused -> MaterialTheme.colorScheme.onError
+                enabled -> MaterialTheme.colorScheme.onSurfaceVariant
+                else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+            },
         )
     }
 }
