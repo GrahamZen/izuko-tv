@@ -636,6 +636,9 @@ private fun AniAppContentImpl(
                                 aniNavigator.navigateEpisodeDetails(subjectId, history.episodeId)
                             }
                         },
+                        onOpenSubject = { history ->
+                            history.subjectId?.let { aniNavigator.navigateSubjectDetails(it, placeholder = null) }
+                        },
                         modifier = Modifier.fillMaxSize(),
                         navigationIcon = {
                             BackNavigationIconButton(
