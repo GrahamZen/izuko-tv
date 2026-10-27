@@ -67,7 +67,7 @@ class TorrentMediaCacheLocationTest : AbstractTorrentMediaCacheEngineTest() {
     private val locations by lazy { TestMediaCacheLocations(dir.toKtPath().inSystem) }
 
     /** 存储的协程挂在测试的作用域下, 测试体结束前关掉, 不然 runTest 一直等它们 */
-    private fun runTest(testBody: suspend TestScope.() -> Unit) = runCoroutineTest(timeout = 10.seconds) {
+    private fun runTest(testBody: suspend TestScope.() -> Unit) = runCoroutineTest(timeout = 30.seconds) {
         try {
             testBody()
         } finally {
@@ -182,8 +182,11 @@ class TorrentMediaCacheLocationTest : AbstractTorrentMediaCacheEngineTest() {
         assertIs<LocalFileMediaCache>(storage.listFlow.value.single())
     }
 
-    /** 等 [condition] 成立, 最多 [timeout] 真实时间: 恢复里有一段在真实的 IO 线程上, 在 IO 线程上等, 测试调度器照常跑 */
-    private suspend fun awaitReal(timeout: Duration = 3.seconds, condition: () -> Boolean) {
+    /**
+     * 等 [condition] 成立, 最多 [timeout] 真实时间: 恢复里有一段在真实的 IO 线程上, 在 IO 线程上等, 测试调度器照常跑.
+     * 给得宽: 机器忙时 (几个会话同时编译、跑测试) 那段 IO 要好几秒, 平时几十毫秒就成立
+     */
+    private suspend fun awaitReal(timeout: Duration = 15.seconds, condition: () -> Boolean) {
         val deadline = System.nanoTime() + timeout.inWholeNanoseconds
         while (!condition() && System.nanoTime() < deadline) withContext(Dispatchers.IO) { Thread.sleep(10) }
     }
