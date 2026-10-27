@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.sync.Mutex
 import me.him188.ani.utils.io.SystemPath
 
 /**
@@ -62,6 +63,13 @@ interface MediaCacheLocations {
      * 不开下载、不读写文件.
      */
     val moving: MutableStateFlow<Set<String>>
+
+    /**
+     * 搬一份缓存时改文件的那一段 (复制 → 改名 → 改记录, 见 [MediaCacheMover]) 与启动清扫互斥. 清扫按记录认目录有没有主:
+     * 搬到一半的临时目录、改好名还没改记录的新目录都会被它当成没人用删掉 —— 后者删掉之后记录照样改过去、原处照删, 两份都没了.
+     * 清扫拿到锁之后再按最新的记录算归属.
+     */
+    val moveLock: Mutex
 }
 
 /** [id] 位置此刻是否接着 */
@@ -76,4 +84,6 @@ class InternalOnlyMediaCacheLocations(root: SystemPath, label: String = "") : Me
     override suspend fun locationForNewCache(): String? = null
 
     override val moving: MutableStateFlow<Set<String>> = MutableStateFlow(emptySet())
+
+    override val moveLock: Mutex = Mutex()
 }
