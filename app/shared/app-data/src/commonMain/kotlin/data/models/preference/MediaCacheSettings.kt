@@ -45,6 +45,9 @@ data class MediaCacheSettings(
      */
     val defaultLocation: String? = null,
 
+    /** 片库: 下完的缓存放进各盘根目录下的片库文件夹, 卸载、清除数据都不删 (见 LibraryMediaCacheStorage); 要「所有文件访问」 */
+    val libraryEnabled: Boolean = false,
+
     @Suppress("PropertyName") @Transient val _placeholder: Int = 0,
 ) {
     companion object {

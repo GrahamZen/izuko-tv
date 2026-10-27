@@ -176,6 +176,7 @@ internal object RemoteCacheList {
                     val back = withTimeoutOrNull(FLOW_TIMEOUT) { (cache as? UnavailableMediaCache)?.reconnected?.first() } == true
                     val text = when {
                         (cache as? UnavailableMediaCache)?.moving == true -> tr("正在移动到其他盘")
+                        (cache as? UnavailableMediaCache)?.accessLost == true -> tr("「所有文件访问」被关掉了")
                         back -> tr("盘已接上，正在恢复")
                         else -> tr("所在的盘没接上")
                     }
