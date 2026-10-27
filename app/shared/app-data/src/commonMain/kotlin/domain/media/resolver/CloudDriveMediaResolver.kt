@@ -11,10 +11,13 @@ package me.him188.ani.app.domain.media.resolver
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.io.IOException
+import kotlinx.io.files.Path
 import me.him188.ani.app.domain.media.player.data.MediaDataProvider
+import me.him188.ani.app.domain.media.player.data.SystemFileMediaDataProvider
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveAuthException
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveRegistry
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveShareUnavailableException
+import me.him188.ani.app.domain.mediasource.clouddrive.LocalFolderDrive
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.MediaExtraFiles
 import me.him188.ani.datasources.api.Subtitle
@@ -28,6 +31,7 @@ import me.him188.ani.utils.logging.warn
  * - 分享搜索与添加的分享: 占位地址里是分享里的文件, 先转存到自己网盘再取地址.
  *
  * 占位地址属于哪个网盘按各网盘的协议认 (见 [CloudDriveRegistry.driveOf]). 视频旁边的外挂字幕一并交给播放器.
+ * 本地文件夹 ([LocalFolderDrive]) 的地址是盘上的文件, 播放器直接读.
  *
  * 必须排在 [HttpStreamingMediaResolver] 前面, 后者会接下所有 [ResourceLocation.HttpStreamingFile].
  */
@@ -67,15 +71,19 @@ class CloudDriveMediaResolver(
             logger.warn(e) { "Failed to resolve ${drive.driveId} file $target" }
             throw MediaResolutionException(ResolutionFailures.ENGINE_ERROR, e)
         }
+        val extraFiles = MediaExtraFiles(
+            subtitles = media.extraFiles.subtitles + playback.subtitles.map {
+                Subtitle(uri = it.url, mimeType = it.mimeType, language = it.language, label = it.label)
+            },
+        ).toMediampMediaExtraFiles()
+        LocalFolderDrive.pathOfUrl(playback.url)?.takeIf { drive.protocol.isLocalFolder }?.let { path ->
+            return SystemFileMediaDataProvider(Path(path), extraFiles, fileType = null)
+        }
         return HttpStreamingMediaDataProvider(
             uri = playback.url,
             originalTitle = media.originalTitle,
             headers = playback.headers,
-            extraFiles = MediaExtraFiles(
-                subtitles = media.extraFiles.subtitles + playback.subtitles.map {
-                    Subtitle(uri = it.url, mimeType = it.mimeType, language = it.language, label = it.label)
-                },
-            ).toMediampMediaExtraFiles(),
+            extraFiles = extraFiles,
         )
     }
 

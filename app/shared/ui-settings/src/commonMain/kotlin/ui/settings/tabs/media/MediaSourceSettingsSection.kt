@@ -77,7 +77,7 @@ fun MediaSourceSettingsSection.Content(
     SettingsTab(modifier) {
         val cloudDrives by vm.cloudDriveGroupStates.collectAsStateWithLifecycle()
         for (drive in cloudDrives) {
-            if (drive.protocol.supportsPasswordLogin) continue
+            if (drive.protocol.isUserAdded) continue
             key(drive.driveId) { CloudDriveGroup(drive) }
         }
         MediaSourceTab(
