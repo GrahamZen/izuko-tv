@@ -390,7 +390,13 @@ class MediaSourceManagerImpl(
         instances.removeAll(instanceIds)
     }
 
-    override fun mediaSourceTiersFlow(): Flow<MediaSelectorSourceTiers> = instances.flow.map { list ->
+    override fun mediaSourceTiersFlow(): Flow<MediaSelectorSourceTiers> = sourceTiers
+
+    /**
+     * 各数据源的层级. 要把每个源的配置 (规则源的整套步骤) 解码一遍, 开播时建查询会话、选源器、自动选源都要它,
+     * 所以只在配置变了时算一次, 大家共用.
+     */
+    private val sourceTiers: Flow<MediaSelectorSourceTiers> = instances.flow.map { list ->
         val arguments = list.mapNotNull { save ->
             val argument = try {
                 save.getArgumentOrNull(codecManager)
@@ -401,7 +407,8 @@ class MediaSourceManagerImpl(
             }
             argument?.let { CloudDriveMediaSource.reportedMediaSourceId(it, save.mediaSourceId) to it }
         }
-        MediaSelectorSourceTiers(
+        val webViewUses = arguments.mapNotNull { (id, argument) -> WebViewSources.useOf(argument)?.let { id to it } }.toMap()
+        webViewUses to MediaSelectorSourceTiers(
             tiers = arguments.associate { (id, argument) -> id to argument.tier },
             channelTiers = buildMap {
                 for ((id, argument) in arguments) {
@@ -411,7 +418,11 @@ class MediaSourceManagerImpl(
                 }
             },
         )
-    }.combine(SourceProfiles.webViewSources, SourceProfiles::demote).flowOn(flowCoroutineContext)
+    }.combine(SourceProfiles.webViewUsage) { (webViewUses, tiers), observed ->
+        SourceProfiles.demote(tiers, observed.filterValues { it }.keys)
+            .copy(webViewSources = WebViewSources.of(webViewUses, observed))
+    }.flowOn(flowCoroutineContext)
+        .shareIn(scope, replay = 1, started = SharingStarted.Lazily)
 
     private fun MediaSourceFactory.create(
         proxyConfig: ProxyConfig?,

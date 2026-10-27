@@ -61,6 +61,11 @@ internal class MediaAutoSelector(private val mediaSelector: MediaSelector) {
         val fuzzyMatchAfter: Duration = 15.seconds,
         val instantTier: MediaSourceTier = DefaultInstantTier,
         val waitForPendingSources: Boolean = true,
+        /**
+         * 原本「立即」档会选的资源要 WebView 嗅探、只好先等直连的源时, 最多等这么久 (从第一次这样等起算):
+         * 到时有直连的精确匹配就选它 (不论层级), 没有就选要嗅探的那个. 嗅探至少也要一两秒, 多等的不超过省下的.
+         */
+        val webViewGrace: Duration = 2.seconds,
     ) {
         init {
             require(exactMatchAfter >= Duration.ZERO)
@@ -85,13 +90,17 @@ internal class MediaAutoSelector(private val mediaSelector: MediaSelector) {
         var deadlines: Job? = null
         // 放开记住的源时它的暂停状态 (见 decide)
         var resumedPreferred: MediaSourceFetchState? = null
+        // 等直连的源等够了 (见 Web.webViewGrace)
+        val webViewGraceOver = MutableStateFlow(false)
+        var webViewGraceTimer: Job? = null
         try {
             combine(
-                mediaSelector.autoSelectSnapshots(sourceSnapshots(session)).let { if (config.selectCache) it.awaitCacheReadiness(logger) else it },
-                stage, mediaSelector.selected,
-            ) { snapshot, phase, currentSelection ->
+                mediaSelector.autoSelectSnapshots(sourceSnapshots(session))
+                    .let { if (config.selectCache) it.awaitCacheReadiness(logger) else it },
+                stage, mediaSelector.selected, webViewGraceOver,
+            ) { snapshot, phase, currentSelection, graceOver ->
                 if (currentSelection != expectedSelection) Decision.Exhausted
-                else decide(snapshot, config, phase, resumedPreferred)
+                else decide(snapshot, config, phase, resumedPreferred, graceOver)
             }.first { decision ->
                 when (decision) {
                     is Decision.ResumePreferredSource -> {
@@ -124,6 +133,16 @@ internal class MediaAutoSelector(private val mediaSelector: MediaSelector) {
                         false
                     }
                     Decision.Wait -> false
+                    Decision.WaitForDirect -> {
+                        val grace = config.web?.webViewGrace
+                        if (webViewGraceTimer == null && grace != null) {
+                            webViewGraceTimer = launch {
+                                delay(grace)
+                                webViewGraceOver.value = true
+                            }
+                        }
+                        false
+                    }
                     Decision.Exhausted -> true
                     is Decision.Select -> {
                         logger.info {
@@ -136,6 +155,7 @@ internal class MediaAutoSelector(private val mediaSelector: MediaSelector) {
             }
         } finally {
             deadlines?.cancel()
+            webViewGraceTimer?.cancel()
         }
         result
     }
@@ -164,6 +184,9 @@ internal class MediaAutoSelector(private val mediaSelector: MediaSelector) {
 
     private sealed interface Decision {
         data object Wait : Decision
+
+        /** 原本立即能选的资源要 WebView 嗅探, 先等直连的源 (见 [Web.webViewGrace]) */
+        data object WaitForDirect : Decision
         data object StartFallback : Decision
 
         /** 只放开记住的源 ([paused] 是它此刻的暂停状态), 留在记住源的阶段等它的结果 */
@@ -182,6 +205,7 @@ internal class MediaAutoSelector(private val mediaSelector: MediaSelector) {
         config: Config,
         stage: Stage,
         resumedPreferred: MediaSourceFetchState?,
+        webViewGraceOver: Boolean = false,
     ): Decision {
         val preferredSource = snapshot.sources.firstOrNull {
             it.kind == MediaSourceKind.WEB && it.mediaSourceId == config.preferredSourceId
@@ -208,6 +232,15 @@ internal class MediaAutoSelector(private val mediaSelector: MediaSelector) {
             findWebCandidate(snapshot, preferred.filter { it.result.mediaSourceId == preferredSource.mediaSourceId })?.let {
                 return Decision.Select(it, "preferred source")
             }
+        }
+        // 记住的源还在查、已经给出条目名精确匹配的资源 (每开完一页交一页) 时就选, 不等它把别的页开完; 拆分季要看整季才认得准哪一集
+        if (stage == Stage.PreferredSource && preferredSource != null && !preferredSource.state.isFinal &&
+            snapshot.context.allFieldsLoaded() && snapshot.context.subjectSeriesInfo?.splitSeason == null
+        ) {
+            val exact = preferred.filter {
+                it.result.mediaSourceId == preferredSource.mediaSourceId && it.metadata.subjectMatchKind == SubjectMatchKind.EXACT
+            }
+            findWebCandidate(snapshot, exact)?.let { return Decision.Select(it, "preferred source (exact, still searching)") }
         }
 
         // 记住的源在上一次开播后被暂停着 (查询按条目共用, 切到下一集时常见): 暂停不算查完。暂停前拿到的结果里没有能选的,
@@ -238,7 +271,7 @@ internal class MediaAutoSelector(private val mediaSelector: MediaSelector) {
             ) return Decision.Wait
             return Decision.StartFallback
         }
-        return decideWeb(snapshot, config, stage, candidates, preferred)
+        return decideWeb(snapshot, config, stage, candidates, preferred, webViewGraceOver)
     }
 
     private fun decideOnCompletion(
@@ -265,6 +298,7 @@ internal class MediaAutoSelector(private val mediaSelector: MediaSelector) {
         stage: Stage,
         candidates: List<MaybeExcludedMedia.Included>,
         preferred: List<MaybeExcludedMedia.Included>,
+        webViewGraceOver: Boolean,
     ): Decision {
         val web = checkNotNull(config.web)
         val webSources = snapshot.sources.filter { it.kind == MediaSourceKind.WEB }
@@ -273,15 +307,36 @@ internal class MediaAutoSelector(private val mediaSelector: MediaSelector) {
         // Settled sources produce no new candidates, so waiting for the remaining deadlines cannot change the choice.
         val effectiveStage = if (webSources.all { it.state.isSettled }) web.lastStage else stage
         val succeededIds = webSources.filter { it.state is MediaSourceFetchState.Succeed }.map { it.mediaSourceId }.toSet()
-        val webCandidates = candidates.filter { it.result.kind == MediaSourceKind.WEB && it.result.mediaSourceId in succeededIds }
+        // 还在查的源已经交出的 (每开完一页交一页, 见 KeywordSearchScope.emitEarly) 条目名精确匹配、层级够「立即」的也能选,
+        // 不等它把别的页开完; 拆分季要看整季各页的集号才认得准哪一集, 只用查完的
+        val workingIds = if (snapshot.context.subjectSeriesInfo?.splitSeason != null) emptySet()
+        else webSources.filter { it.state == MediaSourceFetchState.Working }.mapTo(HashSet()) { it.mediaSourceId }
+        // 解析时可能要 WebView 嗅探的源只兜底 (见 WebViewSources): 别的网页源还在查、又没到最后的截止时间时不选它们;
+        // 都查完后有能直接取到地址的资源时, 它们当作最低层级 (仍按匹配程度排, 精确的排在模糊的前面), 没有时按原层级选
+        val viaWebView = web.sourceTiers.webViewSources
+        val directSources = webSources.filter { it.mediaSourceId !in viaWebView && !it.state.isSettled }
+        val directPending = viaWebView.isNotEmpty() && !webViewGraceOver && effectiveStage != Stage.Fuzzy && directSources.isNotEmpty()
+        val reachableCandidates = candidates.filter {
+            it.result.kind == MediaSourceKind.WEB &&
+                    (it.result.mediaSourceId in succeededIds || it.result.mediaSourceId in workingIds && isInstant(it, web))
+        }
+        val webCandidates = reachableCandidates.filter { !(directPending && it.result.mediaSourceId in viaWebView) }
+        val webViewLowest = webCandidates.any { it.result.mediaSourceId !in viaWebView }
+        val tierOf = { candidate: MaybeExcludedMedia.Included ->
+            if (webViewLowest && candidate.result.mediaSourceId in viaWebView) MediaSourceTier.MaximumValue
+            else web.sourceTiers.get(candidate.result.mediaSourceId, candidate.result.properties.alliance)
+        }
         if (webSources.any { it.results.isNotEmpty() } && !snapshot.context.allFieldsLoaded()) return Decision.Wait
 
+        // 要 WebView 的源排到最后之后, 「立即」档也选还在查的直连源里没有更高层级能胜过的精确匹配:
+        // 原本立即选的 T0 若都要 WebView, 不然要白等到下一个截止时间, 而那时选的也还是它
+        val beatenByPending = { tier: MediaSourceTier ->
+            viaWebView.isEmpty() || !webViewGraceOver && directSources.any { web.sourceTiers.getBestTier(it.mediaSourceId) < tier }
+        }
         val eligible = webCandidates.filter { candidate ->
             val exact = candidate.metadata.subjectMatchKind == SubjectMatchKind.EXACT
             when (effectiveStage) {
-                Stage.Instant -> exact && web.sourceTiers.get(
-                    candidate.result.mediaSourceId, candidate.result.properties.alliance,
-                ) <= web.instantTier
+                Stage.Instant -> exact && (tierOf(candidate) <= web.instantTier || !beatenByPending(tierOf(candidate)))
                 Stage.Exact -> exact
                 Stage.Fuzzy -> true
                 Stage.PreferredSource -> error("Handled before Web fallback")
@@ -291,7 +346,7 @@ internal class MediaAutoSelector(private val mediaSelector: MediaSelector) {
         val groups = eligible.groupBy {
             Pair(
                 it.metadata.subjectMatchKind != SubjectMatchKind.EXACT,
-                web.sourceTiers.get(it.result.mediaSourceId, it.result.properties.alliance),
+                tierOf(it),
             )
         }.toList().sortedWith(compareBy({ it.first.first }, { it.first.second }))
         val preferredIds = preferred.map { it.result.mediaId }.toSet()
@@ -303,20 +358,31 @@ internal class MediaAutoSelector(private val mediaSelector: MediaSelector) {
                 return Decision.Select(
                     media,
                     "${effectiveStage.name}${if (effectiveStage != stage) " (sources settled)" else ""}, " +
-                            "match=${candidate.metadata.subjectMatchKind}, tier=${web.sourceTiers.get(media.mediaSourceId, media.properties.alliance)}",
+                            "match=${candidate.metadata.subjectMatchKind}, tier=${tierOf(candidate)}",
                 )
             }
         }
 
         // Empty final results can finish early; candidates belonging to a later phase must wait.
-        if (allCompleted && webCandidates.isEmpty()) {
+        // 要 WebView 的资源只是暂不选 (直连源还会重试) 时也要等, 到最后的截止时间就选它们
+        if (allCompleted && reachableCandidates.isEmpty()) {
             return if (config.fallbackToOtherKinds) {
                 decideOnCompletion(snapshot, preferred.filter { it.result.kind != MediaSourceKind.WEB })
             } else Decision.Exhausted
         }
         if (effectiveStage == Stage.Fuzzy && (allCompleted || !web.waitForPendingSources)) return Decision.Exhausted
-        return Decision.Wait
+        // 原本立即会选的精确匹配要 WebView 嗅探, 只是在等直连的源: 等的时间有上限 (见 Web.webViewGrace)
+        val deferredInstant = directPending && reachableCandidates.any {
+            it.result.mediaSourceId in viaWebView && it.metadata.subjectMatchKind == SubjectMatchKind.EXACT &&
+                    web.sourceTiers.get(it.result.mediaSourceId, it.result.properties.alliance) <= web.instantTier
+        }
+        return if (deferredInstant) Decision.WaitForDirect else Decision.Wait
     }
+
+    /** 「立即」档选得了的: 条目名精确匹配, 层级不低于 [Web.instantTier]. */
+    private fun isInstant(candidate: MaybeExcludedMedia.Included, web: Web): Boolean =
+        candidate.metadata.subjectMatchKind == SubjectMatchKind.EXACT &&
+                web.sourceTiers.get(candidate.result.mediaSourceId, candidate.result.properties.alliance) <= web.instantTier
 
     /** Fast select disabled skips the instant stage. */
     private val Web.exactStageAfter: Duration get() = if (fastSelect) exactMatchAfter else Duration.ZERO
