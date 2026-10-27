@@ -441,6 +441,7 @@ internal fun TestScope.testRegistry(
     legacy: FakeLegacyPreferences = FakeLegacyPreferences(),
     client: () -> HttpClient = { mockClient { error("unexpected request ${it.url}") } },
     playbackLineages: suspend (subjectId: Int) -> PlaybackLineage? = { null },
+    localFolderRoots: LocalFolderRoots = LocalFolderRoots.None,
 ): TestRegistry {
     val instances = MediaSourceInstanceRepositoryImpl(MemoryDataStore(MediaSourceSaves(saves)))
     val registry = CloudDriveRegistry(
@@ -452,6 +453,7 @@ internal fun TestScope.testRegistry(
         parentCoroutineContext = backgroundScope.coroutineContext,
         httpClient = client,
         playbackLineages = playbackLineages,
+        localFolderRoots = localFolderRoots,
     )
     return TestRegistry(registry, instances, accounts, addedShares, legacy)
 }

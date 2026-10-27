@@ -37,7 +37,6 @@ import me.him188.ani.datasources.api.topic.FileSize.Companion.bytes
 import me.him188.ani.datasources.api.topic.ResourceLocation
 import me.him188.ani.utils.io.SystemPath
 import me.him188.ani.utils.io.inSystem
-import me.him188.ani.utils.io.resolve
 import me.him188.ani.utils.io.toKtPath
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
@@ -63,7 +62,7 @@ class MediaLibraryPublisherTest {
     private val access = object : MediaLibraryAccess {
         override val isSupported: Boolean get() = true
         override fun isGranted(): Boolean = true
-        override fun libraryRootOf(location: MediaCacheLocation): SystemPath = location.root.resolve(MediaLibraryAccess.LIBRARY_DIR_NAME)
+        override fun volumeRootOf(location: MediaCacheLocation): SystemPath = location.root
     }
     private var enabled = true
     private var playing: String? = null
