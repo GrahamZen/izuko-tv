@@ -77,6 +77,8 @@ data class DownloadItem(
     val locationReconnected: Boolean = false,
     /** [locationUnavailable] 时其实是正在搬到别的位置 */
     val locationMoving: Boolean = false,
+    /** [locationUnavailable] 时其实是没有权限读那里了 (片库的「所有文件访问」被关掉) */
+    val locationAccessLost: Boolean = false,
 ) {
     enum class Playability {
         PLAYABLE,

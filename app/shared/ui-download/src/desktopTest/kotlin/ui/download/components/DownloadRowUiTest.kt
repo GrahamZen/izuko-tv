@@ -30,6 +30,8 @@ import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
 import me.him188.ani.app.ui.framework.runAniComposeUiTest
 import me.him188.ani.app.ui.lang.cache_episode_pause_download
 import me.him188.ani.app.ui.lang.cache_episode_status_awaiting_bt_service
+import me.him188.ani.app.ui.lang.cache_episode_status_location_access_lost
+import me.him188.ani.app.ui.lang.cache_episode_status_location_unavailable
 import me.him188.ani.app.ui.lang.cache_episode_status_merging
 import me.him188.ani.app.ui.lang.cache_management_more_actions
 import me.him188.ani.app.ui.lang.cache_subject_delete
@@ -152,5 +154,39 @@ class DownloadRowUiTest {
         }
         onNodeWithText(awaiting, useUnmergedTree = true).assertExists()
         onNodeWithText(merging, useUnmergedTree = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun `a placeholder for lost file access says so instead of an unplugged drive`() = runAniComposeUiTest {
+        var episode by mutableStateOf(
+            createTestDownloadItem(1, initialState = DownloadStatus.FAILED)
+                .copy(locationUnavailable = true, locationAccessLost = true),
+        )
+        val accessLost = runBlocking { getString(Lang.cache_episode_status_location_access_lost) }
+        val unplugged = runBlocking { getString(Lang.cache_episode_status_location_unavailable) }
+        setContent {
+            ProvideCompositionLocalsForPreview {
+                DownloadRow(
+                    episode = episode,
+                    mediaSourceInfoProvider = null,
+                    selectionMode = false,
+                    selected = false,
+                    onToggleSelected = {},
+                    onEnterSelection = {},
+                    onPlay = {},
+                    onResume = {},
+                    onPause = {},
+                    onDelete = {},
+                    onViewDetail = null,
+                )
+            }
+        }
+
+        onNodeWithText(accessLost, useUnmergedTree = true).assertExists()
+        onNodeWithText(unplugged, useUnmergedTree = true).assertDoesNotExist()
+
+        runOnIdle { episode = episode.copy(locationAccessLost = false) }
+        onNodeWithText(unplugged, useUnmergedTree = true).assertExists()
+        onNodeWithText(accessLost, useUnmergedTree = true).assertDoesNotExist()
     }
 }

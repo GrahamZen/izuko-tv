@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.DriveFileMove
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -52,14 +53,18 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.flow.sample
+import kotlinx.coroutines.flow.transform
 import kotlinx.coroutines.launch
 import me.him188.ani.app.domain.media.cache.location.MediaCacheLocations
+import me.him188.ani.app.domain.media.cache.library.MediaLibraryPublisher
 import me.him188.ani.app.domain.media.cache.location.MediaCacheMover
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.ui.foundation.theme.glassContainerColor
@@ -69,11 +74,14 @@ import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_storage_cache_location_internal
 import me.him188.ani.app.ui.lang.tv_background_task_cache_move
-import me.him188.ani.app.ui.lang.tv_background_task_cache_move_hint
+import me.him188.ani.app.ui.lang.tv_background_task_cache_move_cancel
+import me.him188.ani.app.ui.lang.tv_background_task_cache_move_resume
 import me.him188.ani.app.ui.lang.tv_background_task_cache_move_stop
+import me.him188.ani.app.ui.lang.tv_background_task_cache_move_waiting
 import me.him188.ani.app.ui.lang.tv_background_task_device_migration
 import me.him188.ani.app.ui.lang.tv_background_task_device_migration_stop
 import me.him188.ani.app.ui.lang.tv_background_task_device_migration_stopped
+import me.him188.ani.app.ui.lang.tv_background_task_media_library
 import me.him188.ani.app.ui.lang.tv_background_task_next
 import me.him188.ani.app.ui.lang.tv_background_task_profile_import
 import me.him188.ani.app.ui.lang.tv_background_task_profile_import_waiting
@@ -81,6 +89,7 @@ import me.him188.ani.app.ui.profile.ProfileImportSession
 import me.him188.ani.app.ui.remote.RemoteDeviceMigration
 import me.him188.ani.datasources.api.topic.FileSize.Companion.bytes
 import org.jetbrains.compose.resources.stringResource
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
@@ -89,7 +98,9 @@ import kotlin.time.Duration.Companion.milliseconds
  * @property progress 0..1; `null` = 估不出来, 画不定式的进度条
  * @property open 长按任务本身去哪里看详情; `null` = 不能打开
  * @property hint 任务本身聚焦时面板底下的标签行写的 (说长按去哪)
- * @property stop 右端 ✕ 停下它; `null` = 不画 ✕ (功能本身停不了, 或此刻停不了)
+ * @property resume 右端「继续」: 停在半路、等着什么的任务让它接着跑; `null` = 不画 (没在等, 或此刻接不上)
+ * @property resumeLabel 「继续」聚焦时标签行写的
+ * @property stop 右端 ✕ 停下 (取消) 它; `null` = 不画 ✕ (功能本身停不了, 或此刻停不了)
  * @property stopLabel ✕ 聚焦时标签行写的
  */
 internal class TvBackgroundTask(
@@ -100,45 +111,77 @@ internal class TvBackgroundTask(
     val progress: Float?,
     val open: (() -> Unit)? = null,
     val hint: String? = null,
+    val resume: (() -> Unit)? = null,
+    val resumeLabel: String? = null,
     val stop: (() -> Unit)? = null,
     val stopLabel: String? = null,
 )
 
 /**
- * 正在后台跑的任务 (把缓存搬到别的盘、导入收藏、换电视): 各功能自己跑、自己出进度, 这里汇成一个列表给动作面板顶上显示,
+ * 正在后台跑的任务 (把缓存搬到别的盘、下完的缓存放入片库、导入收藏、换电视): 各功能自己跑、自己出进度, 这里汇成一个列表给动作面板顶上显示,
  * 用户离开那一页也看得到还在不在跑、跑到哪了. 结束时各功能照旧弹提示. 加一种任务: 在这里加一个来源.
  * 能停的给 ✕ (搬缓存; 换电视在下载阶段), 停的结果同那个功能自己停下时一样提示; 导入收藏停不了, 不给.
  *
- * @param openCacheMove 缓存搬家那一条按下去: 去设置页「存储」(那一行能看详情、停止)
+ * 搬缓存有一部分因为在播先不搬时, 那一批搬完后这一条照样留着, 进度停在已经搬好的地方 ([MediaCacheMover.waiting]):
+ * 「继续」关掉播放器 (停播后自己接着搬), ✕ 取消 (剩下的留在原处).
+ *
+ * @param closePlayer 关掉后台保留着的播放器; `null` = 此刻没有 (「继续」画成按不了)
  */
-@OptIn(FlowPreview::class)
 @Composable
-internal fun rememberTvBackgroundTasks(openCacheMove: () -> Unit): List<TvBackgroundTask> {
+internal fun rememberTvBackgroundTasks(closePlayer: (() -> Unit)?): List<TvBackgroundTask> {
     val mover = remember { GlobalKoin.getOrNull<MediaCacheMover>() }
     // 搬家每写 256 KB 报一次进度, 面板上半秒更新一次就够
-    val moveFlow = remember { mover?.progress?.sample(500.milliseconds) ?: flowOf(null) }
+    val moveFlow = remember { mover?.progress?.atMostEvery(500.milliseconds) ?: flowOf(null) }
     val move by moveFlow.collectAsState(mover?.progress?.value)
+    val waitingFlow = remember { mover?.waiting ?: flowOf(null) }
+    val waiting by waitingFlow.collectAsState(mover?.waiting?.value)
+    val publisher = remember { GlobalKoin.getOrNull<MediaLibraryPublisher>() }
+    val publishFlow = remember { publisher?.progress?.atMostEvery(500.milliseconds) ?: flowOf(null) }
+    val publish by publishFlow.collectAsState(publisher?.progress?.value)
     val import by ProfileImportSession.state.collectAsState()
     val migration by RemoteDeviceMigration.progress.collectAsState()
     val toaster = LocalToaster.current
 
     val internalName = stringResource(Lang.settings_storage_cache_location_internal)
-    val moveHint = stringResource(Lang.tv_background_task_cache_move_hint)
     val tasks = mutableListOf<TvBackgroundTask>()
+    fun driveName(id: String?): String = id?.let {
+        GlobalKoin.getOrNull<MediaCacheLocations>()?.locations?.value?.firstOrNull { it.id == id }?.label?.takeIf { it.isNotBlank() }
+    } ?: internalName
     move?.let { p ->
-        val target = p.target?.let { id ->
-            GlobalKoin.getOrNull<MediaCacheLocations>()?.locations?.value?.firstOrNull { it.id == id }?.label?.takeIf { it.isNotBlank() }
-        } ?: internalName
         tasks += TvBackgroundTask(
             key = "cache-move",
-            title = stringResource(Lang.tv_background_task_cache_move, target),
-            detail = "${p.done + p.failed + p.skipped}/${p.total} · ${p.bytesDone.bytes} / ${p.bytesTotal.bytes}",
+            title = stringResource(Lang.tv_background_task_cache_move, driveName(p.target)),
+            // 在播先不搬的不算处理完: 一批走完时进度停在那里, 换成下面等停播的那一条接着显示.
+            // 还在列要搬哪些时没有数, 进度条不定式地走
+            detail = if (p.total > 0) "${p.done + p.failed}/${p.total} · ${p.bytesDone.bytes} / ${p.bytesTotal.bytes}" else null,
             progress = if (p.bytesTotal > 0) (p.bytesDone.toFloat() / p.bytesTotal).coerceIn(0f, 1f) else null,
-            open = openCacheMove,
-            hint = moveHint,
             // 停下的结果 (已搬的几条留在新位置) 由搬家结束的提示说 (见 TvLowSpaceToasts)
             stop = mover?.let { { it.cancel() } },
             stopLabel = stringResource(Lang.tv_background_task_cache_move_stop),
+        )
+    }
+    if (move == null) waiting?.let { w ->
+        // 同一个 key: 搬着搬着变成等停播 (或反过来) 时还是这一条, 显示的不换到别的任务上
+        val total = w.doneBytes + w.bytes
+        tasks += TvBackgroundTask(
+            key = "cache-move",
+            title = stringResource(Lang.tv_background_task_cache_move_waiting, driveName(w.target.location)),
+            detail = "${w.doneUnits}/${w.doneUnits + w.units} · ${w.doneBytes.bytes} / ${total.bytes}",
+            progress = if (total > 0) (w.doneBytes.toFloat() / total).coerceIn(0f, 1f) else null,
+            // 播放器一关, 停播就会让搬家接着搬 (见 MediaStorageSetup.start), 这一条随即变回进度
+            resume = closePlayer,
+            resumeLabel = stringResource(Lang.tv_background_task_cache_move_resume),
+            stop = mover?.let { { it.forgetSkipped() } },
+            stopLabel = stringResource(Lang.tv_background_task_cache_move_cancel),
+        )
+    }
+    // 下完的缓存自动放入片库, 一份一份来; 停不了 (自动的, 不给 ✕), 没有详情页
+    publish?.let { p ->
+        tasks += TvBackgroundTask(
+            key = "media-library-publish",
+            title = stringResource(Lang.tv_background_task_media_library),
+            detail = "${p.label} · ${p.bytesDone.bytes} / ${p.bytesTotal.bytes}",
+            progress = if (p.bytesTotal > 0) (p.bytesDone.toFloat() / p.bytesTotal).coerceIn(0f, 1f) else null,
         )
     }
     (import as? ProfileImportSession.State.Running)?.let { s ->
@@ -173,20 +216,33 @@ internal fun rememberTvBackgroundTasks(openCacheMove: () -> Unit): List<TvBackgr
 }
 
 /**
+ * 至多每 [period] 给一个值 (中间的只留最新的), 但隔了一阵之后的第一个值马上给: 任务开始、搬缓存从「等停播」变回进度时不晚半拍,
+ * 否则那一下两样都没有, 整格消失再出现, 焦点被交回卡片.
+ */
+private fun <T> Flow<T>.atMostEvery(period: Duration): Flow<T> = conflate().transform {
+    emit(it)
+    delay(period)
+}
+
+/**
  * 后台任务那一格 (动作面板最上面, 卡片上方), 没有任务时什么都不画. 同时只显示一个任务, 几个任务一起跑时也占这一格、高度不变
  * (同 iOS 的小组件叠放): 名字右边一排小圆点说一共几个、这是第几个. 照播放卡片的样子分成横排的两块 (同一块玻璃、同一个圆角):
  *
  * - 任务本身 (名字、进度): 按确定换到下一个 (最后一个之后回到第一个), 长按打开 ([TvBackgroundTask.open]).
- *   有任务就吃焦点: 从卡片按上永远先落在这里, 不会一上来就停在 ✕ 上; 只有一个打不开的任务时按确定没反应, 标签行写它的名字;
- * - 右端 ✕: 按下去就停, 不再确认 (同播放卡片的 ✕). 有任务能停 ([TvBackgroundTask.stop]) 就一直占着这一列, 切换时任务那块不跟着变宽变窄;
- *   显示的那个停不了时 ✕ 变淡、不吃焦点、点不动. 一个能停的都没有时不画这一列 (同播放卡片的占位卡不画永远灰着的 ✕).
+ *   有任务就吃焦点: 从卡片按上永远先落在这里, 不会一上来就停在右端的按钮上; 只有一个打不开的任务时按确定没反应, 标签行写它的名字;
+ * - 右端「继续」(文件夹里一个箭头, 读作「移动」而不是「播放」, 下面就是播放卡片): 停在半路的任务接着跑 ([TvBackgroundTask.resume]);
+ * - 最右端 ✕: 按下去就停 (取消), 不再确认 (同播放卡片的 ✕).
  *
- * 左右键在两块之间走, 哪一块都按「下」回播放卡片 (由 [partModifier] 接上), 按「上」不动.
- * 显示的那个结束时换到相邻那个 (见 [tvBackgroundTaskShownIndex]); 焦点在 ✕ 上而它变得按不了时交给任务本身, 任务都结束了交回面板.
+ * 右端这两列各自: 有任务用得上就一直占着这一列, 切换时任务那块不跟着变宽变窄; 显示的那个用不上时那一颗变淡、不吃焦点、点不动.
+ * 一个用得上的都没有时不画这一列 (同播放卡片的占位卡不画永远灰着的 ✕).
+ *
+ * 左右键在几块之间走, 哪一块都按「下」回播放卡片 (由 [partModifier] 接上), 按「上」不动.
+ * 显示的那个结束时换到相邻那个 (见 [tvBackgroundTaskShownIndex]); 焦点在右端的按钮上而它变得按不了时交给任务本身, 任务都结束了交回面板.
  *
  * @param onFocused 某块聚焦时 (聚焦着换了显示的任务也算), 面板底下标签行写的字, 以及要不要用错误色 (✕ 那块)
  * @param onFocusedRowGone 聚焦着时任务都结束了 (整格没了): 节点没了 Compose 不会自动改派焦点, 由面板接回卡片上
  * @param partModifier 加在每一块能聚焦的上面: 面板用它把「下」接到卡片
+ * @param bodyModifier 只加在任务本身上: 面板用它把打开时的焦点送到这里 (开始移动缓存之后自动弹出面板时)
  */
 @Composable
 internal fun TvBackgroundTaskSlot(
@@ -195,6 +251,7 @@ internal fun TvBackgroundTaskSlot(
     onFocusedRowGone: () -> Unit,
     modifier: Modifier = Modifier,
     partModifier: Modifier = Modifier,
+    bodyModifier: Modifier = Modifier,
 ) {
     // 显示的是哪个 (key), 和它当时排第几 (它结束时按位置找邻居)
     var shownKey by remember { mutableStateOf<String?>(null) }
@@ -209,14 +266,16 @@ internal fun TvBackgroundTaskSlot(
     }
 
     val multiple = tasks.size > 1
+    val resumeColumn = tasks.any { it.resume != null }
     val stopColumn = tasks.any { it.stop != null }
     val parts = buildSet {
         if (task != null) add(TvBackgroundTaskPart.Body)
+        if (task?.resume != null) add(TvBackgroundTaskPart.Resume)
         if (task?.stop != null) add(TvBackgroundTaskPart.Stop)
     }
     var focusedPart by remember { mutableStateOf<TvBackgroundTaskPart?>(null) }
     val requesters = remember { TvBackgroundTaskPart.entries.associateWith { FocusRequester() } }
-    // 聚焦着的那块没了 (✕ 随显示的任务换了 / 停了而按不了, 或者任务都结束了): 任务本身还在就接住, 不在就交回面板.
+    // 聚焦着的那块没了 (右端的按钮随显示的任务换了 / 停了而按不了, 或者任务都结束了): 任务本身还在就接住, 不在就交回面板.
     // 放在组合作用域里起的协程中: 焦点被清掉的回调随时会到、把 focusedPart 清掉, 跟着条件进出组合的 LaunchedEffect 可能还没跑就被取消
     val scope = rememberCoroutineScope()
     if (focusedPart != null && focusedPart !in parts) {
@@ -232,6 +291,7 @@ internal fun TvBackgroundTaskSlot(
     val nextLabel = if (multiple) stringResource(Lang.tv_background_task_next, index + 1, tasks.size) else null
     val label = when (focusedPart) {
         TvBackgroundTaskPart.Body -> task?.let { t -> listOfNotNull(nextLabel, t.hint).joinToString(" · ").ifEmpty { t.title } to false }
+        TvBackgroundTaskPart.Resume -> task?.resumeLabel?.let { it to false }
         TvBackgroundTaskPart.Stop -> task?.stopLabel?.let { it to true }
         null -> null
     }
@@ -275,8 +335,11 @@ internal fun TvBackgroundTaskSlot(
                 .weight(1f)
                 .fillMaxHeight()
                 .part(TvBackgroundTaskPart.Body, TV_BACKGROUND_TASK_TAG_BODY)
-                // ✕ 按不了时按右不动: 同一行右边没有能去的, 空间搜索会落到右下方播放卡片右端那块上
-                .focusProperties { if (TvBackgroundTaskPart.Stop !in parts) right = FocusRequester.Cancel }
+                .then(bodyModifier)
+                // 右端都按不了时按右不动: 同一行右边没有能去的, 空间搜索会落到右下方播放卡片右端那块上
+                .focusProperties {
+                    if (TvBackgroundTaskPart.Resume !in parts && TvBackgroundTaskPart.Stop !in parts) right = FocusRequester.Cancel
+                }
                 .background(bodyContainer)
                 // 遥控器: 短按换下一个, 按住打开; 确认键由它认领, 不落到下面的 combinedClickable 上
                 .tvLongPressKey(onLongPress = { task.open?.invoke() }, onShortPress = showNext)
@@ -325,28 +388,44 @@ internal fun TvBackgroundTaskSlot(
                 }
             }
         }
+        if (resumeColumn) {
+            TvBackgroundTaskButton(
+                Icons.AutoMirrored.Rounded.DriveFileMove,
+                contentDescription = task.resumeLabel,
+                focused = focusedPart == TvBackgroundTaskPart.Resume,
+                enabled = TvBackgroundTaskPart.Resume in parts,
+                danger = false,
+                Modifier
+                    .part(TvBackgroundTaskPart.Resume, TV_BACKGROUND_TASK_TAG_RESUME)
+                    // ✕ 按不了时按右不动 (同任务本身那条)
+                    .focusProperties { if (TvBackgroundTaskPart.Stop !in parts) right = FocusRequester.Cancel },
+            ) { task.resume?.invoke() }
+        }
         if (stopColumn) {
-            TvBackgroundTaskStopButton(
+            TvBackgroundTaskButton(
+                Icons.Rounded.Close,
                 contentDescription = task.stopLabel,
                 focused = focusedPart == TvBackgroundTaskPart.Stop,
                 enabled = TvBackgroundTaskPart.Stop in parts,
+                danger = true,
                 Modifier.part(TvBackgroundTaskPart.Stop, TV_BACKGROUND_TASK_TAG_STOP),
             ) { task.stop?.invoke() }
         }
     }
 }
 
-/** 格子里能聚焦的两块. */
+/** 格子里能聚焦的几块. */
 internal enum class TvBackgroundTaskPart {
-    Body, Stop;
+    Body, Resume, Stop;
 
     companion object {
         /** 聚焦着的那块没了时, 按这个顺序找一块接住 */
-        val HANDOVER_ORDER = listOf(Body, Stop)
+        val HANDOVER_ORDER = listOf(Body, Resume, Stop)
     }
 }
 
 internal const val TV_BACKGROUND_TASK_TAG_BODY = "tvBackgroundTaskBody"
+internal const val TV_BACKGROUND_TASK_TAG_RESUME = "tvBackgroundTaskResume"
 internal const val TV_BACKGROUND_TASK_TAG_STOP = "tvBackgroundTaskStop"
 
 /** 一共 [count] 个、这是第 [current] 个: 同探索页大图下面那排, 当前那个拉长成短条. */
@@ -365,19 +444,28 @@ private fun TvBackgroundTaskDots(count: Int, current: Int) {
 }
 
 /**
- * 格子右端的 ✕: 同播放卡片右端那块, 平时与任务本身同一块玻璃, 聚焦时错误色实底 —— 与任务本身的半透明高亮是两种材质,
- * 焦点在哪一块一眼可辨.
+ * 格子右端的按钮 (「继续」与 ✕): 同播放卡片右端那块, 平时与任务本身同一块玻璃, 聚焦时实底 (✕ 是错误色, 「继续」是主题色)
+ * —— 与任务本身的半透明高亮是两种材质, 焦点在哪一块一眼可辨.
  */
 @Composable
-private fun TvBackgroundTaskStopButton(
+private fun TvBackgroundTaskButton(
+    icon: ImageVector,
     contentDescription: String?,
     focused: Boolean,
-    /** 显示的那个停不了: 变淡、不吃焦点、点不动 (同 TV 上灰掉的按钮选不中的惯例) */
+    /** 显示的那个用不上: 变淡、不吃焦点、点不动 (同 TV 上灰掉的按钮选不中的惯例) */
     enabled: Boolean,
+    danger: Boolean,
     modifier: Modifier,
     onClick: () -> Unit,
 ) {
-    val container by animateColorAsState(if (focused) MaterialTheme.colorScheme.error else glassContainerColor())
+    val colors = MaterialTheme.colorScheme
+    val container by animateColorAsState(
+        when {
+            !focused -> glassContainerColor()
+            danger -> colors.error
+            else -> colors.primary
+        },
+    )
     Box(
         modifier
             .width(56.dp)
@@ -394,12 +482,12 @@ private fun TvBackgroundTaskStopButton(
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            Icons.Rounded.Close,
+            icon,
             contentDescription = contentDescription,
             tint = when {
-                focused -> MaterialTheme.colorScheme.onError
-                enabled -> MaterialTheme.colorScheme.onSurfaceVariant
-                else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+                focused -> if (danger) colors.onError else colors.onPrimary
+                enabled -> colors.onSurfaceVariant
+                else -> colors.onSurfaceVariant.copy(alpha = 0.3f)
             },
         )
     }
