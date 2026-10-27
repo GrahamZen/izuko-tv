@@ -11,63 +11,68 @@ package me.him188.ani.app.ui.settings.tv
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import me.him188.ani.app.domain.media.cache.library.MediaLibraryPublisher
+import me.him188.ani.app.domain.media.cache.library.MediaStorageSetup
 import me.him188.ani.app.domain.media.cache.location.MediaCacheLocations
 import me.him188.ani.app.domain.media.cache.location.MediaCacheMover
 import me.him188.ani.app.domain.usecase.GlobalKoin
+import me.him188.ani.app.ui.foundation.tv.TvActionPanelRequests
 import me.him188.ani.app.ui.lang.Lang
-import me.him188.ani.app.ui.lang.cache_move_started
 import me.him188.ani.app.ui.lang.settings_storage_cache_move
 import me.him188.ani.app.ui.lang.settings_storage_cache_move_confirm
 import me.him188.ani.app.ui.lang.settings_storage_cache_move_confirm_text
 import me.him188.ani.app.ui.lang.settings_storage_cache_move_confirm_title
 import me.him188.ani.app.ui.lang.settings_storage_cache_move_description
-import me.him188.ani.app.ui.lang.settings_storage_cache_move_none
 import me.him188.ani.app.ui.lang.settings_storage_cache_move_nothing
 import me.him188.ani.app.ui.lang.settings_storage_cache_move_pending
-import me.him188.ani.app.ui.lang.settings_storage_cache_move_progress
-import me.him188.ani.app.ui.lang.settings_storage_cache_move_stop
-import me.him188.ani.app.ui.lang.settings_storage_cache_move_stop_text
-import me.him188.ani.app.ui.lang.settings_storage_cache_move_stop_title
 import me.him188.ani.app.ui.lang.settings_storage_cache_move_target_unavailable
 import me.him188.ani.utils.coroutines.IO_
+import me.him188.ani.utils.logging.info
+import me.him188.ani.utils.logging.logger
 import me.him188.ani.datasources.api.topic.FileSize.Companion.bytes
 import org.jetbrains.compose.resources.getString
 import kotlin.time.Duration.Companion.seconds
 
-/** 搬家的进度 ([progress], 没在搬时为 null) 与各位置上待搬的缓存 ([pending], 按位置 id) */
+/** 正在搬或在等停播 ([busy], 这时进度在动作面板顶上) 与按现在的设置还在别的地方的缓存 ([leftovers]) */
 internal class TvCacheMoveStatus(
-    val progress: MediaCacheMover.Progress?,
-    val pending: Map<String?, MediaCacheMover.Pending>,
+    val busy: Boolean,
+    val leftovers: MediaStorageSetup.Group,
 )
 
 /**
- * 搬家的状态, 页面开着时每秒刷新进度. 待搬的要扫一遍各缓存的文件大小, 不在搬时每 10 秒、搬完那一刻与插拔盘时重算.
+ * 搬家的状态, 页面开着时每秒看一次. 还在别的地方的要扫一遍各缓存的文件大小, 不在搬时每 10 秒、搬完那一刻与插拔盘时重算.
  * 没有这项实现的平台一直没有值, 「移动已有缓存」不显示.
  */
 internal val mediaCacheMoveKey = TvSettingKey.Live<TvCacheMoveStatus>("mediaCacheMove") {
     val mover = GlobalKoin.getOrNull<MediaCacheMover>()
+    val setup = GlobalKoin.getOrNull<MediaStorageSetup>()
     val locations = GlobalKoin.getOrNull<MediaCacheLocations>()
-    if (mover == null || locations == null) {
+    if (mover == null || setup == null || locations == null) {
         emptyFlow()
     } else {
         flow {
-            var pending = emptyMap<String?, MediaCacheMover.Pending>()
-            var pendingFor: List<String?>? = null
+            var leftovers = MediaStorageSetup.Group.EMPTY
+            var countedFor: List<String?>? = null
             var sinceRecount = 0
             while (true) {
-                val progress = mover.progress.value
+                val busy = mover.progress.value != null || mover.waiting.value != null
                 val ids = locations.locations.value.map { it.id }
-                if (progress == null && (ids != pendingFor || sinceRecount >= 10)) {
-                    pending = mover.pending(ids)
-                    pendingFor = ids
+                if (!busy && (ids != countedFor || sinceRecount >= 10)) {
+                    leftovers = setup.leftovers().total
+                    countedFor = ids
                     sinceRecount = 0
                 }
-                // 搬的期间待搬的会变, 搬完重算
-                if (progress != null) pendingFor = null
-                emit(TvCacheMoveStatus(progress, pending))
+                // 搬的期间还在别处的会变, 搬完重算
+                if (busy) countedFor = null
+                emit(TvCacheMoveStatus(busy, leftovers))
                 sinceRecount++
                 delay(1.seconds)
             }
@@ -76,8 +81,9 @@ internal val mediaCacheMoveKey = TvSettingKey.Live<TvCacheMoveStatus>("mediaCach
 }
 
 /**
- * 「移动已有缓存」: 把不在「缓存位置」选的盘上的缓存都搬过去 (见 [MediaCacheMover]). 在搬时按它是停止.
- * 有不止一个位置 (或还有待搬的) 时才显示.
+ * 「移动已有缓存」: 按「缓存放在哪」的设置还在别的地方的缓存 (引导里选了只放新的、搬的时候那块盘没接上、取消了的) 搬过去
+ * ([MediaStorageSetup.moveLeftovers]). 有这样的缓存、又没在搬也没在等停播时才显示: 搬的进度、停止与取消都在动作面板顶上
+ * (开始搬时弹一次, 见 [showMoveInActionPanel]), 这里不重复.
  */
 internal fun TvSettingsItemsBuilder.cacheMoveItem() {
     val mediaCache = TvNetworkSettingKeys.mediaCache
@@ -86,43 +92,26 @@ internal fun TvSettingsItemsBuilder.cacheMoveItem() {
     action(
         Lang.settings_storage_cache_move, Lang.settings_storage_cache_move_description,
         keys = listOf(mediaCache, locations, move),
-        value = { v -> moveValueText(v[move], v[mediaCache]?.defaultLocation) },
-        visible = { v ->
-            v[locations].orEmpty().size > 1 ||
-                    v[move]?.let { it.progress != null || it.pending.values.any { p -> p.units > 0 } } == true
-        },
+        value = { v -> moveValueText(v[move]) },
+        visible = { v -> v[move]?.let { !it.busy && !it.leftovers.isEmpty } == true },
     ) { v ->
         val target = v[mediaCache]?.defaultLocation
         listOf(TvSettingsEdit.Run { env -> onMoveClicked(env, target) })
     }
 }
 
-private fun moveValueText(status: TvCacheMoveStatus?, target: String?): TvText? {
+private fun moveValueText(status: TvCacheMoveStatus?): TvText? {
     if (status == null) return null
-    status.progress?.let { p ->
-        return tvText(
-            Lang.settings_storage_cache_move_progress,
-            p.done + p.failed + p.skipped, p.total, p.bytesDone.bytes.toString(), p.bytesTotal.bytes.toString(),
-        )
-    }
-    val pending = status.pending[target] ?: return null
-    return if (pending.units > 0) {
-        tvText(Lang.settings_storage_cache_move_pending, pending.units, pending.bytes.bytes.toString())
-    } else {
-        tvText(Lang.settings_storage_cache_move_none)
-    }
+    val leftovers = status.leftovers
+    if (leftovers.isEmpty) return null
+    return tvText(Lang.settings_storage_cache_move_pending, leftovers.units, leftovers.bytes.bytes.toString())
 }
 
 private suspend fun onMoveClicked(env: TvSettingsEnv, target: String?) {
     val mover = GlobalKoin.get<MediaCacheMover>()
-    if (mover.isRunning) {
-        val confirm = TvSettingsConfirm(
-            title = tvText(Lang.settings_storage_cache_move_stop_title),
-            text = tvText(Lang.settings_storage_cache_move_stop_text),
-            confirmLabel = tvText(Lang.settings_storage_cache_move_stop),
-            destructive = true,
-        )
-        env.ask(confirm) { mover.cancel() }
+    // 这一行在这时不显示; 刚好在消失前按下去的, 带去看动作面板
+    if (mover.isRunning || mover.waiting.value != null) {
+        TvActionPanelRequests.showTasks("a move already going on")
         return
     }
     val location = GlobalKoin.get<MediaCacheLocations>().locations.value.firstOrNull { it.id == target }
@@ -130,18 +119,39 @@ private suspend fun onMoveClicked(env: TvSettingsEnv, target: String?) {
         env.toast(getString(Lang.settings_storage_cache_move_target_unavailable))
         return
     }
-    val pending = mover.pending(target)
-    if (pending.units == 0) {
+    val setup = GlobalKoin.get<MediaStorageSetup>()
+    val leftovers = setup.leftovers().total
+    if (leftovers.isEmpty) {
         env.toast(getString(Lang.settings_storage_cache_move_nothing))
         return
     }
     val confirm = TvSettingsConfirm(
-        title = tvText(Lang.settings_storage_cache_move_confirm_title, pending.units, location.nameText()),
-        text = tvText(Lang.settings_storage_cache_move_confirm_text, pending.bytes.bytes.toString()),
+        title = tvText(Lang.settings_storage_cache_move_confirm_title, leftovers.units, location.nameText()),
+        text = tvText(Lang.settings_storage_cache_move_confirm_text, leftovers.bytes.bytes.toString()),
         confirmLabel = tvText(Lang.settings_storage_cache_move_confirm),
     )
     env.ask(confirm) {
-        // 在后台搬, 搬完由 TvLowSpaceToasts 提示结果
-        if (mover.start(target)) env.toast(getString(Lang.cache_move_started, pending.units, pending.bytes.bytes.toString()))
+        // 在后台搬, 进度在动作面板顶上, 搬完由 TvLowSpaceToasts 提示结果
+        if (setup.moveLeftovers()) tvSettingsWriteScope.launch { showMoveInActionPanel() }
     }
 }
+
+/**
+ * 在电视上开始移动之后弹一次动作面板看进度 (见 [TvActionPanelRequests]): 等面板顶上有了这件事再弹, 免得弹出来那一刻还空着、焦点落到别处.
+ * 搬家一开始就有进度 (见 [MediaCacheMover.Progress]), 只放入片库时要等发布开始; 几秒内都没有 (一下就做完了, 结果由提示说) 就不弹.
+ */
+internal suspend fun showMoveInActionPanel() {
+    val mover = GlobalKoin.getOrNull<MediaCacheMover>() ?: return
+    val publishing = GlobalKoin.getOrNull<MediaLibraryPublisher>()?.progress ?: flowOf(null)
+    val shown = withTimeoutOrNull(5.seconds) {
+        combine(mover.progress, mover.waiting, publishing) { move, waiting, publish -> move != null || waiting != null || publish != null }
+            .first { it }
+    }
+    if (shown != null) {
+        TvActionPanelRequests.showTasks("moving caches")
+    } else {
+        logger.info { "Moving caches finished before it showed up in the action panel, not opening the panel" }
+    }
+}
+
+private val logger = logger("TvSettingsEntriesCacheMove")

@@ -44,6 +44,7 @@ import me.him188.ani.app.data.network.TmdbImageService
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.platform.AppTerminator
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
+import me.him188.ani.app.ui.foundation.tv.TvActionPanelRequests
 import me.him188.ani.app.ui.subject.details.layout.TvViewAllCommentsList
 import me.him188.ani.app.ui.subject.details.layout.TvViewAllGalleries
 import me.him188.ani.app.ui.subject.details.sections.LocalViewAllCommentsList
@@ -367,6 +368,16 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         //
         // 长按返回这条是栈底兜底 (最先注册), 播放器的"收叠层"处理器比它优先.
         var showQuickMenu by remember { mutableStateOf(false) }
+        // 应用替用户打开 (开始移动缓存之后, 见 TvActionPanelRequests): 焦点落在顶上的任务那一格
+        var quickMenuFocusTasks by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) {
+            TvActionPanelRequests.taskRequests.collect {
+                if (currentDestinationClaimable()) {
+                    quickMenuFocusTasks = true
+                    showQuickMenu = true
+                }
+            }
+        }
         val themeSettings = LocalThemeSettings.current
         val backLongPressAction by rememberUpdatedState(themeSettings.tvBackLongPress)
         val playLongPressAction by rememberUpdatedState(themeSettings.tvPlayLongPress)
@@ -500,7 +511,11 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
                     if (!onMain) aniNavigator.popBackOrNavigateToMain(MainScreenPage.Exploration)
                 },
                 onExitApp = { exitTvApp(context, appTerminator) },
-                onDismissRequest = { showQuickMenu = false },
+                onDismissRequest = {
+                    showQuickMenu = false
+                    quickMenuFocusTasks = false
+                },
+                focusTasks = quickMenuFocusTasks,
             )
         }
         // 页面里的调整入口打开的编辑窗口 (海报墙大小 / 标签顺序 / 播放器按钮). 装在这一层: 用应用的主题,

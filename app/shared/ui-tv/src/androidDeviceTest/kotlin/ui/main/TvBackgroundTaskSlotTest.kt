@@ -46,9 +46,9 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * 动作面板顶上的后台任务那一格 ([TvBackgroundTaskSlot]): 任务本身 | ✕ 两块, 左右在块之间走, 哪一块按下都回卡片;
+ * 动作面板顶上的后台任务那一格 ([TvBackgroundTaskSlot]): 任务本身 | 继续 | ✕, 左右在块之间走, 哪一块按下都回卡片;
  * 任务本身有任务就能聚焦, 按确定换下一个、到头回第一个, 长按打开; ✕ 停下任务, 有任务能停就一直占着那一列, 停不了的点不动;
- * ✕ 按不了时焦点交给任务本身, 任务都结束了交回卡片.
+ * 「继续」让等着的任务接着跑; 右端的按钮按不了时焦点交给任务本身, 任务都结束了交回卡片.
  */
 class TvBackgroundTaskSlotTest {
     private val host = TvNativeTestHost()
@@ -61,6 +61,7 @@ class TvBackgroundTaskSlotTest {
     private var cardEndFocused = false
     private var opened = 0
     private var stopped = 0
+    private var resumed = 0
 
     private val move = TvBackgroundTask(
         "move", "搬缓存", "1/3", 0.3f,
@@ -69,6 +70,13 @@ class TvBackgroundTaskSlotTest {
     )
     private val import = TvBackgroundTask("import", "导入收藏", "5/20", 0.25f)
     private val migration = TvBackgroundTask("migration", "换电视", null, null, stop = { stopped++ }, stopLabel = "停止换电视")
+
+    /** 同一条搬缓存在等着 (等停播): 能继续, 能取消 */
+    private val waitingMove = TvBackgroundTask(
+        "move", "关闭播放器后继续搬缓存", "1/3", 0.3f,
+        resume = { resumed++ }, resumeLabel = "关闭播放器并继续",
+        stop = { stopped++ }, stopLabel = "取消搬缓存",
+    )
 
     @BeforeTest
     fun setUp() {
@@ -222,6 +230,28 @@ class TvBackgroundTaskSlotTest {
     }
 
     @Test
+    fun `the resume button sits before the stop button and focus returns to the task once it resumes`() {
+        setTasks(waitingMove)
+        focusPart(TV_BACKGROUND_TASK_TAG_BODY)
+
+        host.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+        assertFocused(TV_BACKGROUND_TASK_TAG_RESUME)
+        host.waitUntil("「继续」聚焦时标签写继续, 不用错误色") { label == "关闭播放器并继续" && !labelDanger }
+        host.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+        assertFocused(TV_BACKGROUND_TASK_TAG_STOP)
+        host.waitUntil("✕ 聚焦时标签写取消, 用错误色") { label == "取消搬缓存" && labelDanger }
+        host.press(KeyEvent.KEYCODE_DPAD_LEFT)
+        assertFocused(TV_BACKGROUND_TASK_TAG_RESUME)
+
+        host.press(KeyEvent.KEYCODE_DPAD_CENTER)
+        host.waitUntil("按「继续」") { resumed == 1 }
+        // 接着搬了: 同一条变回进度, 没有「继续」, 焦点交给任务本身
+        setTasks(move)
+        assertFocused(TV_BACKGROUND_TASK_TAG_BODY)
+        assertEquals(0, host.onMain { stopped })
+    }
+
+    @Test
     fun `a single task that can neither open nor stop still takes focus and shows its name`() {
         setTasks(import)
         host.press(KeyEvent.KEYCODE_DPAD_UP)
@@ -288,7 +318,7 @@ class TvBackgroundTaskSlotTest {
 
     /** 格子里此刻画出来的任务名 (同时只该有一个). */
     private fun shownTitles(): List<String> {
-        val titles = setOf(move.title, import.title, migration.title)
+        val titles = setOf(move.title, import.title, migration.title, waitingMove.title)
         return nodes().flatMap { it.texts() }.filter { it in titles }
     }
 
