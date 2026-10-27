@@ -511,12 +511,15 @@ class DefaultMediaSelector(
 
     override val events = MutableMediaSelectorEvents()
 
-    override fun autoSelectSnapshots(sources: Flow<List<MediaSourceSelectionSnapshot>>): Flow<MediaAutoSelectSnapshot> =
-        combine(sources, savedDefaultPreference, newPreferences, mediaSelectorSettings, mediaSelectorContext) {
+    override fun autoSelectSnapshots(sources: Flow<List<MediaSourceSelectionSnapshot>>): Flow<MediaAutoSelectSnapshot> {
+        // 源的结果一个个到, 每份快照都整表重筛太贵 (见 MediaFilterMemo); 一次自动选源用一张表
+        val memo = MediaFilterMemo()
+        return combine(sources, savedDefaultPreference, newPreferences, mediaSelectorSettings, mediaSelectorContext) {
                 sourceSnapshots, default, preference, settings, context ->
             val media = sourceSnapshots.flatMap { it.results }.distinctBy { it.mediaId }
             val candidates = algorithm.sortMediaList(
-                algorithm.filterMediaList(media, default, settings, context), settings, context,
+                algorithm.filterMediaList(media, default, settings, context, memo = memo.prepare(media, default, settings, context)),
+                settings, context,
             ).filterIsInstance<MaybeExcludedMedia.Included>()
             MediaAutoSelectSnapshot(
                 sourceSnapshots, candidates,
@@ -524,6 +527,7 @@ class DefaultMediaSelector(
                 preference, settings, context,
             )
         }
+    }
 
     override suspend fun selectAutomatically(candidate: Media, expectedSelection: Media?): Media? {
         if (selected.value != expectedSelection || candidate == expectedSelection) return null

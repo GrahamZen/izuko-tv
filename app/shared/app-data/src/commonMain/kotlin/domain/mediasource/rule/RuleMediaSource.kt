@@ -11,7 +11,10 @@ package me.him188.ani.app.domain.mediasource.rule
 
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.ClientRequestException
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.ServerResponseException
+import io.ktor.client.plugins.pluginOrNull
+import io.ktor.client.plugins.timeout
 import io.ktor.client.request.header
 import io.ktor.client.request.prepareRequest
 import io.ktor.client.request.setBody
@@ -25,11 +28,16 @@ import io.ktor.http.content.TextContent
 import kotlinx.atomicfu.locks.SynchronizedObject
 import kotlinx.atomicfu.locks.synchronized
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import me.him188.ani.app.data.repository.media.SelectorMediaSourceEpisodeCacheRepository
 import me.him188.ani.app.domain.media.fetch.wholeSubjectEpisodeSortsOrNull
+import me.him188.ani.app.domain.mediasource.KeywordSearchScope
 import me.him188.ani.app.domain.mediasource.latestAiredEpisode
 import me.him188.ani.app.domain.mediasource.codec.DefaultMediaSourceCodec
 import me.him188.ani.app.domain.mediasource.codec.DontForgetToRegisterCodec
@@ -189,6 +197,12 @@ class RuleMediaSource(
          * 被验证页挡住的那次也算一次; 同一页再请求要等过这段, 否则拿到的是冷却页.
          */
         private val SITE_SEARCH_COOLDOWN = 3.seconds
+
+        /** 站点回 5xx 后隔多久重试 ([request]) */
+        private val SERVER_ERROR_RETRY_DELAY = 200.milliseconds
+
+        /** 一次搜索里同时取几个条目页: 一页一页地取, 慢的页挡住后面对的那页 */
+        private const val PAGE_CONCURRENCY = 2
     }
 
     private val arguments = config.deserializeArgumentsOrNull(RuleMediaSourceArguments.serializer())
@@ -256,7 +270,11 @@ class RuleMediaSource(
     private suspend fun request(request: RuleHttpRequest): RuleHttpResponse {
         // 站点拉黑了这个网络: 冷却期内不再请求, 收到封禁页也不再接着试 (见 RuleSiteBlocks)
         RuleSiteBlocks.throwIfBlocked(request.url)
-        val response = sendHttp(request)
+        val response = sendHttp(request).let { first ->
+            // 站点偶尔回 5xx, 过一下再请求多半就好了: GET 重试一次
+            if (first.status < 500 || request.method != "GET") first
+            else delay(SERVER_ERROR_RETRY_DELAY).let { sendHttp(request) }
+        }
         RuleSiteBlocks.checkResponse(request.url, response.status, response.text)
         if (request.method != "GET" || response.text.length > MAX_BLOCK_CHECK_LENGTH) return response
         val verdict = evaluator.evaluate(
@@ -353,10 +371,11 @@ class RuleMediaSource(
             keywords.primaryNames, keywords.fallbackNames, remembered,
             requestInterval = Duration.ZERO,
             matches = plan::foundOwn,
+            emitPagesEarly = true,
         ) { name ->
             val searchQuery = searchQuery(name)
             searchFromCacheOrNull(searchQuery, subjectId)
-                ?: searchOnlineUnlessRecentlyEmpty(searchQuery, keywords.keywordOf(name), plan, subjectId)
+                ?: searchOnlineUnlessRecentlyEmpty(searchQuery, keywords.keywordOf(name), plan, subjectId, scope = this)
         }.map { MediaMatch(it, MatchKind.FUZZY) }
     }
 
@@ -397,14 +416,21 @@ class RuleMediaSource(
         keyword: String,
         plan: SubjectSearchPlan,
         subjectId: Int?,
+        scope: KeywordSearchScope?,
     ): List<DefaultMedia> {
         val name = query.subjectName
         val now = currentTimeMillis()
         val searchedAt = synchronized(recentlyEmptyLock) { recentlyEmpty[name] }
         if (searchedAt != null && now - searchedAt < rule.searchCacheTtlMillis) return emptyList()
-        return searchOnline(query, keyword, plan, subjectId).also { media ->
-            if (media.isEmpty()) synchronized(recentlyEmptyLock) { recentlyEmpty[name] = now }
+        val media = try {
+            searchOnline(query, keyword, plan, subjectId, scope)
+        } catch (e: RuleServerErrorException) {
+            // 站点出错时照常换下一个关键词, 但不记成「搜过、没搜到」(站点回应的记忆也没记下这次)
+            logger.info { "RuleMediaSource '$mediaSourceId': search '$keyword' failed: ${e.message}" }
+            return emptyList()
         }
+        if (media.isEmpty()) synchronized(recentlyEmptyLock) { recentlyEmpty[name] = now }
+        return media
     }
 
     /**
@@ -416,6 +442,7 @@ class RuleMediaSource(
         keyword: String,
         plan: SubjectSearchPlan,
         subjectId: Int?,
+        scope: KeywordSearchScope?,
     ): List<DefaultMedia> {
         val ttl = rule.searchCacheTtlMillis.milliseconds
         val subjects = repository.siteMemory.searchResults(mediaSourceId, keyword, ttl) {
@@ -426,31 +453,50 @@ class RuleMediaSource(
         val ordered = plan.pagesToOpen(subjects, matchConfig.autoMatch.preferShorterName) { it.name }
             .take(rule.maxSubjects.coerceAtLeast(1))
         val probe = query.freshnessProbe ?: SelectorEpisodeProbe(query.episodeSort, query.episodeEp, query.episodeName)
-        return buildList {
-            for (subject in ordered) {
-                val episodes = try {
-                    repository.siteMemory.page(
-                        mediaSourceId, subject.fullUrl, ttl,
-                        isFresh = { it.findMatchingEpisodeOrNull(probe.episodeSort, probe.episodeEp, probe.episodeName) != null },
-                    ) { episodesOf(subject.fullUrl) }.orEmpty()
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: BlockedException) {
-                    throw e
-                } catch (e: SiteIpBlockedException) {
-                    throw e
-                } catch (e: Exception) {
-                    // 单个条目页出错不终止整个搜索
-                    logger.warn(e) { "RuleMediaSource '$mediaSourceId': failed to load subject page ${subject.fullUrl}" }
-                    continue
+        // 几页同时取 (最多 PAGE_CONCURRENCY 页), 每取完一页就先交出这一页的资源 ([KeywordSearchScope.emitEarly]); 返回的仍按搜索计划排的顺序
+        val pages = coroutineScope {
+            val gate = Semaphore(PAGE_CONCURRENCY)
+            ordered.map { subject ->
+                // 按搜索计划的顺序占名额再开: 同时在取的总是排在最前的几页 (各自去抢的话谁先抢到不一定)
+                gate.acquire()
+                async {
+                    try {
+                        try {
+                            repository.siteMemory.page(
+                                mediaSourceId, subject.fullUrl, ttl,
+                                isFresh = { it.findMatchingEpisodeOrNull(probe.episodeSort, probe.episodeEp, probe.episodeName) != null },
+                            ) { episodesOf(subject.fullUrl) }.orEmpty()
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: BlockedException) {
+                            throw e
+                        } catch (e: SiteIpBlockedException) {
+                            throw e
+                        } catch (e: Exception) {
+                            // 单个条目页出错不终止整个搜索
+                            logger.warn(e) { "RuleMediaSource '$mediaSourceId': failed to load subject page ${subject.fullUrl}" }
+                            null
+                        }?.let { episodes ->
+                                val selected = if (episodes.isEmpty()) emptyList()
+                                else selectorEngine.selectFilteredMedia(episodes, matchConfig, query, mediaSourceId, subject.name)
+                                if (selected.isNotEmpty()) scope?.emitEarly(selected)
+                                episodes to selected
+                            }
+                    } finally {
+                        gate.release()
+                    }
                 }
+            }.awaitAll()
+        }
+        return buildList {
+            for ((subject, loaded) in ordered.zip(pages)) {
+                val (episodes, selected) = loaded ?: continue
                 logger.info { "RuleMediaSource '$mediaSourceId': ${subject.fullUrl} -> ${episodes.size} episodes" }
                 if (episodes.isEmpty()) continue
                 repository.addCache(
                     subjectId, mediaSourceId, query.subjectName, subject, episodes,
                     sourceCacheTtl = rule.searchCacheTtlMillis.milliseconds,
                 )
-                val selected = selectorEngine.selectFilteredMedia(episodes, matchConfig, query, mediaSourceId, subject.name)
                 // 这一页没有要的那一集时也留一条这个条目的资源, 关键词链靠它判断这个关键词搜到了名字对得上的条目
                 addAll(
                     selected.ifEmpty {
@@ -600,6 +646,8 @@ internal suspend fun HttpClient.executeRuleRequest(request: RuleHttpRequest): Ru
     prepareRequest(request.url) {
         method = HttpMethod.parse(request.method)
         for ((name, value) in request.headers) header(name, value)
+        // 站点连不上时早点放弃: 共用客户端等 30 秒, 播放段第一步连不上就要白等这么久才轮到下一个分支 (如 WebView 嗅探)
+        if (pluginOrNull(HttpTimeout) != null) timeout { connectTimeoutMillis = RULE_CONNECT_TIMEOUT_MILLIS }
         if (request.body != null) {
             // Content-Type 是 Ktor 托管的内容头, 直接 header() 会被覆盖, 要随请求体一起给
             setBody(TextContent(request.body, ContentType.parse(request.contentType ?: "text/plain")))
@@ -610,6 +658,9 @@ internal suspend fun HttpClient.executeRuleRequest(request: RuleHttpRequest): Ru
 } catch (e: ServerResponseException) {
     e.response.toRuleResponse()
 }
+
+/** 规则源请求建立连接 (TCP + TLS) 最多等多久, 见 [executeRuleRequest] */
+private const val RULE_CONNECT_TIMEOUT_MILLIS = 10_000L
 
 private suspend fun HttpResponse.toRuleResponse() = RuleHttpResponse(
     finalUrl = request.url.toString(),

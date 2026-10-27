@@ -9,8 +9,6 @@
 
 package me.him188.ani.app.domain.mediasource.search
 
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import me.him188.ani.app.data.models.subject.SplitSeason
 import me.him188.ani.app.data.network.SeriesGraphTable
 import me.him188.ani.app.data.network.SeriesGraphTableRepository
@@ -352,13 +350,16 @@ internal class TitleIdentity(
             // 用主标题 (去掉季与副标题) 找: 「葬送的芙莉莲 第二季」的别的作品是所有以「葬送的芙莉莲」开头的作品;
             // 再加上同系列 (前传、续集能走到的) 的作品, 本条目名字里含着的 (系列名) 不算
             val bases = names.map(TitleForms::mainTitle).filter { TitleForms.compact(it).length >= 2 }.distinct()
+            val containingBase = table.nodesContainingAny(bases)
             val startingWithBase = bases.flatMap { base ->
                 val normalizedBase = TitleForms.compact(base)
-                (table.nodesContaining(base).filter { it.id != subjectId && it.inSeries(table) }.flatMap { listOf(it.name, it.nameCn) } + plan.otherWorkNames)
+                (containingBase[base].orEmpty().filter { it.id != subjectId && it.inSeries(table) }.flatMap { listOf(it.name, it.nameCn) } + plan.otherWorkNames)
                     .map(TitleForms::compact)
                     .filter { it.length > normalizedBase.length && normalizedBase in it }
             }
-            val inSeries = (subjectId?.let { DriveSeriesParts.seriesNodesOf(it, table) }.orEmpty().flatMap { listOf(it.name, it.nameCn) } + plan.otherWorkNames)
+            // 同系列的作品 (前传、续集能走到的), 下面几处共用
+            val seriesNodes = subjectId?.let { DriveSeriesParts.seriesNodesOf(it, table) }.orEmpty()
+            val inSeries = (seriesNodes.flatMap { listOf(it.name, it.nameCn) } + plan.otherWorkNames)
                 .map(TitleForms::compact)
                 .filter { name -> TitleForms.isDistinctive(name) && own.none { name in it } }
             val others = (startingWithBase + inSeries).filter { it !in own }.distinct()
@@ -374,12 +375,12 @@ internal class TitleIdentity(
             val series = (parts?.seriesNames.orEmpty() + seriesNames).distinct()
             val notOwn = series + others
             val airYear = request.firstAirDate()?.year ?: ownNode?.airDate?.takeIf { it.isValid }?.year
-            val otherWorkYears = subjectId?.let { DriveSeriesParts.seriesNodesOf(it, table) }.orEmpty()
+            val otherWorkYears = seriesNodes
                 .mapNotNullTo(HashSet()) { node -> node.airDate.takeIf { it.isValid }?.year }
                 .filterTo(HashSet()) { year -> airYear == null || abs(year - airYear) > 1 }
             val (ownNames, weakNames) = own.filter { it !in notOwn }.partition(TitleForms::isDistinctive)
             /** 本条目与同系列的作品 */
-            val seriesIds = subjectId?.let { DriveSeriesParts.seriesNodesOf(it, table) }.orEmpty().mapTo(HashSet()) { it.id } +
+            val seriesIds = seriesNodes.mapTo(HashSet()) { it.id } +
                     listOfNotNull(subjectId)
             return TitleIdentity(
                 ownNames = ownNames,
@@ -404,7 +405,7 @@ internal class TitleIdentity(
                         .filterTo(HashSet()) { year -> airYear != null && abs(year - airYear) > 1 }
                 }.orEmpty(),
                 ownCategoryKinds = WorkKinds.ofCategory(ownNode?.metaTags.orEmpty()),
-                firstWorkNames = subjectId?.let { DriveSeriesParts.seriesNodesOf(it, table) }.orEmpty()
+                firstWorkNames = seriesNodes
                     .filter { node -> node.id != subjectId && table.edgesOf(node.id)?.prequels.isNullOrEmpty() }
                     .flatMap { listOf(it.name, it.nameCn) }
                     .map(TitleForms::compact)
@@ -426,22 +427,9 @@ internal fun interface TitleIdentities {
     companion object {
         val None = TitleIdentities { null }
 
-        /** 从系列关系图算; 同一个条目的几个数据源、几次切集共用, 记最近几个条目的结果. */
-        fun of(repository: SeriesGraphTableRepository): TitleIdentities {
-            val lock = Mutex()
-            val cache = LinkedHashMap<List<Any>, TitleIdentity>()
-            return TitleIdentities { request ->
-                val table = repository.current() ?: return@TitleIdentities null
-                val key = listOf(table.dump, table.allAnime, request.subjectId, request.subjectNames, request.nameHints)
-                lock.withLock {
-                    cache[key] ?: TitleIdentity.of(request, table, AnimeNameIndex.of(table)).also {
-                        cache[key] = it
-                        while (cache.size > CACHE_SIZE) cache.remove(cache.keys.first())
-                    }
-                }
-            }
+        /** 从系列关系图算; 与网页类数据源共用结果 ([AnimeNames.identityOf]). */
+        fun of(repository: SeriesGraphTableRepository): TitleIdentities = TitleIdentities { request ->
+            repository.current()?.let { AnimeNames.awaitIdentityOf(request, it) }
         }
-
-        private const val CACHE_SIZE = 8
     }
 }
