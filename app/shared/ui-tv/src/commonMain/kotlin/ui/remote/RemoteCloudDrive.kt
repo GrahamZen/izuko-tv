@@ -29,6 +29,7 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import me.him188.ani.app.data.models.preference.CloudDriveAccount
 import me.him188.ani.app.data.models.preference.CloudDrivePlaybackMode
+import me.him188.ani.app.domain.media.cache.library.MediaLibraryAccess
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveAuthException
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveMediaSource
@@ -36,6 +37,7 @@ import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveProtocol
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveQrLoginState
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveRegistry
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveService
+import me.him188.ani.app.domain.mediasource.clouddrive.LocalFolderDrive
 import me.him188.ani.app.domain.mediasource.clouddrive.WebDav
 import me.him188.ani.app.domain.mediasource.clouddrive.WebDavSources
 import me.him188.ani.app.domain.mediasource.clouddrive.ensureCloudDriveMediaSourceEnabled
@@ -61,7 +63,7 @@ import kotlin.time.Duration.Companion.seconds
  * 手机上可以按协议给的唤起链接跳到网盘 App 里确认, 也可以用另一台设备扫 `api/drive/qr.svg?drive=<id>`.
  *
  * WebDAV 服务器 (NAS) 是用户在这里自己加的网盘 ([WebDavSources]): 卡片上是账号密码登录、媒体文件夹 (浏览服务器的文件夹选)、改名字与地址、删除;
- * 最后一张卡片是添加新服务器的表单.
+ * 添加的表单在「新增数据源」里. 本地文件夹 ([LocalFolderDrive]) 也是在这里加的: 不用登录, 卡片上是权限状态、媒体文件夹 (浏览各块盘选)、改名字、删除.
  *
  * 也给另外两处 (播放器页的「添加网盘分享」「从网盘挑」) 提供已配置的网盘.
  */
@@ -103,6 +105,8 @@ internal object RemoteCloudDrive {
                 !post -> null
                 request.path == "api/drive/check" -> check(request.field("drive"))
                 request.path == "api/drive/webdav/add" -> addWebDav(request)
+                request.path == "api/drive/local/add" -> addLocalFolder(request)
+                request.path == "api/drive/local/grant" -> openLocalFolderGrant()
                 request.path in DRIVE_ACTIONS -> {
                     val service = driveOf(request.field("drive"))
                         ?: return@runCatching status(tr("没有这个网盘，请刷新"), ok = false)
@@ -192,6 +196,8 @@ internal object RemoteCloudDrive {
                             expired = account.isLoggedIn && service.driveId in expired,
                             qr = qrLogins[service.driveId]?.state,
                             languageTag = lang,
+                            folderPath = { folderPathOf(service, it) },
+                            localAccessible = service.protocol.isLocalFolder && service.localFoldersAccessible(),
                         ),
                     )
                 }
@@ -203,6 +209,8 @@ internal object RemoteCloudDrive {
      * 一张网盘卡片的数据.
      *
      * @param sourceName 这个网盘自己网盘的数据源的名字, 找不到时为 null (用网盘名)
+     * @param folderPath 媒体文件夹给人看的路径
+     * @param localAccessible 本地文件夹此刻能读 (见 [CloudDriveService.localFoldersAccessible])
      */
     internal fun driveJson(
         protocol: CloudDriveProtocol,
@@ -212,6 +220,8 @@ internal object RemoteCloudDrive {
         expired: Boolean,
         qr: CloudDriveQrLoginState?,
         languageTag: String,
+        folderPath: (String) -> String = { WebDav.displayPath(protocol, it) },
+        localAccessible: Boolean = false,
     ): JsonObject = buildJsonObject {
         val name = protocol.displayName(languageTag)
         val qrLogin = protocol.login.qr
@@ -242,13 +252,17 @@ internal object RemoteCloudDrive {
         put("type", protocol.type)
         put("supportsPassword", protocol.supportsPasswordLogin)
         put("username", account.username)
-        if (protocol.isWebDav) {
-            put("server", WebDav.serverUrl(protocol)?.toString().orEmpty())
+        if (protocol.isWebDav) put("server", WebDav.serverUrl(protocol)?.toString().orEmpty())
+        if (protocol.isLocalFolder) {
+            put("accessible", localAccessible)
+            put("grantAdb", localFolderAccess()?.adbGrantCommand.orEmpty())
+        }
+        if (protocol.isUserAdded) {
             put("depth", protocol.library.depth)
             putJsonArray("library") {
                 for (fid in protocol.library.folders) addJsonObject {
                     put("id", fid)
-                    put("path", WebDav.displayPath(protocol, fid))
+                    put("path", folderPath(fid))
                 }
             }
         }
@@ -366,18 +380,30 @@ internal object RemoteCloudDrive {
         return status(tr("已添加{0}", protocol.name))
     }
 
-    /** 浏览 WebDAV 服务器的文件夹 (选媒体文件夹用); [fid] 为空时是服务器的根. */
+    /** 浏览 WebDAV 服务器或本地各块盘的文件夹 (选媒体文件夹用); [fid] 为空时是根. */
     private fun folders(service: CloudDriveService, fid: String): JsonObject {
         val protocol = service.protocol
-        if (!protocol.isWebDav) return result(false, tr("这个网盘不能选媒体文件夹"))
+        if (!protocol.isUserAdded) return result(false, tr("这个网盘不能选媒体文件夹"))
         val id = fid.ifEmpty { service.rootFolderId }
-        val children = runBlocking { service.listForPicking(id) }.filter { it.dir }.sortedBy { it.fileName.lowercase() }
+        val atLocalRoot = protocol.isLocalFolder && id == service.rootFolderId
+        // 本地的根是各块盘, 按系统给的顺序 (内部存储在前)
+        val children = runBlocking { service.listForPicking(id) }.filter { it.dir }
+            .let { list -> if (atLocalRoot) list else list.sortedBy { it.fileName.lowercase() } }
         return buildJsonObject {
             put("ok", true)
             put("id", id)
-            put("path", WebDav.displayPath(protocol, id))
-            put("parent", if (id == service.rootFolderId) "" else WebDav.parentIdOf(id))
+            put("path", if (atLocalRoot) tr("设备上的存储") else folderPathOf(service, id))
+            put(
+                "parent",
+                when {
+                    id == service.rootFolderId -> ""
+                    protocol.isLocalFolder -> service.localFolderParentOf(id)
+                    else -> WebDav.parentIdOf(id)
+                },
+            )
             put("chosen", id in protocol.library.folders)
+            // 本地的根 (各块盘的列表) 本身不能当媒体文件夹
+            put("choosable", !atLocalRoot)
             putJsonArray("folders") {
                 for (folder in children) addJsonObject {
                     put("id", folder.fid)
@@ -389,7 +415,7 @@ internal object RemoteCloudDrive {
 
     /** 媒体文件夹: [action] 是 add / remove (文件夹 [fid]) 或 depth (往下找几层). */
     private fun library(service: CloudDriveService, action: String, fid: String, depth: String): JsonObject {
-        if (!service.protocol.isWebDav) return status(tr("这个网盘不能选媒体文件夹"), ok = false)
+        if (!service.protocol.isUserAdded) return status(tr("这个网盘不能选媒体文件夹"), ok = false)
         val expected = updateWebDav(service) { protocol ->
             val library = protocol.library
             protocol.copy(
@@ -411,13 +437,13 @@ internal object RemoteCloudDrive {
         )
     }
 
-    /** 改 WebDAV 服务器的名字与地址, 改完向服务器核对一次登录. */
+    /** 改 WebDAV 服务器的名字与地址 (本地文件夹只改名字), 改完向服务器核对一次登录. */
     private fun editWebDav(service: CloudDriveService, name: String, url: String): JsonObject {
-        if (!service.protocol.isWebDav) return status(tr("订阅来的网盘不能在这里修改"), ok = false)
+        if (!service.protocol.isUserAdded) return status(tr("订阅来的网盘不能在这里修改"), ok = false)
         val expected = try {
             updateWebDav(service) { protocol ->
                 val renamed = protocol.copy(name = name.trim().ifEmpty { protocol.name })
-                if (url.isBlank()) renamed else WebDavSources.withServer(renamed, url)
+                if (url.isBlank() || !protocol.isWebDav) renamed else WebDavSources.withServer(renamed, url)
             }
         } catch (_: IllegalArgumentException) {
             return status(tr("地址要以 http:// 或 https:// 开头"), ok = false)
@@ -427,9 +453,9 @@ internal object RemoteCloudDrive {
         return status(tr("已保存"))
     }
 
-    /** 删掉用户自己加的 WebDAV 服务器 (连同账号密码); 订阅来的网盘会随订阅更新回来, 不在这里删. */
+    /** 删掉用户自己加的 WebDAV 服务器 (连同账号密码) 或本地文件夹 (盘上的文件不动); 订阅来的网盘会随订阅更新回来, 不在这里删. */
     private fun removeWebDav(service: CloudDriveService): JsonObject {
-        if (!service.protocol.isWebDav) return status(tr("订阅来的网盘不能在这里删除"), ok = false)
+        if (!service.protocol.isUserAdded) return status(tr("订阅来的网盘不能在这里删除"), ok = false)
         val name = nameOf(service)
         runBlocking {
             service.logout()
@@ -451,6 +477,40 @@ internal object RemoteCloudDrive {
     private fun awaitDrives(predicate: (List<CloudDriveService>) -> Boolean) {
         runBlocking { withTimeoutOrNull(LOAD_TIMEOUT) { registry.drives.first { it != null && predicate(it) } } }
     }
+
+    // endregion
+
+    // region 本地文件夹
+
+    private fun localFolderAccess(): MediaLibraryAccess? = KoinPlatform.getKoin().getOrNull<MediaLibraryAccess>()?.takeIf { it.isSupported }
+
+    /**
+     * 加一个本地文件夹数据源. 平台读不了盘上的文件夹时不加; 没有「所有文件访问」时照样加上 (卡片上提示去开),
+     * 加完网页打开文件夹浏览选媒体文件夹.
+     */
+    private fun addLocalFolder(request: LanHttpRequest): JsonObject {
+        if (localFolderAccess() == null) return status(tr("这台设备不能读本地文件夹"), ok = false)
+        val protocol = LocalFolderDrive.newProtocol(request.field("name").trim().ifEmpty { tr("本地文件夹") })
+        runBlocking { WebDavSources.add(manager, protocol) }
+        awaitDrives { drives -> drives.any { it.driveId == protocol.id } }
+        logger.info { "Added local folder drive ${protocol.id} from the web console" }
+        return status(tr("已添加{0}", protocol.name))
+    }
+
+    /** 在电视上打开给「所有文件访问」的系统页面 (同片库). 一个入口都没有时回 adb 命令. */
+    private fun openLocalFolderGrant(): JsonObject {
+        val access = localFolderAccess() ?: return status(tr("这台设备不能读本地文件夹"), ok = false)
+        if (access.isGranted()) return status(tr("已经允许了"))
+        return if (access.openGrantPage() != null) {
+            status(tr("已在电视上打开授权页面，用遥控器打开「允许管理所有文件」后回来刷新"))
+        } else {
+            status(tr("电视上没有授权页面，在电脑上运行：{0}", access.adbGrantCommand.orEmpty()), ok = false)
+        }
+    }
+
+    /** 媒体文件夹 [fid] 给人看的路径 */
+    private fun folderPathOf(service: CloudDriveService, fid: String): String =
+        if (service.protocol.isLocalFolder) service.localFolderPathOf(fid) else WebDav.displayPath(service.protocol, fid)
 
     // endregion
 
