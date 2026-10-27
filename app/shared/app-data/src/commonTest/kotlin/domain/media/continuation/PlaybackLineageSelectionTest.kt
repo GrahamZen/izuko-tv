@@ -289,6 +289,23 @@ class PlaybackLineageSelectionTest {
     }
 
     @Test
+    fun `a lineage source still searching after the wait is not searched again`() = runFetchMediaSelectorTestSuite {
+        initWeb()
+        val repository = PlaybackLineageRepository(createTestPreferencesDataStore()).apply { setLineage(SUBJECT_ID, lineageOnDrive) }
+        val (_, session, _) = configureFetchSession {
+            object {
+                val drive by web()
+            }
+        }
+        // 网盘源一直在整轮搜, 线索又不是能直接快取的: 等满之后交给自动选源, 不另起一遍同样的查询
+        testScope().runCurrent()
+        val continuation = FakeContinuation(LineageResolution.Found(media(kind = WEB, subjectName = "Example Series", alliance = ON_LINEAGE)))
+
+        assertFalse(select(repository, continuation, session))
+        assertEquals(0, continuation.resolves)
+    }
+
+    @Test
     fun `a lineage without this episode is kept - a gone one is forgotten`() = runFetchMediaSelectorTestSuite {
         initWeb()
         val repository = PlaybackLineageRepository(createTestPreferencesDataStore()).apply { setLineage(SUBJECT_ID, lineage) }

@@ -414,6 +414,35 @@ class RuleEngineTest {
     }
 
     @Test
+    fun `server error surfaces instead of an empty result unless another branch succeeds`() = runTest {
+        val failing = RuleHttp { RuleHttpResponse(it.url, 500, "internal error") }
+        val config = RuleConfig(
+            baseUrl = "https://www.example.com",
+            search = listOf(RuleStep.Fetch(url = "/s"), RuleStep.Subjects(list = listOf("a"))),
+        )
+        val error = assertFailsWith<RuleServerErrorException> { RuleEngine(config, failing).search("x") }
+        assertEquals(500, error.status)
+
+        val mirror = RuleHttp {
+            if (it.url.startsWith("https://mirror.example.com")) RuleHttpResponse(it.url, 200, """<a href="/d/1">示例</a>""")
+            else RuleHttpResponse(it.url, 502, "bad gateway")
+        }
+        val withMirror = RuleConfig(
+            baseUrl = "https://www.example.com",
+            search = listOf(
+                RuleStep.First(
+                    listOf(
+                        listOf(RuleStep.Fetch(url = "/s")),
+                        listOf(RuleStep.Fetch(url = "https://mirror.example.com/s")),
+                    ),
+                ),
+                RuleStep.Subjects(list = listOf("a")),
+            ),
+        )
+        assertEquals(listOf(RuleSubject("示例", "https://mirror.example.com/d/1")), RuleEngine(withMirror, mirror).search("x"))
+    }
+
+    @Test
     fun `network error surfaces when no branch succeeds`() = runTest {
         val config = RuleConfig(
             baseUrl = "https://www.example.com",

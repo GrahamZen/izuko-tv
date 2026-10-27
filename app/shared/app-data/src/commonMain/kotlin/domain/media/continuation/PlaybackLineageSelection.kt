@@ -19,6 +19,7 @@ import me.him188.ani.app.domain.media.fetch.MediaFetchSession
 import me.him188.ani.app.domain.media.fetch.MediaSourceFetchState
 import me.him188.ani.app.domain.media.fetch.awaitCompletedResults
 import me.him188.ani.app.domain.media.fetch.isFinal
+import me.him188.ani.app.domain.media.fetch.isPaused
 import me.him188.ani.app.domain.media.selector.MaybeExcludedMedia
 import me.him188.ani.app.domain.media.selector.MediaSelector
 import me.him188.ani.app.domain.media.selector.MediaSourceSelectionSnapshot
@@ -91,6 +92,11 @@ class PlaybackLineageSelection(
                 pick(lineage, candidatesOf(session, selector) ?: return null)?.let { return it }
             }
             if (source?.state?.value is MediaSourceFetchState.Succeed) return null
+            // 还在会话里查: 直接去取是把同一套请求再发一遍 (开播时两边一起抢 CPU), 交给自动选源接着等它
+            if (source != null && !source.state.value.isFinal && !source.state.value.isPaused) {
+                logger.info { "Lineage source ${lineage.mediaSourceId} of subject $subjectId is still searching after $SOURCE_TIMEOUT, leaving it to auto select" }
+                return null
+            }
         }
         // 查询会话按条目复用, 记的是进播放页那一集的请求: 换成这一集
         val request = session.latestRequest.first().forEpisode(episode)

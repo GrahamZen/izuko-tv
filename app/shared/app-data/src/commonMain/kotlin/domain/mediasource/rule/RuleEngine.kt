@@ -95,6 +95,12 @@ internal data class RuleState(
 )
 
 /**
+ * 站点出错 (HTTP 5xx). 与 4xx (站点说没有这一页) 不同, 不能当成「搜不到 / 这页没有剧集」:
+ * 这一段没有别的分支取到结果时抛给调用方, 调用方不把这次记成空结果.
+ */
+class RuleServerErrorException(val status: Int, val url: String) : Exception("HTTP $status $url")
+
+/**
  * 每一步的执行记录, 用于日志与调试. [ok] 为 `false` 时 [detail] 是失败原因.
  */
 fun interface RuleTraceListener {
@@ -371,6 +377,7 @@ class RuleEngine(
         }
         val request = RuleHttpRequest(method.trim().uppercase().ifEmpty { "GET" }, RuleText.normalizeUrl(absolute), headers, bodyText, type)
         val response = http.request(request)
+        if (response.status >= 500) throw RuleServerErrorException(response.status, request.url)
         if (response.status >= 400) return fail(label, "HTTP ${response.status} ${request.url}")
         val variables = if (cookieVariable.isBlank()) {
             state.variables

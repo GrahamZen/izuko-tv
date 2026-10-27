@@ -9,6 +9,8 @@
 
 package me.him188.ani.app.domain.mediasource.search
 
+import kotlinx.atomicfu.locks.SynchronizedObject
+import kotlinx.atomicfu.locks.synchronized
 import me.him188.ani.app.data.network.SeriesGraphTable
 import me.him188.ani.app.data.network.SeriesNode
 import me.him188.ani.app.domain.mediasource.toSimplifiedChinese
@@ -61,10 +63,16 @@ internal class AnimeNameIndex private constructor(
 
         @Volatile
         private var last: AnimeNameIndex? = null
+        private val buildLock = SynchronizedObject()
 
-        /** [table] 的索引; 同一张表只建一次 (记最近一张). */
+        /**
+         * [table] 的索引; 同一张表只建一次 (记最近一张). 冷启动时各数据源同时认部, 后来的等先来的建完,
+         * 不各建一份 (每份要拆十多万个名字再排序).
+         */
         fun of(table: SeriesGraphTable): AnimeNameIndex =
-            last?.takeIf { it.table === table } ?: build(table).also { last = it }
+            last?.takeIf { it.table === table } ?: synchronized(buildLock) {
+                last?.takeIf { it.table === table } ?: build(table).also { last = it }
+            }
 
         private fun build(table: SeriesGraphTable): AnimeNameIndex {
             var entries = LongArray(table.size * 4)
