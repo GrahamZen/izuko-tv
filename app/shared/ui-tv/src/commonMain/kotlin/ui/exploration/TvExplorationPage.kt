@@ -828,8 +828,8 @@ private fun TvExplorationPageContent(
         }
     }
 
-    // 返回键分层规则 (见 tvExploreBackTarget): 不在行首卡 -> 回本行首卡; 不在第一行的行首卡 -> 回第一行首卡 (有继续观看是它, 没有是第一个推荐行);
-    // 第一行的行首卡 -> hero 主按钮; hero 主按钮上轮播不在第一项 -> 回第一项
+    // 返回键分层规则 (照 Prime Video, 见 tvExploreBackTarget): 不在行首卡 -> 回本行首卡; 任何一行的行首卡 -> hero 主按钮;
+    // hero 主按钮上轮播不在第一项 -> 回第一项
     // (最后这层在 [TvHeroCarouselBackHandler], 单独注册).
     //
     // **不能只看 cardAreaHasFocus**: 从详情页/播放器返回本页时它要等目标行排出来、焦点
@@ -855,10 +855,9 @@ private fun TvExplorationPageContent(
         val pending = cardFocusRequest
         val key = pending?.rowKey ?: focusedRowKey
         val cardIndex = if (pending != null) pending.cardIndex.let { if (it < 0) 1 else it } else focusedCardIndex
-        val firstRowKey = nativeState.view?.firstRowKey() ?: if (hasFollowed) TV_FOLLOWED_ROW_KEY else tvRecRowKey(0)
-        val target = tvExploreBackTarget(key, cardIndex, firstRowKey)
+        val target = tvExploreBackTarget(key, cardIndex)
         if (target != null) {
-            // 回首卡按远跳走 (同追番页返回回首卡): 途中按方向键当场落到目标, 按确认排队, 落地后点它
+            // 回首卡按远跳走 (同追番页返回回首卡): 途中按方向键当场落到行首, 按确认排队, 落地后点它
             wallFarJumpRow = target
             cardFocusRequest = TvCardFocusRequest(target, cardIndex = 0)
         } else {
@@ -1224,13 +1223,13 @@ private fun TvHeroCarouselBackHandler(enabled: () -> Boolean, onBack: () -> Unit
 }
 
 /**
- * 探索页卡片区按返回落到哪一行的第一张 (返回键分层): 焦点在 [rowKey] 行第 [cardIndex] 张 (条目下标). 不在行首 -> 本行; 在行首、不在第一行
- * ([firstRowKey]: 有继续观看是它, 没有是第一个推荐行) -> 第一行; 第一行的行首 (或焦点不在卡上, [rowKey] 为 null) -> null, 回 hero 主按钮.
+ * 探索页卡片区按返回回到哪一行的首卡 (返回键分层, 照 Prime Video): 焦点在 [rowKey] 行第 [cardIndex] 张 (条目下标). 不在行首 -> 本行;
+ * 任何一行的行首 (或焦点不在卡上, [rowKey] 为 null) -> null, 回顶部的 hero 主按钮. 不经过「第一行」那一层: 那一行往右滑过时,
+ * 竖着滚过去之后还要横着滚回首卡.
  */
-internal fun tvExploreBackTarget(rowKey: String?, cardIndex: Int, firstRowKey: String?): String? = when {
+internal fun tvExploreBackTarget(rowKey: String?, cardIndex: Int): String? = when {
     rowKey == null -> null
     cardIndex > 0 -> rowKey
-    firstRowKey != null && rowKey != firstRowKey -> firstRowKey
     else -> null
 }
 
