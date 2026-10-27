@@ -53,6 +53,7 @@ import kotlin.uuid.Uuid
  * ([DriveHttpConfig.rotatingCookies]) 交还给 [CloudDriveCookieStore.onServerCookies] —— 有的网盘每次请求都会轮换, 不回写的话登录很快失效.
  *
  * WebDAV 服务器 ([CloudDriveProtocol.isWebDav]) 不走请求模板: 列目录由 [WebDavClient] 发 `PROPFIND`, 直链就是文件的地址 (见 [WebDav]).
+ * 本地文件夹 ([CloudDriveProtocol.isLocalFolder]) 直接读盘 ([LocalFolderClient]), 直链是 `file://` 地址.
  *
  * 地址带 `{host}` 的请求在 [DriveHttpConfig.hosts] 之间轮换: 同一个网盘的几个等价域名常解析到不同的边缘节点, 个别节点会连不上
  * (TCP 或 TLS 握手超时) 而其他域名正常, 所以连接层失败时换下一个重试, 并记住最后能用的那个. 不带 `{host}` 的请求连接失败时重试一次.
@@ -63,11 +64,14 @@ internal class CloudDriveApi(
     private val client: HttpClient,
     private val protocol: () -> CloudDriveProtocol,
     private val cookies: CloudDriveCookieStore,
+    localRoots: LocalFolderRoots = LocalFolderRoots.None,
 ) {
     @Volatile
     private var preferredHostIndex = 0
 
     private val webDav = WebDavClient(client, protocol) { cookies.credentials() }
+
+    internal val local = LocalFolderClient(localRoots)
 
     // region 账号
 
@@ -106,6 +110,7 @@ internal class CloudDriveApi(
     /** 列出文件夹的直接子项的一页. */
     suspend fun listFolder(folderId: String, page: Int = 1): DriveFileList {
         if (protocol().isWebDav) return webDav.list(folderId).let { DriveFileList(it, it.size) }
+        if (protocol().isLocalFolder) return local.list(folderId).let { DriveFileList(it, it.size) }
         val op = protocol().api.listFolder ?: throw CloudDriveUnsupportedException("listFolder")
         return listPage("listFolder", op, mapOf("folderId" to folderId.json, "page" to page.json))
     }
@@ -123,6 +128,7 @@ internal class CloudDriveApi(
         if (fileIds.isEmpty()) return emptyList()
         val p = protocol()
         if (p.isWebDav) return fileIds.map { DriveDownload(it, WebDav.nameOf(it), WebDav.parentIdOf(it), WebDav.urlOf(p, it)) }
+        if (p.isLocalFolder) return fileIds.map { DriveDownload(it, LocalFolderDrive.nameOf(it), LocalFolderDrive.parentIdOf(it), LocalFolderDrive.urlOf(it)) }
         val op = p.api.download ?: throw CloudDriveUnsupportedException("download")
         val root = send("download", op.request, mapOf("fileIds" to fileIds.json, "fileId" to fileIds.first().json))
         return root.selectByPath(op.items).mapNotNull { item ->

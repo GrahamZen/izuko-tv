@@ -59,6 +59,7 @@ import kotlin.time.TimeSource
  *
  * 登录态就是账号的 Cookie ([CloudDriveAccount.cookie]); 接口响应里轮换的 Cookie 在这里合并后写回.
  * WebDAV 服务器 ([CloudDriveProtocol.isWebDav]) 用账号密码 ([CloudDriveAccount.username] / [CloudDriveAccount.password]).
+ * 本地文件夹 ([CloudDriveProtocol.isLocalFolder]) 不用登录, 总是算已登录 (见 [account]).
  *
  * @param protocol 创建时的协议; 订阅更新后由 [updateProtocol] 换掉, [driveId] 不变
  */
@@ -72,6 +73,8 @@ class CloudDriveService internal constructor(
     internal val identities: TitleIdentities = TitleIdentities.None,
     /** 条目的播放线索 (见 [PlaybackLineage]): 三种数据源查询时先列线索里的文件夹 */
     private val playbackLineages: suspend (subjectId: Int) -> PlaybackLineage? = { null },
+    /** 本地文件夹 ([CloudDriveProtocol.isLocalFolder]) 能读的盘 */
+    localRoots: LocalFolderRoots = LocalFolderRoots.None,
 ) {
     @Volatile
     var protocol: CloudDriveProtocol = protocol
@@ -101,7 +104,11 @@ class CloudDriveService internal constructor(
 
     private val accountLock = Mutex()
 
-    val account: Flow<CloudDriveAccount> = accounts.flow.map { it.of(driveId) }.distinctUntilChanged()
+    /** 账号; 本地文件夹没有登录信息时给一个只有名字 ([LocalFolderDrive.ACCOUNT_NAME]) 的, 好让各处「已登录」的判断成立. */
+    val account: Flow<CloudDriveAccount> = accounts.flow.map { all ->
+        val account = all.of(driveId)
+        if (this@CloudDriveService.protocol.isLocalFolder && !account.isLoggedIn) account.copy(username = LocalFolderDrive.ACCOUNT_NAME) else account
+    }.distinctUntilChanged()
 
     val isLoggedIn: Flow<Boolean> = account.map { it.isLoggedIn }
 
@@ -130,7 +137,7 @@ class CloudDriveService internal constructor(
             currentAccount().takeIf { it.username.isNotBlank() }?.let { DriveCredentials(it.username, it.password) }
     }
 
-    internal val api = CloudDriveApi(httpClient, { this.protocol }, cookieStore)
+    internal val api = CloudDriveApi(httpClient, { this.protocol }, cookieStore, localRoots)
 
     /**
      * 没有服务端搜索时按名找番用的媒体文件夹索引 (见 [CloudDriveProtocol.searchesLibrary]).
@@ -138,7 +145,7 @@ class CloudDriveService internal constructor(
      */
     private val library = DriveLibraryIndex(
         listFolder = { listAll(it) },
-        roots = { this.protocol.library.folders.ifEmpty { listOf(rootFolderId) } },
+        roots = { this.protocol.library.folders.ifEmpty { if (this.protocol.isLocalFolder) api.local.volumeIds() else listOf(rootFolderId) } },
         config = { this.protocol.library },
     )
 
@@ -220,6 +227,15 @@ class CloudDriveService internal constructor(
     }
 
     val rootFolderId: String get() = protocol.rootId
+
+    /** 本地文件夹 [fid] 给人看的位置 (盘的名字加盘里的路径, 见 [LocalFolderClient.displayPath]) */
+    fun localFolderPathOf(fid: String): String = api.local.displayPath(fid)
+
+    /** 本地文件夹 [fid] 的上一级; 已经是根时为空 */
+    fun localFolderParentOf(fid: String): String = api.local.parentIdOf(fid)
+
+    /** 本地文件夹此刻能读 (安卓上「所有文件访问」开着) */
+    fun localFoldersAccessible(): Boolean = api.local.isAccessible()
 
     /** 指定的文件夹 (往下几层) 里对上 [request] 这个条目的剧集, 规则同自己网盘的数据源读指定的文件夹. */
     internal suspend fun matchPickedFolder(request: MediaFetchRequest, folder: DrivePickedFolder): List<DriveSubjectMatcher.MatchedFile> =
