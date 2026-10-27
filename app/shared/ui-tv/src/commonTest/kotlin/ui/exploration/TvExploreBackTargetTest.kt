@@ -13,32 +13,22 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
-/** 探索页卡片区的返回键分层 ([tvExploreBackTarget]): 本行首卡 → 第一行首卡 → hero 主按钮. */
+/** 探索页卡片区的返回键分层 ([tvExploreBackTarget], 照 Prime Video): 本行首卡 → hero 主按钮. */
 class TvExploreBackTargetTest {
     @Test
     fun `not at the row start goes back to the start of the same row`() {
-        assertEquals("rec-3", tvExploreBackTarget("rec-3", cardIndex = 5, firstRowKey = "followed"))
+        assertEquals("rec-3", tvExploreBackTarget("rec-3", cardIndex = 5))
+        assertEquals("followed", tvExploreBackTarget("followed", cardIndex = 2))
     }
 
     @Test
-    fun `a row start below the first row goes to continue watching`() {
-        assertEquals("followed", tvExploreBackTarget("rec-3", cardIndex = 0, firstRowKey = "followed"))
-        assertEquals("followed", tvExploreBackTarget("rec-0", cardIndex = 0, firstRowKey = "followed"))
-    }
-
-    @Test
-    fun `without continue watching a row start goes to the first recommendation row`() {
-        assertEquals("rec-0", tvExploreBackTarget("rec-3", cardIndex = 0, firstRowKey = "rec-0"))
-    }
-
-    @Test
-    fun `the start of the first row goes to the hero button`() {
-        assertNull(tvExploreBackTarget("followed", cardIndex = 0, firstRowKey = "followed"))
-        assertNull(tvExploreBackTarget("rec-0", cardIndex = 0, firstRowKey = "rec-0"))
+    fun `the start of any row goes to the hero button`() {
+        assertNull(tvExploreBackTarget("rec-3", cardIndex = 0))
+        assertNull(tvExploreBackTarget("followed", cardIndex = 0))
     }
 
     @Test
     fun `focus outside the cards goes to the hero button`() {
-        assertNull(tvExploreBackTarget(null, cardIndex = 0, firstRowKey = "followed"))
+        assertNull(tvExploreBackTarget(null, cardIndex = 0))
     }
 }
