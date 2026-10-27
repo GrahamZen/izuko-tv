@@ -23,6 +23,9 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.JsonObject
@@ -161,6 +164,19 @@ internal object RemoteDeviceMigration {
 
     @Volatile
     private var state: State = State.Idle
+        set(value) {
+            field = value
+            _progress.value = (value as? State.Running)?.let { Progress(it.text, it.done, it.total, it.cancellable) }
+        }
+
+    /**
+     * 正在从旧电视取数据 / 写进来 (见 [migrate]), 没在搬时为 null: 给电视动作面板上的后台任务用.
+     * @property cancellable 还在下载, 能用 [stop] 停
+     */
+    data class Progress(val text: String, val done: Long, val total: Long, val cancellable: Boolean)
+
+    private val _progress = MutableStateFlow<Progress?>(null)
+    val progress: StateFlow<Progress?> = _progress.asStateFlow()
 
     @Volatile
     private var job: Job? = null
@@ -224,11 +240,18 @@ internal object RemoteDeviceMigration {
         return result(true, tr("开始搬了"))
     }
 
-    private fun cancel(): JsonObject = synchronized(this) {
+    private fun cancel(): JsonObject =
+        if (stop()) result(true, tr("已停止，这台电视上什么都没改")) else result(false, tr("现在停不了"))
+
+    /**
+     * 停下正在下载的搬运 (手机上的「停止」与电视动作面板上的 ✕ 共用); 开始写入之后停不了.
+     * @return 停了; 没在搬或已经在写入时为 `false`
+     */
+    fun stop(): Boolean = synchronized(this) {
         val running = state as? State.Running
-        if (running == null || !running.cancellable) return result(false, tr("现在停不了"))
+        if (running == null || !running.cancellable) return false
         job?.cancel()
-        result(true, tr("已停止，这台电视上什么都没改"))
+        true
     }
 
     private fun status(): JsonObject = when (val s = state) {
