@@ -101,7 +101,7 @@ class MediaSelectionTraceReplayTest {
     fun `completed Frieren retains exact matching with sequel results present`() = replay("frieren-01")
 
     @Test
-    fun `recorded preferred Xifan blocks earlier exact T0 until completion`() =
+    fun `recorded preferred Xifan is chosen as soon as it has the exact match - ahead of earlier exact T0`() =
         replay("fresh-bocchi-01", Scenario.PreferredXifan)
 
     @Test
@@ -266,6 +266,8 @@ class MediaSelectionTraceReplayTest {
             Scenario.ExactBeforeFuzzy -> 5_000L
             Scenario.FuzzyOnly -> 15_000L
             Scenario.FuzzyFinished -> frames.first { frame -> frame.sources.single().state == "Succeed" }.elapsedMillis
+            // 记住的源还在查, 交出这条精确匹配时就选它 (不等它查完, 也不选别的源更早的)
+            Scenario.PreferredXifan -> frames.first { frame -> frame.sources.any { it.id == xifan && it.results.any { r -> r.mediaId == expected.mediaId } } }.elapsedMillis
             else -> frames.first { frame -> frame.sources.any { it.id == xifan && it.state == "Succeed" } }.elapsedMillis
         }
         val expectedName = trace.sources.single { it.id == expected.mediaSourceId }.name

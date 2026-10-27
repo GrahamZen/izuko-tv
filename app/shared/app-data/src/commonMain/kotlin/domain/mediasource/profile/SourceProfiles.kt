@@ -70,6 +70,11 @@ object SourceProfiles {
     /** 最近几次大多要 WebView 嗅探才拿到视频的数据源 (只有规则源记这一项). */
     val webViewSources: Flow<Set<String>> = state.map { all -> all.filterValues { usesWebView(it) == true }.keys }.distinctUntilChanged()
 
+    /** 记过的源最近几次是不是大多要 WebView 嗅探 (见 [usesWebView]); 没记过的不在里面. */
+    val webViewUsage: Flow<Map<String, Boolean>> = state.map { all ->
+        buildMap { for ((id, list) in all) usesWebView(list)?.let { put(id, it) } }
+    }.distinctUntilChanged()
+
     class ResolvedUrl(val uri: String, val headers: Map<String, String>)
 
     @Serializable
