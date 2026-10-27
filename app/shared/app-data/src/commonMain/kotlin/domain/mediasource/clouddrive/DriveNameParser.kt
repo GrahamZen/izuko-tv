@@ -9,7 +9,6 @@
 
 package me.him188.ani.app.domain.mediasource.clouddrive
 
-import me.him188.ani.app.domain.mediasource.search.NotAnimeMarkers
 import me.him188.ani.app.domain.mediasource.search.TitleForms
 import me.him188.ani.app.domain.mediasource.search.TitleOccurrences
 import me.him188.ani.datasources.api.EpisodeSort
@@ -148,26 +147,6 @@ internal object DriveNameParser {
         .filterNot { NOT_SEASON_BEFORE_ROMAN.containsMatchIn(name.substring(0, it.range.first)) }
         .mapTo(HashSet()) { FOLDER_ROMAN_NUMERALS.getValue(it.value.trim()) }
 
-    /**
-     * 名字写明的作品类别. 条目本身不是这一类时, 网盘里写着它的文件夹与文件不是条目的正片 (见 [DriveSubjectMatcher.matchEpisodes]).
-     * [inCollections]: 合集的名字 ([isCollectionName]) 写着它也算. 剧场版、外传、OVA、真人版常与正片放在一个合集里; 短剧不是动画,
-     * 不与动画放在一起 (分享站上的「短剧更新汇总」列着几十部短剧, 条目名常是其中一部名字的一段: 「新婚夜和夫君间谍过家家」).
-     */
-    enum class WorkKind(val inCollections: Boolean = false) { MOVIE, SPIN_OFF, OVA, LIVE_ACTION, SHORT_DRAMA(inCollections = true) }
-
-    fun workKindsOf(text: String): Set<WorkKind> = buildSet {
-        // 分享里常在字间插竖线防屏蔽 (「海丨贼丨王丨真丨人丨版」)
-        val name = OBFUSCATION.replace(text, "")
-        if (MOVIE_MARKER.containsMatchIn(name)) add(WorkKind.MOVIE)
-        if (SPIN_OFF_MARKER.containsMatchIn(name)) add(WorkKind.SPIN_OFF)
-        if (OVA_MARKER.containsMatchIn(name)) add(WorkKind.OVA)
-        if (NotAnimeMarkers.isLiveAction(name)) add(WorkKind.LIVE_ACTION)
-        if (NotAnimeMarkers.isShortDrama(name)) add(WorkKind.SHORT_DRAMA)
-    }
-
-    /** 合集的名字 (「TV+剧场版」「1-4季全」「XX 系列合集」): 写着剧场版也可能装着正片. */
-    fun isCollectionName(name: String): Boolean = COLLECTION.containsMatchIn(name)
-
     private fun titleParserEpisode(name: String): EpisodeSort? {
         val range = RawTitleParser.getDefault().parse(name).episodeRange ?: return null
         if (!range.isSingleEpisode()) return null
@@ -242,11 +221,6 @@ internal object DriveNameParser {
     private val FOLDER_ROMAN_SEASON = Regex("""(?<![A-Za-z0-9])(?:Ⅰ|Ⅱ|Ⅲ|Ⅳ|Ⅴ|Ⅵ|III|II|IV|VI|V)(?![A-Za-z0-9])|(?<=\s)I\s*$""")
     private val NOT_SEASON_BEFORE_ROMAN = Regex("""(?:part|vol|volume|cour|disc|disk|cd|chapter)[ ._-]*$""", RegexOption.IGNORE_CASE)
 
-    private val MOVIE_MARKER = Regex("""剧场版|劇場版|电影版|電影版|映画|gekijou-?ban|(?<![A-Za-z])movie(?![A-Za-z])""", RegexOption.IGNORE_CASE)
-    private val SPIN_OFF_MARKER = Regex("""外传|外傳|(?<![A-Za-z])gaiden(?![A-Za-z])""", RegexOption.IGNORE_CASE)
-    private val OVA_MARKER = Regex("""(?<![A-Za-z])(?:OVA|OAD)(?![A-Za-z])""", RegexOption.IGNORE_CASE)
-    private val OBFUSCATION = Regex("""(?<=\p{L})[丨｜](?=\p{L})""")
-    private val COLLECTION = Regex("""合集|全集|全季|系列|[+＋&＆]|附|\d\s*[-~～至]\s*\d""")
     private val FOLDER_SEASON_CODE = Regex("""(?<![A-Za-z0-9])[Ss](\d{1,2})(?![0-9Ee])""")
 
     /** 标题里的 `Season 3`. 与 [TitleForms.ENGLISH_SEASON] 不同, 不跨过 ` - `: 发布标题里 `2nd Season - 01` 的 01 是集号. */

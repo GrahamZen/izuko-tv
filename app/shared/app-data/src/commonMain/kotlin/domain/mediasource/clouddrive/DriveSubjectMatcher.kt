@@ -25,6 +25,8 @@ import me.him188.ani.app.domain.mediasource.search.SubjectSearchPlan
 import me.him188.ani.app.domain.mediasource.search.TitleForms
 import me.him188.ani.app.domain.mediasource.search.TitleIdentities
 import me.him188.ani.app.domain.mediasource.search.TitleIdentity
+import me.him188.ani.app.domain.mediasource.search.WorkKind
+import me.him188.ani.app.domain.mediasource.search.WorkKinds
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import me.him188.ani.utils.logging.info
@@ -83,7 +85,7 @@ internal fun interface TmdbEpisodeNumbering {
  * 4. 展开文件夹时, 按季分好的一层里不是这个条目的季的文件夹 (见 [DriveSubjectSeason.otherSeasonFolders]) 不往下列:
  *    里面没写季的视频认的都是那一季, 最后也会按季去掉.
  * 5. 每个视频 ([matchEpisodes]): 自动找到的先看路径点名的是哪一部 ([DrivePathAttribution]), 点名别的部的不要; 再看作品类别,
- *    写明是剧场版、外传、OVA ([DriveNameParser.workKindsOf]) 而条目不是这一类的不要 (整个系列的合集里它们的视频也从 01 编起,
+ *    写明是剧场版、外传、OVA ([WorkKinds.of]) 而条目不是这一类的不要 (整个系列的合集里它们的视频也从 01 编起,
  *    「TV+剧场版」「1-4季」这类合集名不算), 真人版、短剧一律不要; 最后从文件名解析集号, 按 [DriveEpisodeResolver] 认是哪一集.
  *    只有一集的条目 (剧场版) 文件名里多半没有集号, 认不出集号的正片就当作那一集.
  *    网盘给的视频时长与认出的那一集 (条目服务记的时长) 差得离谱的不要 ([EpisodeDurations]): 短剧、同名的剧场版.
@@ -317,7 +319,7 @@ internal class DriveSubjectMatcher(
             val season = DriveSubjectSeason.of(request, tmdbEpisodes, identity)
             val attribution = identity?.let { DrivePathAttribution(it, season, request) }
             val resolver = DriveEpisodeResolver(request, season, tmdbEpisodes, identity, trustFolders)
-            val kinds = KindCheck(request, trustFolders)
+            val kinds = KindCheck(request, trustFolders, identity?.ownCategoryKinds.orEmpty())
             val durations = request.episodes.takeUnless { trustFolders }.orEmpty().associate { it.sort to it.durationSeconds }
             val onlyEpisode = request.episodes.singleOrNull()?.sort
 
@@ -329,7 +331,11 @@ internal class DriveSubjectMatcher(
             }
 
             val titles = DriveNameParser.titlePatterns(SubjectSearchPlan.of(request).ownNames)
-            val parsedFiles = candidates.associateWith { DriveNameParser.parseFile(it.file.fileName, titles) }
+            // 条目本身是 OVA 时文件名里的 OVA 标记不是「附带的番外」
+            val ovaIsMain = kinds.isOwn(WorkKind.OVA)
+            val parsedFiles = candidates.associateWith {
+                DriveNameParser.parseFile(if (ovaIsMain) WorkKinds.withoutOvaMarker(it.file.fileName) else it.file.fileName, titles)
+            }
             // 只有一集的条目: 文件夹里只有这一个视频时, 名字里剩下的数字不是集号 (「酷漫404」)
             val videosIn = candidates.groupingBy { it.folders }.eachCount()
             val continuousFolders = resolver.continuousFolders(parsedFiles)
@@ -367,23 +373,23 @@ internal class DriveSubjectMatcher(
         }
 
         /**
-         * 作品类别: 候选的文件夹 (合集名只算 [DriveNameParser.WorkKind.inCollections] 的) 与文件名写明了条目不是的那一类.
-         * 真人版、短剧一律不要; 剧场版、外传、OVA 在条目本身是这一类、只有一集 (剧场版条目的名字里常不写剧场版) 或候选来自用户指定的文件夹时不查.
+         * 作品类别: 候选的文件夹 (合集名只算 [WorkKind.inCollections] 的) 与文件名写明了条目不是的那一类.
+         * 真人版、短剧一律不要; 剧场版、外传、OVA 在条目本身是这一类 (名字里写着的, 或 Bangumi 记的类型 [categoryKinds])、
+         * 只有一集 (剧场版条目的名字里常不写剧场版) 或候选来自用户指定的文件夹时不查.
          */
-        private class KindCheck(request: MediaFetchRequest, trustFolders: Boolean) {
-            private val ownKinds = subjectNamesOf(request).flatMapTo(HashSet()) { DriveNameParser.workKindsOf(it) }
+        private class KindCheck(request: MediaFetchRequest, trustFolders: Boolean, categoryKinds: Set<WorkKind>) {
+            private val ownKinds = subjectNamesOf(request).flatMapTo(HashSet()) { WorkKinds.of(it) } + categoryKinds
             private val checked = when {
                 trustFolders -> emptySet()
-                request.episodes.size != 1 -> DriveNameParser.WorkKind.entries.toSet()
-                else -> setOf(DriveNameParser.WorkKind.LIVE_ACTION, DriveNameParser.WorkKind.SHORT_DRAMA)
+                request.episodes.size != 1 -> WorkKind.entries.toSet()
+                else -> setOf(WorkKind.LIVE_ACTION, WorkKind.SHORT_DRAMA)
             }
 
+            fun isOwn(kind: WorkKind): Boolean = kind in ownKinds
+
             fun rejects(candidate: Candidate): Boolean {
-                val folderKinds = candidate.folders.flatMap { folder ->
-                    val collection = DriveNameParser.isCollectionName(folder)
-                    DriveNameParser.workKindsOf(folder).filter { it.inCollections || !collection }
-                }
-                return (folderKinds + DriveNameParser.workKindsOf(candidate.file.fileName)).any { it in checked && it !in ownKinds }
+                val folderKinds = candidate.folders.flatMap { WorkKinds.outsideCollectionsOf(it) }
+                return (folderKinds + WorkKinds.of(candidate.file.fileName)).any { it in checked && it !in ownKinds }
             }
         }
     }
