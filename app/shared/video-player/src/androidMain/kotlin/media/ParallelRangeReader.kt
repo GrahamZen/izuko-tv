@@ -216,8 +216,10 @@ internal class ParallelRangeReader(
     /**
      * 打开 `[position, position + length)` ([length] 为 -1 表示到资源末尾), 返回要读的字节数, 不知道时为 -1.
      *
-     * @param knownTotalLength 资源总长, 之前按范围读到过时给 (说明服务端支持范围请求): 这时各块 (包括第一块) 当场一起排出去,
+     * @param knownTotalLength 资源总长, 之前按范围读到过时给 (说明服务端支持范围请求): 这时各块 (包括第一块) 在第一次 [read] 时一起排出去,
      * 不先在调用线程上发一个请求问长度. 网盘每个请求首字节要两三秒, 串着问一次, 跳转后就要多等这一轮.
+     * 打开后一个字节都没读就关的 (播放器读完文件尾的索引, 先在正文开头打开, 紧接着就跳到观看进度) 不发任何请求:
+     * 当场排的话一整轮几十个请求刚发出就取消.
      * 小范围 (不到一块, 例如跳到文件尾读索引) 也拆给几个连接, 每块不小于 [minPartBytes]: 连接被限速时一个连接读一百多 KB 要好几秒
      */
     fun open(position: Long, length: Long, knownTotalLength: Long = -1): Long {
@@ -233,7 +235,7 @@ internal class ParallelRangeReader(
                 val parts = (remaining / minPartBytes).coerceIn(1, connections.toLong())
                 fixedChunkLength = (remaining + parts - 1) / parts
             }
-            topUp()
+            // 第一次 read 才排 (read 开头就补满): 打开了却一个字节都不读就关的不发请求
             return remaining
         }
         if (length in 0..chunkSize.toLong()) {

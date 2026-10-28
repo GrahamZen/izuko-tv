@@ -112,10 +112,10 @@ internal object RangeHttpClients {
         .build()
 
     /**
-     * 每个请求一个: 记新建连接用了多久、连没连上, 并告诉 [FailoverDns] 哪个节点连不上;
+     * 每个请求一个: 记新建连接用了多久、连没连上, 并告诉 [FailoverDns] 哪个节点连不上 (请求被取消而断掉的不算);
      * 响应头来得慢 ([SLOW_RESPONSE_LOG_MILLIS]) 与请求失败也记 (复用连接时没有建连的那几行).
      */
-    private class ConnectLogger(private val dns: FailoverDns) : EventListener() {
+    internal class ConnectLogger(private val dns: FailoverDns) : EventListener() {
         private var callStartedAt = 0L
         private var startedAt = 0L
 
@@ -154,6 +154,9 @@ internal object RangeHttpClients {
             protocol: Protocol?,
             ioe: IOException,
         ) {
+            // 读的一方不要了而取消的请求: 正在建的连接被关掉 (Socket closed), 节点没问题. 当成连不上的话, 关掉一次读取
+            // (读完文件头、索引常有几十个请求还在建连) 就把这组节点连同「最近连上过」的一起记坏, 之后只去连公共 DNS 给的别处节点
+            if (call.isCanceled()) return
             dns.markUnreachable(inetSocketAddress.address)
             logger.warn { "Connect to ${call.request().url.host} via ${inetSocketAddress.address?.hostAddress} failed after ${elapsedMillis()}ms: $ioe" }
         }
