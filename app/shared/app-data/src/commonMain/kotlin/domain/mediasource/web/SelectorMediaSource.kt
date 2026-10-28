@@ -361,7 +361,7 @@ class SelectorMediaSource(
         }
         return buildList {
             for (cache in caches) {
-                val episodes = cache.webEpisodeInfos
+                val episodes = cache.webEpisodeInfos.asEpisodesOf(query)
                 val fresh = freshPages?.contains(cache.webSubjectInfo.fullUrl)
                     ?: (episodes.findMatchingEpisodeOrNull(probe.episodeSort, probe.episodeEp, probe.episodeName) != null)
                 // 页面没有已上映的最新一集 (可能已经更新, 也可能站点把几集合成一条「第12-13集」): 有当前这一集、又只查这一集时照用;
@@ -479,6 +479,7 @@ class SelectorMediaSource(
             freshnessProbe = freshnessProbe,
             subjectEpisodeSorts = subjectEpisodeSorts,
             subjectEpisodeCount = query.mainEpisodeCountOrNull(),
+            ovaSubject = query.isOvaSubject(),
         )
 
         val plan = SubjectSearchPlan.of(query)
