@@ -19,6 +19,7 @@ import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
 import android.view.ViewTreeObserver
 import android.widget.FrameLayout
 import androidx.compose.runtime.Immutable
@@ -27,6 +28,7 @@ import com.github.panpf.sketch.Sketch
 import kotlinx.coroutines.CoroutineScope
 import me.him188.ani.app.ui.foundation.focus.TvScrollSpring
 import me.him188.ani.app.ui.foundation.tv.TV_CARD_PAST_DIM_ALPHA
+import me.him188.ani.app.ui.foundation.tv.TV_SCROLL_HIDDEN_TEXT_IN_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TV_SCROLL_STILL_FRAMES
 import me.him188.ani.app.ui.foundation.tv.TV_SCROLL_STILL_PX
 import me.him188.ani.app.ui.foundation.tv.TvBackdropTreatment
@@ -534,6 +536,68 @@ open class TvNativeRowWallView private constructor(
         list.update(style, metrics)
         if (changed) requestLayout()
         applyFrame()
+    }
+
+    /** 换内容滑动途中藏起来的卡 (见 [beginLane]) 与它们的淡出 / 淡回. */
+    private val laneHidden = ArrayList<TvNativeCardView>()
+    private var laneFade: ValueAnimator? = null
+
+    /**
+     * 宿主换内容时整片平移这一份 (宾客模式, 见 TvNativeGridPageView.slideIn): 途中只在自己那一屏宽 ([laneWidth]) 里画, 屏外预排的卡
+     * 不进旁边那份. 滑动途中扫过屏幕的是 [edge] 那条边 (+1 右边: 往左滑出去 / 从左边滑进来; −1 左边: 反过来), 跨出这条边的卡
+     * (停着时被屏幕边切掉一截的那张, 以及屏外预排的) 当场淡出, 边上没有被切开的卡; 停稳后 [endLane] 再淡回来.
+     * 另一条边途中一直在屏幕外, 跨着它的卡照常画 (从右边滑进来时屏幕右缘那张不用藏).
+     */
+    internal fun beginLane(laneWidth: Int, edge: Int) {
+        clipBounds = Rect(0, Short.MIN_VALUE.toInt(), laneWidth, Short.MAX_VALUE.toInt())
+        laneFade?.cancel()
+        val crossing = ArrayList<TvNativeCardView>()
+        val rect = Rect()
+        forEachCard(list) { card ->
+            rect.set(0, 0, card.width, card.height)
+            offsetDescendantRectToMyCoords(card, rect)
+            if (if (edge > 0) rect.right > laneWidth else rect.left < 0) crossing += card
+        }
+        // 上一轮淡回途中又换了: 这一轮不跨出的照常显示
+        laneHidden.forEach { if (it !in crossing) it.transitionAlpha = 1f }
+        laneHidden.clear()
+        laneHidden += crossing
+        fadeLaneHidden(to = 0f, millis = TV_NATIVE_LANE_CARD_OUT_MILLIS)
+    }
+
+    /** 滑动停下: 撤掉裁剪, 藏起来的卡 [fadeIn] 时淡回来, 否则 (换走收起了) 当场复原. */
+    internal fun endLane(fadeIn: Boolean) {
+        clipBounds = null
+        laneFade?.cancel()
+        if (fadeIn) {
+            fadeLaneHidden(to = 1f, millis = TV_SCROLL_HIDDEN_TEXT_IN_MILLIS.toLong())
+        } else {
+            laneHidden.forEach { it.transitionAlpha = 1f }
+            laneHidden.clear()
+        }
+    }
+
+    private fun fadeLaneHidden(to: Float, millis: Long) {
+        val cards = laneHidden.toList()
+        if (cards.isEmpty()) return
+        val from = FloatArray(cards.size) { cards[it].transitionAlpha }
+        laneFade = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = if (transitions) millis else 0L
+            addUpdateListener {
+                val f = it.animatedValue as Float
+                cards.forEachIndexed { i, card -> card.transitionAlpha = from[i] + (to - from[i]) * f }
+            }
+            start()
+        }
+    }
+
+    private fun forEachCard(group: ViewGroup, action: (TvNativeCardView) -> Unit) {
+        for (i in 0 until group.childCount) {
+            when (val child = group.getChildAt(i)) {
+                is TvNativeCardView -> action(child)
+                is ViewGroup -> forEachCard(child, action)
+            }
+        }
     }
 
     /** 简介宽度由子类按两路内容切换 (见 [TvNativeExploreView]); 本类恒用聚焦卡那一档. */
@@ -1990,3 +2054,6 @@ private const val TV_NATIVE_LANDING_STALE_MILLIS = 400L
 
 /** 远跳的纵向距离在这么多行 (含组标题) 以内按逐格的 spring 滚 (见 TvNativeRowWallView.focusCard). */
 private const val TV_NATIVE_NEAR_JUMP_ROWS = 2
+
+/** 换内容滑动开始时跨出那一屏宽的卡淡出多久 (见 TvNativeRowWallView.beginLane): 赶在整片滑起来之前没掉. */
+private const val TV_NATIVE_LANE_CARD_OUT_MILLIS = 120L
