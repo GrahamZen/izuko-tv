@@ -15,6 +15,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import me.him188.ani.app.platform.Context
 import me.him188.ani.app.tools.MonoTasker
+import me.him188.ani.utils.logging.info
+import me.him188.ani.utils.logging.logger
 import platform.AVFAudio.AVAudioSession
 import platform.AVFAudio.AVAudioSessionCategoryPlayback
 import platform.AVFAudio.setActive
@@ -78,6 +80,7 @@ internal class IosAudioManager : AudioManager {
     }
 
     init {
+        logger("iPadDiag").info { "[iPadDiag] 音量管理器第一次用到, 又设一次 playback 并激活音频会话" }
         AVAudioSession.sharedInstance().run {
             setCategory(AVAudioSessionCategoryPlayback, null)
             setActive(true, null)

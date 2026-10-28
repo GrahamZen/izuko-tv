@@ -40,6 +40,7 @@ import platform.AVFoundation.timebase
 import platform.CoreMedia.CMTimeGetSeconds
 import platform.CoreMedia.CMTimebaseGetRate
 import platform.CoreMedia.kCMTimeZero
+import kotlin.time.TimeSource
 
 /**
  * 盯着播放器此刻登记的视频图层 (见 [IosVideoLayerRegistry.register]), 播放卡住了就拨一下.
@@ -57,6 +58,7 @@ internal object IosVideoLayerWake {
 
     fun watch(player: MediampPlayer, avPlayer: AVPlayer, layer: AVPlayerLayer, isCurrent: () -> Boolean) {
         job?.cancel()
+        IpadPlaybackStallDiag.track(avPlayer, layer)
         job = scope.launch {
             val tag = "图层 ${layer.hashCode()}"
             var item: AVPlayerItem? = null
@@ -64,6 +66,10 @@ internal object IosVideoLayerWake {
             var noFrameMillis = 0L
             var stalledMillis = 0L
             var lastState = ""
+            var elapsed = 0L
+            var startDumped = false
+            var dumpAt = -1L
+            var dumpLabel = ""
             while (isCurrent()) {
                 val current = avPlayer.currentItem
                 if (current != item) {
@@ -71,6 +77,8 @@ internal object IosVideoLayerWake {
                     nudges = 0
                     noFrameMillis = 0L
                     stalledMillis = 0L
+                    startDumped = false
+                    dumpAt = -1L
                 }
                 val ready = layer.isReadyForDisplay()
                 val itemReady = current?.status == AVPlayerItemStatusReadyToPlay
@@ -96,6 +104,17 @@ internal object IosVideoLayerWake {
                     val time = CMTimeGetSeconds(avPlayer.currentTime())
                     logger.info { "[PiP] $tag: $state (t=${(time * 10).toLong() / 10.0}s)" }
                 }
+                if (!startDumped && playing) {
+                    startDumped = true
+                    logger.info { "[PiP] $tag: 卡住排查 开播时: ${IpadPlaybackStallDiag.dump(avPlayer, layer)}" }
+                    dumpAt = elapsed + 1000
+                    dumpLabel = "开播 1 秒"
+                }
+                if (dumpAt in 0..elapsed) {
+                    val label = dumpLabel
+                    dumpAt = -1L
+                    logger.info { "[PiP] $tag: 卡住排查 $label: ${IpadPlaybackStallDiag.dump(avPlayer, layer)}" }
+                }
 
                 noFrameMillis = if (playing && hasVideo && !ready) noFrameMillis + POLL_MILLIS else 0L
                 stalledMillis = if (playing && keepUp && clockRate == 0.0) stalledMillis + POLL_MILLIS else 0L
@@ -104,11 +123,22 @@ internal object IosVideoLayerWake {
                     val why = if (noFrameMillis >= NO_FRAME_MILLIS) "没出帧 ${noFrameMillis}ms" else "缓冲够了时钟 ${stalledMillis}ms 没启动"
                     noFrameMillis = 0L
                     stalledMillis = 0L
+                    logger.info { "[PiP] $tag: 卡住排查 拨之前 ($why): ${IpadPlaybackStallDiag.dump(avPlayer, layer)}" }
                     logger.info { "[PiP] $tag: $why, 暂停、原地 seek 再播放 (第 $nudges 次)" }
                     player.pause()
-                    avPlayer.seekToTime(avPlayer.currentTime(), toleranceBefore = kCMTimeZero.readValue(), toleranceAfter = kCMTimeZero.readValue())
+                    val seekStart = TimeSource.Monotonic.markNow()
+                    avPlayer.seekToTime(
+                        avPlayer.currentTime(),
+                        toleranceBefore = kCMTimeZero.readValue(),
+                        toleranceAfter = kCMTimeZero.readValue(),
+                    ) { finished ->
+                        logger.info { "[PiP] $tag: 卡住排查 原地 seek 回调 finished=$finished, ${seekStart.elapsedNow().inWholeMilliseconds}ms" }
+                    }
                     player.resume()
+                    dumpAt = elapsed + 500
+                    dumpLabel = "拨后 0.5 秒"
                 }
+                elapsed += POLL_MILLIS
                 delay(POLL_MILLIS)
             }
         }
