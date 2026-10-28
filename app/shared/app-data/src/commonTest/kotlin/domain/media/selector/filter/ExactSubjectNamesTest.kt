@@ -76,6 +76,23 @@ class ExactSubjectNamesTest {
     }
 
     @Test
+    fun `a name followed by the air year is exact`() {
+        val haruhi = ExactSubjectNames(listOf("凉宫春日的忧郁", "涼宮ハルヒの憂鬱"), simplify, airYear = 2006)
+        assertTrue(haruhi.matches("凉宫春日的忧郁2006"))
+        assertTrue(haruhi.matches("凉宫春日的忧郁 (2006)"))
+        assertTrue(haruhi.matches("凉宫春日的忧郁【2006】"))
+        assertTrue(haruhi.matches("凉宫春日的忧郁 2006年版"))
+        assertTrue(haruhi.matches("涼宮ハルヒの憂鬱 2006"))
+        // 别的年份是另一版
+        assertFalse(haruhi.matches("凉宫春日的忧郁2009"))
+        assertFalse(haruhi.matches("凉宫春日的忧郁 (2009)"))
+        // 年份不在名字后面的不算
+        assertFalse(haruhi.matches("2006凉宫春日的忧郁"))
+        // 不知道首播年份时照旧是模糊
+        assertFalse(ExactSubjectNames(listOf("凉宫春日的忧郁"), simplify).matches("凉宫春日的忧郁2006"))
+    }
+
+    @Test
     fun `a subject without names matches nothing`() {
         assertFalse(ExactSubjectNames(emptyList(), simplify).matches("死神"))
         assertFalse(ExactSubjectNames(listOf(""), simplify).matches(""))
