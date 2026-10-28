@@ -435,12 +435,12 @@ internal class PlayerLoadErrorHandler(
                 web = if (waitForSearching) {
                     MediaAutoSelector.Web(sourceTiers = sourceTiers)
                 } else {
+                    // 错误切换不需要等太长时间。一秒内没有能选的、还有在线源没查完时接着等它们:
+                    // 手上的候选可能来自被暂停的源, 换源时放开重查, 它们之前交出的就清空了, 不等就一个都不选
                     MediaAutoSelector.Web(
                         sourceTiers = sourceTiers,
-                        // 错误切换不需要等太长时间。
                         exactMatchAfter = 1.seconds,
                         fuzzyMatchAfter = 1.seconds,
-                        waitForPendingSources = false,
                     )
                 },
             ),
