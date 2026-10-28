@@ -24,6 +24,7 @@ import me.him188.ani.app.domain.settings.SettingAdjustmentChoice
 import me.him188.ani.app.domain.settings.SettingAdjustmentQuestion
 import me.him188.ani.app.domain.settings.SettingAdjustments
 import me.him188.ani.app.domain.usecase.GlobalKoin
+import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.player_seek_preview_crashed_switched_to_full_screen
@@ -44,7 +45,6 @@ import me.him188.ani.app.ui.lang.tv_source_search_paused_for_stutter
 import me.him188.ani.app.ui.settings.SettingChoiceDialog
 import me.him188.ani.app.ui.settings.SettingChoiceDialogAction
 import org.jetbrains.compose.resources.StringResource
-import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -60,7 +60,7 @@ fun TvSettingAdjustmentHost() {
     val toaster = LocalToaster.current
     LaunchedEffect(adjustments, toaster) {
         adjustments.notices.collect { adjustment ->
-            noticeText(adjustment)?.let { toaster.toast(getString(it)) }
+            noticeText(adjustment)?.let { toaster.toast(getStringOffMain(it)) }
         }
     }
 
