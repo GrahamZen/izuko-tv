@@ -38,6 +38,8 @@ import me.him188.ani.app.domain.media.cache.location.AndroidMediaCacheLocations
 import me.him188.ani.app.domain.media.cache.location.MediaCacheLocations
 import me.him188.ani.app.domain.media.cache.storage.MediaSaveDirProvider
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
+import me.him188.ani.app.domain.mediasource.clouddrive.AndroidLocalFolderAccess
+import me.him188.ani.app.domain.mediasource.clouddrive.LocalFolderAccess
 import me.him188.ani.app.domain.media.resolver.AndroidWebMediaResolver
 import me.him188.ani.app.domain.media.resolver.ApiVideoMediaResolver
 import me.him188.ani.app.domain.media.resolver.HttpStreamingMediaResolver
@@ -195,6 +197,7 @@ fun getAndroidModules(
         )
     }
     single<MediaLibraryAccess> { AndroidMediaLibraryAccess(androidContext()) }
+    single<LocalFolderAccess> { AndroidLocalFolderAccess(androidContext(), get()) }
     single<MediaCacheLocations> {
         AndroidMediaCacheLocations(
             androidContext(),

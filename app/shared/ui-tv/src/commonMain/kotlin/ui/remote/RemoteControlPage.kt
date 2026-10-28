@@ -5757,18 +5757,22 @@ private val CLOUD_DRIVE_SCRIPT = """
       (canBrowse ? '<div class="row"><button type="button" class="ghost" data-cd="browse">' + T('选择文件夹') + '</button></div>' : '') +
       '<div class="cd-browse" data-drive="' + esc(d.id) + '" hidden></div></div>';
   }
-  // 本地文件夹 (U 盘、移动硬盘、内部存储): 不用登录; 没有「所有文件访问」时给去电视上授权的按钮, 媒体文件夹、改名字、删除
+  // 本地文件夹 (U 盘、移动硬盘、内部存储): 不用登录; 还没有权限时给去电视上授权的按钮 (安卓 11 起是「所有文件访问」的系统页面,
+  // 7.1~10 是「存储」权限的授权框), 媒体文件夹、改名字、删除
   function localCard(d) {
-    var name = esc(d.name), id = esc(d.id);
+    var name = esc(d.name), id = esc(d.id), allFiles = d.grantAllFiles !== false;
     var h = '<div class="card set-card" data-drive="' + id + '" data-name="' + name + '" data-type="local"><div class="set-title">' +
       window.srcIcon(d.sourceId, d.name) + name + '<small>' + T('U 盘、移动硬盘与内部存储里的视频') + '</small></div>';
     if (!d.enabled) h += disabledNotice(d);
     if (d.accessible) {
       h += '<div class="now-status ready"><b>' + T('能读取') + '</b><span>' + T('播放时在媒体文件夹里按番名找') + '</span></div>';
     } else {
-      h += '<div class="now-status attention"><b>' + T('还没有读取文件的权限') + '</b><span>' + T('在电视上打开「允许管理所有文件」后才能读盘上的文件夹') + '</span></div>' +
-        '<div class="row"><button type="button" class="primary" data-cd="local-grant">' + T('在电视上打开授权页面') + '</button></div>' +
-        (d.grantAdb ? '<p class="hint">' + T('电视上找不到这个页面时，在电脑上运行：{0}', esc(d.grantAdb)) + '</p>' : '');
+      h += '<div class="now-status attention"><b>' + T('还没有读取文件的权限') + '</b><span>' +
+        (allFiles ? T('在电视上打开「允许管理所有文件」后才能读盘上的文件夹') : T('在电视上允许「存储」权限后才能读盘上的文件夹')) + '</span></div>' +
+        '<div class="row"><button type="button" class="primary" data-cd="local-grant">' +
+        (allFiles ? T('在电视上打开授权页面') : T('在电视上弹出授权框')) + '</button></div>' +
+        (d.grantAdb ? '<p class="hint">' + (allFiles ? T('电视上找不到这个页面时，在电脑上运行：{0}', esc(d.grantAdb))
+          : T('电视上没有弹出授权框时，在电脑上运行：{0}', esc(d.grantAdb))) + '</p>' : '');
     }
     h += libraryHtml(d, d.accessible, T('还没有选：播放时在各块盘里按番名找（从盘的根目录往下）。选上放动画的文件夹，找得更快也更准。'));
     h += '<details class="cd-edit" data-drive="' + id + '"><summary>' + T('修改名字') + '</summary><form class="cd-webdav-edit" data-drive="' + id + '">' +
