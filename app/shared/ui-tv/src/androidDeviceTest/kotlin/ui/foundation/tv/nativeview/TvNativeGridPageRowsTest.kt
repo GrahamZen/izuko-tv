@@ -9,9 +9,12 @@
 
 package me.him188.ani.app.ui.foundation.tv.nativeview
 
+import android.animation.ValueAnimator
 import android.graphics.Rect
 import android.view.KeyEvent
 import android.view.View
+import android.view.ViewGroup
+import android.view.ViewTreeObserver
 import android.widget.FrameLayout
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
@@ -20,12 +23,13 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
  * 网格页 ([TvNativeGridPageView]) 里与网格换着显示的一组一行的内容 ([TvNativeGridPageView.rows], 追番页「追更」): 卡片墙上确定进的是本页的
  * hero 态、hero 态里确定交给它自己的监听器; 与网格互换时 hero 态留着; 本页 hero 态里首行整片推到 hero 线; 换走时焦点停放在本页上,
- * 网格的卡拿到再落地; 它拿着焦点时不算网格的焦点.
+ * 网格的卡拿到再落地; 它拿着焦点时不算网格的焦点; 与网格换着滑动时, 行在屏外预排的卡不画进页面.
  */
 class TvNativeGridPageRowsTest {
     private val host = TvNativeTestHost()
@@ -222,6 +226,68 @@ class TvNativeGridPageRowsTest {
             page.focusItem(0)
         }
         host.waitUntil("网格报了焦点") { pageListener.gridFocus.lastOrNull() == true }
+    }
+
+    @Test
+    fun `cards laid out past the rows edge are not drawn on the page while sliding`() {
+        assertTrue(ValueAnimator.areAnimatorsEnabled(), "要开着系统动画跑: 看的是滑动途中")
+        showRows()
+        host.waitUntil("首行在右边屏外预排着卡") { offLaneCards().isNotEmpty() }
+        var sampled = 0
+        val leaks = mutableListOf<String>()
+        // 每帧画之前看: 排在它那一屏宽以外的卡, 有没有哪块落在页面里还没被裁掉
+        val sampler = ViewTreeObserver.OnPreDrawListener {
+            if (rows.isShown && rows.translationX != 0f) {
+                sampled++
+                leaks += offLaneCards().mapNotNull { drawnOnPage(it) }
+            }
+            true
+        }
+        host.onMain {
+            page.transitions = true
+            page.viewTreeObserver.addOnPreDrawListener(sampler)
+            // 换到右边的分类: 一组一行的内容整片往左滑出去, 右边屏外的卡跟着往页面里走
+            page.showGrid(0, direction = 1, animated = true)
+            page.setCards(0, testCards(12))
+        }
+        host.waitUntil("滑出去了") { !rows.isShown }
+        // 换回来: 从左边滑进来, 起步时它右边屏外的卡正落在页面左半边
+        val grid = host.onMain { page.grid!! }
+        host.onMain { page.showRows(ROWS_KEY, direction = -1, animated = true) }
+        host.waitUntil("滑进来了") { !grid.isShown }
+        host.onMain { page.viewTreeObserver.removeOnPreDrawListener(sampler) }
+        assertTrue(sampled > 0, "滑动途中应采到帧")
+        assertEquals(emptyList(), leaks)
+        assertNull(host.onMain { rows.clipBounds }, "停下后不裁")
+    }
+
+    /** 一组一行的内容里排在它那一屏宽以外 (右边) 的卡: 按它自己的坐标算, 不管此刻平移到哪. */
+    private fun offLaneCards(): List<View> {
+        val origin = rows.windowRect()
+        return cardsIn(rows).filter { it.windowRect().left - origin.left >= rows.width }
+    }
+
+    /** [card] 画进页面的那块 (按一组一行的内容的裁剪框裁过), 没有就是 null. */
+    private fun drawnOnPage(card: View): String? {
+        val drawn = card.windowRect()
+        if (!drawn.intersect(page.windowRect())) return null
+        rows.clipBounds?.let { clip ->
+            val origin = rows.windowRect()
+            clip.offset(origin.left, origin.top)
+            if (!drawn.intersect(clip)) return null
+        }
+        return "平移 ${rows.translationX} 时画在 $drawn"
+    }
+
+    private fun cardsIn(view: View): List<View> = when (view) {
+        is TvNativeCardView -> listOf(view)
+        is ViewGroup -> (0 until view.childCount).flatMap { cardsIn(view.getChildAt(it)) }
+        else -> emptyList()
+    }
+
+    private fun View.windowRect(): Rect {
+        val at = IntArray(2).also { getLocationInWindow(it) }
+        return Rect(at[0], at[1], at[0] + width, at[1] + height)
     }
 
     private companion object {
