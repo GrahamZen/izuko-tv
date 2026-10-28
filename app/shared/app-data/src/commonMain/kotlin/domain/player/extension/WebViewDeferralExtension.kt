@@ -105,7 +105,11 @@ class WebViewDeferralExtension(
             SourceProfiles.recordWebViewDeferred(media.mediaSourceId, now())
             logger.info { "${media.mediaSourceId} needs the web view for ${media.mediaId}, switching to ${alternative.mediaId}" }
             PlayTimeline.mark("webview_deferred", "${media.mediaSourceId} -> ${alternative.mediaSourceId}")
-            return selector.selectAutomatically(alternative, expectedSelection = media) != null
+            // 换走它不是因为它坏了: 换源时不拉黑, 留着兜底
+            WebViewDeferral.markSwitchingAway(media.mediaId)
+            val switched = selector.selectAutomatically(alternative, expectedSelection = media) != null
+            if (!switched) WebViewDeferral.takeSwitchingAway(media.mediaId)
+            return switched
         }
     }
 }
