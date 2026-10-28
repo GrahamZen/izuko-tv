@@ -29,6 +29,7 @@ import me.him188.ani.app.domain.mediasource.codec.DefaultMediaSourceCodec
 import me.him188.ani.app.domain.mediasource.codec.DontForgetToRegisterCodec
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceArguments
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceTier
+import me.him188.ani.app.domain.mediasource.KeywordSearchScope
 import me.him188.ani.app.domain.mediasource.keywordSearchChain
 import me.him188.ani.app.domain.mediasource.search.SiteSearchMemory
 import me.him188.ani.app.domain.mediasource.search.SubjectMatch
@@ -436,10 +437,7 @@ class JsonApiMediaSource(
             matches = plan::foundOwn,
         ) { name ->
             searchFromCacheOrNull(subjectId, name, freshnessProbe, filterContext, plan)
-                ?: run {
-                    beforeOnlineSearch()
-                    searchOnline(subjectId, name, keywords.keywordOf(name), plan, freshnessProbe, filterContext)
-                }
+                ?: searchOnline(subjectId, name, keywords.keywordOf(name), plan, freshnessProbe, filterContext, scope = this)
         }.mapKeepingBatches { MediaMatch(it, MatchKind.FUZZY) }
     }
 
@@ -466,9 +464,14 @@ class JsonApiMediaSource(
         plan: SubjectSearchPlan,
         probe: Probe,
         filterContext: JsonApiFilterContext,
+        /** 关键词链: 换词的间隔只在真要发搜索请求时等, 记忆里有的不等 */
+        scope: KeywordSearchScope? = null,
     ): List<DefaultMedia> {
         val ttl = searchConfig.searchCacheTtl
-        val found = repository.siteMemory.searchResults(mediaSourceId, keyword, ttl) { searchSubjectsOnline(keyword) }.orEmpty()
+        val found = repository.siteMemory.searchResults(mediaSourceId, keyword, ttl) {
+            scope?.beforeOnlineSearch()
+            searchSubjectsOnline(keyword)
+        }.orEmpty()
         val subjects = plan.pagesToOpen(found.map { it.withJudgedName(plan) }, searchConfig.autoMatch.preferShorterName) { it.name }
         var allSubjectsLoaded = true
         val media = buildList {

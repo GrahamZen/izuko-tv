@@ -424,6 +424,8 @@ class SelectorMediaSource(
     ): List<DefaultMedia> = withContext(SearchDispatchers.parsingContext()) {
         val searchUrl = buildSearchUrl(keyword)
         val originalSubjects = repository.siteMemory.searchResults(mediaSourceId, searchUrl, searchConfig.searchCacheTtl) {
+            // 关键词链换词的间隔只在真要发请求时等, 记忆里有的不等
+            scope?.beforeOnlineSearch()
             delayUntilNextAllowedSearch()
             fetchPageOrThrow(searchUrl, PageExpectation.SearchResults(searchConfig))
         } ?: return@withContext emptyList()
@@ -538,10 +540,7 @@ class SelectorMediaSource(
             // 若缓存的剧集列表包含当前请求的剧集 (典型场景: 切集), 直接从缓存构建结果, 不发起任何网络请求.
             // 缓存按 TTL 过期, 也会在该条目手动重新查询时被清除.
             engine.searchFromCacheOrNull(searchConfig, searchQuery, mediaSourceId, subjectId, plan, scope = this@keywordSearchChain)
-                ?: run {
-                    beforeOnlineSearch()
-                    engine.searchOnline(searchConfig, searchQuery, keywords.keywordOf(name), plan, mediaSourceId, subjectId, scope = this@keywordSearchChain)
-                }
+                ?: engine.searchOnline(searchConfig, searchQuery, keywords.keywordOf(name), plan, mediaSourceId, subjectId, scope = this@keywordSearchChain)
         }.mapKeepingBatches { MediaMatch(it, MatchKind.FUZZY) }
     }
 

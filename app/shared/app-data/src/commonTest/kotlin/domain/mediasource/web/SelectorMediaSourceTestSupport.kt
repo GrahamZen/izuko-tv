@@ -36,6 +36,8 @@ internal fun TestScope.createTestSelectorMediaSource(
     cacheDao: WebSearchSessionCacheDao = NoopWebSearchSessionCacheDao,
     /** 用户设置的搜索缓存有效期. 默认 0, 即不写缓存. */
     cacheTtl: Duration = Duration.ZERO,
+    /** 几个数据源共用同一份缓存与站点搜索记忆时传同一个 */
+    repository: SelectorMediaSourceEpisodeCacheRepository = SelectorMediaSourceEpisodeCacheRepository(cacheDao, flowOf(cacheTtl)),
 ): SelectorMediaSource {
     val client = HttpClient(engine).asScopedHttpClient()
     val sessionManager = WebSessionManager(
@@ -55,7 +57,7 @@ internal fun TestScope.createTestSelectorMediaSource(
                 arguments,
             ),
         ),
-        repository = SelectorMediaSourceEpisodeCacheRepository(cacheDao, flowOf(cacheTtl)),
+        repository = repository,
         client = client,
         sessionManager = sessionManager,
     )
