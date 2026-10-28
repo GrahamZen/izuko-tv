@@ -37,6 +37,7 @@ import me.him188.ani.app.domain.settings.ServiceConnectionTester.TestState
 import me.him188.ani.app.domain.settings.ServiceConnectionTesters
 import me.him188.ani.app.domain.torrent.peer.PeerFilterSubscription
 import me.him188.ani.app.domain.usecase.GlobalKoin
+import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_media_torrent_download_rate_limit
 import me.him188.ani.app.ui.lang.settings_media_torrent_peer_filter
@@ -147,7 +148,6 @@ import me.him188.ani.datasources.api.topic.FileSize.Companion.megaBytes
 import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.platform.format1f
 import org.jetbrains.compose.resources.StringResource
-import org.jetbrains.compose.resources.getString
 import kotlin.time.Duration.Companion.seconds
 
 /** 网络、BT、存储用到的几份值. */
@@ -603,7 +603,7 @@ internal fun TvSettingsItemsBuilder.storageItems() {
                     sketch.memoryCache.clear()
                 }
                 env.deps.imageCacheRefresh.update { it + 1 }
-                env.toast(getString(Lang.settings_storage_image_cache_cleared))
+                env.toast(getStringOffMain(Lang.settings_storage_image_cache_cleared))
             },
         )
     }
@@ -620,7 +620,7 @@ internal fun TvSettingsItemsBuilder.storageItems() {
             TvSettingsEdit.Run { env ->
                 GlobalKoin.getOrNull<PlaybackDiskCacheStorage>()?.clear()
                 env.deps.playbackCacheRefresh.update { it + 1 }
-                env.toast(getString(Lang.settings_storage_playback_cache_cleared))
+                env.toast(getStringOffMain(Lang.settings_storage_playback_cache_cleared))
             },
         )
     }

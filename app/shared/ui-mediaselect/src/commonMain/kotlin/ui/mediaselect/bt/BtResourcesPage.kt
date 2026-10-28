@@ -50,6 +50,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
+import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.foundation.navigation.BackHandler
 import me.him188.ani.app.ui.foundation.setClipEntryText
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
@@ -74,7 +75,6 @@ import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import me.him188.ani.datasources.api.topic.ResourceLocation
 import me.him188.ani.utils.platform.annotations.TestOnly
-import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -168,7 +168,7 @@ fun BtResourcesPage(
         if (download is ResourceLocation.MagnetLink) {
             scope.launch {
                 clipboard.setClipEntryText(download.uri)
-                toaster.toast(getString(Lang.settings_debug_copied, download.uri))
+                toaster.toast(getStringOffMain(Lang.settings_debug_copied, download.uri))
             }
         }
     }

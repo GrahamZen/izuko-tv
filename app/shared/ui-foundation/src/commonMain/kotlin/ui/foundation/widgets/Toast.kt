@@ -43,6 +43,7 @@ import me.him188.ani.app.domain.foundation.LoadError
 import me.him188.ani.app.tools.MonoTasker
 import me.him188.ani.app.ui.foundation.AbstractViewModel
 import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
+import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.foundation_load_error_network
 import me.him188.ani.app.ui.lang.foundation_load_error_no_results
@@ -55,7 +56,6 @@ import me.him188.ani.app.ui.lang.foundation_load_error_unknown_feedback
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 import me.him188.ani.utils.platform.annotations.TestOnly
-import org.jetbrains.compose.resources.getString
 import kotlin.math.max
 import kotlin.math.min
 
@@ -101,14 +101,14 @@ fun Toaster.showLoadError(error: LoadError) {
 
 private suspend fun renderLoadErrorToastMessage(error: LoadError): String {
     return when (error) {
-        LoadError.NetworkError -> getString(Lang.foundation_load_error_network)
-        LoadError.NoResults -> getString(Lang.foundation_load_error_no_results)
-        LoadError.RateLimited -> getString(Lang.foundation_load_error_rate_limited)
-        LoadError.RequiresLogin -> getString(Lang.foundation_load_error_requires_login)
-        LoadError.SubjectNotAccessible -> getString(Lang.foundation_load_error_subject_not_accessible)
-        LoadError.ServiceUnavailable -> getString(Lang.foundation_load_error_service_unavailable)
-        is LoadError.UnknownError -> getString(Lang.foundation_load_error_unknown_feedback)
-        is LoadError.RequestError -> getString(Lang.foundation_load_error_request_error, error.localized)
+        LoadError.NetworkError -> getStringOffMain(Lang.foundation_load_error_network)
+        LoadError.NoResults -> getStringOffMain(Lang.foundation_load_error_no_results)
+        LoadError.RateLimited -> getStringOffMain(Lang.foundation_load_error_rate_limited)
+        LoadError.RequiresLogin -> getStringOffMain(Lang.foundation_load_error_requires_login)
+        LoadError.SubjectNotAccessible -> getStringOffMain(Lang.foundation_load_error_subject_not_accessible)
+        LoadError.ServiceUnavailable -> getStringOffMain(Lang.foundation_load_error_service_unavailable)
+        is LoadError.UnknownError -> getStringOffMain(Lang.foundation_load_error_unknown_feedback)
+        is LoadError.RequestError -> getStringOffMain(Lang.foundation_load_error_request_error, error.localized)
     }
 }
 

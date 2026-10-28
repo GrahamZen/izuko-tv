@@ -83,6 +83,7 @@ import me.him188.ani.app.ui.exploration.ExplorationScreen
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.LocalPlatform
 import me.him188.ani.app.ui.foundation.animation.LocalAniMotionScheme
+import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.layout.AniWindowInsets
 import me.him188.ani.app.ui.foundation.layout.LocalPlatformWindow
@@ -121,7 +122,6 @@ import me.him188.ani.app.ui.update.AppUpdateViewModel
 import me.him188.ani.app.ui.update.UpdateNotifier
 import me.him188.ani.app.ui.user.SelfInfoUiState
 import me.him188.ani.utils.platform.isAndroid
-import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 import org.koin.mp.KoinPlatform
 
@@ -583,7 +583,7 @@ private fun BoxScope.UpdateNotifierWithVersionExpiryCheck() {
                             asyncHandler.launch {
                                 val data = settingsVm.cacheDirectoryGroupState.onGetBackupData()
                                 clipboard.setClipEntryText(data)
-                                toaster.toast(getString(Lang.settings_update_version_expired_copied_to_clipboard))
+                                toaster.toast(getStringOffMain(Lang.settings_update_version_expired_copied_to_clipboard))
                             }
                         },
                     ) {

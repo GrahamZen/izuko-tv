@@ -51,6 +51,7 @@ import me.him188.ani.app.platform.LocalContext
 import me.him188.ani.app.platform.features.getComponentAccessors
 import me.him188.ani.app.tools.formatDateTime
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
+import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.foundation.setClipEntryText
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.lang.Lang
@@ -91,7 +92,6 @@ import me.him188.ani.datasources.mikan.MikanCNMediaSource
 import me.him188.ani.utils.io.absolutePath
 import me.him188.ani.utils.io.inSystem
 import me.him188.ani.utils.platform.annotations.TestOnly
-import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 
 @Immutable
@@ -238,7 +238,7 @@ fun MediaDetailsLazyGrid(
                         scope.launch {
                             if (!fileRevealer.revealFile(url)) {
                                 toaster.toast(
-                                    getString(
+                                    getStringOffMain(
                                         Lang.cache_details_open_file_failed,
                                         url.inSystem.absolutePath,
                                     ),
