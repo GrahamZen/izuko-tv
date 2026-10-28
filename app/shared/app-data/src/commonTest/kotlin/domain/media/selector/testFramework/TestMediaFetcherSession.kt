@@ -10,7 +10,12 @@
 package me.him188.ani.app.domain.media.selector.testFramework
 
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.onCompletion
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.test.TestScope
 import me.him188.ani.app.domain.media.fetch.MediaFetchSession
 import me.him188.ani.app.domain.media.fetch.MediaFetcherConfig
@@ -24,7 +29,6 @@ import me.him188.ani.app.domain.mediasource.web.SolveRequest
 import me.him188.ani.app.domain.mediasource.web.WebCaptchaKind
 import me.him188.ani.datasources.api.DefaultMedia
 import me.him188.ani.datasources.api.Media
-import me.him188.ani.datasources.api.paging.SinglePagePagedSource
 import me.him188.ani.datasources.api.paging.SizedSource
 import me.him188.ani.datasources.api.paging.emptySizedSource
 import me.him188.ani.datasources.api.source.*
@@ -82,9 +86,7 @@ class TestMediaFetchSessionBuilder {
             kind = kind,
             fetch = {
                 handle.onFetch()
-                SinglePagePagedSource {
-                    handle.result.await().asFlow()
-                }
+                handle.matches()
             },
         )
         handle = Handle(
@@ -136,6 +138,35 @@ class Handle(
         fetchCount++
     }
 
+    /** [emitEarly] 交出的, 每次调用一批. */
+    private val early = Channel<List<MediaMatch>>(Channel.UNLIMITED)
+
+    /** 查询交出的资源: 先是 [emitEarly] 交的 (源仍在查), [complete] 时再交完. */
+    internal fun matches(): SizedSource<MediaMatch> {
+        val done = MutableStateFlow(false)
+        return object : SizedSource<MediaMatch> {
+            override val results = flow {
+                while (true) {
+                    val batch = select<List<MediaMatch>?> {
+                        early.onReceive { it }
+                        result.onAwait { null }
+                    } ?: break
+                    batch.forEach { emit(it) }
+                }
+                result.await().forEach { emit(it) }
+            }.onCompletion { done.value = true }
+            override val finished = done
+            override val totalSize = flowOf(null)
+        }
+    }
+
+    /** 先交出这些资源, 源仍在查 (同网页源开完一页先交一页). [complete] 时只需交剩下的. */
+    fun emitEarly(vararg medias: Media): Handle {
+        check(result.isActive)
+        early.trySend(medias.map { MediaMatch(it, MatchKind.EXACT).ownedByThisSource() })
+        return this
+    }
+
     fun complete(vararg medias: Media) = complete(medias.toList())
 
     fun complete(vararg medias: MediaMatch) = complete(medias.toList())
@@ -146,15 +177,13 @@ class Handle(
     @JvmName("completeListMediaMatch")
     fun complete(medias: List<MediaMatch>): Handle {
         check(result.isActive)
-        check(medias.all { it.media.mediaSourceId == SOURCE_DMHY })
-        result.complete(
-            medias.map {
-                it.copy(
-                    (it.media as DefaultMedia).copy(mediaSourceId = instance.mediaSourceId),
-                )
-            },
-        )
+        result.complete(medias.map { it.ownedByThisSource() })
         return this
+    }
+
+    private fun MediaMatch.ownedByThisSource(): MediaMatch {
+        check(media.mediaSourceId == SOURCE_DMHY)
+        return copy((media as DefaultMedia).copy(mediaSourceId = instance.mediaSourceId))
     }
 
     /** Ends the query as rate limited. The fetcher retries it once after [retryAfter]. */

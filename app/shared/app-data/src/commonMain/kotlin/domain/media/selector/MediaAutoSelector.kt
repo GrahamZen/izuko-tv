@@ -307,8 +307,9 @@ internal class MediaAutoSelector(private val mediaSelector: MediaSelector) {
         // Settled sources produce no new candidates, so waiting for the remaining deadlines cannot change the choice.
         val effectiveStage = if (webSources.all { it.state.isSettled }) web.lastStage else stage
         val succeededIds = webSources.filter { it.state is MediaSourceFetchState.Succeed }.map { it.mediaSourceId }.toSet()
-        // 还在查的源已经交出的 (每开完一页交一页, 见 KeywordSearchScope.emitEarly) 条目名精确匹配、层级够「立即」的也能选,
-        // 不等它把别的页开完; 拆分季要看整季各页的集号才认得准哪一集, 只用查完的
+        // 还在查的源已经交出的 (每开完一页交一页, 见 KeywordSearchScope.emitEarly) 条目名精确匹配也当作候选, 不等它把别的页开完:
+        // 能不能选与查完的源一样由下面的阶段、层级与 WebView 兜底的规则判断 (如等直连的源等够了时, 任意层级的直连精确匹配胜过要嗅探的);
+        // 模糊匹配要等它查完, 后面的页可能有精确的; 拆分季要看整季各页的集号才认得准哪一集, 只用查完的
         val workingIds = if (snapshot.context.subjectSeriesInfo?.splitSeason != null) emptySet()
         else webSources.filter { it.state == MediaSourceFetchState.Working }.mapTo(HashSet()) { it.mediaSourceId }
         // 解析时可能要 WebView 嗅探的源只兜底 (见 WebViewSources): 别的网页源还在查、又没到最后的截止时间时不选它们;
@@ -318,7 +319,8 @@ internal class MediaAutoSelector(private val mediaSelector: MediaSelector) {
         val directPending = viaWebView.isNotEmpty() && !webViewGraceOver && effectiveStage != Stage.Fuzzy && directSources.isNotEmpty()
         val reachableCandidates = candidates.filter {
             it.result.kind == MediaSourceKind.WEB &&
-                    (it.result.mediaSourceId in succeededIds || it.result.mediaSourceId in workingIds && isInstant(it, web))
+                    (it.result.mediaSourceId in succeededIds ||
+                            it.result.mediaSourceId in workingIds && it.metadata.subjectMatchKind == SubjectMatchKind.EXACT)
         }
         val webCandidates = reachableCandidates.filter { !(directPending && it.result.mediaSourceId in viaWebView) }
         val webViewLowest = webCandidates.any { it.result.mediaSourceId !in viaWebView }
@@ -378,11 +380,6 @@ internal class MediaAutoSelector(private val mediaSelector: MediaSelector) {
         }
         return if (deferredInstant) Decision.WaitForDirect else Decision.Wait
     }
-
-    /** 「立即」档选得了的: 条目名精确匹配, 层级不低于 [Web.instantTier]. */
-    private fun isInstant(candidate: MaybeExcludedMedia.Included, web: Web): Boolean =
-        candidate.metadata.subjectMatchKind == SubjectMatchKind.EXACT &&
-                web.sourceTiers.get(candidate.result.mediaSourceId, candidate.result.properties.alliance) <= web.instantTier
 
     /** Fast select disabled skips the instant stage. */
     private val Web.exactStageAfter: Duration get() = if (fastSelect) exactMatchAfter else Duration.ZERO
