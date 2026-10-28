@@ -76,20 +76,38 @@ object LocalFolderDrive {
 }
 
 /**
- * 本地文件夹能读哪些盘, 由平台提供. 安卓上读别的应用放的文件要「所有文件访问」(同片库, 见 [MediaLibraryAccess]).
+ * 本地文件夹能读哪些盘, 由平台提供; 读别的应用放的文件要的权限见 [LocalFolderAccess].
  * 没有实现的平台 ([None]) 一块盘都没有.
  */
 interface LocalFolderRoots {
     /** 此刻接着的盘, 内部存储在前 */
     fun roots(): List<LocalFolderRoot>
 
-    /** 能读盘上的文件夹 (安卓上是「所有文件访问」开着) */
+    /** 能读盘上的文件夹 ([LocalFolderAccess.isGranted]) */
     fun isAccessible(): Boolean
 
     object None : LocalFolderRoots {
         override fun roots(): List<LocalFolderRoot> = emptyList()
         override fun isAccessible(): Boolean = false
     }
+}
+
+/**
+ * 读盘上别的应用放的文件要的权限, 由平台提供. 安卓 11 起是「所有文件访问」(同片库, 见 [MediaLibraryAccess]);
+ * 7.1~10 是「存储」权限 (只用读), 在应用里弹框给, 外接盘上的文件同样读得到.
+ */
+interface LocalFolderAccess {
+    /** 要的是「所有文件访问」; 否则是「存储」权限. 网页按它说去开哪一个 */
+    val allFiles: Boolean
+
+    /** 权限此刻开着 (在电视上给的, 或用 adb 给的, 都算) */
+    fun isGranted(): Boolean
+
+    /** 在设备上打开给权限的地方 (授权框或系统设置页); 一个入口都没有时返回 `false` (用 [adbGrantCommand]) */
+    fun openGrant(): Boolean
+
+    /** 用电脑给权限的 adb 命令 */
+    val adbGrantCommand: String
 }
 
 /**

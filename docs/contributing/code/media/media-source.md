@@ -63,7 +63,9 @@ WebDAV 列目录不给画面高度与时长：`cloud-drive` 给出候选前读�
 条目级查询切集不再查，后来才读到的由 `DriveVideoInfoRefresh` 记下，切集复用查询时让这个源重查一次。
 
 协议的 `type` 是 `local` 时是设备上的文件夹（内部存储、U 盘、移动硬盘，见 `LocalFolderDrive`）：`LocalFolderClient` 直接读盘，
-根是此刻接着的各块盘（`LocalFolderRoots`，安卓上取缓存位置的各块盘、要「所有文件访问」，同片库），盘根下的 `Android/` 与片库不列；
+根是此刻接着的各块盘（`LocalFolderRoots`，安卓上取缓存位置的各块盘），盘根下的 `Android/` 与片库不列；
+读别的应用放的文件要的权限由平台给（`LocalFolderAccess`，安卓 `AndroidLocalFolderAccess`）：安卓 11 起是「所有文件访问」（同片库），
+7.1~10 是「存储」权限（只读，`LocalFolderPermissionActivity` 弹框给；安卓 10 靠清单里的 `requestLegacyExternalStorage` 按路径读）；
 直链是 `file://` 地址，`CloudDriveMediaResolver` 交给播放器的是本地文件（`SystemFileMediaDataProvider`），旁边的外挂字幕同样。
 不用登录（账号里没有登录信息时 `CloudDriveService.account` 给一个只有名字的账号）。同 WebDAV 在 Web 控制台添加、在媒体文件夹的索引里按番名找；
 没选媒体文件夹时从各块盘的根目录往下建索引。不读文件头补画质。

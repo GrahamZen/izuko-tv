@@ -20,6 +20,9 @@ internal fun localFolderTexts() = listOf(
     RemoteText("在电视上打开「允许管理所有文件」后才能读盘上的文件夹", "Turn on “Allow management of all files” on the TV to read folders on the drives", "在電視上打開「允許管理所有文件」後才能讀盤上的文件夾", "在電視上開啟「允許管理所有檔案」後才能讀取磁碟上的資料夾"),
     RemoteText("在电视上打开授权页面", "Open the permission page on the TV", "在電視上打開授權頁面", "在電視上開啟授權頁面"),
     RemoteText("电视上找不到这个页面时，在电脑上运行：{0}", "If the TV has no such page, run this on a computer: {0}", "電視上找不到這個頁面時，在電腦上運行：{0}", "電視上找不到這個頁面時，在電腦上執行：{0}"),
+    RemoteText("在电视上允许「存储」权限后才能读盘上的文件夹", "Allow the “Storage” permission on the TV to read folders on the drives", "在電視上允許「儲存空間」權限後才能讀盤上的文件夾", "在電視上允許「儲存空間」權限後才能讀取磁碟上的資料夾"),
+    RemoteText("在电视上弹出授权框", "Show the permission prompt on the TV", "在電視上彈出授權框", "在電視上顯示授權對話框"),
+    RemoteText("电视上没有弹出授权框时，在电脑上运行：{0}", "If no prompt appears on the TV, run this on a computer: {0}", "電視上沒有彈出授權框時，在電腦上運行：{0}", "電視上沒有出現授權對話框時，在電腦上執行：{0}"),
     RemoteText("还没有选：播放时在各块盘里按番名找（从盘的根目录往下）。选上放动画的文件夹，找得更快也更准。", "None chosen yet: playback searches every drive by title, starting from the top folder. Choose the folders that hold your anime for faster, more accurate matches.", "還沒有選：播放時在各塊盤裡按番名找（從盤的根目錄往下）。選上放動畫的文件夾，找得更快也更準。", "還沒有選：播放時在各個磁碟裡按番名找（從磁碟的根目錄往下）。選上放動畫的資料夾，找得更快也更準。"),
     RemoteText("修改名字", "Rename", "修改名字", "修改名字"),
     RemoteText("删除这个数据源", "Remove this source", "刪除這個數據源", "刪除這個資料源"),
@@ -30,5 +33,11 @@ internal fun localFolderTexts() = listOf(
     RemoteText("这台设备不能读本地文件夹", "This device can’t read local folders", "這台設備不能讀本地文件夾", "這台裝置不能讀取本機資料夾"),
     RemoteText("已经允许了", "Already allowed", "已經允許了", "已經允許了"),
     RemoteText("已在电视上打开授权页面，用遥控器打开「允许管理所有文件」后回来刷新", "The permission page is open on the TV. Turn on “Allow management of all files” with the remote, then come back and refresh.", "已在電視上打開授權頁面，用遙控器打開「允許管理所有文件」後回來刷新", "已在電視上開啟授權頁面，用遙控器開啟「允許管理所有檔案」後回來重新整理"),
+    RemoteText(
+        "已在电视上弹出授权框，选「允许」后回来刷新；之前拒绝过的会打开应用信息，在「权限」里打开「存储」",
+        "A permission prompt is showing on the TV. Choose “Allow”, then come back and refresh. If it was denied before, the app info page opens instead: turn on “Storage” under “Permissions”.",
+        "已在電視上彈出授權框，選「允許」後回來刷新；之前拒絕過的會打開應用程式資料，在「權限」裡打開「儲存空間」",
+        "已在電視上顯示授權對話框，選「允許」後回來重新整理；之前拒絕過的會開啟應用程式資訊，在「權限」裡開啟「儲存空間」",
+    ),
     RemoteText("电视上没有授权页面，在电脑上运行：{0}", "The TV has no permission page. Run this on a computer: {0}", "電視上沒有授權頁面，在電腦上運行：{0}", "電視上沒有授權頁面，在電腦上執行：{0}"),
 )
