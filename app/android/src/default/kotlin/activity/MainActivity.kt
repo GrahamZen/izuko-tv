@@ -34,6 +34,7 @@ import androidx.core.view.WindowCompat
 import me.him188.ani.android.BuildConfig
 import me.him188.ani.android.FormFactorStartupPlaceholder
 import me.him188.ani.android.InstallFormFactorUi
+import me.him188.ani.android.formFactorAutoUiScaleEligible
 import me.him188.ani.android.formFactorUiBehavior
 import me.him188.ani.android.onFormFactorActivityCreated
 import androidx.lifecycle.lifecycleScope
@@ -41,6 +42,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -125,7 +127,8 @@ class MainActivity : AniComponentActivity(), PictureInPictureHost {
      * 这是唯一能在 Activity 创建前介入的时机.
      */
     override fun attachBaseContext(newBase: Context) {
-        val scale = UiScaleMirror.read(newBase)
+        // 首次引导前按屏幕真实大小定一次 (见 AutoUiScale)
+        val scale = AutoUiScale.decide(newBase, formFactorAutoUiScaleEligible(newBase)) ?: UiScaleMirror.read(newBase)
         appliedUiScale = scale
         super.attachBaseContext(newBase.withUiScale(scale))
     }
@@ -258,6 +261,10 @@ class MainActivity : AniComponentActivity(), PictureInPictureHost {
 
         val externalContentProvider = externalContentProviderFactory.create(this, lifecycleScope)
 
+        // attachBaseContext 自动定的那一档先写回设置, 再开始往镜像抄 (否则设置里的 100% 会把它抄回去); 只有首次引导前那一次走这里
+        AutoUiScale.consumePending(this)?.let { scale ->
+            runBlocking { settingsRepository.themeSettings.update { copy(uiScale = scale) } }
+        }
         // 把界面缩放抄进 SharedPreferences: attachBaseContext 拿不到 DataStore (还没有协程可用).
         // 挪到 IO: write 是同步落盘 (commit), 拖滑块每过一格都会触发一次, 放主线程会加剧拖动时的卡顿
         lifecycleScope.launch(Dispatchers.IO) {
