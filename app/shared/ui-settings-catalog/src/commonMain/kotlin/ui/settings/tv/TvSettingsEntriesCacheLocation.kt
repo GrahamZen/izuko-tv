@@ -17,6 +17,7 @@ import me.him188.ani.app.domain.media.cache.location.MediaCacheLocation
 import me.him188.ani.app.domain.media.cache.location.MediaCacheLocationProblem
 import me.him188.ani.app.domain.media.cache.location.MediaCacheLocations
 import me.him188.ani.app.domain.usecase.GlobalKoin
+import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_storage_cache_location_disconnected
 import me.him188.ani.app.ui.lang.settings_storage_cache_location_fat32
@@ -28,7 +29,6 @@ import me.him188.ani.app.ui.lang.settings_storage_where_value
 import me.him188.ani.app.ui.lang.storage_guide_busy
 import me.him188.ani.app.ui.lang.storage_guide_mode_app
 import me.him188.ani.app.ui.lang.storage_guide_mode_library
-import org.jetbrains.compose.resources.getString
 
 /**
  * 缓存可以放的位置 (见 [MediaCacheLocations]), 页面开着时跟着插拔变; 打开页面时先重列一遍, 剩余空间是新的.
@@ -73,7 +73,7 @@ internal fun TvSettingsItemsBuilder.cacheLocationItem() {
         listOf(
             TvSettingsEdit.Run { env ->
                 if (GlobalKoin.get<MediaStorageSetup>().isMoving) {
-                    env.toast(getString(Lang.storage_guide_busy))
+                    env.toast(getStringOffMain(Lang.storage_guide_busy))
                 } else {
                     env.show(TvSettingsOverlay.Dialog { dismiss -> StorageGuideDialog(dismiss) })
                 }

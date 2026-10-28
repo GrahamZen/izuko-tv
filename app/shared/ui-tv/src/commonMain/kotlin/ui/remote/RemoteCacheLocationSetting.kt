@@ -19,6 +19,7 @@ import me.him188.ani.app.domain.media.cache.location.MediaCacheLocationProblem
 import me.him188.ani.app.domain.media.cache.location.MediaCacheLocations
 import me.him188.ani.app.domain.media.cache.location.MediaCacheMover
 import me.him188.ani.app.domain.media.cache.location.mediaCacheLocationChoices
+import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.cache_move_started
 import me.him188.ani.app.ui.lang.settings_storage_cache_location
@@ -35,7 +36,6 @@ import me.him188.ani.app.ui.lang.settings_storage_cache_move_target_unavailable
 import me.him188.ani.app.ui.lang.tv_background_task_cache_move
 import me.him188.ani.app.ui.lang.tv_background_task_cache_move_waiting
 import me.him188.ani.datasources.api.topic.FileSize.Companion.bytes
-import org.jetbrains.compose.resources.getString
 import org.koin.mp.KoinPlatform
 
 /**
@@ -69,7 +69,7 @@ internal object RemoteCacheLocationSetting {
 
     private suspend fun options(): List<RemoteSettingEditor.Options.Option> {
         val locations = locations()
-            ?: return listOf(RemoteSettingEditor.Options.Option(null, getString(Lang.settings_storage_cache_location_internal)))
+            ?: return listOf(RemoteSettingEditor.Options.Option(null, getStringOffMain(Lang.settings_storage_cache_location_internal)))
         locations.refresh()
         val selected = selected()
         return mediaCacheLocationChoices(locations.locations.value, selected).map { choice ->
@@ -81,8 +81,8 @@ internal object RemoteCacheLocationSetting {
         val unusable = locations()?.locations?.value.orEmpty().mapNotNull { location ->
             when (location.unusable) {
                 null -> null
-                MediaCacheLocationProblem.FAT32 -> getString(Lang.settings_storage_cache_location_fat32, nameOf(location))
-                MediaCacheLocationProblem.READ_ONLY -> getString(Lang.settings_storage_cache_location_read_only, nameOf(location))
+                MediaCacheLocationProblem.FAT32 -> getStringOffMain(Lang.settings_storage_cache_location_fat32, nameOf(location))
+                MediaCacheLocationProblem.READ_ONLY -> getStringOffMain(Lang.settings_storage_cache_location_read_only, nameOf(location))
             }
         }
         return (unusable + listOfNotNull(moveStatus())).takeIf { it.isNotEmpty() }?.joinToString("\n")
@@ -92,45 +92,45 @@ internal object RemoteCacheLocationSetting {
     private suspend fun moveStatus(): String? {
         val mover = mover() ?: return null
         suspend fun driveName(id: String?): String =
-            locations()?.locations?.value?.firstOrNull { it.id == id }?.let { nameOf(it) } ?: getString(Lang.settings_storage_cache_location_internal)
+            locations()?.locations?.value?.firstOrNull { it.id == id }?.let { nameOf(it) } ?: getStringOffMain(Lang.settings_storage_cache_location_internal)
         mover.progress.value?.let { p ->
             // 还在列要搬哪些时没有数
-            if (p.total == 0) return getString(Lang.tv_background_task_cache_move, driveName(p.target))
-            return getString(
+            if (p.total == 0) return getStringOffMain(Lang.tv_background_task_cache_move, driveName(p.target))
+            return getStringOffMain(
                 Lang.settings_storage_cache_move_progress,
                 p.done + p.failed, p.total, p.bytesDone.bytes.toString(), p.bytesTotal.bytes.toString(),
             )
         }
         mover.waiting.value?.let { w ->
-            return getString(Lang.tv_background_task_cache_move_waiting, driveName(w.target.location)) +
+            return getStringOffMain(Lang.tv_background_task_cache_move_waiting, driveName(w.target.location)) +
                     " · ${w.doneUnits}/${w.doneUnits + w.units} · ${w.doneBytes.bytes} / ${(w.doneBytes + w.bytes).bytes}"
         }
         val pending = setup()?.leftovers()?.total ?: return null
         if (pending.isEmpty) return null
-        return getString(Lang.settings_storage_cache_move_pending, pending.units, pending.bytes.bytes.toString())
+        return getStringOffMain(Lang.settings_storage_cache_move_pending, pending.units, pending.bytes.bytes.toString())
     }
 
     private suspend fun startMove(): String {
-        val mover = mover() ?: return getString(Lang.settings_storage_cache_move_nothing)
+        val mover = mover() ?: return getStringOffMain(Lang.settings_storage_cache_move_nothing)
         if (mover.progress.value != null || mover.waiting.value != null) return moveStatus().orEmpty()
         val target = selected()
         val location = locations()?.locations?.value?.firstOrNull { it.id == target }
-        if (location == null || location.unusable != null) return getString(Lang.settings_storage_cache_move_target_unavailable)
-        val setup = setup() ?: return getString(Lang.settings_storage_cache_move_nothing)
+        if (location == null || location.unusable != null) return getStringOffMain(Lang.settings_storage_cache_move_target_unavailable)
+        val setup = setup() ?: return getStringOffMain(Lang.settings_storage_cache_move_nothing)
         val pending = setup.leftovers().total
-        if (pending.isEmpty) return getString(Lang.settings_storage_cache_move_nothing)
+        if (pending.isEmpty) return getStringOffMain(Lang.settings_storage_cache_move_nothing)
         setup.moveLeftovers()
-        return getString(Lang.cache_move_started, pending.units, pending.bytes.bytes.toString())
+        return getStringOffMain(Lang.cache_move_started, pending.units, pending.bytes.bytes.toString())
     }
 
     private suspend fun labelOf(choice: MediaCacheLocationChoice): String {
-        val location = choice.location ?: return getString(Lang.settings_storage_cache_location_disconnected)
+        val location = choice.location ?: return getStringOffMain(Lang.settings_storage_cache_location_disconnected)
         val free = location.freeBytes
         val total = location.totalBytes
         if (free == null || total == null) return nameOf(location)
-        return nameOf(location) + " · " + getString(Lang.settings_storage_cache_location_space, free.bytes.toString(), total.bytes.toString())
+        return nameOf(location) + " · " + getStringOffMain(Lang.settings_storage_cache_location_space, free.bytes.toString(), total.bytes.toString())
     }
 
     private suspend fun nameOf(location: MediaCacheLocation): String =
-        if (location.id == null || location.label.isBlank()) getString(Lang.settings_storage_cache_location_internal) else location.label
+        if (location.id == null || location.label.isBlank()) getStringOffMain(Lang.settings_storage_cache_location_internal) else location.label
 }

@@ -33,6 +33,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.him188.ani.app.platform.LocalContext
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
+import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.foundation.lan.TvRemoteSettingsBridge
 import me.him188.ani.app.ui.foundation.setClipEntryText
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
@@ -50,7 +51,6 @@ import me.him188.ani.app.ui.lang.settings_log_share_file
 import me.him188.ani.app.ui.lang.settings_log_share_today_log_file
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
-import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 import java.io.File
 import java.io.RandomAccessFile
@@ -217,10 +217,10 @@ internal suspend fun exportLogFileTo(context: Context, logFile: File, target: Ur
         }
     }.fold(
         // 位置是用户自己挑的, 不用再告诉他在哪
-        onSuccess = { toaster.toast(getString(Lang.settings_log_exported)) },
+        onSuccess = { toaster.toast(getStringOffMain(Lang.settings_log_exported)) },
         onFailure = {
             logger.warn(it) { "Failed to export log file to $target" }
-            toaster.toast(getString(Lang.settings_log_export_failed))
+            toaster.toast(getStringOffMain(Lang.settings_log_export_failed))
         },
     )
 }
@@ -240,10 +240,10 @@ internal suspend fun exportLogFileToAppDir(context: Context, logFile: File, toas
             logFile.copyTo(dir.resolve(EXPORT_FILE_NAME), overwrite = true)
         }
     }.fold(
-        onSuccess = { toaster.toast(getString(Lang.settings_log_export_succeed, it.absolutePath)) },
+        onSuccess = { toaster.toast(getStringOffMain(Lang.settings_log_export_succeed, it.absolutePath)) },
         onFailure = {
             logger.warn(it) { "Failed to export log file to app directory" }
-            toaster.toast(getString(Lang.settings_log_export_failed))
+            toaster.toast(getStringOffMain(Lang.settings_log_export_failed))
         },
     )
 }

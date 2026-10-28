@@ -56,6 +56,7 @@ import kotlinx.coroutines.launch
 import me.him188.ani.app.domain.mediasource.subscription.MediaSourceSubscription
 import me.him188.ani.app.navigation.LocalNavigator
 import me.him188.ani.app.ui.foundation.animation.LocalAniMotionScheme
+import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.foundation.setClipEntryText
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.lang.Lang
@@ -81,7 +82,6 @@ import me.him188.ani.app.ui.settings.SettingsDetailPaneScope
 import me.him188.ani.app.ui.settings.SettingsTab
 import me.him188.ani.app.ui.settings.framework.ConnectionTesterRunner
 import me.him188.ani.app.ui.settings.framework.components.SettingsScope
-import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 
 internal object MediaSourceSubscriptionPageTestTags {
@@ -238,7 +238,7 @@ private fun SettingsScope.SubscriptionUrlItem(url: String) {
                 {
                     uiScope.launch {
                         clipboard.setClipEntryText(url)
-                        toaster.toast(getString(Lang.settings_media_source_subscription_copied))
+                        toaster.toast(getStringOffMain(Lang.settings_media_source_subscription_copied))
                     }
                 },
             ) {
@@ -349,7 +349,7 @@ internal fun MediaSourceSubscriptionPageActions(
                         val string = subscriptionState.exportToString(subscription)
                         clipboard.setClipEntryText(string)
                         showMenu = false
-                        toaster.toast(getString(Lang.settings_media_source_subscription_copied))
+                        toaster.toast(getStringOffMain(Lang.settings_media_source_subscription_copied))
                     }
                 },
                 enabled = !subscriptionState.isExportInProgress.collectAsStateWithLifecycle().value,
