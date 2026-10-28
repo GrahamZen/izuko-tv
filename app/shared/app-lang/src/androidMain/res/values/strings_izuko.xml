@@ -216,8 +216,6 @@
     <string name="settings_theme_tv_hero_backdrop_description">When off, Explore, Search and Collection all become poster walls with a title under each poster; press OK on a card to show its hero background, and OK again to open it</string>
     <string name="settings_theme_tv_immersive_schedule">Immersive Airing Schedule (TV)</string>
     <string name="settings_theme_tv_immersive_schedule_description">Show the airing schedule as a date rail plus a poster grid. Turn off to fall back to the classic side-by-side day columns</string>
-    <string name="settings_theme_tv_schedule_layout">Airing schedule layout (TV)</string>
-    <string name="settings_theme_tv_schedule_layout_description">Pick how the airing schedule is laid out on TV.</string>
     <string name="settings_theme_tv_backdrop_blur">Blurred background (TV)</string>
     <string name="settings_theme_tv_backdrop_blur_description">Fills the page behind with a blurred version of the title artwork, at two levels picked together: the poster wall level for the wall after selecting a poster (when “Selecting a poster” is “Show the overview first”) and for the airing schedule (Medium when Off), and the details level past the first screen of a details page. A strong wall and a light details page look best: the wall background stays out of the way and the details page still shows the artwork. With Off, the details zoom in from the artwork and the details page keeps the artwork sharp and dimmed</string>
     <string name="settings_theme_tv_backdrop_blur_pair">%1$s on the poster wall, %2$s on details</string>
@@ -328,9 +326,6 @@
     <string name="settings_theme_tv_episode_specials_hidden">Hide</string>
     <string name="settings_theme_tv_episode_specials_after_main">After the main episodes</string>
     <string name="settings_theme_tv_episode_specials_by_number">Between main episodes, by number</string>
-    <string name="settings_theme_tv_schedule_upstream">Classic list</string>
-    <string name="settings_theme_tv_schedule_grid">Poster wall</string>
-    <string name="settings_theme_tv_schedule_timeline">Detail panel + timeline</string>
     <string name="settings_theme_tv_ui_scale">Interface scale</string>
     <string name="settings_theme_tv_ui_scale_description">Scale the whole interface up or down. Use this when your TV or box reports a wrong screen density and everything looks too large or too small. 100% follows the system. The interface reloads once when you leave settings so that dialogs and menus match</string>
     <string name="settings_theme_tv_retain_playback_session">Keep playback session after leaving</string>
