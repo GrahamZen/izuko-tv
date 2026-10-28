@@ -196,7 +196,8 @@ object DevSwitches {
     val openFailFast = toggle("openFailFast", "开播: 打开视频出错少重试 (坏链接早换源)", default = true, persistent = true)
 
     /**
-     * 开播诊断: 记开播时间线 (控制台 `api/debug/timeline`, 见 PlayTimeline)、自动选源每一步在等什么、共用客户端与播放请求的各段耗时;
+     * 开播诊断: 记开播时间线 (控制台 `api/debug/timeline`, 见 PlayTimeline)、自动选源每一步在等什么、共用客户端与播放请求的各段耗时、
+     * 每个媒体出第一帧 (见 PlaybackPerfProbe);
      * 主线程卡住超过 4 秒时把栈打进日志 (重启后生效). 关着时这些都不记.
      */
     val playDiagnostics = toggle("playDiagnostics", "开播诊断: 时间线、选源追踪、请求耗时与主线程卡顿 (卡顿监视重启生效)", persistent = true)
