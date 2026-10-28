@@ -56,12 +56,6 @@ class SourceProfileExtension(
     private val context: PlayerExtensionContext,
     private val client: ScopedHttpClient,
 ) : PlayerExtension("SourceProfile") {
-    private class Tracking(val media: Media, val selectedAt: Long) {
-        var loaded = false
-        var outcome: Boolean? = null
-        var playbackFailed = false
-    }
-
     private sealed interface Event {
         class Selected(val media: Media?) : Event
         class Loading(val state: VideoLoadingState) : Event
@@ -88,7 +82,7 @@ class SourceProfileExtension(
                     }
                 }
                 val errors = context.player.playerErrors()
-                var tracking: Tracking? = null
+                var tracking: SourceAttempt? = null
                 // 一个收集者按先后处理, 不用为跟踪状态加锁
                 merge(
                     selected.map { Event.Selected(it) },
@@ -98,14 +92,13 @@ class SourceProfileExtension(
                 ).collect { event ->
                     when (event) {
                         is Event.Selected -> tracking = event.media?.takeIf { it.kind != MediaSourceKind.LocalCache }
-                            ?.let { if (tracking?.media?.mediaId == it.mediaId) tracking else Tracking(it, currentTimeMillis()) }
+                            ?.let { if (tracking?.media?.mediaId == it.mediaId) tracking else SourceAttempt(it, currentTimeMillis()) }
 
                         is Event.Loading -> {
                             val t = tracking ?: return@collect
                             val state = event.state
-                            if (state is VideoLoadingState.Succeed) t.loaded = true
-                            if (state is VideoLoadingState.Failed && state != VideoLoadingState.Cancelled && t.outcome == null) {
-                                t.outcome = false
+                            if (state is VideoLoadingState.Succeed) t.onLoaded()
+                            if (state is VideoLoadingState.Failed && state != VideoLoadingState.Cancelled && t.onLoadFailed()) {
                                 // 自己网盘的事 (没登录、空间不够) 放不了不是这个源的毛病, 不记
                                 if (state is VideoLoadingState.UnknownError && state.cause.isCloudDriveAccountProblem()) return@collect
                                 val reason = PlaybackFailureReportExtension.reasonOf(state)
@@ -115,16 +108,15 @@ class SourceProfileExtension(
 
                         is Event.Playback -> {
                             val t = tracking ?: return@collect
-                            if (event.state == PlaybackState.PLAYING && t.loaded && t.outcome == null) {
-                                t.outcome = true
+                            if (event.state == PlaybackState.PLAYING && t.onPlaying()) {
                                 launch { recordPlaying(t, startupMillis = currentTimeMillis() - t.selectedAt) }
                             }
                         }
 
                         Event.PlayerError -> {
                             val t = tracking ?: return@collect
-                            if (t.outcome == true && !t.playbackFailed) {
-                                t.playbackFailed = true
+                            // 打开成功、还没播起来就出错, 和播起来之后出错, 各记一条
+                            if (t.onPlayerError()) {
                                 launch { record(t, ok = false, reason = Reason.PLAYER_ERROR) }
                             }
                         }
@@ -158,7 +150,7 @@ class SourceProfileExtension(
         }
     }
 
-    private suspend fun record(t: Tracking, ok: Boolean, reason: Reason) {
+    private suspend fun record(t: SourceAttempt, ok: Boolean, reason: Reason) {
         SourceProfiles.record(
             t.media.mediaSourceId,
             SourceObservation(
@@ -170,7 +162,7 @@ class SourceProfileExtension(
         )
     }
 
-    private suspend fun recordPlaying(t: Tracking, startupMillis: Long) {
+    private suspend fun recordPlaying(t: SourceAttempt, startupMillis: Long) {
         var observation = SourceObservation(
             at = currentTimeMillis(),
             ok = true,
