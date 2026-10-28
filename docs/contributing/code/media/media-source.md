@@ -117,7 +117,8 @@ RSS 源配置的 `titleToLink`（`RssTitleToLink`）在解析出条目之后、�
 匹配相关的配置（`autoMatch`、`matchEpisodeSortFromName`、`matchVideo`）含义相同。
 关键词与打开哪些条目页同网页抓取数据源（[搜索计划](#搜索计划)），每个关键词最多打开 `maxSubjects` 个：
 有的站搜索结果固定是一整页按相关度排的条目，后面是只沾一两个字的，不是这一部的不开。资源的 `download` 是剧集页（`WebVideo`），
-播放时 `WebVideoDirectResolver.resolveDirectly` 执行播放段；取不到或要求嗅探时，播放器按 `matchVideo` 用 WebView 打开剧集页。
+播放时 `WebVideoDirectResolver.resolveDirectly` 执行播放段；取不到或要求嗅探时，先看这一集手上有没有不用嗅探的资源可换（`WebViewDeferral`，
+见 [MediaSelector](media-selector.md)），没有才由播放器按 `matchVideo` 用 WebView 打开剧集页。
 GET 请求被站点验证挡住时改由 `WebSessionManager` 加载，与 `SelectorMediaSource` 共用验证码会话。
 
 `fetch` 可以把响应设的 Cookie 存进变量（`cookies`），交给 `mediaHeaders` 让播放器带上：有的站点取视频地址的接口同时发下载视频要的 Cookie，
@@ -280,7 +281,7 @@ JSONPath 表达式；公共请求头（如 `apikey`）与地址前缀在三个�
 
 `SourceProfiles` 记下每个数据源最近几次播放的实际表现（开播用时、分辨率与码率、有没有删到插播广告、规则源走没走 WebView、
 失败），控制台据此给出建议阶级。选中一个资源记一次开播：播起来了、打开失败，或打开成功但还没播起来就报错（`SourceAttempt`）；
-播起来之后出错另记一次。自己网盘的问题（没登录、空间不够）不记。规则源最近几次大多要 WebView 嗅探才拿到视频时，`mediaSourceTiersFlow` 给出的阶级比配置高一级；
+播起来之后出错另记一次。自己网盘的问题（没登录、空间不够）不记。解析到要嗅探时改选了别的资源，记一次「要嗅探」，不算播放也不算失败。规则源最近几次大多要 WebView 嗅探才拿到视频时，`mediaSourceTiersFlow` 给出的阶级比配置高一级；
 其他数据源的阶级只取配置。
 
 ### Channel 级阶级

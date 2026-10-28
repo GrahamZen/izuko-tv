@@ -48,11 +48,12 @@ class WebViewSourcesTest {
     }
 
     @Test
-    fun `fallback sources count unless recent plays were mostly direct`() {
+    fun `fallback sources count only when recent plays mostly sniffed`() {
         val uses = mapOf("always" to Use.ALWAYS, "fallback-new" to Use.FALLBACK, "fallback-direct" to Use.FALLBACK, "fallback-web" to Use.FALLBACK)
         val observed = mapOf("always" to false, "fallback-direct" to false, "fallback-web" to true, "direct-but-sniffed" to true)
+        // 没播过的先直连源照普通源排, 真要嗅探时再改选 (见 WebViewDeferral)
         assertEquals(
-            setOf("always", "fallback-new", "fallback-web", "direct-but-sniffed"),
+            setOf("always", "fallback-web", "direct-but-sniffed"),
             WebViewSources.of(uses, observed),
         )
     }

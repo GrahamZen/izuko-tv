@@ -97,6 +97,26 @@ class SourceProfilesTest {
     }
 
     @Test
+    fun `a deferral marks the web view without counting as a play or failure`() {
+        val deferral = SourceObservation(5, ok = true, webView = true, deferred = true)
+        val s = SourceProfiles.summarize(listOf(deferral))!!
+        assertEquals(true, s.webView)
+        assertEquals(0, s.plays)
+        assertEquals(0, s.failures)
+        assertEquals(0, s.tests)
+        // 播过一次直连、改选掉两次: 按最近几次的标记多数算要嗅探, 播放次数只算真播的
+        val mixed = SourceProfiles.summarize(listOf(ok(1, startup = 3000, webView = false), deferral, deferral.copy(at = 6)))!!
+        assertEquals(true, mixed.webView)
+        assertEquals(1, mixed.plays)
+        assertEquals(3000L, mixed.startupMillis)
+
+        val id = "deferral-test"
+        SourceProfiles.recordWebViewDeferred(id, now = 7)
+        assertEquals(true, SourceProfiles.summary(id)!!.webView)
+        assertEquals(0, SourceProfiles.summary(id)!!.plays)
+    }
+
+    @Test
     fun `demote only raises the listed sources`() {
         val tiers = MediaSelectorSourceTiers(mapOf("a" to MediaSourceTier(0u), "b" to MediaSourceTier(2u)))
         val demoted = SourceProfiles.demote(tiers, setOf("a"))
