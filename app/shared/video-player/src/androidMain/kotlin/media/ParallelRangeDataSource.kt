@@ -140,7 +140,7 @@ internal class ParallelRangeDataSource(
                 boosted() -> "$boostedConnections connections (boosted from $connections)"
                 else -> "$connections connections"
             }
-            val wait = if (lengthKnown >= 0) "all chunks requested at once" else "in ${millisSince(startedAt)}ms"
+            val wait = if (lengthKnown >= 0) "chunks requested together on the first read" else "in ${millisSince(startedAt)}ms"
             "Opened ${dataSpec.uri.host} at ${dataSpec.position} with $mode, length $length, $wait"
         }
         opened = true

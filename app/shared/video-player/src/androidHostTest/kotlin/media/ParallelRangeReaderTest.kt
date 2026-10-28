@@ -12,7 +12,10 @@ package me.him188.ani.app.videoplayer.media
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InterruptedIOException
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.Executor
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.test.AfterTest
@@ -383,6 +386,31 @@ class ParallelRangeReaderTest {
     }
 
     @Test
+    fun `with a known length an open closed before any read requests nothing`() {
+        // 播放器读完文件尾的索引, 先在正文开头打开、紧接着又跳到观看进度: 这一次一个字节都不读
+        val tasks = AtomicInteger()
+        val counting = Executor { tasks.incrementAndGet(); executor.execute(it) }
+        val server = FakeServer()
+        val reader = ParallelRangeReader(server, counting, connections = 4, chunkSize = 1000)
+        assertEquals(content.size - 500L, reader.open(500, -1, knownTotalLength = content.size.toLong()))
+        reader.close()
+        assertEquals(0, tasks.get())
+        assertTrue(synchronized(server.opened) { server.opened.isEmpty() })
+    }
+
+    @Test
+    fun `with a known length the first read requests a whole round`() {
+        val tasks = AtomicInteger()
+        val counting = Executor { tasks.incrementAndGet(); executor.execute(it) }
+        val reader = ParallelRangeReader(FakeServer(), counting, connections = 4, chunkSize = 1000)
+        reader.open(500, -1, knownTotalLength = content.size.toLong())
+        assertEquals(0, tasks.get())
+        assertTrue(reader.read(ByteArray(10), 0, 10) > 0)
+        assertEquals(4, tasks.get())
+        reader.close()
+    }
+
+    @Test
     fun `with a known length every chunk is requested at once and nothing on the opening thread`() {
         val server = FakeServer()
         val reader = reader(server)
@@ -409,9 +437,12 @@ class ParallelRangeReaderTest {
         val server = FakeServer(hangOpens = true)
         val reader = reader(server)
         reader.open(0, -1, knownTotalLength = content.size.toLong())
+        // 第一次读才排块; 读的线程在等数据, 这时关
+        val reading = executor.submit<Unit> { reader.read(ByteArray(10), 0, 10) }
         val deadline = System.nanoTime() + 5_000_000_000L
         while (synchronized(server.opened) { server.opened.size } < 4 && System.nanoTime() < deadline) Thread.sleep(10)
         reader.close()
+        assertFailsWith<ExecutionException> { reading.get(5, TimeUnit.SECONDS) }
         // 不要了的请求当场作废, 不占着位子挡住之后的请求
         while (server.interruptedOpens.get() < 4 && System.nanoTime() < deadline) Thread.sleep(10)
         assertEquals(4, server.interruptedOpens.get())
