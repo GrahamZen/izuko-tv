@@ -278,7 +278,8 @@ JSONPath 表达式；公共请求头（如 `apikey`）与地址前缀在三个�
 （`AniBakaRuleImporter.tierOfLabels`）。
 
 `SourceProfiles` 记下每个数据源最近几次播放的实际表现（开播用时、分辨率与码率、有没有删到插播广告、规则源走没走 WebView、
-失败），控制台据此给出建议阶级。规则源最近几次大多要 WebView 嗅探才拿到视频时，`mediaSourceTiersFlow` 给出的阶级比配置高一级；
+失败），控制台据此给出建议阶级。选中一个资源记一次开播：播起来了、打开失败，或打开成功但还没播起来就报错（`SourceAttempt`）；
+播起来之后出错另记一次。自己网盘的问题（没登录、空间不够）不记。规则源最近几次大多要 WebView 嗅探才拿到视频时，`mediaSourceTiersFlow` 给出的阶级比配置高一级；
 其他数据源的阶级只取配置。
 
 ### Channel 级阶级
