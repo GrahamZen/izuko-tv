@@ -14,6 +14,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
+import me.him188.ani.app.domain.media.fetch.SearchConcurrency
 import me.him188.ani.app.domain.settings.SettingAdjustment
 import me.him188.ani.app.domain.settings.SettingAdjustments
 import me.him188.ani.app.domain.usecase.GlobalKoin
@@ -40,13 +41,14 @@ internal object TvSearchStutter {
 
 /**
  * 播放页上挂一个: 播放时搜索导致画面卡顿, 设置「完整搜索」没选过的改成「只手动」并当场暂停搜索 (见 [EpisodeViewModel.onSearchCausedStutter]),
- * 改了就经 [SettingAdjustments] 告知一声 (可在设置里改回).
+ * 改了就经 [SettingAdjustments] 告知一声 (可在设置里改回). 「同时搜索的数据源」也往下调一级 (见 [SearchConcurrency.onSearchStutter]).
  */
 @Composable
 fun TvSearchStutterGuard(vm: EpisodeViewModel) {
     val adjustments = remember { GlobalKoin.get<SettingAdjustments>() }
     LaunchedEffect(vm) {
         TvSearchStutter.events.collect {
+            SearchConcurrency.Default.onSearchStutter()
             if (vm.onSearchCausedStutter()) adjustments.notify(SettingAdjustment.FullSearchStutter)
         }
     }

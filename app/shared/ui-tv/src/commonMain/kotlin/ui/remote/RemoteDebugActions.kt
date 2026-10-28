@@ -29,8 +29,11 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import me.him188.ani.app.data.persistent.database.AniDatabase
+import me.him188.ani.app.data.repository.media.PlaybackLineageRepository
+import me.him188.ani.app.data.repository.media.SelectorMediaSourceEpisodeCacheRepository
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
 import me.him188.ani.app.domain.foundation.DebugNetworkHooks
+import me.him188.ani.app.domain.player.diagnostics.PlayTimeline
 import me.him188.ani.app.navigation.AniNavigator
 import me.him188.ani.app.navigation.MainScreenPage
 import me.him188.ani.app.ui.foundation.lan.LanHttpRequest
@@ -57,11 +60,20 @@ import kotlin.time.Duration.Companion.seconds
  *   `hang` 秒后才失败 = 模拟超时), `rules` 空 = 全部放行, 见 [DebugNetworkHooks]. 只在内存里, 重启就没了.
  * - `POST api/debug/requests/reset` 从现在起记录请求, `GET api/debug/requests[?raw=1]` 按接口数次数 (另给逐条),
  *   `POST api/debug/requests/stop` 停.
+ * - `GET api/debug/timeline`: 最近几次开播的时间线 (见 [PlayTimeline], 开了调试开关 `playDiagnostics` 才有): 每次开播一组 `[序号, 距开始的毫秒, 步骤, 说明]`.
+ * - `GET api/debug/stacks`: 全部线程的栈 (查开播卡在哪一步), 在 `text` 里.
+ * - `POST api/debug/search/clear` `[subject=<条目 id>] [memory=1]`: 清搜索记录, 量第一次搜的耗时用: 网页类数据源的搜索缓存与跨条目共用的
+ *   站点回应记忆 (给了 subject 时只清这一部的缓存行); `memory=1` 时连这一部记住的数据源与播放线索一起清 (同第一次看).
  */
 internal object RemoteDebugActions {
     private val logger = logger<RemoteDebugActions>()
+    // 线程之间空一行, 每一帧另起一行 (api/debug/stacks)
+    private val STACK_SEPARATOR = String(charArrayOf('\n', '\n'))
+    private val FRAME_PREFIX = String(charArrayOf('\n')) + "    at "
     private val database: AniDatabase get() = KoinPlatform.getKoin().get()
     private val collections: SubjectCollectionRepository get() = KoinPlatform.getKoin().get()
+    private val searchCache: SelectorMediaSourceEpisodeCacheRepository get() = KoinPlatform.getKoin().get()
+    private val lineages: PlaybackLineageRepository get() = KoinPlatform.getKoin().get()
 
     private const val MAX_ROWS = 200
 
@@ -80,6 +92,17 @@ internal object RemoteDebugActions {
                 request.path == "api/debug/requests" && get -> requests(raw = request.queryParam("raw") == "1")
                 request.path == "api/debug/requests/reset" && post -> DebugNetworkHooks.startRecording().let { result(true, "recording") }
                 request.path == "api/debug/requests/stop" && post -> DebugNetworkHooks.stopRecording().let { result(true, "stopped") }
+                request.path == "api/debug/search/clear" && post -> clearSearch(request.formFields())
+                request.path == "api/debug/timeline" && get -> buildJsonObject { put("ok", true); put("sessions", PlayTimeline.toJson()) }
+                request.path == "api/debug/stacks" && get -> buildJsonObject {
+                    put("ok", true)
+                    put(
+                        "text",
+                        Thread.getAllStackTraces().entries.sortedBy { it.key.name }.joinToString(STACK_SEPARATOR) { (t, frames) ->
+                            "thread ${t.name} (${t.state})" + frames.take(40).joinToString("") { FRAME_PREFIX + it }
+                        },
+                    )
+                }
                 request.path.startsWith("api/debug/settings/") -> RemoteDebugSettingsPage.handle(request, navigator)
                 else -> null
             }
@@ -136,6 +159,25 @@ internal object RemoteDebugActions {
             }
         }
         database.invalidationTracker.refreshAsync()
+        return result(true, "ok")
+    }
+
+    private fun clearSearch(form: Map<String, String>): JsonObject {
+        val subjectId = form["subject"]?.toIntOrNull()
+        val memory = form["memory"] == "1"
+        if (memory && subjectId == null) return result(false, "memory=1 needs subject")
+        if (subjectId == null) {
+            execute("DELETE FROM web_search_session_cache")
+            searchCache.siteMemory.clear()
+        }
+        runBlocking {
+            if (subjectId != null) searchCache.clearByRequestedSubject(subjectId)
+            if (memory && subjectId != null) {
+                database.preferredWebMediaSourceDao().deletePreferredMediaSource(subjectId)
+                lineages.setLineage(subjectId, null)
+            }
+        }
+        logger.info { "Remote debug: cleared search records${subjectId?.let { " of subject $it" }.orEmpty()}${if (memory) " and its remembered source" else ""}" }
         return result(true, "ok")
     }
 
