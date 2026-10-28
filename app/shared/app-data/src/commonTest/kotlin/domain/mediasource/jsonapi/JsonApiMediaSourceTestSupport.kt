@@ -163,6 +163,8 @@ internal fun TestScope.createTestJsonApiMediaSource(
     /** 用户设置的搜索缓存有效期. 默认 0, 即不写缓存. */
     cacheTtl: Duration = Duration.ZERO,
     getTimeMillis: () -> Long = { currentTimeMillis() },
+    /** 几个数据源共用同一份缓存与站点搜索记忆时传同一个 */
+    repository: SelectorMediaSourceEpisodeCacheRepository = SelectorMediaSourceEpisodeCacheRepository(cacheDao, flowOf(cacheTtl)),
 ): JsonApiMediaSource {
     val client = HttpClient(engine).asScopedHttpClient()
     val arguments = JsonApiMediaSourceArguments.Default.copy(searchConfig = searchConfig)
@@ -174,7 +176,7 @@ internal fun TestScope.createTestJsonApiMediaSource(
                 arguments,
             ),
         ),
-        repository = SelectorMediaSourceEpisodeCacheRepository(cacheDao, flowOf(cacheTtl)),
+        repository = repository,
         client = client,
         getTimeMillis = getTimeMillis,
     )

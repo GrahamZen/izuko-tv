@@ -33,7 +33,8 @@ import kotlin.time.Duration
  */
 interface KeywordSearchScope {
     /**
-     * 向站点发起搜索前调用. 本条链里已经向站点发起过搜索时, 先等待请求间隔; 命中缓存的搜索不调用它, 也就不等待.
+     * 真要向站点发搜索请求前调用. 本条链里已经向站点发起过搜索时, 先等待请求间隔;
+     * 命中搜索缓存或站点搜索记忆 (SiteSearchMemory) 的不发请求, 不调用它, 也就不等待.
      */
     suspend fun beforeOnlineSearch()
 
@@ -54,11 +55,11 @@ interface KeywordSearchScope {
  *
  * 每个关键词的结果一搜到就发出, 不等整条链结束; 按批发 ([BatchedSizedSource]): 提前交出的一页一批, 一个词剩下的一批.
  * 两次向站点发起的搜索之间等待 [requestInterval]
- * (由 [search] 通过 [KeywordSearchScope.beforeOnlineSearch] 触发); 命中搜索缓存的不发请求也不等待.
+ * (由 [search] 通过 [KeywordSearchScope.beforeOnlineSearch] 触发); 命中搜索缓存或站点搜索记忆的不发请求也不等待.
  *
  * @param matches 一次搜索的结果里是否有名字能对上请求条目的.
  * @param emitPagesEarly 为 true 时 [search] 可以经 [KeywordSearchScope.emitEarly] 先发出一个词的部分资源 (网页类数据源每开完一个条目页交一次, 开播时不用等这个词的页全部开完)
- * @param search 搜索一个关键词, 返回该关键词搜到的全部资源. 先查缓存, 未命中时调用 [KeywordSearchScope.beforeOnlineSearch] 再向站点请求.
+ * @param search 搜索一个关键词, 返回该关键词搜到的全部资源. 先查缓存与站点搜索记忆, 都没有时调用 [KeywordSearchScope.beforeOnlineSearch] 再向站点请求.
  */
 fun keywordSearchChain(
     primary: List<String>,
