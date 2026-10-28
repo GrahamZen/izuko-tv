@@ -22,7 +22,10 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import me.him188.ani.app.platform.DevSwitches
 import me.him188.ani.app.platform.perf.PerfTimeline
+import me.him188.ani.utils.logging.info
+import me.him188.ani.utils.logging.logger
 import java.util.Locale
 
 /**
@@ -171,6 +174,8 @@ internal class PlaybackPerfProbe(
 
     override fun onRenderedFirstFrame(eventTime: AnalyticsListener.EventTime, output: Any, renderTimeMs: Long) {
         PerfTimeline.mark(EVENTS, "首帧")
+        // 开播诊断按这一行算出画面 (声音开始走另见 AudioOutputDiagnostics)
+        if (DevSwitches.playDiagnostics.value) logger.info { "[Video] first frame rendered" }
     }
 
     override fun onVideoDecoderInitialized(
@@ -236,6 +241,8 @@ internal class PlaybackPerfProbe(
     }
 
     companion object {
+        private val logger = logger<PlaybackPerfProbe>()
+
         /** 计数与读数的大类 (性能诊断按这些名字读, 见 ui-tv 的 PerfPlayback). */
         const val FRAMES = "画面"
         const val EVENTS = "播放"

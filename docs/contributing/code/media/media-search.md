@@ -162,7 +162,8 @@ flowchart TD
 
 **诊断**：调试开关「开播诊断」（`DevSwitches.playDiagnostics`）开着时记开播时间线（`PlayTimeline`，控制台 `api/debug/timeline`：
 查询会话、各源排队与开查、认部、开页、自动选源每一步、解析、交给播放器），自动选源每一步在等什么（`AutoSelectTrace`），
-共用客户端与播放请求的各段耗时（`HttpPhaseLog`、`PlaybackRequestLog`），以及主线程卡住时的栈（重启后生效）；关着时都不记。
+共用客户端与播放请求的各段耗时（`HttpPhaseLog`、`PlaybackRequestLog`），每个媒体出第一帧（日志 `[Video] first frame rendered`，
+声音开始走另有 `[Audio] playing`），以及主线程卡住时的栈（重启后生效）；关着时都不记。
 
 ## 认部
 
