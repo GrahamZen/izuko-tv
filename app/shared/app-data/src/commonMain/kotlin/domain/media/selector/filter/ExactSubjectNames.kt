@@ -21,15 +21,21 @@ import me.him188.ani.app.domain.mediasource.toSimplifiedChinese
  * - 开头多出的英文词出现在本条目别的名字里时去掉再比 (「BLEACH 死神 千年血战篇」对中文名「死神 千年血战篇」,
  *   「BLEACH」出自日文名);
  * - 季号的写法: 条目名写了季号的 (Bangumi 的「赛博朋克：边缘行者 2」), 页名写同一季、去掉季号后系列名相同的也算
- *   (「赛博朋克：边缘行者 第二季」, 见 [SeasonNumberConflict.subjectSeasonOf] / [SeasonNumberConflict.pageSeasonOf]).
+ *   (「赛博朋克：边缘行者 第二季」, 见 [SeasonNumberConflict.subjectSeasonOf] / [SeasonNumberConflict.pageSeasonOf]);
+ * - 名字后面跟着首播年份 ([airYear]) 的也算 (站点用年份分开重制版与旧版: 「凉宫春日的忧郁2006」「凉宫春日的忧郁 (2006)」),
+ *   年份对不上的 (「凉宫春日的忧郁2009」) 是另一版, 仍是模糊.
  *
  * 去掉这些之后仍要与某个名字整个相等 (忽略空白、标点与大小写, 同 [MediaListFilters.normalizeForCompare]).
  */
 internal class ExactSubjectNames(
     names: Collection<String>,
     private val simplify: (String) -> String = { it.toSimplifiedChinese() },
+    /** 本条目首播的年份, 不知道时为 null */
+    airYear: Int? = null,
 ) {
-    private val keys: Set<String> = names.mapTo(HashSet()) { key(it) }.apply { remove("") }
+    private val keys: Set<String> = names.mapTo(HashSet()) { key(it) }.apply { remove("") }.let { base ->
+        if (airYear == null) base else base + base.flatMap { name -> YEAR_SUFFIXES.map { name + airYear + it } }
+    }
 
     /** 本条目写了季号的名字: 去掉季号后的系列名与季号 */
     private val seasonKeys: Set<Pair<String, Int>> = names.mapNotNullTo(HashSet()) { SeasonNumberConflict.subjectSeasonOf(simplify(it)) }
@@ -60,5 +66,8 @@ internal class ExactSubjectNames(
         val WHITESPACE = Regex("""\s+""")
         val ASCII_WORD = Regex("""[A-Za-z0-9]*[A-Za-z][A-Za-z0-9]*""")
         val NAME_SEPARATOR = Regex("""\s+/\s+|／""")
+
+        /** 年份后面常跟的字 (「2006年版」); 括号与空白比较前就去掉了 */
+        val YEAR_SUFFIXES = listOf("", "年", "版", "年版")
     }
 }
