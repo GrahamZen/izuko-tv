@@ -32,6 +32,16 @@ class SettingAdjustmentsTest {
     }
 
     @Test
+    fun `notice sent before the UI collects is delivered once it subscribes`() = runTest {
+        val adjustments = SettingAdjustments(backgroundScope)
+        adjustments.notify(SettingAdjustment.FullSearchStutter)
+        runCurrent()
+        val received = async { adjustments.notices.first() }
+        runCurrent()
+        assertEquals(SettingAdjustment.FullSearchStutter, received.await())
+    }
+
+    @Test
     fun `询问 — 选了才改，问完收起`() = runTest {
         val adjustments = SettingAdjustments(backgroundScope)
         var applied = 0

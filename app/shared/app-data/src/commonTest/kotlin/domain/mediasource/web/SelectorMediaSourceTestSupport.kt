@@ -71,6 +71,9 @@ internal class InMemoryWebSearchSessionCacheDao : WebSearchSessionCacheDao {
     val rows = mutableListOf<WebSearchSessionCacheEntity>()
     private var nextId = 1L
 
+    override suspend fun subjectUrlOf(mediaSourceId: String, playUrl: String): String? =
+        rows.filter { it.mediaSourceId == mediaSourceId && it.playUrl == playUrl }.maxByOrNull { it.cachedAt }?.subjectUrl
+
     override suspend fun insertAll(items: List<WebSearchSessionCacheEntity>) {
         items.forEach { rows += it.copy(id = nextId++) }
     }
@@ -160,6 +163,8 @@ internal class InMemoryWebSearchSessionCacheDao : WebSearchSessionCacheDao {
 }
 
 internal object NoopWebSearchSessionCacheDao : WebSearchSessionCacheDao {
+    override suspend fun subjectUrlOf(mediaSourceId: String, playUrl: String): String? = null
+
     override suspend fun insertAll(items: List<WebSearchSessionCacheEntity>) {}
     override suspend fun markRoundComplete(requesterSubjectId: Int?, mediaSourceId: String, subjectName: String) {}
     override suspend fun deletePage(

@@ -88,6 +88,7 @@ internal fun createPlaybackHttpDataSourceFactory(
             .connectTimeout(connectTimeoutMillis.toLong(), TimeUnit.MILLISECONDS)
             .readTimeout(DefaultHttpDataSource.DEFAULT_READ_TIMEOUT_MILLIS.toLong(), TimeUnit.MILLISECONDS)
             .dns(FallbackDns.Default)
+            .eventListenerFactory(PlaybackRequestLog)
             .apply { proxyConfig?.let { playbackProxy(it) } }
             .build()
     }

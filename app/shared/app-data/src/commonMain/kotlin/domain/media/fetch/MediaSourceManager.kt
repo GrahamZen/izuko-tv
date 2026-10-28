@@ -13,6 +13,7 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -327,7 +328,9 @@ class MediaSourceManagerImpl(
         MediaSourceMediaFetcher(
             configProvider = { MediaFetcherConfig(currentPlatform() != Platform.Ios) },
             mediaSources = instances,
+            flowContext = SearchDispatchers.current,
             searchLimiter = MediaSourceSearchLimiter.Default,
+            sourceTiers = { sourceTiers.replayCache.firstOrNull() },
         )
     }
     override val webVideoMatcherLoader: MediaSourceWebVideoMatcherLoader = MediaSourceWebVideoMatcherLoader(
@@ -394,9 +397,9 @@ class MediaSourceManagerImpl(
 
     /**
      * 各数据源的层级. 要把每个源的配置 (规则源的整套步骤) 解码一遍, 开播时建查询会话、选源器、自动选源都要它,
-     * 所以只在配置变了时算一次, 大家共用.
+     * 所以只在配置变了时算一次, 大家共用. 一开始就算: 建查询会话时直接取手上的 (排开查先后, 不等它).
      */
-    private val sourceTiers: Flow<MediaSelectorSourceTiers> = instances.flow.map { list ->
+    private val sourceTiers: SharedFlow<MediaSelectorSourceTiers> = instances.flow.map { list ->
         val arguments = list.mapNotNull { save ->
             val argument = try {
                 save.getArgumentOrNull(codecManager)
@@ -422,7 +425,7 @@ class MediaSourceManagerImpl(
         SourceProfiles.demote(tiers, observed.filterValues { it }.keys)
             .copy(webViewSources = WebViewSources.of(webViewUses, observed))
     }.flowOn(flowCoroutineContext)
-        .shareIn(scope, replay = 1, started = SharingStarted.Lazily)
+        .shareIn(scope, replay = 1, started = SharingStarted.Eagerly)
 
     private fun MediaSourceFactory.create(
         proxyConfig: ProxyConfig?,

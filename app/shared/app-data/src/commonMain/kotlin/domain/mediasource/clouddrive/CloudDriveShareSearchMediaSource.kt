@@ -33,6 +33,7 @@ import kotlinx.io.IOException
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import me.him188.ani.app.domain.media.fetch.SelfLimitedMediaSource
+import me.him188.ani.app.domain.media.fetch.batchedSizedSource
 import me.him188.ani.app.domain.mediasource.TextTemplate
 import me.him188.ani.app.domain.mediasource.codec.DefaultMediaSourceCodec
 import me.him188.ani.app.domain.mediasource.codec.DontForgetToRegisterCodec
@@ -656,20 +657,18 @@ class CloudDriveShareSearchMediaSource(
         if (!drive.account.first().isLoggedIn) throw CloudDriveAuthException(driveId = drive.driveId)
         val subjectName = CloudDriveMediaSource.subjectNameOf(query)
         val subjectId = query.subjectId.toIntOrNull()
-        // 每认出一个分享的剧集就交给选源 (见 DriveShareSearchEngine.searchInBatches); 自动选源等这个源查完才从里面挑.
-        // 不用 SinglePagePagedSource: 它把整个 flow 收完才给第一页
+        // 每认出一个分享的剧集就交给选源 (见 DriveShareSearchEngine.searchInBatches), 一个分享一批 (见 BatchedSizedSource);
+        // 自动选源等这个源查完才从里面挑. 不用 SinglePagePagedSource: 它把整个 flow 收完才给第一页
         val finishedState = MutableStateFlow(false)
         val totalSizeState = MutableStateFlow<Int?>(null)
-        return object : SizedSource<MediaMatch> {
-            override val results: Flow<MediaMatch> = channelFlow {
+        return batchedSizedSource(
+            channelFlow {
                 val seen = HashSet<String>()
                 suspend fun deliver(matches: List<DriveShareMatch>) {
                     val fresh = matches.filter { seen.add("${it.share.shareId}/${it.file.fid}") }
                     if (fresh.isEmpty()) return
                     drive.noteShareMatches(fresh)
-                    for (match in fresh) {
-                        send(MediaMatch(match.toShareMedia(drive.placeholders, mediaSourceId, arguments.name, subjectName), MatchKind.FUZZY))
-                    }
+                    send(fresh.map { MediaMatch(it.toShareMedia(drive.placeholders, mediaSourceId, arguments.name, subjectName), MatchKind.FUZZY) })
                 }
                 val onLineage = subjectId?.let { drive.lineageShareOf(it, mediaSourceId) }?.let { engine.matchFolder(query, it) }.orEmpty()
                 deliver(onLineage)
@@ -680,10 +679,10 @@ class CloudDriveShareSearchMediaSource(
                 }
                 totalSizeState.value = seen.size
                 finishedState.value = true
-            }
-            override val finished: Flow<Boolean> get() = finishedState
-            override val totalSize: Flow<Int?> get() = totalSizeState
-        }
+            },
+            finishedState,
+            totalSizeState,
+        )
     }
 
     /**

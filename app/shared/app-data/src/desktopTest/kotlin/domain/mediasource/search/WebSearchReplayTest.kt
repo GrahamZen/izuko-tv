@@ -58,6 +58,7 @@ import kotlin.test.Test
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
+import kotlin.time.TimeSource
 
 /**
  * 网页类数据源 (网页、规则) 自动搜索的离线录放: 在录好的站点回应上用真的数据源代码跑每一部的每个源, 记下发了哪些请求、
@@ -186,7 +187,12 @@ class WebSearchReplayTest {
             episodeInfo = prepared.episode,
             mediaSourceTiers = null,
         )
+        val filterStart = TimeSource.Monotonic.markNow()
         val filtered = MediaSelectorFilterSortAlgorithm().filterMediaList(media, MediaPreference.Any, MediaSelectorSettings.Default, context)
+        val filterColdMs = filterStart.elapsedNow().inWholeMilliseconds
+        val warmStart = TimeSource.Monotonic.markNow()
+        repeat(3) { MediaSelectorFilterSortAlgorithm().filterMediaList(media, MediaPreference.Any, MediaSelectorSettings.Default, context) }
+        val filterWarmMs = warmStart.elapsedNow().inWholeMilliseconds / 3
         fun Media.describe() = "${properties.subjectName} | ${properties.episodeName} | ${episodeRange} | $mediaId"
         return buildJsonObject {
             put("id", prepared.id)
@@ -194,6 +200,8 @@ class WebSearchReplayTest {
             put("source", source.name)
             put("requests", buildJsonArray { synchronized(log) { log.toList() }.forEach { add(JsonPrimitive(it)) } })
             put("media", media.size)
+            put("filterColdMs", filterColdMs)
+            put("filterWarmMs", filterWarmMs)
             put("pages", buildJsonArray { media.mapNotNull { it.properties.subjectName }.distinct().forEach { add(JsonPrimitive(it)) } })
             put("included", buildJsonArray { filtered.filterIsInstance<MaybeExcludedMedia.Included>().forEach { add(JsonPrimitive(it.result.describe())) } })
             // 条目名算精确匹配的 (选源面板上不提示「条目名不完全一致」, 自动选源优先)

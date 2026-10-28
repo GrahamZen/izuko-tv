@@ -35,10 +35,16 @@ interface EpisodeContinuation {
     suspend fun resolve(lineage: PlaybackLineage, request: MediaFetchRequest): LineageResolution
 
     /**
-     * 按 [lineage] 直接去取很快 (网盘只列一个文件夹): 选源时不等它的数据源整轮搜完, 直接去取.
-     * 在线源、BT 直接去取就是让那个源再搜一遍, 不算.
+     * 按 [lineage] 直接去取很快 (网盘只列一个文件夹, 在线源记着条目页时只开这一页): 选源时不等它的数据源整轮搜完, 直接去取.
+     * BT、没记条目页的在线源直接去取就是让那个源再搜一遍, 不算.
      */
     fun isQuickToResolve(lineage: PlaybackLineage): Boolean = false
+
+    /**
+     * 顺着 [current] 播起来的 [playing] 让线索记下的位置跟着更新时的新线索 (在线源补上 / 换成这一集所在的条目页); 不用更新时为 null.
+     * 只更新同一条线索的位置, 不换线索.
+     */
+    suspend fun updated(current: PlaybackLineage, playing: Media): PlaybackLineage? = null
 }
 
 sealed interface LineageResolution {
@@ -49,6 +55,12 @@ sealed interface LineageResolution {
 
     /** 线索彻底失效 (分享被取消、文件夹被删), 之后不用再顺着它找 */
     data object Gone : LineageResolution
+
+    /**
+     * 这回快取不成 (记下的页打不开、数据源出错), 线索还在: 选源改用查询会话里那个数据源的结果, 不另起一轮同样的查询
+     * (见 [EpisodeContinuation.isQuickToResolve]).
+     */
+    data object Unavailable : LineageResolution
 }
 
 /** 本地缓存按它的来源认线索: 缓存下来的就是那个版本. */
@@ -81,4 +93,9 @@ class EpisodeContinuations(private val continuations: List<EpisodeContinuation>)
     }
 
     override fun isQuickToResolve(lineage: PlaybackLineage): Boolean = continuations.any { it.isQuickToResolve(lineage) }
+
+    override suspend fun updated(current: PlaybackLineage, playing: Media): PlaybackLineage? {
+        val target = playing.continuationTarget
+        return continuations.firstOrNull { it.owns(target) }?.updated(current, target)
+    }
 }
