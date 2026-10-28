@@ -30,6 +30,11 @@
     <uses-permission
             android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
             tools:ignore="ScopedStorage" />
+    <!-- 本地文件夹数据源在安卓 7.1~10 上读别的应用放的文件 (11 起用上面的「所有文件访问」): 在应用里弹框给;
+         安卓 10 另要 application 上的 requestLegacyExternalStorage 才能按路径读. 见 AndroidLocalFolderAccess -->
+    <uses-permission
+            android:name="android.permission.READ_EXTERNAL_STORAGE"
+            android:maxSdkVersion="29" />
 
     <!-- 不声明为必需: 同一个包也允许装在带触摸屏的设备上 -->
     <uses-feature
@@ -39,7 +44,10 @@
             android:name="android.hardware.touchscreen"
             android:required="false" />
 
-    <application android:banner="@drawable/tv_banner">
+    <!-- requestLegacyExternalStorage: 只对安卓 10 起作用 (11 起系统不看), 见上面的 READ_EXTERNAL_STORAGE -->
+    <application
+            android:banner="@drawable/tv_banner"
+            android:requestLegacyExternalStorage="true">
 
         <!-- 电视主屏启动器入口 -->
         <activity
@@ -64,6 +72,13 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </service>
+
+        <!-- 本地文件夹数据源在安卓 7.1~10 上弹「存储」权限的授权框 (透明, 有结果就关) -->
+        <activity
+                android:name="me.him188.ani.app.domain.mediasource.clouddrive.LocalFolderPermissionActivity"
+                android:exported="false"
+                android:excludeFromRecents="true"
+                android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <!-- Web 控制台「退出 Ani 后保留」: 抬高进程优先级, 被回收后重启时顺带把网页服务起起来 -->
         <service

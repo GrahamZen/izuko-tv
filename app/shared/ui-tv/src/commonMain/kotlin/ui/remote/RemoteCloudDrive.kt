@@ -29,7 +29,6 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import me.him188.ani.app.data.models.preference.CloudDriveAccount
 import me.him188.ani.app.data.models.preference.CloudDrivePlaybackMode
-import me.him188.ani.app.domain.media.cache.library.MediaLibraryAccess
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveAuthException
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveMediaSource
@@ -37,6 +36,7 @@ import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveProtocol
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveQrLoginState
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveRegistry
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveService
+import me.him188.ani.app.domain.mediasource.clouddrive.LocalFolderAccess
 import me.him188.ani.app.domain.mediasource.clouddrive.LocalFolderDrive
 import me.him188.ani.app.domain.mediasource.clouddrive.WebDav
 import me.him188.ani.app.domain.mediasource.clouddrive.WebDavSources
@@ -254,8 +254,11 @@ internal object RemoteCloudDrive {
         put("username", account.username)
         if (protocol.isWebDav) put("server", WebDav.serverUrl(protocol)?.toString().orEmpty())
         if (protocol.isLocalFolder) {
+            val access = localFolderAccess()
             put("accessible", localAccessible)
-            put("grantAdb", localFolderAccess()?.adbGrantCommand.orEmpty())
+            // 「所有文件访问」(安卓 11 起) 或「存储」权限 (7.1~10): 卡片按它说去开哪个
+            put("grantAllFiles", access?.allFiles != false)
+            put("grantAdb", access?.adbGrantCommand.orEmpty())
         }
         if (protocol.isUserAdded) {
             put("depth", protocol.library.depth)
@@ -482,10 +485,10 @@ internal object RemoteCloudDrive {
 
     // region 本地文件夹
 
-    private fun localFolderAccess(): MediaLibraryAccess? = KoinPlatform.getKoin().getOrNull<MediaLibraryAccess>()?.takeIf { it.isSupported }
+    private fun localFolderAccess(): LocalFolderAccess? = KoinPlatform.getKoin().getOrNull()
 
     /**
-     * 加一个本地文件夹数据源. 平台读不了盘上的文件夹时不加; 没有「所有文件访问」时照样加上 (卡片上提示去开),
+     * 加一个本地文件夹数据源. 平台读不了盘上的文件夹时不加; 还没有权限时照样加上 (卡片上提示去开),
      * 加完网页打开文件夹浏览选媒体文件夹.
      */
     private fun addLocalFolder(request: LanHttpRequest): JsonObject {
@@ -497,12 +500,21 @@ internal object RemoteCloudDrive {
         return status(tr("已添加{0}", protocol.name))
     }
 
-    /** 在电视上打开给「所有文件访问」的系统页面 (同片库). 一个入口都没有时回 adb 命令. */
+    /**
+     * 在电视上打开给权限的地方 ([LocalFolderAccess.openGrant]): 「所有文件访问」的系统页面 (同片库), 或「存储」权限的授权框
+     * (之前选过不再询问时是应用信息页). 一个入口都没有时回 adb 命令.
+     */
     private fun openLocalFolderGrant(): JsonObject {
         val access = localFolderAccess() ?: return status(tr("这台设备不能读本地文件夹"), ok = false)
         if (access.isGranted()) return status(tr("已经允许了"))
-        return if (access.openGrantPage() != null) {
-            status(tr("已在电视上打开授权页面，用遥控器打开「允许管理所有文件」后回来刷新"))
+        return if (access.openGrant()) {
+            status(
+                if (access.allFiles) {
+                    tr("已在电视上打开授权页面，用遥控器打开「允许管理所有文件」后回来刷新")
+                } else {
+                    tr("已在电视上弹出授权框，选「允许」后回来刷新；之前拒绝过的会打开应用信息，在「权限」里打开「存储」")
+                },
+            )
         } else {
             status(tr("电视上没有授权页面，在电脑上运行：{0}", access.adbGrantCommand.orEmpty()), ok = false)
         }
