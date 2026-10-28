@@ -449,8 +449,9 @@ class TvNativeGridPageView(
             return
         }
         next.translationX = width * direction
-        clipToLane(next, width.toInt())
-        clipToLane(cur, width.toInt())
+        // 扫过屏幕的边: 新那份从右边进来时是它的左边, 旧那份往左出去时是它的右边
+        beginLane(next, width.toInt(), edge = -direction)
+        beginLane(cur, width.toInt(), edge = direction)
         slideAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = TV_TAB_CONTENT_SLIDE_MILLIS.toLong()
             interpolator = TV_NATIVE_FAST_OUT_SLOW_IN
@@ -465,10 +466,9 @@ class TvNativeGridPageView(
                 override fun onAnimationEnd(animation: Animator) {
                     slideAnimator = null
                     contentScrollSliding = false
-                    next.clipBounds = null
-                    cur.clipBounds = null
+                    endLane(next, fadeIn = true)
                     emitContentScroll()
-                    if (shown !== cur) retire(cur)
+                    if (shown !== cur) retire(cur) else endLane(cur, fadeIn = true)
                 }
             })
             start()
@@ -476,11 +476,20 @@ class TvNativeGridPageView(
     }
 
     /**
-     * 滑动途中 [view] 只在自己那一屏宽 ([width]) 里画, 裁剪框跟着它平移: 一组一行的内容在屏外两侧预排着卡 (见 TvNativeStripView),
-     * 框 ([gridClip]) 是固定在屏上的, 那些卡跟着整片平移进框里就叠在另一份上. 竖向不裁: hero 态里网格整片上抬, 下面几排画在它自己的边界外.
+     * 滑动途中 [view] 只在自己那一屏宽 ([width], 车道) 里画, 裁剪框跟着它平移: 一组一行的内容在屏外两侧预排着卡 (见 TvNativeStripView),
+     * 框 ([gridClip]) 是固定在屏上的, 那些卡跟着整片平移进框里就叠在另一份上. 一组一行的内容还把扫过屏幕的那条边上跨出去的卡
+     * 先藏起来、停稳后淡回 (见 [TvNativeRowWallView.beginLane]), 车道边上没有被切开的卡; 网格车道外没有卡, 只裁.
+     * 竖向不裁: hero 态里网格整片上抬, 下面几排画在它自己的边界外.
      */
-    private fun clipToLane(view: View, width: Int) {
-        view.clipBounds = Rect(0, Short.MIN_VALUE.toInt(), width, Short.MAX_VALUE.toInt())
+    private fun beginLane(view: View, width: Int, edge: Int) {
+        val rows = rows
+        if (rows != null && view === rows) rows.beginLane(width, edge) else view.clipBounds = Rect(0, Short.MIN_VALUE.toInt(), width, Short.MAX_VALUE.toInt())
+    }
+
+    /** 滑动停下 / 收起: 撤掉裁剪; 一组一行的内容藏起来的卡 [fadeIn] 时淡回来 (收起的那份当场复原). */
+    private fun endLane(view: View, fadeIn: Boolean) {
+        val rows = rows
+        if (rows != null && view === rows) rows.endLane(fadeIn) else view.clipBounds = null
     }
 
     /** 退场的那份 (网格 / 一组一行的内容): 不画、不收焦点, 网格下次换标签时拿来复用. */
@@ -489,7 +498,7 @@ class TvNativeGridPageView(
         if (view.hasFocus()) parkFocus()
         view.visibility = INVISIBLE
         view.translationX = 0f
-        view.clipBounds = null
+        endLane(view, fadeIn = false)
     }
 
     /**
