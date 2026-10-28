@@ -25,6 +25,7 @@ import me.him188.ani.app.ui.lang.settings_storage_cache_location_internal
 import me.him188.ani.app.ui.lang.settings_storage_cache_location_read_only
 import me.him188.ani.app.ui.lang.settings_storage_where
 import me.him188.ani.app.ui.lang.settings_storage_where_description
+import me.him188.ani.app.ui.lang.settings_storage_where_description_app_only
 import me.him188.ani.app.ui.lang.settings_storage_where_value
 import me.him188.ani.app.ui.lang.storage_guide_busy
 import me.him188.ani.app.ui.lang.storage_guide_mode_app
@@ -47,26 +48,33 @@ internal val mediaCacheLocationsKey = TvSettingKey.Live<List<MediaCacheLocation>
 }
 
 /**
- * 「缓存放在哪」: 哪块盘、下完的放进片库还是应用目录. 值写现在的设置, 按下去进引导 ([StorageGuideDialog]) 改; 正在搬时先等它搬完.
- * 下面两行有事时才出现: 别的地方还有缓存 ([cacheMoveItem]), 片库的权限被关掉了 ([revokedLibraryItem]).
+ * 「缓存放在哪」: 哪块盘、下完的放进片库还是应用目录 (系统不支持片库时只说哪块盘). 值写现在的设置, 按下去进引导 ([StorageGuideDialog]) 改;
+ * 正在搬时先等它搬完. 下面两行有事时才出现: 别的地方还有缓存 ([cacheMoveItem]), 片库的权限被关掉了 ([revokedLibraryItem]).
  */
 internal fun TvSettingsItemsBuilder.cacheLocationItem() {
     val mediaCache = TvNetworkSettingKeys.mediaCache
     val locations = mediaCacheLocationsKey
+    val librarySupported = mediaLibrarySupported()
     action(
         Lang.settings_storage_where, keys = listOf(mediaCache, locations),
         value = { v ->
             val settings = v[mediaCache] ?: return@action null
             val drive = v[locations].orEmpty().firstOrNull { it.id == settings.defaultLocation }
-            tvText(
-                Lang.settings_storage_where_value,
-                drive?.nameText() ?: tvText(Lang.settings_storage_cache_location_disconnected),
-                tvText(if (settings.libraryEnabled) Lang.storage_guide_mode_library else Lang.storage_guide_mode_app),
-            )
+            val driveName = drive?.nameText() ?: tvText(Lang.settings_storage_cache_location_disconnected)
+            if (librarySupported) {
+                tvText(
+                    Lang.settings_storage_where_value,
+                    driveName,
+                    tvText(if (settings.libraryEnabled) Lang.storage_guide_mode_library else Lang.storage_guide_mode_app),
+                )
+            } else {
+                driveName
+            }
         },
         details = { v ->
             val unusable = v[locations].orEmpty().mapNotNull { it.unusableText() }
-            TvText.Join(listOf(tvText(Lang.settings_storage_where_description)) + unusable, separator = "\n")
+            val description = if (librarySupported) Lang.settings_storage_where_description else Lang.settings_storage_where_description_app_only
+            TvText.Join(listOf(tvText(description)) + unusable, separator = "\n")
         },
         chevron = true,
     ) {

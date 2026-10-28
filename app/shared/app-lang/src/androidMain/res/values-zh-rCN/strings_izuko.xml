@@ -657,7 +657,6 @@
     <string name="settings_storage_media_library">片库</string>
     <string name="settings_storage_media_library_description">下完的缓存自动移到所在那块盘根目录下的 Izuko 文件夹，按番和集整理，在电脑上也能直接打开。片库在应用目录之外，卸载、清除数据都不会删掉。需要「所有文件访问」权限</string>
     <string name="settings_storage_media_library_revoked">「所有文件访问」权限被关掉了，片库暂时不可用。重新打开权限即可恢复</string>
-    <string name="settings_storage_media_library_unsupported">这台设备的系统是 Android 10 或更早，不支持片库</string>
     <string name="settings_storage_media_library_confirm_text">片库放在应用目录之外，卸载、清除数据都不会删掉。需要「所有文件访问」权限：关掉这个权限后片库暂时不可用，重新打开即可恢复；卸载重装后需要重新打开。</string>
     <string name="settings_storage_media_library_grant_app">在系统页面里允许本应用管理所有文件，回到应用后接着打开片库</string>
     <string name="settings_storage_media_library_grant_list">在列表里找到本应用并允许，回到应用后接着打开片库</string>
@@ -672,6 +671,7 @@
     <string name="settings_storage_delete_cache_when_done_library_confirm">仍然打开</string>
     <string name="settings_storage_where">缓存放在哪</string>
     <string name="settings_storage_where_description">缓存下载到哪块盘，下完的放不放进片库。按确定修改，已有的缓存可以一起移过去</string>
+    <string name="settings_storage_where_description_app_only">缓存下载到哪块盘。按确定修改，已有的缓存可以一起移过去</string>
     <string name="settings_storage_where_value">%1$s · %2$s</string>
     <string name="settings_storage_media_library_revoked_title">片库暂时不可用</string>
     <string name="settings_storage_media_library_regrant">重新授权</string>
@@ -682,6 +682,7 @@
     <string name="storage_guide_step_existing">已有的缓存</string>
     <string name="storage_guide_drive_title">缓存放在哪块盘</string>
     <string name="storage_guide_drive_description">新的缓存下载到这里；放进片库时，片库也在这块盘上。</string>
+    <string name="storage_guide_drive_description_app_only">新的缓存下载到这里。</string>
     <string name="storage_guide_drive_has">现在有 %1$d 条 · %2$s</string>
     <string name="storage_guide_drive_empty">现在没有缓存</string>
     <string name="storage_guide_mode_title">下完的缓存怎么放</string>
@@ -715,6 +716,7 @@
     <string name="storage_guide_done_title">确认一下</string>
     <string name="storage_guide_done_description">按「完成」后生效。</string>
     <string name="storage_guide_done_where">缓存位置：%1$s · %2$s</string>
+    <string name="storage_guide_done_where_drive">缓存位置：%1$s</string>
     <string name="storage_guide_done_move">在后台移动 %1$d 条（%2$s），动作面板顶上能看到进度</string>
     <string name="storage_guide_done_keep_existing">已有的缓存留在原处</string>
     <string name="storage_guide_done_nothing_to_move">没有要移的缓存</string>
