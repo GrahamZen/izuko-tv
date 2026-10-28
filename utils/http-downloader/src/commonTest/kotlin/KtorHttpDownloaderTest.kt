@@ -26,6 +26,7 @@ import kotlinx.collections.immutable.persistentMapOf
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
@@ -864,6 +865,91 @@ class KtorHttpDownloaderTest {
         assertNotNull(state)
         assertEquals(DownloadStatus.FAILED, state.status)
         assertNotNull(state.error)
+    }
+
+    // ----------------------------------------------------
+    // 合并中被暂停 (空间不足时会这样)
+    // ----------------------------------------------------
+
+    /** 为 true 时下一次合并中途把任务暂停, 合并本身照样做完 (同 MP4 / MKV 的拼接: 阻塞着拼, 取消打断不了) */
+    private var pauseDuringMerge = false
+
+    /** 合并按顺序拼接分段; 分段文件缺了就失败, 同 ffmpeg 读不到输入 */
+    private fun createMergePausingDownloader() = object : KtorHttpDownloader(
+        client = mockClient.asScopedHttpClient(),
+        fileSystem = fileSystem,
+        clock = mockClock,
+        baseSaveDir = Path(tempDir),
+        parentScope = CoroutineScope(SupervisorJob() + testDispatcher),
+        ioDispatcher = testDispatcher,
+    ) {
+        override suspend fun mergeM3u8Segments(st: DownloadState, cacheDir: Path, finalOutput: Path) {
+            if (pauseDuringMerge) {
+                pauseDuringMerge = false
+                withContext(NonCancellable) { pause(st.downloadId) }
+            }
+            val bytes = st.segments.sortedBy { it.index }.map { seg ->
+                val path = Path(tempDir).resolve(seg.relativeTempFilePath)
+                check(fileSystem.exists(path)) { "Segment file $path is gone" }
+                fileSystem.read(path) { readByteArray() }
+            }
+            writeBytes(finalOutput, bytes.reduce { a, b -> a + b })
+        }
+    }
+
+    @Test
+    fun `merge - a download paused while merging keeps its segments and completes on resume`() = testScope.runTest {
+        val mergeDownloader = createMergePausingDownloader()
+        try {
+            val downloadId = DownloadId("paused-merge")
+            pauseDuringMerge = true
+            mergeDownloader.downloadWithId(downloadId, "https://example.com/master.m3u8")
+            mergeDownloader.joinDownload(downloadId)
+
+            val paused = assertNotNull(mergeDownloader.getState(downloadId))
+            assertEquals(DownloadStatus.PAUSED, paused.status)
+            paused.segments.forEach {
+                assertTrue(fileSystem.exists(Path(tempDir).resolve(it.relativeTempFilePath)), "segment ${it.index} kept")
+            }
+
+            assertTrue(mergeDownloader.resume(downloadId))
+            mergeDownloader.joinDownload(downloadId)
+            assertEquals(DownloadStatus.COMPLETED, mergeDownloader.getState(downloadId)?.status)
+            assertEquals(1024L + 2048 + 3072, fileSystem.metadata(Path("$tempDir/paused-merge.mp4")).size)
+            assertFalse(fileSystem.exists(Path("$tempDir/segments_paused-merge")))
+        } finally {
+            mergeDownloader.close()
+        }
+    }
+
+    @Test
+    fun `merge - resume downloads again the segments whose files are gone`() = testScope.runTest {
+        val mergeDownloader = createMergePausingDownloader()
+        try {
+            val downloadId = DownloadId("lost-segment")
+            pauseDuringMerge = true
+            mergeDownloader.downloadWithId(downloadId, "https://example.com/master.m3u8")
+            mergeDownloader.joinDownload(downloadId)
+            val paused = assertNotNull(mergeDownloader.getState(downloadId))
+            assertEquals(DownloadStatus.PAUSED, paused.status)
+            // 第二段 (segment2.ts) 的文件没了
+            val lost = paused.segments.sortedBy { it.index }[1]
+            fileSystem.delete(Path(tempDir).resolve(lost.relativeTempFilePath))
+            val lostUrl = "https://example.com/segment2.ts"
+            val requestsBefore = attempts.getValue(lostUrl)
+
+            assertTrue(mergeDownloader.resume(downloadId))
+            mergeDownloader.joinDownload(downloadId)
+
+            val state = assertNotNull(mergeDownloader.getState(downloadId))
+            assertEquals(DownloadStatus.COMPLETED, state.status)
+            assertEquals(requestsBefore + 1, attempts.getValue(lostUrl))
+            assertEquals(requestsBefore, attempts.getValue("https://example.com/segment1.ts"))
+            assertEquals(1024L + 2048 + 3072, state.downloadedBytes)
+            assertEquals(1024L + 2048 + 3072, fileSystem.metadata(Path("$tempDir/lost-segment.mp4")).size)
+        } finally {
+            mergeDownloader.close()
+        }
     }
 
     // ----------------------------------------------------

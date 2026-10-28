@@ -13,6 +13,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -134,7 +135,27 @@ class DownloadSpaceGuardTest {
         assertEquals(listOf(DownloadSpaceGuard.LowSpacePause(freeBytes = 512L shl 20, paused = 1, location = "usb")), events)
     }
 
+    @Test
+    fun `a download merging its segments is not paused`() = runTest {
+        val downloading = testDownload(1)
+        val merging = testDownload(2)
+        val storage = DownloadTestStorage().apply { listFlow.value = listOf(downloading, Merging(merging)) }
+        val manager = MediaDownloadManager(listOf(storage), backgroundScope)
+        runCurrent()
+
+        val guard = DownloadSpaceGuard(manager, { dir }, backgroundScope, freeBytes = { 512L shl 20 })
+        assertEquals(1, guard.check())
+        runCurrent()
+        assertEquals(1, downloading.pauseCalls)
+        assertEquals(0, merging.pauseCalls)
+    }
+
     private class OnLocation(delegate: DownloadTestCache, override val locationId: String?) : MediaCache by delegate
+
+    /** 下完了在合并分段 (状态仍是进行中). */
+    private class Merging(delegate: DownloadTestCache) : MediaCache by delegate {
+        override val isMerging: Flow<Boolean> = flowOf(true)
+    }
 
     /** 读状态一直等不到结果, 像 torrent 服务断开时那样. */
     private class StuckStateCache(delegate: DownloadTestCache) : MediaCache by delegate {
