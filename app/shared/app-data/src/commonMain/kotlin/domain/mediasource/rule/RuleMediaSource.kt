@@ -377,12 +377,13 @@ class RuleMediaSource(
             emitPagesEarly = true,
         ) { name ->
             val searchQuery = searchQuery(name)
-            searchFromCacheOrNull(searchQuery, subjectId)
+            searchFromCacheOrNull(searchQuery, subjectId, scope = this)
                 ?: searchOnlineUnlessRecentlyEmpty(searchQuery, keywords.keywordOf(name), plan, subjectId, scope = this)
         }.map { MediaMatch(it, MatchKind.FUZZY) }
     }
 
-    private suspend fun searchFromCacheOrNull(query: SelectorSearchQuery, subjectId: Int?): List<DefaultMedia>? {
+    /** 同网页抓取数据源: 写这些页的那一轮有页没开完时, 先经 [scope] 交出缓存里的, 再返回 `null` 照常重搜补齐. */
+    private suspend fun searchFromCacheOrNull(query: SelectorSearchQuery, subjectId: Int?, scope: KeywordSearchScope?): List<DefaultMedia>? {
         val caches = try {
             repository.getCache(subjectId, mediaSourceId, query.subjectName)
         } catch (e: CancellationException) {
@@ -392,7 +393,7 @@ class RuleMediaSource(
             return null
         }
         val probe = query.freshnessProbe ?: SelectorEpisodeProbe(query.episodeSort, query.episodeEp, query.episodeName)
-        return buildList {
+        val media = buildList {
             for (cache in caches) {
                 val episodes = cache.webEpisodeInfos.asEpisodesOf(query)
                 // 同网页抓取数据源: 页面没有已上映的最新一集时, 有当前这一集、又只查这一集才照用, 否则整个重搜 (不跳过它只用别的页)
@@ -404,7 +405,13 @@ class RuleMediaSource(
                 }
                 addAll(selectorEngine.selectFilteredMedia(episodes, matchConfig, query, mediaSourceId, cache.webSubjectInfo.name))
             }
-        }.takeIf { it.isNotEmpty() }
+        }
+        if (media.isEmpty()) return null
+        if (caches.any { !it.roundComplete }) {
+            scope?.emitEarly(media)
+            return null
+        }
+        return media
     }
 
     /**
@@ -517,7 +524,10 @@ class RuleMediaSource(
                 )
             }
         }
-        return OnlineSearchResult(media, allPagesLoaded = pages.none { it == null })
+        val allPagesLoaded = pages.none { it == null }
+        // 这一轮要开的页都开成了, 之后读到的缓存才算完整 (见 searchFromCacheOrNull)
+        if (allPagesLoaded) repository.markRoundComplete(subjectId, mediaSourceId, query.subjectName)
+        return OnlineSearchResult(media, allPagesLoaded)
     }
 
     private suspend fun episodesOf(subjectUrl: String): List<WebSearchEpisodeInfo> =

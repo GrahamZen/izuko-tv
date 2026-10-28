@@ -134,6 +134,8 @@ class EpisodePlayerTestSuite(
 private object NoopWebSearchSessionCacheDao : WebSearchSessionCacheDao {
     override suspend fun insertAll(items: List<WebSearchSessionCacheEntity>) {}
 
+    override suspend fun markRoundComplete(requesterSubjectId: Int?, mediaSourceId: String, subjectName: String) {}
+
     override suspend fun deletePage(
         requesterSubjectId: Int?,
         mediaSourceId: String,

@@ -75,6 +75,16 @@ internal class InMemoryWebSearchSessionCacheDao : WebSearchSessionCacheDao {
         items.forEach { rows += it.copy(id = nextId++) }
     }
 
+    override suspend fun markRoundComplete(requesterSubjectId: Int?, mediaSourceId: String, subjectName: String) {
+        rows.replaceAll {
+            if (it.requesterSubjectId == requesterSubjectId && it.mediaSourceId == mediaSourceId && it.subjectName == subjectName) {
+                it.copy(roundComplete = true)
+            } else {
+                it
+            }
+        }
+    }
+
     override suspend fun deletePage(
         requesterSubjectId: Int?,
         mediaSourceId: String,
@@ -151,6 +161,7 @@ internal class InMemoryWebSearchSessionCacheDao : WebSearchSessionCacheDao {
 
 internal object NoopWebSearchSessionCacheDao : WebSearchSessionCacheDao {
     override suspend fun insertAll(items: List<WebSearchSessionCacheEntity>) {}
+    override suspend fun markRoundComplete(requesterSubjectId: Int?, mediaSourceId: String, subjectName: String) {}
     override suspend fun deletePage(
         requesterSubjectId: Int?,
         mediaSourceId: String,
