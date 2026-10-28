@@ -778,7 +778,7 @@ class CloudDriveService internal constructor(
 
     /**
      * 网盘满了转存不进去时, 删掉转存文件夹里够用的副本 (等删除完成) 腾出 [needed] 的空间, 挑哪些见 [pickSavedCopiesToFree];
-     * 删什么都没用 (空间被别的文件占着) 时一个不删, 抛 [CloudDriveCapacityException].
+     * 删什么都没用 (空间被别的文件占着) 或算不清剩余空间时一个不删, 抛 [CloudDriveCapacityException].
      */
     private suspend fun freeSaveFolder(clearable: List<DriveFile>, needed: Long, ref: DriveShareFileRef) {
         val free = try {
@@ -792,8 +792,17 @@ class CloudDriveService internal constructor(
         val files = pickSavedCopiesToFree(clearable, needed, free)
         val freeText = free?.let { "${it / MB} MB free" } ?: "free space unknown"
         if (files.isEmpty()) {
-            logger.warn { "Cloud drive $driveId is full ($freeText): clearing $SAVE_FOLDER_NAME (${clearable.sumOf { it.size } / MB} MB) would not fit ${ref.key} (${needed / MB} MB)" }
-            throw CloudDriveCapacityException("网盘空间不够, 清掉「$SAVE_FOLDER_NAME」里的副本也放不下 ${ref.fileName} (${needed / MB} MB)", needed)
+            val known = free != null && free < needed
+            logger.warn {
+                "Cloud drive $driveId is full ($freeText), not removing any of the ${clearable.size} copies in $SAVE_FOLDER_NAME " +
+                    "(${clearable.sumOf { it.size } / MB} MB) to save ${ref.key} (${needed / MB} MB): " +
+                    if (known) "they would not make room" else "the free space does not tell whether they would help"
+            }
+            throw CloudDriveCapacityException(
+                if (known) "网盘空间不够, 清掉「$SAVE_FOLDER_NAME」里的副本也放不下 ${ref.fileName} (${needed / MB} MB)"
+                else "网盘空间不够, 转存不下 ${ref.fileName} (${needed / MB} MB)",
+                needed,
+            )
         }
         logger.warn { "Cloud drive $driveId is full ($freeText): removing ${files.size} of ${clearable.size} files (${files.sumOf { it.size } / MB} MB) from $SAVE_FOLDER_NAME to save ${ref.key} (${needed / MB} MB)" }
         api.deleteFiles(files.map { it.fid }, wait = true)

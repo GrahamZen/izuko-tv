@@ -225,7 +225,8 @@ data class DriveRequest(
  *
  * @property tier 账号档位 (如会员类型), 用来显示与决定播放并发数 (见 [CloudDriveProtocol.tiers])
  * @property nickname 账号昵称
- * @property capacity 网盘的总容量与已用 (字节). 转存时网盘满了, 据此只清转存文件夹里够用的那些; 清光也放不下就不清
+ * @property capacity 网盘的总容量与已用 (字节). 转存时网盘满了, 据此只清转存文件夹里够用的那些; 清光也放不下就不清.
+ *   没有这项 (或取不到) 时网盘满了也不清, 直接报空间不够
  * @property createFolder 取值是新文件夹的 id
  * @property deleteFiles 取值是后台任务 id (空表示已经完成)
  * @property saveFromShare 取值是后台任务 id; 任务完成时 [DriveTaskOp.resultIds] 给出新文件的 id
