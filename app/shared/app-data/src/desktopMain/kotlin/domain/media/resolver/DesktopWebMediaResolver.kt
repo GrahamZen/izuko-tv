@@ -104,6 +104,8 @@ class DesktopWebMediaResolver(
                     media.extraFiles.toMediampMediaExtraFiles(),
                 )
             }
+            // 要嗅探了: 手上有不用嗅探的资源时改选它, 这次解析随之取消
+            WebViewDeferral.beforeSniff(media)
 
             val webViewConfig = allMatchers.fold(WebViewConfig.Empty) { acc, matcher ->
                 matcher.patchConfig(acc)
