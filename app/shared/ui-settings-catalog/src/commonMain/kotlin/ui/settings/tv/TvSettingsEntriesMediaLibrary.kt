@@ -36,6 +36,9 @@ import kotlin.time.Duration.Companion.seconds
 /** 片库要的权限: 系统支不支持、此刻开没开 */
 internal data class TvMediaLibraryAccess(val supported: Boolean, val granted: Boolean)
 
+/** 系统支持片库 (安卓 11 起); 不支持时设置里不提片库 */
+internal fun mediaLibrarySupported(): Boolean = GlobalKoin.getOrNull<MediaLibraryAccess>()?.isSupported == true
+
 /**
  * 片库的权限状态, 页面开着时每秒看一次: 从系统设置给完权限回来, 跟着变.
  * 没有片库实现的平台 (只有安卓有) 一直没有值.
@@ -76,11 +79,12 @@ internal fun TvSettingsItemsBuilder.revokedLibraryItem() {
  */
 internal fun TvSettingsItemsBuilder.deleteCacheWhenDoneItem() {
     val mediaCache = TvNetworkSettingKeys.mediaCache
+    val librarySupported = mediaLibrarySupported()
     toggleOf(
         listOf(mediaCache), Lang.settings_storage_delete_cache_when_done,
         description = { tvText(Lang.settings_storage_delete_cache_when_done_description) },
         confirm = { v, target ->
-            if (target && v[mediaCache]?.libraryEnabled == true) {
+            if (target && librarySupported && v[mediaCache]?.libraryEnabled == true) {
                 TvSettingsConfirm(
                     title = tvText(Lang.settings_storage_delete_cache_when_done_library_title),
                     text = tvText(Lang.settings_storage_delete_cache_when_done_library_text),

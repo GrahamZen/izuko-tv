@@ -23,11 +23,11 @@ internal enum class StorageGuideStep { Drive, Mode, Permission, Existing, Confir
  * 中途退出什么都不改. 返回键按走过的步退回去 ([back]).
  *
  * @param initial 现在的设置, 各步先选好它
- * @param librarySupported 平台支持片库 (安卓 11 起); 不支持时「方式」那一步只能选应用目录
+ * @param librarySupported 平台支持片库 (安卓 11 起); 不支持时没有「方式」那一步, 一律放应用目录
  */
 internal class StorageGuideState(initial: MediaStorageSetup.Choice, val librarySupported: Boolean) {
     /** 打开引导时片库开着 (关掉时「已有的缓存」那一步问移回还是留在文件夹里) */
-    val wasLibrary: Boolean = initial.library
+    val wasLibrary: Boolean = initial.library && librarySupported
 
     var step: StorageGuideStep by mutableStateOf(StorageGuideStep.Drive)
         private set
@@ -51,18 +51,18 @@ internal class StorageGuideState(initial: MediaStorageSetup.Choice, val libraryS
     /** 这次是关掉片库 (「已有的缓存」那一步问片库里的怎么办) */
     val turningLibraryOff: Boolean get() = wasLibrary && !library
 
-    /** 头上画的几步: 授权只在走到了、或选了片库要去授权时出现 */
+    /** 头上画的几步: 「方式」只在支持片库时有; 授权只在走到了、或选了片库要去授权时出现 */
     val visibleSteps: List<StorageGuideStep>
         get() = listOfNotNull(
             StorageGuideStep.Drive,
-            StorageGuideStep.Mode,
+            StorageGuideStep.Mode.takeIf { librarySupported },
             StorageGuideStep.Permission.takeIf { step == it || it in history },
             StorageGuideStep.Existing,
         )
 
     fun chooseDrive(id: String?) {
         location = id
-        go(StorageGuideStep.Mode)
+        go(if (librarySupported) StorageGuideStep.Mode else StorageGuideStep.Existing)
     }
 
     /** 选了方式; 选片库又没权限时先去授权 */
