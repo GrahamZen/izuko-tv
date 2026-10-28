@@ -27,6 +27,7 @@ import me.him188.ani.app.data.models.preference.effectiveFullSearchMode
 import me.him188.ani.app.data.models.preference.VideoResolverSettings
 import me.him188.ani.app.data.repository.media.MediaSourceSubscriptionRepository
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
+import me.him188.ani.app.domain.media.fetch.SearchConcurrency
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveQrLoginState
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveRegistry
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveService
@@ -76,6 +77,10 @@ import me.him188.ani.app.ui.lang.settings_media_preference_override_notice
 import me.him188.ani.app.ui.lang.settings_media_preference_title
 import me.him188.ani.app.ui.lang.settings_media_resolution
 import me.him188.ani.app.ui.lang.settings_media_resolution_description
+import me.him188.ani.app.ui.lang.settings_media_search_concurrency
+import me.him188.ani.app.ui.lang.settings_media_search_concurrency_at_most
+import me.him188.ani.app.ui.lang.settings_media_search_concurrency_description
+import me.him188.ani.app.ui.lang.settings_media_search_concurrency_unlimited
 import me.him188.ani.app.ui.lang.settings_media_show_disabled
 import me.him188.ani.app.ui.lang.settings_media_show_disabled_description
 import me.him188.ani.app.ui.lang.settings_media_source_bt
@@ -553,6 +558,17 @@ internal fun TvSettingsItemsBuilder.mediaSelectorItems() {
         },
         read = { it.effectiveFullSearchMode(GlobalKoin.getOrNull<LowRamDevice>()?.value == true) },
         write = { copy(fullSearchMode = it) },
+    )
+    // 同时搜索的数据源: 默认不限; 吃不消时应用自动往下调一级并提示 (见 SearchConcurrency)
+    choice(
+        selector, Lang.settings_media_search_concurrency, Lang.settings_media_search_concurrency_description,
+        options = { SearchConcurrency.OPTIONS },
+        label = {
+            if (it <= 0) tvText(Lang.settings_media_search_concurrency_unlimited)
+            else tvText(Lang.settings_media_search_concurrency_at_most, it)
+        },
+        read = { it.searchConcurrency },
+        write = { copy(searchConcurrency = it) },
     )
 }
 

@@ -110,11 +110,11 @@ class SelectorSiteFixtureTest {
             ),
         ).results.toList().map { it.media }
 
-        // 两条搜索结果都被打开: 第一季 2 线路 × 28 集, 第二季 3 线路 × 10 集; 不按当前剧集裁剪
-        assertEquals(2 * 28 + 3 * 10, medias.size)
-        // preferShorterName: 名字更短的 "葬送的芙莉莲" 排在 "葬送的芙莉莲 第二季" 之前
-        assertEquals("葬送的芙莉莲", medias.first().properties.subjectName)
-        assertEquals("葬送的芙莉莲 第二季", medias.last().properties.subjectName)
+        // 两条搜索结果都被打开 (同时开, 先开完的那页先交): 第一季 2 线路 × 28 集, 第二季 3 线路 × 10 集; 不按当前剧集裁剪
+        assertEquals(
+            mapOf<String?, Int>("葬送的芙莉莲" to 2 * 28, "葬送的芙莉莲 第二季" to 3 * 10),
+            medias.groupingBy { it.properties.subjectName }.eachCount(),
+        )
         val ep14 = medias.filter { it.episodeRange?.contains(EpisodeSort(14)) == true }
         assertEquals(listOf("旧番主线①", "备用①"), ep14.map { it.properties.alliance })
 

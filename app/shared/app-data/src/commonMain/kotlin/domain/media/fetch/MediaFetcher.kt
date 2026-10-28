@@ -53,6 +53,7 @@ import me.him188.ani.app.data.repository.RepositoryRequestError
 import me.him188.ani.app.data.repository.RepositoryServiceUnavailableException
 import me.him188.ani.app.data.repository.RepositorySubjectNotAccessibleException
 import me.him188.ani.app.data.repository.RepositoryUnknownException
+import me.him188.ani.app.domain.media.selector.MediaSelectorSourceTiers
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveAuthException
 import me.him188.ani.app.domain.mediasource.instance.MediaSourceInstance
 import me.him188.ani.app.domain.mediasource.search.AnimeNames
@@ -66,6 +67,7 @@ import me.him188.ani.datasources.api.source.MediaMatch
 import me.him188.ani.datasources.api.source.MediaSource
 import me.him188.ani.datasources.api.source.MediaSourceInfo
 import me.him188.ani.datasources.api.source.MediaSourceKind
+import me.him188.ani.datasources.api.source.MediaSourceTier
 import me.him188.ani.datasources.api.source.toStringMultiline
 import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.coroutines.cancellableCoroutineScope
@@ -184,6 +186,8 @@ class MediaSourceMediaFetcher(
     private val flowContext: CoroutineContext = Dispatchers.Default,
     /** 同时在查的数据源个数的上限, 为 null 时不限 (见 [MediaSourceSearchLimiter]). */
     private val searchLimiter: MediaSourceSearchLimiter? = null,
+    /** 选源用的层级表, 开查先后与排队按它 (见 [SourceStartOrder.startTierOf]); 还没有时为 null */
+    private val sourceTiers: () -> MediaSelectorSourceTiers? = { null },
 ) : MediaFetcher {
     private inner class MediaSourceResultImpl(
         override val instanceId: String,
@@ -196,6 +200,10 @@ class MediaSourceMediaFetcher(
         private val flowContext: CoroutineContext,
         /** 这个源查询时要占名额的上限; null 不占 (见 [SelfLimitedMediaSource]). */
         private val searchLimiter: MediaSourceSearchLimiter?,
+        /** 开查时这个源换到的线程池通道 (见 [SearchDispatchers.forSource]) */
+        private val searchLane: () -> CoroutineContext = { EmptyCoroutineContext },
+        /** 排队等名额按的层级 (见 [SourceStartOrder.startTierOf]) */
+        private val searchTier: MediaSourceTier? = sourceInfo.tier,
     ) : MediaSourceFetchResult, SynchronizedObject() {
         /**
          * 为了确保线程安全, 对 [state] 的写入必须谨慎.
@@ -243,9 +251,12 @@ class MediaSourceMediaFetcher(
                 var terminalState: MediaSourceFetchState.Completed? = null
                 pagedSources
                     .flatMapMerge { sources ->
-                        sources.results.map { it.media }
+                        sources.mediaBatches()
                     }
-                    .run { searchLimiter?.let { withSearchPermit(it, kind, sourceInfo.tier, sourceInfo.displayName) } ?: this }
+                    .run { searchLimiter?.let { withSearchPermit(it, kind, searchTier, sourceInfo.displayName, mediaSourceId) } ?: this }
+                    // 只有搜索本身换到这个源的通道上: 起步交的空结果、状态与结果的发布留在原处, 排在后面的源也不会连这一步都轮不到
+                    // (选源器要等每个源都交过一次才开始判断)
+                    .flowOn(searchLane())
                     .onStart {
                         // 排队等名额 (见 searchLimiter) 也算在查. 与 [pause] 互斥: 这一代若已经被暂停换代, 不能再把状态改回 Working
                         synchronized(this@MediaSourceResultImpl) {
@@ -325,6 +336,7 @@ class MediaSourceMediaFetcher(
                                 true
                             }
                         }
+                        if (published) logger.info { "${sourceInfo.displayName} finished: ${update.state::class.simpleName}, ${publishedResults.value.size} media" }
                         if (published && update.state is MediaSourceFetchState.RateLimited && state.value == update.state) {
                             scheduleRateLimitAutoRestart(update.state)
                         }
@@ -520,6 +532,8 @@ class MediaSourceMediaFetcher(
             }
         override val request: Flow<MediaFetchRequest> = latestRequest.take(1) // 否则会一直显示加载
 
+        private val startTiers = SourceStartOrder.startTiers(sourceTiers)
+
         override val mediaSourceResults: List<MediaSourceFetchResult> = mediaSources
             .filter {
                 if (config.enableBTFetcher) true else it.source.kind != MediaSourceKind.BitTorrent
@@ -538,14 +552,21 @@ class MediaSourceMediaFetcher(
                         },
                     flowContext = flowContext,
                     searchLimiter = searchLimiter.takeUnless { instance.source is SelfLimitedMediaSource },
+                    searchLane = { SearchDispatchers.forSource(searchRanks.getValue(instance.instanceId)) },
+                    searchTier = SourceStartOrder.startTierOf(instance.source.mediaSourceId, instance.source.info.tier, startTiers),
                 )
             }
+
+        /** 各源在开查先后里的位次 (见 [SourceStartOrder]) */
+        private val searchRanks: Map<String, Int> by lazy {
+            SourceStartOrder.of(mediaSourceResults, startTiers).withIndex().associate { (rank, index) -> mediaSourceResults[index].instanceId to rank }
+        }
 
         override val cumulativeResults: Flow<List<Media>> = kotlin.run {
             if (mediaSourceResults.isEmpty()) {
                 return@run flowOfEmptyList()
             }
-            SourceStartOrder.combineInOrder(mediaSourceResults.map { it.results }, SourceStartOrder.of(mediaSourceResults)) { lists ->
+            SourceStartOrder.combineInOrder(mediaSourceResults.map { it.results }, SourceStartOrder.of(mediaSourceResults, startTiers)) { lists ->
                 lists.asSequence().flatten().toList()
             }.map { list ->
                 list.distinctBy { it.mediaId } // distinct globally by id, just to be safe
