@@ -249,7 +249,11 @@ internal class RemoteSettingSpec<T>(
     val check: (suspend (JsonElement) -> String?)? = null,
     /** 存好之后接着做的事 (如打开片库时一并关掉「标记看过后删除缓存」), 返回的一句接在「已保存」后面. */
     val onSaved: (suspend (JsonElement) -> String?)? = null,
+    /** 这台设备上有没有这一项 (如片库只在安卓 11 起有): 没有时网页不列, 也不收. 不写时总有. */
+    val available: (() -> Boolean)? = null,
 ) {
+    val isAvailable: Boolean get() = available?.invoke() != false
+
     private val path: List<String> get() = fieldName.split('.')
 
     /** 字段的序列化描述; 没有这个字段, 或中间一段不是不可空的数据类时抛异常. */
@@ -328,7 +332,7 @@ internal object RemoteGenericSettings {
 
     /** 给网页的清单 ([specs] 默认是正式清单; 调试区传 [RemoteSettingsCatalog.debugItems]). */
     suspend fun describe(repository: SettingsRepository, specs: List<RemoteSettingSpec<*>> = RemoteSettingsCatalog.items): JsonArray {
-        val items = specs.map { describe(it, repository) }
+        val items = specs.filter { it.isAvailable }.map { describe(it, repository) }
         return JsonArray(items)
     }
 
@@ -392,14 +396,14 @@ internal object RemoteGenericSettings {
         raw: String,
         specs: List<RemoteSettingSpec<*>> = RemoteSettingsCatalog.items,
     ): JsonObject {
-        val spec = specs.firstOrNull { it.key == key }
+        val spec = specs.firstOrNull { it.key == key && it.isAvailable }
             ?: return result(false, tr("没有这一项设置：{0}", key))
         return runBlocking { setTyped(spec, repository, raw) }
     }
 
     /** 网页按了这一项的第二个按钮 ([RemoteSettingSpec.action]). */
     fun action(key: String, specs: List<RemoteSettingSpec<*>> = RemoteSettingsCatalog.items): JsonObject {
-        val action = specs.firstOrNull { it.key == key }?.action
+        val action = specs.firstOrNull { it.key == key && it.isAvailable }?.action
             ?: return result(false, tr("没有这一项设置：{0}", key))
         return result(true, runBlocking { action.run() })
     }
