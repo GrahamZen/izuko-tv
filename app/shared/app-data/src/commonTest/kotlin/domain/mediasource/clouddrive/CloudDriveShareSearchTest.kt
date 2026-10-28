@@ -122,6 +122,30 @@ class CloudDriveShareSearchTest {
     }
 
     @Test
+    fun `tries the next name when the episodes found by the previous one do not cover the work`() = runTest {
+        // 第一个名字搜到的分享只收了前两集, 第二个名字搜到的分享有第三集
+        val part = mapOf(TestDrive.SHARE_ROOT to listOf(dir("p", "名字一")), "p" to listOf(video("p01", "01.mp4"), video("p02", "02.mp4")))
+        val rest = mapOf(TestDrive.SHARE_ROOT to listOf(dir("r", "名字二")), "r" to listOf(video("r03", "03.mp4")))
+        val shares = shares(mapOf("part" to part, "rest" to rest))
+        val urls = mutableListOf<String>()
+        val engine = DriveShareSearchEngine(config, shares, links) { url ->
+            urls += url
+            val keyword = url.substringAfter("wd=").decodeURLQueryComponent()
+            val (title, share) = if (keyword == "名字一") "名字一" to "part" else "名字二" to "rest"
+            """{"code":1,"list":[{"vod_name":"$title","vod_down_url":"测试网盘${'$'}https://share.drive.test/s/$share"}]}""".encodeToByteArray()
+        }
+        val episodes = (1..3).map { MediaFetchRequest.Episode("e$it", EpisodeSort(it)) }
+        val matched = engine.search(request("名字一", "名字二").copy(episodes = episodes))
+        assertEquals(listOf("p01", "p02", "r03"), matched.map { it.file.fid }.sorted())
+        assertEquals(listOf("名字一", "名字二"), urls.map { it.substringAfter("wd=").decodeURLQueryComponent() })
+
+        // 第一个名字搜到的已经覆盖了每一集: 不再换名字搜
+        urls.clear()
+        engine.search(request("名字一", "名字二").copy(episodes = episodes.take(2)))
+        assertEquals(listOf("名字一"), urls.map { it.substringAfter("wd=").decodeURLQueryComponent() })
+    }
+
+    @Test
     fun `a name with decorations is searched again without them before the next name`() = runTest {
         // 站点按标题原样找: 带全角破折号的名字搜不到, 去掉破折号的同一个名字搜得到; 搜到了就不再换下一个名字
         val shares = shares(mapOf("share1" to share1))

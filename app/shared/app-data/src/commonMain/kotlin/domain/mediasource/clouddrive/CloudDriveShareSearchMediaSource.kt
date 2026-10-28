@@ -296,8 +296,8 @@ internal class DriveShareSearchEngine(
     /**
      * 站点搜到的分享; 每读完一个分享就把认出的剧集交给 [deliver]. 关键词来自搜索计划 ([SubjectSearchPlan.keywords], 按标题原样找的排法
      * [KeywordStyle.literal]), 这样走:
-     * 1. 条目名的主标题 (最多 [DriveShareSearchConfig.maxKeywords] 个): 前一个名字搜到的分享里认出了剧集就不再换名字搜, 这类站连着搜几次就会回 5xx;
-     *    搜到了分享却一集都没认出 (都是别的作品、别的季) 时换下一个名字.
+     * 1. 条目名的主标题 (最多 [DriveShareSearchConfig.maxKeywords] 个): 认出的剧集覆盖了条目的每一集就不再换名字搜, 这类站连着搜几次就会回 5xx;
+     *    搜到了分享却一集都没认出 (都是别的作品、别的季), 或认出的只是其中几集 (一个分享只收了一段) 时换下一个名字.
      *    一个名字原样搜不到时先换它的写法 ([KeywordKind.WRITING]: 去掉装饰符号、中日文之间的空格) 再搜, 然后才轮到下一个名字.
      * 2. 认出的剧集没覆盖条目的每一集时, 依次再搜副标题、系列名与别的叫法 (共 [MAX_WIDER_SEARCHES] 次, 覆盖了就停): 只写副标题
      *    (「辉夜大小姐想让我告白：究极浪漫」) 或系列名加季 (「物理魔法使马修第二季」) 的分享按条目名搜不到, 也常更全 (「京都动乱第二季 更46」).
@@ -342,9 +342,9 @@ internal class DriveShareSearchEngine(
 
         names@ for (name in keywords.primary) {
             for (keyword in listOf(name) + keywords.writingsOf(name)) {
-                val read = searchAndRead(keyword) ?: continue
-                // 搜到的分享里一集都没认出时换下一个名字; 这个名字的别的写法多半搜到同一批分享, 不再试
-                if (read.isNotEmpty()) break@names else continue@names
+                searchAndRead(keyword) ?: continue
+                // 认出的还没覆盖每一集时换下一个名字; 这个名字的别的写法多半搜到同一批分享, 不再试
+                if (matches.isNotEmpty() && coversAllEpisodes(matches, request)) break@names else continue@names
             }
         }
         for (keyword in keywords.wider.take(MAX_WIDER_SEARCHES)) {
