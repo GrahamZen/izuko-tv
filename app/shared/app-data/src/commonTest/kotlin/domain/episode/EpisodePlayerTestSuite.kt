@@ -132,6 +132,8 @@ class EpisodePlayerTestSuite(
  * 不存储任何行的 [WebSearchSessionCacheDao]: 测试中的 web 源搜索缓存永远不命中.
  */
 private object NoopWebSearchSessionCacheDao : WebSearchSessionCacheDao {
+    override suspend fun subjectUrlOf(mediaSourceId: String, playUrl: String): String? = null
+
     override suspend fun insertAll(items: List<WebSearchSessionCacheEntity>) {}
 
     override suspend fun markRoundComplete(requesterSubjectId: Int?, mediaSourceId: String, subjectName: String) {}

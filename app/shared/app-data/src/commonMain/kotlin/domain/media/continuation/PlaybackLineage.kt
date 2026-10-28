@@ -49,6 +49,8 @@ data class DriveFolderLineage(
  *
  * @property subjectName 站点上的条目名 ([me.him188.ani.datasources.api.MediaProperties.subjectName]), 区分同一个源搜到的几个条目页
  * @property channel 线路名 ([me.him188.ani.datasources.api.MediaProperties.alliance]), 站点没有线路时为空
+ * @property subjectUrl 这个条目页的地址 (从搜索缓存里按播放地址查到的); 有时下一集直接打开这一页挑
+ *   ([me.him188.ani.app.domain.mediasource.web.SubjectPageMediaSource]), 不再让这个源整轮搜一遍. 没缓存过的为 null
  */
 @Serializable
 @SerialName("web-source")
@@ -56,6 +58,7 @@ data class WebSourceLineage(
     override val mediaSourceId: String,
     val subjectName: String,
     val channel: String,
+    val subjectUrl: String? = null,
 ) : PlaybackLineage
 
 /**

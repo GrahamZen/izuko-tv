@@ -15,11 +15,15 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.onCompletion
+import kotlinx.coroutines.flow.transform
 import kotlinx.coroutines.selects.select
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.TestScope
+import me.him188.ani.app.domain.media.fetch.BatchedSizedSource
 import me.him188.ani.app.domain.media.fetch.MediaFetchSession
 import me.him188.ani.app.domain.media.fetch.MediaFetcherConfig
 import me.him188.ani.app.domain.media.fetch.MediaSourceMediaFetcher
+import me.him188.ani.app.domain.media.fetch.batchedSizedSource
 import me.him188.ani.app.domain.media.selector.testFramework.MediaSelectorTestSuite.Companion.SOURCE_DMHY
 import me.him188.ani.app.domain.mediasource.instance.MediaSourceInstance
 import me.him188.ani.app.domain.mediasource.web.BlockReason
@@ -141,20 +145,33 @@ class Handle(
     /** [emitEarly] 交出的, 每次调用一批. */
     private val early = Channel<List<MediaMatch>>(Channel.UNLIMITED)
 
+    /**
+     * 为 true 时逐条交出 (同不分批的数据源), 每条之间隔 1 毫秒: 别的线程上的数据源一页还没交完, 下游已经看到前面几条.
+     * 默认按批 ([BatchedSizedSource]): 每次 [emitEarly] 一批, [complete] 一批.
+     */
+    var deliverItemByItem = false
+
     /** 查询交出的资源: 先是 [emitEarly] 交的 (源仍在查), [complete] 时再交完. */
     internal fun matches(): SizedSource<MediaMatch> {
         val done = MutableStateFlow(false)
+        val batches = flow {
+            while (true) {
+                val batch = select<List<MediaMatch>?> {
+                    early.onReceive { it }
+                    result.onAwait { null }
+                } ?: break
+                emit(batch)
+            }
+            result.await().takeIf { it.isNotEmpty() }?.let { emit(it) }
+        }.onCompletion { done.value = true }
+        if (!deliverItemByItem) return batchedSizedSource(batches, done, flowOf(null))
         return object : SizedSource<MediaMatch> {
-            override val results = flow {
-                while (true) {
-                    val batch = select<List<MediaMatch>?> {
-                        early.onReceive { it }
-                        result.onAwait { null }
-                    } ?: break
-                    batch.forEach { emit(it) }
+            override val results = batches.transform { batch ->
+                for (match in batch) {
+                    emit(match)
+                    delay(1)
                 }
-                result.await().forEach { emit(it) }
-            }.onCompletion { done.value = true }
+            }
             override val finished = done
             override val totalSize = flowOf(null)
         }

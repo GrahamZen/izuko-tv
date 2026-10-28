@@ -34,21 +34,24 @@ class MediaSelectorAutoSelectUseCaseImpl(
 
     override suspend fun invoke(session: MediaFetchSession, mediaSelector: MediaSelector) {
         val settings = getMediaSelectorSettingsFlow().first()
+        AutoSelectTrace.step("selector settings read")
         // #355 Restore a temporarily enabled source using the merged media preference.
         // Enable it before selecting: a disabled source counts as finished, and once every Web source has finished
         // the selector stops waiting for deadlines. The selector needs the same preference before deciding anyway.
         if (settings.autoEnableLastSelected) {
             val sourceId = mediaSelector.mediaSourceId.finalSelected.first()
+            AutoSelectTrace.step("last selected source read")
             session.mediaSourceResults.firstOrNull { it.mediaSourceId == sourceId }?.enable()
         }
 
         val subjectId = session.request.first().subjectId.toIntOrNull()
+        AutoSelectTrace.step("request read")
         MediaAutoSelector(mediaSelector).select(
             session,
             MediaAutoSelector.Config(
-                preferredSourceId = subjectId?.let { getPreferredWebMediaSource(it).first() },
+                preferredSourceId = subjectId?.let { getPreferredWebMediaSource(it).first() }.also { AutoSelectTrace.step("preferred source read") },
                 web = if (settings.preferKind == MediaSourceKind.WEB) MediaAutoSelector.Web(
-                    sourceTiers = getMediaSelectorSourceTiers().first(),
+                    sourceTiers = getMediaSelectorSourceTiers().first().also { AutoSelectTrace.step("source tiers read") },
                     fastSelect = settings.fastSelectWebKind,
                     exactMatchAfter = settings.fastSelectWebLowTierToleranceDuration,
                 ) else null,

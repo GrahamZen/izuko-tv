@@ -18,6 +18,7 @@ import me.him188.ani.app.domain.episode.MediaFetchSelectBundle
 import me.him188.ani.app.domain.media.continuation.PlaybackLineageSelection
 import me.him188.ani.app.domain.media.fetch.MediaFetchSession
 import me.him188.ani.app.domain.media.fetch.awaitCompletedResults
+import me.him188.ani.app.domain.media.selector.AutoSelectTrace
 import me.him188.ani.app.domain.media.selector.MaybeExcludedMedia
 import me.him188.ani.app.domain.media.selector.MediaSelector
 import me.him188.ani.app.domain.media.selector.MediaSelectorAutoSelectUseCase
@@ -53,17 +54,21 @@ class AutoSelectExtension(
         backgroundTaskScope: ExtensionBackgroundTaskScope
     ) {
         backgroundTaskScope.launch("AutoSelect") {
+            AutoSelectTrace.probeDefaultDispatcher(this)
             // 任务挂在本 session 的 sessionScope 下, switchEpisode 先取消旧 scope 再换 session, 任务内不可能观察到别的 session;
             // 直接用 onStart 的 episodeSession, 不经 context.sessionFlow.
             episodeSession.fetchSelectFlow.collectLatest { fetchSelect ->
                 if (fetchSelect == null) return@collectLatest
+                AutoSelectTrace.step("fetch session ready")
                 // fetchSelect 由 infoBundleFlow 派生, 拿到非空 bundle 时 replayCache 已有对应的 infoBundle.
                 // infoBundleFlow 首值 null, 网络错误后也会回到 null; 用 replayCache 而不是 filterNotNull().first(), 否则会连自动选择一起挂住.
                 val episodeInfo = episodeSession.infoBundleFlow.replayCache.lastOrNull()?.episodeInfo
                 if (episodeInfo != null && continueLineageOrFalse(episodeInfo, fetchSelect)) return@collectLatest
+                AutoSelectTrace.step("lineage not continued")
                 val replayed = episodeInfo != null
-                        && !hasLocalCacheForEpisode(fetchSelect.mediaFetchSession, fetchSelect.mediaSelector)
+                        && !hasLocalCacheForEpisode(fetchSelect.mediaFetchSession, fetchSelect.mediaSelector).also { AutoSelectTrace.step("local cache checked") }
                         && replayBrowseMemoryOrFalse(episodeInfo, fetchSelect.mediaSelector)
+                AutoSelectTrace.step("browse memory replayed=$replayed")
                 if (!replayed) {
                     mediaSelectorAutoSelectUseCase(fetchSelect.mediaFetchSession, fetchSelect.mediaSelector)
                 }

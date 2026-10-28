@@ -48,6 +48,7 @@ import me.him188.ani.app.domain.media.resolver.toEpisodeMetadata
 import me.him188.ani.app.domain.media.selector.MediaSelector
 import me.him188.ani.app.domain.player.ExtensionException
 import me.him188.ani.app.domain.player.PlayerExtensionManager
+import me.him188.ani.app.domain.player.diagnostics.PlayTimeline
 import me.him188.ani.app.domain.player.extension.EpisodePlayerExtensionFactory
 import me.him188.ani.app.domain.player.extension.ExtensionBackgroundTaskScope
 import me.him188.ani.app.domain.player.extension.PlayerExtension
@@ -111,7 +112,7 @@ class EpisodeFetchSelectPlayState(
     }
 
     private val _episodeSessionFlow = MutableStateFlow(
-        newEpisodeSession(initialEpisodeId),
+        newEpisodeSession(initialEpisodeId.also { PlayTimeline.begin(subjectId, it, "open") }),
     )
 
     /**
@@ -191,11 +192,13 @@ class EpisodeFetchSelectPlayState(
             switchEpisodeLock.withLock {
                 withContext(InSwitchEpisode(episodeId)) {
                     // 1. 停止上一个 episode 生命周期内的所有后台任务.
+                    PlayTimeline.begin(subjectId, episodeId, "switch")
                     logger.info { "SwitchEpisode($episodeId): Stopping previous scope" }
                     _episodeSessionFlow.value.sessionScope.coroutineContext.job.cancelAndJoin()
 
                     // 2. 暂停播放, '冻结'播放器状态. 此时还不能 stop, 因为要调用扩展.
                     logger.info { "SwitchEpisode($episodeId): Pausing player" }
+                    PlayTimeline.mark("switch_previous_scope_stopped")
                     withContext(mainDispatcher) {
                         // 按播放意图判断: 缓冲中也应当暂停 (v1 只在 PLAYING 时暂停, 是个缺陷)
                         if (player.state.value.playWhenReady) {
@@ -205,16 +208,19 @@ class EpisodeFetchSelectPlayState(
 
                     // 3. 调用扩展, 使用旧播放器的状态.
                     logger.info { "SwitchEpisode($episodeId): Calling extension onBeforeSwitchEpisode" }
+                    PlayTimeline.mark("switch_player_paused")
                     extensionManager.call {
                         it.onBeforeSwitchEpisode(episodeId)
                     }
 
                     // 4. 停止播放器, 清空播放器状态.
                     logger.info { "SwitchEpisode($episodeId): Stopping player" }
+                    PlayTimeline.mark("switch_extensions_done")
                     playerSession.stopForNextEpisode()
 
                     // 5. 创建新的 fetchSelectSession
                     logger.info { "SwitchEpisode($episodeId): Propagate newEpisodeSession" }
+                    PlayTimeline.mark("switch_player_stopped")
                     val newSession = newEpisodeSession(episodeId)
                     _episodeSessionFlow.value = newSession
 
@@ -223,6 +229,7 @@ class EpisodeFetchSelectPlayState(
                     newSession.startSessionScopeTasks()
 
                     logger.info { "SwitchEpisode($episodeId): Complete" }
+                    PlayTimeline.mark("switch_complete")
                 }
             }
         }.join()
@@ -352,6 +359,7 @@ class EpisodeFetchSelectPlayState(
 
                         // `filterNotNull()` is needed. Even when media is unselect, we should not stop the player.
                         fetchSelect.mediaSelector.selected.filterNotNull().collectLatest { media ->
+                            PlayTimeline.mark("t_sel_got")
                             val episodeInfo = episodeSession.infoBundleFlow
                                 .filterNotNull()
                                 .first()
@@ -359,7 +367,9 @@ class EpisodeFetchSelectPlayState(
 
                             if (!playerSession.isPlayingFine(media)) {
                                 callOnBeforeLoadMedia(episodeSession)
+                                PlayTimeline.mark("t_before_load")
                                 val startPositionMillis = extensionManager.startPositionMillis(episodeInfo.episodeId) ?: 0L
+                                PlayTimeline.mark("t_start_pos")
                                 playerSession.loadMedia(media, episodeInfo.toEpisodeMetadata(), startPositionMillis)
                                 onMediaLoaded(episodeInfo.episodeId)
                             }

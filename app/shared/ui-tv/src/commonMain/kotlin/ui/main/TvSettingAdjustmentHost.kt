@@ -19,6 +19,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import me.him188.ani.app.data.models.preference.BangumiRouteKind
+import me.him188.ani.app.domain.media.fetch.SearchConcurrency
 import me.him188.ani.app.domain.settings.SettingAdjustment
 import me.him188.ani.app.domain.settings.SettingAdjustmentChoice
 import me.him188.ani.app.domain.settings.SettingAdjustmentQuestion
@@ -41,6 +42,9 @@ import me.him188.ani.app.ui.lang.settings_network_bangumi_mirror_switch_logout
 import me.him188.ani.app.ui.lang.settings_network_bangumi_route_ech
 import me.him188.ani.app.ui.lang.settings_network_bangumi_route_mirrors
 import me.him188.ani.app.ui.lang.settings_network_bangumi_route_origin
+import me.him188.ani.app.ui.lang.tv_source_search_concurrency_reduced_killed
+import me.him188.ani.app.ui.lang.tv_source_search_concurrency_reduced_memory
+import me.him188.ani.app.ui.lang.tv_source_search_concurrency_reduced_stutter
 import me.him188.ani.app.ui.lang.tv_source_search_paused_for_stutter
 import me.him188.ani.app.ui.settings.SettingChoiceDialog
 import me.him188.ani.app.ui.settings.SettingChoiceDialogAction
@@ -60,7 +64,9 @@ fun TvSettingAdjustmentHost() {
     val toaster = LocalToaster.current
     LaunchedEffect(adjustments, toaster) {
         adjustments.notices.collect { adjustment ->
-            noticeText(adjustment)?.let { toaster.toast(getStringOffMain(it)) }
+            noticeText(adjustment)?.let {
+                toaster.toast(if (adjustment is SettingAdjustment.SearchConcurrencyReduced) getStringOffMain(it, adjustment.limit) else getStringOffMain(it))
+            }
         }
     }
 
@@ -89,6 +95,12 @@ fun TvSettingAdjustmentHost() {
 private fun noticeText(adjustment: SettingAdjustment): StringResource? = when (adjustment) {
     SettingAdjustment.VideoEnhancementTooSlow -> Lang.player_video_enhancement_auto_off
     SettingAdjustment.FullSearchStutter -> Lang.tv_source_search_paused_for_stutter
+    is SettingAdjustment.SearchConcurrencyReduced -> when (adjustment.reason) {
+        SearchConcurrency.Reason.MemoryLow -> Lang.tv_source_search_concurrency_reduced_memory
+        SearchConcurrency.Reason.SearchStutter -> Lang.tv_source_search_concurrency_reduced_stutter
+        SearchConcurrency.Reason.KilledWhileSearching -> Lang.tv_source_search_concurrency_reduced_killed
+    }
+
     is SettingAdjustment.SeekPreviewOnFullScreen ->
         if (adjustment.afterCrash) Lang.player_seek_preview_crashed_switched_to_full_screen
         else Lang.player_seek_preview_switched_to_full_screen
@@ -131,7 +143,8 @@ private fun SettingAdjustmentDialog(
         }
 
         // 只告知的情形不弹询问 (宿主里直接放掉)
-        SettingAdjustment.VideoEnhancementTooSlow, SettingAdjustment.FullSearchStutter, is SettingAdjustment.SeekPreviewOnFullScreen -> Unit
+        SettingAdjustment.VideoEnhancementTooSlow, SettingAdjustment.FullSearchStutter, is SettingAdjustment.SeekPreviewOnFullScreen,
+        is SettingAdjustment.SearchConcurrencyReduced -> Unit
     }
 }
 

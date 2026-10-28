@@ -17,15 +17,18 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import me.him188.ani.app.data.models.preference.MediaPreference.Companion.ANY_FILTER
 import me.him188.ani.app.domain.media.fetch.MediaFetchSession
 import me.him188.ani.app.domain.media.fetch.MediaSourceFetchState
+import me.him188.ani.app.domain.media.fetch.MediaSourceSearchLimiter
 import me.him188.ani.app.domain.media.fetch.isFinal
 import me.him188.ani.app.domain.media.fetch.isPaused
 import me.him188.ani.app.domain.media.fetch.resumePausedSources
 import me.him188.ani.app.domain.media.selector.MatchMetadata.SubjectMatchKind
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceTier
+import me.him188.ani.app.domain.player.diagnostics.PlayTimeline
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.utils.logging.info
@@ -90,17 +93,33 @@ internal class MediaAutoSelector(private val mediaSelector: MediaSelector) {
         var deadlines: Job? = null
         // 放开记住的源时它的暂停状态 (见 decide)
         var resumedPreferred: MediaSourceFetchState? = null
+        val tuning = PreferredSourceTuning.current()
+        val trace = AutoSelectTrace()
+        AutoSelectTrace.step("selector started")
+        // 记忆源阶段等够了 (见 DevSwitches.searchMemoryWaitCap): 不再只等记住的源
+        val preferredTimedOut = MutableStateFlow(false)
+        val preferredTimer = config.preferredSourceId?.let { id ->
+            if (tuning.prioritize) MediaSourceSearchLimiter.Default.prioritize(id)
+            tuning.waitCap?.let { cap ->
+                launch {
+                    delay(cap)
+                    if (stage.value == Stage.PreferredSource) logger.info { "Preferred source $id still has nothing after $cap, considering other sources" }
+                    preferredTimedOut.value = true
+                }
+            }
+        }
         // 等直连的源等够了 (见 Web.webViewGrace)
         val webViewGraceOver = MutableStateFlow(false)
         var webViewGraceTimer: Job? = null
         try {
             combine(
-                mediaSelector.autoSelectSnapshots(sourceSnapshots(session))
+                mediaSelector.autoSelectSnapshots(sourceSnapshots(session).onEach { trace.sourcesEmitted(it.size) })
                     .let { if (config.selectCache) it.awaitCacheReadiness(logger) else it },
-                stage, mediaSelector.selected, webViewGraceOver,
-            ) { snapshot, phase, currentSelection, graceOver ->
+                stage, mediaSelector.selected, preferredTimedOut, webViewGraceOver,
+            ) { snapshot, phase, currentSelection, timedOut, graceOver ->
                 if (currentSelection != expectedSelection) Decision.Exhausted
-                else decide(snapshot, config, phase, resumedPreferred, graceOver)
+                else decide(snapshot, config, phase, resumedPreferred, timedOut, graceOver)
+                    .also { trace.observe(snapshot, phase.name, it::class.simpleName.orEmpty()) }
             }.first { decision ->
                 when (decision) {
                     is Decision.ResumePreferredSource -> {
@@ -148,6 +167,7 @@ internal class MediaAutoSelector(private val mediaSelector: MediaSelector) {
                         logger.info {
                             "Auto select: reason=${decision.reason}, source=${decision.media.mediaSourceId}, media=${decision.media.mediaId}"
                         }
+                        PlayTimeline.mark("auto_select_done", decision.reason)
                         result = mediaSelector.selectAutomatically(decision.media, expectedSelection)
                         true
                     }
@@ -155,6 +175,7 @@ internal class MediaAutoSelector(private val mediaSelector: MediaSelector) {
             }
         } finally {
             deadlines?.cancel()
+            preferredTimer?.cancel()
             webViewGraceTimer?.cancel()
         }
         result
@@ -199,12 +220,14 @@ internal class MediaAutoSelector(private val mediaSelector: MediaSelector) {
      * Pure decision over a coherent snapshot. Only [select] advances time or writes selection.
      *
      * @param resumedPreferred 这次选择里放开记住的源时它的暂停状态, 还没放开过为 null
+     * @param preferredTimedOut 记忆源阶段等够了, 不再只等记住的源 (见 DevSwitches.searchMemoryWaitCap)
      */
     private fun decide(
         snapshot: MediaAutoSelectSnapshot,
         config: Config,
         stage: Stage,
         resumedPreferred: MediaSourceFetchState?,
+        preferredTimedOut: Boolean = false,
         webViewGraceOver: Boolean = false,
     ): Decision {
         val preferredSource = snapshot.sources.firstOrNull {
@@ -242,6 +265,7 @@ internal class MediaAutoSelector(private val mediaSelector: MediaSelector) {
             }
             findWebCandidate(snapshot, exact)?.let { return Decision.Select(it, "preferred source (exact, still searching)") }
         }
+        if (stage == Stage.PreferredSource && preferredTimedOut) return Decision.StartFallback
 
         // 记住的源在上一次开播后被暂停着 (查询按条目共用, 切到下一集时常见): 暂停不算查完。暂停前拿到的结果里没有能选的,
         // 就只放开它、在这一阶段等它的结果, 给不出资源再放开其它源。快照里还是放开时那个暂停状态 = 新状态还没到;

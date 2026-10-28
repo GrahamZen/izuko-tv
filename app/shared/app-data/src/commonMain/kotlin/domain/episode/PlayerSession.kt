@@ -42,6 +42,7 @@ import me.him188.ani.app.domain.media.selector.MediaSelector
 import me.him188.ani.app.domain.mediasource.MediaSourceTags
 import me.him188.ani.app.domain.mediasource.instance.GetMediaSourceInstancesUseCase
 import me.him188.ani.app.domain.player.VideoLoadingState
+import me.him188.ani.app.domain.player.diagnostics.PlayTimeline
 import me.him188.ani.app.domain.player.toLogText
 import me.him188.ani.app.domain.settings.GetVideoScaffoldConfigUseCase
 import me.him188.ani.datasources.api.Media
@@ -156,6 +157,7 @@ class PlayerSession(
         val backgroundScope = this
         _videoLoadingStateFlow.value = VideoLoadingState.Initial // 避免一直显示已取消 (.Cancelled)
         stopPlayback()
+        PlayTimeline.mark("t_stopped")
         if (media == null) {
             return@coroutineScope
         }
@@ -164,6 +166,7 @@ class PlayerSession(
         var preparedHlsPlaybackProxySession: HlsPlaybackProxySession? = null
         try {
             _videoLoadingStateFlow.value = VideoLoadingState.ResolvingSource
+            PlayTimeline.mark("resolve_start", media.mediaSourceId)
             val source = try {
                 withContext(MediaResolveDeadlineReporter { _resolveDeadline.value = it }) {
                     mediaResolver.resolve(
@@ -174,6 +177,7 @@ class PlayerSession(
             } finally {
                 _resolveDeadline.value = null
             }
+            PlayTimeline.mark("resolved")
             _videoLoadingStateFlow.compareAndSet(
                 VideoLoadingState.ResolvingSource,
                 VideoLoadingState.DecodingData(
@@ -197,8 +201,10 @@ class PlayerSession(
             }.data
 
             logger.info { "Set media data to player at ${startPositionMillis}ms: ${preparedData.toLogText()}" }
+            PlayTimeline.mark("set_media", "at ${startPositionMillis}ms")
             // v2: setMediaData 挂起直到媒体真正打开, 播放意图和起播位置随打开一并生效.
             player.setMediaData(preparedData, playWhenReady = true, startPositionMillis = startPositionMillis)
+            PlayTimeline.mark("player_opened")
             hlsPlaybackProxySession = preparedHlsPlaybackProxySession
             preparedHlsPlaybackProxySession = null
 
@@ -259,6 +265,7 @@ class PlayerSession(
     suspend fun stopPlayback() {
         _loadedMedia.value = null
         stopPlayer()
+        PlayTimeline.mark("t_stop_player_done")
         closeHlsPlaybackProxySession()
     }
 
@@ -277,8 +284,11 @@ class PlayerSession(
     }
 
     private suspend fun stopPlayer() {
+        PlayTimeline.mark("t_stop_to_main")
         withContext(mainDispatcher) {
+            PlayTimeline.mark("t_stop_on_main")
             player.stopPlayback()
+            PlayTimeline.mark("t_stop_main_done")
         }
     }
 

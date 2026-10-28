@@ -21,6 +21,7 @@ import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
 import me.him188.ani.app.data.models.subject.SubjectSeriesInfo
 import me.him188.ani.app.data.network.SubjectSeriesIndexService
 import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
+import me.him188.ani.app.domain.player.diagnostics.PlayTimeline
 import me.him188.ani.app.domain.usecase.UseCase
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
@@ -85,6 +86,7 @@ internal fun subjectEpisodeInfoBundleFlow(
             throw notFound()
         }
         subjectCollection.collect { subject ->
+            PlayTimeline.mark("t_subject", "${subject.episodes.size}")
             val episodeCollectionInfo = subject.episodes.find { it.episodeId == episodeId }
             if (episodeCollectionInfo == null) {
                 if (!found) {
@@ -94,6 +96,7 @@ internal fun subjectEpisodeInfoBundleFlow(
             }
             found = true
             deadline.cancel()
+            PlayTimeline.mark("t_series_start")
             emit(
                 SubjectEpisodeInfoBundle(
                     subjectId, episodeId,
@@ -108,6 +111,7 @@ internal fun subjectEpisodeInfoBundleFlow(
             )
         }
         if (!found) throw notFound()
+        PlayTimeline.mark("t_subject_done")
         deadline.cancel()
     }
 }
