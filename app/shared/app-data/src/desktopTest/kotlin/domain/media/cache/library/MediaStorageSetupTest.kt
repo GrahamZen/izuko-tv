@@ -154,6 +154,7 @@ class MediaStorageSetupTest {
         val result = applyAndWait(env) { env.setup.apply(MediaStorageSetup.Choice("usb", library = true), moveExisting = true) }
 
         assertEquals(1, result.moved)
+        assertFalse(result.nothingToMove)
         val moved = File(usbLibrary, "番 [bgm-1]/番 - 01 [bgmep-11].mkv")
         assertEquals(256, moved.length())
         assertTrue(File(moved.path + MediaLibraryLayout.SIDECAR_SUFFIX).exists(), "the sidecar moves with it")
@@ -163,6 +164,14 @@ class MediaStorageSetupTest {
         assertEquals("usb", cache.locationId)
         assertEquals("dmhy.11", cache.origin.mediaId, "the original media is kept")
         assertEquals("usb", settings.flow.value.defaultLocation)
+    }
+
+    @Test
+    fun `applying when everything is already in place reports that there was nothing to move`() = runTest { env ->
+        val result = applyAndWait(env) { env.setup.apply(MediaStorageSetup.Choice(null, library = false), moveExisting = true) }
+
+        assertTrue(result.nothingToMove)
+        assertFalse(settings.flow.value.libraryEnabled, "the setting is still written")
     }
 
     @Test
