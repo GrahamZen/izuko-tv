@@ -23,6 +23,7 @@ import me.him188.ani.app.domain.profile.SelfCollectionRecords
 import me.him188.ani.app.domain.profile.UserProfiles
 import me.him188.ani.app.platform.LocalContext
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
+import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
 import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
@@ -45,7 +46,6 @@ import me.him188.ani.app.ui.update.AppUpdateState
 import me.him188.ani.app.ui.update.AppUpdateViewModel
 import me.him188.ani.app.ui.update.FailedToInstallDialog
 import me.him188.ani.app.ui.update.InstallPermissionDialog
-import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -184,7 +184,7 @@ internal fun TvClearRecordsDialog(profile: ProfileViewModel, dismiss: () -> Unit
     val loaded = counts ?: return
     if (loaded.isEmpty) {
         LaunchedEffect(Unit) {
-            toaster.toast(getString(Lang.profile_clear_records_empty))
+            toaster.toast(getStringOffMain(Lang.profile_clear_records_empty))
             dismiss()
         }
         return
@@ -195,7 +195,7 @@ internal fun TvClearRecordsDialog(profile: ProfileViewModel, dismiss: () -> Unit
             dismiss()
             profile.launchAfterDialog {
                 profile.clearSelfRecords()
-                toaster.toast(getString(Lang.profile_clear_records_done))
+                toaster.toast(getStringOffMain(Lang.profile_clear_records_done))
             }
         },
         onDismissRequest = dismiss,

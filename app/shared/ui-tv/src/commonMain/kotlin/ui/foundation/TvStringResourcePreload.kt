@@ -21,7 +21,6 @@ import me.him188.ani.app.ui.lang.Res
 import me.him188.ani.app.ui.lang.allStringResources
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
-import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.rememberResourceEnvironment
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource
@@ -35,10 +34,9 @@ import kotlin.time.TimeSource
  *
  * 全部文案里有只在部分语言里有的 (默认语言那份已删、繁简中文里还留着): 这个环境下读不到, 跳过 —— 界面不会用它, 读它会抛异常.
  *
- * **在主线程上读, 别挪去后台线程.** 资源库每读一条 (含命中缓存) 都要拿同一把公平的协程锁, 读文件本身由库放到 Default 上做.
- * 锁放开时直接交给排着的下一个协程: 若那是个主线程上的协程 (ViewModel 里调 getString), 而主线程正在 `stringResource` 的
- * `runBlocking` 里等这把锁, 两边就永远互等, 界面卡死 (见过: 冷启动两秒进播放页, 主线程停在 rememberResourceState).
- * 后台连读三千条时锁几乎一直有人拿, 撞上的机会大; 放在主线程上, 拿锁放锁和 `stringResource` 都在同一个线程上一件件来, 不会撞.
+ * **在后台线程上等资源库的锁** ([getStringOffMain]): 资源库每读一条 (含命中缓存) 都要拿同一把公平的协程锁, 连读三千条时锁几乎一直有人拿.
+ * 排着队的若有跑在主线程上的协程, 而主线程正在 `stringResource` 的 `runBlocking` 里等同一把锁, 两边就永远互等, 界面卡死
+ * (冷启动后马上进播放页、选定资源后撞上过). 后台的读取拿锁放锁不用主线程, `stringResource` 最多等它读完这一条.
  */
 @Composable
 fun PreloadStringResourcesWhenIdle() {
@@ -52,7 +50,7 @@ fun PreloadStringResourcesWhenIdle() {
             async {
                 permits.withPermit {
                     try {
-                        getString(environment, resource)
+                        getStringOffMain(environment, resource)
                         false
                     } catch (e: CancellationException) {
                         throw e

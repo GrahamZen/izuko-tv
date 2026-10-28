@@ -16,6 +16,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.comment_reply_to
 import me.him188.ani.app.ui.lang.episode_comments
@@ -57,7 +58,6 @@ import me.him188.ani.app.ui.lang.watch_together_title
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import org.jetbrains.compose.resources.StringResource
-import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.rememberResourceEnvironment
 import kotlin.time.Duration.Companion.seconds
 
@@ -78,7 +78,7 @@ internal fun PrewarmTvPlayerControls(
     val environment = rememberResourceEnvironment()
     LaunchedEffect(environment) {
         withContext(Dispatchers.IO) {
-            for (resource in TV_PLAYER_CONTROLS_STRING_RESOURCES) getString(environment, resource)
+            for (resource in TV_PLAYER_CONTROLS_STRING_RESOURCES) getStringOffMain(environment, resource)
         }
     }
     val currentCanPrewarm by rememberUpdatedState(canPrewarmNow)

@@ -36,6 +36,7 @@ import me.him188.ani.app.data.network.LightRelatedCharacterInfo
 import me.him188.ani.app.data.network.LightRelatedPersonInfo
 import me.him188.ani.app.ui.foundation.LocalSubjectAppearanceSettings
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
+import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.foundation.layout.currentWindowAdaptiveInfo1
 import me.him188.ani.app.ui.foundation.layout.paneVerticalPadding
 import me.him188.ani.app.ui.lang.Lang
@@ -45,7 +46,6 @@ import me.him188.ani.app.ui.lang.subject_airing_total_episodes_scheduled
 import me.him188.ani.app.ui.rating.RatingText
 import me.him188.ani.app.ui.subject.getSubjectSeasonText
 import me.him188.ani.utils.platform.annotations.TestOnly
-import org.jetbrains.compose.resources.getString
 
 @Immutable
 class SubjectPreviewItemInfo(
@@ -130,7 +130,7 @@ class SubjectPreviewItemInfo(
                 if (persons.isEmpty()) return@let null
 
                 buildString {
-                    append(getString(Lang.exploration_search_staff_prefix))
+                    append(getStringOffMain(Lang.exploration_search_staff_prefix))
                     persons.forEachIndexed { index, relatedPersonInfo ->
                         append(relatedPersonInfo.name)
                         if (index != persons.lastIndex) {
@@ -183,12 +183,12 @@ class SubjectPreviewItemInfo(
             }
             return when (airingInfo.kind) {
                 SubjectAiringKind.COMPLETED ->
-                    getString(Lang.subject_airing_total_episodes_completed, airingInfo.mainEpisodeCount.toString())
+                    getStringOffMain(Lang.subject_airing_total_episodes_completed, airingInfo.mainEpisodeCount.toString())
 
                 SubjectAiringKind.UPCOMING,
                 SubjectAiringKind.ON_AIR,
                     ->
-                    getString(Lang.subject_airing_total_episodes_scheduled, airingInfo.mainEpisodeCount.toString())
+                    getStringOffMain(Lang.subject_airing_total_episodes_scheduled, airingInfo.mainEpisodeCount.toString())
             }
         }
     }

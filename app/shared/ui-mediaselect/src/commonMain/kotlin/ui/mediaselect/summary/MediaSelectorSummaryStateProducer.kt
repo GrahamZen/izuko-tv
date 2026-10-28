@@ -30,13 +30,13 @@ import me.him188.ani.app.domain.media.selector.MaybeExcludedMedia
 import me.him188.ani.app.domain.media.selector.MediaSelector
 import me.him188.ani.app.domain.media.selector.UnsafeOriginalMediaAccess
 import me.him188.ani.app.domain.media.selector.isPerfectMatch
+import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.media_selector_summary_dropped_file
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.source.MediaSourceInfo
 import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.utils.platform.collections.tupleOf
-import org.jetbrains.compose.resources.getString
 import kotlin.time.Duration.Companion.seconds
 
 
@@ -52,7 +52,7 @@ class MediaSelectorSummaryStateProducer(
     /**
      * 选中的是用户拖入的本地文件 ([DroppedFileMedia]) 时展示的来源名称.
      */
-    droppedFileSourceName: suspend () -> String = { getString(Lang.media_selector_summary_dropped_file) },
+    droppedFileSourceName: suspend () -> String = { getStringOffMain(Lang.media_selector_summary_dropped_file) },
 ) {
     private val sourceSummariesFlow = combine(mediaSourceResultsFlow, mediaSources) { results, sources ->
         tupleOf(results, sources)

@@ -16,6 +16,7 @@ import me.him188.ani.app.data.models.preference.MediaCacheSettings
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.media.cache.library.MediaLibraryAccess
 import me.him188.ani.app.domain.media.cache.library.MediaStorageSetup
+import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.cache_move_started
 import me.him188.ani.app.ui.lang.settings_storage_media_library
@@ -26,7 +27,6 @@ import me.him188.ani.app.ui.lang.settings_storage_media_library_revoked
 import me.him188.ani.app.ui.lang.settings_storage_media_library_unsupported
 import me.him188.ani.app.ui.lang.storage_guide_busy
 import me.him188.ani.datasources.api.topic.FileSize.Companion.bytes
-import org.jetbrains.compose.resources.getString
 import org.koin.mp.KoinPlatform
 
 /**
@@ -53,22 +53,22 @@ internal object RemoteMediaLibrarySetting {
 
     private suspend fun status(): String? {
         val access = access() ?: return null
-        if (!access.isSupported) return getString(Lang.settings_storage_media_library_unsupported)
+        if (!access.isSupported) return getStringOffMain(Lang.settings_storage_media_library_unsupported)
         if (access.isGranted()) return null
         val enabled = KoinPlatform.getKoin().get<SettingsRepository>().mediaCacheSettings.flow.first().libraryEnabled
         return listOfNotNull(
-            if (enabled) getString(Lang.settings_storage_media_library_revoked) else null,
-            access.adbGrantCommand?.let { getString(Lang.settings_storage_media_library_grant_adb_text, it) },
+            if (enabled) getStringOffMain(Lang.settings_storage_media_library_revoked) else null,
+            access.adbGrantCommand?.let { getStringOffMain(Lang.settings_storage_media_library_grant_adb_text, it) },
         ).joinToString("\n").ifEmpty { null }
     }
 
     /** 打不开的原因; 能打开时为 `null` */
     private suspend fun cannotTurnOn(): String? {
-        val access = access() ?: return getString(Lang.settings_storage_media_library_unsupported)
-        if (!access.isSupported) return getString(Lang.settings_storage_media_library_unsupported)
+        val access = access() ?: return getStringOffMain(Lang.settings_storage_media_library_unsupported)
+        if (!access.isSupported) return getStringOffMain(Lang.settings_storage_media_library_unsupported)
         if (access.isGranted()) return null
-        return access.adbGrantCommand?.let { getString(Lang.settings_storage_media_library_grant_adb_text, it) }
-            ?: getString(Lang.settings_storage_media_library_unsupported)
+        return access.adbGrantCommand?.let { getStringOffMain(Lang.settings_storage_media_library_grant_adb_text, it) }
+            ?: getStringOffMain(Lang.settings_storage_media_library_unsupported)
     }
 
     /**
@@ -84,10 +84,10 @@ internal object RemoteMediaLibrarySetting {
         return listOfNotNull(
             when {
                 total.isEmpty -> null
-                started -> getString(Lang.cache_move_started, total.units, total.bytes.bytes.toString())
-                else -> getString(Lang.storage_guide_busy)
+                started -> getStringOffMain(Lang.cache_move_started, total.units, total.bytes.bytes.toString())
+                else -> getStringOffMain(Lang.storage_guide_busy)
             },
-            if (on && deleteWhenDoneWasOn) getString(Lang.settings_storage_media_library_delete_when_done_off) else null,
+            if (on && deleteWhenDoneWasOn) getStringOffMain(Lang.settings_storage_media_library_delete_when_done_off) else null,
         ).joinToString("\n").ifEmpty { null }
     }
 }
