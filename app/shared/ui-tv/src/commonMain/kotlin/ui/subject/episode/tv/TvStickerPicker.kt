@@ -123,7 +123,7 @@ internal fun TvStickerPicker(
                 )
                 Spacer(Modifier.height(12.dp))
                 Row(Modifier.fillMaxSize()) {
-                    // 包列表自己消费上下键 (与新番时间表的日期行同一套路, 见 TvSchedulePage):
+                    // 包列表自己消费上下键:
                     // 交给默认的空间搜索的话, 首项按上、末项按下会跳出选择器 —— 而选择器盖在
                     // 评论弹窗与评论面板之上, 焦点落到底下那些看不见的卡片上就等于卡死.
                     // 列表可滚 + 逐项显式落点, 顺带也解决了"包多到一屏放不下"时的滚动
@@ -192,7 +192,7 @@ internal fun TvStickerPicker(
                                     when (event.key) {
                                         Key.DirectionUp -> index < columns // 首行
                                         Key.DirectionDown -> index / columns == lastIndex / columns // 末行
-                                        // 行末按右: 不拦的话空间搜索会绕到别处 (同 TvSchedulePage 的日期行)
+                                        // 行末按右: 不拦的话空间搜索会绕到别处
                                         Key.DirectionRight -> index % columns == columns - 1 || index == lastIndex
                                         else -> false // 左键回包列表, 交给空间搜索
                                     }

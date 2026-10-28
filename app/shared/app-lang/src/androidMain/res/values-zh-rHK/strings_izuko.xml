@@ -760,8 +760,6 @@
     <string name="settings_theme_tv_remote_reset">重設 Web 控制台地址</string>
     <string name="settings_theme_tv_remote_reset_description">換一個新地址，之前掃碼開啟的頁面和書籤都會失效，要重新掃碼</string>
     <string name="settings_theme_tv_remote_reset_confirm">確定重設地址嗎？正在用目前地址的頁面和書籤都要重新掃碼。</string>
-    <string name="settings_theme_tv_schedule_layout">新番時間表版式 (電視)</string>
-    <string name="settings_theme_tv_schedule_layout_description">選擇電視上新番時間表的版式。</string>
     <string name="settings_theme_tv_backdrop_blur">模糊背景 (電視)</string>
     <string name="settings_theme_tv_backdrop_blur_description">整頁底下鋪這部作品大圖的模糊版，海報牆與詳情頁按搭配一起選：海報牆按確定後（「海報上按確定」選「先看簡介」時）和新番時間表用海報牆那一檔（時間表選不模糊時按中），詳情頁翻過第一屏後用詳情頁那一檔。海報牆重、詳情頁輕最好看：卡片牆後面的底不搶眼，詳情頁還認得出畫面。選不模糊時海報牆從大圖放大進詳情頁，詳情頁的大圖清晰地淡在後面</string>
     <string name="settings_theme_tv_backdrop_blur_pair">海報牆%1$s、詳情頁%2$s</string>
@@ -872,9 +870,6 @@
     <string name="settings_theme_tv_episode_specials_hidden">隱藏</string>
     <string name="settings_theme_tv_episode_specials_after_main">排在正片後面</string>
     <string name="settings_theme_tv_episode_specials_by_number">按序號插在正片之間</string>
-    <string name="settings_theme_tv_schedule_upstream">經典列表</string>
-    <string name="settings_theme_tv_schedule_grid">海報牆</string>
-    <string name="settings_theme_tv_schedule_timeline">左側詳情 + 單列時間線</string>
     <string name="comment_reply_to">回覆 %1$s</string>
     <string name="comment_new_comment">發表評論</string>
     <string name="comment_view_comment">查看評論</string>

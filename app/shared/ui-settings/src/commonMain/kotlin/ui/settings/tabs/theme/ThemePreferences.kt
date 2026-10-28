@@ -26,7 +26,6 @@ import me.him188.ani.app.data.models.preference.ThemeSettings
 import me.him188.ani.app.data.models.preference.TvBackdropBlurLevel
 import me.him188.ani.app.data.models.preference.TvVisualEffectsLevel
 import me.him188.ani.app.data.models.preference.TvPosterConfirmAction
-import me.him188.ani.app.data.models.preference.TvScheduleLayout
 import me.him188.ani.app.data.models.preference.TvTitleLogoDisplay
 import me.him188.ani.app.data.models.preference.TvTitleLogoLanguage
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
@@ -74,11 +73,6 @@ import me.him188.ani.app.ui.lang.settings_theme_tv_visual_effects_balanced
 import me.him188.ani.app.ui.lang.settings_theme_tv_visual_effects_description
 import me.him188.ani.app.ui.lang.settings_theme_tv_visual_effects_full
 import me.him188.ani.app.ui.lang.settings_theme_tv_visual_effects_smooth
-import me.him188.ani.app.ui.lang.settings_theme_tv_schedule_layout
-import me.him188.ani.app.ui.lang.settings_theme_tv_schedule_layout_description
-import me.him188.ani.app.ui.lang.settings_theme_tv_schedule_upstream
-import me.him188.ani.app.ui.lang.settings_theme_tv_schedule_grid
-import me.him188.ani.app.ui.lang.settings_theme_tv_schedule_timeline
 import me.him188.ani.app.ui.settings.framework.SettingsState
 import me.him188.ani.app.ui.settings.framework.components.DropdownItem
 import me.him188.ani.app.ui.settings.framework.components.SettingsScope
@@ -170,26 +164,6 @@ fun SettingsScope.ThemeGroup(
 
         // 沉浸式外壳专属 (探索 / 追番 / 搜索 / 详情在这一形态下恒为沉浸式布局, 没有回退开关)
         if (LocalAniUiBehavior.current.immersiveShell) {
-            // 三版都留着可选 (见 TvScheduleLayout): 改版换掉的东西未必人人都想要
-            DropdownItem(
-                selected = { themeSettings.tvScheduleLayout },
-                values = { TvScheduleLayout.entries },
-                itemText = {
-                    Text(
-                        stringResource(
-                            when (it) {
-                                TvScheduleLayout.Upstream -> Lang.settings_theme_tv_schedule_upstream
-                                TvScheduleLayout.Grid -> Lang.settings_theme_tv_schedule_grid
-                                TvScheduleLayout.Timeline -> Lang.settings_theme_tv_schedule_timeline
-                            },
-                        ),
-                    )
-                },
-                onSelect = { state.update(themeSettings.copy(tvScheduleLayout = it)) },
-                title = { Text(stringResource(Lang.settings_theme_tv_schedule_layout)) },
-                description = { Text(stringResource(Lang.settings_theme_tv_schedule_layout_description)) },
-            )
-
             // 海报墙的卡片上按确定: 先看简介 (hero 态) / 直接播放 / 直接进详情页 (见 TvPosterConfirmAction)
             DropdownItem(
                 selected = { themeSettings.tvPosterConfirm },
