@@ -42,14 +42,15 @@ internal object WebViewSources {
     }
 
     /**
-     * 自动选源当作要 WebView 的数据源: 一定要嗅探的; 先直连的里画像没说「最近大多直连」的 (没播过的也算, 直连那一步取不到时照样要嗅探);
-     * 以及画像说最近大多要嗅探的.
+     * 自动选源当作要 WebView 的数据源: 一定要嗅探的, 以及画像说最近大多要嗅探的.
+     * 先直连的 ([Use.FALLBACK]) 画像没记过的 (没播过) 不算: 选源时照普通源排, 解析时真要转去嗅探再看手上有没有直连的资源可换
+     * (见 `WebViewDeferral`), 那次也记进画像.
      *
      * @param uses 各数据源的 [useOf]
      * @param observed 画像记下的最近几次是不是大多靠 WebView 嗅探 (见 `SourceProfiles.webViewUsage`)
      */
     fun of(uses: Map<String, Use>, observed: Map<String, Boolean>): Set<String> = buildSet {
-        for ((id, use) in uses) if (use == Use.ALWAYS || observed[id] != false) add(id)
+        for ((id, use) in uses) if (use == Use.ALWAYS) add(id)
         for ((id, webView) in observed) if (webView) add(id)
     }
 }
