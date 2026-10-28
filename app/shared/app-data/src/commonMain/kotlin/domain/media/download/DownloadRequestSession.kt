@@ -173,6 +173,8 @@ class DownloadRequestSession internal constructor(
     parentScope: CoroutineScope,
     /** 查询用的系列信息 (回退搜索关键词、拆分季的整季序号), 同开播; 取不到为 `null`. */
     private val seriesInfo: suspend (subjectId: Int) -> SubjectSeriesInfo? = { null },
+    /** 给查询请求加上港台译名, 同开播 (见 `withRegionalNames`) */
+    private val withRegionalNames: suspend (MediaFetchRequest, SubjectSeriesInfo?) -> MediaFetchRequest = { request, _ -> request },
 ) {
     val episodeIds: List<Int> = episodeIds.distinct().also {
         require(it.isNotEmpty()) { "episodeIds must not be empty" }
@@ -342,7 +344,9 @@ class DownloadRequestSession internal constructor(
         episodes: List<EpisodeInfo>,
         existing: List<ExistingDownload>,
     ): List<Pair<EpisodeInfo, Media>> = coroutineScope {
-        val fetchSession = sources.createFetchFetchSession(flowOf(MediaFetchRequest.create(subject, episode, episodes, seriesInfo(subjectId))))
+        val series = seriesInfo(subjectId)
+        val request = withRegionalNames(MediaFetchRequest.create(subject, episode, episodes, series), series)
+        val fetchSession = sources.createFetchFetchSession(flowOf(request))
         val selector = selectors.create(subjectId, episodeId, fetchSession.cumulativeResults, fetchRequest = fetchSession.latestRequest)
         // 保持查询进行, 与弹窗是否可见无关.
         launch { fetchSession.cumulativeResults.collect() }
@@ -460,6 +464,8 @@ class DownloadRequestSessionFactory(
     private val addDownload: AddDownloadUseCase,
     /** 见 [DownloadRequestSession] 的同名参数. */
     private val seriesInfo: suspend (subjectId: Int) -> SubjectSeriesInfo? = { null },
+    /** 见 [DownloadRequestSession] 的同名参数. */
+    private val withRegionalNames: suspend (MediaFetchRequest, SubjectSeriesInfo?) -> MediaFetchRequest = { request, _ -> request },
 ) {
     /**
      * 创建会话但不开始处理.
@@ -468,6 +474,6 @@ class DownloadRequestSessionFactory(
         DownloadRequestSession(
             subjectId, episodeIds,
             subjects, preferences, sources, selectors, downloadManager, addDownload,
-            parentScope, seriesInfo,
+            parentScope, seriesInfo, withRegionalNames,
         )
 }

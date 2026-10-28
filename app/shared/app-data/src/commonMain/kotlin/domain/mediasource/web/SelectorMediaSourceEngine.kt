@@ -111,6 +111,8 @@ data class SelectorSearchQuery(
     val subjectEpisodeSorts: Set<EpisodeSort>? = null,
     /** 条目的正片集数, 不知道时为 null: 多集的番里没写集号的一条不认作第 1 集 (见 [matchingEpisodeSortFor]) */
     val subjectEpisodeCount: Int? = null,
+    /** 条目本身是 OVA: 条目页上只有「OVA01」这样编号的集时, 按正片第几集认 (见 [asEpisodesOf]) */
+    val ovaSubject: Boolean = false,
 )
 
 /**
@@ -280,7 +282,7 @@ abstract class SelectorMediaSourceEngine {
         val bySortOnly = config.autoMatch.filterByEpisodeSort && query.episodeSort is EpisodeSort.Normal
         // 只在按集号过滤时才谈得上"放宽到整个条目": 不按集号过滤时本来就全部产出
         val wholeSubject = query.subjectEpisodeSorts?.takeIf { bySortOnly }
-        val mediaList = createMedia(episodes, config, query, mediaSourceId, subjectName) { episodeSort ->
+        val mediaList = createMedia(episodes.asEpisodesOf(query), config, query, mediaSourceId, subjectName) { episodeSort ->
             when {
                 !bySortOnly -> true
                 // 整个条目的集号都留下, 见 [SelectorSearchQuery.subjectEpisodeSorts]. 特别篇 (OVA、SP) 与解析不出集号的

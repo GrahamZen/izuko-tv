@@ -59,10 +59,13 @@ class SubjectSearchPlan private constructor(private val request: MediaFetchReque
      * 一个数据源的关键词链 ([SearchKeywords]):
      * - 主关键词: 搜索名的前 [KeywordStyle.primaryCount] 个. 只取首词的源 ([KeywordStyle.onlyFirstWord]) 本来就是想搜整个系列的短词,
      *   名字里含系列名 ([MediaFetchNameHints.seriesNames]) 时取系列名的首词: 「继 怪怪守护神」的首词「继」什么都搜得到, 系列名「怪怪守护神」才是;
-     *   没有系列名而首词太弱 (一个字、很短的英文) 时用整个名字.
+     *   没有系列名而首词太弱 (一个字、很短的英文) 时取名字的主体一段 ([mainSegmentOf]: 「C3 -魔方少女-」取「魔方少女」), 取不出时用整个名字.
+     *   站点按连续的字找, 整个名字去掉符号后 (「C3 魔方少女」) 常与站上的写法 (「C3-魔方少女-」) 对不上.
      * - 回退关键词, 依次: 请求的回退关键词 ([MediaFetchRequest.fallbackSearchKeywords]: 带季号的别名、系列名、港台译名)、
-     *   被系列名换下的名字自己的首词、名字去掉中日文之间空格的写法 (站点按字面找, 「继 怪怪守护神」搜不到「继怪怪守护神」). 太弱的不要.
-     * 改写后相同的词只搜一次. 按标题原样找的站点另见 [literalKeywords]; [subtitles] (数据源知道的这一部的副标题) 只给它们用.
+     *   被系列名或主体一段换下的名字本身 (带空格: 系列名搜出一大片别的季时, 站上的「浪客剑心 追忆篇」只有用整个名字才搜得到)、
+     *   名字太短又切不出主体时 (「AIR」「THE BIG-O」) 条目别的名字 (站上常叫「青空 AIR」)、
+     *   名字去掉中日文之间空格的写法 (站点按字面找, 「继 怪怪守护神」搜不到「继怪怪守护神」). 太弱的不要.
+     * 改写后相同的词只搜一次, 连着的空格并成一个. 按标题原样找的站点另见 [literalKeywords]; [subtitles] (数据源知道的这一部的副标题) 只给它们用.
      */
     fun keywords(style: KeywordStyle, sourceId: String? = null, subtitles: List<String> = emptyList()): SearchKeywords {
         val names = request.subjectNames.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
@@ -73,21 +76,37 @@ class SubjectSearchPlan private constructor(private val request: MediaFetchReque
         }
         val builder = KeywordsBuilder()
         fun siteKeyword(name: String, onlyFirstWord: Boolean = style.onlyFirstWord) =
-            MediaSourceEngineHelpers.getSearchKeyword(name, style.removeSpecial, onlyFirstWord).trim()
+            MediaSourceEngineHelpers.getSearchKeyword(name, style.removeSpecial, onlyFirstWord).replace(SPACES, " ").trim()
+
+        /** 条目自己的名字 [name] 发给站点的词, 规则同主关键词 (系列名另算) */
+        fun keywordOf(name: String): String {
+            val full = siteKeyword(name, onlyFirstWord = false)
+            if (!style.onlyFirstWord) return full
+            val firstWord = siteKeyword(name)
+            return if (firstWord != full && isWeak(firstWord)) mainSegmentOf(full) ?: full else firstWord
+        }
 
         val primaryNames = names.take(style.primaryCount.coerceAtLeast(1))
         val replaced = mutableListOf<String>()
+        var searchOtherNames = false
         for (name in primaryNames) {
             val full = siteKeyword(name, onlyFirstWord = false)
+            val firstWord = siteKeyword(name, onlyFirstWord = true)
+            val segment = if (isWeak(firstWord)) mainSegmentOf(full) else null
+            if (isWeak(firstWord) && segment == null) searchOtherNames = true
             if (!style.onlyFirstWord) {
                 builder.primary(name, full)
                 continue
             }
             val series = seriesNameIn(name)
-            val firstWord = siteKeyword(name)
             when {
                 series != null -> {
                     builder.primary(series, siteKeyword(series))
+                    replaced += name
+                }
+
+                segment != null -> {
+                    builder.primary(segment, segment)
                     replaced += name
                 }
                 // 首词就是整个名字时不嫌它短 (「K」「Air」本来就叫这个)
@@ -96,7 +115,10 @@ class SubjectSearchPlan private constructor(private val request: MediaFetchReque
             }
         }
         for (name in request.fallbackSearchKeywords) builder.fallback(name, siteKeyword(name), kindOf(name))
-        for (name in replaced) builder.fallback(name, siteKeyword(name), KeywordKind.ALIAS)
+        for (name in replaced) builder.fallback(name, siteKeyword(name, onlyFirstWord = false), KeywordKind.ALIAS)
+        if (searchOtherNames) {
+            for (name in names.drop(primaryNames.size)) builder.fallback(name, keywordOf(name), KeywordKind.ALIAS)
+        }
         for (name in primaryNames) {
             val joined = TitleForms.withoutSpacesBetweenCjk(name)
             if (joined != name) builder.fallback(joined, siteKeyword(joined, onlyFirstWord = false), KeywordKind.WRITING, writingOf = name)
@@ -207,6 +229,19 @@ class SubjectSearchPlan private constructor(private val request: MediaFetchReque
             val compact = keyword.filterNot { it.isWhitespace() }
             return compact.length <= 1 || isWeakSearchKeyword(compact)
         }
+
+        /**
+         * 首词太弱的名字 (改写后的 [full]) 里拿去搜的那一段: 首词之后第一段不弱的, 有含中日文的段先取它
+         * (「C3 魔方少女」取「魔方少女」, 「Go Princess 光之美少女」取「光之美少女」, 「怪 ayakashi」取「ayakashi」).
+         * 名字里没有中日文 (「NEW GAME」「THE BIG O」) 时切出来的多是常用词, 不取. 取不到为 null.
+         */
+        internal fun mainSegmentOf(full: String): String? {
+            if (!TitleForms.containsCjk(full)) return null
+            val segments = full.split(' ').drop(1).filter { it.isNotEmpty() && !isWeak(it) }
+            return segments.firstOrNull(TitleForms::containsCjk) ?: segments.firstOrNull()
+        }
+
+        private val SPACES = Regex("""\s+""")
     }
 }
 
