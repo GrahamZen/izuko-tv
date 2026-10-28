@@ -17,6 +17,7 @@ import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -24,7 +25,9 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import me.him188.ani.app.data.repository.RepositoryRateLimitedException
+import me.him188.ani.app.data.repository.media.SelectorMediaSourceEpisodeCacheRepository
 import me.him188.ani.app.domain.mediasource.web.InMemoryWebSearchSessionCacheDao
+import me.him188.ani.app.domain.mediasource.web.NoopWebSearchSessionCacheDao
 import me.him188.ani.datasources.api.DefaultMedia
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.PackedDate
@@ -400,6 +403,28 @@ class JsonApiMediaSourceTest {
         val media = source.fetchMedia(aired)
         // 同一个词第二次查不比第一次少: 3253 页上的第 1 集也在
         assertTrue(media.any { it.mediaId.startsWith("json-api-test.3253-") }, media.map { it.mediaId }.toString())
+    }
+
+    @Test
+    fun `keywords the site memory already has send no request and do not wait`() = runTest {
+        // 站点搜索记忆跨条目共用: 先用另一个数据源实例 (请求间隔各自算) 把两个词都搜过
+        val repository = SelectorMediaSourceEpisodeCacheRepository(NoopWebSearchSessionCacheDao, flowOf(1.hours))
+        val slow = config.copy(requestInterval = 1.seconds)
+        val site = Site()
+        site.emptySearchTerms += "葬送的芙莉莲"
+        val request = request(subjectNames = listOf(SampleSite.SUBJECT_NAME), fallbackSearchKeywords = listOf("芙莉莲"))
+        createTestJsonApiMediaSource(slow, site.engine, getTimeMillis = { testScheduler.currentTime }, repository = repository)
+            .fetchMedia(request)
+        site.requests.clear()
+
+        val source = createTestJsonApiMediaSource(slow, site.engine, getTimeMillis = { testScheduler.currentTime }, repository = repository)
+        val start = testScheduler.currentTime
+        val media = source.fetchMedia(request)
+
+        assertEquals(emptyList(), site.requests)
+        assertEquals(4, media.size)
+        // 换词时不发请求, 也不等换词的间隔
+        assertEquals(0, testScheduler.currentTime - start)
     }
 
     @Test
