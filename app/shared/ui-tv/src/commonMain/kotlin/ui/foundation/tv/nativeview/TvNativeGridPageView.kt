@@ -449,6 +449,8 @@ class TvNativeGridPageView(
             return
         }
         next.translationX = width * direction
+        clipToLane(next, width.toInt())
+        clipToLane(cur, width.toInt())
         slideAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = TV_TAB_CONTENT_SLIDE_MILLIS.toLong()
             interpolator = TV_NATIVE_FAST_OUT_SLOW_IN
@@ -463,6 +465,8 @@ class TvNativeGridPageView(
                 override fun onAnimationEnd(animation: Animator) {
                     slideAnimator = null
                     contentScrollSliding = false
+                    next.clipBounds = null
+                    cur.clipBounds = null
                     emitContentScroll()
                     if (shown !== cur) retire(cur)
                 }
@@ -471,12 +475,21 @@ class TvNativeGridPageView(
         }
     }
 
+    /**
+     * 滑动途中 [view] 只在自己那一屏宽 ([width]) 里画, 裁剪框跟着它平移: 一组一行的内容在屏外两侧预排着卡 (见 TvNativeStripView),
+     * 框 ([gridClip]) 是固定在屏上的, 那些卡跟着整片平移进框里就叠在另一份上. 竖向不裁: hero 态里网格整片上抬, 下面几排画在它自己的边界外.
+     */
+    private fun clipToLane(view: View, width: Int) {
+        view.clipBounds = Rect(0, Short.MIN_VALUE.toInt(), width, Short.MAX_VALUE.toInt())
+    }
+
     /** 退场的那份 (网格 / 一组一行的内容): 不画、不收焦点, 网格下次换标签时拿来复用. */
     private fun retire(view: View) {
         // 还持着焦点就先停放: 收起时系统会清掉焦点, 全局兜底把它塞给首个标签
         if (view.hasFocus()) parkFocus()
         view.visibility = INVISIBLE
         view.translationX = 0f
+        view.clipBounds = null
     }
 
     /**
