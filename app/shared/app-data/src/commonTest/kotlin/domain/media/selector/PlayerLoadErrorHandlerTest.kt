@@ -470,6 +470,48 @@ class PlayerLoadErrorHandlerTest {
             assertEquals(replacement.mediaId, selector.selected.value?.mediaId)
         }
 
+    @Test
+    fun `player error keeps waiting for a resumed source whose earlier results were all that remained`() =
+        runFetchMediaSelectorTestSuite {
+            initSubject("test")
+            val (_, session, sources) = configureFetchSession {
+                object {
+                    val remembered by web { tier = 0 }
+
+                    // 层级够不上「立即」档: 放开重查的那一刻 (旧结果还没清空) 也不会被选上
+                    val other by web { tier = 1 }
+
+                    // 一直在查的高层级源
+                    val pending by web { tier = 0 }
+                }
+            }
+            val failed = media(kind = WEB, subjectName = initApi.subjectName)
+            val replacement = media(kind = WEB, subjectName = initApi.subjectName)
+            sources.other.emitEarly(replacement)
+            sources.remembered.complete(failed)
+            testScope().runCurrent()
+            selector.select(selector.filteredCandidatesMedia.first().single { it.mediaId == failed.mediaId })
+            // 选定后还在查的源被暂停, 暂停前交出的资源还在候选里
+            val rememberedId = sources.remembered.instance.mediaSourceId
+            session.pauseSearching(keep = { it.mediaSourceId == rememberedId })
+            testScope().runCurrent()
+            assertTrue(selector.filteredCandidatesMedia.first().any { it.mediaId == replacement.mediaId })
+
+            val handler = PlayerLoadErrorHandler(getPreferKind = { WEB }, getSourceTiers = { preferenceApi.sourceTiers!! })
+            val job = testScope().launch { handler.handleError(session, selector) }
+            // 换源时放开被暂停的源从头重查, 之前交出的随之清空; 过了快速换源的一秒它还没交出结果, 换源照样等它
+            testScope().advanceTimeBy(3.seconds)
+            testScope().runCurrent()
+            assertEquals(2, sources.other.fetchCount)
+            assertFalse(job.isCompleted)
+            assertEquals(failed.mediaId, selector.selected.value?.mediaId)
+
+            sources.other.complete(replacement)
+            testScope().runCurrent()
+            assertTrue(job.isCompleted)
+            assertEquals(replacement.mediaId, selector.selected.value?.mediaId)
+        }
+
     context(scope: TestScope)
     private fun testScope(): TestScope = implicit()
 }
