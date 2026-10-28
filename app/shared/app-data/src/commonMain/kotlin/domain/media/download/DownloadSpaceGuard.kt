@@ -36,7 +36,7 @@ import kotlin.time.Duration.Companion.seconds
  *
  * 下载不会因为空间不够自己停下, 会一直写到分区只剩几百 KB. 那时系统和别的应用写不进数据库, 会被判定损坏而删掉
  * (电视的节目数据库就这样没过), 删缓存的记录也写不进去, 重启后被删的缓存又回来. 所以剩余空间低于 [lowSpaceBytes]
- * 就先全部停下, 由用户腾出空间后再继续; 空间仍不够时继续, 会再停下并提示.
+ * 就先全部停下 (正在合并分段的除外, 见 [isMerging]), 由用户腾出空间后再继续; 空间仍不够时继续, 会再停下并提示.
  * 正在播放的 BT 视频本身也在写盘, 它不是下载记录, 这里不管.
  *
  * torrent 服务断开重连时, 有的下载读状态会一直等到服务回来 (或报错); 每个下载的读取与暂停都限时, 一次检查出错只记日志,
@@ -85,7 +85,7 @@ class DownloadSpaceGuard(
     }
 
     private suspend fun pauseRunning(downloads: List<MediaDownload>, location: String?, free: Long): Int {
-        val running = downloads.filter { stateOf(it) == MediaCacheState.IN_PROGRESS }
+        val running = downloads.filter { stateOf(it) == MediaCacheState.IN_PROGRESS && !isMerging(it) }
         if (running.isEmpty()) return 0
         logger.warn { "Only ${free.bytes} left on location ${location ?: "internal"}, pausing ${running.size} downloads" }
         for (download in running) {
@@ -111,6 +111,19 @@ class DownloadSpaceGuard(
     } catch (e: Exception) {
         logger.warn { "Failed to read the state of download ${download.id}: $e" }
         null
+    }
+
+    /**
+     * 已经下完、正在把分段合成一个文件的不停: 合完分段就删, 占的空间回到合并前; 这时停下, 停的只是记录
+     * (拼接不会中途停), 合好的文件与分段两份都占着, 继续时还要再合一遍. 读不出来时当没在合并.
+     */
+    private suspend fun isMerging(download: MediaDownload): Boolean = try {
+        withTimeoutOrNull(STATE_TIMEOUT) { download.cache.isMerging.first() } == true
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        logger.warn { "Failed to read whether download ${download.id} is merging: $e" }
+        false
     }
 
     /** 因空间不足暂停了 [location] 这个位置上的 [paused] 个下载, 那个盘当时还剩 [freeBytes] 字节. */
