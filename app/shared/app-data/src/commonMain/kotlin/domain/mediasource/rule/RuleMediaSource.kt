@@ -408,10 +408,13 @@ class RuleMediaSource(
     }
 
     /**
-     * 最近搜过、什么都没搜到的名字 → 搜的时刻. 搜索缓存只存搜到了条目的; 不记这个的话, 站点上没有这部番时每换一集都把所有名字重搜一遍,
-     * 请求多了会被站点当成采集拉黑 (见 RuleSiteBlocks). 与搜到时的缓存留一样久 ([RuleConfig.searchCacheTtlMillis]).
+     * 最近给哪一部搜过、什么都没搜到的名字 (条目 id 与名字) → 搜的时刻. 搜索缓存只存搜到了条目的; 不记这个的话, 站点上没有这部番时
+     * 每换一集都把所有名字重搜一遍, 请求多了会被站点当成采集拉黑 (见 RuleSiteBlocks). 与搜到时的缓存留一样久 ([RuleConfig.searchCacheTtlMillis]).
+     *
+     * 「没搜到」是认部、开页之后的结果, 只对这一部算数: 第二季拿系列名搜, 站点只有第一季的页被排除, 换去看第一季时同一个系列名照样要搜.
+     * 有条目页没取到 (网络出错) 的那一轮不记, 下次照常重搜.
      */
-    private val recentlyEmpty = HashMap<String, Long>()
+    private val recentlyEmpty = HashMap<Pair<Int?, String>, Long>()
     private val recentlyEmptyLock = SynchronizedObject()
 
     private suspend fun searchOnlineUnlessRecentlyEmpty(
@@ -421,20 +424,23 @@ class RuleMediaSource(
         subjectId: Int?,
         scope: KeywordSearchScope?,
     ): List<DefaultMedia> {
-        val name = query.subjectName
+        val key = subjectId to query.subjectName
         val now = currentTimeMillis()
-        val searchedAt = synchronized(recentlyEmptyLock) { recentlyEmpty[name] }
+        val searchedAt = synchronized(recentlyEmptyLock) { recentlyEmpty[key] }
         if (searchedAt != null && now - searchedAt < rule.searchCacheTtlMillis) return emptyList()
-        val media = try {
+        val result = try {
             searchOnline(query, keyword, plan, subjectId, scope)
         } catch (e: RuleServerErrorException) {
             // 站点出错时照常换下一个关键词, 但不记成「搜过、没搜到」(站点回应的记忆也没记下这次)
             logger.info { "RuleMediaSource '$mediaSourceId': search '$keyword' failed: ${e.message}" }
             return emptyList()
         }
-        if (media.isEmpty()) synchronized(recentlyEmptyLock) { recentlyEmpty[name] = now }
-        return media
+        if (result.media.isEmpty() && result.allPagesLoaded) synchronized(recentlyEmptyLock) { recentlyEmpty[key] = now }
+        return result.media
     }
+
+    /** 搜一个关键词的结果; [allPagesLoaded] 为 false 时有条目页没取到 (出错), 「没搜到」不作数. */
+    private class OnlineSearchResult(val media: List<DefaultMedia>, val allPagesLoaded: Boolean)
 
     /**
      * 向站点搜 [keyword] (搜索计划改写好的词), 打开可能是这一部的条目 ([SubjectSearchPlan.pagesToOpen], 最多 [RuleConfig.maxSubjects] 个).
@@ -446,7 +452,7 @@ class RuleMediaSource(
         plan: SubjectSearchPlan,
         subjectId: Int?,
         scope: KeywordSearchScope?,
-    ): List<DefaultMedia> {
+    ): OnlineSearchResult {
         val ttl = rule.searchCacheTtlMillis.milliseconds
         val subjects = repository.siteMemory.searchResults(mediaSourceId, keyword, ttl) {
             delayUntilNextAllowedSearch()
@@ -480,8 +486,14 @@ class RuleMediaSource(
                             logger.warn(e) { "RuleMediaSource '$mediaSourceId': failed to load subject page ${subject.fullUrl}" }
                             null
                         }?.let { episodes ->
-                                val selected = if (episodes.isEmpty()) emptyList()
-                                else selectorEngine.selectFilteredMedia(episodes, matchConfig, query, mediaSourceId, subject.name)
+                                if (episodes.isEmpty()) return@let episodes to emptyList()
+                                // 开完一页就写进搜索缓存, 再交出这一页的资源: 交出去的被选中后搜索可能马上被暂停 (取消),
+                                // 等全部页开完再写就写不上了, 下一集也就用不上这一页的缓存
+                                repository.addCache(
+                                    subjectId, mediaSourceId, query.subjectName, subject, episodes,
+                                    sourceCacheTtl = rule.searchCacheTtlMillis.milliseconds,
+                                )
+                                val selected = selectorEngine.selectFilteredMedia(episodes, matchConfig, query, mediaSourceId, subject.name)
                                 if (selected.isNotEmpty()) scope?.emitEarly(selected)
                                 episodes to selected
                             }
@@ -491,15 +503,11 @@ class RuleMediaSource(
                 }
             }.awaitAll()
         }
-        return buildList {
+        val media = buildList {
             for ((subject, loaded) in ordered.zip(pages)) {
                 val (episodes, selected) = loaded ?: continue
                 logger.info { "RuleMediaSource '$mediaSourceId': ${subject.fullUrl} -> ${episodes.size} episodes" }
                 if (episodes.isEmpty()) continue
-                repository.addCache(
-                    subjectId, mediaSourceId, query.subjectName, subject, episodes,
-                    sourceCacheTtl = rule.searchCacheTtlMillis.milliseconds,
-                )
                 // 这一页没有要的那一集时也留一条这个条目的资源, 关键词链靠它判断这个关键词搜到了名字对得上的条目
                 addAll(
                     selected.ifEmpty {
@@ -509,6 +517,7 @@ class RuleMediaSource(
                 )
             }
         }
+        return OnlineSearchResult(media, allPagesLoaded = pages.none { it == null })
     }
 
     private suspend fun episodesOf(subjectUrl: String): List<WebSearchEpisodeInfo> =
