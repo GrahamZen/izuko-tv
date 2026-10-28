@@ -658,7 +658,6 @@
     <string name="settings_storage_media_library">Library</string>
     <string name="settings_storage_media_library_description">Finished downloads move to an Izuko folder at the root of the drive they were saved on, sorted by show and episode, and you can open them on a computer too. The library is outside the app’s own folders: uninstalling the app or clearing its data doesn’t delete it. Needs the All files access permission</string>
     <string name="settings_storage_media_library_revoked">All files access is off, so the library can’t be used for now. Turn the permission back on to restore it</string>
-    <string name="settings_storage_media_library_unsupported">This device runs Android 10 or earlier, which doesn’t support the library</string>
     <string name="settings_storage_media_library_confirm_text">The library is outside the app’s own folders, so uninstalling the app or clearing its data doesn’t delete it. It needs All files access: if that permission is turned off, the library can’t be used until it’s turned back on. After reinstalling the app, turn the permission on again.</string>
     <string name="settings_storage_media_library_grant_app">Allow this app to manage all files on the system page; back in the app, turning on the library continues</string>
     <string name="settings_storage_media_library_grant_list">Find this app in the list and allow it; back in the app, turning on the library continues</string>
@@ -673,6 +672,7 @@
     <string name="settings_storage_delete_cache_when_done_library_confirm">Turn on anyway</string>
     <string name="settings_storage_where">Where downloads go</string>
     <string name="settings_storage_where_description">Which drive downloads are saved on, and whether finished ones go into the library. Press OK to change it; existing downloads can move along</string>
+    <string name="settings_storage_where_description_app_only">Which drive downloads are saved on. Press OK to change it; existing downloads can move along</string>
     <string name="settings_storage_where_value">%1$s · %2$s</string>
     <string name="settings_storage_media_library_revoked_title">Library unavailable</string>
     <string name="settings_storage_media_library_regrant">Allow again</string>
@@ -683,6 +683,7 @@
     <string name="storage_guide_step_existing">Existing</string>
     <string name="storage_guide_drive_title">Which drive downloads go to</string>
     <string name="storage_guide_drive_description">New downloads are saved here; with the library on, the library is on this drive too.</string>
+    <string name="storage_guide_drive_description_app_only">New downloads are saved here.</string>
     <string name="storage_guide_drive_has">%1$d downloads · %2$s</string>
     <string name="storage_guide_drive_empty">No downloads yet</string>
     <string name="storage_guide_mode_title">Where finished downloads go</string>
@@ -716,6 +717,7 @@
     <string name="storage_guide_done_title">Confirm</string>
     <string name="storage_guide_done_description">Takes effect when you press Done.</string>
     <string name="storage_guide_done_where">Downloads: %1$s · %2$s</string>
+    <string name="storage_guide_done_where_drive">Downloads: %1$s</string>
     <string name="storage_guide_done_move">Moving %1$d (%2$s) in the background; the action panel shows the progress</string>
     <string name="storage_guide_done_keep_existing">Existing downloads stay where they are</string>
     <string name="storage_guide_done_nothing_to_move">Nothing to move</string>
