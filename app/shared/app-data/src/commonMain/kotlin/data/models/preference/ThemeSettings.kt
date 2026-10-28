@@ -23,26 +23,6 @@ enum class DarkMode {
 }
 
 /**
- * TV 新番时间表的版式. 三版都留着, 设置里可选 —— 改版换掉的东西未必人人都想要
- * (用户 2026-09-18)。
- *
- * 旧的布尔 `tvImmersiveSchedule` 已撤: 存储层是 `ignoreUnknownKeys = true` (见 DataStoreMP),
- * 旧配置里多出来的那个字段会被忽略, 不会读崩; 代价是原先关掉沉浸式的人会回到默认版式,
- * 再选一次即可。
- */
-@Serializable
-enum class TvScheduleLayout {
-    /** 上游原布局: 15 天并排的纵向列表. */
-    Upstream,
-
-    /** 日期胶囊行 + 海报墙 (同追番页的卡片墙, 原生视图; 默认). 存储名沿用 2026-09-13 之前的竖版卡片网格. */
-    Grid,
-
-    /** 左侧焦点详情大图大字 + 右侧单列时间线. */
-    Timeline,
-}
-
-/**
  * TV 探索页的风格 (设置「探索页风格」), 见 [ThemeSettings.tvExploreLayout]. 平板触屏一律是海报墙.
  */
 @Serializable
@@ -326,8 +306,6 @@ data class ThemeSettings(
      * @since 1.0.4
      */
     val tvPosterConfirm: TvPosterConfirmAction = TvPosterConfirmAction.Hero,
-    /** TV: 新番时间表用哪一版版式, 见 [TvScheduleLayout]. */
-    val tvScheduleLayout: TvScheduleLayout = TvScheduleLayout.Grid,
     /**
      * TV: 追番页顶部那排收藏分类标签的先后顺序 (想看 / 在看 / 搁置 / 看过 / 抛弃).
      *
