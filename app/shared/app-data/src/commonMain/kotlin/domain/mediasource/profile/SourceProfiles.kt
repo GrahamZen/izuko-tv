@@ -128,6 +128,15 @@ object SourceProfiles {
         changes.update { it + 1 }
     }
 
+    /**
+     * 这个源的资源解析到要转去 WebView 嗅探时改选了别的资源 (见 `WebViewDeferral`): 记一条「要嗅探」, 不算播放也不算失败.
+     * 之后选源就把它当要嗅探的源兜底 (见 [webViewUsage]).
+     */
+    fun recordWebViewDeferred(mediaSourceId: String, now: Long) {
+        pendingWebView.update { it - mediaSourceId }
+        record(mediaSourceId, SourceObservation(at = now, ok = true, webView = true, deferred = true))
+    }
+
     fun recordSearch(mediaSourceId: String, observation: SearchObservation) {
         searches.update { it + (mediaSourceId to (it[mediaSourceId].orEmpty() + observation).takeLast(KEEP)) }
         changes.update { it + 1 }
@@ -164,14 +173,16 @@ object SourceProfiles {
         return if (marks.isEmpty()) null else marks.count { it } * 2 > marks.size
     }
 
-    internal fun summarize(all: List<SourceObservation>, searchList: List<SearchObservation> = emptyList()): SourceProfileSummary? {
-        if (all.isEmpty() && searchList.isEmpty()) return null
+    internal fun summarize(observations: List<SourceObservation>, searchList: List<SearchObservation> = emptyList()): SourceProfileSummary? {
+        if (observations.isEmpty() && searchList.isEmpty()) return null
+        // 改选掉的那几次只算「要嗅探」, 其余各项只看真播过、测过的
+        val webView = usesWebView(observations)
+        val all = observations.filter { !it.deferred }
         val video = all.lastOrNull { it.height != null }
         val kbps = all.mapNotNull { it.kbps }.takeLast(RECENT).sorted().let { it.getOrNull(it.size / 2) }
         val startup = all.filter { it.ok && !it.test }.mapNotNull { it.startupMillis }.takeLast(RECENT).sorted().let { it.getOrNull(it.size / 2) }
         val hls = all.filter { it.adSegments != null }
         val adPlays = hls.count { (it.adSegments ?: 0) > 0 }
-        val webView = usesWebView(all)
         val failures = all.count { !it.ok }
         val searchMillis = searchList.filter { it.outcome == SearchObservation.Outcome.OK }.map { it.millis }
             .takeLast(RECENT).sorted().let { it.getOrNull(it.size / 2) }
@@ -226,6 +237,8 @@ data class SourceObservation(
     val reason: String? = null,
     /** 控制台「深度测试」测出来的, 不是真实播放. */
     val test: Boolean = false,
+    /** 解析到要嗅探时改选了别的资源, 没有播 ([SourceProfiles.recordWebViewDeferred]): 只记 [webView]. */
+    val deferred: Boolean = false,
 )
 
 /** 一次搜索 (播放页查资源时每个源一条): 用时与结果, 来自查询状态, 不多发请求. */
