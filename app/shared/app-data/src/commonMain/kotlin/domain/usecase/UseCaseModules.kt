@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.first
 import me.him188.ani.app.data.network.TmdbSubjectMapRepository
 import me.him188.ani.app.data.repository.episode.EpisodeCollectionRepository
 import me.him188.ani.app.data.repository.episode.EpisodeSubjectRepository
+import me.him188.ani.app.data.repository.media.SelectorMediaSourceEpisodeCacheRepository
 import me.him188.ani.app.data.repository.subject.GetEpisodeTypeFiltersUseCase
 import me.him188.ani.app.data.repository.subject.GetEpisodeTypeFiltersUseCaseImpl
 import me.him188.ani.app.data.repository.subject.SetSubjectCollectionTypeOrDeleteUseCase
@@ -146,7 +147,11 @@ fun KoinApplication.useCaseModules() = module {
         val instances = get<MediaSourceManager>().allInstances
         // 按顺序认领资源: 网盘的资源也是在线类, 要排在在线源前面
         EpisodeContinuations(
-            listOf(DriveEpisodeContinuation(get(), instances), TorrentContinuation(instances), WebSourceContinuation(instances)),
+            listOf(
+                DriveEpisodeContinuation(get(), instances),
+                TorrentContinuation(instances),
+                WebSourceContinuation(instances, subjectUrlOf = get<SelectorMediaSourceEpisodeCacheRepository>()::subjectUrlOf),
+            ),
         )
     }
     single<PlaybackLineageSelection> { PlaybackLineageSelection(get(), get(), get()) }

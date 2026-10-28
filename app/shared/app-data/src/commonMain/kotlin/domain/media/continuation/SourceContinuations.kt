@@ -14,9 +14,12 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.toList
 import me.him188.ani.app.domain.mediasource.instance.MediaSourceInstance
+import me.him188.ani.app.domain.mediasource.web.SubjectPageMediaSource
+import me.him188.ani.app.platform.DevSwitches
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import me.him188.ani.datasources.api.source.MediaSourceKind
+import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 import kotlin.coroutines.cancellation.CancellationException
@@ -24,14 +27,31 @@ import kotlin.coroutines.cancellation.CancellationException
 /**
  * 在线源的资源 (网页抓取、规则源、JSON 接口、媒体服务器等; 网盘由 [me.him188.ani.app.domain.mediasource.clouddrive.DriveEpisodeContinuation] 管):
  * 顺着同一个源、站点上同一个条目、同一条线路找 ([WebSourceLineage]). 排在网盘后面, 网盘资源先被它认领.
+ * 线索记着条目页地址时 (调试开关 `lineageOpenPage`), 下一集直接打开这一页找 ([SubjectPageMediaSource]), 不等这个源整轮搜完.
  */
-class WebSourceContinuation(private val instances: Flow<List<MediaSourceInstance>>) : EpisodeContinuation {
+class WebSourceContinuation(
+    private val instances: Flow<List<MediaSourceInstance>>,
+    /** 某个源的一集 (播放地址) 出自哪个条目页 (搜索缓存里查, 见 SelectorMediaSourceEpisodeCacheRepository.subjectUrlOf) */
+    private val subjectUrlOf: suspend (mediaSourceId: String, playUrl: String) -> String? = { _, _ -> null },
+) : EpisodeContinuation {
     override fun owns(media: Media): Boolean = media.kind == MediaSourceKind.WEB
 
     override suspend fun lineageOf(media: Media): PlaybackLineage? {
         val subjectName = media.properties.subjectName?.takeIf { it.isNotBlank() } ?: return null
-        return WebSourceLineage(media.mediaSourceId, subjectName, media.properties.alliance)
+        return WebSourceLineage(
+            media.mediaSourceId, subjectName, media.properties.alliance,
+            subjectUrl = media.originalUrl.takeIf { it.isNotEmpty() }?.let { subjectUrlOf(media.mediaSourceId, it) },
+        )
     }
+
+    override suspend fun updated(current: PlaybackLineage, playing: Media): PlaybackLineage? {
+        if (current !is WebSourceLineage || !continues(current, playing)) return null
+        val playingLineage = lineageOf(playing) as? WebSourceLineage ?: return null
+        return playingLineage.takeIf { it.subjectUrl != null && it.subjectUrl != current.subjectUrl }
+    }
+
+    override fun isQuickToResolve(lineage: PlaybackLineage): Boolean =
+        lineage is WebSourceLineage && lineage.subjectUrl != null && DevSwitches.lineageOpenPage.value
 
     override fun continues(lineage: PlaybackLineage, candidate: Media): Boolean =
         lineage is WebSourceLineage && candidate.kind == MediaSourceKind.WEB &&
@@ -39,8 +59,31 @@ class WebSourceContinuation(private val instances: Flow<List<MediaSourceInstance
                 candidate.properties.subjectName == lineage.subjectName &&
                 candidate.properties.alliance == lineage.channel
 
-    override suspend fun resolve(lineage: PlaybackLineage, request: MediaFetchRequest): LineageResolution =
-        if (lineage is WebSourceLineage) refetch(instances, lineage, request, ::continues) else LineageResolution.NotFound
+    override suspend fun resolve(lineage: PlaybackLineage, request: MediaFetchRequest): LineageResolution {
+        if (lineage !is WebSourceLineage) return LineageResolution.NotFound
+        // 选中的条目页一般不会变 (连载中的番页上多出新的集): 直接打开记下的那一页找这一集.
+        // 页上没有这一集 (新的一集还没更新进来) 时这个源整轮搜多半还是这一页, 不再搜; 页打不开时交给查询会话里这个源的结果
+        return if (isQuickToResolve(lineage)) openSubjectPage(lineage, request) else refetch(instances, lineage, request, ::continues)
+    }
+
+    private suspend fun openSubjectPage(lineage: WebSourceLineage, request: MediaFetchRequest): LineageResolution {
+        val subjectUrl = lineage.subjectUrl ?: return LineageResolution.Unavailable
+        val source = instances.first().firstOrNull { it.isEnabled && it.mediaSourceId == lineage.mediaSourceId }?.source as? SubjectPageMediaSource
+            ?: return LineageResolution.Unavailable
+        val media = try {
+            source.mediaOnSubjectPage(subjectUrl, lineage.subjectName, request)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.warn(e) { "Opening the subject page $subjectUrl of ${lineage.mediaSourceId} for the playback lineage failed" }
+            return LineageResolution.Unavailable
+        }
+        val found = media.firstOrNull { continues(lineage, it) && it.coversEpisodeOf(request) } ?: run {
+            logger.info { "Subject page $subjectUrl of ${lineage.mediaSourceId} has no episode ${request.episodeSort} on the lineage" }
+            return LineageResolution.NotFound
+        }
+        return LineageResolution.Found(found)
+    }
 }
 
 /**

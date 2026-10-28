@@ -347,6 +347,7 @@ private fun KoinApplication.otherModules(
     single<VideoEnhancementFallbackSetting>(createdAtStart = true) {
         VideoEnhancementFallbackSetting(get(), get()).also { it.start(coroutineScope) }
     }
+    single<SearchConcurrencySetting>(createdAtStart = true) { SearchConcurrencySetting(get(), get()).also { it.start(coroutineScope) } }
     // 加密直连的配置与地址; 连接层 BangumiEchTransport 由支持的平台的模块提供 (安卓: ConscryptEchTransport)
     single<BangumiEchConfig> {
         // DoH 清单在第一次拉配置时才建 (建时就去仓库拉): 用不到加密直连的人不为它多发请求

@@ -116,6 +116,22 @@ class KeywordSearchChainTest {
     }
 
     @Test
+    fun `a page handed over early is one batch and the rest of the keyword is another`() = runTest {
+        val source = keywordSearchChain(
+            primary = listOf("A"), fallback = emptyList(), remembered = emptyList(),
+            requestInterval = 1.seconds,
+            matches = matches("A"),
+            emitPagesEarly = true,
+        ) {
+            emitEarly(listOf(media("A"), media("A-line2")))
+            listOf(media("A"), media("A-line2"), media("A2"))
+        }
+
+        assertEquals(listOf(listOf("A", "A-line2"), listOf("A2")), source.batches.toList().map { batch -> batch.map { it.properties.subjectName } })
+        assertEquals(listOf("A", "A-line2", "A2"), source.results.toList().map { it.properties.subjectName })
+    }
+
+    @Test
     fun `online searches are spaced by the interval while cache hits add no delay`() = runTest {
         val recorder = Recorder(this)
         val source = keywordSearchChain(

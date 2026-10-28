@@ -16,9 +16,11 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import me.him188.ani.app.data.models.preference.BangumiRouteKind
+import me.him188.ani.app.domain.media.fetch.SearchConcurrency
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 
@@ -36,6 +38,11 @@ sealed interface SettingAdjustment {
     /** 告知: 播放时搜索把画面拖卡了, 「完整搜索」已改成只手动, 这一集也停了搜索. */
     data object FullSearchStutter : SettingAdjustment {
         override val key: String get() = "full-search-stutter"
+    }
+
+    /** 告知: 搜索吃不消 ([reason]), 「同时搜索的数据源」已往下调成最多 [limit] 个 (见 `SearchConcurrency`). */
+    data class SearchConcurrencyReduced(val limit: Int, val reason: SearchConcurrency.Reason) : SettingAdjustment {
+        override val key: String get() = "search-concurrency-reduced"
     }
 
     /** 告知: 拖动预览换输出弄坏了这台设备的解码器 ([afterCrash] = 上次在小画面预览时闪退), 已改成画在全屏上. */
@@ -104,10 +111,17 @@ class SettingAdjustments(private val scope: CoroutineScope) {
     /** 这次运行里选过「暂不」的 [SettingAdjustment.key]. */
     private val declined = MutableStateFlow(emptySet<String>())
 
-    /** 调用方已经改好了设置, 告知用户. */
+    /** 调用方已经改好了设置, 告知用户. 界面还没起来 (启动时就认出要改的) 时等它来收再发. */
     fun notify(adjustment: SettingAdjustment) {
         logger.info { "[SettingAdjust] ${adjustment.key}: changed, notifying" }
-        _notices.tryEmit(adjustment)
+        if (_notices.subscriptionCount.value > 0) {
+            _notices.tryEmit(adjustment)
+        } else {
+            scope.launch {
+                _notices.subscriptionCount.first { it > 0 }
+                _notices.emit(adjustment)
+            }
+        }
     }
 
     /** 想改, 先问用户. 见本类说明. */

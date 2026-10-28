@@ -159,4 +159,42 @@ object DevSwitches {
         listOf("正式", "本机 127.0.0.1:8787"),
         description = "本机: 电脑上在 tools/ticket-worker 跑 wrangler dev --env dev (假 GitHub), 再 adb reverse tcp:8787 tcp:8787",
     )
+
+    // 开播与搜索的可调项; 默认值是真机上量过选定的取值. 存在设备上, 冷启动也生效
+
+    /** 记住的源 (自动选源的记忆源阶段只等它) 在同时查的名额里排到最前 */
+    val searchMemoryFirst = toggle("searchMemoryFirst", "开播: 记忆源插队", persistent = true)
+
+    /** 记忆源阶段最多等几秒, 到了就放开别的源; 0 为一直等 */
+    val searchMemoryWaitCap = number("searchMemoryWaitCap", "开播: 记忆源最多等几秒 (0 = 一直等)", default = 0f, range = 0f..60f, persistent = true)
+
+    /** 数据源查询用低优先级线程 (见 SearchDispatchers), 重启后生效 */
+    val searchLowPriority = toggle("searchLowPriority", "开播: 数据源查询用低优先级线程 (重启生效)", default = true, persistent = true)
+
+    /** 各源的查询用自己的通道, 同一组线程先给开查先后里靠前的源 (见 SearchDispatchers.forSource) */
+    val searchPrioritized = toggle("searchPrioritized", "开播: 搜索线程按源的先后取任务", default = true, persistent = true)
+
+    /** 名额空着时一批源同时来查, 先收齐这么多毫秒再按优先级发名额 (见 MediaSourceSearchLimiter); 0 为来一个发一个 */
+    val searchStartWindowMs = number("searchStartWindowMs", "开播: 先收齐一批再按优先级发名额 (毫秒, 0 = 先到先得)", default = 150f, range = 0f..1000f, persistent = true)
+
+    /** 在线源的播放线索记着条目页时, 下一集直接打开这一页找, 不等这个源整轮搜完 (见 WebSourceContinuation) */
+    val lineageOpenPage = toggle("lineageOpenPage", "开播: 网页源线索直接开条目页", default = true, persistent = true)
+
+    /** 自动选定资源时就暂停还没查完的数据源, 不等视频播起来 (见 PauseMediaFetchWhilePlayingExtension) */
+    val pauseSearchOnSelect = toggle("pauseSearchOnSelect", "开播: 选定资源就暂停其他搜索", default = true, persistent = true)
+
+    /** 网页抓取源一个关键词搜到几个条目页时同时开两页 (同规则源), 关时一页页开 (见 SelectorMediaSource) */
+    val selectorPagesConcurrent = toggle("selectorPagesConcurrent", "开播: 网页抓取源同时开两页", default = true, persistent = true)
+
+    /** 播放线索的数据源还在查时, 它已经交出的里有线索上的资源就选, 关时等它查完 (见 PlaybackLineageSelection) */
+    val lineageWorkingResults = toggle("lineageWorkingResults", "开播: 线索源边查边找", default = true, persistent = true)
+
+    /** 各源开查先后与排队按选源时它能到的最好层级 (线路层级、画像降级), 关时按源自身的层级 (见 SourceStartOrder.startTierOf) */
+    val searchStartByBestTier = toggle("searchStartByBestTier", "开播: 开查先后按线路最好层级", default = true, persistent = true)
+
+    /**
+     * 开播诊断: 记开播时间线 (控制台 `api/debug/timeline`, 见 PlayTimeline)、自动选源每一步在等什么、共用客户端与播放请求的各段耗时;
+     * 主线程卡住超过 4 秒时把栈打进日志 (重启后生效). 关着时这些都不记.
+     */
+    val playDiagnostics = toggle("playDiagnostics", "开播诊断: 时间线、选源追踪、请求耗时与主线程卡顿 (卡顿监视重启生效)", persistent = true)
 }

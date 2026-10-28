@@ -145,6 +145,7 @@ import me.him188.ani.app.domain.player.extension.RememberPlayProgressExtension
 import me.him188.ani.app.domain.player.extension.SaveMediaPreferenceExtension
 import me.him188.ani.app.domain.player.extension.PlaybackFailureReportExtension
 import me.him188.ani.app.domain.player.extension.PlaybackPerfTraceExtension
+import me.him188.ani.app.domain.player.extension.PlayTimelineExtension
 import me.him188.ani.app.domain.player.extension.SeekPreviewDecoderFaultExtension
 import me.him188.ani.app.domain.player.extension.SourceProfileExtension
 import me.him188.ani.app.domain.player.extension.SwitchMediaOnPlayerErrorExtension
@@ -474,6 +475,7 @@ open class EpisodeViewModel(
             EpisodeExitAnalyticsExtension,
             MediaFetchAnalyticsExtension,
             PlaybackPerfTraceExtension,
+            PlayTimelineExtension,
             PlaybackSpeedExtension.Factory(playbackSpeedFlow),
             RememberPlayProgressExtension,
             MarkAsWatchedExtension,

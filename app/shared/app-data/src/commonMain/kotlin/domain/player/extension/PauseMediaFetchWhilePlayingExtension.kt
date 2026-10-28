@@ -10,25 +10,32 @@
 package me.him188.ani.app.domain.player.extension
 
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.merge
 import me.him188.ani.app.domain.episode.EpisodeSession
 import me.him188.ani.app.domain.media.fetch.MediaFetchSession
 import me.him188.ani.app.domain.media.fetch.MediaSourceFetchResult
 import me.him188.ani.app.domain.media.fetch.MediaSourceFetchState
 import me.him188.ani.app.domain.media.fetch.pauseSearching
 import me.him188.ani.app.domain.media.selector.MediaAutoSelector
+import me.him188.ani.app.domain.media.selector.SelectOrigin
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveAddedShareMediaSource
+import me.him188.ani.app.platform.DevSwitches
 import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import org.koin.core.Koin
 
 /**
- * 视频真正播起来 (时钟在走) 时, 暂停还没查完的数据源: 弱机上搜索和播放抢 CPU、网络与内存, 开播那一两分钟会卡.
+ * 自动选定资源时 (调试开关 `pauseSearchOnSelect`) 与视频真正播起来 (时钟在走) 时, 暂停还没查完的数据源:
+ * 搜索和播放抢 CPU、网络与内存, 拿播放地址、播放器缓冲那几秒跟着慢, 弱机上开播那一两分钟还会卡.
+ * 选中的资源播不起来时换源照常: 手上有别的资源就换, 没有了自动选源会放开被暂停的源重新查 (见 [MediaAutoSelector]).
  * 本地缓存与「我添加的分享」不暂停: 都很轻 (后者只读用户给这部番添加的那几个分享), 而且后者常在开播的同时刚加上分享、正要查.
- * 还没有资源播起来之前所有数据源照常同时查询.
+ * 还没选定资源之前所有数据源照常同时查询.
  *
- * 只认播放状态从没在播变成在播的那一刻: 换了查询会话 (如重新搜索) 重新挂上时视频已经在播, 不算开始播放.
+ * 播放只认状态从没在播变成在播的那一刻: 换了查询会话 (如重新搜索) 重新挂上时视频已经在播, 不算开始播放.
  *
  * [canPause] 返回 `false` 时不暂停: 选源面板开着 (开着期间一直查完), 或用户开了「完整搜索」.
  * [selectorOpened] 返回 `true` (这个查询会话里打开过选源面板) 时只暂停还没开始查的, 正在查的让它查完 (见 [pauseSearchingWhilePlaying]).
@@ -48,12 +55,17 @@ class PauseMediaFetchWhilePlayingExtension(
         backgroundTaskScope.launch("PauseMediaFetchWhilePlaying") {
             context.sessionFlow.flatMapLatest { it.fetchSelectFlow }.collectLatest { bundle ->
                 if (bundle == null) return@collectLatest
-                context.player.playbackStarts().collect {
+                merge(
+                    context.player.playbackStarts().map { "Playback started" },
+                    bundle.mediaSelector.events.onSelect
+                        .filter { it.origin == SelectOrigin.AUTOMATIC && it.media != null && DevSwitches.pauseSearchOnSelect.value }
+                        .map { "Media selected automatically" },
+                ).collect { trigger ->
                     if (!canPause()) return@collect
                     val session = bundle.mediaFetchSession
                     val paused = session.pauseSearchingWhilePlaying(selectorOpened(session), keep = { keepsSearching(it) || keep(session, it) })
                     if (paused > 0) {
-                        logger.info { "Playback started, paused $paused media sources that were still searching" }
+                        logger.info { "$trigger, paused $paused media sources that were still searching" }
                     }
                 }
             }

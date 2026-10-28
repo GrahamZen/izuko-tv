@@ -89,6 +89,10 @@ constructor(
      */
     val fullSearchMode: FullSearchMode? = null,
     /**
+     * 「同时搜索的数据源」: 同时在查的数据源最多几个, 0 = 不限. 吃不消时应用会自动往下调一级并告知 (见 `SearchConcurrency`).
+     */
+    val searchConcurrency: Int = 0,
+    /**
      * 订阅更新时把这个订阅的数据源排回订阅里的顺序. 关闭 (默认) 时保留用户自己调过的顺序, 新加的源排在最后;
      * 数据源的配置照常随订阅更新, 启用 / 停用一直保留 (见 `MediaSourceSubscriptionUpdater`).
      */

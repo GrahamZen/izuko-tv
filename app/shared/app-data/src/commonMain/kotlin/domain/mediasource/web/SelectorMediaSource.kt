@@ -11,15 +11,18 @@
 package me.him188.ani.app.domain.mediasource.web
 
 import io.ktor.client.request.get
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import me.him188.ani.app.data.models.ApiFailure
 import me.him188.ani.app.data.models.fold
 import me.him188.ani.app.data.models.runApiRequest
 import me.him188.ani.app.data.repository.media.SelectorMediaSourceEpisodeCacheRepository
-import me.him188.ani.app.domain.media.fetch.wholeSubjectEpisodeSortsOrNull
+import me.him188.ani.app.domain.media.fetch.SearchDispatchers
 import me.him188.ani.app.domain.mediasource.KeywordSearchScope
 import me.him188.ani.app.domain.mediasource.MediaSourceEngineHelpers
 import me.him188.ani.app.domain.mediasource.codec.DefaultMediaSourceCodec
@@ -27,13 +30,14 @@ import me.him188.ani.app.domain.mediasource.codec.DontForgetToRegisterCodec
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceArguments
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceTier
 import me.him188.ani.app.domain.mediasource.keywordSearchChain
-import me.him188.ani.app.domain.mediasource.latestAiredEpisode
 import me.him188.ani.app.domain.mediasource.rememberedKeywords
 import me.him188.ani.app.domain.mediasource.search.SiteSearchMemory
+import me.him188.ani.app.domain.mediasource.search.SubjectMatch
 import me.him188.ani.app.domain.mediasource.search.SubjectSearchPlan
 import me.him188.ani.app.domain.mediasource.search.keywordStyle
 import me.him188.ani.app.domain.mediasource.web.captcha.SolveOutcome
 import me.him188.ani.app.domain.mediasource.web.captcha.WebSessionManager
+import me.him188.ani.app.platform.DevSwitches
 import me.him188.ani.datasources.api.DefaultMedia
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.matcher.WebVideo
@@ -43,7 +47,7 @@ import me.him188.ani.datasources.api.matcher.WebVideoMatcherContext
 import me.him188.ani.datasources.api.matcher.WebVideoMatcherProvider
 import me.him188.ani.datasources.api.matcher.WebViewConfig
 import me.him188.ani.datasources.api.paging.SizedSource
-import me.him188.ani.datasources.api.paging.map
+import me.him188.ani.app.domain.media.fetch.mapKeepingBatches
 import me.him188.ani.app.domain.mediasource.web.format.SelectedChannelEpisodes
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.paging.emptySizedSource
@@ -121,7 +125,7 @@ class SelectorMediaSource(
     override val kind: MediaSourceKind = MediaSourceKind.WEB,
     private val client: ScopedHttpClient,
     private val sessionManager: WebSessionManager,
-) : HttpMediaSource(), WebVideoMatcherProvider {
+) : HttpMediaSource(), WebVideoMatcherProvider, SubjectPageMediaSource {
     companion object {
         val FactoryId = FactoryId("web-selector")
 
@@ -133,6 +137,9 @@ class SelectorMediaSource(
          * 代价是这类条目切集时要换一个查询会话 (见 `servesEpisodeOf`), BT 源随之重新搜索.
          */
         const val MAX_WHOLE_SUBJECT_EPISODES = 300
+
+        /** 一个关键词搜到几个条目页时最多同时开几页 (同规则源; 站点的请求间隔只管搜索请求) */
+        private const val PAGE_CONCURRENCY = 2
 
         /**
          * [matcher] 对 WebView 配置的修改: 依次合并 [config] 已有的 cookies、[matchVideo] 中配置的 cookies 和 [captchaCookies];
@@ -317,6 +324,7 @@ class SelectorMediaSource(
         query: SelectorSearchQuery,
         mediaSourceId: String,
         subjectId: Int?,
+        plan: SubjectSearchPlan,
         scope: KeywordSearchScope?,
     ): List<DefaultMedia>? {
         // 请求普通剧集且按集号过滤时, 只有集号相符的行 (和集号不是纯数字的行) 可能出结果,
@@ -363,6 +371,8 @@ class SelectorMediaSource(
         }
         val media = buildList {
             for (cache in caches) {
+                // 写缓存时名字表可能还没读进来, 那时认不出的别的作品的页也开了: 按现在的认部再判一次, 在线搜也不会开它
+                if (plan.identify(cache.webSubjectInfo.name) == SubjectMatch.OTHER) continue
                 val episodes = cache.webEpisodeInfos.asEpisodesOf(query)
                 val fresh = freshPages?.contains(cache.webSubjectInfo.fullUrl)
                     ?: (episodes.findMatchingEpisodeOrNull(probe.episodeSort, probe.episodeEp, probe.episodeName) != null)
@@ -411,7 +421,7 @@ class SelectorMediaSource(
         subjectId: Int?,
         /** 每开完一个条目页就经它先交出这一页的资源 (见 [KeywordSearchScope.emitEarly]) */
         scope: KeywordSearchScope? = null,
-    ): List<DefaultMedia> = withContext(Dispatchers.Default) {
+    ): List<DefaultMedia> = withContext(SearchDispatchers.parsingContext()) {
         val searchUrl = buildSearchUrl(keyword)
         val originalSubjects = repository.siteMemory.searchResults(mediaSourceId, searchUrl, searchConfig.searchCacheTtl) {
             delayUntilNextAllowedSearch()
@@ -421,44 +431,26 @@ class SelectorMediaSource(
         val subjects = plan.pagesToOpen(originalSubjects, searchConfig.autoMatch.preferShorterName) { it.name }
         val probe = query.freshnessProbe ?: SelectorEpisodeProbe(query.episodeSort, query.episodeEp, query.episodeName)
 
-        var allPagesLoaded = true
-        val media = buildList {
-            for (subjectInfo in subjects) {
-                val episodes = try {
-                    repository.siteMemory.page(
-                        mediaSourceId, subjectInfo.fullUrl, searchConfig.searchCacheTtl,
-                        isFresh = { it.findMatchingEpisodeOrNull(probe.episodeSort, probe.episodeEp, probe.episodeName) != null },
-                    ) {
-                        fetchPageOrThrow(
-                            subjectInfo.fullUrl,
-                            PageExpectation.SubjectDetails(searchConfig, subjectInfo.fullUrl),
-                        )?.episodes
+        // 几页同时取 (最多 PAGE_CONCURRENCY 页, 同规则源; 开关关时一页页取), 每取完一页就先写缓存、交出这一页的资源; 返回的仍按搜索计划排的顺序
+        val gate = Semaphore(if (DevSwitches.selectorPagesConcurrent.value) PAGE_CONCURRENCY else 1)
+        val pages = coroutineScope {
+            subjects.map { subjectInfo ->
+                // 按搜索计划的顺序占名额再开: 同时在取的总是排在最前的几页
+                gate.acquire()
+                async {
+                    try {
+                        loadPage(searchConfig, query, subjectInfo, probe, mediaSourceId, subjectId, scope)
+                    } finally {
+                        gate.release()
                     }
-                } catch (e: BlockedException) {
-                    throw e
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    // 单个条目页的网络错误不终止整个搜索
-                    logger.warn(e) { "SelectorMediaSource '$mediaSourceId': failed to load subject page ${subjectInfo.fullUrl}" }
-                    null
                 }
-                if (episodes == null) {
-                    allPagesLoaded = false
-                    continue
-                }
-                repository.addCache(
-                    subjectId, mediaSourceId, query.subjectName, subjectInfo, episodes,
-                    sourceCacheTtl = searchConfig.searchCacheTtl,
-                )
-                val selected = selectFilteredMedia(
-                    episodes,
-                    searchConfig,
-                    query,
-                    mediaSourceId,
-                    subjectName = subjectInfo.name,
-                )
-                scope?.emitEarly(selected)
+            }.awaitAll()
+        }
+        // 这一轮要开的页都开成了, 之后读到的缓存才算完整 (见 searchFromCacheOrNull)
+        if (pages.none { it == null }) repository.markRoundComplete(subjectId, mediaSourceId, query.subjectName)
+        buildList {
+            for ((subjectInfo, loaded) in subjects.zip(pages)) {
+                val (episodes, selected) = loaded ?: continue
                 // 这一页没有要的那一集 (还没更新) 时也留一条这个条目的资源: 关键词链靠产出的资源判断这个关键词搜到了名字对得上的条目
                 // (见 searchChain), 一条都没有就会接着用别的关键词再搜. 这条集号对不上, 选源时照常被排除.
                 addAll(
@@ -468,9 +460,58 @@ class SelectorMediaSource(
                 )
             }
         }
-        // 这一轮要开的页都开成了, 之后读到的缓存才算完整 (见 searchFromCacheOrNull)
-        if (allPagesLoaded) repository.markRoundComplete(subjectId, mediaSourceId, query.subjectName)
-        media
+    }
+
+    /** 打开搜到的一个条目页: 写进搜索缓存, 交出这一页的资源 ([KeywordSearchScope.emitEarly]); 页面出错 (单个条目页的网络错误不终止整个搜索) 为 null. */
+    private suspend fun EngineType.loadPage(
+        searchConfig: SelectorSearchConfig,
+        query: SelectorSearchQuery,
+        subjectInfo: WebSearchSubjectInfo,
+        probe: SelectorEpisodeProbe,
+        mediaSourceId: String,
+        subjectId: Int?,
+        scope: KeywordSearchScope?,
+    ): Pair<List<WebSearchEpisodeInfo>, List<DefaultMedia>>? {
+        val episodes = try {
+            repository.siteMemory.page(
+                mediaSourceId, subjectInfo.fullUrl, searchConfig.searchCacheTtl,
+                isFresh = { it.findMatchingEpisodeOrNull(probe.episodeSort, probe.episodeEp, probe.episodeName) != null },
+            ) {
+                fetchPageOrThrow(
+                    subjectInfo.fullUrl,
+                    PageExpectation.SubjectDetails(searchConfig, subjectInfo.fullUrl),
+                )?.episodes
+            }
+        } catch (e: BlockedException) {
+            throw e
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.warn(e) { "SelectorMediaSource '$mediaSourceId': failed to load subject page ${subjectInfo.fullUrl}" }
+            null
+        } ?: return null
+        repository.addCache(
+            subjectId, mediaSourceId, query.subjectName, subjectInfo, episodes,
+            sourceCacheTtl = searchConfig.searchCacheTtl,
+        )
+        val selected = selectFilteredMedia(
+            episodes,
+            searchConfig,
+            query,
+            mediaSourceId,
+            subjectName = subjectInfo.name,
+        )
+        scope?.emitEarly(selected)
+        return episodes to selected
+    }
+
+    override suspend fun mediaOnSubjectPage(subjectUrl: String, subjectName: String, request: MediaFetchRequest): List<Media> {
+        if (!searchConfig.autoMatch.enabled || !isSupportedByPlatformPlayer()) return emptyList()
+        return withContext(SearchDispatchers.parsingContext()) {
+            val episodes = fetchPageOrThrow(subjectUrl, PageExpectation.SubjectDetails(searchConfig, subjectUrl))?.episodes
+            if (episodes.isNullOrEmpty()) emptyList()
+            else engine.selectFilteredMedia(episodes, searchConfig, request.selectorSearchQuery(subjectName), mediaSourceId, subjectName)
+        }
     }
 
     override suspend fun fetch(query: MediaFetchRequest): SizedSource<MediaMatch> {
@@ -480,23 +521,8 @@ class SelectorMediaSource(
         }
         if (!isSupportedByPlatformPlayer()) return emptySizedSource()
 
-        val allSubjectNames = query.subjectNames.toSet()
-        val freshnessProbe = query.latestAiredEpisode()?.let {
-            SelectorEpisodeProbe(episodeSort = it.sort, episodeEp = it.ep, episodeName = it.name)
-        }
         val subjectId = query.subjectId.toIntOrNull()
-        val subjectEpisodeSorts = query.wholeSubjectEpisodeSortsOrNull()
-        fun searchQuery(name: String) = SelectorSearchQuery(
-            subjectName = name,
-            episodeSort = query.episodeSort,
-            allSubjectNames = allSubjectNames,
-            episodeEp = query.episodeEp,
-            episodeName = query.episodeName,
-            freshnessProbe = freshnessProbe,
-            subjectEpisodeSorts = subjectEpisodeSorts,
-            subjectEpisodeCount = query.mainEpisodeCountOrNull(),
-            ovaSubject = query.isOvaSubject(),
-        )
+        fun searchQuery(name: String) = query.selectorSearchQuery(name)
 
         val plan = SubjectSearchPlan.of(query)
         val keywords = plan.keywords(searchConfig.autoMatch.keywordStyle(), mediaSourceId)
@@ -511,12 +537,12 @@ class SelectorMediaSource(
             // 搜索缓存: 上一次真实搜索已把条目页面的全部剧集写入缓存 (addCache).
             // 若缓存的剧集列表包含当前请求的剧集 (典型场景: 切集), 直接从缓存构建结果, 不发起任何网络请求.
             // 缓存按 TTL 过期, 也会在该条目手动重新查询时被清除.
-            engine.searchFromCacheOrNull(searchConfig, searchQuery, mediaSourceId, subjectId, scope = this@keywordSearchChain)
+            engine.searchFromCacheOrNull(searchConfig, searchQuery, mediaSourceId, subjectId, plan, scope = this@keywordSearchChain)
                 ?: run {
                     beforeOnlineSearch()
                     engine.searchOnline(searchConfig, searchQuery, keywords.keywordOf(name), plan, mediaSourceId, subjectId, scope = this@keywordSearchChain)
                 }
-        }.map { MediaMatch(it, MatchKind.FUZZY) }
+        }.mapKeepingBatches { MediaMatch(it, MatchKind.FUZZY) }
     }
 
     // region 浏览: 列表模式, 不做任何自动匹配

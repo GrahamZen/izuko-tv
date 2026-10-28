@@ -773,6 +773,9 @@
     <string name="tv_source_resume_source">继续查这个数据源</string>
     <string name="tv_source_paused_hint">开播后为了不卡画面暂停了，还没查完</string>
     <string name="tv_source_search_paused_for_stutter">播放时搜索让画面卡顿，「完整搜索」已改成「只手动」，可在设置里改回</string>
+    <string name="tv_source_search_concurrency_reduced_memory">内存不够，「同时搜索的数据源」已改成最多 %1$d 个，可在设置里改回</string>
+    <string name="tv_source_search_concurrency_reduced_stutter">播放时搜索让画面卡顿，「同时搜索的数据源」已改成最多 %1$d 个，可在设置里改回</string>
+    <string name="tv_source_search_concurrency_reduced_killed">上次搜索时内存不够、应用被系统关掉，「同时搜索的数据源」已改成最多 %1$d 个，可在设置里改回</string>
     <string name="tv_source_bt">BT 与缓存</string>
     <string name="tv_source_manual">手动查找</string>
     <string name="tv_source_failed">查询失败</string>
@@ -872,6 +875,10 @@
     <string name="settings_media_full_search_mode_always">始终</string>
     <string name="settings_media_full_search_mode_on_panel">打开选源面板时</string>
     <string name="settings_media_full_search_mode_manual">只手动</string>
+    <string name="settings_media_search_concurrency">同时搜索的数据源</string>
+    <string name="settings_media_search_concurrency_description">默认不限：每个数据源一开始就搜，找到得最快。内存不够、搜索让播放卡顿，或者搜索时应用被系统关掉时，会自动往下调一档并提示。</string>
+    <string name="settings_media_search_concurrency_unlimited">不限</string>
+    <string name="settings_media_search_concurrency_at_most">最多 %1$d 个</string>
     <string name="settings_media_source_subscription_updating">更新中 %1$d/%2$d</string>
     <string name="settings_media_source_test_progress">已完成 %1$d/%2$d · 失败 %3$d</string>
     <!-- 网盘 (设置 - 数据源), 网盘名与扫码用的 App 名来自网盘的协议 -->

@@ -118,6 +118,20 @@ interface WebSearchSessionCacheDao {
     )
 
     /**
+     * 某个数据源的一集 (播放地址 [playUrl]) 出自哪个条目页, 不论过没过期; 播放线索记下它, 下一集直接打开这一页.
+     */
+    @Query(
+        """
+        SELECT subjectUrl FROM web_search_session_cache
+        WHERE mediaSourceId = :mediaSourceId
+            AND playUrl = :playUrl
+        ORDER BY cachedAt DESC
+        LIMIT 1
+        """,
+    )
+    suspend fun subjectUrlOf(mediaSourceId: String, playUrl: String): String?
+
+    /**
      * 以条目页面为单位整体替换: 先删除该页面的旧行再插入, 避免残留页面上已不存在的剧集.
      */
     /** [subjectName] 这一轮搜索的条目页都开完了, 见 [WebSearchSessionCacheEntity.roundComplete]. */

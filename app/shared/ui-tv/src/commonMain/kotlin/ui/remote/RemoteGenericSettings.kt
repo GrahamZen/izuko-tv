@@ -30,6 +30,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import me.him188.ani.app.data.models.preference.AnitorrentConfig
 import me.him188.ani.app.data.models.preference.MediaPreference
+import me.him188.ani.app.data.models.preference.MediaSelectorSettings
 import me.him188.ani.app.data.models.preference.TorrentPeerConfig
 import me.him188.ani.app.data.repository.user.Settings
 import me.him188.ani.app.data.repository.user.SettingsRepository
@@ -51,6 +52,8 @@ import me.him188.ani.app.ui.lang.settings_media_any
 import me.him188.ani.app.ui.lang.settings_media_excluded_alliance
 import me.him188.ani.app.ui.lang.settings_media_excluded_alliance_description
 import me.him188.ani.app.ui.lang.settings_media_excluded_alliance_none
+import me.him188.ani.app.ui.lang.settings_media_search_concurrency
+import me.him188.ani.app.ui.lang.settings_media_search_concurrency_description
 import me.him188.ani.app.ui.lang.settings_media_torrent_extra_trackers
 import me.him188.ani.app.ui.lang.settings_media_torrent_extra_trackers_dialog_description
 import me.him188.ani.utils.ipparser.IpSeqRange
@@ -157,7 +160,17 @@ internal object RemoteSettingsCatalog {
      * 只在 debug 包「设置 → 调试」里出现的已有设置项 (见 [RemoteDebugSettings]): 开发时要反复切的设置临时登记在这里, 写法同 [items],
      * 不用去电视设置页一层层找; 用完删掉. key 不能与 [items] 重名.
      */
-    val debugItems: List<RemoteSettingSpec<*>> = listOf()
+    val debugItems: List<RemoteSettingSpec<*>> = listOf(
+        // 测量用: 脚本经调试区直接改「同时搜索的数据源」, 量各档的开播时间
+        RemoteSettingSpec(
+            key = "searchConcurrency",
+            settings = { mediaSelectorSettings },
+            serializer = MediaSelectorSettings.serializer(),
+            fieldName = "searchConcurrency",
+            title = Lang.settings_media_search_concurrency,
+            description = Lang.settings_media_search_concurrency_description,
+        ),
+    )
 
     private val TRACKER_SCHEMES = listOf("udp://", "http://", "https://", "ws://", "wss://")
 

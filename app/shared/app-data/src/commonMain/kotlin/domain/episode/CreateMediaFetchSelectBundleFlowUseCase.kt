@@ -35,6 +35,7 @@ import me.him188.ani.app.domain.media.fetch.withRegionalSeriesNames
 import me.him188.ani.app.domain.media.fetch.withSeasonAliases
 import me.him188.ani.app.domain.media.selector.DefaultMediaSelector
 import me.him188.ani.app.domain.media.selector.MediaSelectorContextFlowProducer
+import me.him188.ani.app.domain.player.diagnostics.PlayTimeline
 import me.him188.ani.app.domain.player.extension.holdSearchingForFinishedCache
 import me.him188.ani.app.domain.usecase.UseCase
 import me.him188.ani.datasources.api.source.MediaFetchRequest
@@ -91,7 +92,8 @@ class CreateMediaFetchSelectBundleFlowUseCaseImpl(
         subjectEpisodeInfoBundleFlow: Flow<SubjectEpisodeInfoBundle?>,
         fetchSessions: SubjectMediaFetchSessions,
     ): Flow<MediaFetchSelectBundle?> = createBundleFlow(subjectEpisodeInfoBundleFlow) { request, refreshTick ->
-        fetchSessions.get(request, refreshTick)
+        PlayTimeline.mark("t_session_get")
+        fetchSessions.get(request, refreshTick).also { PlayTimeline.mark("t_session_got") }
     }
 
     private fun createBundleFlow(
@@ -136,6 +138,7 @@ class CreateMediaFetchSelectBundleFlowUseCaseImpl(
             // 所以我们总是等待一个 not null SubjectEpisodeInfoBundle 比较.
             .filterNotNull()
             .map { bundle ->
+                PlayTimeline.mark("t_bundle_in")
                 val request = MediaFetchRequest.create(
                     bundle.subjectCollectionInfo.subjectInfo,
                     bundle.episodeCollectionInfo.episodeInfo,
@@ -144,6 +147,7 @@ class CreateMediaFetchSelectBundleFlowUseCaseImpl(
                 ).let { withRegionalNames(it, bundle.seriesInfo) }
                 // 用户为本条目改过的搜索关键词只在建会话时读一次: 会话内改动走 MediaFetchSession.setFetchRequest,
                 // 不必因此重建整个会话 (选中项与播放都挂在会话上)
+                PlayTimeline.mark("t_request_built")
                 bundle to (episodePreferencesRepository.searchKeywordsFlow(bundle.subjectId).first()?.applyTo(request) ?: request)
             }
             // 「重新搜索(含新数据源)」按一下就 +1: 会话创建时对数据源列表取快照, 改完数据源 / 更新订阅要让新源
@@ -161,6 +165,7 @@ class CreateMediaFetchSelectBundleFlowUseCaseImpl(
             // 条目信息刚变、配给它的会话还没到: 不拿上一份的会话建选源器 (见 SessionForBundle)
             if (sessionForBundle.bundle != bundle) return@transformLatest
             val fetchSession = sessionForBundle.session
+            PlayTimeline.mark("t_selector_build")
             // 与查询请求认部用的名字 (MediaFetchRequest.nameHints) 是同一组
             val subjectInfo = bundle.subjectInfo.withSeasonAliases(bundle.seriesInfo)
 
@@ -186,6 +191,7 @@ class CreateMediaFetchSelectBundleFlowUseCaseImpl(
             )
 
             // 「有缓存时直接播, 不搜索」: 交出去之前停住缓存以外的源, 见 PlayCacheWithoutSearchingExtension
+            PlayTimeline.mark("t_hold_check")
             holdSearchingForFinishedCache(fetchSession, settingsRepository, mediaCacheManager, bundle.subjectId, bundle.episodeId)
             emit(
                 MediaFetchSelectBundle(
@@ -193,6 +199,7 @@ class CreateMediaFetchSelectBundleFlowUseCaseImpl(
                     selector,
                 ),
             )
+            PlayTimeline.mark("t_bundle_emitted")
         }.flowOn(flowContext)
     }
 }

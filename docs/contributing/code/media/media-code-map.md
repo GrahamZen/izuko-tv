@@ -137,7 +137,7 @@
    外挂字幕不是这个文件，单连接直接下（共用总长会按视频的长度分块去要字幕，一个字节也拿不到）。
    网盘直链的缓冲策略是 `ThrottledSourceLoadControl`：开播 / 跳转后攒够 5 秒才播，播放中卡住后攒够 10 秒，
    同一个媒体每多卡一次翻倍（最多 60 秒）；在等这些门槛时它报出要攒多少，电视播放页的 `TvThrottledBufferHint` 据此说明原因。
-9. 播放器时钟开始走时，`PauseMediaFetchWhilePlayingExtension` 暂停仍在查询的数据源
+9. 自动选定资源与播放器时钟开始走时，`PauseMediaFetchWhilePlayingExtension` 暂停仍在查询的数据源
    （`MediaFetchSession.pauseSearching` / `MediaSourceFetchResult.pause`，状态 `MediaSourceFetchState.Paused`），
    `ObserveWebMediaSourcePreferenceExtension` 把正在播的 Web 源记为本条目的记忆源，
    `PlaybackLineageExtension` 按规则记下或保留本条目的播放线索。

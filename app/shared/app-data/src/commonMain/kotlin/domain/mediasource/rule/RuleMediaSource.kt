@@ -36,9 +36,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import me.him188.ani.app.data.repository.media.SelectorMediaSourceEpisodeCacheRepository
-import me.him188.ani.app.domain.media.fetch.wholeSubjectEpisodeSortsOrNull
 import me.him188.ani.app.domain.mediasource.KeywordSearchScope
-import me.him188.ani.app.domain.mediasource.latestAiredEpisode
 import me.him188.ani.app.domain.mediasource.codec.DefaultMediaSourceCodec
 import me.him188.ani.app.domain.mediasource.codec.DontForgetToRegisterCodec
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceArguments
@@ -56,21 +54,23 @@ import me.him188.ani.app.domain.mediasource.web.SelectorMediaSource
 import me.him188.ani.app.domain.mediasource.web.SelectorSearchConfig
 import me.him188.ani.app.domain.mediasource.web.SelectorSearchQuery
 import me.him188.ani.app.domain.mediasource.web.SolveRequest
+import me.him188.ani.app.domain.mediasource.web.SubjectPageMediaSource
 import me.him188.ani.app.domain.mediasource.web.WebCaptchaKind
 import me.him188.ani.app.domain.mediasource.web.WebSearchEpisodeInfo
 import me.him188.ani.app.domain.mediasource.web.WebSearchSubjectInfo
 import me.him188.ani.app.domain.mediasource.keywordSearchChain
 import me.him188.ani.app.domain.mediasource.rememberedKeywords
 import me.him188.ani.app.domain.mediasource.search.SiteSearchMemory
+import me.him188.ani.app.domain.mediasource.search.SubjectMatch
 import me.him188.ani.app.domain.mediasource.search.SubjectSearchPlan
 import me.him188.ani.app.domain.mediasource.search.keywordStyle
+import me.him188.ani.app.domain.player.diagnostics.PlayTimeline
 import me.him188.ani.app.domain.mediasource.web.asEpisodesOf
 import me.him188.ani.app.domain.mediasource.web.captcha.WebSessionManager
 import me.him188.ani.app.domain.mediasource.web.findMatchingEpisodeOrNull
 import me.him188.ani.app.domain.mediasource.web.format.SelectorChannelFormat
 import me.him188.ani.app.domain.mediasource.web.format.parseOrNull
-import me.him188.ani.app.domain.mediasource.web.isOvaSubject
-import me.him188.ani.app.domain.mediasource.web.mainEpisodeCountOrNull
+import me.him188.ani.app.domain.mediasource.web.selectorSearchQuery
 import me.him188.ani.datasources.api.DefaultMedia
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.Media
@@ -83,7 +83,7 @@ import me.him188.ani.datasources.api.matcher.WebVideoSniffTimeout
 import me.him188.ani.datasources.api.matcher.WebViewConfig
 import me.him188.ani.datasources.api.paging.SizedSource
 import me.him188.ani.datasources.api.paging.emptySizedSource
-import me.him188.ani.datasources.api.paging.map
+import me.him188.ani.app.domain.media.fetch.mapKeepingBatches
 import me.him188.ani.datasources.api.source.BrowseChannel
 import me.him188.ani.datasources.api.source.BrowseEpisode
 import me.him188.ani.datasources.api.source.BrowseSubject
@@ -183,7 +183,7 @@ class RuleMediaSource(
     private val client: ScopedHttpClient,
     private val repository: SelectorMediaSourceEpisodeCacheRepository,
     private val sessionManager: WebSessionManager,
-) : HttpMediaSource(), WebVideoMatcherProvider {
+) : HttpMediaSource(), WebVideoMatcherProvider, SubjectPageMediaSource {
     companion object {
         val FactoryId = FactoryId("rule")
         val INFO = MediaSourceInfo(
@@ -347,29 +347,17 @@ class RuleMediaSource(
 
     override suspend fun fetch(query: MediaFetchRequest): SizedSource<MediaMatch> {
         if (!rule.autoMatch.enabled || rule.search.isEmpty()) return emptySizedSource()
+        PlayTimeline.mark("t_rule_fetch", info.displayName)
 
-        val allSubjectNames = query.subjectNames.toSet()
-        val freshnessProbe = query.latestAiredEpisode()?.let {
-            SelectorEpisodeProbe(episodeSort = it.sort, episodeEp = it.ep, episodeName = it.name)
-        }
         val subjectId = query.subjectId.toIntOrNull()
-        val subjectEpisodeSorts = query.wholeSubjectEpisodeSortsOrNull()
-        fun searchQuery(name: String) = SelectorSearchQuery(
-            subjectName = name,
-            episodeSort = query.episodeSort,
-            allSubjectNames = allSubjectNames,
-            episodeEp = query.episodeEp,
-            episodeName = query.episodeName,
-            freshnessProbe = freshnessProbe,
-            subjectEpisodeSorts = subjectEpisodeSorts,
-            subjectEpisodeCount = query.mainEpisodeCountOrNull(),
-            ovaSubject = query.isOvaSubject(),
-        )
+        fun searchQuery(name: String) = query.selectorSearchQuery(name)
 
         // 关键词与什么时候停同网页抓取数据源 (搜索计划); 两次搜索之间的间隔由 searchOnline 按规则自己等
         val plan = SubjectSearchPlan.of(query)
         val keywords = plan.keywords(rule.autoMatch.keywordStyle(), mediaSourceId)
+        PlayTimeline.mark("t_keywords", info.displayName)
         val remembered = repository.rememberedKeywords(subjectId, mediaSourceId, keywords.primaryNames + keywords.fallbackNames, logger)
+        PlayTimeline.mark("t_remembered", info.displayName)
         return keywordSearchChain(
             keywords.primaryNames, keywords.fallbackNames, remembered,
             requestInterval = Duration.ZERO,
@@ -377,13 +365,19 @@ class RuleMediaSource(
             emitPagesEarly = true,
         ) { name ->
             val searchQuery = searchQuery(name)
-            searchFromCacheOrNull(searchQuery, subjectId, scope = this)
+            PlayTimeline.mark("t_kw", "${info.displayName} $name")
+            searchFromCacheOrNull(searchQuery, subjectId, plan, scope = this).also { PlayTimeline.mark("t_cache_checked", info.displayName) }
                 ?: searchOnlineUnlessRecentlyEmpty(searchQuery, keywords.keywordOf(name), plan, subjectId, scope = this)
-        }.map { MediaMatch(it, MatchKind.FUZZY) }
+        }.mapKeepingBatches { MediaMatch(it, MatchKind.FUZZY) }
     }
 
     /** 同网页抓取数据源: 写这些页的那一轮有页没开完时, 先经 [scope] 交出缓存里的, 再返回 `null` 照常重搜补齐. */
-    private suspend fun searchFromCacheOrNull(query: SelectorSearchQuery, subjectId: Int?, scope: KeywordSearchScope?): List<DefaultMedia>? {
+    private suspend fun searchFromCacheOrNull(
+        query: SelectorSearchQuery,
+        subjectId: Int?,
+        plan: SubjectSearchPlan,
+        scope: KeywordSearchScope?,
+    ): List<DefaultMedia>? {
         val caches = try {
             repository.getCache(subjectId, mediaSourceId, query.subjectName)
         } catch (e: CancellationException) {
@@ -395,6 +389,8 @@ class RuleMediaSource(
         val probe = query.freshnessProbe ?: SelectorEpisodeProbe(query.episodeSort, query.episodeEp, query.episodeName)
         val media = buildList {
             for (cache in caches) {
+                // 写缓存时名字表可能还没读进来, 那时认不出的别的作品的页也开了: 按现在的认部再判一次, 在线搜也不会开它
+                if (plan.identify(cache.webSubjectInfo.name) == SubjectMatch.OTHER) continue
                 val episodes = cache.webEpisodeInfos.asEpisodesOf(query)
                 // 同网页抓取数据源: 页面没有已上映的最新一集时, 有当前这一集、又只查这一集才照用, 否则整个重搜 (不跳过它只用别的页)
                 if (episodes.findMatchingEpisodeOrNull(probe.episodeSort, probe.episodeEp, probe.episodeName) == null &&
@@ -463,11 +459,14 @@ class RuleMediaSource(
         val ttl = rule.searchCacheTtlMillis.milliseconds
         val subjects = repository.siteMemory.searchResults(mediaSourceId, keyword, ttl) {
             delayUntilNextAllowedSearch()
-            engine.search(keyword).map { it.toSubjectInfo() }
+            PlayTimeline.mark("t_http", info.displayName)
+            engine.search(keyword).map { it.toSubjectInfo() }.also { PlayTimeline.mark("t_http_done", info.displayName) }
         }.orEmpty()
         logger.info { "RuleMediaSource '$mediaSourceId': search '$keyword' -> ${subjects.size} subjects" }
+        PlayTimeline.mark("search_results", "${info.displayName} '$keyword' ${subjects.size}")
         val ordered = plan.pagesToOpen(subjects, matchConfig.autoMatch.preferShorterName) { it.name }
             .take(rule.maxSubjects.coerceAtLeast(1))
+        PlayTimeline.mark("pages_open", "${info.displayName} ${ordered.size}/${subjects.size}")
         val probe = query.freshnessProbe ?: SelectorEpisodeProbe(query.episodeSort, query.episodeEp, query.episodeName)
         // 几页同时取 (最多 PAGE_CONCURRENCY 页), 每取完一页就先交出这一页的资源 ([KeywordSearchScope.emitEarly]); 返回的仍按搜索计划排的顺序
         val pages = coroutineScope {
@@ -492,7 +491,8 @@ class RuleMediaSource(
                             // 单个条目页出错不终止整个搜索
                             logger.warn(e) { "RuleMediaSource '$mediaSourceId': failed to load subject page ${subject.fullUrl}" }
                             null
-                        }?.let { episodes ->
+                        }.also { PlayTimeline.mark("page_loaded", "${info.displayName} ${subject.name} ${it?.size ?: "失败"}") }
+                            ?.let { episodes ->
                                 if (episodes.isEmpty()) return@let episodes to emptyList()
                                 // 开完一页就写进搜索缓存, 再交出这一页的资源: 交出去的被选中后搜索可能马上被暂停 (取消),
                                 // 等全部页开完再写就写不上了, 下一集也就用不上这一页的缓存
@@ -528,6 +528,13 @@ class RuleMediaSource(
         // 这一轮要开的页都开成了, 之后读到的缓存才算完整 (见 searchFromCacheOrNull)
         if (allPagesLoaded) repository.markRoundComplete(subjectId, mediaSourceId, query.subjectName)
         return OnlineSearchResult(media, allPagesLoaded)
+    }
+
+    override suspend fun mediaOnSubjectPage(subjectUrl: String, subjectName: String, request: MediaFetchRequest): List<Media> {
+        if (!rule.autoMatch.enabled) return emptyList()
+        val episodes = episodesOf(subjectUrl)
+        if (episodes.isEmpty()) return emptyList()
+        return selectorEngine.selectFilteredMedia(episodes, matchConfig, request.selectorSearchQuery(subjectName), mediaSourceId, subjectName)
     }
 
     private suspend fun episodesOf(subjectUrl: String): List<WebSearchEpisodeInfo> =

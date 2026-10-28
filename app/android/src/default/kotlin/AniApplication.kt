@@ -37,10 +37,13 @@ import me.him188.ani.app.domain.foundation.HttpClientProvider
 import me.him188.ani.app.domain.foundation.ScopedHttpClientUserAgent
 import me.him188.ani.app.domain.foundation.get
 import me.him188.ani.app.domain.media.cache.location.MediaCacheLocations
+import me.him188.ani.app.domain.media.fetch.AndroidSearchConcurrency
+import me.him188.ani.app.domain.media.fetch.AndroidSearchDispatcher
 import me.him188.ani.app.domain.torrent.service.AniTorrentService
 import me.him188.ani.app.domain.torrent.service.PikPakCacheServiceController
 import me.him188.ani.app.domain.torrent.service.TorrentServiceConnectionManager
 import me.him188.ani.app.platform.AndroidLoggingConfigurator
+import me.him188.ani.app.platform.DevSwitches
 import me.him188.ani.app.platform.DevSwitchesAndroid
 import me.him188.ani.app.platform.PreviousExits
 import me.him188.ani.app.videoplayer.media.SeekPreviewCrashMarker
@@ -56,6 +59,7 @@ import me.him188.ani.app.ui.foundation.aniSharedSketch
 import me.him188.ani.app.ui.settings.tabs.log.getLogsDir
 import me.him188.ani.utils.analytics.Analytics
 import me.him188.ani.utils.coroutines.IO_
+import me.him188.ani.utils.ktor.HttpPhaseLog
 import me.him188.ani.utils.logging.error
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
@@ -135,6 +139,11 @@ class AniApplication : Application() {
             // In service process, we don't need any dependency which is use in app process.
             return
         }
+        AndroidSearchDispatcher.install()
+        AndroidSearchConcurrency.install(this)
+        // 开播诊断 (调试开关): 共用客户端的请求各段耗时、主线程卡顿时的栈
+        HttpPhaseLog.enabled = { DevSwitches.playDiagnostics.value }
+        if (DevSwitches.playDiagnostics.value) MainThreadStallWatch.install()
 
         // 本进程属于哪个用户: 必须在建数据库与配置 (startKoin) 之前定下来, 见 UserProfiles
         UserProfiles.install(
