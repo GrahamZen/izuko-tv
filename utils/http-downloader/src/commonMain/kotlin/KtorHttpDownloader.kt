@@ -33,6 +33,7 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -373,6 +374,7 @@ open class KtorHttpDownloader(
         }
 
         logger.info { "Resuming $downloadId with status=${st.status}" }
+        if (!recheckSegmentFiles(st)) return true
 
         // 恢复时只知道请求头 (选项不落库), 统一在这里构造一次, 免得各处各自 new 一个
         val options = optionsFor(DownloadOptions(headers = st.requestHeaders))
@@ -429,6 +431,37 @@ open class KtorHttpDownloader(
             _downloadStatesFlow.update { put(downloadId, entry.copy(job = job)) }
         }
         return true
+    }
+
+    /**
+     * 继续前对一遍分段文件, 见 [checkSegmentFiles]: 文件没了的分段标回没下; 早已合并完的直接记成完成.
+     * @return 还要接着下载与合并时为 true
+     */
+    private suspend fun recheckSegmentFiles(st: DownloadState): Boolean {
+        val root = rootOf(st.location)
+        val check = withContext(ioDispatcher) {
+            st.checkSegmentFiles(
+                segmentExists = { fileSystem.exists(root.resolve(it.relativeTempFilePath)) },
+                outputSize = fileSystem.metadataOrNull(root.resolve(st.relativeOutputPath))?.size,
+            )
+        }
+        when (check) {
+            SegmentFilesCheck.Intact -> return true
+            SegmentFilesCheck.AlreadyMerged -> {
+                logger.info { "Segments of ${st.downloadId} are gone but its output is complete, marking it completed" }
+                updateState(st.downloadId) {
+                    it.copy(status = COMPLETED, error = null, timestamp = clock.now().toEpochMilliseconds())
+                }
+                emitProgress(st.downloadId)
+                return false
+            }
+
+            is SegmentFilesCheck.Redownload -> {
+                logger.warn { "${check.indexes.size} downloaded segments of ${st.downloadId} are gone, downloading them again" }
+                updateState(st.downloadId) { it.withSegmentsToRedownload(check.indexes) }
+                return true
+            }
+        }
     }
 
     override suspend fun getActiveDownloadIds(): List<DownloadId> {
@@ -1152,6 +1185,8 @@ open class KtorHttpDownloader(
             }
         }
 
+        // 合并中被暂停 / 取消就不删分段: 拼接不会中途停, 走到这里文件已经合好, 状态却不是完成, 继续时靠分段再合一遍
+        ensureActive()
         // remove segment files
         st.segments.forEach { seg ->
             fileSystem.delete(root.resolve(seg.relativeTempFilePath))
