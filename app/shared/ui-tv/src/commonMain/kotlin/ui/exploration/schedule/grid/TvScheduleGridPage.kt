@@ -88,7 +88,6 @@ import me.him188.ani.app.ui.exploration.schedule.AiringScheduleItemPresentation
 import me.him188.ani.app.ui.exploration.schedule.ScheduleDay
 import me.him188.ani.app.ui.exploration.schedule.ScheduleItemDefaults
 import me.him188.ani.app.ui.exploration.schedule.SchedulePagePresentation
-import me.him188.ani.app.ui.exploration.schedule.tvTitle
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallGrid
 import me.him188.ani.app.ui.foundation.tv.TvPosterWallScaled
@@ -147,6 +146,8 @@ import me.him188.ani.app.ui.foundation.tv.tvPlayKeyShortPress
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallBackground
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallEndMargin
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallLabelHeight
+import me.him188.ani.app.ui.foundation.tv.tvTmdbSubjectTitle
+import me.him188.ani.app.ui.foundation.tv.tvUseOriginalTitle
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.rememberTvBesideAnchorPositionProvider
 import me.him188.ani.app.ui.foundation.widgets.showLoadError
@@ -891,6 +892,11 @@ private suspend fun LazyListState.scrollToCenter(index: Int) {
     val center = (info.viewportStartOffset + info.viewportEndOffset) / 2f
     scrollBy((item.offset + item.size / 2f - center).roundToInt().toFloat())
 }
+
+/** 番名: 非中文界面查到过的 TMDB 标题 (见 [tvTmdbSubjectTitle]), 否则原名或中文名 (见 [tvUseOriginalTitle]). */
+@Composable
+private fun AiringScheduleItemPresentation.tvTitle(): String =
+    tvTmdbSubjectTitle(subjectId) ?: if (tvUseOriginalTitle()) subjectOriginalTitle else subjectTitle
 
 /** "第 16 话" / "第 16 (28) 话" (语义同 [ScheduleItemDefaults.Episode], 但只要集号不要集名). */
 @Composable
