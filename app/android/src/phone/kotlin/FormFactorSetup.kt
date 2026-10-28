@@ -9,6 +9,7 @@
 
 package me.him188.ani.android
 
+import android.content.Context
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.Composable
 import me.him188.ani.app.navigation.AniNavigator
@@ -21,6 +22,10 @@ import me.him188.ani.app.ui.foundation.AniUiBehavior
 
 /** 指针设备 (触屏/鼠标) 的界面行为. */
 internal val formFactorUiBehavior: AniUiBehavior get() = AniUiBehavior.Default
+
+/** 不自动定界面缩放. */
+@Suppress("UNUSED_PARAMETER")
+internal fun formFactorAutoUiScaleEligible(context: Context): Boolean = false
 
 /** 无需安装任何界面变体, 原样组合 ([aniNavigator] 只有 TV 形态用得到). */
 @Composable

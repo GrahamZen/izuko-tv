@@ -9,6 +9,7 @@
 
 package me.him188.ani.android
 
+import android.content.Context
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -43,6 +44,9 @@ import org.koin.android.ext.android.getKoin
 
 /** 遥控器设备的界面行为. */
 internal val formFactorUiBehavior: AniUiBehavior get() = TvAniUiBehavior
+
+/** 首次引导还没走完: 这时按屏幕真实大小定一次界面缩放 (盒子 densityDpi 报大时画布不够, 见 AutoUiScale). */
+internal fun formFactorAutoUiScaleEligible(context: Context): Boolean = TvOnboardingGate.isPending(context)
 
 /**
  * 把遥控器形态的页面实现注入共享页面的变体插槽, 并换上电视端的页面底色 (浅色下整屏同海报墙的浅灰, 见 [TvPageBackgroundTheme]).
