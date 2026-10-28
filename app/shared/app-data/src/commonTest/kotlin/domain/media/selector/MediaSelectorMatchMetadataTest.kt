@@ -15,6 +15,7 @@ import me.him188.ani.app.domain.media.selector.MatchMetadata.SubjectMatchKind
 import me.him188.ani.app.domain.media.selector.testFramework.SimpleMediaSelectorTestSuite
 import me.him188.ani.app.domain.media.selector.testFramework.addSimpleMediaSelectorTest
 import me.him188.ani.datasources.api.EpisodeSort
+import me.him188.ani.datasources.api.PackedDate
 import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.datasources.api.topic.EpisodeRange
 import me.him188.ani.test.TestContainer
@@ -45,6 +46,34 @@ class MediaSelectorMatchMetadataTest {
                     episodeRange = EpisodeRange.single(EpisodeSort(2)),
                     subjectMatchKind = SubjectMatchKind.FUZZY,
                     episodeMatchKind = EpisodeMatchKind.NONE,
+                )
+            }
+        }
+    }
+
+    @TestFactory
+    fun `subject name followed by the air year is EXACT`() = runDynamicTests {
+        addSimpleMediaSelectorTest(
+            "subject name with air year",
+            {
+                initSubject("凉宫春日的忧郁") {
+                    airDate = PackedDate(2006, 4, 2)
+                }
+            },
+        ) {
+            checkMatchMetadata {
+                expect(
+                    mediaSubjectName = "凉宫春日的忧郁2006",
+                    episodeRange = EpisodeRange.single(EpisodeSort(1)),
+                    subjectMatchKind = SubjectMatchKind.EXACT,
+                    episodeMatchKind = EpisodeMatchKind.SORT,
+                )
+                // 同名的另一版
+                expect(
+                    mediaSubjectName = "凉宫春日的忧郁2009",
+                    episodeRange = EpisodeRange.single(EpisodeSort(1)),
+                    subjectMatchKind = SubjectMatchKind.FUZZY,
+                    episodeMatchKind = EpisodeMatchKind.SORT,
                 )
             }
         }
