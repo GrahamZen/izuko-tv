@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.data.persistent.database.dao
 
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Entity
 import androidx.room.Index
@@ -83,6 +84,13 @@ data class WebSearchSessionCacheEntity(
      * TTL 在写入时取数据源配置与用户设置中的较小者, 之后的读取与清理只依据本字段.
      */
     val expiresAt: Long,
+    /**
+     * 写这一行的那一轮搜索 ([subjectName] 搜到、要打开的条目页) 全部开完了. 每开完一页先写进来 (为 false),
+     * 这一轮的条目页都开成了才改成 true ([markRoundComplete]). 有页没开完 (被暂停、出错) 的那一轮, 读到时先用缓存里的,
+     * 同时照常重搜补齐. 31 版加的列, 升级前的行当作没开完.
+     */
+    @ColumnInfo(defaultValue = "0")
+    val roundComplete: Boolean = false,
 )
 
 @Dao
@@ -112,6 +120,17 @@ interface WebSearchSessionCacheDao {
     /**
      * 以条目页面为单位整体替换: 先删除该页面的旧行再插入, 避免残留页面上已不存在的剧集.
      */
+    /** [subjectName] 这一轮搜索的条目页都开完了, 见 [WebSearchSessionCacheEntity.roundComplete]. */
+    @Query(
+        """
+        UPDATE web_search_session_cache SET roundComplete = 1
+        WHERE requesterSubjectId IS :requesterSubjectId
+            AND mediaSourceId = :mediaSourceId
+            AND subjectName = :subjectName
+        """,
+    )
+    suspend fun markRoundComplete(requesterSubjectId: Int?, mediaSourceId: String, subjectName: String)
+
     @Transaction
     suspend fun replacePage(
         requesterSubjectId: Int?,

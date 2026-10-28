@@ -310,12 +310,14 @@ class SelectorMediaSource(
      * 缓存的每一页都要用得上才命中: 页面的剧集列表里有 [SelectorSearchQuery.freshnessProbe] (请求里已上映的最新一集, 未知时为当前剧集),
      * 或者 (只查这一集时) 有当前这一集. 有一页用不上就返回 `null` 走完整搜索 (页面可能已更新, 例如刚开播的新集在缓存里还没有),
      * 不跳过它只用别的页: 同一个词第二次查不能比第一次少.
+     * 写这些页的那一轮搜索有页没开完 (被暂停、出错, 见 [WebSearchCache.roundComplete]) 时, 先经 [scope] 交出缓存里的, 再返回 `null` 照常重搜补齐.
      */
     private suspend fun EngineType.searchFromCacheOrNull(
         searchConfig: SelectorSearchConfig,
         query: SelectorSearchQuery,
         mediaSourceId: String,
         subjectId: Int?,
+        scope: KeywordSearchScope?,
     ): List<DefaultMedia>? {
         // 请求普通剧集且按集号过滤时, 只有集号相符的行 (和集号不是纯数字的行) 可能出结果,
         // 不必把长番几千集整页读回内存.
@@ -359,7 +361,7 @@ class SelectorMediaSource(
         } else {
             null
         }
-        return buildList {
+        val media = buildList {
             for (cache in caches) {
                 val episodes = cache.webEpisodeInfos.asEpisodesOf(query)
                 val fresh = freshPages?.contains(cache.webSubjectInfo.fullUrl)
@@ -381,7 +383,13 @@ class SelectorMediaSource(
                     ),
                 )
             }
-        }.takeIf(List<DefaultMedia>::isNotEmpty)
+        }
+        if (media.isEmpty()) return null
+        if (caches.any { !it.roundComplete }) {
+            scope?.emitEarly(media)
+            return null
+        }
+        return media
     }
 
     /**
@@ -413,7 +421,8 @@ class SelectorMediaSource(
         val subjects = plan.pagesToOpen(originalSubjects, searchConfig.autoMatch.preferShorterName) { it.name }
         val probe = query.freshnessProbe ?: SelectorEpisodeProbe(query.episodeSort, query.episodeEp, query.episodeName)
 
-        buildList {
+        var allPagesLoaded = true
+        val media = buildList {
             for (subjectInfo in subjects) {
                 val episodes = try {
                     repository.siteMemory.page(
@@ -433,7 +442,11 @@ class SelectorMediaSource(
                     // 单个条目页的网络错误不终止整个搜索
                     logger.warn(e) { "SelectorMediaSource '$mediaSourceId': failed to load subject page ${subjectInfo.fullUrl}" }
                     null
-                } ?: continue
+                }
+                if (episodes == null) {
+                    allPagesLoaded = false
+                    continue
+                }
                 repository.addCache(
                     subjectId, mediaSourceId, query.subjectName, subjectInfo, episodes,
                     sourceCacheTtl = searchConfig.searchCacheTtl,
@@ -455,6 +468,9 @@ class SelectorMediaSource(
                 )
             }
         }
+        // 这一轮要开的页都开成了, 之后读到的缓存才算完整 (见 searchFromCacheOrNull)
+        if (allPagesLoaded) repository.markRoundComplete(subjectId, mediaSourceId, query.subjectName)
+        media
     }
 
     override suspend fun fetch(query: MediaFetchRequest): SizedSource<MediaMatch> {
@@ -495,7 +511,7 @@ class SelectorMediaSource(
             // 搜索缓存: 上一次真实搜索已把条目页面的全部剧集写入缓存 (addCache).
             // 若缓存的剧集列表包含当前请求的剧集 (典型场景: 切集), 直接从缓存构建结果, 不发起任何网络请求.
             // 缓存按 TTL 过期, 也会在该条目手动重新查询时被清除.
-            engine.searchFromCacheOrNull(searchConfig, searchQuery, mediaSourceId, subjectId)
+            engine.searchFromCacheOrNull(searchConfig, searchQuery, mediaSourceId, subjectId, scope = this@keywordSearchChain)
                 ?: run {
                     beforeOnlineSearch()
                     engine.searchOnline(searchConfig, searchQuery, keywords.keywordOf(name), plan, mediaSourceId, subjectId, scope = this@keywordSearchChain)
