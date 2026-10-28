@@ -17,11 +17,13 @@ import me.him188.ani.app.data.network.SeriesGraphTable
 import me.him188.ani.app.data.network.SeriesGraphTableRepository
 import me.him188.ani.app.domain.mediasource.clouddrive.DriveNameParser
 import me.him188.ani.app.domain.mediasource.toSimplifiedChinese
+import me.him188.ani.app.domain.player.diagnostics.PlayTimeline
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import kotlin.concurrent.Volatile
+import kotlin.time.TimeSource
 import kotlin.time.measureTime
 
 /**
@@ -93,6 +95,7 @@ object AnimeNames {
         key: List<Any?>,
         mine: CompletableDeferred<TitleIdentity>?,
     ): TitleIdentity {
+        val start = TimeSource.Monotonic.markNow()
         val identity = try {
             if (table == null) TitleIdentity.namesOnly(request) else TitleIdentity.of(request, table, AnimeNameIndex.of(table))
         } catch (e: Throwable) {
@@ -108,6 +111,7 @@ object AnimeNames {
             }
         }
         mine?.complete(identity)
+        PlayTimeline.mark("identity_built", "${request.subjectId} ${start.elapsedNow().inWholeMilliseconds}ms")
         return identity
     }
 
@@ -117,16 +121,20 @@ object AnimeNames {
      * 排一次条目页 ([SubjectSearchPlan.pagesToOpen]), 把这一路用到的类与正则都初始化掉. 电视上第一次认部要多花半秒多, 都花在这些上.
      */
     fun prewarm(table: SeriesGraphTable) {
+        // 各段用时一起记进日志, 看出慢在哪一段
+        val parts = mutableListOf<String>()
         val took = measureTime {
-            AnimeNameIndex.of(table)
-            "臺灣".toSimplifiedChinese()
-            DriveNameParser.parseSubjectSeason("")
+            parts += "index=" + measureTime { AnimeNameIndex.of(table) }.inWholeMilliseconds
+            parts += "icu=" + measureTime { "臺灣".toSimplifiedChinese() }.inWholeMilliseconds
+            parts += "regex=" + measureTime { DriveNameParser.parseSubjectSeason("") }.inWholeMilliseconds
             sampleRequest(table)?.let { request ->
-                identityOf(request, table)
-                SubjectSearchPlan.of(request).pagesToOpen(listOf(request.subjectNames.first() + " 第二季"), preferShorterName = false) { it }
+                parts += "identity=" + measureTime { identityOf(request, table) }.inWholeMilliseconds
+                parts += "pages=" + measureTime {
+                    SubjectSearchPlan.of(request).pagesToOpen(listOf(request.subjectNames.first() + " 第二季"), preferShorterName = false) { it }
+                }.inWholeMilliseconds
             }
         }
-        logger.info { "Anime name index for ${table.size} entries ready in $took" }
+        logger.info { "Anime name index for ${table.size} entries ready in $took (${parts.joinToString(" ")})" }
     }
 
     /** 表里第一部有续作的番, 当作开播的请求. */

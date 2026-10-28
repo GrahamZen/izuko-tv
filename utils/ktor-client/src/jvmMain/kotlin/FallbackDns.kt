@@ -94,6 +94,9 @@ actual fun HttpClientConfig<*>.engineFallbackDns() {
     @Suppress("UNCHECKED_CAST") // engine 块只会作用于实际的引擎配置, 类型在块内判断
     (this as HttpClientConfig<HttpClientEngineConfig>).engine {
         if (this !is OkHttpConfig) return@engine
-        config { dns(FallbackDns.Default) }
+        config {
+            dns(FallbackDns.Default)
+            eventListenerFactory(HttpPhaseLog)
+        }
     }
 }

@@ -52,7 +52,7 @@ import me.him188.ani.datasources.api.matcher.ApiVideoResolver
 import me.him188.ani.datasources.api.matcher.WebVideo
 import me.him188.ani.datasources.api.paging.SizedSource
 import me.him188.ani.datasources.api.paging.emptySizedSource
-import me.him188.ani.datasources.api.paging.map
+import me.him188.ani.app.domain.media.fetch.mapKeepingBatches
 import me.him188.ani.datasources.api.source.BrowseChannel
 import me.him188.ani.datasources.api.source.BrowseEpisode
 import me.him188.ani.datasources.api.source.BrowseSubject
@@ -435,12 +435,12 @@ class JsonApiMediaSource(
             requestInterval = searchConfig.requestInterval,
             matches = plan::foundOwn,
         ) { name ->
-            searchFromCacheOrNull(subjectId, name, freshnessProbe, filterContext)
+            searchFromCacheOrNull(subjectId, name, freshnessProbe, filterContext, plan)
                 ?: run {
                     beforeOnlineSearch()
                     searchOnline(subjectId, name, keywords.keywordOf(name), plan, freshnessProbe, filterContext)
                 }
-        }.map { MediaMatch(it, MatchKind.FUZZY) }
+        }.mapKeepingBatches { MediaMatch(it, MatchKind.FUZZY) }
     }
 
     private class Probe(val episodeSort: EpisodeSort, val episodeEp: EpisodeSort?, val episodeName: String?)
@@ -470,7 +470,8 @@ class JsonApiMediaSource(
         val ttl = searchConfig.searchCacheTtl
         val found = repository.siteMemory.searchResults(mediaSourceId, keyword, ttl) { searchSubjectsOnline(keyword) }.orEmpty()
         val subjects = plan.pagesToOpen(found.map { it.withJudgedName(plan) }, searchConfig.autoMatch.preferShorterName) { it.name }
-        return buildList {
+        var allSubjectsLoaded = true
+        val media = buildList {
             for (subject in subjects) {
                 val channels = try {
                     repository.siteMemory.page(
@@ -485,6 +486,7 @@ class JsonApiMediaSource(
                 } catch (e: RepositoryException) {
                     // 单个条目的网络错误不终止整个搜索
                     logger.warn(e) { "JsonApiMediaSource '$mediaSourceId': failed to load subject ${subject.url}" }
+                    allSubjectsLoaded = false
                     continue
                 }
                 val episodes = channels.flatMap { it.episodes }
@@ -498,10 +500,15 @@ class JsonApiMediaSource(
                 addAll(selectMedia(subject, episodes, filterContext))
             }
         }
+        // 这一轮要取的条目都取成了, 之后读到的缓存才算完整 (见 searchFromCacheOrNull)
+        if (allSubjectsLoaded) repository.markRoundComplete(subjectId, mediaSourceId, subjectName)
+        return media
     }
 
     /**
-     * 从搜索缓存构建结果. 仅当缓存的剧集列表里能找到 [probe] (已上映的最新一集) 时才命中; 否则 `null`, 走完整搜索.
+     * 从搜索缓存构建结果, 规则同网页抓取数据源: 缓存的每一页都要用得上才命中 (剧集列表里有 [probe], 即已上映的最新一集,
+     * 或者有当前这一集), 有一页用不上就返回 `null` 走完整搜索, 不跳过它只用别的页: 同一个词第二次查不能比第一次少.
+     * 写这些页的那一轮搜索有页没开完 (被暂停、出错, 见 `WebSearchCache.roundComplete`) 时也重搜.
      * 缓存行的剧集地址与当前模板对不上 (模板改过) 的页面当作没有缓存.
      */
     private suspend fun searchFromCacheOrNull(
@@ -509,6 +516,7 @@ class JsonApiMediaSource(
         subjectName: String,
         probe: Probe,
         filterContext: JsonApiFilterContext,
+        plan: SubjectSearchPlan,
     ): List<DefaultMedia>? {
         val caches = try {
             repository.getCache(subjectId, mediaSourceId, subjectName)
@@ -518,11 +526,18 @@ class JsonApiMediaSource(
             logger.warn(e) { "JsonApiMediaSource '$mediaSourceId': failed to read search cache, falling back to search" }
             return null
         }
+        if (caches.any { !it.roundComplete }) return null
         val episodeUrlTemplate = searchConfig.subject.episodes.episodeUrlTemplate
         return buildList {
             for (cache in caches) {
+                // 写缓存时名字表可能还没读进来, 那时认不出的别的作品的页也开了: 按现在的认部再判一次, 在线搜也不会开它
+                if (plan.identify(cache.webSubjectInfo.name) == SubjectMatch.OTHER) continue
                 val rows = cache.webEpisodeInfos
-                if (rows.findMatchingEpisodeOrNull(probe.episodeSort, probe.episodeEp, probe.episodeName) == null) continue
+                if (rows.findMatchingEpisodeOrNull(probe.episodeSort, probe.episodeEp, probe.episodeName) == null &&
+                    rows.findMatchingEpisodeOrNull(filterContext.episodeSort, filterContext.episodeEp, filterContext.episodeName) == null
+                ) {
+                    return null
+                }
                 val subject = JsonApiSubjectInfo(
                     id = cache.webSubjectInfo.internalId,
                     name = cache.webSubjectInfo.name,

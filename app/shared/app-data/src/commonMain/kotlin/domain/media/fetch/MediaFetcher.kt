@@ -15,7 +15,10 @@ import kotlinx.atomicfu.locks.synchronized
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -25,6 +28,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flatMapMerge
 import kotlinx.coroutines.flow.flow
@@ -39,6 +43,7 @@ import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.transform
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.io.IOException
 import me.him188.ani.app.data.models.episode.EpisodeInfo
 import me.him188.ani.app.data.models.episode.displayName
@@ -53,11 +58,14 @@ import me.him188.ani.app.data.repository.RepositoryRequestError
 import me.him188.ani.app.data.repository.RepositoryServiceUnavailableException
 import me.him188.ani.app.data.repository.RepositorySubjectNotAccessibleException
 import me.him188.ani.app.data.repository.RepositoryUnknownException
+import me.him188.ani.app.domain.media.selector.MediaSelectorSourceTiers
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveAuthException
 import me.him188.ani.app.domain.mediasource.instance.MediaSourceInstance
 import me.him188.ani.app.domain.mediasource.search.AnimeNames
 import me.him188.ani.app.domain.mediasource.web.BlockReason
 import me.him188.ani.app.domain.mediasource.web.BlockedException
+import me.him188.ani.app.domain.player.diagnostics.PlayTimeline
+import me.him188.ani.app.platform.DevSwitches
 import me.him188.ani.app.platform.currentAniBuildConfig
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.paging.SizedSource
@@ -66,6 +74,7 @@ import me.him188.ani.datasources.api.source.MediaMatch
 import me.him188.ani.datasources.api.source.MediaSource
 import me.him188.ani.datasources.api.source.MediaSourceInfo
 import me.him188.ani.datasources.api.source.MediaSourceKind
+import me.him188.ani.datasources.api.source.MediaSourceTier
 import me.him188.ani.datasources.api.source.toStringMultiline
 import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.coroutines.cancellableCoroutineScope
@@ -79,6 +88,7 @@ import me.him188.ani.utils.platform.collections.ImmutableEnumMap
 import me.him188.ani.utils.platform.currentTimeMillis
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 private val DEFAULT_RATE_LIMIT_RETRY_DELAY = 30.seconds
@@ -184,6 +194,12 @@ class MediaSourceMediaFetcher(
     private val flowContext: CoroutineContext = Dispatchers.Default,
     /** 同时在查的数据源个数的上限, 为 null 时不限 (见 [MediaSourceSearchLimiter]). */
     private val searchLimiter: MediaSourceSearchLimiter? = null,
+    /** 选源用的层级表, 开查先后与排队按它 (见 [SourceStartOrder.startTierOf]); 还没有时为 null */
+    private val sourceTiers: () -> MediaSelectorSourceTiers? = { null },
+    /** 条目 (请求的 subjectId) 记住的数据源 (自动选源先只等它), 开查时排最前 (见 [SourceStartOrder.of] 的 `first`); 没有时为 null */
+    private val rememberedSourceOf: (suspend (subjectId: String) -> String?)? = null,
+    /** [rememberedSourceOf] 跑在这上面. 不用查询的线程池: 冷启动时那里排满了各源的活, 读一次库要等一两秒 */
+    private val lookupContext: CoroutineContext = Dispatchers.Default,
 ) : MediaFetcher {
     private inner class MediaSourceResultImpl(
         override val instanceId: String,
@@ -196,6 +212,10 @@ class MediaSourceMediaFetcher(
         private val flowContext: CoroutineContext,
         /** 这个源查询时要占名额的上限; null 不占 (见 [SelfLimitedMediaSource]). */
         private val searchLimiter: MediaSourceSearchLimiter?,
+        /** 开查时这个源换到的线程池通道 (见 [SearchDispatchers.forSource]) */
+        private val searchLane: suspend () -> CoroutineContext = { EmptyCoroutineContext },
+        /** 排队等名额按的层级 (见 [SourceStartOrder.startTierOf]) */
+        private val searchTier: MediaSourceTier? = sourceInfo.tier,
     ) : MediaSourceFetchResult, SynchronizedObject() {
         /**
          * 为了确保线程安全, 对 [state] 的写入必须谨慎.
@@ -243,9 +263,12 @@ class MediaSourceMediaFetcher(
                 var terminalState: MediaSourceFetchState.Completed? = null
                 pagedSources
                     .flatMapMerge { sources ->
-                        sources.results.map { it.media }
+                        sources.mediaBatches()
                     }
-                    .run { searchLimiter?.let { withSearchPermit(it, kind, sourceInfo.tier, sourceInfo.displayName) } ?: this }
+                    .run { searchLimiter?.let { withSearchPermit(it, kind, searchTier, sourceInfo.displayName, mediaSourceId) } ?: this }
+                    // 只有搜索本身换到这个源的通道上: 起步交的空结果、状态与结果的发布留在原处, 排在后面的源也不会连这一步都轮不到
+                    // (选源器要等每个源都交过一次才开始判断)
+                    .flowOn(searchLane())
                     .onStart {
                         // 排队等名额 (见 searchLimiter) 也算在查. 与 [pause] 互斥: 这一代若已经被暂停换代, 不能再把状态改回 Working
                         synchronized(this@MediaSourceResultImpl) {
@@ -325,6 +348,7 @@ class MediaSourceMediaFetcher(
                                 true
                             }
                         }
+                        if (published) logger.info { "${sourceInfo.displayName} finished: ${update.state::class.simpleName}, ${publishedResults.value.size} media" }
                         if (published && update.state is MediaSourceFetchState.RateLimited && state.value == update.state) {
                             scheduleRateLimitAutoRestart(update.state)
                         }
@@ -520,6 +544,8 @@ class MediaSourceMediaFetcher(
             }
         override val request: Flow<MediaFetchRequest> = latestRequest.take(1) // 否则会一直显示加载
 
+        private val startTiers = SourceStartOrder.startTiers(sourceTiers)
+
         override val mediaSourceResults: List<MediaSourceFetchResult> = mediaSources
             .filter {
                 if (config.enableBTFetcher) true else it.source.kind != MediaSourceKind.BitTorrent
@@ -538,14 +564,41 @@ class MediaSourceMediaFetcher(
                         },
                     flowContext = flowContext,
                     searchLimiter = searchLimiter.takeUnless { instance.source is SelfLimitedMediaSource },
+                    searchLane = { SearchDispatchers.forSource(searchRanks.await().getValue(instance.instanceId)) },
+                    searchTier = SourceStartOrder.startTierOf(instance.source.mediaSourceId, instance.source.info.tier, startTiers),
                 )
             }
+
+        /** 这部番记住的源 ([rememberedSourceOf]), 建会话时就在 [lookupContext] 上开始读; 开关关着或没给 [rememberedSourceOf] 时为 null. */
+        private val rememberedSource: Deferred<String?>? = rememberedSourceOf
+            ?.takeIf { DevSwitches.searchRememberedFirst.value }
+            ?.let { lookup ->
+                CoroutineScope(lookupContext).async {
+                    PlayTimeline.mark("t_first_lookup")
+                    lookup(request.first().subjectId)
+                }
+            }
+
+        /**
+         * 各源在开查先后里的位次 (见 [SourceStartOrder]), 第一个开查的源来取时算一次. 这部番记住的源 ([rememberedSourceOf]) 排最前、
+         * 先拿搜索线程, 限流也排它到队首: 自动选源先只等它, 别的源再多也先查它 ([DevSwitches.searchRememberedFirst] 关时不管它).
+         * 记住的源建会话时就开始读 ([rememberedSource]), 到这里最多再等 [REMEMBERED_SOURCE_TIMEOUT], 还没读到就照常排.
+         */
+        private val searchRanks: Deferred<Map<String, Int>> = CoroutineScope(flowContext).async(start = CoroutineStart.LAZY) {
+            val remembered = rememberedSource?.let { lookup ->
+                withTimeoutOrNull(REMEMBERED_SOURCE_TIMEOUT) { lookup.await() }
+                    .also { PlayTimeline.mark("search_first", it ?: if (lookup.isCompleted) "none" else "timed out") }
+            }
+            if (remembered != null) searchLimiter?.prioritize(remembered)
+            SourceStartOrder.of(mediaSourceResults, startTiers, first = remembered)
+                .withIndex().associate { (rank, index) -> mediaSourceResults[index].instanceId to rank }
+        }
 
         override val cumulativeResults: Flow<List<Media>> = kotlin.run {
             if (mediaSourceResults.isEmpty()) {
                 return@run flowOfEmptyList()
             }
-            SourceStartOrder.combineInOrder(mediaSourceResults.map { it.results }, SourceStartOrder.of(mediaSourceResults)) { lists ->
+            SourceStartOrder.combineInOrder(mediaSourceResults.map { it.results }, SourceStartOrder.of(mediaSourceResults, startTiers)) { lists ->
                 lists.asSequence().flatten().toList()
             }.map { list ->
                 list.distinctBy { it.mediaId } // distinct globally by id, just to be safe
@@ -616,6 +669,9 @@ class MediaSourceMediaFetcher(
     private companion object {
         private val logger = logger<MediaSourceMediaFetcher>()
         private const val ENABLE_WATCHDOG = false
+
+        /** 读条目记住的源最多等这么久, 读不出来就照常排, 不让各源开查跟着等 */
+        private val REMEMBERED_SOURCE_TIMEOUT = 300.milliseconds
     }
 }
 

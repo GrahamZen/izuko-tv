@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.domain.media.continuation
 
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.currentTime
@@ -22,11 +23,13 @@ import me.him188.ani.app.domain.media.selector.testFramework.FetchMediaSelectorT
 import me.him188.ani.app.domain.media.selector.testFramework.runFetchMediaSelectorTestSuite
 import me.him188.ani.app.domain.media.selector.testFramework.tier
 import me.him188.ani.app.domain.mediasource.clouddrive.DriveShareLocation
+import me.him188.ani.app.platform.DevSwitches
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import me.him188.ani.datasources.api.source.MediaSourceKind.LocalCache
 import me.him188.ani.datasources.api.source.MediaSourceKind.WEB
 import me.him188.ani.test.DisabledOnNative
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -42,6 +45,8 @@ class PlaybackLineageSelectionTest {
     private class FakeContinuation(
         var resolution: LineageResolution = LineageResolution.NotFound,
         private val quick: Boolean = false,
+        /** 直接去取一直取不完 (站点卡住) */
+        private val hang: Boolean = false,
     ) : EpisodeContinuation {
         var resolves = 0
         override fun owns(media: Media) = false
@@ -49,6 +54,7 @@ class PlaybackLineageSelectionTest {
         override fun continues(lineage: PlaybackLineage, candidate: Media) = candidate.properties.alliance == ON_LINEAGE
         override suspend fun resolve(lineage: PlaybackLineage, request: MediaFetchRequest): LineageResolution {
             resolves++
+            if (hang) awaitCancellation()
             return resolution
         }
         override fun isQuickToResolve(lineage: PlaybackLineage) = quick
@@ -72,6 +78,11 @@ class PlaybackLineageSelectionTest {
         cacheRecords: EpisodeCacheRecords = HAS_CACHE_RECORD,
     ): Boolean = PlaybackLineageSelection(repository, continuation, cacheRecords)
         .select(SUBJECT_ID, preferenceApi.mediaSelectorContext.value.episodeInfo!!, session, selector)
+
+    @AfterTest
+    fun resetSwitch() {
+        DevSwitches.lineageWorkingResults.set("1")
+    }
 
     @Test
     fun `the lineage candidate wins over source tiers and preferences`() = runFetchMediaSelectorTestSuite {
@@ -272,6 +283,64 @@ class PlaybackLineageSelectionTest {
     }
 
     @Test
+    fun `a quick lineage that cannot be opened this time waits for its source in the session`() = runFetchMediaSelectorTestSuite {
+        initWeb()
+        val repository = PlaybackLineageRepository(createTestPreferencesDataStore()).apply { setLineage(SUBJECT_ID, lineageOnDrive) }
+        val (_, session, sources) = configureFetchSession {
+            object {
+                val drive by web()
+            }
+        }
+        // 会话里这个源边查边交出了线索上的这一集
+        sources.drive.emitEarly(media(kind = WEB, subjectName = "Example Series", alliance = ON_LINEAGE))
+        testScope().runCurrent()
+        val continuation = FakeContinuation(LineageResolution.Unavailable, quick = true)
+
+        assertTrue(select(repository, continuation, session))
+        assertEquals(ON_LINEAGE, selector.selected.value?.properties?.alliance)
+        assertEquals(1, continuation.resolves)
+    }
+
+    @Test
+    fun `a quick lineage whose direct lookup hangs is taken from the session as soon as its source hands it over`() = runFetchMediaSelectorTestSuite {
+        initWeb()
+        val repository = PlaybackLineageRepository(createTestPreferencesDataStore()).apply { setLineage(SUBJECT_ID, lineageOnDrive) }
+        val (_, session, sources) = configureFetchSession {
+            object {
+                val drive by web()
+            }
+        }
+        // 会话里这个源 (读搜索缓存) 先交出了线索上的这一集, 直接开记下的页却卡着
+        sources.drive.emitEarly(media(kind = WEB, subjectName = "Example Series", alliance = ON_LINEAGE))
+        testScope().runCurrent()
+        val continuation = FakeContinuation(quick = true, hang = true)
+        val start = testScope().currentTime
+
+        assertTrue(select(repository, continuation, session))
+        assertEquals(ON_LINEAGE, selector.selected.value?.properties?.alliance)
+        assertTrue(testScope().currentTime - start < 1_000)
+    }
+
+    @Test
+    fun `a quick lineage without this episode is settled at once`() = runFetchMediaSelectorTestSuite {
+        initWeb()
+        val repository = PlaybackLineageRepository(createTestPreferencesDataStore()).apply { setLineage(SUBJECT_ID, lineageOnDrive) }
+        val (_, session, _) = configureFetchSession {
+            object {
+                val drive by web()
+            }
+        }
+        // 会话里这个源还在整轮搜: 快取已经说了没有这一集, 不等它
+        testScope().runCurrent()
+        val continuation = FakeContinuation(LineageResolution.NotFound, quick = true)
+        val start = testScope().currentTime
+
+        assertFalse(select(repository, continuation, session))
+        assertTrue(testScope().currentTime - start < 1_000)
+        assertEquals(1, continuation.resolves)
+    }
+
+    @Test
     fun `a lineage source that finished without the episode is not searched again`() = runFetchMediaSelectorTestSuite {
         initWeb()
         val repository = PlaybackLineageRepository(createTestPreferencesDataStore()).apply { setLineage(SUBJECT_ID, lineageOnDrive) }
@@ -303,6 +372,45 @@ class PlaybackLineageSelectionTest {
 
         assertFalse(select(repository, continuation, session))
         assertEquals(0, continuation.resolves)
+    }
+
+    @Test
+    fun `a lineage resource from a source still searching is selected without waiting for it to finish`() = runFetchMediaSelectorTestSuite {
+        DevSwitches.lineageWorkingResults.set("1")
+        initWeb()
+        val repository = PlaybackLineageRepository(createTestPreferencesDataStore()).apply { setLineage(SUBJECT_ID, lineageOnDrive) }
+        val (_, session, sources) = configureFetchSession {
+            object {
+                val drive by web()
+            }
+        }
+        // 开完第一页先交出这一页, 还在开别的页
+        sources.drive.emitEarly(media(kind = WEB, subjectName = "Example Series", alliance = ON_LINEAGE))
+        testScope().runCurrent()
+        val continuation = FakeContinuation()
+        val start = testScope().currentTime
+
+        assertTrue(select(repository, continuation, session))
+        assertEquals(ON_LINEAGE, selector.selected.value?.properties?.alliance)
+        assertTrue(testScope().currentTime - start < 1_000)
+        assertEquals(0, continuation.resolves)
+    }
+
+    @Test
+    fun `a lineage source still searching has to finish when the switch is off`() = runFetchMediaSelectorTestSuite {
+        DevSwitches.lineageWorkingResults.set("0")
+        initWeb()
+        val repository = PlaybackLineageRepository(createTestPreferencesDataStore()).apply { setLineage(SUBJECT_ID, lineageOnDrive) }
+        val (_, session, sources) = configureFetchSession {
+            object {
+                val drive by web()
+            }
+        }
+        sources.drive.emitEarly(media(kind = WEB, subjectName = "Example Series", alliance = ON_LINEAGE))
+        testScope().runCurrent()
+
+        assertFalse(select(repository, FakeContinuation(), session))
+        assertNull(selector.selected.value)
     }
 
     @Test

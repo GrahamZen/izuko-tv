@@ -112,6 +112,11 @@ class SelectorMediaSourceEpisodeCacheRepository(
         dao.deleteByRequestedSubjectAndSource(requesterSubjectId, mediaSourceId)
     }
 
+    /** [mediaSourceId] 的一集 (播放地址 [playUrl]) 出自哪个条目页; 没缓存过时为 null. 见 [WebSearchSessionCacheDao.subjectUrlOf]. */
+    suspend fun subjectUrlOf(mediaSourceId: String, playUrl: String): String? = withContext(defaultDispatcher) {
+        dao.subjectUrlOf(mediaSourceId, playUrl)
+    }
+
     /**
      * 清除所有已过期的行. 在进入/退出播放页时调用.
      */
