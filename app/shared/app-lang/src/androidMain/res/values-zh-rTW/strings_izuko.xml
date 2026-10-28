@@ -464,7 +464,6 @@
     <string name="settings_storage_media_library">片庫</string>
     <string name="settings_storage_media_library_description">下載完的快取自動移到所在磁碟根目錄下的 Izuko 資料夾，按番和集整理，在電腦上也能直接打開。片庫在應用程式目錄之外，解除安裝、清除資料都不會刪除。需要「所有檔案存取權」</string>
     <string name="settings_storage_media_library_revoked">「所有檔案存取權」被關閉了，片庫暫時不可用。重新開啟權限即可恢復</string>
-    <string name="settings_storage_media_library_unsupported">這台裝置的系統是 Android 10 或更早，不支援片庫</string>
     <string name="settings_storage_media_library_confirm_text">片庫放在應用程式目錄之外，解除安裝、清除資料都不會刪除。需要「所有檔案存取權」：關閉這個權限後片庫暫時不可用，重新開啟即可恢復；解除安裝後重新安裝要再開啟一次。</string>
     <string name="settings_storage_media_library_grant_app">在系統頁面允許本應用程式管理所有檔案，回到應用程式後接著開啟片庫</string>
     <string name="settings_storage_media_library_grant_list">在清單裡找到本應用程式並允許，回到應用程式後接著開啟片庫</string>
@@ -479,6 +478,7 @@
     <string name="settings_storage_delete_cache_when_done_library_confirm">仍然開啟</string>
     <string name="settings_storage_where">快取放在哪裡</string>
     <string name="settings_storage_where_description">快取下載到哪個磁碟，下載完的放不放進片庫。按確定修改，已有的快取可以一併移過去</string>
+    <string name="settings_storage_where_description_app_only">快取下載到哪個磁碟。按確定修改，已有的快取可以一併移過去</string>
     <string name="settings_storage_where_value">%1$s · %2$s</string>
     <string name="settings_storage_media_library_revoked_title">片庫暫時不可用</string>
     <string name="settings_storage_media_library_regrant">重新授權</string>
@@ -489,6 +489,7 @@
     <string name="storage_guide_step_existing">已有的快取</string>
     <string name="storage_guide_drive_title">快取放在哪個磁碟</string>
     <string name="storage_guide_drive_description">新的快取下載到這裡；放進片庫時，片庫也在這個磁碟上。</string>
+    <string name="storage_guide_drive_description_app_only">新的快取下載到這裡。</string>
     <string name="storage_guide_drive_has">現在有 %1$d 個 · %2$s</string>
     <string name="storage_guide_drive_empty">現在沒有快取</string>
     <string name="storage_guide_mode_title">下載完的快取怎樣放</string>
@@ -522,6 +523,7 @@
     <string name="storage_guide_done_title">確認一下</string>
     <string name="storage_guide_done_description">按「完成」後生效。</string>
     <string name="storage_guide_done_where">快取位置：%1$s · %2$s</string>
+    <string name="storage_guide_done_where_drive">快取位置：%1$s</string>
     <string name="storage_guide_done_move">在背景移動 %1$d 個（%2$s），動作面板頂部可看到進度</string>
     <string name="storage_guide_done_keep_existing">已有的快取留在原處</string>
     <string name="storage_guide_done_nothing_to_move">沒有要移的快取</string>

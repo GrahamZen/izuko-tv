@@ -32,7 +32,7 @@ import me.him188.ani.datasources.api.topic.FileSize.Companion.bytes
 
 /**
  * 存储快满、缓存下载被全部暂停时弹提示 (见 [DownloadSpaceGuard.lowSpacePauses]); 把已有缓存搬到别的盘搬完时说结果
- * (见 [MediaCacheMover.finished]). 下载与搬家可能在任何一页 (或 Web 控制台) 开始, 所以挂在 TV 根组合上.
+ * (见 [MediaCacheMover.finished]; 一份要搬的都没有时不说). 下载与搬家可能在任何一页 (或 Web 控制台) 开始, 所以挂在 TV 根组合上.
  */
 @Composable
 fun TvLowSpaceToasts() {
@@ -50,7 +50,7 @@ fun TvLowSpaceToasts() {
     }
     LaunchedEffect(toaster) {
         val mover = GlobalKoin.getOrNull<MediaCacheMover>() ?: return@LaunchedEffect
-        mover.finished.collect { result -> toaster.toast(moveResultText(result)) }
+        mover.finished.collect { result -> if (!result.nothingToMove) toaster.toast(moveResultText(result)) }
     }
 }
 

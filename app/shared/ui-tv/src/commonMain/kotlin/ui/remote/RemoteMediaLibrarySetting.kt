@@ -23,8 +23,8 @@ import me.him188.ani.app.ui.lang.settings_storage_media_library
 import me.him188.ani.app.ui.lang.settings_storage_media_library_delete_when_done_off
 import me.him188.ani.app.ui.lang.settings_storage_media_library_description
 import me.him188.ani.app.ui.lang.settings_storage_media_library_grant_adb_text
+import me.him188.ani.app.ui.lang.settings_storage_media_library_grant_adb_title
 import me.him188.ani.app.ui.lang.settings_storage_media_library_revoked
-import me.him188.ani.app.ui.lang.settings_storage_media_library_unsupported
 import me.him188.ani.app.ui.lang.storage_guide_busy
 import me.him188.ani.datasources.api.topic.FileSize.Companion.bytes
 import org.koin.mp.KoinPlatform
@@ -33,7 +33,7 @@ import org.koin.mp.KoinPlatform
  * 「片库」卡片, 同电视设置「存储 → 缓存放在哪」引导里的片库那一项: 没有「所有文件访问」时打不开, 状态里给 adb 命令
  * (控制台这边多半就在电脑上); 开着但权限被关掉时状态里说片库暂时不可用. 去系统授权页的流程只在电视上的引导里有.
  * 开关之后照引导的默认做法把已有的搬过去 (见 [changed]).
- * 平台没有片库实现时打不开 (控制台只在安卓电视上有, 那里总有实现).
+ * 系统不支持片库 (安卓 10 及以下) 时不列这一项.
  */
 internal object RemoteMediaLibrarySetting {
     val spec = RemoteSettingSpec(
@@ -47,13 +47,14 @@ internal object RemoteMediaLibrarySetting {
         status = { status() },
         check = { value -> if (value.jsonPrimitive.boolean) cannotTurnOn() else null },
         onSaved = { value -> changed(value.jsonPrimitive.boolean) },
+        available = { access() != null },
     )
 
-    private fun access(): MediaLibraryAccess? = KoinPlatform.getKoin().getOrNull()
+    /** 系统支持片库时的权限实现 */
+    private fun access(): MediaLibraryAccess? = KoinPlatform.getKoin().getOrNull<MediaLibraryAccess>()?.takeIf { it.isSupported }
 
     private suspend fun status(): String? {
         val access = access() ?: return null
-        if (!access.isSupported) return getStringOffMain(Lang.settings_storage_media_library_unsupported)
         if (access.isGranted()) return null
         val enabled = KoinPlatform.getKoin().get<SettingsRepository>().mediaCacheSettings.flow.first().libraryEnabled
         return listOfNotNull(
@@ -64,11 +65,10 @@ internal object RemoteMediaLibrarySetting {
 
     /** 打不开的原因; 能打开时为 `null` */
     private suspend fun cannotTurnOn(): String? {
-        val access = access() ?: return getStringOffMain(Lang.settings_storage_media_library_unsupported)
-        if (!access.isSupported) return getStringOffMain(Lang.settings_storage_media_library_unsupported)
+        val access = access() ?: return getStringOffMain(Lang.settings_storage_media_library_grant_adb_title)
         if (access.isGranted()) return null
         return access.adbGrantCommand?.let { getStringOffMain(Lang.settings_storage_media_library_grant_adb_text, it) }
-            ?: getStringOffMain(Lang.settings_storage_media_library_unsupported)
+            ?: getStringOffMain(Lang.settings_storage_media_library_grant_adb_title)
     }
 
     /**

@@ -76,7 +76,6 @@ import me.him188.ani.app.ui.lang.settings_storage_media_library_grant_adb_text
 import me.him188.ani.app.ui.lang.settings_storage_media_library_grant_app
 import me.him188.ani.app.ui.lang.settings_storage_media_library_grant_details
 import me.him188.ani.app.ui.lang.settings_storage_media_library_grant_list
-import me.him188.ani.app.ui.lang.settings_storage_media_library_unsupported
 import me.him188.ani.app.ui.lang.storage_guide_busy
 import me.him188.ani.app.ui.lang.storage_guide_done_description
 import me.him188.ani.app.ui.lang.storage_guide_done_finish
@@ -85,7 +84,9 @@ import me.him188.ani.app.ui.lang.storage_guide_done_move
 import me.him188.ani.app.ui.lang.storage_guide_done_nothing_to_move
 import me.him188.ani.app.ui.lang.storage_guide_done_title
 import me.him188.ani.app.ui.lang.storage_guide_done_where
+import me.him188.ani.app.ui.lang.storage_guide_done_where_drive
 import me.him188.ani.app.ui.lang.storage_guide_drive_description
+import me.him188.ani.app.ui.lang.storage_guide_drive_description_app_only
 import me.him188.ani.app.ui.lang.storage_guide_drive_empty
 import me.him188.ani.app.ui.lang.storage_guide_drive_has
 import me.him188.ani.app.ui.lang.storage_guide_drive_title
@@ -127,7 +128,7 @@ import org.jetbrains.compose.resources.stringResource
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * 「缓存放在哪」引导 (设置「存储」那一行按下去): 全屏, 一步一步问 —— 放在哪块盘、下完的放进片库还是应用目录、(选了片库又没权限时) 去授权、
+ * 「缓存放在哪」引导 (设置「存储」那一行按下去): 全屏, 一步一步问 —— 放在哪块盘、下完的放进片库还是应用目录 (系统不支持片库时不问)、(选了片库又没权限时) 去授权、
  * 已有的缓存怎么办, 最后确认. 各步先选好现在的设置; 按「完成」才写设置、开始搬 ([MediaStorageSetup.apply]), 中途退出什么都不改.
  * 返回键退回上一步, 在第一步关掉引导. 步骤逻辑在 [StorageGuideState].
  */
@@ -223,7 +224,9 @@ private fun DriveStep(state: StorageGuideState, setup: MediaStorageSetup, drives
     val usage by produceState(emptyMap<String?, MediaStorageSetup.Group>()) { value = setup.usage() }
     val recommended = remember(drives) { recommendedDrive(drives) }
     GuideColumns(
-        description = stringResource(Lang.storage_guide_drive_description),
+        description = stringResource(
+            if (state.librarySupported) Lang.storage_guide_drive_description else Lang.storage_guide_drive_description_app_only,
+        ),
         options = {
             for (drive in drives) {
                 val used = usage[drive.id]
@@ -257,14 +260,9 @@ private fun ModeStep(state: StorageGuideState, granted: Boolean, focus: TvFocusS
         options = {
             GuideOption(
                 title = stringResource(Lang.storage_guide_mode_library),
-                description = if (state.librarySupported) {
-                    stringResource(Lang.storage_guide_mode_library_description)
-                } else {
-                    stringResource(Lang.settings_storage_media_library_unsupported)
-                },
-                recommended = state.librarySupported,
+                description = stringResource(Lang.storage_guide_mode_library_description),
+                recommended = true,
                 selected = state.library,
-                enabled = state.librarySupported,
                 onClick = { state.chooseMode(library = true, granted = granted) },
                 modifier = Modifier.tvFocusAnchor(focus, GuideFocus("mode:library")),
             )
@@ -279,7 +277,7 @@ private fun ModeStep(state: StorageGuideState, granted: Boolean, focus: TvFocusS
         },
     )
     LaunchedEffect(Unit) {
-        focus.request(GuideFocus(if (state.library || (state.librarySupported && !state.wasLibrary)) "mode:library" else "mode:app"))
+        focus.request(GuideFocus(if (state.library || !state.wasLibrary) "mode:library" else "mode:app"))
     }
 }
 
@@ -428,7 +426,14 @@ private fun ConfirmStep(
         description = stringResource(Lang.storage_guide_done_description),
         details = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(stringResource(Lang.storage_guide_done_where, driveName, modeName), style = MaterialTheme.typography.titleMedium)
+                Text(
+                    if (state.librarySupported) {
+                        stringResource(Lang.storage_guide_done_where, driveName, modeName)
+                    } else {
+                        stringResource(Lang.storage_guide_done_where_drive, driveName)
+                    },
+                    style = MaterialTheme.typography.titleMedium,
+                )
                 val current = plan
                 val total = current?.total
                 Text(

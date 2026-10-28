@@ -104,7 +104,10 @@ class MediaCacheMover(
         val skipped: Int,
         /** 整批停下的原因; null = 搬完了 */
         val stopReason: StopReason?,
-    )
+    ) {
+        /** 一份要搬的都没有 (如引导里换了设置, 已有的都已经在那): 没有结果可说 */
+        val nothingToMove: Boolean get() = stopReason == null && moved == 0 && failed == 0 && skipped == 0
+    }
 
     enum class StopReason { TARGET_UNAVAILABLE, NOT_ENOUGH_SPACE, CANCELLED }
 

@@ -17,7 +17,7 @@ import kotlin.test.assertTrue
 
 /**
  * 「缓存放在哪」引导的步骤 ([StorageGuideState]): 选片库又没权限时先去授权, 给下来接着走; 没有要搬的跳过「已有的缓存」, 返回时也跳过;
- * 第一步按返回关掉引导; 系统不支持片库时只能放应用目录.
+ * 第一步按返回关掉引导; 系统不支持片库时没有「方式」那一步, 只放应用目录.
  */
 class StorageGuideStateTest {
     private fun state(location: String? = null, library: Boolean = false, supported: Boolean = true) =
@@ -90,12 +90,17 @@ class StorageGuideStateTest {
     }
 
     @Test
-    fun `without library support only the app folder is chosen`() {
+    fun `without library support the mode step is skipped and caches stay in the app folder`() {
         val state = state(library = true, supported = false)
         assertFalse(state.library)
-        state.chooseDrive(null)
-        state.chooseMode(library = true, granted = true)
-        assertFalse(state.library)
+        assertFalse(state.turningLibraryOff)
+        assertFalse(StorageGuideStep.Mode in state.visibleSteps)
+
+        state.chooseDrive("usb")
         assertEquals(StorageGuideStep.Existing, state.step)
+        assertEquals(MediaStorageSetup.Choice("usb", library = false), state.choice)
+
+        assertTrue(state.back())
+        assertEquals(StorageGuideStep.Drive, state.step)
     }
 }
