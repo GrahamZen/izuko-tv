@@ -59,6 +59,7 @@ import me.him188.ani.app.ui.foundation.focus.TvFocusScope
 import me.him188.ani.app.ui.foundation.focus.rememberTvFocusScope
 import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
 import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
+import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
 import me.him188.ani.app.ui.foundation.widgets.AniFocusActionButton
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
@@ -122,7 +123,6 @@ import me.him188.ani.app.ui.lang.storage_guide_step_mode
 import me.him188.ani.app.ui.lang.storage_guide_step_permission
 import me.him188.ani.app.ui.lang.tv_onboarding_recommended
 import me.him188.ani.datasources.api.topic.FileSize.Companion.bytes
-import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 import kotlin.time.Duration.Companion.seconds
 
@@ -309,10 +309,10 @@ private fun PermissionStep(state: StorageGuideState, access: MediaLibraryAccess?
                 onClick = {
                     scope.launch {
                         hint = when (access?.openGrantPage()) {
-                            MediaLibraryAccess.GrantPage.APP -> getString(Lang.settings_storage_media_library_grant_app)
-                            MediaLibraryAccess.GrantPage.LIST -> getString(Lang.settings_storage_media_library_grant_list)
-                            MediaLibraryAccess.GrantPage.APP_DETAILS -> getString(Lang.settings_storage_media_library_grant_details)
-                            null -> access?.adbGrantCommand?.let { getString(Lang.settings_storage_media_library_grant_adb_text, it) }
+                            MediaLibraryAccess.GrantPage.APP -> getStringOffMain(Lang.settings_storage_media_library_grant_app)
+                            MediaLibraryAccess.GrantPage.LIST -> getStringOffMain(Lang.settings_storage_media_library_grant_list)
+                            MediaLibraryAccess.GrantPage.APP_DETAILS -> getStringOffMain(Lang.settings_storage_media_library_grant_details)
+                            null -> access?.adbGrantCommand?.let { getStringOffMain(Lang.settings_storage_media_library_grant_adb_text, it) }
                         }
                     }
                 },

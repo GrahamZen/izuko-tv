@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.remote
 
+import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.foundation.lan.escapeHtml
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.mediafetch_request_editor_episode_ep
@@ -24,7 +25,6 @@ import me.him188.ani.app.ui.lang.mediafetch_request_editor_secondary_names
 import me.him188.ani.app.ui.lang.mediafetch_request_editor_secondary_names_supporting
 import me.him188.ani.app.ui.lang.mediafetch_request_editor_title
 import org.jetbrains.compose.resources.StringResource
-import org.jetbrains.compose.resources.getString
 
 /**
  * Web 控制台 (网页里标题叫「Izuko TV 控制台」; 手机、电脑的浏览器都能开, 原叫「手机遥控 / 控制中心」) 的网页: 底部四个标签 (搜索 / 播放器 / 缓存 / 设置) 的单页应用; 搜索标签顶上再分「搜索 / 结果」两页,
@@ -3181,7 +3181,7 @@ private val SCRIPT = """
  * 折叠在 `<details>` 里 —— 平时用不上, 展开才占地方. 内容由脚本按 `api/player` 里的 `request` 预填.
  */
 internal suspend fun renderPlayerRequestSection(): String {
-    suspend fun t(r: StringResource): String = getString(r).escapeHtml()
+    suspend fun t(r: StringResource): String = getStringOffMain(r).escapeHtml()
     return """
 <details class="card req" id="req" hidden>
 <summary>${t(Lang.mediafetch_request_editor_title)}<small id="req-sum"></small></summary>

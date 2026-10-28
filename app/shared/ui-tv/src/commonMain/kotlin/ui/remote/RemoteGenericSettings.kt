@@ -33,6 +33,7 @@ import me.him188.ani.app.data.models.preference.MediaPreference
 import me.him188.ani.app.data.models.preference.TorrentPeerConfig
 import me.him188.ani.app.data.repository.user.Settings
 import me.him188.ani.app.data.repository.user.SettingsRepository
+import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.remote_settings_peer_client_rules
 import me.him188.ani.app.ui.lang.remote_settings_tracker_subscriptions
@@ -54,7 +55,6 @@ import me.him188.ani.app.ui.lang.settings_media_torrent_extra_trackers
 import me.him188.ani.app.ui.lang.settings_media_torrent_extra_trackers_dialog_description
 import me.him188.ani.utils.ipparser.IpSeqRange
 import org.jetbrains.compose.resources.StringResource
-import org.jetbrains.compose.resources.getString
 
 /**
  * Web 控制台「设置」里的通用设置项清单: 登记一行 (哪个设置、哪个字段、用设置页的哪条文案), 网页上就有对应的卡片,
@@ -343,14 +343,14 @@ internal object RemoteGenericSettings {
         } else {
             stored
         }
-        val title = getString(spec.title)
-        val description = spec.description?.let { getString(it) }
-        val placeholder = spec.placeholder?.let { getString(it) }
+        val title = getStringOffMain(spec.title)
+        val description = spec.description?.let { getStringOffMain(it) }
+        val placeholder = spec.placeholder?.let { getStringOffMain(it) }
         val choices = when (editor) {
             is RemoteSettingEditor.Choice -> {
                 val d = spec.fieldDescriptor
                 (0 until d.elementsCount).map { d.getElementName(it) }.map { name ->
-                    name to (editor.labels[name]?.let { getString(it) } ?: name)
+                    name to (editor.labels[name]?.let { getStringOffMain(it) } ?: name)
                 }
             }
 
@@ -415,7 +415,7 @@ internal object RemoteGenericSettings {
         }
         spec.check?.invoke(element)?.let { return result(false, it) }
         spec.settings(repository).update { spec.write(this, element) }
-        val saved = tr("已保存「{0}」", getString(spec.title))
+        val saved = tr("已保存「{0}」", getStringOffMain(spec.title))
         return result(true, spec.onSaved?.invoke(element)?.let { "$saved\n$it" } ?: saved)
     }
 
