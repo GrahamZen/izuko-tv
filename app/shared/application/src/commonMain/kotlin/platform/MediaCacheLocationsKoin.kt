@@ -34,6 +34,7 @@ import me.him188.ani.app.domain.media.cache.storage.MediaCacheSave
 import me.him188.ani.app.domain.media.cache.storage.MediaSaveDirProvider
 import me.him188.ani.app.domain.media.download.MediaDownloadManager
 import me.him188.ani.app.domain.media.player.PlaybackActivity
+import me.him188.ani.app.domain.mediasource.clouddrive.LocalFolderAccess
 import me.him188.ani.app.domain.mediasource.clouddrive.LocalFolderRoots
 import me.him188.ani.utils.io.SystemPath
 import me.him188.ani.utils.io.absolutePath
@@ -49,10 +50,12 @@ internal fun Scope.mediaCacheLocations(): MediaCacheLocations =
     getOrNull<MediaCacheLocations>()
         ?: InternalOnlyMediaCacheLocations(Path(get<MediaSaveDirProvider>().saveDir).inSystem)
 
-/** 本地文件夹数据源能读的盘: 同缓存位置的各块盘, 权限同片库; 平台没有片库实现时一块都没有 */
-internal fun Scope.localFolderRoots(): LocalFolderRoots =
-    getOrNull<MediaLibraryAccess>()?.takeIf { it.isSupported }?.let { VolumeLocalFolderRoots(mediaCacheLocations(), it) }
-        ?: LocalFolderRoots.None
+/** 本地文件夹数据源能读的盘: 同缓存位置的各块盘; 平台没有本地文件夹的权限实现 ([LocalFolderAccess]) 时一块都没有 */
+internal fun Scope.localFolderRoots(): LocalFolderRoots {
+    val access = getOrNull<LocalFolderAccess>() ?: return LocalFolderRoots.None
+    val library = getOrNull<MediaLibraryAccess>() ?: return LocalFolderRoots.None
+    return VolumeLocalFolderRoots(mediaCacheLocations(), library, access)
+}
 
 /** 网页缓存在 [location] 位置上的目录; 那个盘没接上时为 `null` */
 internal fun MediaCacheLocations.httpCacheDirOf(location: String): Path? =
