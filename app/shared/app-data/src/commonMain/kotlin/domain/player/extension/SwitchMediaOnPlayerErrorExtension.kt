@@ -37,6 +37,7 @@ import me.him188.ani.app.domain.media.download.MediaDownloadManager
 import me.him188.ani.app.domain.media.fetch.MediaFetchSession
 import me.him188.ani.app.domain.media.fetch.isFinal
 import me.him188.ani.app.domain.media.fetch.isPaused
+import me.him188.ani.app.domain.media.resolver.WebViewDeferral
 import me.him188.ani.app.domain.media.selector.MediaAutoSelector
 import me.him188.ani.app.domain.media.selector.MediaSelector
 import me.him188.ani.app.domain.media.selector.MediaSelectorSourceTiers
@@ -377,7 +378,8 @@ internal class PlayerLoadErrorHandler(
     ) {
         mediaSelectorFlow.collectLatest { selector ->
             selector.events.onSelect.collect { event ->
-                event.previousMedia?.let { blacklist(it.mediaId) }
+                // 要嗅探时被改选掉的没坏, 不拉黑 (见 WebViewDeferral.takeSwitchingAway)
+                event.previousMedia?.takeUnless { WebViewDeferral.takeSwitchingAway(it.mediaId) }?.let { blacklist(it.mediaId) }
             }
         }
     }

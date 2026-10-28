@@ -10,6 +10,8 @@
 package me.him188.ani.app.domain.media.resolver
 
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.datasources.api.Media
 import kotlin.concurrent.Volatile
@@ -40,6 +42,27 @@ object WebViewDeferral {
         val gate = gate ?: return
         if (!gate(media)) return
         withTimeoutOrNull(CANCEL_WAIT) { awaitCancellation() }
+    }
+
+    /** 正要因为要嗅探而被改选掉的资源, 换源时取走 (见 [takeSwitchingAway]) */
+    private val switchingAway = MutableStateFlow<Set<String>>(emptySet())
+
+    /** 改选前记下: 接下来从 [mediaId] 换走是因为它要嗅探, 不是它坏了. 改选没成就 [takeSwitchingAway] 撤掉. */
+    fun markSwitchingAway(mediaId: String) {
+        switchingAway.update { it + mediaId }
+    }
+
+    /**
+     * 从 [mediaId] 换走是不是改选 (见 [markSwitchingAway]), 只认一次. 是的话换源时不拉黑它: 它没坏, 只是慢,
+     * 它的源已记成要嗅探, 选源只拿它兜底, 等于排到最后; 再选到它时直接嗅探 (每个资源只改选一次).
+     */
+    fun takeSwitchingAway(mediaId: String): Boolean {
+        var taken = false
+        switchingAway.update {
+            taken = mediaId in it
+            if (taken) it - mediaId else it
+        }
+        return taken
     }
 
     private val CANCEL_WAIT = 5.seconds
