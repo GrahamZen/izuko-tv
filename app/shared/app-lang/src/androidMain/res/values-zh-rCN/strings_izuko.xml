@@ -217,8 +217,6 @@
     <string name="settings_theme_tv_hero_backdrop_description">关掉后探索、搜索、追番三页都换成海报墙：海报下面写番名，卡片上按确定先显示 hero 背景，再按确定进详情</string>
     <string name="settings_theme_tv_immersive_schedule">沉浸式新番时间表</string>
     <string name="settings_theme_tv_immersive_schedule_description">新番时间表使用日期胶囊 + 海报网格布局。关闭则回退到 15 天并排的纵向列表</string>
-    <string name="settings_theme_tv_schedule_layout">新番时间表版式 (电视)</string>
-    <string name="settings_theme_tv_schedule_layout_description">选择电视上新番时间表的版式。</string>
     <string name="settings_theme_tv_backdrop_blur">模糊背景 (电视)</string>
     <string name="settings_theme_tv_backdrop_blur_description">整页底下铺这部作品大图的模糊版，海报墙与详情页按搭配一起选：海报墙按确定后（「海报上按确定」选「先看简介」时）和新番时间表用海报墙那一档（时间表选不模糊时按中），详情页翻过第一屏后用详情页那一档。海报墙重、详情页轻最好看：卡片墙后面的底不抢眼，详情页还认得出画面。选不模糊时海报墙从大图放大进详情页，详情页的大图清晰地淡在后面</string>
     <string name="settings_theme_tv_backdrop_blur_pair">海报墙%1$s、详情页%2$s</string>
@@ -329,9 +327,6 @@
     <string name="settings_theme_tv_episode_specials_hidden">隐藏</string>
     <string name="settings_theme_tv_episode_specials_after_main">排在正片后面</string>
     <string name="settings_theme_tv_episode_specials_by_number">按序号插在正片之间</string>
-    <string name="settings_theme_tv_schedule_upstream">经典列表</string>
-    <string name="settings_theme_tv_schedule_grid">海报墙</string>
-    <string name="settings_theme_tv_schedule_timeline">左侧详情 + 单列时间线</string>
     <string name="settings_theme_tv_ui_scale">界面缩放</string>
     <string name="settings_theme_tv_ui_scale_description">整体放大或缩小界面。电视 / 盒子上报的屏幕密度不准、导致界面过大或过小时可用此项校正，100% 为跟随系统。离开设置页时界面会重载一次，使弹窗与菜单一并生效</string>
     <string name="settings_theme_tv_retain_playback_session">退出播放页后保留播放状态</string>

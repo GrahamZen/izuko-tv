@@ -74,7 +74,6 @@ import me.him188.ani.app.ui.foundation.TvPageActionHost
 import me.him188.ani.app.ui.foundation.TvPageAdjustHost
 import me.him188.ani.app.ui.foundation.playback.PlaybackSessionEntry
 import me.him188.ani.app.data.models.preference.TvLongPressAction
-import me.him188.ani.app.data.models.preference.TvScheduleLayout
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tvKeyLongPressInterceptor
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
@@ -100,7 +99,6 @@ import me.him188.ani.app.ui.exploration.LocalExplorationPageVariant
 import me.him188.ani.app.ui.exploration.TvExplorationPage
 import me.him188.ani.app.ui.exploration.schedule.LocalSchedulePageVariant
 import me.him188.ani.app.ui.exploration.schedule.SchedulePageVariant
-import me.him188.ani.app.ui.exploration.schedule.TvSchedulePage
 import me.him188.ani.app.ui.exploration.search.LocalSearchPageVariant
 import me.him188.ani.app.ui.exploration.search.SearchPageVariant
 import me.him188.ani.app.ui.exploration.search.TvSearchPage
@@ -299,14 +297,9 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
             }
         },
         LocalSchedulePageVariant provides SchedulePageVariant { presentation, onRetry, modifier ->
-            // 两版 TV 版式在这里分流 (Upstream 那一档在 ScheduleScreen 就挡住了, 到不了这里).
-            // 改版换掉的东西未必人人都想要, 所以旧版留着可选, 见 TvScheduleLayout
+            // 海报墙: 同追番页的卡片墙, 换上海报墙那套灰阶底色
             ProvideTvScrollActivity {
-                when (LocalThemeSettings.current.tvScheduleLayout) {
-                    // 海报墙: 同追番页的卡片墙, 换上海报墙那套灰阶底色
-                    TvScheduleLayout.Grid -> TvPosterWallTheme { TvScheduleGridPage(presentation, onRetry, modifier) }
-                    else -> TvSchedulePage(presentation, onRetry, modifier)
-                }
+                TvPosterWallTheme { TvScheduleGridPage(presentation, onRetry, modifier) }
             }
         },
         LocalSearchPageVariant provides SearchPageVariant { state, onIntent, suggestionsPager, modifier ->

@@ -25,7 +25,6 @@ import me.him188.ani.app.data.models.preference.TvExitBehavior
 import me.him188.ani.app.data.models.preference.TvExploreLayout
 import me.him188.ani.app.data.models.preference.TvLongPressAction
 import me.him188.ani.app.data.models.preference.TvPosterConfirmAction
-import me.him188.ani.app.data.models.preference.TvScheduleLayout
 import me.him188.ani.app.data.models.preference.TvTitleLogoDisplay
 import me.him188.ani.app.data.models.preference.TvTitleLogoLanguage
 import me.him188.ani.app.data.models.preference.TvVisualEffectsLevel
@@ -202,11 +201,6 @@ import me.him188.ani.app.ui.lang.settings_theme_tv_remote_show_on_launch
 import me.him188.ani.app.ui.lang.settings_theme_tv_remote_show_on_launch_description
 import me.him188.ani.app.ui.lang.settings_theme_tv_retain_playback_session
 import me.him188.ani.app.ui.lang.settings_theme_tv_retain_playback_session_description
-import me.him188.ani.app.ui.lang.settings_theme_tv_schedule_grid
-import me.him188.ani.app.ui.lang.settings_theme_tv_schedule_layout
-import me.him188.ani.app.ui.lang.settings_theme_tv_schedule_layout_description
-import me.him188.ani.app.ui.lang.settings_theme_tv_schedule_timeline
-import me.him188.ani.app.ui.lang.settings_theme_tv_schedule_upstream
 import me.him188.ani.app.ui.lang.settings_theme_tv_title_logo
 import me.him188.ani.app.ui.lang.settings_theme_tv_title_logo_auto
 import me.him188.ani.app.ui.lang.settings_theme_tv_title_logo_description
@@ -534,22 +528,6 @@ private fun TvSettingsItemsBuilder.themeItems() {
         theme, Lang.settings_theme_dynamic_subject, Lang.settings_theme_dynamic_subject_description,
         read = { it.useDynamicSubjectPageTheme },
         write = { copy(useDynamicSubjectPageTheme = it) },
-    )
-    // 三版都留着可选 (见 TvScheduleLayout): 改版换掉的东西未必人人都想要
-    choice(
-        theme, Lang.settings_theme_tv_schedule_layout, Lang.settings_theme_tv_schedule_layout_description,
-        options = { TvScheduleLayout.entries },
-        label = {
-            tvText(
-                when (it) {
-                    TvScheduleLayout.Upstream -> Lang.settings_theme_tv_schedule_upstream
-                    TvScheduleLayout.Grid -> Lang.settings_theme_tv_schedule_grid
-                    TvScheduleLayout.Timeline -> Lang.settings_theme_tv_schedule_timeline
-                },
-            )
-        },
-        read = { it.tvScheduleLayout },
-        write = { copy(tvScheduleLayout = it) },
     )
     choice(
         theme, Lang.settings_theme_tv_poster_confirm, Lang.settings_theme_tv_poster_confirm_description,
