@@ -192,6 +192,9 @@ object DevSwitches {
     /** 各源开查先后与排队按选源时它能到的最好层级 (线路层级、画像降级), 关时按源自身的层级 (见 SourceStartOrder.startTierOf) */
     val searchStartByBestTier = toggle("searchStartByBestTier", "开播: 开查先后按线路最好层级", default = true, persistent = true)
 
+    /** 播放器打开视频期间读取出错只重试一次, 关时按 Media3 默认重试 3 次 (见 OpeningLoadErrorPolicy) */
+    val openFailFast = toggle("openFailFast", "开播: 打开视频出错少重试 (坏链接早换源)", default = true, persistent = true)
+
     /**
      * 开播诊断: 记开播时间线 (控制台 `api/debug/timeline`, 见 PlayTimeline)、自动选源每一步在等什么、共用客户端与播放请求的各段耗时;
      * 主线程卡住超过 4 秒时把栈打进日志 (重启后生效). 关着时这些都不记.
