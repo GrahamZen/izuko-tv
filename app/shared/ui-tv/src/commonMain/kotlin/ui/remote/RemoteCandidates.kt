@@ -21,6 +21,7 @@ import me.him188.ani.app.domain.media.selector.UnsafeOriginalMediaAccess
 import me.him188.ani.app.domain.media.selector.blocksSelection
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveRegistry
 import me.him188.ani.app.domain.mediasource.clouddrive.DriveVideoBitrates
+import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.media_selector_item_cache_not_ready
 import me.him188.ani.app.ui.lang.media_selector_item_excluded_alliance
@@ -32,7 +33,6 @@ import me.him188.ani.app.ui.lang.media_selector_item_subject_title_mismatch
 import me.him188.ani.app.ui.lang.media_selector_item_unsupported_playback
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.source.MediaSourceKind
-import org.jetbrains.compose.resources.getString
 import org.koin.mp.KoinPlatform
 import kotlin.reflect.KClass
 
@@ -188,17 +188,17 @@ internal object RemoteCandidates {
     /** 排除原因的文字, 与电视上选源面板的一致 (见 TvSourceStrings.exclusion). */
     private fun loadReasonTexts(): Map<KClass<out MediaExclusionReason>, String> = runBlocking {
         mapOf(
-            MediaExclusionReason.ExcludedAlliance::class to getString(Lang.media_selector_item_excluded_alliance),
-            MediaExclusionReason.MediaWithoutSubtitle::class to getString(Lang.media_selector_item_no_subtitle),
+            MediaExclusionReason.ExcludedAlliance::class to getStringOffMain(Lang.media_selector_item_excluded_alliance),
+            MediaExclusionReason.MediaWithoutSubtitle::class to getStringOffMain(Lang.media_selector_item_no_subtitle),
             MediaExclusionReason.SingleEpisodeForCompleteSubject::class to
-                    getString(Lang.media_selector_item_single_episode_resource),
+                    getStringOffMain(Lang.media_selector_item_single_episode_resource),
             MediaExclusionReason.UnsupportedByPlatformPlayer::class to
-                    getString(Lang.media_selector_item_unsupported_playback),
-            MediaExclusionReason.FromSequelSeason::class to getString(Lang.media_selector_item_season_mismatch),
-            MediaExclusionReason.FromSeriesSeason::class to getString(Lang.media_selector_item_season_mismatch),
-            MediaExclusionReason.SubjectNameMismatch::class to getString(Lang.media_selector_item_subject_title_mismatch),
-            MediaExclusionReason.CacheNotReady::class to getString(Lang.media_selector_item_cache_not_ready),
-            MediaExclusionReason.PublishedBeforeAiring::class to getString(Lang.media_selector_item_published_before_airing),
+                    getStringOffMain(Lang.media_selector_item_unsupported_playback),
+            MediaExclusionReason.FromSequelSeason::class to getStringOffMain(Lang.media_selector_item_season_mismatch),
+            MediaExclusionReason.FromSeriesSeason::class to getStringOffMain(Lang.media_selector_item_season_mismatch),
+            MediaExclusionReason.SubjectNameMismatch::class to getStringOffMain(Lang.media_selector_item_subject_title_mismatch),
+            MediaExclusionReason.CacheNotReady::class to getStringOffMain(Lang.media_selector_item_cache_not_ready),
+            MediaExclusionReason.PublishedBeforeAiring::class to getStringOffMain(Lang.media_selector_item_published_before_airing),
         )
     }
 

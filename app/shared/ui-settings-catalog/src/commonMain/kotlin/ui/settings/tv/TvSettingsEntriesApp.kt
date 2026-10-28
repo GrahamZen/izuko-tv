@@ -27,6 +27,7 @@ import me.him188.ani.app.domain.settings.unreachableProxyOf
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.platform.MeteredNetworkDetector
 import me.him188.ani.app.platform.currentAniBuildConfig
+import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.oauth_bangumi_help_activation_failed
 import me.him188.ani.app.ui.lang.oauth_bangumi_help_activation_failed_content
@@ -141,7 +142,6 @@ import me.him188.ani.app.ui.settings.tabs.log.LogLanShareState
 import me.him188.ani.app.ui.update.AppUpdatePresentation
 import me.him188.ani.app.ui.update.AppUpdateState
 import me.him188.ani.app.ui.update.UpdateCheckProgress
-import org.jetbrains.compose.resources.getString
 import kotlin.math.roundToInt
 
 /** 账号、更新、日志、关于、调试用到的几份值. */
@@ -552,7 +552,7 @@ internal fun TvSettingsItemsBuilder.logItems() {
     ) { emptyList() }
     run(Lang.settings_log_export_file, Lang.tv_settings_log_export_description, visible = { logExportSupported }) { env ->
         if (!currentLogFileExists(env.context)) {
-            env.toast(getString(Lang.settings_log_file_not_found))
+            env.toast(getStringOffMain(Lang.settings_log_file_not_found))
         } else {
             // 系统选择器开着时要一直留在组合里 (结果才收得到), 导完再关
             env.show(TvSettingsOverlay.Dialog { dismiss -> LogExport(onDone = dismiss) })
@@ -594,15 +594,15 @@ internal fun TvSettingsItemsBuilder.debugItems() {
     action(Lang.settings_debug_metered_network, keys = listOf(metered), value = { it[metered]?.let(::tvOnOff) }) { emptyList() }
     run(Lang.settings_debug_logout) { env ->
         GlobalKoin.get<UserRepository>().clearSelfInfo()
-        env.toast(getString(Lang.settings_debug_logged_out))
+        env.toast(getStringOffMain(Lang.settings_debug_logged_out))
     }
     // 直连之后 token 只活 7 天, 续期平时六天才跑一次: 这里当场跑一遍 (成功会把轮换后的新 token 写回, 与自动续期同一条代码)
     run(Lang.tv_settings_debug_refresh_session) { env ->
         val result = runCatching { GlobalKoin.get<SessionManager>().refreshSession() }
         env.toast(
             result.fold(
-                onSuccess = { getString(Lang.tv_settings_debug_refresh_ok) },
-                onFailure = { getString(Lang.tv_settings_debug_refresh_failed, "${it::class.simpleName} ${it.message}") },
+                onSuccess = { getStringOffMain(Lang.tv_settings_debug_refresh_ok) },
+                onFailure = { getStringOffMain(Lang.tv_settings_debug_refresh_failed, "${it::class.simpleName} ${it.message}") },
             ),
         )
     }

@@ -31,6 +31,7 @@ import me.him188.ani.app.data.models.preference.MediaCacheSettings
 import me.him188.ani.app.platform.PermissionManager
 import me.him188.ani.app.ui.foundation.LocalSketch
 import me.him188.ani.app.ui.foundation.getClipEntryText
+import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.foundation.rememberAsyncHandler
 import me.him188.ani.app.ui.foundation.setClipEntryText
 import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
@@ -62,7 +63,6 @@ import me.him188.ani.app.ui.settings.framework.SettingsState
 import me.him188.ani.app.ui.settings.framework.components.DropdownItem
 import me.him188.ani.app.ui.settings.framework.components.SettingsScope
 import me.him188.ani.app.ui.settings.framework.components.TextItem
-import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 
 @Stable
@@ -89,7 +89,7 @@ fun SettingsScope.BackupSettings(state: CacheDirectoryGroupState) {
                 scope.launch {
                     val data = state.onGetBackupData()
                     clipboard.setClipEntryText(data)
-                    toaster.toast(getString(Lang.settings_mediasource_rss_copied_to_clipboard))
+                    toaster.toast(getStringOffMain(Lang.settings_mediasource_rss_copied_to_clipboard))
                 }
             },
             title = { Text(stringResource(Lang.settings_storage_backup_op_backup_title)) },

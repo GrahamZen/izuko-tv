@@ -27,6 +27,7 @@ import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.platform.MeteredNetworkDetector
 import me.him188.ani.app.tools.update.UpdateInstaller
 import me.him188.ani.app.ui.foundation.LocalPlatform
+import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.foundation.setClipEntryText
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.lang.Lang
@@ -54,7 +55,6 @@ import me.him188.ani.app.ui.settings.framework.components.SwitchItem
 import me.him188.ani.app.ui.settings.framework.components.TextItem
 import me.him188.ani.app.ui.update.devbuild.DevBuildPackageSpec
 import me.him188.ani.utils.platform.isDesktop
-import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 import org.koin.mp.KoinPlatform
 
@@ -146,7 +146,7 @@ fun DebugTab(
                 onClick = {
                     scope.launch {
                         GlobalKoin.get<UserRepository>().clearSelfInfo()
-                        toaster.toast(getString(Lang.settings_debug_logged_out))
+                        toaster.toast(getStringOffMain(Lang.settings_debug_logged_out))
                     }
                 },
             )
@@ -157,7 +157,7 @@ fun DebugTab(
                         val value = (GlobalKoin.get<SessionManager>().sessionFlow.value as? AccessTokenSession)
                             ?.tokens?.bangumiAccessToken.orEmpty()
                         // 屏幕上只露开头几位, 能确认复制到了什么又不把令牌整个亮在电视上
-                        toaster.toast(getString(Lang.settings_debug_copied, value.take(6) + if (value.length > 6) "…" else ""))
+                        toaster.toast(getStringOffMain(Lang.settings_debug_copied, value.take(6) + if (value.length > 6) "…" else ""))
                         clipboard.setClipEntryText(value)
                     }
                 },

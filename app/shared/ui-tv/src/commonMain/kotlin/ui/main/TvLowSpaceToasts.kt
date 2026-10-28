@@ -15,6 +15,7 @@ import me.him188.ani.app.domain.media.cache.location.MediaCacheLocations
 import me.him188.ani.app.domain.media.cache.location.MediaCacheMover
 import me.him188.ani.app.domain.media.download.DownloadSpaceGuard
 import me.him188.ani.app.domain.usecase.GlobalKoin
+import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.cache_move_cancelled
@@ -28,7 +29,6 @@ import me.him188.ani.app.ui.lang.cache_paused_low_space
 import me.him188.ani.app.ui.lang.cache_paused_low_space_drive
 import me.him188.ani.app.ui.lang.settings_storage_cache_location_internal
 import me.him188.ani.datasources.api.topic.FileSize.Companion.bytes
-import org.jetbrains.compose.resources.getString
 
 /**
  * 存储快满、缓存下载被全部暂停时弹提示 (见 [DownloadSpaceGuard.lowSpacePauses]); 把已有缓存搬到别的盘搬完时说结果
@@ -41,9 +41,9 @@ fun TvLowSpaceToasts() {
         DownloadSpaceGuard.lowSpacePauses.collect { pause ->
             val free = pause.freeBytes.bytes.toString()
             val message = when (val location = pause.location) {
-                null -> getString(Lang.cache_paused_low_space, free, pause.paused)
+                null -> getStringOffMain(Lang.cache_paused_low_space, free, pause.paused)
                 // 外接盘满了: 说是哪个盘, 内部存储上的下载照常
-                else -> getString(Lang.cache_paused_low_space_drive, driveLabel(location), free, pause.paused)
+                else -> getStringOffMain(Lang.cache_paused_low_space_drive, driveLabel(location), free, pause.paused)
             }
             toaster.toast(message)
         }
@@ -55,17 +55,17 @@ fun TvLowSpaceToasts() {
 }
 
 private suspend fun moveResultText(result: MediaCacheMover.Result): String {
-    val name = result.target?.let { driveLabel(it) } ?: getString(Lang.settings_storage_cache_location_internal)
+    val name = result.target?.let { driveLabel(it) } ?: getStringOffMain(Lang.settings_storage_cache_location_internal)
     return when (result.stopReason) {
-        MediaCacheMover.StopReason.TARGET_UNAVAILABLE -> getString(Lang.cache_move_stopped_unavailable, name)
-        MediaCacheMover.StopReason.NOT_ENOUGH_SPACE -> getString(Lang.cache_move_stopped_space, name, result.moved)
-        MediaCacheMover.StopReason.CANCELLED -> getString(Lang.cache_move_cancelled, result.moved)
+        MediaCacheMover.StopReason.TARGET_UNAVAILABLE -> getStringOffMain(Lang.cache_move_stopped_unavailable, name)
+        MediaCacheMover.StopReason.NOT_ENOUGH_SPACE -> getStringOffMain(Lang.cache_move_stopped_space, name, result.moved)
+        MediaCacheMover.StopReason.CANCELLED -> getStringOffMain(Lang.cache_move_cancelled, result.moved)
         // 有在播先不搬的: 还没完, 剩下的在动作面板顶上等着 (见 TvBackgroundTasks)
         null -> when {
-            result.skipped > 0 && result.failed > 0 -> getString(Lang.cache_move_waiting_failed, result.moved, result.failed, result.skipped)
-            result.skipped > 0 -> getString(Lang.cache_move_waiting, result.moved, result.skipped)
-            result.failed > 0 -> getString(Lang.cache_move_summary, result.moved, result.failed)
-            else -> getString(Lang.cache_move_done, result.moved, name)
+            result.skipped > 0 && result.failed > 0 -> getStringOffMain(Lang.cache_move_waiting_failed, result.moved, result.failed, result.skipped)
+            result.skipped > 0 -> getStringOffMain(Lang.cache_move_waiting, result.moved, result.skipped)
+            result.failed > 0 -> getStringOffMain(Lang.cache_move_summary, result.moved, result.failed)
+            else -> getStringOffMain(Lang.cache_move_done, result.moved, name)
         }
     }
 }
