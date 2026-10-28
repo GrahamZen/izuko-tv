@@ -63,6 +63,7 @@ import org.openani.mediamp.ExperimentalMediampApi
 import me.him188.ani.app.domain.player.tracks.AudioTrackSupport
 import me.him188.ani.app.domain.player.tracks.PlayerTrackChooser
 import me.him188.ani.app.domain.player.tracks.TrackChooserHost
+import me.him188.ani.app.platform.DevSwitches
 import me.him188.ani.app.platform.PlaybackRequestHints
 import me.him188.ani.app.videoplayer.audio.AudioPassthroughMode
 import me.him188.ani.app.videoplayer.diagnostics.PlayerProbes
@@ -623,7 +624,7 @@ class LibassExoPlayerMediampPlayer private constructor(
                 data
             }
             try {
-                exoMediampPlayer.setMediaData(playerData, playWhenReady, startPositionMillis)
+                pipeline.opening.during { exoMediampPlayer.setMediaData(playerData, playWhenReady, startPositionMillis) }
                 return
             } catch (e: PlaybackException) {
                 if (data !is UriMediaData || !e.isVideoOutputDetachTimeout() || attempt >= MAX_OPEN_ATTEMPTS) throw e
@@ -749,6 +750,10 @@ private class LibassMediaSourcePipeline(
 
     /** 播放器的测速器, 顺带记下实际读到的字节 (卡住时的诊断用, 见 [RebufferDiagnostics]). */
     val bandwidthMeter = DeliveredBytesMeter(context)
+
+    /** 播放器正在打开媒体 (`setMediaData` 期间): 这期间读取出错少重试 (见 [OpeningLoadErrorPolicy]). */
+    val opening = OpeningPhase()
+    private val loadErrorPolicy = OpeningLoadErrorPolicy(isOpening = { DevSwitches.openFailFast.value && opening.isOpening })
 
     /** 每准备一个新媒体时先调 (主线程): 播放器借此结束进行中的拖动预览. */
     var onNewMedia: (() -> Unit)? = null
@@ -937,6 +942,7 @@ private class LibassMediaSourcePipeline(
         } ?: extractorsFactory
         return DefaultMediaSourceFactory(dataSourceFactory, extractors)
             .setSubtitleParserFactory(subtitleParserFactory)
+            .setLoadErrorHandlingPolicy(loadErrorPolicy)
             .createMediaSource(mediaItem)
     }
 
