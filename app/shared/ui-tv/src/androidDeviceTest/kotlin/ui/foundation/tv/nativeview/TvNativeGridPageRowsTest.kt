@@ -10,7 +10,10 @@
 package me.him188.ani.app.ui.foundation.tv.nativeview
 
 import android.animation.ValueAnimator
+import android.graphics.Bitmap
+import android.graphics.Color
 import android.graphics.Rect
+import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
@@ -25,11 +28,12 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.test.fail
 
 /**
  * 网格页 ([TvNativeGridPageView]) 里与网格换着显示的一组一行的内容 ([TvNativeGridPageView.rows], 追番页「追更」): 卡片墙上确定进的是本页的
  * hero 态、hero 态里确定交给它自己的监听器; 与网格互换时 hero 态留着; 本页 hero 态里首行整片推到 hero 线; 换走时焦点停放在本页上,
- * 网格的卡拿到再落地; 它拿着焦点时不算网格的焦点; 与网格换着滑动时, 行在屏外预排的卡不画进页面.
+ * 网格的卡拿到再落地; 它拿着焦点时不算网格的焦点; 与网格换着滑动时, 行在屏外预排的卡不画到网格的卡上, 滑动途中扫过屏幕的那条边上跨出去的卡藏起来、停稳后淡回.
  */
 class TvNativeGridPageRowsTest {
     private val host = TvNativeTestHost()
@@ -229,36 +233,87 @@ class TvNativeGridPageRowsTest {
     }
 
     @Test
-    fun `cards laid out past the rows edge are not drawn on the page while sliding`() {
+    fun `cards laid out past the rows edge stay off the grid cards while sliding`() {
         assertTrue(ValueAnimator.areAnimatorsEnabled(), "要开着系统动画跑: 看的是滑动途中")
         showRows()
         host.waitUntil("首行在右边屏外预排着卡") { offLaneCards().isNotEmpty() }
+        var grid: View? = null
         var sampled = 0
         val leaks = mutableListOf<String>()
-        // 每帧画之前看: 排在它那一屏宽以外的卡, 有没有哪块落在页面里还没被裁掉
+        // 每帧画之前看: 排在它那一屏宽以外的卡, 画出来的部分 (裁剪框以内) 有没有压到网格的卡
         val sampler = ViewTreeObserver.OnPreDrawListener {
-            if (rows.isShown && rows.translationX != 0f) {
+            val g = grid
+            if (g != null && rows.isShown && rows.translationX != 0f) {
                 sampled++
-                leaks += offLaneCards().mapNotNull { drawnOnPage(it) }
+                val gridCards = cardsIn(g).map { it.windowRect() }
+                leaks += offLaneCards().mapNotNull { drawnOver(it, gridCards) }
             }
             true
         }
         host.onMain {
             page.transitions = true
             page.viewTreeObserver.addOnPreDrawListener(sampler)
-            // 换到右边的分类: 一组一行的内容整片往左滑出去, 右边屏外的卡跟着往页面里走
+            // 换到右边的分类: 一组一行的内容整片往左滑出去, 右边屏外的卡跟着往网格那边走
             page.showGrid(0, direction = 1, animated = true)
             page.setCards(0, testCards(12))
+            grid = page.grid
         }
         host.waitUntil("滑出去了") { !rows.isShown }
-        // 换回来: 从左边滑进来, 起步时它右边屏外的卡正落在页面左半边
-        val grid = host.onMain { page.grid!! }
+        // 换回来: 从左边滑进来, 起步时它右边屏外的卡正落在网格左半边
         host.onMain { page.showRows(ROWS_KEY, direction = -1, animated = true) }
-        host.waitUntil("滑进来了") { !grid.isShown }
+        host.waitUntil("滑进来了") { grid?.isShown == false }
         host.onMain { page.viewTreeObserver.removeOnPreDrawListener(sampler) }
         assertTrue(sampled > 0, "滑动途中应采到帧")
         assertEquals(emptyList(), leaks)
         assertNull(host.onMain { rows.clipBounds }, "停下后不裁")
+    }
+
+    @Test
+    fun `cards crossing the edge that sweeps the screen hide while sliding and fade back in once settled`() {
+        showRows()
+        val red = host.testImage("rows-lane-red", Color.RED, Color.RED)
+        host.onMain {
+            host.root.setBackgroundColor(Color.BLUE)
+            rows.setItems(
+                listOf(
+                    TvNativeExploreItem.Header("h-new", "有新集"),
+                    TvNativeExploreItem.Row(NEW, List(10) { TvNativeCard(imageUrl = red, title = "红 $it") }),
+                ),
+            )
+        }
+        // 屏幕右缘切过的那张 (跨出这一屏宽) 与整张在屏上的第一张上各取一点
+        val edge = host.onMain { rows.windowRect().right }
+        val crossing = edge - EDGE_SAMPLE_PX
+        val (whole, y) = host.onMain {
+            val cards = cardsIn(rows).map { it.windowRect() }
+            if (cards.none { it.left < crossing && it.right > edge }) fail("没有跨屏幕右缘的卡: $cards")
+            val first = cards.filter { it.left >= 0 && it.right <= edge }.minBy { it.left }
+            first.centerX() to first.top + first.height() / 3
+        }
+        shotWhen("卡画出来") { isReddish(it.getPixel(crossing, y)) && isReddish(it.getPixel(whole, y)) }
+        // 从右边滑进来 (扫过屏幕的是左边): 右缘那张途中一直在屏幕外那一侧, 不藏
+        host.onMain { rows.beginLane(rows.width, edge = -1) }
+        SystemClock.sleep(300)
+        assertTrue(isReddish(host.windowShot().getPixel(crossing, y)), "从右边滑进来时右缘那张照常画")
+        host.onMain { rows.endLane(fadeIn = false) }
+        // 往左滑出去 (扫过屏幕的是右边): 跨出右边的卡藏起来, 整张在屏上的照常
+        host.onMain { rows.beginLane(rows.width, edge = 1) }
+        shotWhen("跨屏幕右缘的卡藏起来") { isBluish(it.getPixel(crossing, y)) && isReddish(it.getPixel(whole, y)) }
+        // 停稳: 淡回来
+        host.onMain { rows.endLane(fadeIn = true) }
+        shotWhen("停稳后淡回来") { isReddish(it.getPixel(crossing, y)) }
+        assertNull(host.onMain { rows.clipBounds }, "停下后不裁")
+    }
+
+    /** 反复截本窗口, 直到 [ready]. */
+    private fun shotWhen(what: String, ready: (Bitmap) -> Boolean): Bitmap {
+        val deadline = SystemClock.uptimeMillis() + 3000
+        while (true) {
+            val shot = host.windowShot()
+            if (ready(shot)) return shot
+            if (SystemClock.uptimeMillis() > deadline) fail("等不到: $what")
+            SystemClock.sleep(50)
+        }
     }
 
     /** 一组一行的内容里排在它那一屏宽以外 (右边) 的卡: 按它自己的坐标算, 不管此刻平移到哪. */
@@ -267,16 +322,16 @@ class TvNativeGridPageRowsTest {
         return cardsIn(rows).filter { it.windowRect().left - origin.left >= rows.width }
     }
 
-    /** [card] 画进页面的那块 (按一组一行的内容的裁剪框裁过), 没有就是 null. */
-    private fun drawnOnPage(card: View): String? {
+    /** [card] 画出来的那块 (按一组一行的内容的裁剪框裁过) 压着 [gridCards] 里的哪张, 没压着就是 null. */
+    private fun drawnOver(card: View, gridCards: List<Rect>): String? {
         val drawn = card.windowRect()
-        if (!drawn.intersect(page.windowRect())) return null
         rows.clipBounds?.let { clip ->
             val origin = rows.windowRect()
             clip.offset(origin.left, origin.top)
             if (!drawn.intersect(clip)) return null
         }
-        return "平移 ${rows.translationX} 时画在 $drawn"
+        val hit = gridCards.firstOrNull { Rect.intersects(it, drawn) } ?: return null
+        return "平移 ${rows.translationX} 时画在 $drawn, 压着网格的 $hit"
     }
 
     private fun cardsIn(view: View): List<View> = when (view) {
@@ -294,5 +349,13 @@ class TvNativeGridPageRowsTest {
         const val ROWS_KEY = -1
         const val NEW = "row-new"
         const val WEEK = "row-week"
+
+        /** 取点离屏幕边多远. */
+        const val EDGE_SAMPLE_PX = 6
+
+
+        // 卡片封面上可能压着一层浅浅的暗, 只看哪个颜色占上风
+        fun isReddish(p: Int) = Color.red(p) > 150 && Color.blue(p) < 80
+        fun isBluish(p: Int) = Color.blue(p) > 180 && Color.red(p) < 80
     }
 }
