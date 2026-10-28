@@ -14,13 +14,20 @@ import io.ktor.client.engine.mock.respondError
 import io.ktor.client.request.HttpRequestData
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import me.him188.ani.app.data.repository.RepositoryRateLimitedException
 import me.him188.ani.app.domain.mediasource.web.InMemoryWebSearchSessionCacheDao
 import me.him188.ani.datasources.api.DefaultMedia
 import me.him188.ani.datasources.api.EpisodeSort
+import me.him188.ani.datasources.api.PackedDate
 import me.him188.ani.datasources.api.source.BrowseChannel
 import me.him188.ani.datasources.api.source.BrowseEpisode
 import me.him188.ani.datasources.api.source.BrowseSubject
@@ -51,6 +58,15 @@ class JsonApiMediaSourceTest {
         /** 搜索这些词时站点返回空列表, 模拟站点搜索只认短关键词. */
         val emptySearchTerms = mutableSetOf<String>()
 
+        /** 搜到的条目. */
+        var searchResponse = SampleSite.SEARCH_RESPONSE
+
+        /** 别的条目的剧集列表响应 (按条目 id); 没有的为空列表. */
+        val otherEpisodes = mutableMapOf<String, String>()
+
+        /** 这个条目的剧集列表一直取不完 (还在取时搜索就被停下). */
+        var hangingSubject: String? = null
+
         val engine = MockEngine { request ->
             requests += request
             val url = request.url.toString()
@@ -58,11 +74,14 @@ class JsonApiMediaSourceTest {
                 url == "https://api.example.com/search" && request.method == HttpMethod.Post -> {
                     val body = request.bodyText.orEmpty()
                     val hasResults = ("芙莉莲" in body || "Sousou" in body) && emptySearchTerms.none { "\"keyword\":\"$it\"" in body }
-                    respondJson(if (hasResults) SampleSite.SEARCH_RESPONSE else "[]")
+                    respondJson(if (hasResults) searchResponse else "[]")
                 }
 
-                url.startsWith("https://api.example.com/episodes?anime_id=3252") -> respondJson(episodesResponse)
-                url.startsWith("https://api.example.com/episodes?anime_id=") -> respondJson("[]")
+                url.startsWith("https://api.example.com/episodes?anime_id=") -> {
+                    val id = url.substringAfter("anime_id=").substringBefore('&')
+                    if (id == hangingSubject) awaitCancellation()
+                    respondJson(if (id == "3252") episodesResponse else otherEpisodes[id] ?: "[]")
+                }
 
                 url == "https://api.example.com/playback" -> {
                     if (rateLimitPlayOnce) {
@@ -337,6 +356,50 @@ class JsonApiMediaSourceTest {
         val cached = second.first { it.properties.alliance == "线路A" }
         assertEquals("json-api-test.3252-线路A-47464", cached.mediaId)
         assertEquals("A", (cached.download as ResourceLocation.WebVideo).apiParameters!!["channelMatch"])
+    }
+
+    /** 同名的两个条目页: 3252 是 [SampleSite.EPISODES_RESPONSE] (第 1~3 集), 3253 只有第 1、2 集. */
+    private fun Site.withTwoPages() = apply {
+        searchResponse = """
+            [{"id": 3252, "title": "葬送的芙莉莲 第二季", "aliases": [], "total_episodes": 10},
+             {"id": 3253, "title": "葬送的芙莉莲 第二季", "aliases": [], "total_episodes": 10}]
+        """.trimIndent()
+        otherEpisodes["3253"] = """
+            [{"id": 57463, "episode_number": 1.0, "title": "那我们走吧", "kind": "main"},
+             {"id": 57464, "episode_number": 2.0, "title": "南方勇者", "kind": "main"}]
+        """.trimIndent()
+    }
+
+    @Test
+    fun `a round stopped before every subject page was loaded is searched again next time`() = runTest {
+        val site = Site().withTwoPages().apply { hangingSubject = "3253" }
+        val dao = InMemoryWebSearchSessionCacheDao()
+        val (source, _) = createSource(site = site, cacheDao = dao)
+        // 3252 已经取完写进缓存, 3253 还在取时搜索被停下 (查询在后台线程上跑, 真等)
+        val first = backgroundScope.launch { source.fetchMedia(request()) }
+        withContext(Dispatchers.Default) {
+            withTimeout(10.seconds) {
+                while (dao.rows.none { it.subjectUrl.endsWith("/3252") } || site.episodeRequests.none { "anime_id=3253" in it }) delay(10)
+            }
+        }
+        first.cancel()
+
+        site.hangingSubject = null
+        val media = source.fetchMedia(request())
+        assertTrue(media.any { it.mediaId.startsWith("json-api-test.3253-") }, media.map { it.mediaId }.toString())
+    }
+
+    @Test
+    fun `a cached page without the latest aired episode is not skipped when it has this episode`() = runTest {
+        val site = Site().withTwoPages()
+        val (source, _) = createSource(site = site, cacheDao = InMemoryWebSearchSessionCacheDao())
+        // 已经播到第 3 集, 3253 页上还没有; 要的是第 1 集
+        val aired = request().copy(episodes = (1..3).map { MediaFetchRequest.Episode("e$it", EpisodeSort(it), airDate = PackedDate(2020, 1, it)) })
+        source.fetchMedia(aired)
+
+        val media = source.fetchMedia(aired)
+        // 同一个词第二次查不比第一次少: 3253 页上的第 1 集也在
+        assertTrue(media.any { it.mediaId.startsWith("json-api-test.3253-") }, media.map { it.mediaId }.toString())
     }
 
     @Test

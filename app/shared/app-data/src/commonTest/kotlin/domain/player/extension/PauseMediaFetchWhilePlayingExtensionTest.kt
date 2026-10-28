@@ -36,13 +36,44 @@ import me.him188.ani.app.domain.media.fetch.MediaSourceFetchState
 import me.him188.ani.app.domain.media.resolver.MediaResolver
 import me.him188.ani.app.domain.media.resolver.TestUniversalMediaResolver
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveAddedShareMediaSource
+import me.him188.ani.app.platform.DevSwitches
 import me.him188.ani.datasources.api.source.MediaSourceInfo
 import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.utils.coroutines.childScope
+import org.openani.mediamp.test.TestMediampPlayer
+import kotlin.test.AfterTest
 import kotlin.test.Test
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 
 class PauseMediaFetchWhilePlayingExtensionTest : AbstractPlayerExtensionTest() {
+    @AfterTest
+    fun restoreSwitch() {
+        DevSwitches.pauseSearchOnSelect.set("1")
+    }
+
+    @Test
+    fun `sources still searching are paused once a media is selected automatically`() = runTest {
+        selectWhileWeb2Searching(automatically = true) { session ->
+            assertIs<MediaSourceFetchState.Paused>(session.stateOf("web2"))
+        }
+    }
+
+    @Test
+    fun `a manual selection pauses only once playback starts`() = runTest {
+        selectWhileWeb2Searching(automatically = false) { session ->
+            assertIs<MediaSourceFetchState.Working>(session.stateOf("web2"))
+        }
+    }
+
+    @Test
+    fun `switched off an automatic selection pauses only once playback starts`() = runTest {
+        DevSwitches.pauseSearchOnSelect.set("0")
+        selectWhileWeb2Searching(automatically = true) { session ->
+            assertIs<MediaSourceFetchState.Working>(session.stateOf("web2"))
+        }
+    }
+
     @Test
     fun `sources still searching are paused once playback starts`() = runTest {
         playWhileWeb2Searching(canPause = { true }) { session ->
@@ -163,6 +194,36 @@ class PauseMediaFetchWhilePlayingExtensionTest : AbstractPlayerExtensionTest() {
         advanceUntilIdle()
         suite.player.loadMedia(durationMs = 10_000L, playWhenReady = true)
         advanceUntilIdle()
+        verify(session)
+
+        testScope.cancel()
+    }
+
+    /** web1 查完、选中, 播放器一直打不开 (没播起来), web2 一直查不完; 选完用 [verify] 检查查询会话. */
+    private suspend fun TestScope.selectWhileWeb2Searching(
+        automatically: Boolean,
+        verify: (MediaFetchSession) -> Unit,
+    ) {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val testScope = this.childScope()
+        val suite = EpisodePlayerTestSuite(this, testScope)
+        suite.registerComponent<MediaResolver> { TestUniversalMediaResolver }
+        val web1 = suite.mediaSelectorTestBuilder.delayedMediaSource("web1", kind = MediaSourceKind.WEB)
+        suite.mediaSelectorTestBuilder.delayedMediaSource("web2", kind = MediaSourceKind.WEB) // 一直查不完
+
+        val state = suite.createState(listOf(PauseMediaFetchWhilePlayingExtension.Factory(canPause = { true })))
+        state.onUIReady()
+        state.mediaFetchSessionFlow.filterNotNull().flatMapLatest { it.cumulativeResults }.launchIn(testScope)
+
+        val media = suite.mediaSelectorTestBuilder.createMedia("web1", kind = MediaSourceKind.WEB)
+        web1.complete(listOf(media))
+        advanceUntilIdle()
+        val session = state.mediaFetchSessionFlow.filterNotNull().first()
+        val selector = state.mediaSelectorFlow.filterNotNull().first()
+        suite.player.openBehavior = TestMediampPlayer.OpenBehavior.Hold()
+        if (automatically) selector.selectAutomatically(media, null) else selector.select(media)
+        advanceUntilIdle()
+        assertFalse(suite.player.state.value.isPlaying)
         verify(session)
 
         testScope.cancel()
