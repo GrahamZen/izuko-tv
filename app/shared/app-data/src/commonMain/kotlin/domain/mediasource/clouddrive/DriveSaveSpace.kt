@@ -12,15 +12,16 @@ package me.him188.ani.app.domain.mediasource.clouddrive
 /**
  * 网盘满了转存不进去时, 从转存文件夹里挑出要删的副本 (见 CloudDriveService 的转存).
  *
- * 那些副本是之前播放时转存的, 留着下次播同一集不用再转存, 所以知道剩余空间 [free] 时只删够用的, 先删最早转存的;
- * 删光也放不下就一个都不删. 不知道剩余空间, 或者按剩余空间本来就放得下 (网盘的数对不上) 时, 照旧全删了再试.
+ * 那些副本是之前播放时转存的, 留着下次播同一集不用再转存, 所以先按剩余空间 [free] 算好要腾出多少, 只删够用的, 先删最早转存的;
+ * 删光也放不下就一个都不删. 算不清时也不删: 不知道剩余空间, 或者按剩余空间本来就放得下 (网盘的数对不上, 删了也不知道有没有用).
  *
  * @param clearable 转存文件夹里这次用不到的副本
  * @param needed 这次要转存的文件一共多大
- * @return 要删的文件; 为空表示删什么都没用, 直接报空间不够
+ * @param free 网盘剩余空间, 超额时是负数 (超出的部分也要腾出来); 不知道时为 `null`
+ * @return 要删的文件; 为空表示不删, 直接报空间不够
  */
 internal fun pickSavedCopiesToFree(clearable: List<DriveFile>, needed: Long, free: Long?): List<DriveFile> {
-    if (free == null || free >= needed) return clearable
+    if (free == null || free >= needed) return emptyList()
     if (free + clearable.sumOf { it.size } < needed) return emptyList()
     val picked = ArrayList<DriveFile>()
     var available = free

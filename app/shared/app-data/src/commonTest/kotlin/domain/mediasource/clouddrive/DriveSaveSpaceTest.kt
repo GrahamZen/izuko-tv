@@ -36,9 +36,9 @@ class DriveSaveSpaceTest {
     }
 
     @Test
-    fun `every copy is removed when the free space is unknown or does not explain the failure`() {
-        assertEquals(saved, pickSavedCopiesToFree(saved, needed = 23_000, free = null))
-        assertEquals(saved, pickSavedCopiesToFree(saved, needed = 1_000, free = 5_000))
+    fun `nothing is removed when the free space is unknown or does not explain the failure`() {
+        assertEquals(emptyList(), pickSavedCopiesToFree(saved, needed = 1_000, free = null))
+        assertEquals(emptyList(), pickSavedCopiesToFree(saved, needed = 1_000, free = 5_000))
         assertEquals(emptyList(), pickSavedCopiesToFree(emptyList(), needed = 1_000, free = null))
     }
 }
