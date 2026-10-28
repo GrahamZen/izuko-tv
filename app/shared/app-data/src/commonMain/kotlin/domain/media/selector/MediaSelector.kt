@@ -40,6 +40,7 @@ import me.him188.ani.datasources.api.topic.hasSeason
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import kotlin.coroutines.CoroutineContext
+import kotlin.time.TimeSource
 
 /**
  * 用于管理一组 [Media]，通过对其进行过滤、应用用户偏好以及上下文信息，
@@ -516,6 +517,7 @@ class DefaultMediaSelector(
         val memo = MediaFilterMemo()
         return combine(sources, savedDefaultPreference, newPreferences, mediaSelectorSettings, mediaSelectorContext) {
                 sourceSnapshots, default, preference, settings, context ->
+            val computeStart = TimeSource.Monotonic.markNow()
             val media = sourceSnapshots.flatMap { it.results }.distinctBy { it.mediaId }
             val candidates = algorithm.sortMediaList(
                 algorithm.filterMediaList(media, default, settings, context, memo = memo.prepare(media, default, settings, context)),
@@ -525,7 +527,7 @@ class DefaultMediaSelector(
                 sourceSnapshots, candidates,
                 algorithm.filterByPreference(candidates, preference).filterIsInstance<MaybeExcludedMedia.Included>(),
                 preference, settings, context,
-            )
+            ).also { AutoSelectTrace.snapshotComputed(media.size, computeStart.elapsedNow()) }
         }
     }
 

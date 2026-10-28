@@ -18,6 +18,7 @@ import me.him188.ani.app.domain.mediasource.clouddrive.DriveNameParser
 import me.him188.ani.app.domain.mediasource.clouddrive.DriveSubjectSeason
 import me.him188.ani.app.domain.mediasource.web.SelectorAutoMatchConfig
 import me.him188.ani.app.domain.mediasource.web.isWeakSearchKeyword
+import me.him188.ani.app.domain.player.diagnostics.PlayTimeline
 import me.him188.ani.datasources.api.DefaultMedia
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.source.MediaFetchNameHints
@@ -201,6 +202,7 @@ class SubjectSearchPlan private constructor(private val request: MediaFetchReque
     private fun <T> ownSeasonFirst(pages: List<T>, nameOf: (T) -> String): List<T> {
         val season = DriveSubjectSeason.declaredIn(ownNames, aliases = false) ?: 1
         return pages.sortedBy { page -> DriveNameParser.parseSubjectSeason(nameOf(page)).let { it != null && it != season } }
+            .also { ordered -> PlayTimeline.mark("pages_order", "season=$season " + ordered.joinToString(" / ") { nameOf(it).take(24) }) }
     }
 
     private fun <T> judgedPagesToOpen(pages: List<T>, preferShorterName: Boolean, nameOf: (T) -> String): List<T> {

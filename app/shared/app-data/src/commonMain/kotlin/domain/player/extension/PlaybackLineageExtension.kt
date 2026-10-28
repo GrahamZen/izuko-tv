@@ -76,6 +76,9 @@ class PlaybackLineageExtension(
         if (current != null && !manual) {
             if (!continuation.continues(current, media)) {
                 logger.info { "Playing ${media.mediaId} off the playback lineage of subject $subjectId, keeping the lineage" }
+            } else {
+                // 顺着线索播的: 线索记下的位置跟着更新 (在线源补上 / 换成这一集所在的条目页)
+                continuation.updated(current, media)?.let { repository.setLineage(subjectId, it) }
             }
             return
         }

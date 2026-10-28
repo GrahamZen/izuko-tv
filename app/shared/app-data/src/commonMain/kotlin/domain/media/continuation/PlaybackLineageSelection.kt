@@ -9,20 +9,27 @@
 
 package me.him188.ani.app.domain.media.continuation
 
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.data.models.episode.EpisodeInfo
 import me.him188.ani.app.data.models.episode.displayName
 import me.him188.ani.app.data.repository.media.PlaybackLineageRepository
 import me.him188.ani.app.domain.media.fetch.MediaFetchSession
+import me.him188.ani.app.domain.media.fetch.MediaSourceFetchResult
 import me.him188.ani.app.domain.media.fetch.MediaSourceFetchState
 import me.him188.ani.app.domain.media.fetch.awaitCompletedResults
 import me.him188.ani.app.domain.media.fetch.isFinal
 import me.him188.ani.app.domain.media.fetch.isPaused
 import me.him188.ani.app.domain.media.selector.MaybeExcludedMedia
+import me.him188.ani.app.domain.media.selector.MediaAutoSelectSnapshot
 import me.him188.ani.app.domain.media.selector.MediaSelector
 import me.him188.ani.app.domain.media.selector.MediaSourceSelectionSnapshot
+import me.him188.ani.app.platform.DevSwitches
 import me.him188.ani.datasources.api.CachedMedia
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.source.MediaFetchRequest
@@ -39,8 +46,10 @@ import kotlin.time.Duration.Companion.seconds
  *    只读元数据): 没有就不等本地缓存源, 直接往下; 有才等它查完 (平时毫秒级). 等不到 (没下完的 BT 缓存要等 BT 服务连上)
  *    或选源器没准备好时也返回 false, 交给自动选源: 有缓存时就该用缓存, BT 缓存没下完也能边下边播;
  * 2. 在查完了的数据源的候选里找线索上的资源 (查询会话按条目复用, 切集时多半已经在手上);
- * 3. 还没有: 直接去取快的线索 ([EpisodeContinuation.isQuickToResolve], 网盘只列一个文件夹) 马上去取, 不等那个数据源整轮搜完;
- *    别的线索等它的数据源查完 (被暂停的照用暂停前拿到的) 再找一次, 这一轮正常查完了还没有就不再重搜 (重搜也是同样的结果),
+ * 3. 还没有: 快的线索 ([EpisodeContinuation.isQuickToResolve], 网盘只列一个文件夹, 在线源只开记下的条目页) 马上去取,
+ *    同时看它的数据源在会话里边查边交出的, 谁先给出线索上的资源用谁; 直接去取说没有这一集、线索失效都就此定下, 不再另起一轮查询,
+ *    这回取不成 ([LineageResolution.Unavailable]: 页打不开) 时只等数据源那一路;
+ *    别的线索等它的数据源: 它边查边交出的里有线索上的资源就用 (拆分季除外), 否则等它查完 (被暂停的照用暂停前拿到的) 再找一次, 这一轮正常查完了还没有就不再重搜 (重搜也是同样的结果),
  *    数据源被暂停、出错或等不到时才直接去取 ([EpisodeContinuation.resolve]);
  * 4. 直接取回来的资源不在候选里, 先按选源器的过滤规则判一次 (排除的字幕组、早于本集开播、条目名、别的季…), 被排除就当没找到;
  *    线索彻底失效时忘掉它.
@@ -85,22 +94,101 @@ class PlaybackLineageSelection(
         selector: MediaSelector,
     ): Media? {
         pick(lineage, candidatesOf(session, selector) ?: return null)?.let { return it }
-        if (!continuation.isQuickToResolve(lineage)) {
-            val source = session.mediaSourceResults.firstOrNull { it.mediaSourceId == lineage.mediaSourceId }
-            if (source != null && !source.state.value.isFinal) {
-                withTimeoutOrNull(SOURCE_TIMEOUT) { source.state.first { it.isFinal } }
-                pick(lineage, candidatesOf(session, selector) ?: return null)?.let { return it }
-            }
-            if (source?.state?.value is MediaSourceFetchState.Succeed) return null
-            // 还在会话里查: 直接去取是把同一套请求再发一遍 (开播时两边一起抢 CPU), 交给自动选源接着等它
-            if (source != null && !source.state.value.isFinal && !source.state.value.isPaused) {
-                logger.info { "Lineage source ${lineage.mediaSourceId} of subject $subjectId is still searching after $SOURCE_TIMEOUT, leaving it to auto select" }
-                return null
-            }
-        }
         // 查询会话按条目复用, 记的是进播放页那一集的请求: 换成这一集
         val request = session.latestRequest.first().forEpisode(episode)
-        return when (val resolution = withTimeoutOrNull(RESOLVE_TIMEOUT) { continuation.resolve(lineage, request) }) {
+        val source = session.mediaSourceResults.firstOrNull { it.mediaSourceId == lineage.mediaSourceId }
+        if (continuation.isQuickToResolve(lineage)) return quickOrFromSession(subjectId, lineage, request, source, session, selector)
+        if (source != null && !source.state.value.isFinal) awaitOnSource(lineage, source, session, selector)?.let { return it }
+        if (source?.state?.value is MediaSourceFetchState.Succeed) return null
+        // 还在会话里查: 直接去取是把同一套请求再发一遍 (开播时两边一起抢 CPU), 交给自动选源接着等它
+        if (source != null && !source.state.value.isFinal && !source.state.value.isPaused) {
+            logger.info { "Lineage source ${lineage.mediaSourceId} of subject $subjectId is still searching after $SOURCE_TIMEOUT, leaving it to auto select" }
+            return null
+        }
+        return accepted(subjectId, lineage, withTimeoutOrNull(RESOLVE_TIMEOUT) { continuation.resolve(lineage, request) }, session, selector)
+    }
+
+    /**
+     * 快取的线索: 直接去取与查询会话里这个源 [source] 的结果一起等, 谁先给出线索上的资源用谁, 另一路取消
+     * (会话读搜索缓存时常比开页快; 记下的页打开慢时也不必干等它). 直接去取说没有这一集、线索失效或取回的被选源器排除时就此定下;
+     * 这回取不成 ([LineageResolution.Unavailable]) 或等不到时只等会话那一路. 都没有时为 null, 不另起一轮查询 (交给自动选源).
+     */
+    private suspend fun quickOrFromSession(
+        subjectId: Int,
+        lineage: PlaybackLineage,
+        request: MediaFetchRequest,
+        source: MediaSourceFetchResult?,
+        session: MediaFetchSession,
+        selector: MediaSelector,
+    ): Media? = coroutineScope {
+        val quick = async { withTimeoutOrNull(RESOLVE_TIMEOUT) { continuation.resolve(lineage, request) } }
+        val fromSession = async {
+            if (source != null && !source.state.value.isFinal) awaitOnSource(lineage, source, session, selector) else null
+        }
+        var quickPending = true
+        var sessionPending = true
+        try {
+            while (quickPending || sessionPending) {
+                val outcome = select<QuickOutcome> {
+                    if (quickPending) quick.onAwait { resolution ->
+                        quickPending = false
+                        if (resolution == LineageResolution.Unavailable || resolution == null) {
+                            logger.info { "Quick lineage of subject $subjectId is unavailable this time, waiting for its source" }
+                            QuickOutcome.Pending
+                        } else {
+                            QuickOutcome.Settled(accepted(subjectId, lineage, resolution, session, selector))
+                        }
+                    }
+                    if (sessionPending) fromSession.onAwait { media ->
+                        sessionPending = false
+                        if (media != null) QuickOutcome.Settled(media) else QuickOutcome.Pending
+                    }
+                }
+                if (outcome is QuickOutcome.Settled) return@coroutineScope outcome.media
+            }
+            null
+        } finally {
+            quick.cancel()
+            fromSession.cancel()
+        }
+    }
+
+    /** [quickOrFromSession] 里一路的结果: 定下了 (可能是没有), 或还要等另一路 */
+    private sealed interface QuickOutcome {
+        data class Settled(val media: Media?) : QuickOutcome
+        data object Pending : QuickOutcome
+    }
+
+    /**
+     * 等查询会话里线索的数据源 [source] (最多 [SOURCE_TIMEOUT]): 它边查边交出的里有线索上的资源就用 ([pickFromWorking]),
+     * 否则等它查完 (被暂停的照用暂停前拿到的) 再在候选里找一次. 没有为 null.
+     */
+    private suspend fun awaitOnSource(
+        lineage: PlaybackLineage,
+        source: MediaSourceFetchResult,
+        session: MediaFetchSession,
+        selector: MediaSelector,
+    ): Media? {
+        var early: Media? = null
+        withTimeoutOrNull(SOURCE_TIMEOUT) {
+            combine(source.state, source.results) { state, results -> state to results }.first { (state, results) ->
+                state.isFinal || DevSwitches.lineageWorkingResults.value && results.isNotEmpty() &&
+                        pickFromWorking(lineage, source, session, selector)?.also { early = it } != null
+            }
+        }
+        early?.let { return it }
+        return pick(lineage, candidatesOf(session, selector) ?: return null)
+    }
+
+    /** 直接取回的结果: 选源器排除的当没找到, 线索彻底失效时忘掉它. */
+    private suspend fun accepted(
+        subjectId: Int,
+        lineage: PlaybackLineage,
+        resolution: LineageResolution?,
+        session: MediaFetchSession,
+        selector: MediaSelector,
+    ): Media? =
+        when (resolution) {
             is LineageResolution.Found -> resolution.media.takeIf { passesFilters(it, session, selector) } ?: run {
                 logger.info { "Playback lineage of subject $subjectId resolved ${resolution.media.mediaId}, but the selector excludes it" }
                 null
@@ -112,9 +200,8 @@ class PlaybackLineageSelection(
                 null
             }
 
-            LineageResolution.NotFound, null -> null
+            LineageResolution.NotFound, LineageResolution.Unavailable, null -> null
         }
-    }
 
     /**
      * 播放出错换源的第一步: 手上的候选里还有线索上别的资源 (没拉黑的, 例如同一个种子被另一个站搜到) 就换它; 不直接去取, 不等数据源.
@@ -159,11 +246,29 @@ class PlaybackLineageSelection(
     private suspend fun candidatesOf(session: MediaFetchSession, selector: MediaSelector): List<Media>? =
         candidatesOf(sourceSnapshots(session), selector)
 
-    private suspend fun candidatesOf(sources: List<MediaSourceSelectionSnapshot>, selector: MediaSelector): List<Media>? {
-        val snapshot = withTimeoutOrNull(SOURCE_TIMEOUT) {
+    private suspend fun candidatesOf(sources: List<MediaSourceSelectionSnapshot>, selector: MediaSelector): List<Media>? =
+        snapshotOf(sources, selector)?.candidates?.map(MaybeExcludedMedia.Included::result)
+
+    private suspend fun snapshotOf(sources: List<MediaSourceSelectionSnapshot>, selector: MediaSelector): MediaAutoSelectSnapshot? =
+        withTimeoutOrNull(SOURCE_TIMEOUT) {
             selector.autoSelectSnapshots(flowOf(sources)).first { it.context.hasEpisode && it.context.allFieldsLoaded() }
-        } ?: return null
-        return snapshot.candidates.map(MaybeExcludedMedia.Included::result)
+        }
+
+    /**
+     * 还在查的线索数据源 [source] 已经交出的 (每开完一页交一页, 见 KeywordSearchScope.emitEarly) 里线索上的资源, 没有为 null:
+     * 不等它把别的页开完. 拆分季要看整季各页的集号才认得准哪一集, 不用没查完的 (同 MediaAutoSelector).
+     */
+    private suspend fun pickFromWorking(
+        lineage: PlaybackLineage,
+        source: MediaSourceFetchResult,
+        session: MediaFetchSession,
+        selector: MediaSelector,
+    ): Media? {
+        val partial = source.results.first()
+        val sources = sourceSnapshots(session).map { if (it.mediaSourceId == source.mediaSourceId) it.copy(results = partial) else it }
+        val snapshot = snapshotOf(sources, selector) ?: return null
+        if (snapshot.context.subjectSeriesInfo?.splitSeason != null) return null
+        return pick(lineage, snapshot.candidates.map(MaybeExcludedMedia.Included::result))
     }
 
     private suspend fun sourceSnapshots(session: MediaFetchSession): List<MediaSourceSelectionSnapshot> =

@@ -774,6 +774,9 @@
     <string name="tv_source_resume_source">Continue searching this source</string>
     <string name="tv_source_paused_hint">Paused when playback started to keep it smooth. Not finished yet</string>
     <string name="tv_source_search_paused_for_stutter">Searching made playback stutter, so Full search is now Manual only. You can change it back in Settings</string>
+    <string name="tv_source_search_concurrency_reduced_memory">Memory is low, so Sources searched at once is now up to %1$d. You can change it back in Settings</string>
+    <string name="tv_source_search_concurrency_reduced_stutter">Searching made playback stutter, so Sources searched at once is now up to %1$d. You can change it back in Settings</string>
+    <string name="tv_source_search_concurrency_reduced_killed">The system closed the app for low memory during the last search, so Sources searched at once is now up to %1$d. You can change it back in Settings</string>
     <string name="tv_source_bt">BT and cache</string>
     <string name="tv_source_manual">Browse manually</string>
     <string name="tv_source_failed">Failed sources</string>
@@ -873,6 +876,10 @@
     <string name="settings_media_full_search_mode_always">Always</string>
     <string name="settings_media_full_search_mode_on_panel">When the source panel opens</string>
     <string name="settings_media_full_search_mode_manual">Manual only</string>
+    <string name="settings_media_search_concurrency">Sources searched at once</string>
+    <string name="settings_media_search_concurrency_description">Unlimited by default: every source starts searching right away, so results come fastest. When memory runs low, searching makes playback stutter, or the system closes the app during a search, this is lowered one step automatically and you get a notice.</string>
+    <string name="settings_media_search_concurrency_unlimited">Unlimited</string>
+    <string name="settings_media_search_concurrency_at_most">Up to %1$d</string>
     <string name="settings_media_source_subscription_updating">Updating %1$d/%2$d</string>
     <string name="settings_media_source_test_progress">Done %1$d/%2$d · Failed %3$d</string>
     <!-- 网盘 (设置 - 数据源), 网盘名与扫码用的 App 名来自网盘的协议 -->

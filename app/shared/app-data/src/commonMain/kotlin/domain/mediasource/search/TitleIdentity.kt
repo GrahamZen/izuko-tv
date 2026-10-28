@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.domain.mediasource.search
 
+import kotlin.time.TimeSource
 import me.him188.ani.app.data.models.subject.SplitSeason
 import me.him188.ani.app.data.network.SeriesGraphTable
 import me.him188.ani.app.data.network.SeriesGraphTableRepository
@@ -20,6 +21,7 @@ import me.him188.ani.app.domain.mediasource.clouddrive.DriveSubjectSeason
 import me.him188.ani.app.domain.mediasource.clouddrive.seriesSeasonOf
 import me.him188.ani.app.domain.mediasource.clouddrive.seriesSplitSeasonOf
 import me.him188.ani.app.domain.mediasource.rss.firstAirDate
+import me.him188.ani.app.domain.player.diagnostics.PlayTimeline
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import kotlin.math.abs
@@ -337,6 +339,8 @@ internal class TitleIdentity(
 
         /** @param index 全部动画的名字索引, 认系列以外的作品用; 不给时不认 */
         fun of(request: MediaFetchRequest, table: SeriesGraphTable, index: AnimeNameIndex? = null): TitleIdentity {
+            // 各段用时记进开播时间线 (开了诊断开关时), 看认部慢在哪一段
+            val started = TimeSource.Monotonic.markNow()
             val subjectId = request.subjectId.toIntOrNull()
             val names = DriveSubjectMatcher.subjectNamesOf(request)
             val ownNode = subjectId?.let(table::nodeOf)
@@ -350,7 +354,9 @@ internal class TitleIdentity(
             // 用主标题 (去掉季与副标题) 找: 「葬送的芙莉莲 第二季」的别的作品是所有以「葬送的芙莉莲」开头的作品;
             // 再加上同系列 (前传、续集能走到的) 的作品, 本条目名字里含着的 (系列名) 不算
             val bases = names.map(TitleForms::mainTitle).filter { TitleForms.compact(it).length >= 2 }.distinct()
+            val afterPlan = started.elapsedNow().inWholeMilliseconds
             val containingBase = table.nodesContainingAny(bases)
+            val afterScan = started.elapsedNow().inWholeMilliseconds
             val startingWithBase = bases.flatMap { base ->
                 val normalizedBase = TitleForms.compact(base)
                 (containingBase[base].orEmpty().filter { it.id != subjectId && it.inSeries(table) }.flatMap { listOf(it.name, it.nameCn) } + plan.otherWorkNames)
@@ -358,7 +364,9 @@ internal class TitleIdentity(
                     .filter { it.length > normalizedBase.length && normalizedBase in it }
             }
             // 同系列的作品 (前传、续集能走到的), 下面几处共用
+            val afterStartWith = started.elapsedNow().inWholeMilliseconds
             val seriesNodes = subjectId?.let { DriveSeriesParts.seriesNodesOf(it, table) }.orEmpty()
+            val afterSeries = started.elapsedNow().inWholeMilliseconds
             val inSeries = (seriesNodes.flatMap { listOf(it.name, it.nameCn) } + plan.otherWorkNames)
                 .map(TitleForms::compact)
                 .filter { name -> TitleForms.isDistinctive(name) && own.none { name in it } }
@@ -371,7 +379,9 @@ internal class TitleIdentity(
                     DriveSeriesParts(parts.keywords, parts.seriesNames, parts.ownParts, parts.otherParts.filter { part -> own.none { part in it } })
                 }
                 ?.takeIf { it.ownParts.isNotEmpty() || laterWork }
+            val afterParts = started.elapsedNow().inWholeMilliseconds
             val roots = overlappingWorkNames(request, subjectId, table)
+            val afterRoots = started.elapsedNow().inWholeMilliseconds
             val series = (parts?.seriesNames.orEmpty() + seriesNames).distinct()
             val notOwn = series + others
             val airYear = request.firstAirDate()?.year ?: ownNode?.airDate?.takeIf { it.isValid }?.year
@@ -382,6 +392,12 @@ internal class TitleIdentity(
             /** 本条目与同系列的作品 */
             val seriesIds = seriesNodes.mapTo(HashSet()) { it.id } +
                     listOfNotNull(subjectId)
+            if (PlayTimeline.enabled) PlayTimeline.mark(
+                "t_id_breakdown",
+                "plan=$afterPlan scan=${afterScan - afterPlan} (${bases.size} bases, ${containingBase.values.sumOf { it.size }} hits) " +
+                    "startWith=${afterStartWith - afterScan} series=${afterSeries - afterStartWith} (${seriesNodes.size}) " +
+                    "parts=${afterParts - afterSeries} roots=${afterRoots - afterParts} rest=${started.elapsedNow().inWholeMilliseconds - afterRoots}",
+            )
             return TitleIdentity(
                 ownNames = ownNames,
                 otherWorkNames = others,

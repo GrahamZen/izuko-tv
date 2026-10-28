@@ -155,7 +155,9 @@ class SelectorMediaSourceFetchFallbackTest {
         )
 
         assertEquals(listOf("出包王女", "铃芽之旅"), site.searchKeywords)
-        assertEquals(listOf("出包王女", "出包王女第二季"), subjects)
+        // 两页同时开, 先开完的先交出, 先后不定
+        assertEquals(setOf("出包王女", "出包王女第二季"), subjects.toSet())
+        assertEquals(2, subjects.size)
     }
 
     @Test
@@ -230,8 +232,9 @@ class SelectorMediaSourceFetchFallbackTest {
 
         val subjects = source.fetchSubjectNames(longSeries(1))
         assertEquals(listOf("出包王女"), site.searchKeywords)
-        // 名字写明是别的季的页排在后面开 (见 SubjectSearchPlan.pagesToOpen)
-        assertEquals(listOf("出包王女", "出包王女 Darkness", "出包王女第二季", "出包王女Darkness 第二季"), subjects)
+        // 四页都从缓存读回; 几页同时开, 先取完的先写进缓存, 读回的先后不定
+        assertEquals(setOf("出包王女", "出包王女 Darkness", "出包王女第二季", "出包王女Darkness 第二季"), subjects.toSet())
+        assertEquals(4, subjects.size)
     }
 
     /**

@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.domain.media.selector
 
+import java.io.File
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
@@ -43,7 +44,12 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
-/** Replays recorded playback observations through real filtering, preferences and the automatic selection use case. */
+/**
+ * Replays recorded playback observations through real filtering, preferences and the automatic selection use case.
+ *
+ * - `TRACE_WEBVIEW_SOURCES`: 当作要 WebView 嗅探的源名 (逗号分隔; `*` = 全部网页源, `-名字` 排除), 比 WebView 兜底的规则用;
+ * - `TRACE_REPORT`: 给了文件时只把各条选了什么追加进去 (用例文件、源名、资源、选定时刻、录下的源名), 不核对.
+ */
 class MediaSelectionTraceReplayTest {
     @Serializable
     private data class Case(
@@ -153,7 +159,11 @@ class MediaSelectionTraceReplayTest {
             loadModules(listOf(module {
                 single<GetMediaSelectorSettingsFlowUseCase> { GetMediaSelectorSettingsFlowUseCase { settings } }
                 single<GetMediaSelectorSourceTiersUseCase> {
-                    GetMediaSelectorSourceTiersUseCase { context.mapNotNull { it.mediaSourceTiers } }
+                    val webViewSpec = System.getenv("TRACE_WEBVIEW_SOURCES")?.split(',')?.map { it.trim() }.orEmpty()
+                    val webViewIds = trace.sources.filter { source ->
+                        source.kind.name == "WEB" && ("-" + source.name) !in webViewSpec && ("*" in webViewSpec || source.name in webViewSpec)
+                    }.mapTo(HashSet()) { it.id }
+                    GetMediaSelectorSourceTiersUseCase { context.mapNotNull { it.mediaSourceTiers?.copy(webViewSources = webViewIds) } }
                 }
                 single<GetPreferredWebMediaSourceUseCase> {
                     GetPreferredWebMediaSourceUseCase { flowOf(trace.preferredSourceId) }
@@ -182,6 +192,13 @@ class MediaSelectionTraceReplayTest {
             }
             advanceTimeBy(startedAt + trace.durationMillis - testScheduler.currentTime)
             runCurrent()
+            System.getenv("TRACE_REPORT")?.let { report ->
+                val picked = selector.selected.value
+                File(report).appendText(
+                    "${case.file}\t${picked?.mediaSourceId?.let { id -> trace.sources.single { it.id == id }.name }}\t${picked?.mediaId}\t$selectedAt\t${case.expectedSourceName}\n",
+                )
+                return@runTest
+            }
             assertEquals(case.expectedMediaId, selector.selected.value?.mediaId, case.file)
             if (case.expectedMediaId != null) {
                 val sourceName = trace.sources.single { it.id == selector.selected.value!!.mediaSourceId }.name

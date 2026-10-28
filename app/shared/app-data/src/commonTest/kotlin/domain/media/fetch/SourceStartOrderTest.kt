@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
+import me.him188.ani.app.domain.media.selector.MediaSelectorSourceTiers
 import me.him188.ani.app.domain.mediasource.profile.SearchObservation
 import me.him188.ani.app.domain.mediasource.profile.SourceObservation
 import me.him188.ani.app.domain.mediasource.profile.SourceProfileSummary
@@ -75,6 +76,23 @@ class SourceStartOrderTest {
             "fast" to played(3, startupMillis = 800, searchMillis = 400),
         )
         assertEquals(listOf("fast", "slow", "unknown"), SourceStartOrder.of(sources) { profiles[it] }.map { sources[it].mediaSourceId })
+    }
+
+    @Test
+    fun `tiers reached through channels count - sources missing from the tiers use their own`() {
+        val sources = listOf(FakeSource("t2", 2), FakeSource("t1", 1), FakeSource("channels", 4), FakeSource("unlisted", 0))
+        val tiers = MediaSelectorSourceTiers(
+            tiers = mapOf("t1" to MediaSourceTier(1u), "t2" to MediaSourceTier(2u), "channels" to MediaSourceTier(4u)),
+            channelTiers = mapOf("channels" to mapOf("line-a" to MediaSourceTier(1u), "line-b" to MediaSourceTier(6u))),
+        )
+        assertEquals(
+            listOf("unlisted", "t1", "channels", "t2"),
+            SourceStartOrder.of(sources, tiers) { null }.map { sources[it].mediaSourceId },
+        )
+        assertEquals(
+            listOf("unlisted", "t1", "t2", "channels"),
+            SourceStartOrder.of(sources) { null }.map { sources[it].mediaSourceId },
+        )
     }
 
     @Test
