@@ -10,20 +10,23 @@
 package me.him188.ani.app.domain.media.cache.library
 
 import me.him188.ani.app.domain.media.cache.location.MediaCacheLocations
+import me.him188.ani.app.domain.mediasource.clouddrive.LocalFolderAccess
 import me.him188.ani.app.domain.mediasource.clouddrive.LocalFolderRoot
 import me.him188.ani.app.domain.mediasource.clouddrive.LocalFolderRoots
 import me.him188.ani.utils.io.absolutePath
 
 /**
- * 本地文件夹数据源能读的盘 = 缓存位置里此刻接着的各块盘 (内部存储在前; 只读、FAT32 这类放不了缓存的盘也算), 权限同片库.
+ * 本地文件夹数据源能读的盘 = 缓存位置里此刻接着的各块盘 (内部存储在前; 只读、FAT32 这类放不了缓存的盘也算),
+ * 盘的根目录同片库的倒推 ([MediaLibraryAccess.volumeRootOf]); 权限见 [LocalFolderAccess].
  */
 class VolumeLocalFolderRoots(
     private val locations: MediaCacheLocations,
-    private val access: MediaLibraryAccess,
+    private val library: MediaLibraryAccess,
+    private val access: LocalFolderAccess,
 ) : LocalFolderRoots {
     override fun roots(): List<LocalFolderRoot> =
         locations.locations.value.mapNotNull { location ->
-            access.volumeRootOf(location)?.let { LocalFolderRoot(location.label, it.absolutePath.trimEnd('/')) }
+            library.volumeRootOf(location)?.let { LocalFolderRoot(location.label, it.absolutePath.trimEnd('/')) }
         }.distinctBy { it.path }
 
     override fun isAccessible(): Boolean = access.isGranted()
