@@ -82,6 +82,18 @@ class SelectorMediaSourceEpisodeCacheRepository(
     }
 
     /**
+     * [subjectName] 这一轮搜到、要打开的条目页都开完了 (都已 [addCache]): 之后读到的缓存才算完整, 不必重搜.
+     * 见 [WebSearchSessionCacheEntity.roundComplete].
+     */
+    suspend fun markRoundComplete(
+        requesterSubjectId: Int?,
+        mediaSourceId: String,
+        subjectName: String,
+    ) = withContext(defaultDispatcher) {
+        dao.markRoundComplete(requesterSubjectId, mediaSourceId, subjectName)
+    }
+
+    /**
      * 清除该条目在所有数据源上的缓存.
      */
     suspend fun clearByRequestedSubject(requesterSubjectId: Int) = withContext(defaultDispatcher) {
@@ -185,6 +197,7 @@ private fun List<WebSearchSessionCacheEntity>.toWebSearchCache(): WebSearchCache
         ),
         webEpisodeInfos = map { it.toWebSearchEpisodeInfo() },
         cachedAt = minOf { it.cachedAt },
+        roundComplete = all { it.roundComplete },
     )
 }
 
@@ -193,6 +206,8 @@ data class WebSearchCache(
     val webEpisodeInfos: List<WebSearchEpisodeInfo>,
     /** 这一页写入缓存的时间 (各行中最早的) */
     val cachedAt: Long = 0,
+    /** 写这一页的那一轮搜索的条目页都开完了 (见 [WebSearchSessionCacheEntity.roundComplete]); 为 false 时这个词还有页可能没缓存上 */
+    val roundComplete: Boolean = true,
 )
 
 private fun WebSearchEpisodeInfo.toEntity(
