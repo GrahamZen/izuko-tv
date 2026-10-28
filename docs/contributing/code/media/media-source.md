@@ -225,7 +225,8 @@ JSONPath 表达式；公共请求头（如 `apikey`）与地址前缀在三个�
 
 - **与 Selector 源共用自动匹配层。** `JsonApiSearchConfig.autoMatch` 就是 `SelectorAutoMatchConfig`，
   搜索缓存也写进同一张 `WebSearchSessionCache` 表（剧集的站点 id 从播放页地址按模板反解，
-  不单独存列）。关键字链（主名、回退关键字、记忆关键字的顺序与节流）是两种源共用的 `keywordSearchChain`。
+  不单独存列）。关键字链（主名、回退关键字、记忆关键字的顺序与节流）是两种源共用的 `keywordSearchChain`；
+  换词的间隔只在真要向站点发搜索请求时等，命中搜索缓存或站点搜索记忆（`SiteSearchMemory`）的不等。
 - **请求节流是源级的。** 三个阶段的请求共用一个最小间隔（`requestInterval`），而不是像 Selector 源那样
   只在搜索之间等待：接口站点对剧集与播放请求同样限流，而且自动匹配一次会连着发搜索、剧集与播放请求。
 - **线路是声明出来的。** 有的站点剧集列表里没有线路，线路只在播放响应的候选数组里以一个
