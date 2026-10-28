@@ -16,9 +16,13 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
+import me.him188.ani.app.data.repository.media.SelectorMediaSourceEpisodeCacheRepository
 import me.him188.ani.app.domain.mediasource.web.format.SelectorChannelFormatNoChannel
 import me.him188.ani.app.domain.mediasource.web.format.SelectorSubjectFormatA
 import me.him188.ani.datasources.api.EpisodeSort
@@ -26,8 +30,11 @@ import me.him188.ani.datasources.api.PackedDate
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.measureTime
 
 /**
  * 自动匹配的关键词链: 主关键词搜不到名字能对上的条目时, 依次尝试回退关键词.
@@ -105,6 +112,36 @@ class SelectorMediaSourceFetchFallbackTest {
         assertEquals(listOf("更多", "出包王女"), site.searchKeywords)
         // 整个系列都搜出来, 只打开本季的页面 (第一季、Darkness 选择器反正会排除)
         assertEquals(listOf("出包王女第二季"), subjects)
+    }
+
+    @Test
+    fun `a fallback keyword the site memory already has does not wait the request interval`() = runTest {
+        // 站点搜索记忆跨条目共用: 先用另一个数据源实例 (请求间隔各自算) 搜过「出包王女」
+        val repository = SelectorMediaSourceEpisodeCacheRepository(NoopWebSearchSessionCacheDao, flowOf(1.hours))
+        val slow = config.copy(requestInterval = 5.seconds)
+        val site = Site()
+        createTestSelectorMediaSource(slow, site.engine, repository = repository)
+            .fetchSubjectNames(request(subjectNames = listOf("出包王女 第二季")))
+        site.searchKeywords.clear()
+
+        val source = createTestSelectorMediaSource(slow, site.engine, repository = repository)
+        // 站点在别的线程上回应, 等它时测试调度器会把后台任务的虚拟时间往前推, 这里按真实时间量
+        lateinit var subjects: List<String>
+        val elapsed = withContext(Dispatchers.Default) {
+            measureTime {
+                subjects = source.fetchSubjectNames(
+                    request(
+                        subjectNames = listOf("更多 出包王女", "もっとTo LOVEる -とらぶる-", "出包王女 第二季"),
+                        fallbackSearchKeywords = listOf("出包王女 第二季", "出包王女"),
+                    ),
+                )
+            }
+        }
+
+        // 只有「更多」发了请求; 换到记忆里有的「出包王女」不发请求, 也不等换词的间隔
+        assertEquals(listOf("更多"), site.searchKeywords)
+        assertEquals(listOf("出包王女第二季"), subjects)
+        assertTrue(elapsed < slow.requestInterval, "took $elapsed")
     }
 
     @Test
