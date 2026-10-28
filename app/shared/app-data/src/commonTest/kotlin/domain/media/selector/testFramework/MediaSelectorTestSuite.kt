@@ -42,6 +42,7 @@ import me.him188.ani.app.domain.mediasource.codec.MediaSourceTier
 import me.him188.ani.datasources.api.DefaultMedia
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.MediaExtraFiles
+import me.him188.ani.datasources.api.PackedDate
 import me.him188.ani.datasources.api.SubtitleKind
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import me.him188.ani.datasources.api.source.MediaSourceKind
@@ -88,6 +89,9 @@ sealed class MediaSelectorTestSuite {
         var episodeEp: EpisodeSort? = EpisodeSort(1)
         var episodeName: String = ""
 
+        /** 条目首播日期 */
+        var airDate: PackedDate = PackedDate.Invalid
+
         fun aliases(vararg aliases: String) {
             this.aliases.addAll(aliases)
         }
@@ -117,6 +121,7 @@ sealed class MediaSelectorTestSuite {
             subjectInfo = SubjectInfo.Empty.copy(
                 nameCn = init.subjectName,
                 aliases = init.aliases.toList(),
+                airDate = init.airDate,
             ),
             episodeInfo = EpisodeInfo.Empty.copy(episodeId = init.episodeId, sort = init.episodeSort, ep = init.episodeEp, name = init.episodeName),
             subjectSeriesInfo = init.seriesInfo,
