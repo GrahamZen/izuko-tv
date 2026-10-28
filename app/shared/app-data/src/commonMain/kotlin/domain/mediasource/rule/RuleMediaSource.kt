@@ -64,10 +64,12 @@ import me.him188.ani.app.domain.mediasource.rememberedKeywords
 import me.him188.ani.app.domain.mediasource.search.SiteSearchMemory
 import me.him188.ani.app.domain.mediasource.search.SubjectSearchPlan
 import me.him188.ani.app.domain.mediasource.search.keywordStyle
+import me.him188.ani.app.domain.mediasource.web.asEpisodesOf
 import me.him188.ani.app.domain.mediasource.web.captcha.WebSessionManager
 import me.him188.ani.app.domain.mediasource.web.findMatchingEpisodeOrNull
 import me.him188.ani.app.domain.mediasource.web.format.SelectorChannelFormat
 import me.him188.ani.app.domain.mediasource.web.format.parseOrNull
+import me.him188.ani.app.domain.mediasource.web.isOvaSubject
 import me.him188.ani.app.domain.mediasource.web.mainEpisodeCountOrNull
 import me.him188.ani.datasources.api.DefaultMedia
 import me.him188.ani.datasources.api.EpisodeSort
@@ -361,6 +363,7 @@ class RuleMediaSource(
             freshnessProbe = freshnessProbe,
             subjectEpisodeSorts = subjectEpisodeSorts,
             subjectEpisodeCount = query.mainEpisodeCountOrNull(),
+            ovaSubject = query.isOvaSubject(),
         )
 
         // 关键词与什么时候停同网页抓取数据源 (搜索计划); 两次搜索之间的间隔由 searchOnline 按规则自己等
@@ -391,7 +394,7 @@ class RuleMediaSource(
         val probe = query.freshnessProbe ?: SelectorEpisodeProbe(query.episodeSort, query.episodeEp, query.episodeName)
         return buildList {
             for (cache in caches) {
-                val episodes = cache.webEpisodeInfos
+                val episodes = cache.webEpisodeInfos.asEpisodesOf(query)
                 // 同网页抓取数据源: 页面没有已上映的最新一集时, 有当前这一集、又只查这一集才照用, 否则整个重搜 (不跳过它只用别的页)
                 if (episodes.findMatchingEpisodeOrNull(probe.episodeSort, probe.episodeEp, probe.episodeName) == null &&
                     (query.subjectEpisodeSorts != null ||
@@ -665,7 +668,7 @@ private const val RULE_CONNECT_TIMEOUT_MILLIS = 10_000L
 private suspend fun HttpResponse.toRuleResponse() = RuleHttpResponse(
     finalUrl = request.url.toString(),
     status = status.value,
-    text = runCatching { bodyAsText() }.getOrDefault(""),
+    text = runCatching { bodyAsText() }.getOrDefault("").let(::unwrapJsonEncodedHtml),
     cookies = headers.getAll(HttpHeaders.SetCookie).orEmpty()
         .map { it.substringBefore(';').trim() }
         .filter { it.substringBefore('=', "").isNotBlank() },
