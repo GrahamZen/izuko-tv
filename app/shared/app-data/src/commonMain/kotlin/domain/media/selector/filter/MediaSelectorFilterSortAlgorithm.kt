@@ -138,7 +138,7 @@ class MediaSelectorFilterSortAlgorithm {
             )
         } else null
 
-        val subjectNames = NormalizedNames(context.subjectInfo?.allNames.orEmpty())
+        val subjectNames = NormalizedNames(context.subjectInfo?.allNames.orEmpty(), context.subjectInfo?.airDate?.takeIf { it.isValid }?.year)
         val seriesSubjectNames = NormalizedNames(context.subjectSeriesInfo?.seriesSubjectNamesWithoutSelf.orEmpty().toList())
 
         val filtered = list.map { media ->
@@ -156,7 +156,7 @@ class MediaSelectorFilterSortAlgorithm {
      * 一组名称及其经 [MediaListFilters.normalizeForCompare] 处理后的形式, 每次过滤创建一次.
      * 列表里每个资源都要与同一组名称逐个 [MediaListFilters.specialEquals], 预先处理名称一侧, 免得每个资源都对它们重复执行正则.
      */
-    private class NormalizedNames(val names: List<String>) {
+    private class NormalizedNames(val names: List<String>, private val airYear: Int? = null) {
         private val normalized = names.map { MediaListFilters.normalizeForCompare(it) }
 
         /**
@@ -173,7 +173,7 @@ class MediaSelectorFilterSortAlgorithm {
         fun anyEquals(normalizedName: String): Boolean = firstEqualOrNull(normalizedName) != null
 
         /** 定资源是不是精确匹配时多认的写法, 见 [ExactSubjectNames] */
-        val exact by lazy { ExactSubjectNames(names) }
+        val exact by lazy { ExactSubjectNames(names, airYear = airYear) }
     }
 
     @Suppress("PrivatePropertyName")
