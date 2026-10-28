@@ -17,6 +17,7 @@ import androidx.compose.ui.platform.testTag
 import kotlinx.coroutines.launch
 import me.him188.ani.app.platform.LocalContext
 import me.him188.ani.app.tools.update.UpdateInstaller
+import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
 import me.him188.ani.app.ui.foundation.widgets.AniButton
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
@@ -29,7 +30,6 @@ import me.him188.ani.app.ui.lang.settings_update_manual_install_title
 import me.him188.ani.app.ui.lang.settings_update_manual_install_view_package
 import me.him188.ani.utils.io.SystemPath
 import me.him188.ani.utils.io.absolutePath
-import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 import org.koin.mp.KoinPlatform
 
@@ -65,7 +65,7 @@ fun FailedToInstallDialog(
                 onClick = {
                     scope.launch {
                         if (file == null) {
-                            toaster.toast(getString(Lang.settings_update_manual_install_package_not_found))
+                            toaster.toast(getStringOffMain(Lang.settings_update_manual_install_package_not_found))
                             return@launch
                         }
                         val success =
@@ -73,7 +73,7 @@ fun FailedToInstallDialog(
 
                         if (!success) {
                             toaster.toast(
-                                getString(
+                                getStringOffMain(
                                     Lang.settings_update_manual_install_open_failed,
                                     file.absolutePath,
                                 ),

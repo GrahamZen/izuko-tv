@@ -18,6 +18,7 @@ import me.him188.ani.app.ui.foundation.Res
 import me.him188.ani.app.ui.foundation.bangumi
 import me.him188.ani.app.ui.foundation.dandanplay
 import me.him188.ani.app.ui.foundation.dmhy
+import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.foundation.mikan
 import me.him188.ani.app.ui.foundation.tmdb
 import me.him188.ani.app.ui.lang.Lang
@@ -64,7 +65,6 @@ import me.him188.ani.app.ui.settings.tabs.about.OpenSourceLibraryInfo
 import me.him188.ani.app.ui.settings.tabs.about.developerCredits
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.StringResource
-import org.jetbrains.compose.resources.getString
 
 /** 「关于」用到的实时值. */
 internal object TvAboutSettingKeys {
@@ -89,7 +89,7 @@ internal fun TvSettingsItemsBuilder.aboutItems() {
     ) {
         listOf(
             TvSettingsEdit.Run { env ->
-                if (env.deps.settings.debugTriggerState.triggerDebugMode()) env.toast(getString(Lang.settings_debug_mode_enabled))
+                if (env.deps.settings.debugTriggerState.triggerDebugMode()) env.toast(getStringOffMain(Lang.settings_debug_mode_enabled))
             },
         )
     }
@@ -240,5 +240,5 @@ private fun linkQr(url: String) = TvQr(url, caption = tvText(url), link = true)
 
 /** 在电视的浏览器里打开 [url]; 没有浏览器时提示扫码. */
 private fun openLink(url: String) = TvSettingsEdit.Run { env ->
-    if (!openUrlInBrowser(env.context, url)) env.toast(getString(Lang.tv_settings_link_no_browser))
+    if (!openUrlInBrowser(env.context, url)) env.toast(getStringOffMain(Lang.tv_settings_link_no_browser))
 }

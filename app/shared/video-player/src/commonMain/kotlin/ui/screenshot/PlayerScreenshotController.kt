@@ -19,6 +19,7 @@ import kotlinx.coroutines.launch
 import me.him188.ani.app.tools.MonoTasker
 import me.him188.ani.app.ui.foundation.ImageViewerHandler
 import me.him188.ani.app.ui.foundation.LocalImageViewerHandler
+import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.Toaster
 import me.him188.ani.app.ui.lang.Lang
@@ -39,7 +40,6 @@ import me.him188.ani.app.videoplayer.screenshot.rememberPlayerScreenshotCapturer
 import me.him188.ani.app.videoplayer.screenshot.rememberPlayerScreenshotSharer
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
-import org.jetbrains.compose.resources.getString
 import org.openani.mediamp.MediampPlayer
 
 /**
@@ -82,7 +82,7 @@ class PlayerScreenshotController(
     /** [anchor] 是分享按钮在窗口中的位置, 见 [PlayerScreenshotSharer.share]. */
     fun share(screenshot: SavedPlayerScreenshot, anchor: DpRect?) {
         scope.launch {
-            if (!sharer.share(screenshot, anchor)) toaster.toast(getString(Lang.video_player_screenshot_share_failed))
+            if (!sharer.share(screenshot, anchor)) toaster.toast(getStringOffMain(Lang.video_player_screenshot_share_failed))
         }
     }
 
@@ -93,7 +93,7 @@ class PlayerScreenshotController(
             } else {
                 Lang.video_player_screenshot_copy_failed
             }
-            toaster.toast(getString(message))
+            toaster.toast(getStringOffMain(message))
         }
     }
 
@@ -106,15 +106,15 @@ class PlayerScreenshotController(
 private val logger = logger<PlayerScreenshotController>()
 
 private suspend fun PlayerScreenshotFailure.toastMessage(): String = when (this) {
-    PlayerScreenshotFailure.PermissionDenied -> getString(Lang.video_player_screenshot_failed_permission)
-    PlayerScreenshotFailure.Unsupported -> getString(Lang.video_player_screenshot_failed_unsupported)
-    PlayerScreenshotFailure.NoFrame -> getString(Lang.video_player_screenshot_failed_no_frame)
+    PlayerScreenshotFailure.PermissionDenied -> getStringOffMain(Lang.video_player_screenshot_failed_permission)
+    PlayerScreenshotFailure.Unsupported -> getStringOffMain(Lang.video_player_screenshot_failed_unsupported)
+    PlayerScreenshotFailure.NoFrame -> getStringOffMain(Lang.video_player_screenshot_failed_no_frame)
     is PlayerScreenshotFailure.SaveFailed -> {
         val detail = cause.message?.takeIf { it.isNotBlank() }
         if (detail == null) {
-            getString(Lang.video_player_screenshot_failed_save)
+            getStringOffMain(Lang.video_player_screenshot_failed_save)
         } else {
-            getString(Lang.video_player_screenshot_failed_save_reason, detail)
+            getStringOffMain(Lang.video_player_screenshot_failed_save_reason, detail)
         }
     }
 }

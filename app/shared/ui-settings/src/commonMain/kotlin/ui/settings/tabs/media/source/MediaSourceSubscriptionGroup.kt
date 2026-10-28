@@ -69,6 +69,7 @@ import me.him188.ani.app.tools.formatDateTime
 import me.him188.ani.app.ui.foundation.AsyncImage
 import me.him188.ani.app.ui.foundation.animation.LocalAniMotionScheme
 import me.him188.ani.app.ui.foundation.getClipEntryText
+import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_media_source_subscription_add_confirm
@@ -91,7 +92,6 @@ import me.him188.ani.app.ui.lang.settings_media_source_subscriptions
 import me.him188.ani.app.ui.lang.settings_mediasource_clipboard_empty
 import me.him188.ani.app.ui.settings.framework.components.SettingsScope
 import me.him188.ani.utils.platform.Uuid
-import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 import kotlin.jvm.JvmName
 
@@ -400,7 +400,7 @@ private fun AddSubscriptionDialog(
                             uiScope.launch {
                                 val clipText = clipboard.getClipEntryText()
                                 if (clipText.isNullOrBlank()) {
-                                    toaster.toast(getString(Lang.settings_mediasource_clipboard_empty))
+                                    toaster.toast(getStringOffMain(Lang.settings_mediasource_clipboard_empty))
                                     return@launch
                                 }
                                 state.setEditingUrl(clipText)

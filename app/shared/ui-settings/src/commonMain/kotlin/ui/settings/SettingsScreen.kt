@@ -116,6 +116,7 @@ import me.him188.ani.app.ui.foundation.LocalPlatform
 import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
 import me.him188.ani.app.ui.foundation.animation.LocalAniMotionScheme
 import me.him188.ani.app.ui.foundation.animation.NavigationMotionScheme
+import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.layout.AniWindowInsets
 import me.him188.ani.app.ui.foundation.layout.currentWindowAdaptiveInfo1
@@ -192,7 +193,6 @@ import me.him188.ani.app.ui.settings.tabs.network.TmdbImagesGroup
 import me.him188.ani.app.ui.settings.tabs.theme.ThemeGroup
 import me.him188.ani.app.ui.update.devbuild.DevBuildsTab
 import me.him188.ani.utils.platform.hasScrollingBug
-import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -325,7 +325,7 @@ fun SettingsScreen(
                         {
                             scope.launch {
                                 if (vm.debugTriggerState.triggerDebugMode()) {
-                                    toaster.toast(getString(Lang.settings_debug_mode_enabled))
+                                    toaster.toast(getStringOffMain(Lang.settings_debug_mode_enabled))
                                 }
                             }
                         },
