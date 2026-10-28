@@ -74,6 +74,9 @@ internal object TitleForms {
         }
     }
 
+    /** 含有中日文字 (汉字、假名) */
+    fun containsCjk(text: String): Boolean = text.any { it.isCjk() }
+
     private fun Char.isCjk(): Boolean =
         this in '぀'..'ヿ' || this in '㐀'..'䶿' || this in '一'..'鿿' || this in '豈'..'﫿'
 

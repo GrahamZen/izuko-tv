@@ -40,6 +40,13 @@ internal suspend fun KoinComponent.withRegionalNames(request: MediaFetchRequest,
     return withRegionalNames(request, entry, seriesInfo)
 }
 
+/** 同上, 对应表 [map] 由调用方给 (缓存选资源的会话 `DownloadRequestSession` 不经 Koin). */
+internal suspend fun withRegionalNames(map: TmdbSubjectMapRepository, request: MediaFetchRequest, seriesInfo: SubjectSeriesInfo?): MediaFetchRequest {
+    val subjectId = request.subjectId.toIntOrNull()?.takeIf { it > 0 } ?: return request
+    val entry = map.lookup(subjectId)?.takeIf { it.regionalNames.isNotEmpty() } ?: return request
+    return withRegionalNames(request, entry, seriesInfo)
+}
+
 /** [withRegionalNames] 查到对应表之后的部分. 名字取 [MediaFetchRequest.nameHints] 里条目服务的 (同选择器), 不取用户改过的搜索名. */
 internal fun withRegionalNames(request: MediaFetchRequest, entry: TmdbSubjectMapEntry, seriesInfo: SubjectSeriesInfo?): MediaFetchRequest {
     val hints = request.nameHints

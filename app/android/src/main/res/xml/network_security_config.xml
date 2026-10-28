@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  系统的根证书之外再认几张: 老系统 (如 Android 9、10 的电视) 里还没有, 用它们签发证书的站点握手失败.
+  - SSL.com TLS RSA / ECC Root CA 2022 (取自 Mozilla 根证书库): 例如 AGE 动漫的证书链.
+  有网络安全配置时清单里的 usesCleartextTraffic 不再起作用, 明文 HTTP 在这里照旧放开 (本机代理、局域网控制台、部分 http 数据源).
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="@raw/sslcom_tls_rsa_root_ca_2022" />
+            <certificates src="@raw/sslcom_tls_ecc_root_ca_2022" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

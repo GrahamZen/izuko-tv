@@ -10,6 +10,7 @@
 package me.him188.ani.app.domain.usecase
 
 import kotlinx.coroutines.flow.first
+import me.him188.ani.app.data.network.TmdbSubjectMapRepository
 import me.him188.ani.app.data.repository.episode.EpisodeCollectionRepository
 import me.him188.ani.app.data.repository.episode.EpisodeSubjectRepository
 import me.him188.ani.app.data.repository.subject.GetEpisodeTypeFiltersUseCase
@@ -27,6 +28,7 @@ import me.him188.ani.app.domain.episode.CreateMediaFetchSelectBundleFlowUseCaseI
 import kotlinx.coroutines.flow.map
 import me.him188.ani.app.domain.media.fetch.MediaFetchSessionRefresh
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
+import me.him188.ani.app.domain.media.fetch.withRegionalNames
 import me.him188.ani.app.domain.episode.GetAnimeScheduleFlowUseCase
 import me.him188.ani.app.domain.episode.GetAnimeScheduleFlowUseCaseImpl
 import me.him188.ani.app.domain.episode.GetAnimeSeasonIdsFlowUseCase
@@ -131,6 +133,7 @@ fun KoinApplication.useCaseModules() = module {
         DownloadRequestSessionFactory(
             get(), get(), get(), MediaSelectorFactory.withKoin(koin), get(), get(),
             seriesInfo = { get<SubjectRelationsRepository>().seriesInfoForFetchOrNull(it) },
+            withRegionalNames = { request, series -> withRegionalNames(get<TmdbSubjectMapRepository>(), request, series) },
         )
     }
     single<GetPreferredWebMediaSourceUseCase> { GetPreferredWebMediaSourceUseCaseImpl(get()) }
