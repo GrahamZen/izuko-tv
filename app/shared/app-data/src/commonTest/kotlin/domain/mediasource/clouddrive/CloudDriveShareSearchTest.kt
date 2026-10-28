@@ -146,6 +146,46 @@ class CloudDriveShareSearchTest {
     }
 
     @Test
+    fun `a site that keeps failing is not searched with every keyword`() = runTest {
+        // 站点一直重置连接: 换了词也一样, 连着两次就不再搜
+        val urls = mutableListOf<String>()
+        val engine = DriveShareSearchEngine(config, shares(mapOf("share1" to share1)), links) { url ->
+            urls += url
+            throw ShareSiteUnavailableException(url, Exception("Connection reset"))
+        }
+        assertEquals(emptyList(), engine.search(request("名字一", "名字二", "葬送的芙莉莲")))
+        assertEquals(2, urls.size)
+    }
+
+    @Test
+    fun `one failed search does not stop the next keyword`() = runTest {
+        val urls = mutableListOf<String>()
+        val engine = DriveShareSearchEngine(config, shares(mapOf("share1" to share1)), links) { url ->
+            urls += url
+            if (urls.size == 1) throw ShareSiteUnavailableException(url, Exception("Connection reset"))
+            if ("wd=%E8%91%AC%E9%80%81" in url) siteResponse.encodeToByteArray() else """{"list":[]}""".encodeToByteArray()
+        }
+        val matched = engine.search(request("名字一", "葬送的芙莉莲"))
+        assertEquals(listOf("s1e01", "s1e02"), matched.map { it.file.fid })
+    }
+
+    @Test
+    fun `searches the site answered without results do not count as failures`() = runTest {
+        // 回了 (哪怕是空的、4xx 当作没有) 就不算站点出错: 两个名字都没搜到, 第三个照样搜
+        val urls = mutableListOf<String>()
+        val engine = DriveShareSearchEngine(config.copy(maxKeywords = 3), shares(mapOf("share1" to share1)), links) { url ->
+            urls += url
+            when {
+                "wd=%E8%91%AC%E9%80%81" in url -> siteResponse.encodeToByteArray()
+                urls.size == 1 -> throw ShareSiteUnavailableException(url, Exception("HTTP 520"))
+                else -> null
+            }
+        }
+        val matched = engine.search(request("名字一", "名字二", "葬送的芙莉莲"))
+        assertEquals(listOf("s1e01", "s1e02"), matched.map { it.file.fid })
+    }
+
+    @Test
     fun `a name with decorations is searched again without them before the next name`() = runTest {
         // 站点按标题原样找: 带全角破折号的名字搜不到, 去掉破折号的同一个名字搜得到; 搜到了就不再换下一个名字
         val shares = shares(mapOf("share1" to share1))
