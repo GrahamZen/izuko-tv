@@ -44,6 +44,7 @@ import kotlinx.coroutines.launch
 import me.him188.ani.app.platform.AniBuildConfig
 import me.him188.ani.app.platform.currentAniBuildConfig
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
+import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.foundation.setClipEntryText
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.lang.Lang
@@ -62,7 +63,6 @@ import me.him188.ani.app.ui.settings.tabs.AniHelperDestination
 import me.him188.ani.utils.platform.Platform
 import me.him188.ani.utils.platform.annotations.TestOnly
 import me.him188.ani.utils.platform.currentPlatform
-import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -142,7 +142,7 @@ fun BuildInfoTab(
     fun copy(text: String) {
         scope.launch {
             clipboard.setClipEntryText(text)
-            toaster.toast(getString(Lang.settings_build_info_copied))
+            toaster.toast(getStringOffMain(Lang.settings_build_info_copied))
         }
     }
 

@@ -15,6 +15,7 @@ import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import me.him188.ani.app.domain.episode.EpisodeAirTime
+import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.collection_tv_progress_completed
 import me.him188.ani.app.ui.lang.collection_tv_progress_finale_at
@@ -35,7 +36,6 @@ import me.him188.ani.app.ui.lang.collection_tv_progress_updates_day
 import me.him188.ani.app.ui.lang.collection_tv_progress_wish_started
 import me.him188.ani.datasources.api.EpisodeSort
 import org.jetbrains.compose.resources.StringResource
-import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 import kotlin.time.Instant
 
@@ -83,7 +83,7 @@ internal data class TvProgressStrings(
 internal fun rememberTvProgressStrings(): TvProgressStrings = tvProgressStringsOf { stringResource(it) }
 
 /** 同 [rememberTvProgressStrings], 给不在 Compose 里的 (系统主屏频道) 用. */
-internal suspend fun loadTvProgressStrings(): TvProgressStrings = tvProgressStringsOf { getString(it) }
+internal suspend fun loadTvProgressStrings(): TvProgressStrings = tvProgressStringsOf { getStringOffMain(it) }
 
 private inline fun tvProgressStringsOf(get: (StringResource) -> String): TvProgressStrings = TvProgressStrings(
     header = get(Lang.collection_tv_progress_header),

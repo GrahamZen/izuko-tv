@@ -40,6 +40,7 @@ import me.him188.ani.app.platform.LocalContext
 import me.him188.ani.app.platform.navigation.rememberAsyncBrowserNavigator
 import me.him188.ani.app.ui.foundation.LocalSketch
 import me.him188.ani.app.ui.foundation.effects.rememberNoticeSoundPlayer
+import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.foundation.navigation.BackHandler
 import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
 import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
@@ -56,7 +57,6 @@ import me.him188.ani.app.ui.settings.tabs.media.MediaSourceSubscriptionSettingsP
 import me.him188.ani.app.ui.settings.tabs.media.SelectionBar
 import me.him188.ani.app.ui.settings.tabs.media.rememberMediaSourceSettingsSection
 import me.him188.ani.app.ui.update.AppUpdateViewModel
-import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -95,7 +95,7 @@ fun TouchSettingsPage(
             initialCategory = initialTab?.name ?: TouchSettingsLastPosition.categoryId,
             scope = scope,
             extraKeys = listOf(TvSettingKeys.debug),
-            loadTemplate = { getString(TouchSettingsTextOverrides[it] ?: it) },
+            loadTemplate = { getStringOffMain(TouchSettingsTextOverrides[it] ?: it) },
         )
     }
     val playNoticeSound = rememberNoticeSoundPlayer()

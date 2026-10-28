@@ -56,6 +56,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.datetime.TimeZone
 import me.him188.ani.app.ui.foundation.LocalSketch
 import me.him188.ani.app.ui.foundation.focus.tvWindowInitialFocus
+import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tv.AniOutlinedTextField
 import me.him188.ani.app.ui.foundation.tv.TV_REDUCED_MARQUEE_ITERATIONS
@@ -197,7 +198,6 @@ import me.him188.ani.app.ui.lang.tv_source_web_no_exact
 import me.him188.ani.app.ui.media.rememberMediaDetailsStrings
 import org.jetbrains.compose.resources.ResourceEnvironment
 import org.jetbrains.compose.resources.StringResource
-import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.rememberResourceEnvironment
 import org.jetbrains.compose.resources.stringResource
 import kotlin.time.Duration.Companion.seconds
@@ -742,8 +742,8 @@ internal fun PrewarmTvSourcePanelStrings() {
     val environment = rememberResourceEnvironment()
     LaunchedEffect(environment) {
         val values = withContext(Dispatchers.IO) {
-            for (resource in TV_SOURCE_OTHER_STRING_RESOURCES) getString(environment, resource)
-            TV_SOURCE_STRING_RESOURCES.map { getString(environment, it) }
+            for (resource in TV_SOURCE_OTHER_STRING_RESOURCES) getStringOffMain(environment, resource)
+            TV_SOURCE_STRING_RESOURCES.map { getStringOffMain(environment, it) }
         }
         prewarmedTvSourceStrings = environment to values
     }

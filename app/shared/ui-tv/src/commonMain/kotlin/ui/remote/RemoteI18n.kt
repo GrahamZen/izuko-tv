@@ -12,9 +12,9 @@ package me.him188.ani.app.ui.remote
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.remote_web_lang
-import org.jetbrains.compose.resources.getString
 
 /**
  * Web 控制台跟着 app 内的语言走 (简体 / 香港繁体 / 台湾繁体 / 英文).
@@ -39,7 +39,7 @@ internal object RemoteI18n {
         private set
 
     fun refresh() {
-        val tag = runCatching { runBlocking { getString(Lang.remote_web_lang) } }.getOrNull()
+        val tag = runCatching { runBlocking { getStringOffMain(Lang.remote_web_lang) } }.getOrNull()
         lang = RemoteLang.entries.firstOrNull { it.tag == tag } ?: RemoteLang.ZH_CN
     }
 

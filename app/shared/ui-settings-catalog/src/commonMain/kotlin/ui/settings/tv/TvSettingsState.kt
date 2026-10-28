@@ -31,10 +31,10 @@ import me.him188.ani.app.data.models.preference.NoticeSoundKind
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.navigation.BrowserNavigator
 import me.him188.ani.app.navigation.SettingsTab
+import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.utils.logging.error
 import me.him188.ani.utils.logging.logger
 import org.jetbrains.compose.resources.StringResource
-import org.jetbrains.compose.resources.getString
 import kotlin.time.Duration.Companion.milliseconds
 
 /** 写之前要先问的一句, 等页面弹窗回话. */
@@ -66,7 +66,7 @@ class TvSettingsState(
     private val scope: CoroutineScope,
     /** 一直要读的值 (分类的显示条件、说明栏二维码用到的, 如调试、Web 控制台地址). */
     extraKeys: List<TvSettingKey<*>> = emptyList(),
-    private val loadTemplate: suspend (StringResource) -> String = { getString(it) },
+    private val loadTemplate: suspend (StringResource) -> String = { getStringOffMain(it) },
 ) {
     val nav = MutableStateFlow(TvSettingsNav(categoryId = initialCategory))
 

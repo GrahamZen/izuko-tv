@@ -173,6 +173,7 @@ import me.him188.ani.app.ui.episode.danmaku.MatchingDanmakuUiState
 import me.him188.ani.app.ui.episode.share.MediaShareData
 import me.him188.ani.app.ui.foundation.AbstractViewModel
 import me.him188.ani.app.ui.foundation.HasBackgroundScope
+import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.foundation.launchInBackground
 import me.him188.ani.app.ui.foundation.lists.PaginatedGroup
 import me.him188.ani.app.ui.foundation.stateOf
@@ -243,7 +244,6 @@ import me.him188.ani.utils.io.SystemPath
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.warn
 import me.him188.ani.utils.platform.annotations.TestOnly
-import org.jetbrains.compose.resources.getString
 import org.koin.core.Koin
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
@@ -497,7 +497,7 @@ open class EpisodeViewModel(
             ObserveWebMediaSourcePreferenceExtension,
             PlaybackLineageExtension,
             // 字幕跟界面语言、音轨原声优先, 手动换过的按番记住 (界面语言用 remote_web_lang: 各语言资源里写的语言标记)
-            PreferredTracksExtension.Factory(uiLanguage = { getString(Lang.remote_web_lang) }),
+            PreferredTracksExtension.Factory(uiLanguage = { getStringOffMain(Lang.remote_web_lang) }),
         ),
         koin,
         sharingStarted = SharingStarted.WhileSubscribed(5_000),

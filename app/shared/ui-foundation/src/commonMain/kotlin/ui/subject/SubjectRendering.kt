@@ -11,11 +11,11 @@ package me.him188.ani.app.ui.subject
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
+import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.subject_rendering_season_year_month
 import me.him188.ani.datasources.api.PackedDate
 import me.him188.ani.datasources.api.seasonMonth
-import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 
 @Stable
@@ -33,5 +33,5 @@ suspend fun getSubjectSeasonText(date: PackedDate): String {
     if (date.seasonMonth == 0) {
         return date.toString()
     }
-    return getString(Lang.subject_rendering_season_year_month, date.year.toString(), date.seasonMonth.toString())
+    return getStringOffMain(Lang.subject_rendering_season_year_month, date.year.toString(), date.seasonMonth.toString())
 }

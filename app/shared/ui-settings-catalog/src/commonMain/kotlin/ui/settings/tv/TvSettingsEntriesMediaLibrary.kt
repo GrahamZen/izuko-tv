@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flow
 import me.him188.ani.app.domain.media.cache.library.MediaLibraryAccess
 import me.him188.ani.app.domain.usecase.GlobalKoin
+import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_storage_delete_cache_when_done
 import me.him188.ani.app.ui.lang.settings_storage_delete_cache_when_done_description
@@ -30,7 +31,6 @@ import me.him188.ani.app.ui.lang.settings_storage_media_library_grant_list
 import me.him188.ani.app.ui.lang.settings_storage_media_library_regrant
 import me.him188.ani.app.ui.lang.settings_storage_media_library_revoked
 import me.him188.ani.app.ui.lang.settings_storage_media_library_revoked_title
-import org.jetbrains.compose.resources.getString
 import kotlin.time.Duration.Companion.seconds
 
 /** 片库要的权限: 系统支不支持、此刻开没开 */
@@ -102,9 +102,9 @@ internal fun TvSettingsItemsBuilder.deleteCacheWhenDoneItem() {
  */
 private suspend fun askForPermission(env: TvSettingsEnv, access: MediaLibraryAccess) {
     when (access.openGrantPage()) {
-        MediaLibraryAccess.GrantPage.APP -> env.toast(getString(Lang.settings_storage_media_library_grant_app))
-        MediaLibraryAccess.GrantPage.LIST -> env.toast(getString(Lang.settings_storage_media_library_grant_list))
-        MediaLibraryAccess.GrantPage.APP_DETAILS -> env.toast(getString(Lang.settings_storage_media_library_grant_details))
+        MediaLibraryAccess.GrantPage.APP -> env.toast(getStringOffMain(Lang.settings_storage_media_library_grant_app))
+        MediaLibraryAccess.GrantPage.LIST -> env.toast(getStringOffMain(Lang.settings_storage_media_library_grant_list))
+        MediaLibraryAccess.GrantPage.APP_DETAILS -> env.toast(getStringOffMain(Lang.settings_storage_media_library_grant_details))
         null -> {
             val command = access.adbGrantCommand ?: return
             val info = TvSettingsConfirm(

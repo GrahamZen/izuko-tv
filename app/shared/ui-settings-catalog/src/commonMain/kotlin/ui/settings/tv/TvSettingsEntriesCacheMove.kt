@@ -24,6 +24,7 @@ import me.him188.ani.app.domain.media.cache.library.MediaStorageSetup
 import me.him188.ani.app.domain.media.cache.location.MediaCacheLocations
 import me.him188.ani.app.domain.media.cache.location.MediaCacheMover
 import me.him188.ani.app.domain.usecase.GlobalKoin
+import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.foundation.tv.TvActionPanelRequests
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_storage_cache_move
@@ -38,7 +39,6 @@ import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.datasources.api.topic.FileSize.Companion.bytes
-import org.jetbrains.compose.resources.getString
 import kotlin.time.Duration.Companion.seconds
 
 /** 正在搬或在等停播 ([busy], 这时进度在动作面板顶上) 与按现在的设置还在别的地方的缓存 ([leftovers]) */
@@ -116,13 +116,13 @@ private suspend fun onMoveClicked(env: TvSettingsEnv, target: String?) {
     }
     val location = GlobalKoin.get<MediaCacheLocations>().locations.value.firstOrNull { it.id == target }
     if (location == null || location.unusable != null) {
-        env.toast(getString(Lang.settings_storage_cache_move_target_unavailable))
+        env.toast(getStringOffMain(Lang.settings_storage_cache_move_target_unavailable))
         return
     }
     val setup = GlobalKoin.get<MediaStorageSetup>()
     val leftovers = setup.leftovers().total
     if (leftovers.isEmpty) {
-        env.toast(getString(Lang.settings_storage_cache_move_nothing))
+        env.toast(getStringOffMain(Lang.settings_storage_cache_move_nothing))
         return
     }
     val confirm = TvSettingsConfirm(

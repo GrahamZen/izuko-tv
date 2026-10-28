@@ -15,6 +15,7 @@ import me.him188.ani.app.domain.search.SearchSort
 import me.him188.ani.app.domain.search.SubjectSearchQuery
 import me.him188.ani.app.ui.exploration.search.TV_SEARCH_RECENT_YEAR_COUNT
 import me.him188.ani.app.ui.exploration.search.buildSearchFilterState
+import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.foundation.lan.escapeHtml
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.exploration_search_filter_audience
@@ -42,7 +43,6 @@ import me.him188.ani.app.ui.lang.search_tv_filter_season
 import me.him188.ani.app.ui.lang.search_tv_filter_year
 import me.him188.ani.app.ui.lang.search_tv_filter_sort
 import org.jetbrains.compose.resources.StringResource
-import org.jetbrains.compose.resources.getString
 
 /**
  * 手机网页上提交的一次搜索: 关键词 + 与电视筛选弹窗同一套的筛选项 (排序 / 最低评分 / 标签).
@@ -218,15 +218,15 @@ private class SearchLabels(
 
     companion object {
         suspend fun load(): SearchLabels = SearchLabels(
-            sortTitle = getString(Lang.search_tv_filter_sort),
-            ratingTitle = getString(Lang.search_tv_filter_rating_min),
-            yearTitle = getString(Lang.search_tv_filter_year),
-            seasonTitle = getString(Lang.search_tv_filter_season),
-            yearAll = getString(Lang.exploration_search_filter_year_all),
-            seasonAll = getString(Lang.exploration_search_filter_season_all),
-            any = getString(Lang.search_tv_filter_any),
-            sorts = SearchSort.entries.associateWith { getString(it.label) },
-            kinds = KIND_LABELS.mapValues { getString(it.value) },
+            sortTitle = getStringOffMain(Lang.search_tv_filter_sort),
+            ratingTitle = getStringOffMain(Lang.search_tv_filter_rating_min),
+            yearTitle = getStringOffMain(Lang.search_tv_filter_year),
+            seasonTitle = getStringOffMain(Lang.search_tv_filter_season),
+            yearAll = getStringOffMain(Lang.exploration_search_filter_year_all),
+            seasonAll = getStringOffMain(Lang.exploration_search_filter_season_all),
+            any = getStringOffMain(Lang.search_tv_filter_any),
+            sorts = SearchSort.entries.associateWith { getStringOffMain(it.label) },
+            kinds = KIND_LABELS.mapValues { getStringOffMain(it.value) },
         )
 
         private val SearchSort.label: StringResource
