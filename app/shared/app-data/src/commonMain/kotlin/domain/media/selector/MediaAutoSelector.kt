@@ -337,11 +337,15 @@ internal class MediaAutoSelector(private val mediaSelector: MediaSelector) {
         // 模糊匹配要等它查完, 后面的页可能有精确的; 拆分季要看整季各页的集号才认得准哪一集, 只用查完的
         val workingIds = if (snapshot.context.subjectSeriesInfo?.splitSeason != null) emptySet()
         else webSources.filter { it.state == MediaSourceFetchState.Working }.mapTo(HashSet()) { it.mediaSourceId }
-        // 解析时可能要 WebView 嗅探的源只兜底 (见 WebViewSources): 别的网页源还在查、又没到最后的截止时间时不选它们;
-        // 都查完后有能直接取到地址的资源时, 它们当作最低层级 (仍按匹配程度排, 精确的排在模糊的前面), 没有时按原层级选
+        // 解析时可能要 WebView 嗅探的源排在能直接取到地址的后面 (见 WebViewSources): 「立即」档里别的网页源还在查时先不选它们,
+        // 等的时间有上限 (见 Web.webViewGrace); 过了「立即」档或等够了就不再等, 有能直接取到地址的资源时它们当作最低层级
+        // (仍按匹配程度排, 精确的排在模糊的前面, 只胜过一次都没播起来的源), 没有时按原层级选.
+        // 一次都没播起来的源 (降到了最低一级, 见 SourceProfiles.demoteFailing) 不等
         val viaWebView = web.sourceTiers.webViewSources
-        val directSources = webSources.filter { it.mediaSourceId !in viaWebView && !it.state.isSettled }
-        val directPending = viaWebView.isNotEmpty() && !webViewGraceOver && effectiveStage != Stage.Fuzzy && directSources.isNotEmpty()
+        val directSources = webSources.filter {
+            it.mediaSourceId !in viaWebView && !it.state.isSettled && web.sourceTiers.getBestTier(it.mediaSourceId) != NeverPlaysTier
+        }
+        val directPending = viaWebView.isNotEmpty() && !webViewGraceOver && effectiveStage == Stage.Instant && directSources.isNotEmpty()
         val reachableCandidates = candidates.filter {
             it.result.kind == MediaSourceKind.WEB &&
                     (it.result.mediaSourceId in succeededIds ||
@@ -350,7 +354,7 @@ internal class MediaAutoSelector(private val mediaSelector: MediaSelector) {
         val webCandidates = reachableCandidates.filter { !(directPending && it.result.mediaSourceId in viaWebView) }
         val webViewLowest = webCandidates.any { it.result.mediaSourceId !in viaWebView }
         val tierOf = { candidate: MaybeExcludedMedia.Included ->
-            if (webViewLowest && candidate.result.mediaSourceId in viaWebView) MediaSourceTier.MaximumValue
+            if (webViewLowest && candidate.result.mediaSourceId in viaWebView) WebViewLowestTier
             else web.sourceTiers.get(candidate.result.mediaSourceId, candidate.result.properties.alliance)
         }
         if (webSources.any { it.results.isNotEmpty() } && !snapshot.context.allFieldsLoaded()) return Decision.Wait
@@ -401,7 +405,8 @@ internal class MediaAutoSelector(private val mediaSelector: MediaSelector) {
         // 原本立即会选的精确匹配要 WebView 嗅探, 只是在等直连的源: 等的时间有上限 (见 Web.webViewGrace)
         val deferredInstant = directPending && reachableCandidates.any {
             it.result.mediaSourceId in viaWebView && it.metadata.subjectMatchKind == SubjectMatchKind.EXACT &&
-                    web.sourceTiers.get(it.result.mediaSourceId, it.result.properties.alliance) <= web.instantTier
+                    web.sourceTiers.get(it.result.mediaSourceId, it.result.properties.alliance)
+                        .let { tier -> tier <= web.instantTier || !beatenByPending(tier) }
         }
         return if (deferredInstant) Decision.WaitForDirect else Decision.Wait
     }
@@ -445,5 +450,11 @@ internal class MediaAutoSelector(private val mediaSelector: MediaSelector) {
 
     private companion object {
         val logger = logger<MediaAutoSelector>()
+
+        /** 一次都没播起来的源被降到的层级 (见 SourceProfiles.demoteFailing) */
+        val NeverPlaysTier = MediaSourceTier.MaximumValue
+
+        /** 有能直接取到地址的资源时, 要 WebView 嗅探的资源当作的层级: 只比一次都没播起来的源高 */
+        val WebViewLowestTier = MediaSourceTier(MediaSourceTier.MaximumValue.value - 1u)
     }
 }
