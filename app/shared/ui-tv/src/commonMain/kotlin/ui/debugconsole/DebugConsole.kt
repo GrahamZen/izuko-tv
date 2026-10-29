@@ -39,6 +39,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import me.him188.ani.app.domain.foundation.ForegroundListenerRefresh
 import me.him188.ani.app.navigation.AniNavigator
 import me.him188.ani.app.ui.settings.tv.TvDebugConsoleEntry
 import me.him188.ani.app.ui.settings.tv.TvSettingsPlatform
@@ -97,6 +98,10 @@ object DebugConsole {
     @Volatile
     internal var playback: RetainedPlaybackSessionHolder? = null
 
+    /** 当前的监听 socket; 回到前台时关掉它, 让下面的 accept 循环在原端口重新监听 (见 [ForegroundListenerRefresh]). */
+    @Volatile
+    private var listening: ServerSocket? = null
+
     /** 起服务 (只起一次). 由 debug 包的启动流程调用. */
     fun start(config: DebugConsoleConfig) {
         if (this.config != null) return
@@ -125,6 +130,8 @@ object DebugConsole {
                 .onFailure { logger.warn(it) { "Failed to save debug console address" } }
         }
         logger.info { "Debug console listening on port $port" }
+        listening = server
+        ForegroundListenerRefresh.register { listening?.close() }
         coroutineScope {
             // 换了 Wi-Fi 地址会变: 隔一会儿重新取
             launch {
@@ -153,6 +160,7 @@ object DebugConsole {
                         rebound = listen(selector, port)
                     }
                     server = rebound
+                    listening = rebound
                     continue
                 }
                 launch {
