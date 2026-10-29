@@ -781,14 +781,7 @@ class CloudDriveService internal constructor(
      * 删什么都没用 (空间被别的文件占着) 或算不清剩余空间时一个不删, 抛 [CloudDriveCapacityException].
      */
     private suspend fun freeSaveFolder(clearable: List<DriveFile>, needed: Long, ref: DriveShareFileRef) {
-        val free = try {
-            api.freeSpace()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Throwable) {
-            logger.warn { "Failed to read the free space of $driveId: $e" }
-            null
-        }
+        val free = readFreeSpace()
         val files = pickSavedCopiesToFree(clearable, needed, free)
         val freeText = free?.let { "${it / MB} MB free" } ?: "free space unknown"
         if (files.isEmpty()) {
@@ -808,6 +801,40 @@ class CloudDriveService internal constructor(
         api.deleteFiles(files.map { it.fid }, wait = true)
         val removed = files.mapTo(HashSet()) { it.fid }
         savedFiles.entries.removeAll { it.value in removed }
+        awaitFreeSpace(needed, ref)
+    }
+
+    /**
+     * 删完副本后等网盘报的剩余空间够放下 [needed] 再回去转存: 删除任务完成后已用量要过一会儿才降 (实测要二十几秒),
+     * 马上转存仍回空间不够. 每 [FREE_SPACE_POLL_INTERVAL] 查一次, 最多再查 [FREE_SPACE_POLLS] 次;
+     * 还不够或读不到剩余空间就照常转存, 由转存的结果说了算.
+     */
+    private suspend fun awaitFreeSpace(needed: Long, ref: DriveShareFileRef) {
+        var free = readFreeSpace()
+        var polls = 0
+        while (free != null && free < needed && polls < FREE_SPACE_POLLS) {
+            delay(FREE_SPACE_POLL_INTERVAL)
+            polls++
+            free = readFreeSpace()
+        }
+        when {
+            free == null -> Unit
+            free < needed -> logger.warn {
+                "Cloud drive $driveId still has ${free / MB} MB free after $polls checks, less than ${ref.key} needs (${needed / MB} MB); saving anyway"
+            }
+
+            polls > 0 -> logger.info { "Cloud drive $driveId has room for ${ref.key} after $polls checks" }
+        }
+    }
+
+    /** 网盘报的剩余空间; 协议没有这项或读不到时为 null. */
+    private suspend fun readFreeSpace(): Long? = try {
+        api.freeSpace()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Throwable) {
+        logger.warn { "Failed to read the free space of $driveId: $e" }
+        null
     }
 
     // endregion
@@ -1109,6 +1136,12 @@ class CloudDriveService internal constructor(
 
         /** 转存文件夹里最多留几个字幕文件, 多了删最早转存的. */
         const val MAX_SAVED_SUBTITLES = 60
+
+        /** 删完转存副本后等网盘报的剩余空间降下来时多久查一次 (见 [awaitFreeSpace]). */
+        private val FREE_SPACE_POLL_INTERVAL = 1.seconds
+
+        /** 删完转存副本后最多再查几次剩余空间 (约半分钟). */
+        private const val FREE_SPACE_POLLS = 30
 
         /** 找外挂字幕最多等多久, 超时就不带字幕播放. */
         private val SUBTITLE_LOOKUP_TIMEOUT = 8.seconds
