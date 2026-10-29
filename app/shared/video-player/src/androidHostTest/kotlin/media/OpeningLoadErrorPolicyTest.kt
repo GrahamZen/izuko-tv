@@ -13,6 +13,9 @@ import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
+import java.io.IOException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -32,6 +35,14 @@ class OpeningLoadErrorPolicyTest {
         val default = DefaultLoadErrorHandlingPolicy()
         assertEquals(default.getMinimumLoadableRetryCount(C.DATA_TYPE_MEDIA), policy.getMinimumLoadableRetryCount(C.DATA_TYPE_MEDIA))
         assertEquals(3, policy.getMinimumLoadableRetryCount(C.DATA_TYPE_MEDIA))
+    }
+
+    @Test
+    fun `a host that does not resolve is not worth a retry`() {
+        // 状态码那几种要真的 Media3 数据规格, 在设备测试 OpeningFailFastTest 里测
+        assertTrue(OpeningLoadErrorPolicy.isDefinitive(IOException(UnknownHostException("cdn.example"))))
+        assertFalse(OpeningLoadErrorPolicy.isDefinitive(IOException("connection reset")))
+        assertFalse(OpeningLoadErrorPolicy.isDefinitive(SocketTimeoutException()))
     }
 
     @Test
