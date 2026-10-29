@@ -809,6 +809,7 @@
     <string name="tv_source_drive_login_title">登录%1$s</string>
     <string name="tv_source_drive_login_password">这个网盘用账号密码登录：用手机扫码打开 Web 控制台，在「数据源」里填写。</string>
     <string name="tv_source_site_ip_blocked">网站封了这个网络的 IP，%1$s 后再试</string>
+    <string name="tv_source_group_local">本地</string>
     <string name="tv_source_group_drive">网盘</string>
     <string name="tv_source_group_online">在线</string>
     <string name="tv_source_group_direct">直链</string>
