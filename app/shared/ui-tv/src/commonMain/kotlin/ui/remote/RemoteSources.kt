@@ -30,17 +30,12 @@ import me.him188.ani.app.domain.media.fetch.MediaSourceManager
 import me.him188.ani.app.domain.media.fetch.updateMediaSourceArguments
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveAddedShareMediaSource
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveMediaSource
-import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveShareSearchArguments
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveShareSearchMediaSource
 import me.him188.ani.app.domain.mediasource.codec.ExportedMediaSourceData
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceCodecManager
 import me.him188.ani.app.domain.mediasource.directapi.DirectApiMediaSource
-import me.him188.ani.app.domain.mediasource.directapi.DirectApiMediaSourceArguments
 import me.him188.ani.app.domain.mediasource.instance.MediaSourceInstance
 import me.him188.ani.app.domain.mediasource.rule.RuleMediaSource
-import me.him188.ani.app.domain.mediasource.rule.RuleMediaSourceArguments
-import me.him188.ani.app.domain.mediasource.rss.RssMediaSourceArguments
-import me.him188.ani.app.domain.mediasource.web.SelectorMediaSourceArguments
 import me.him188.ani.app.ui.foundation.lan.LanHttpRequest
 import me.him188.ani.datasources.api.source.ConnectionStatus
 import me.him188.ani.datasources.api.source.FactoryId
@@ -62,7 +57,7 @@ import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource
 
 /**
- * Web 控制台设置标签里的「数据源」页: 设置里数据源管理那一页的网页版, 主要解决「在电视上编辑数据源要填很多东西」.
+ * Web 控制台数据源标签的列表页: 设置里数据源管理那一页的网页版, 主要解决「在电视上编辑数据源要填很多东西」.
  *
  * 全部走 [MediaSourceManager] 现成的持久化接口 (列表 / 新增 / 改配置 / 启用停用 / 删除 / 排序), 不依赖任何页面的组合,
  * 在 HTTP 线程上 `runBlocking` 即可. 与播放不冲突: 播放会话创建时对数据源列表取快照 (`createFetchFetchSession`),
@@ -96,7 +91,7 @@ internal object RemoteSources {
     private val JSON_FACTORIES = setOf(RSS, SELECTOR, DIRECT_API, DRIVE_SHARE_SEARCH, CLOUD_DRIVE, RULE)
 
     /**
-     * 不在「新增数据源」里列出的类型: 「网盘」没有模板 (导入 JSON 即可), 「我添加的分享」在播放器页添加分享时按网盘自动建.
+     * 不在添加面板「新增数据源」里列出的类型: 「网盘」没有模板 (导入 JSON 即可), 「我添加的分享」在播放器页添加分享时按网盘自动建.
      */
     private val NOT_ADDABLE = setOf(CLOUD_DRIVE, CloudDriveAddedShareMediaSource.FactoryId)
 
@@ -114,7 +109,6 @@ internal object RemoteSources {
             when {
                 request.path == "api/sources" && get -> list()
                 request.path == "api/sources/export" && get -> export(request.queryParam("id").orEmpty())
-                request.path == "api/sources/template" && get -> template(request.queryParam("factoryId").orEmpty())
                 request.path == RemoteSourceProfiles.DEEP_TEST_PATH -> RemoteSourceProfiles.handle(request)
                 !post -> null
                 request.path == "api/sources/test" -> test(request)
@@ -209,11 +203,14 @@ internal object RemoteSources {
                     }
                 }
             }
-            // 可新增的类型: 与设置页一致 —— 不允许多实例的工厂已经有一个了就不再列; 本地源与 NOT_ADDABLE 不列
+            // 可新增的类型: 与设置页一致 —— 不允许多实例的工厂已经有一个了就不再列; 本地源与 NOT_ADDABLE 不列.
+            // 同一个 factoryId 只列一次 (两个蜜柑计划的工厂共用一个 id, 按 id 新建时用的也是同一个)
+            val listed = mutableSetOf<FactoryId>()
             putJsonArray("templates") {
                 for (factory in manager.allFactories) {
                     if (manager.isLocal(factory.factoryId) || factory.factoryId in NOT_ADDABLE) continue
                     if (!factory.allowMultipleInstances && instances.any { it.factoryId == factory.factoryId }) continue
+                    if (!listed.add(factory.factoryId)) continue
                     addJsonObject {
                         val editor = editorOf(factory.factoryId, factory, fromSubscription = false)
                         put("factoryId", factory.factoryId.value)
@@ -288,24 +285,6 @@ internal object RemoteSources {
         val arguments = instance.config.serializedArguments
         if (instance.factoryId !in JSON_FACTORIES || arguments == null) return result(false, tr("这个数据源不支持导出"))
         val data = codec.serialize(instance.factoryId, arguments)
-        return buildJsonObject {
-            put("ok", true)
-            put("message", "")
-            put("json", pretty.encodeToString(ExportedMediaSourceData.serializer(), data))
-        }
-    }
-
-    /** 新增 RSS / 选择器源时的空白模板 (默认参数). */
-    private fun template(factoryId: String): JsonObject {
-        val data = when (FactoryId(factoryId)) {
-            RSS -> codec.encode(RssMediaSourceArguments.Default)
-            SELECTOR -> codec.encode(SelectorMediaSourceArguments.Default)
-            // 给一份结构完整的示例, 比空模板好改
-            DIRECT_API -> codec.encode(DirectApiMediaSourceArguments.Example)
-            DRIVE_SHARE_SEARCH -> codec.encode(CloudDriveShareSearchArguments.Example)
-            RULE -> codec.encode(RuleMediaSourceArguments.Example)
-            else -> return result(false, tr("这个类型没有 JSON 模板"))
-        }
         return buildJsonObject {
             put("ok", true)
             put("message", "")

@@ -52,7 +52,7 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * 设置标签「数据源」页的数据源画像 (见 [SourceProfiles]): 每个源下面一行实际表现与建议层级, 以及「深度测试」 ——
+ * 数据源标签列表页的数据源画像 (见 [SourceProfiles]): 每个源下面一行实际表现与建议层级, 以及「深度测试」 ——
  * 拿一部各站都有的番 ([SAMPLE]) 搜一次、解析出第一集的视频地址、探测分辨率与码率, 结果也记进画像 (标为测试).
  *
  * 深度测试在后台跑 (控制台一次只处理一个请求, 搜索加解析可能要一两分钟): `POST api/sources/deeptest` 开始, `GET` 查进度.
