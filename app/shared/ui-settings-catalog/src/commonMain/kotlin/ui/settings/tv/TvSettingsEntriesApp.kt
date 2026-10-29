@@ -393,7 +393,7 @@ internal fun TvSettingsItemsBuilder.danmakuRuleItems() {
     action(
         Lang.tv_settings_danmaku_rules_add, Lang.tv_settings_danmaku_rules_add_description,
         value = { tvText(Lang.tv_settings_on_phone) },
-        qr = { consoleQr(it, "#settings/resources", legacy = true) },
+        qr = { consoleQr(it, "#settings/play", legacy = true) },
     ) { emptyList() }
     entries(
         listOf(rules),
