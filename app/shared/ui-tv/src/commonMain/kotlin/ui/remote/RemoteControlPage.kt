@@ -27,8 +27,9 @@ import me.him188.ani.app.ui.lang.mediafetch_request_editor_title
 import org.jetbrains.compose.resources.StringResource
 
 /**
- * Web 控制台 (网页里标题叫「Izuko TV 控制台」; 手机、电脑的浏览器都能开, 原叫「手机遥控 / 控制中心」) 的网页: 底部四个标签 (搜索 / 播放器 / 缓存 / 设置) 的单页应用; 搜索标签顶上再分「搜索 / 结果」两页,
- * 设置标签再分「常规 / 数据源」两页; 「常规」第一屏是分类列表, 点一类进去是那一组的卡片.
+ * Web 控制台 (网页里标题叫「Izuko TV 控制台」; 手机、电脑的浏览器都能开, 原叫「手机遥控 / 控制中心」) 的网页: 底部五个标签 (搜索 / 播放器 / 缓存 / 数据源 / 设置) 的单页应用;
+ * 搜索标签顶上再分「搜索 / 结果」两页; 数据源标签顶上分「列表 / 订阅 / 网盘 / 本地 / BT」五页 (见 [SOURCES_TAB_HTML]);
+ * 设置标签第一屏是搜索框与分类列表, 点一类进去是那一组的卡片.
  *
  * 带少量脚本 (与「搜索输入」时代的纯表单页不同): 数据源结果是陆续回来的, 不刷新就看不到新结果, 所以「播放器」
  * 标签每秒轮询一次 `api/player` (带版本号, 没变化服务端只回一个标志). 提交都走 `fetch` 表单编码,
@@ -48,7 +49,7 @@ internal fun renderRemoteControlPage(
     pageVersion: String = "",
     /** 生成页面时电视是哪个用户 (见 RemoteProfiles); 提示轮询报的和它不一样就整页重载. 0 = 不比 */
     profileId: Int = 0,
-    /** debug 包: 「设置 → 常规」多一组「调试」, 放开发时临时要调的开关 (见 [RemoteDebugSettings]) */
+    /** debug 包: 设置标签多一组「调试」, 放开发时临时要调的开关 (见 [RemoteDebugSettings]) */
     debugTools: Boolean = false,
 ): String =
     """
@@ -65,7 +66,7 @@ internal fun renderRemoteControlPage(
     """.trimIndent() + "\n" + "window.pageVersion = '" + pageVersion + "';\n" + "window.profileId = " + profileId + ";\n" + i18nScript + "\n" + LANG_SCRIPT + "\n" + THEME_HEAD_SCRIPT + "\n" + """
     </script>
     <style>
-    """.trimIndent() + "\n" + STYLE + "\n" + SHOT_STYLE + "\n" + FAIL_STYLE + "\n" + PERF_STYLE + "\n" + SOURCE_PROFILE_STYLE + "\n" + FEEDBACK_STYLE + "\n" + themeCss + """
+    """.trimIndent() + "\n" + STYLE + "\n" + SHOT_STYLE + "\n" + FAIL_STYLE + "\n" + PERF_STYLE + "\n" + SOURCE_PROFILE_STYLE + "\n" + FEEDBACK_STYLE + "\n" + SOURCES_TAB_STYLE + "\n" + SETTINGS_RECENT_STYLE + "\n" + themeCss + """
     </style>
     </head>
     <body>
@@ -104,20 +105,26 @@ internal fun renderRemoteControlPage(
     <div id="cl-pick"></div>
     </section>
     <section class="tab" id="tab-settings" hidden>
-    <div class="seg" id="set-seg"><button type="button" data-ssub="general" class="on">常规</button><button type="button" data-ssub="sources">数据源</button></div>
     <div id="set-general">
-    <div class="set-mode-row" id="set-mode-row"><div class="seg set-mode" id="set-mode"><button type="button" data-smode="groups" class="on">分类</button><button type="button" data-smode="all">全部</button></div></div>
+    <div class="set-search" id="set-search"><input type="search" id="set-q" placeholder="搜索设置" aria-label="搜索设置" autocomplete="off"></div>
     <div id="set-home">
-    <div class="card set-nav">
+    <div id="set-recent" hidden></div>
+    <div class="card set-nav set-me">
     <button type="button" class="set-nav-row" data-group="account"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg><span class="set-nav-txt"><b>账号与用户</b><small>用户、Bangumi 账号、播放记录</small><small class="set-nav-note" hidden></small></span><span class="set-nav-go">›</span></button>
-    <button type="button" class="set-nav-row" data-group="look"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 1.01 7 1c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-1.99-2-1.99zM17 19H7V5h10v14z"/></svg><span class="set-nav-txt"><b>本机偏好</b><small>主题、音量控件等，只影响这台手机</small><small class="set-nav-note" hidden></small></span><span class="set-nav-go">›</span></button>
-    <button type="button" class="set-nav-row" data-group="connect"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"/></svg><span class="set-nav-txt"><b>连接电视</b><small>从手机打开 Izuko、后台保持连接</small><small class="set-nav-note" hidden></small></span><span class="set-nav-go">›</span></button>
+    </div>
+    <div class="card set-nav">
+    <button type="button" class="set-nav-row" data-group="play"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12zm-5-6-7 4V7z"/></svg><span class="set-nav-txt"><b>播放与弹幕</b><small>字幕组偏好、弹幕屏蔽词</small><small class="set-nav-note" hidden></small></span><span class="set-nav-go">›</span></button>
     <button type="button" class="set-nav-row" data-group="network"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zm6.93 6h-2.95c-.32-1.25-.78-2.45-1.38-3.56 1.84.63 3.37 1.91 4.33 3.56zM12 4.04c.83 1.2 1.48 2.53 1.91 3.96h-3.82c.43-1.43 1.08-2.76 1.91-3.96zM4.26 14C4.1 13.36 4 12.69 4 12s.1-1.36.26-2h3.38c-.08.66-.14 1.32-.14 2 0 .68.06 1.34.14 2H4.26zm.82 2h2.95c.32 1.25.78 2.45 1.38 3.56-1.84-.63-3.37-1.9-4.33-3.56zm2.95-8H5.08c.96-1.66 2.49-2.93 4.33-3.56C8.81 5.55 8.35 6.75 8.03 8zM12 19.96c-.83-1.2-1.48-2.53-1.91-3.96h3.82c-.43 1.43-1.08 2.76-1.91 3.96zM14.34 14H9.66c-.09-.66-.16-1.32-.16-2 0-.68.07-1.35.16-2h4.68c.09.65.16 1.32.16 2 0 .68-.07 1.34-.16 2zm.25 5.56c.6-1.11 1.06-2.31 1.38-3.56h2.95c-.96 1.65-2.49 2.93-4.33 3.56zM16.36 14c.08-.66.14-1.32.14-2 0-.68-.06-1.34-.14-2h3.38c.16.64.26 1.31.26 2s-.1 1.36-.26 2h-3.38z"/></svg><span class="set-nav-txt"><b>网络</b><small>代理、Bangumi 连接方式、TMDB 图片</small><small class="set-nav-note" hidden></small></span><span class="set-nav-go">›</span></button>
-    <button type="button" class="set-nav-row" data-group="resources"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H4V6h16v12zM6 10h2v2H6zm0 4h8v2H6zm10 0h2v2h-2zm-6-4h8v2h-8z"/></svg><span class="set-nav-txt"><b>资源与弹幕</b><small>BT Tracker、Peer 规则、PikPak、字幕组、弹幕屏蔽词</small><small class="set-nav-note" hidden></small></span><span class="set-nav-go">›</span></button>
+    <button type="button" class="set-nav-row" data-group="device"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 1.01 7 1c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-1.99-2-1.99zM17 19H7V5h10v14z"/></svg><span class="set-nav-txt"><b>这台手机</b><small>主题、音量控件、从手机打开 Izuko、后台保持连接</small><small class="set-nav-note" hidden></small></span><span class="set-nav-go">›</span></button>
+    </div>
+    <div class="card set-nav">
+    """.trimIndent() + "\n" + FEEDBACK_SET_ROW + "\n" + """
     <button type="button" class="set-nav-row" data-group="maintain"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22.7 19l-9.1-9.1c.9-2.3.4-5-1.5-6.9-2-2-5-2.4-7.4-1.3L9 6 6 9 1.6 4.7C.4 7.1.9 10.1 2.9 12.1c1.9 1.9 4.6 2.4 6.9 1.5l9.1 9.1c.4.4 1 .4 1.4 0l2.3-2.3c.5-.4.5-1.1.1-1.4z"/></svg><span class="set-nav-txt"><b>维护</b><small>应用更新、日志、性能诊断、设置备份、换电视</small><small class="set-nav-note" hidden></small></span><span class="set-nav-go">›</span></button>
-    """.trimIndent() + "\n" + FEEDBACK_SET_ROW + "\n" + (if (debugTools) SET_DEBUG_ROW + "\n" else "") + """
+    """.trimIndent() + "\n" + (if (debugTools) SET_DEBUG_ROW + "\n" else "") + """
     </div>
+    <p class="hint" id="set-more">这里只放了常用的设置，其余的请在电视上改。数据源在底栏「数据源」里。</p>
     </div>
+    <div id="set-hits" hidden></div>
     <div class="set-head" id="set-head" hidden><button type="button" class="sheet-btn" id="set-back" aria-label="返回" title="返回"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg></button><div class="sheet-title" id="set-group-title"></div></div>
     <div class="set-group" data-group="account" hidden>
     <h2 class="set-group-h">账号与用户</h2>
@@ -125,14 +132,10 @@ internal fun renderRemoteControlPage(
     <div id="set-account"></div>
     <div id="set-history"></div>
     </div>
-    <div class="set-group" data-group="look" hidden>
-    <h2 class="set-group-h">本机偏好</h2>
-    <div id="set-look"></div>
-    </div>
-    <div class="set-group" data-group="connect" hidden>
-    <h2 class="set-group-h">连接电视</h2>
-    <div id="set-front"></div>
-    <div id="set-keep"></div>
+    <div class="set-group" data-group="play" hidden>
+    <h2 class="set-group-h">播放与弹幕</h2>
+    <div id="set-generic"></div>
+    <div id="set-dmfilter"></div>
     </div>
     <div class="set-group" data-group="network" hidden>
     <h2 class="set-group-h">网络</h2>
@@ -140,12 +143,13 @@ internal fun renderRemoteControlPage(
     <div id="set-bangumi"></div>
     <div id="set-tmdb"></div>
     </div>
-    <div class="set-group" data-group="resources" hidden>
-    <h2 class="set-group-h">资源与弹幕</h2>
-    <div id="set-generic"></div>
-    <div id="set-pikpak"></div>
-    <div id="set-dmfilter"></div>
+    <div class="set-group" data-group="device" hidden>
+    <h2 class="set-group-h">这台手机</h2>
+    <div id="set-look"></div>
+    <div id="set-front"></div>
+    <div id="set-keep"></div>
     </div>
+    """.trimIndent() + "\n" + FEEDBACK_SET_GROUP + "\n" + """
     <div class="set-group" data-group="maintain" hidden>
     <h2 class="set-group-h">维护</h2>
     <div id="set-update"></div>
@@ -154,17 +158,10 @@ internal fun renderRemoteControlPage(
     <div id="set-backup"></div>
     <div id="set-migrate"></div>
     </div>
-    """.trimIndent() + "\n" + FEEDBACK_SET_GROUP + "\n" + (if (debugTools) SET_DEBUG_GROUP + "\n" else "") + """
-    <p class="hint" id="set-more">这里只放了常用的设置，其余的请在电视上改。</p>
-    </div>
-    <div id="set-sources" hidden>
-    <p class="hint">修改立即保存。正在播放的这一集不受影响，下一集或重新进入播放器时生效。订阅来的源只能启用或停用。</p>
-    <div id="src-subs"></div>
-    <div id="src-drives"></div>
-    <div id="src-add"></div>
-    <div id="src-list"></div>
+    """.trimIndent() + "\n" + (if (debugTools) SET_DEBUG_GROUP + "\n" else "") + """
     </div>
     </section>
+    """.trimIndent() + "\n" + SOURCES_TAB_HTML + "\n" + """
     <div id="cache-sheet" class="sheet" hidden>
     <div class="sheet-head"><button type="button" class="sheet-btn" id="cache-back" hidden aria-label="返回" title="返回"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg></button>
     <div class="sheet-title" id="cache-title">缓存</div><button type="button" class="sheet-btn" id="cache-close" aria-label="关闭" title="关闭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button></div>
@@ -196,11 +193,12 @@ internal fun renderRemoteControlPage(
     <button data-tab="search"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg><span class="tl">搜索</span></button>
     <button data-tab="player"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="o" d="M10 16.5l6-4.5-6-4.5v9zM12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/><path class="f" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/></svg><span class="tl">播放器</span></button>
     <button data-tab="cache"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="o" d="M19 9h-4V3H9v6H5l7 7 7-7zm-8 2V5h2v6h1.17L12 13.17 9.83 11H11zm-6 7h14v2H5z"/><path class="f" d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg><span class="tl">缓存</span></button>
+    """.trimIndent() + "\n" + SOURCES_TAB_BUTTON + "\n" + """
     <button data-tab="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="o" d="M19.43 12.98c.04-.32.07-.64.07-.98 0-.34-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.09-.16-.26-.25-.44-.25-.06 0-.12.01-.17.03l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.06-.02-.12-.03-.18-.03-.17 0-.34.09-.43.25l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98 0 .33.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.09.16.26.25.44.25.06 0 .12-.01.17-.03l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.06.02.12.03.18.03.17 0 .34-.09.43-.25l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65zm-1.98-1.71c.04.31.05.52.05.73 0 .21-.02.43-.05.73l-.14 1.13.89.7 1.08.84-.7 1.21-1.27-.51-1.04-.42-.9.68c-.43.32-.84.56-1.25.73l-1.06.43-.16 1.13-.2 1.35h-1.4l-.19-1.35-.16-1.13-1.06-.43c-.43-.18-.83-.41-1.23-.71l-.91-.7-1.06.43-1.27.51-.7-1.21 1.08-.84.89-.7-.14-1.13c-.03-.31-.05-.54-.05-.74s.02-.43.05-.73l.14-1.13-.89-.7-1.08-.84.7-1.21 1.27.51 1.04.42.9-.68c.43-.32.84-.56 1.25-.73l1.06-.43.16-1.13.2-1.35h1.39l.19 1.35.16 1.13 1.06.43c.43.18.83.41 1.23.71l.91.7 1.06-.43 1.27-.51.7 1.21-1.07.85-.89.7.14 1.13zM12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm0 6c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/><path class="f" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg><span class="tl">设置</span></button>
     </nav>
     <script>
     var INITIAL_TAB = '$initialTab';
-    """.trimIndent() + "\n" + SCRIPT + "\n" + REQUEST_SCRIPT + "\n" + CONTROL_SCRIPT + "\n" + DANMAKU_SCRIPT + "\n" + REVIEW_SCRIPT + "\n" + CACHE_SCRIPT + "\n" + CACHE_LIST_SCRIPT + "\n" + SOURCES_SCRIPT + "\n" + SOURCE_PROFILE_SCRIPT + "\n" + SUBS_SCRIPT + "\n" + CLOUD_DRIVE_SCRIPT + "\n" + SETTINGS_SCRIPT + "\n" + SETTINGS_EXTRAS_SCRIPT + "\n" + DEVICE_MIGRATION_SCRIPT + "\n" +LOOK_SCRIPT + "\n" + LOGS_SCRIPT + "\n" + PERF_SCRIPT + "\n" + PROFILES_SCRIPT + "\n" + ACCOUNT_SCRIPT + "\n" + HISTORY_SCRIPT + "\n" + HELP_SCRIPT + "\n" + PICK_SCRIPT + "\n" + UPDATE_SCRIPT + "\n" + SHARES_SCRIPT + "\n" + DRIVE_SCRIPT + "\n" + SHOT_SCRIPT + "\n" + MIRROR_SCRIPT + "\n" + FAIL_SCRIPT + "\n" + FEEDBACK_SCRIPT + "\n" + """
+    """.trimIndent() + "\n" + SCRIPT + "\n" + REQUEST_SCRIPT + "\n" + CONTROL_SCRIPT + "\n" + DANMAKU_SCRIPT + "\n" + REVIEW_SCRIPT + "\n" + CACHE_SCRIPT + "\n" + CACHE_LIST_SCRIPT + "\n" + SOURCES_SCRIPT + "\n" + SOURCES_TAB_SCRIPT + "\n" + SOURCE_PROFILE_SCRIPT + "\n" + SUBS_SCRIPT + "\n" + CLOUD_DRIVE_SCRIPT + "\n" + SETTINGS_SCRIPT + "\n" + SETTINGS_EXTRAS_SCRIPT + "\n" + SETTINGS_RECENT_SCRIPT + "\n" + DEVICE_MIGRATION_SCRIPT + "\n" +LOOK_SCRIPT + "\n" + LOGS_SCRIPT + "\n" + PERF_SCRIPT + "\n" + PROFILES_SCRIPT + "\n" + ACCOUNT_SCRIPT + "\n" + HISTORY_SCRIPT + "\n" + HELP_SCRIPT + "\n" + PICK_SCRIPT + "\n" + UPDATE_SCRIPT + "\n" + SHARES_SCRIPT + "\n" + DRIVE_SCRIPT + "\n" + SHOT_SCRIPT + "\n" + MIRROR_SCRIPT + "\n" + FAIL_SCRIPT + "\n" + FEEDBACK_SCRIPT + "\n" + """
     </script>
     </body>
     </html>
@@ -562,9 +560,9 @@ button { font: inherit; border: 0; cursor: pointer; }
    画在标签自身背景之上, 所以灰色轨道不能靠 .seg 的背景, 由 ::after 画在垫层上面 (同为 -1, 后出现的在上).
    iOS Safari 按贴着视口顶边的粘性元素给状态栏取色: 标签自身背景用页面底色 (反正被垫层盖住), 吸顶时离顶边留 8px,
    顶边那一排全是垫层 —— 不论按元素背景还是按像素取色, 吸顶前后状态栏都是底色 */
-#set-seg, #search-seg { position: sticky; top: 8px; z-index: 4; background: var(--bg); }
-#set-seg::before, #search-seg::before { content: ''; position: absolute; inset: -10px -16px -4px; background: var(--bg); z-index: -1; }
-#set-seg::after, #search-seg::after { content: ''; position: absolute; inset: 0; border-radius: inherit; background: var(--chip); z-index: -1; }
+#search-seg { position: sticky; top: 8px; z-index: 4; background: var(--bg); }
+#search-seg::before { content: ''; position: absolute; inset: -10px -16px -4px; background: var(--bg); z-index: -1; }
+#search-seg::after { content: ''; position: absolute; inset: 0; border-radius: inherit; background: var(--chip); z-index: -1; }
 .seg button { flex: 1; background: none; padding: 8px 6px; border-radius: 10px; font-size: 14px; color: var(--sub); }
 .seg button.on { background: var(--seg-on); color: var(--p); font-weight: 700; box-shadow: 0 1px 2px var(--shadow-sm); }
 .seg small { font-size: 12px; font-weight: 400; margin-left: 2px; }
@@ -647,9 +645,14 @@ button { font: inherit; border: 0; cursor: pointer; }
 .set-card > .toggle:first-child { margin-top: 0; }
 .set-title { font-size: 15px; font-weight: 700; margin-bottom: 10px; }
 .set-title small { font-size: 12px; font-weight: 400; color: var(--mute); margin-left: 6px; }
-/* 「常规」页的分类列表 (#set-home): 一张卡片里一行一组, 第二行是这一组有哪些设置, 有当前状态时再多一行;
-   点进去是那一组的卡片 (.set-group), 顶上 .set-head 返回 (按钮与标题同全屏面板的 .sheet-head) */
+/* 设置标签的分类列表 (#set-home): 一张卡片里一行一组, 第二行是这一组有哪些设置, 有当前状态时再多一行;
+   点进去是那一组的卡片 (.set-group), 顶上 .set-head 返回 (按钮与标题同全屏面板的 .sheet-head).
+   账号与用户单独一张卡片放最上面 (.set-me, 图标大一号); 反馈与维护另起一张放在后面 */
 .set-nav { padding: 4px 0; overflow: hidden; }
+.set-nav + .set-nav { margin-top: 12px; }
+.set-me .set-nav-row { padding: 14px 16px; }
+.set-me .set-nav-row svg { width: 44px; height: 44px; padding: 10px; border-radius: 22px; background: var(--p-soft); }
+.set-me .set-nav-txt b { font-size: 17px; }
 .set-nav-row { display: flex; align-items: center; gap: 14px; width: 100%; padding: 12px 16px; background: none; border-radius: 0; text-align: left; color: var(--fg); }
 .set-nav-row + .set-nav-row { border-top: 1px solid var(--line); }
 .set-nav-row:active { background: var(--soft); }
@@ -663,13 +666,17 @@ button { font: inherit; border: 0; cursor: pointer; }
 .set-nav-go { flex: none; color: var(--mute); font-size: 22px; line-height: 1; }
 .set-head { display: flex; align-items: center; gap: 8px; }
 .set-head[hidden] { display: none; }
-/* 顶上的显示方式「分类 / 全部」(记在这台手机上): 小一号的分段, 靠右, 只在第一层出现。全部 = 各组卡片列成一页, 组名作小标题 (.set-group-h) */
-.set-mode-row { display: flex; justify-content: flex-end; margin: -2px 0 10px; }
-.set-mode-row[hidden] { display: none; }
-.seg.set-mode { margin: 0; padding: 2px; border-radius: 10px; }
-.set-mode button { flex: none; padding: 4px 12px; font-size: 13px; border-radius: 8px; }
+/* 分类列表上面的搜索框 (只在第一层): 输入时各组里对得上的卡片平铺成一页, 组名作小标题 (.set-group-h), 对不上的卡片藏起来 (.set-miss);
+   不在设置标签里的 (数据源的 BT 设置、缓存等) 列在 #set-hits 里, 点了跳过去. 字号 16px: 小于 16px 时 iOS Safari 点进去会把整页放大 */
+.set-search { margin: 2px 0 12px; }
+.set-search[hidden] { display: none; }
+.set-search input { box-sizing: border-box; width: 100%; font: inherit; font-size: 16px; padding: 11px 14px; border: 1px solid var(--outline); border-radius: 12px; background: var(--field); color: var(--fg); }
+.set-search input:focus { outline: 2px solid var(--p); border-color: transparent; }
+.set-miss { display: none !important; }
 .set-group-h { display: none; margin: 20px 0 -4px; }
-#set-general.flat .set-group-h { display: block; }
+#set-general.searching .set-group-h { display: block; }
+#set-hits[hidden] { display: none; }
+#set-hits .set-nav { margin-top: 12px; }
 /* 「应用更新」(见 UPDATE_SCRIPT); 进度条借缓存列表的 .cl-bar */
 .upd-line { margin: 0 0 6px; font-size: 15px; }
 .upd-status { margin-top: 10px; }
@@ -683,17 +690,40 @@ button { font: inherit; border: 0; cursor: pointer; }
 .cd-qr img { width: 200px; height: 200px; border-radius: 12px; }
 #src-drives a.primary { text-decoration: none; text-align: center; }
 #src-drives textarea { width: 100%; font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
-/* WebDAV 卡片: 媒体文件夹一行一个 (路径 + 移除), 浏览服务器文件夹的面板 */
-.cd-lib { margin-top: 14px; }
-.cd-lib-h { font-size: 13px; color: var(--sub); }
-.cd-lib-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 6px; padding: 8px 12px; border-radius: 10px; background: var(--soft); font-size: 14px; word-break: break-all; }
-.cd-lib-row button { flex: none; height: 32px; padding: 0 12px; font-size: 13px; }
+/* 本地页的卡片 (WebDAV / 本地文件夹): 「标签 — 值」几行, 值能改的点了就地换成输入框 (.cd-inline);
+   媒体文件夹一行一个 (路径 + 移除), 标题右边「添加」, 浏览文件夹的面板; 最下面红字删除 */
+.sw.cd-sw { margin-top: 12px; border-radius: 14px; }
+.sw.cd-sw > .cd-fold { margin-top: 0; }
+.cd-sw input, .cd-sw textarea, .cd-sw select { -webkit-user-select: text; user-select: text; }
+.cd-kvs { margin-top: 2px; border-top: 1px solid var(--line); }
+.cd-kv { display: flex; align-items: center; gap: 12px; min-height: 46px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.cd-k { flex: none; width: 6.5em; color: var(--sub); }
+.cd-v { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 0; background: none; color: var(--fg); font-size: 14px; text-align: left; word-break: break-all; }
+button.cd-v svg { flex: none; width: 16px; height: 16px; fill: var(--mute); }
+.cd-link { flex: none; padding: 6px 2px; background: none; color: var(--p); font-size: 14px; font-weight: 600; }
+.cd-inline { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; }
+.cd-inline input { flex: 1; min-width: 0; padding: 8px 10px; }
+.cd-inline .primary { flex: none; padding: 8px 12px; font-size: 14px; border-radius: 10px; }
+.cd-inline .icb { background: var(--chip); color: var(--on-chip); border-radius: 10px; }
+.cd-lib { margin-top: 16px; }
+.cd-lib-h { display: flex; align-items: center; justify-content: space-between; min-height: 34px; font-size: 13px; font-weight: 600; color: var(--sub); }
+.cd-lib-add { padding: 6px 12px; border-radius: 16px; background: var(--chip); color: var(--on-chip); font-size: 13px; font-weight: 600; }
+.cd-lib-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 6px; padding: 4px 4px 4px 12px; border-radius: 10px; background: var(--soft); font-size: 14px; word-break: break-all; }
+.cd-lib-row .icb { background: none; color: var(--sub); }
+.cd-depth { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; font-size: 14px; color: var(--sub); }
+.cd-depth select { flex: none; width: 5em; font: inherit; font-size: 15px; padding: 6px 8px; border: 1px solid var(--outline); border-radius: 10px; background: var(--field); color: var(--fg); }
+.cd-depth + .hint { margin-top: 4px; }
 .cd-browse { margin-top: 10px; padding: 10px; border: 1px solid var(--line2); border-radius: 12px; }
-.cd-path { font-size: 13px; color: var(--sub); word-break: break-all; margin-bottom: 8px; }
+.cd-browse-h { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
+.cd-browse-h .cd-path { flex: 1; min-width: 0; padding-top: 8px; }
+.cd-browse-x { flex: none; background: var(--chip); color: var(--on-chip); border-radius: 10px; }
+.cd-path { font-size: 13px; color: var(--sub); word-break: break-all; }
+/* 等电视回话时按钮里的转圈 (见 CLOUD_DRIVE_SCRIPT 的 busy) */
+.cd-spin { display: inline-block; flex: none; width: 14px; height: 14px; margin-right: 8px; vertical-align: -2px; border: 2px solid currentColor;
+  border-right-color: transparent; border-radius: 50%; animation: cd-spin .8s linear infinite; }
+@keyframes cd-spin { to { transform: rotate(360deg); } }
 .cd-folders { display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow-y: auto; }
 .cd-folder { text-align: left; padding: 10px 12px; border-radius: 10px; background: var(--soft); color: var(--fg); font-size: 14px; word-break: break-all; }
-.cd-edit { margin-top: 14px; }
-.cd-edit > summary { cursor: pointer; font-size: 14px; color: var(--sub); }
 .log-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 4px; }
 .log-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border-radius: 12px; background: var(--soft); text-decoration: none; }
 .log-name { min-width: 0; font-size: 15px; font-weight: 600; color: var(--p); word-break: break-all; }
@@ -716,8 +746,9 @@ button { font: inherit; border: 0; cursor: pointer; }
 /* 左右滑出按钮 (仿 iOS 列表, 见 SCRIPT 的 swRow): 行包在 .sw 里, 按钮垫在行下面, 行随手指平移露出它们.
    圆角与投影挪到外层 (内层裁掉按钮的角); 竖向滚动仍归浏览器 (touch-action: pan-y) */
 .sw { position: relative; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px var(--shadow); }
-/* 行上的字不让选: 选中了再横拖, 浏览器会当成拖动选中的文字, 把这次手势掐掉 (电脑上鼠标拖实测); 也挡掉 iOS 长按的菜单 */
-.sw > .item, .sw > .sw-row { box-shadow: none; touch-action: pan-y; transition: transform .22s cubic-bezier(.2, .8, .2, 1);
+/* 行上的字不让选: 选中了再横拖, 浏览器会当成拖动选中的文字, 把这次手势掐掉 (电脑上鼠标拖实测); 也挡掉 iOS 长按的菜单.
+   行要是定位元素: 收回到 0 时 transform 清掉, 不定位的行会画到绝对定位的按钮底下, 按钮在收回最后那一下盖到行上闪一下 */
+.sw > .item, .sw > .sw-row { position: relative; box-shadow: none; touch-action: pan-y; transition: transform .22s cubic-bezier(.2, .8, .2, 1);
   -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .sw > .item.dragging, .sw > .sw-row.dragging { transition: none; }
 /* 卡片里面的一行行 (缓存每一集): 贴满卡片左右 (抵掉卡片内边距), 不带圆角投影; 行是透明的 (缓存卡底下垫着模糊封面),
@@ -1378,8 +1409,8 @@ private val SCRIPT = """
 (function () {
   // 静态 HTML 按当前语言翻一遍 (见 LANG_SCRIPT)
   translateStatic(document.body);
-  // sub: 搜索标签里当前是「搜索」(form) 还是「结果」(results) 那一页; setSub: 设置标签里是「常规」(general) 还是「数据源」(sources)
-  var cur = null, sub = 'form', setSub = 'general', ver = '', busy = false;
+  // sub: 搜索标签里当前是「搜索」(form) 还是「结果」(results) 那一页; srcTab: 数据源标签里是哪一页 (list / subs / drives / local / bt)
+  var cur = null, sub = 'form', srcTab = 'list', ver = '', busy = false;
   // CONTROL_SCRIPT 在支持 Media Session 的浏览器里显式启用后改成 true. 这时即使页面进后台也继续拉轻量播放状态,
   // 否则 iPhone 锁屏 / 控制中心里的进度和播放键会停在旧状态. 浏览器仍可能自行节流, 但每次系统按钮操作还会主动补拉.
   window.mediaSessionActive = false;
@@ -1650,7 +1681,7 @@ private val SCRIPT = """
       });
   }
   setInterval(pollNotice, 2000);
-  // 电视上启动时的二维码弹窗 (见 TvRemoteControl.closeLaunchDialog). 这台手机上怎么处理 (记在手机上, 这一条里和设置 → 外观里
+  // 电视上启动时的二维码弹窗 (见 TvRemoteControl.closeLaunchDialog). 这台手机上怎么处理 (记在手机上, 这一条里和设置 → 这台手机里
   // 是同一个下拉框, 随时能改回来): 每次提示 (默认) = 顶上一条「还开着 [关掉电视上的弹窗] ×」, 点了才关, × 只收起这一条 (本次);
   // 自动关掉 = 打开网页直接关; 不提示也不关 = 什么都不出现. 遥控器关掉后下一轮提示轮询就收起.
   // 关掉之后提示一句以后去哪找码 —— 弹窗里写着的那句随它关掉就看不到了
@@ -1703,7 +1734,7 @@ private val SCRIPT = """
     var m = ldSel.value;
     ldSetMode(m);
     if (m === 'auto') ldAutoClose();
-    else if (m === 'off') toast(T('以后不再提醒。请用遥控器关闭电视上的二维码；可在「设置 → 本机偏好」中重新开启提醒。'), 5000);
+    else if (m === 'off') toast(T('以后不再提醒。请用遥控器关闭电视上的二维码；可在「设置 → 这台手机」中重新开启提醒。'), 5000);
   });
   ldBar.addEventListener('click', function (e) {
     var b = e.target.closest('[data-ld]');
@@ -1715,6 +1746,7 @@ private val SCRIPT = """
   if (ldMode() === 'auto') ldAutoClose();
   pollNotice();
 
+  var TABS = ['search', 'player', 'cache', 'sources', 'settings'];
   function show(tab) {
     cur = tab;
     var secs = document.querySelectorAll('.tab');
@@ -1725,76 +1757,157 @@ private val SCRIPT = """
     if (tab === 'search') showSub(sub);
     if (tab === 'player') poll(true);
     if (tab === 'cache' && window.loadCaches) window.loadCaches();
-    if (tab === 'settings') showSetSub(setSub);
-    if (tab === 'settings' && window.loadLogs) window.loadLogs();
-    if (tab === 'settings' && window.loadPerf) window.loadPerf();
-    if (tab === 'settings' && window.loadUpdate) window.loadUpdate();
-    if (tab === 'settings' && window.loadHistory) window.loadHistory();
-  }
-  // 别的脚本 (播放记录面板点 ▶ 之后) 切标签用
-  window.showTab = show;
-  // 设置标签里的两页: 「常规」(分类列表与各组卡片) 与「数据源」(订阅 + 数据源管理), 切到哪页拉哪页.
-  // 「常规」的数据切过来时一起拉: 分类列表上的状态行 (当前用户、登录状态、版本) 也要用
-  function showSetSub(which) {
-    setSub = which;
-    // 数据源页的工具行也是 sticky 的, 要让开上面这一行, 否则两个叠在一起
-    var seg = document.getElementById('set-seg');
-    document.documentElement.style.setProperty('--seg-h', (seg.offsetHeight + 4) + 'px');
-    document.getElementById('set-general').hidden = which !== 'general';
-    document.getElementById('set-sources').hidden = which !== 'sources';
-    var bs = document.querySelectorAll('#set-seg button');
-    for (var i = 0; i < bs.length; i++) bs[i].classList.toggle('on', bs[i].getAttribute('data-ssub') === which);
-    if (which === 'sources') {
+    if (tab === 'sources') {
+      // 三份数据进标签时一起拉: 列表页「+」的添加表单要类型清单 (本地页的「+」也用它), 网盘与本地两页是同一份网盘数据
       if (window.loadSources) window.loadSources();
       if (window.loadSubs) window.loadSubs();
       if (window.loadDrives) window.loadDrives();
-    } else {
+      showSrcTab(srcTab);
+    }
+    if (tab === 'settings') {
+      // 各组的数据进标签时一起拉: 分类列表上的状态行 (当前用户、登录状态、版本) 与搜索都要用
       paintSetGroup();
       if (window.loadSettings) window.loadSettings();
       if (window.loadProfiles) window.loadProfiles();
       if (window.loadAccount) window.loadAccount();
       if (window.loadUpdate) window.loadUpdate();
+      if (window.loadLogs) window.loadLogs();
+      if (window.loadPerf) window.loadPerf();
+      if (window.loadHistory) window.loadHistory();
     }
   }
-  // 「常规」页分组: 第一屏是分类列表 (#set-home), 点一行进那一组 (.set-group), 顶上一行返回. 进组时压一条历史记录
+  // 别的脚本 (播放记录面板点 ▶ 之后) 切标签用
+  window.showTab = show;
+  // 数据源标签顶上的五页 (见 SOURCES_TAB_HTML). 换页只换地址栏 (#sources/页名, 列表页不带), 不压历史, 同底栏.
+  // BT 页的设置项随设置一起拉, 换到这页时拉一次
+  var SRC_TABS = ['list', 'subs', 'drives', 'local', 'bt'];
+  function showSrcTab(which) {
+    srcTab = SRC_TABS.indexOf(which) >= 0 ? which : 'list';
+    // 列表页的工具行也是 sticky 的, 要让开顶上这一行, 否则两个叠在一起
+    document.documentElement.style.setProperty('--seg-h', (document.getElementById('src-top').offsetHeight + 4) + 'px');
+    var ps = document.querySelectorAll('.src-pane');
+    for (var i = 0; i < ps.length; i++) ps[i].hidden = ps[i].getAttribute('data-stab') !== srcTab;
+    var bs = document.querySelectorAll('#src-seg button');
+    for (var j = 0; j < bs.length; j++) bs[j].classList.toggle('on', bs[j].getAttribute('data-stab') === srcTab);
+    if (window.srcPlus) window.srcPlus(srcTab);
+    syncHash();
+    if (srcTab === 'bt' && window.loadSettings) window.loadSettings();
+  }
+  // 别的脚本 (添加了 WebDAV / 本地文件夹之后) 换到数据源的某一页用
+  window.showSrcTab = function (which) {
+    if (cur === 'sources') showSrcTab(which);
+    else { srcTab = which; show('sources'); }
+  };
+  document.getElementById('src-seg').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-stab]');
+    if (!b) return;
+    showSrcTab(b.getAttribute('data-stab'));
+    window.scrollTo(0, 0);
+  });
+  // 设置标签的分组: 第一屏是搜索框与分类列表 (#set-home), 点一行进那一组 (.set-group), 顶上一行返回. 进组时压一条历史记录
   // (#settings/组名, state 里记着组名), 手机的返回键 / 返回手势回到列表; 刷新页面也停在这一组.
   // groupPushed: 当前这一组底下垫着列表那条历史记录, 页面上的返回要退回去 (不留多余的记录, 否则之后按返回键要多按一次).
-  // flat: 顶上的显示方式切到了「全部」(记在这台手机上): 各组卡片列成一页, 组名作小标题, 没有分类列表和子页
-  var setGroup = null, groupPushed = false, LAYOUT_KEY = 'ani-settings-layout', flat = false;
-  try { flat = localStorage.getItem(LAYOUT_KEY) === 'all'; } catch (e) {}
+  // setQ: 搜索框里的字 (小写); 有字时不看分组, 各组里对得上的卡片平铺成一页, 组名作小标题
+  var setGroup = null, groupPushed = false, setQ = '';
+  var setInput = document.getElementById('set-q'), hitsBox = document.getElementById('set-hits');
   function hasGroup(g) { return !!g && !!document.querySelector('.set-group[data-group="' + g + '"]'); }
+  // 书签与旧版电视二维码里的组名: 本机偏好 / 连接电视合成了「这台手机」, 资源与弹幕留在设置里的是「播放与弹幕」
+  var GROUP_ALIAS = { look: 'device', connect: 'device', resources: 'play' };
+  function groupOf(g) { return (g && GROUP_ALIAS[g]) || g; }
+  // 一组里对得上的卡片留着, 对不上的加 .set-miss 藏起来 (不碰卡片自己的 hidden: 有些卡片按状态由各自的脚本藏);
+  // 卡片里套的卡片跟着外层. q 为空 = 全部放出来. 返回这一组有没有露出来的卡片
+  function filterCards(group, q) {
+    var any = false;
+    [].forEach.call(group.querySelectorAll('.card'), function (c) {
+      if (c.parentNode.closest('.card')) return;
+      var hit = !q || c.textContent.toLowerCase().indexOf(q) >= 0;
+      c.classList.toggle('set-miss', !hit);
+      if (hit && !c.hidden) any = true;
+    });
+    return any;
+  }
+  // 不在设置标签里、但常会到设置里找的: [标题, 在哪, 搜索时还认的词, 去哪个标签, 哪一页]. BT 页的设置项另按卡片标题逐条列 (见 paintHits)
+  var ELSEWHERE = [
+    [T('数据源列表'), T('数据源 › 列表'), '数据源 启用 停用 层级 优先 导入 source', 'sources', 'list'],
+    [T('订阅'), T('数据源 › 订阅'), '订阅 subscription', 'sources', 'subs'],
+    [T('网盘'), T('数据源 › 网盘'), '网盘 登录 cookie 扫码 转码 cloud drive', 'sources', 'drives'],
+    [T('本地文件夹与 WebDAV'), T('数据源 › 本地'), '本地 文件夹 u 盘 硬盘 nas webdav local folder', 'sources', 'local'],
+    [T('BT 设置'), T('数据源 › BT'), 'bt tracker peer pikpak 黑名单 离线 torrent', 'sources', 'bt'],
+    [T('已下载的缓存'), T('底栏「缓存」'), '缓存 下载 cache download', 'cache', ''],
+    [T('缓存放在哪、片库'), T('在电视上改：设置 → 存储，有一步步的引导'), '缓存 位置 片库 外接 硬盘 移动 存储 storage library', '', '']
+  ];
+  // tab 为空 = 只在电视上能改的, 只说去哪改, 不能点
+  function hitRow(title, where, tab, page) {
+    var txt = '<span class="set-nav-txt"><b>' + esc(title) + '</b><small>' + esc(where) + '</small></span>';
+    if (!tab) return '<div class="set-nav-row">' + txt + '</div>';
+    return '<button type="button" class="set-nav-row" data-hit-tab="' + tab + '" data-hit-page="' + page + '">' + txt + '<span class="set-nav-go">›</span></button>';
+  }
+  function paintHits(q) {
+    hitsBox.hidden = !q;
+    if (!q) { hitsBox.innerHTML = ''; return; }
+    var rows = [];
+    [].forEach.call(document.querySelectorAll('#src-bt .card, #set-pikpak .card'), function (c) {
+      var t = c.querySelector('.set-title');
+      if (t && c.textContent.toLowerCase().indexOf(q) >= 0) rows.push(hitRow(t.textContent, T('数据源 › BT'), 'sources', 'bt'));
+    });
+    ELSEWHERE.forEach(function (x) {
+      if (x[4] === 'bt' && rows.length) return;
+      if ((x[0] + ' ' + x[2]).toLowerCase().indexOf(q) >= 0) rows.push(hitRow(x[0], x[1], x[3], x[4]));
+    });
+    var shown = document.querySelector('.set-group:not([hidden])');
+    hitsBox.innerHTML = (rows.length ? '<h2 class="set-group-h">' + T('在别的标签里') + '</h2><div class="card set-nav">' + rows.join('') + '</div>' : '') +
+      (rows.length || shown ? '' : '<p class="hint">' + T('没有找到相关的设置') + '</p>');
+  }
   function paintSetGroup() {
-    var g = flat ? null : setGroup;
+    var q = setQ, g = q ? null : setGroup;
     var gs = document.querySelectorAll('.set-group');
-    for (var i = 0; i < gs.length; i++) gs[i].hidden = !flat && gs[i].getAttribute('data-group') !== g;
-    document.getElementById('set-general').classList.toggle('flat', flat);
-    document.getElementById('set-home').hidden = flat || !!g;
+    for (var i = 0; i < gs.length; i++) {
+      var any = filterCards(gs[i], q);
+      gs[i].hidden = q ? !any : gs[i].getAttribute('data-group') !== g;
+    }
+    document.getElementById('set-general').classList.toggle('searching', !!q);
+    document.getElementById('set-home').hidden = !!q || !!g;
+    document.getElementById('set-search').hidden = !!g;
     document.getElementById('set-head').hidden = !g;
-    // 显示方式与底下那句说明只在第一层
-    document.getElementById('set-mode-row').hidden = !!g;
-    document.getElementById('set-more').hidden = !!g;
-    var ms = document.querySelectorAll('#set-mode button');
-    for (var j = 0; j < ms.length; j++) ms[j].classList.toggle('on', (ms[j].getAttribute('data-smode') === 'all') === flat);
+    paintHits(q);
+    if (!q && !g && window.paintRecentSettings) window.paintRecentSettings();
     if (g) {
       document.getElementById('set-group-title').textContent =
         document.querySelector('.set-nav-row[data-group="' + g + '"] b').textContent;
     }
   }
-  // 地址栏只换不压: 标签与所在的组 (切标签不算一步, 返回键只退组)
-  function syncHash() {
-    if (history.replaceState) history.replaceState(history.state, '', '#' + cur + (cur === 'settings' && setGroup && !flat ? '/' + setGroup : ''));
-  }
-  function setLayout(all) {
-    flat = all;
-    setGroup = null;
-    try { if (all) localStorage.setItem(LAYOUT_KEY, 'all'); else localStorage.removeItem(LAYOUT_KEY); } catch (e) {}
+  setInput.addEventListener('input', function () {
+    setQ = setInput.value.trim().toLowerCase();
     paintSetGroup();
-    syncHash();
-  }
-  document.getElementById('set-mode').addEventListener('click', function (e) {
-    var b = e.target.closest('[data-smode]');
-    if (b) setLayout(b.getAttribute('data-smode') === 'all');
   });
+  // 清掉搜索回到分类列表 (再点底栏「设置」、点了一条跳到别的标签时)
+  function clearSetSearch() {
+    if (!setQ && !setInput.value) return;
+    setInput.value = '';
+    setQ = '';
+    paintSetGroup();
+  }
+  // 搜着的时候卡片陆续画出来 (设置读回来、换了用户): 按当前的字再筛一遍. 只看各组 (#set-hits 自己也在重画, 看它会停不下来)
+  var refilter = 0;
+  var cardsObserver = new MutationObserver(function () {
+    if (!setQ || refilter) return;
+    refilter = requestAnimationFrame(function () { refilter = 0; if (setQ) paintSetGroup(); });
+  });
+  [].forEach.call(document.querySelectorAll('.set-group'), function (g) { cardsObserver.observe(g, { childList: true, subtree: true }); });
+  hitsBox.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-hit-tab]');
+    if (!b) return;
+    var tab = b.getAttribute('data-hit-tab'), page = b.getAttribute('data-hit-page');
+    if (tab === 'sources' && page) srcTab = page;
+    clearSetSearch();
+    show(tab);
+    window.scrollTo(0, 0);
+  });
+  // 地址栏只换不压: 标签与所在的组 / 页 (切标签与数据源的页不算一步, 返回键只退设置的组)
+  function syncHash() {
+    var sub2 = cur === 'settings' ? setGroup : cur === 'sources' && srcTab !== 'list' ? srcTab : null;
+    if (history.replaceState) history.replaceState(history.state, '', '#' + cur + (sub2 ? '/' + sub2 : ''));
+  }
   function openSetGroup(g) {
     if (!hasGroup(g)) return;
     setGroup = g;
@@ -1821,11 +1934,11 @@ private val SCRIPT = """
   }
   // 返回 / 前进键: 按地址栏切到对应的标签与组 (进组后又切到别的标签时, 按返回键回到设置的分类列表)
   window.addEventListener('popstate', function () {
-    var h = location.hash.slice(1), k = h.indexOf('/'), tab = k < 0 ? h : h.slice(0, k), g = k < 0 ? null : h.slice(k + 1);
-    if (tab !== 'search' && tab !== 'player' && tab !== 'cache' && tab !== 'settings') return;
+    var h = location.hash.slice(1), k = h.indexOf('/'), tab = k < 0 ? h : h.slice(0, k), g = k < 0 ? null : groupOf(h.slice(k + 1));
+    if (TABS.indexOf(tab) < 0) return;
     groupPushed = tab === 'settings' && hasGroup(g);
     setGroup = groupPushed ? g : null;
-    if (tab === 'settings') setSub = 'general';
+    if (tab === 'sources') srcTab = SRC_TABS.indexOf(g) >= 0 ? g : 'list';
     show(tab);
   });
   // 分类列表每行第二行是这一组有哪些设置; 卡片脚本报上来的当前状态另起一行. 同一组可以有几条, 按 slot 排
@@ -1857,19 +1970,18 @@ private val SCRIPT = """
   }
   document.querySelector('.tabbar').addEventListener('click', function (e) {
     var b = e.target.closest('button');
-    if (b) show(b.getAttribute('data-tab'));
+    if (!b) return;
+    var tab = b.getAttribute('data-tab');
+    // 已经在设置标签里再点「设置」: 在某一组里 = 回到分类列表 (同左上角的返回); 在搜索结果里 = 清掉搜索回到分类列表
+    if (tab === 'settings' && cur === 'settings') {
+      if (setGroup) { closeSetGroup(); return; }
+      if (setQ || setInput.value) { clearSetSearch(); window.scrollTo(0, 0); return; }
+    }
+    show(tab);
   });
   document.getElementById('search-seg').addEventListener('click', function (e) {
     var b = e.target.closest('[data-sub]');
     if (b) showSub(b.getAttribute('data-sub'));
-  });
-  document.getElementById('set-seg').addEventListener('click', function (e) {
-    var b = e.target.closest('[data-ssub]');
-    if (!b) return;
-    var which = b.getAttribute('data-ssub');
-    // 在某一组里再点「常规」: 回到分类列表 (同左上角的返回)
-    if (which === 'general' && setSub === 'general' && setGroup) { closeSetGroup(); return; }
-    showSetSub(which);
   });
 
   // ---- 搜索 ----
@@ -2227,6 +2339,7 @@ private val SCRIPT = """
       if (row) swSwallow = true; // 点的是另一行: 这一下只收起, 不当作点击
     }
     if (!row || onActs || row.closest('.selecting') || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    if (t.closest('input, textarea, select')) return; // 在输入框里拖是选字、挪光标, 不是横滑
     var sw = row.parentNode;
     swDrag = { row: row, sw: sw, x0: e.clientX, y0: e.clientY, base: row._x || 0, id: e.pointerId, mode: 0,
       l: swWidth(sw, 'l'), r: swWidth(sw, 'r'), w: sw.offsetWidth, bl: swEdge(sw, 'l'), br: swEdge(sw, 'r'), full: false };
@@ -3148,19 +3261,22 @@ private val SCRIPT = """
   });
 
   var h0 = location.hash.slice(1);
-  // 旧书签 #sources: 数据源并进了「设置」, 打开设置标签的「数据源」页
-  if (h0 === 'sources' || h0 === 'sources/webdav') {
-    // 电视设置「添加 WebDAV」的二维码: 数据源页的「新增数据源」直接选上 WebDAV (见 renderAdd)
-    if (h0 === 'sources/webdav') window.pendingSourceAdd = 'webdav';
-    setSub = 'sources';
-    h0 = 'settings';
+  // 电视设置「添加 WebDAV」的二维码 (#sources/webdav): 本地页, 添加面板直接选上 WebDAV (见 renderAdd)
+  if (h0 === 'sources/webdav') {
+    window.pendingSourceAdd = 'webdav';
+    h0 = 'sources/local';
+  }
+  // #sources/页名: 停在数据源的那一页
+  if (h0.indexOf('sources/') === 0) {
+    if (SRC_TABS.indexOf(h0.slice(8)) >= 0) srcTab = h0.slice(8);
+    h0 = 'sources';
   }
   // #settings/组名 (在某一组里刷新了页面): 停在那一组. 这条记录是进组时压的 (state 对得上) 就照旧, 底下本来就垫着列表;
-  // 否则 (书签、手打的地址) 先把这条换成列表再压一条组, 按返回键回到列表. 「全部」显示方式下没有子页, 只打开设置标签
+  // 否则 (书签、手打的地址) 先把这条换成列表再压一条组, 按返回键回到列表. 旧组名照 GROUP_ALIAS 认
   if (h0.indexOf('settings/') === 0) {
-    var g0 = h0.slice(9);
+    var g0 = groupOf(h0.slice(9));
     h0 = 'settings';
-    if (hasGroup(g0) && !flat) {
+    if (hasGroup(g0)) {
       setGroup = g0;
       if (history.state && history.state.setGroup === g0) groupPushed = true;
       else if (history.pushState) {
@@ -3173,7 +3289,7 @@ private val SCRIPT = """
   // 等本页其余脚本 (缓存 / 数据源 / 设置等) 都跑完再切标签: 它们的加载函数 (window.loadCaches 等) 是后面才登记的,
   // 直接切的话从 #cache / #settings 书签打开时那一页是空的
   setTimeout(function () {
-    show(h0 === 'search' || h0 === 'player' || h0 === 'cache' || h0 === 'settings' ? h0 : INITIAL_TAB);
+    show(TABS.indexOf(h0) >= 0 ? h0 : INITIAL_TAB);
   }, 0);
 })();
 """.trimIndent()
@@ -4094,7 +4210,7 @@ private val CONTROL_SCRIPT = """
     return t + 'x';
   }
   /*
-   * 音量控件两种样式 (设置 - 本机偏好 - 「播放卡的音量控件」, 见 LOOK_SCRIPT 的 VOL_STYLES):
+   * 音量控件两种样式 (设置 → 这台手机 → 「播放卡的音量控件」, 见 LOOK_SCRIPT 的 VOL_STYLES):
    * - buttons (默认): 同弹幕时间偏移那套 —— 一下一档、按住数字左右拖微调、点数字直接输。滑条在手机上
    *   一碰就从头滑到尾, 音量一下子拉满 (用户 2026-09-20);
    * - slider: 原来那根;
@@ -4572,7 +4688,7 @@ private val CONTROL_SCRIPT = """
 """.trimIndent()
 
 /**
- * 设置标签「数据源」页的脚本 (见 RemoteSources). 列表在切到这一页与每次操作成功后整份重拉; 新增区只在可选类型变了时才
+ * 数据源标签列表页与添加面板的脚本 (见 RemoteSources). 列表在切到这一页与每次操作成功后整份重拉; 新增区只在可选类型变了时才
  * 重画, 免得正在填的表单被冲掉. 参数表单按服务端给的参数模型现画, visibleWhen 在本地即时切换.
  * 局域网是 http, 浏览器的剪贴板接口不可用 (只在安全上下文里有), 复制走 execCommand, 不行就提示长按手动复制.
  */
@@ -4966,45 +5082,90 @@ private val SOURCES_SCRIPT = """
   }
 
   // ---- 新增 ----
+  // 添加面板 (见 SOURCES_TAB_SCRIPT) 第一屏是类型列表: 订阅 / 单个数据源 (导入 JSON, 加上要填表单或不用填的类型; 写 JSON 的空白模板不列,
+  // 有 JSON 的直接导入) / 本地 (本地文件夹、WebDAV),
+  // 每行一句说明; 点一行换成那个类型的表单, 面板标题换成类型名, 左上角返回回到列表. addKind: 正在填的类型
+  // ('import' / 'webdav' / 'local' / 模板下标), 空 = 在列表上
+  var addKind = '';
+  var addTitle = document.getElementById('add-title'), addBack = document.getElementById('add-back');
+  var ADD_ICONS = {
+    sub: 'M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z',
+    'import': 'M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z',
+    code: 'M9.4 16.6 4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4zm5.2 0 4.6-4.6-4.6-4.6L16 6l6 6-6 6-1.4-1.4z',
+    local: 'M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z',
+    webdav: 'M20 13H4c-.55 0-1 .45-1 1v6c0 .55.45 1 1 1h16c.55 0 1-.45 1-1v-6c0-.55-.45-1-1-1zM7 19c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zM20 3H4c-.55 0-1 .45-1 1v6c0 .55.45 1 1 1h16c.55 0 1-.45 1-1V4c0-.55-.45-1-1-1zM7 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z'
+  };
+  function addRow(kind, icon, title, sub) {
+    return '<button type="button" class="set-nav-row add-row" data-add-type="' + kind + '"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="' +
+      ADD_ICONS[icon] + '"/></svg><span class="set-nav-txt"><b>' + title + '</b>' + (sub ? '<small>' + sub + '</small>' : '') +
+      '</span><span class="set-nav-go">›</span></button>';
+  }
+  // 类型名 (面板标题用)
+  function addName(kind) {
+    if (kind === 'import') return T('导入 JSON');
+    if (kind === 'local') return T('本地文件夹');
+    if (kind === 'webdav') return 'WebDAV';
+    var t = data && data.templates[+kind];
+    return t ? t.name : T('添加数据源');
+  }
   function renderAdd() {
     var t = data.templates || [];
     var key = JSON.stringify(t);
     if (key === lastTemplates) return;
     lastTemplates = key;
-    // 「导入 JSON」作为下拉里的第一项: 原先是单独一个折叠框, 没有说明, 不容易看出是干什么的
-    addBox.innerHTML =
-      '<label class="f"><span>' + T('新增数据源') + '</span><select id="src-new"><option value="">' + T('选择类型…') + '</option>' +
-      '<option value="import">' + T('导入 JSON（选文件或粘贴）') + '</option>' +
-      (window.webdavAdd ? '<option value="webdav">' + T('WebDAV（NAS）') + '</option>' : '') +
-      (window.localFolderAdd ? '<option value="local">' + T('本地文件夹（U 盘、移动硬盘、内部存储）') + '</option>' : '') +
-      t.map(function (x, i) { return '<option value="' + i + '">' + esc(x.name) + '</option>'; }).join('') +
-      '</select></label><div id="src-new-panel"></div>';
-    // 从电视设置「添加 WebDAV」的二维码进来 (#sources/webdav): 直接选上并打开表单
+    addBox.innerHTML = '<div id="src-new-list">' +
+      '<h2>' + T('订阅') + '</h2><div class="card set-nav">' +
+      addRow('sub', 'sub', T('添加订阅'), T('在线源一般都来自订阅，一次加一批')) + '</div>' +
+      '<h2>' + T('单个数据源') + '</h2><div class="card set-nav">' +
+      addRow('import', 'import', T('导入 JSON'), T('粘贴或选文件：单个、列表或订阅内容都可以')) +
+      t.map(function (x, i) {
+        return x.editor === 'json' ? '' : addRow(String(i), 'code', esc(x.name), x.description ? esc(x.description) : '');
+      }).join('') + '</div>' +
+      (window.localFolderAdd || window.webdavAdd ? '<h2>' + T('本地') + '</h2><div class="card set-nav">' +
+        (window.localFolderAdd ? addRow('local', 'local', T('本地文件夹'), T('U 盘、移动硬盘、电视的内部存储')) : '') +
+        (window.webdavAdd ? addRow('webdav', 'webdav', 'WebDAV', T('NAS 或其他 WebDAV 服务')) : '') + '</div>' : '') +
+      '</div><div id="src-new-panel" hidden></div>';
+    addKind = '';
+    showAddList();
+    // 进来时已经定了类型 (电视设置「添加 WebDAV」的二维码 #sources/webdav、类型清单读到之前按了本地页「+」里的一项):
+    // 直接打开那个类型的表单与添加面板
     if (window.pendingSourceAdd) {
-      var sel = document.getElementById('src-new');
-      sel.value = window.pendingSourceAdd;
+      var k = window.pendingSourceAdd;
       window.pendingSourceAdd = null;
-      if (sel.value) {
-        sel.dispatchEvent(new Event('change', { bubbles: true }));
-        addBox.scrollIntoView({ block: 'start' });
-      }
+      openAddType(k);
+      if (window.sourceAddSheet) window.sourceAddSheet.open();
     }
   }
-  function clearAdd() {
-    var sel = document.getElementById('src-new');
-    if (sel) sel.value = '';
-    var panel = document.getElementById('src-new-panel');
-    if (panel) panel.innerHTML = '';
+  // 回到类型列表
+  function showAddList() {
+    addKind = '';
+    var list = document.getElementById('src-new-list'), panel = document.getElementById('src-new-panel');
+    if (list) list.hidden = false;
+    if (panel) { panel.hidden = true; panel.innerHTML = ''; }
+    addTitle.textContent = T('添加数据源');
+    addBack.hidden = true;
   }
-  addBox.addEventListener('change', function (e) {
-    if (e.target.getAttribute && e.target.getAttribute('data-imp') === 'file') {
-      var file = e.target.files && e.target.files[0];
-      if (file) readImportFile(e.target, file);
+  // 换成某个类型的表单. 「添加订阅」不在面板里填: 关上面板, 到订阅页的地址框
+  function openAddType(kind) {
+    if (kind === 'sub') {
+      if (window.sourceAddSheet) window.sourceAddSheet.close();
+      if (window.showSrcTab) window.showSrcTab('subs');
+      setTimeout(function () {
+        var i = document.querySelector('#src-subs .sub-add input');
+        if (i) { i.scrollIntoView({ block: 'center', behavior: 'smooth' }); i.focus(); }
+      }, 300);
       return;
     }
-    if (e.target.id !== 'src-new') { if (e.target.form) applyVis(e.target.form); return; }
-    var panel = document.getElementById('src-new-panel');
-    if (e.target.value === 'import') {
+    var panel = document.getElementById('src-new-panel'), list = document.getElementById('src-new-list');
+    if (!panel) return;
+    var t = kind === 'import' || kind === 'webdav' || kind === 'local' ? null : data.templates[+kind];
+    if (!t && kind !== 'import' && kind !== 'webdav' && kind !== 'local') return;
+    addKind = kind;
+    list.hidden = true;
+    panel.hidden = false;
+    addTitle.textContent = addName(kind);
+    addBack.hidden = false;
+    if (kind === 'import') {
       // id 沿用 src-import: 「粘贴即覆盖」认这个表单
       panel.innerHTML = '<form class="src-new-form" id="src-import" data-kind="import">' +
         '<p class="hint">' + T('粘贴别处复制的数据源配置（JSON）：单个、列表或订阅内容都可以，每个都新建为本地源。粘贴会整段替换框里原有的内容。') + '</p>' +
@@ -5016,32 +5177,41 @@ private val SOURCES_SCRIPT = """
         '<button type="button" class="ghost" data-imp="clear">' + T('清空') + '</button><button type="submit" class="primary">' + T('导入') + '</button></div></form>';
       return;
     }
-    if (e.target.value === 'webdav') {
+    if (kind === 'webdav') {
       panel.innerHTML = '<form class="src-new-form" data-kind="webdav">' + window.webdavAdd.form() + btns('cancel-new', T('添加')) + '</form>';
       return;
     }
-    if (e.target.value === 'local') {
+    if (kind === 'local') {
       panel.innerHTML = '<form class="src-new-form" data-kind="local">' + window.localFolderAdd.form() + btns('cancel-new', T('添加')) + '</form>';
       return;
     }
-    var t = data.templates[+e.target.value];
-    if (!t) { panel.innerHTML = ''; return; }
     var hint = t.description ? '<p class="hint">' + esc(t.description) + '</p>' : '';
-    if (t.editor === 'json') {
-      getJson('api/sources/template?factoryId=' + encodeURIComponent(t.factoryId)).then(function (r) {
-        if (!r.ok) { toast(r.message); return; }
-        panel.innerHTML = '<form class="src-new-form" data-kind="json">' + hint + jsonEditorHtml() +
-          '<p class="hint">' + T('这是一份空白模板，在表单里填好即可；别处分享的配置可以切到「源码」整段粘贴。') + '</p>' +
-          btns('cancel-new', T('添加')) + '</form>';
-        initJsonEditor(panel.querySelector('form'), r.json);
-      }).catch(failRead);
-    } else {
-      panel.innerHTML = '<form class="src-new-form" data-kind="params">' + hint + paramForm(t.params || []) +
-        btns('cancel-new', T('添加')) + '</form>';
-      applyVis(panel.querySelector('form'));
+    panel.innerHTML = '<form class="src-new-form" data-kind="params">' + hint + paramForm(t.params || []) +
+      btns('cancel-new', T('添加')) + '</form>';
+    applyVis(panel.querySelector('form'));
+  }
+  // 「+」打开面板时调 (见 SOURCES_TAB_SCRIPT): kind 为空 = 类型列表. 类型清单还没读到时记下, 读到后 renderAdd 照它打开
+  window.addSourceType = function (kind) {
+    if (!document.getElementById('src-new-list')) { if (kind) window.pendingSourceAdd = kind; return; }
+    if (kind) openAddType(kind); else showAddList();
+  };
+  addBack.addEventListener('click', showAddList);
+  // 加好了或取消: 回到类型列表, 添加面板关上
+  function clearAdd() {
+    showAddList();
+    if (window.sourceAddSheet) window.sourceAddSheet.close();
+  }
+  addBox.addEventListener('change', function (e) {
+    if (e.target.getAttribute && e.target.getAttribute('data-imp') === 'file') {
+      var file = e.target.files && e.target.files[0];
+      if (file) readImportFile(e.target, file);
+      return;
     }
+    if (e.target.form) applyVis(e.target.form);
   });
   addBox.addEventListener('click', function (e) {
+    var row = e.target.closest('[data-add-type]');
+    if (row) { openAddType(row.getAttribute('data-add-type')); return; }
     if (e.target.closest('[data-act="cancel-new"]')) { clearAdd(); return; }
     var c = e.target.closest('[data-imp="clear"]');
     if (c) {
@@ -5083,13 +5253,11 @@ private val SOURCES_SCRIPT = """
       });
       return;
     }
-    var t = data.templates[+document.getElementById('src-new').value];
+    var t = data.templates[+addKind];
     if (!t) return;
-    if (!syncJson(form)) return;
     var fd = new FormData(form);
-    var json = form.getAttribute('data-kind') === 'json';
-    if (!json) fd.append('factoryId', t.factoryId);
-    post(json ? 'api/sources/import' : 'api/sources/save-params', fd).then(function (r) {
+    fd.append('factoryId', t.factoryId);
+    post('api/sources/save-params', fd).then(function (r) {
       toast(r.message);
       if (r.ok) { clearAdd(); lastTemplates = ''; load(); }
     }).catch(fail);
@@ -5574,7 +5742,7 @@ private val SOURCES_SCRIPT = """
 """.trimIndent()
 
 /**
- * 「数据源」页顶部的订阅块 (见 RemoteSubscriptions): 列表 / 添加 / 立即更新 / 删除. 更新在电视后台跑, 服务端报
+ * 数据源标签订阅页的订阅卡片 (见 RemoteSubscriptions): 列表 / 添加 / 立即更新 / 删除. 更新在电视后台跑, 服务端报
  * `updating` 时每 2 秒重拉一次, 更新完顺带刷新下面的数据源列表 (订阅会增删源). 重画时保住正在输入的地址.
  */
 private val SUBS_SCRIPT = """
@@ -5661,14 +5829,17 @@ private val SUBS_SCRIPT = """
 """.trimIndent()
 
 /**
- * 「数据源」页的网盘卡片 (见 RemoteCloudDrive), 每个已配置的网盘一张: 登录状态、扫码登录 (手机上点按钮按协议给的链接唤起网盘 App 确认,
- * 或另一台设备扫码)、填 Cookie、转码开关、启用这个网盘的数据源、退出. 没有配置网盘时只有一张说明卡片.
+ * 数据源标签网盘页与本地页的卡片 (见 RemoteCloudDrive), 每个已配置的网盘一张: 登录状态、扫码登录 (手机上点按钮按协议给的链接唤起网盘 App 确认,
+ * 或另一台设备扫码)、填 Cookie、转码开关、启用这个网盘的数据源、退出. 云盘在网盘页, WebDAV 服务器与本地文件夹在本地页;
+ * 哪一页没有卡片时只有一张说明卡片.
  * 扫码进行中每 2 秒拉一次状态, 切回本页时立即拉一次; 数据源列表重拉时 (导入、启用停用) 跟着重拉.
  */
 private val CLOUD_DRIVE_SCRIPT = """
 (function () {
-  var box = document.getElementById('src-drives');
-  var timer = null, last = '', checked = false, polling = false, loading = false;
+  // 云盘画在网盘页 (box), WebDAV 服务器与本地文件夹画在本地页 (localBox); 两页的卡片是同一份 api/drives
+  var box = document.getElementById('src-drives'), localBox = document.getElementById('src-local'), boxes = [box, localBox];
+  var timer = null, last = '', lastLocal = '', checked = false, polling = false, loading = false;
+  function find(sel) { return box.querySelector(sel) || localBox.querySelector(sel); }
   // 各网盘二维码还剩多久过期: 按服务端给的剩余时长倒数, 每秒只改那几个数字 (卡片不跟着重画)
   var qrDeadline = {}, qrTick = null;
   function tickQr() {
@@ -5723,52 +5894,63 @@ private val CLOUD_DRIVE_SCRIPT = """
     return '<div class="now-status attention"><b>' + T('「{0}」数据源已停用', esc(d.sourceName)) + '</b><span>' + T('启用后播放时才会在网盘里找') + '</span></div>' +
       '<div class="row"><button type="button" class="primary" data-cd="enable">' + T('启用') + '</button></div>';
   }
-  // WebDAV 服务器 (NAS): 账号密码登录、媒体文件夹、改名字与地址、删除
+  // 本地页的卡片收起成一行: 图标 + 名字, 下面一行是媒体文件夹 (WebDAV 是服务器地址), 右边是状态; 展开才是名字地址、登录、媒体文件夹.
+  // 左滑露出删除 (同缓存列表, 滑到底直接删, 都先确认). 本地页只有一张时默认展开; 用户展开收起过的, 重画时照旧 (见 paint)
+  var foldOpen = false;
+  function foldCard(d, type, sub, status, body) {
+    var name = esc(d.name), id = esc(d.id), attrs = ' data-drive="' + id + '" data-name="' + name + '"' + (type ? ' data-type="' + type + '"' : '');
+    var del = '<button type="button" class="sw-btn del" data-cd="remove"' + attrs + '>' + window.ICONS.trash + T('删除') + '</button>';
+    return window.swRow('', del, '<details class="card set-card cd-fold sw-row"' + attrs + (foldOpen ? ' open' : '') + '><summary>' +
+      window.srcIcon(d.sourceId, d.name) + '<span class="cd-fold-t"><b>' + name + '</b><small>' + sub + '</small></span>' +
+      '<span class="cd-pill ' + status[1] + '">' + status[0] + '</span></summary>' + body + '</details>', 'cd-sw');
+  }
+  function libraryLine(d) {
+    return d.library.length ? d.library.map(function (f) { return esc(f.path); }).join(T('、')) : T('还没有添加媒体文件夹');
+  }
+  // 一行「标签 — 值」. field (name / url) 不为空时值可以改: 点一下就地换成输入框 (同播放卡上点时间改进度), 见 editRow
+  function kvRow(label, value, field, extra) {
+    return '<div class="cd-kv"' + (field ? ' data-field="' + field + '" data-label="' + label + '" data-value="' + esc(value) + '"' : '') + '>' +
+      '<span class="cd-k">' + label + '</span>' +
+      (field ? '<button type="button" class="cd-v" data-cd="edit"><span>' + esc(value) + '</span>' + window.ICONS.edit + '</button>'
+        : '<span class="cd-v">' + esc(value) + '</span>') + (extra || '') + '</div>';
+  }
+  // WebDAV 服务器 (NAS): 名字与地址 (点了就地改)、账号、媒体文件夹、删除; 没登录或连不上时是登录表单
   function webdavCard(d) {
-    var name = esc(d.name), id = esc(d.id);
-    var h = '<div class="card set-card" data-drive="' + id + '" data-name="' + name + '"><div class="set-title">' +
-      window.srcIcon(d.sourceId, d.name) + name + '<small>' + esc(d.server) + '</small></div>';
-    if (!d.enabled) h += disabledNotice(d);
+    var id = esc(d.id);
     var ok = d.loggedIn && !d.expired;
-    if (ok) h += '<div class="now-status ready"><b>' + T('已连接') + '</b><span>' + esc(d.username) + '</span></div>';
-    else if (d.expired) h += '<div class="now-status error"><b>' + T('连不上服务器或账号密码不对') + '</b><span>' + T('确认服务器开着、地址与账号密码没变') + '</span></div>';
+    var h = d.enabled ? '' : disabledNotice(d);
+    if (d.expired) h += '<div class="now-status error"><b>' + T('连不上服务器或账号密码不对') + '</b><span>' + T('确认服务器开着、地址与账号密码没变') + '</span></div>';
+    h += '<div class="cd-kvs">' + kvRow(T('名字'), d.name, 'name') + kvRow(T('地址'), d.server, 'url') +
+      (ok ? kvRow(T('用户名'), d.username, '', '<button type="button" class="cd-link" data-cd="logout">' + T('退出登录') + '</button>') : '') + '</div>';
     if (!ok) {
       h += '<form class="cd-pass" data-drive="' + id + '">' +
         '<label class="f"><span>' + T('用户名') + '</span><input type="text" name="username" autocomplete="off" spellcheck="false" value="' + esc(d.username) + '"></label>' +
         '<label class="f"><span>' + T('密码') + '</span><input type="password" name="password" autocomplete="new-password"></label>' +
         '<div class="row"><button type="submit" class="primary">' + T('登录') + '</button></div></form>';
     }
-    h += libraryHtml(d, ok, T('还没有选：播放时在整个服务器里按番名找。选上放动画的文件夹，找得更快也更准。'));
-    h += '<details class="cd-edit" data-drive="' + id + '"><summary>' + T('修改名字与地址') + '</summary><form class="cd-webdav-edit" data-drive="' + id + '">' +
-      '<label class="f"><span>' + T('名字') + '</span><input type="text" name="name" autocomplete="off" value="' + name + '"></label>' +
-      '<label class="f"><span>' + T('WebDAV 地址') + '</span><input type="text" name="url" inputmode="url" autocomplete="off" spellcheck="false" value="' + esc(d.server) + '"></label>' +
-      '<div class="row"><button type="submit" class="ghost">' + T('保存') + '</button></div></form></details>';
-    h += '<div class="row">' + (d.loggedIn ? '<button type="button" class="ghost" data-cd="logout">' + T('退出登录') + '</button>' : '') +
-      '<button type="button" class="ghost" data-cd="remove">' + T('删除这台服务器') + '</button></div>';
-    return h + '</div>';
+    h += libraryHtml(d, ok, T('还没有添加：播放时在整个服务器里按番名找。添加放动画的文件夹，找得更快也更准。'));
+    var status = !d.enabled ? [T('已停用'), 'warn'] : ok ? [T('已连接'), 'ok'] : d.expired ? [T('连不上'), 'err'] : [T('未登录'), 'warn'];
+    return foldCard(d, '', esc(d.server), status, h);
   }
-  // 媒体文件夹: 选了的一行一个 (可移除)、往下找几层、浏览文件夹的按钮与面板. [canBrowse] 时才给浏览 (登录了 / 有权限), [emptyHint] 是还没选时的说明
+  // 媒体文件夹: 标题右边「添加」(登录了 / 有权限才有), 选了的一行一个 (右边移除), 浏览文件夹的面板, 往下找几层. [emptyHint] 是还没选时的说明
   function libraryHtml(d, canBrowse, emptyHint) {
-    return '<div class="cd-lib"><div class="cd-lib-h">' + T('媒体文件夹') + '</div>' +
+    return '<div class="cd-lib"><div class="cd-lib-h"><span>' + T('媒体文件夹') + '</span>' +
+      (canBrowse ? '<button type="button" class="ic cd-lib-add" data-cd="browse" title="' + T('添加媒体文件夹') + '">' + window.ICONS.plus + T('添加') + '</button>' : '') + '</div>' +
       (d.library.length ? d.library.map(function (f) {
-        return '<div class="cd-lib-row"><span>' + esc(f.path) + '</span><button type="button" class="ghost" data-cd="lib-remove" data-fid="' + esc(f.id) + '">' + T('移除') + '</button></div>';
+        return '<div class="cd-lib-row"><span>' + esc(f.path) + '</span><button type="button" class="icb" data-cd="lib-remove" data-fid="' + esc(f.id) + '" aria-label="' +
+          T('移除') + '" title="' + T('移除') + '">' + window.ICONS.close + '</button></div>';
       }).join('') : '<p class="hint">' + emptyHint + '</p>') +
-      '<label class="f"><span>' + T('往下找几层') + '</span><select data-cd="depth">' + [1, 2, 3].map(function (n) {
+      '<div class="cd-browse" data-drive="' + esc(d.id) + '" hidden></div>' +
+      '<label class="cd-depth"><span>' + T('往下找几层') + '</span><select data-cd="depth">' + [1, 2, 3].map(function (n) {
         return '<option value="' + n + '"' + (d.depth === n ? ' selected' : '') + '>' + n + '</option>';
-      }).join('') + '</select><em>' + T('1 层：媒体文件夹 / 番名；2 层：媒体文件夹 / 季度 / 番名') + '</em></label>' +
-      (canBrowse ? '<div class="row"><button type="button" class="ghost" data-cd="browse">' + T('选择文件夹') + '</button></div>' : '') +
-      '<div class="cd-browse" data-drive="' + esc(d.id) + '" hidden></div></div>';
+      }).join('') + '</select></label><p class="hint">' + T('1 层：媒体文件夹 / 番名；2 层：媒体文件夹 / 季度 / 番名') + '</p></div>';
   }
   // 本地文件夹 (U 盘、移动硬盘、内部存储): 不用登录; 还没有权限时给去电视上授权的按钮 (安卓 11 起是「所有文件访问」的系统页面,
-  // 7.1~10 是「存储」权限的授权框), 媒体文件夹、改名字、删除
+  // 7.1~10 是「存储」权限的授权框), 名字 (点了就地改)、媒体文件夹、删除
   function localCard(d) {
-    var name = esc(d.name), id = esc(d.id), allFiles = d.grantAllFiles !== false;
-    var h = '<div class="card set-card" data-drive="' + id + '" data-name="' + name + '" data-type="local"><div class="set-title">' +
-      window.srcIcon(d.sourceId, d.name) + name + '<small>' + T('U 盘、移动硬盘与内部存储里的视频') + '</small></div>';
-    if (!d.enabled) h += disabledNotice(d);
-    if (d.accessible) {
-      h += '<div class="now-status ready"><b>' + T('能读取') + '</b><span>' + T('播放时在媒体文件夹里按番名找') + '</span></div>';
-    } else {
+    var allFiles = d.grantAllFiles !== false;
+    var h = d.enabled ? '' : disabledNotice(d);
+    if (!d.accessible) {
       h += '<div class="now-status attention"><b>' + T('还没有读取文件的权限') + '</b><span>' +
         (allFiles ? T('在电视上打开「允许管理所有文件」后才能读盘上的文件夹') : T('在电视上允许「存储」权限后才能读盘上的文件夹')) + '</span></div>' +
         '<div class="row"><button type="button" class="primary" data-cd="local-grant">' +
@@ -5776,14 +5958,42 @@ private val CLOUD_DRIVE_SCRIPT = """
         (d.grantAdb ? '<p class="hint">' + (allFiles ? T('电视上找不到这个页面时，在电脑上运行：{0}', esc(d.grantAdb))
           : T('电视上没有弹出授权框时，在电脑上运行：{0}', esc(d.grantAdb))) + '</p>' : '');
     }
-    h += libraryHtml(d, d.accessible, T('还没有选：播放时在各块盘里按番名找（从盘的根目录往下）。选上放动画的文件夹，找得更快也更准。'));
-    h += '<details class="cd-edit" data-drive="' + id + '"><summary>' + T('修改名字') + '</summary><form class="cd-webdav-edit" data-drive="' + id + '">' +
-      '<label class="f"><span>' + T('名字') + '</span><input type="text" name="name" autocomplete="off" value="' + name + '"></label>' +
-      '<div class="row"><button type="submit" class="ghost">' + T('保存') + '</button></div></form></details>';
-    h += '<div class="row"><button type="button" class="ghost" data-cd="remove">' + T('删除这个数据源') + '</button></div>';
-    return h + '</div>';
+    h += '<div class="cd-kvs">' + kvRow(T('名字'), d.name, 'name') + '</div>';
+    h += libraryHtml(d, d.accessible, T('还没有添加：播放时在各块盘里按番名找（从盘的根目录往下）。添加放动画的文件夹，找得更快也更准。'));
+    var status = !d.enabled ? [T('已停用'), 'warn'] : d.accessible ? [T('已授权'), 'ok'] : [T('未授权'), 'warn'];
+    return foldCard(d, 'local', libraryLine(d), status, h);
   }
-  // 「新增数据源」下拉里选本地文件夹时的表单与提交: 添加成功后滚到它的卡片, 有权限时打开选媒体文件夹
+  // 就地改名字 / 地址: 那一行换成输入框 + 保存 / 取消; 回车保存, Esc 取消. 名字与地址一起提交 (没改的那个照原样, 本地文件夹没有地址)
+  function editRow(row) {
+    var drive = driveOf(row), field = row.getAttribute('data-field');
+    row._html = row.innerHTML;
+    row.innerHTML = '<span class="cd-k">' + row.getAttribute('data-label') + '</span><form class="cd-inline" data-drive="' + esc(drive) + '" data-field="' + field + '">' +
+      '<input type="text" name="value" autocomplete="off" spellcheck="false"' + (field === 'url' ? ' inputmode="url"' : '') + '>' +
+      '<button type="submit" class="primary">' + T('保存') + '</button>' +
+      '<button type="button" class="icb" data-cd="edit-cancel" aria-label="' + T('取消') + '" title="' + T('取消') + '">' + window.ICONS.close + '</button></form>';
+    var input = row.querySelector('input');
+    input.value = row.getAttribute('data-value');
+    input.focus();
+    input.select();
+  }
+  function cancelEdit(row) {
+    if (row && row._html != null) { row.innerHTML = row._html; row._html = null; }
+  }
+  function submitEdit(form) {
+    var row = form.closest('.cd-kv'), card = form.closest('.card'), field = form.getAttribute('data-field');
+    var value = form.elements.value.value.trim();
+    var urlRow = card.querySelector('.cd-kv[data-field="url"]');
+    var data = {
+      drive: form.getAttribute('data-drive'),
+      name: field === 'name' ? value : card.getAttribute('data-name'),
+      url: field === 'url' ? value : urlRow ? urlRow.getAttribute('data-value') : ''
+    };
+    act('api/drive/webdav/edit', data, true).then(function () {
+      // 没改动时卡片不重画, 输入框要自己收回去
+      if (row.isConnected) cancelEdit(row);
+    });
+  }
+  // 添加面板里选本地文件夹时的表单与提交: 添加成功后换到本地页、滚到它的卡片, 有权限时打开选媒体文件夹
   window.localFolderAdd = {
     form: function () {
       return '<p class="hint">' + T('读电视上接着的 U 盘、移动硬盘与内部存储里的视频。添加后，播放时会在选的文件夹里按番名找，直接播放原文件。') + '</p>' +
@@ -5795,15 +6005,16 @@ private val CLOUD_DRIVE_SCRIPT = """
       return act('api/drive/local/add', { name: form.elements.name.value.trim() }, true).then(function (r) {
         var added = r && r.ok && r.drives ? r.drives.filter(function (x) { return x.type === 'local' && !before[x.id]; })[0] : null;
         if (added) {
-          var c = box.querySelector('.card[data-drive="' + CSS.escape(added.id) + '"]');
-          if (c) c.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          if (window.showSrcTab) window.showSrcTab('local');
+          var c = localBox.querySelector('.card[data-drive="' + CSS.escape(added.id) + '"]');
+          if (c) { c.open = true; c.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
           if (added.accessible) openFolder(added.id, '');
         }
         return r;
       });
     }
   };
-  // 「新增数据源」下拉里选 WebDAV 时的表单与提交 (见数据源脚本的 renderAdd). 添加成功后滚到新服务器的卡片, 打开选媒体文件夹
+  // 添加面板里选 WebDAV 时的表单与提交 (见数据源脚本的 renderAdd). 添加成功后换到本地页、滚到新服务器的卡片, 打开选媒体文件夹
   var driveIds = {};
   window.webdavAdd = {
     form: function () {
@@ -5822,8 +6033,9 @@ private val CLOUD_DRIVE_SCRIPT = """
       return act('api/drive/webdav/add', v, true).then(function (r) {
         var added = r && r.ok && r.drives ? r.drives.filter(function (x) { return x.type === 'webdav' && !before[x.id]; })[0] : null;
         if (added) {
-          var c = box.querySelector('.card[data-drive="' + CSS.escape(added.id) + '"]');
-          if (c) c.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          if (window.showSrcTab) window.showSrcTab('local');
+          var c = localBox.querySelector('.card[data-drive="' + CSS.escape(added.id) + '"]');
+          if (c) { c.open = true; c.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
           if (added.loggedIn) openFolder(added.id, '');
         }
         return r;
@@ -5832,27 +6044,40 @@ private val CLOUD_DRIVE_SCRIPT = """
   };
   // 浏览服务器文件夹的面板: 当前路径、上一级、子文件夹 (点进去), 把当前文件夹加为媒体文件夹
   function renderBrowse(drive) {
-    var panel = box.querySelector('.cd-browse[data-drive="' + CSS.escape(drive) + '"]');
+    var panel = find('.cd-browse[data-drive="' + CSS.escape(drive) + '"]');
     var b = browsing[drive];
     if (!panel) return;
     if (!b) { panel.hidden = true; panel.innerHTML = ''; return; }
     panel.hidden = false;
-    panel.innerHTML = '<div class="cd-path">' + esc(b.path) + '</div><div class="cd-folders">' +
+    panel.innerHTML = '<div class="cd-browse-h"><div class="cd-path">' + esc(b.path) + '</div>' +
+      '<button type="button" class="icb cd-browse-x" data-cd="browse-close" aria-label="' + T('收起') + '" title="' + T('收起') + '">' + window.ICONS.close + '</button></div>' +
+      '<div class="cd-folders">' +
       (b.parent ? '<button type="button" class="cd-folder" data-cd="open" data-fid="' + esc(b.parent) + '">' + T('上一级') + '</button>' : '') +
       b.folders.map(function (f) {
         return '<button type="button" class="cd-folder" data-cd="open" data-fid="' + esc(f.id) + '">' + esc(f.name) + '</button>';
       }).join('') +
       (b.folders.length ? '' : '<p class="hint">' + T('这里没有子文件夹') + '</p>') + '</div>' +
-      '<div class="row">' + (b.choosable === false ? '' : b.chosen ? '<button type="button" class="primary" disabled>' + T('已是媒体文件夹') + '</button>'
-        : '<button type="button" class="primary" data-cd="lib-add" data-fid="' + esc(b.id) + '">' + T('加为媒体文件夹') + '</button>') +
-      '<button type="button" class="ghost" data-cd="browse-close">' + T('收起') + '</button></div>';
+      (b.choosable === false ? '' : '<div class="row">' + (b.chosen ? '<button type="button" class="primary" disabled>' + T('已是媒体文件夹') + '</button>'
+        : '<button type="button" class="primary" data-cd="lib-add" data-fid="' + esc(b.id) + '">' + T('加为媒体文件夹') + '</button>') + '</div>');
   }
-  function openFolder(drive, fid) {
+  // 等电视回话的按钮: 转圈 + 换一句说明, 不让再点 (加媒体文件夹要先把文件夹里的视频读一遍, 常要几秒); 回来后按原样放回
+  function busy(btn, text) {
+    if (!btn || btn.disabled) return;
+    btn.disabled = true;
+    btn._html = btn.innerHTML;
+    btn.innerHTML = '<span class="cd-spin" aria-hidden="true"></span>' + (text != null ? text : btn._html);
+  }
+  function unbusy(btn) {
+    if (btn && btn.isConnected && btn._html != null) { btn.innerHTML = btn._html; btn._html = null; btn.disabled = false; }
+  }
+  function openFolder(drive, fid, btn) {
+    busy(btn);
     post('api/drive/folders', { drive: drive, fid: fid }).then(function (r) {
+      unbusy(btn);
       if (!r.ok) { toast(r.message); return; }
       browsing[drive] = r;
       renderBrowse(drive);
-    }).catch(fail);
+    }).catch(function (e) { unbusy(btn); fail(e); });
   }
   function card(d) {
     if (d.type === 'webdav') return webdavCard(d);
@@ -5910,37 +6135,48 @@ private val CLOUD_DRIVE_SCRIPT = """
     if (d.loggedIn) h += '<div class="row"><button type="button" class="ghost" data-cd="logout">' + T('退出登录') + '</button></div>';
     return h + '</div>';
   }
+  // 重画保住正在填的输入框、展开的「修改」与焦点 (按表单与网盘对回去)
+  function paint(el0, h) {
+    var typed = {}, focused = null;
+    function keyOf(el) {
+      var f = el.closest('form');
+      return f ? f.className + '|' + (f.getAttribute('data-drive') || '') + '|' + el.name : '';
+    }
+    [].forEach.call(el0.querySelectorAll('form input, form textarea'), function (el) {
+      var k = keyOf(el);
+      if (!k) return;
+      typed[k] = el.value;
+      if (document.activeElement === el) focused = k;
+    });
+    var folds = {};
+    [].forEach.call(el0.querySelectorAll('details.cd-fold'), function (el) { folds[el.getAttribute('data-drive')] = el.open; });
+    el0.innerHTML = h;
+    [].forEach.call(el0.querySelectorAll('details.cd-fold'), function (el) {
+      var k = el.getAttribute('data-drive');
+      if (k in folds) el.open = folds[k];
+    });
+    [].forEach.call(el0.querySelectorAll('form input, form textarea'), function (el) {
+      var k = keyOf(el);
+      if (k && typed[k] !== undefined && typed[k] !== el.defaultValue) el.value = typed[k];
+      if (k && focused === k) el.focus();
+    });
+  }
+  function isLocal(x) { return x.type === 'webdav' || x.type === 'local'; }
   function render(d) {
     if (!d || d.drives === undefined) return;
     driveIds = {};
     d.drives.forEach(function (x) { driveIds[x.id] = true; });
-    var h = (d.drives.some(function (x) { return x.type !== 'webdav' && x.type !== 'local'; }) ? '' : '<div class="card set-card"><div class="set-title">' + T('网盘') + '</div><p class="hint">' +
-        T('网盘的接入方式来自订阅或导入的数据源。加上带网盘的数据源后，在这里登录。') + '</p><p class="hint">' + T('WebDAV（NAS）与本地文件夹在下面的「新增数据源」里添加。') + '</p></div>') +
-      d.drives.map(card).join('');
-    if (h !== last) {
-      // 重画保住正在填的输入框、展开的「修改」与焦点 (按表单与网盘对回去)
-      var typed = {}, focused = null, opened = {};
-      function keyOf(el) {
-        var f = el.closest('form');
-        return f ? f.className + '|' + (f.getAttribute('data-drive') || '') + '|' + el.name : '';
-      }
-      [].forEach.call(box.querySelectorAll('form input, form textarea'), function (el) {
-        var k = keyOf(el);
-        if (!k) return;
-        typed[k] = el.value;
-        if (document.activeElement === el) focused = k;
-      });
-      [].forEach.call(box.querySelectorAll('details.cd-edit[open]'), function (el) { opened[el.getAttribute('data-drive')] = true; });
-      box.innerHTML = h;
-      last = h;
-      [].forEach.call(box.querySelectorAll('form input, form textarea'), function (el) {
-        var k = keyOf(el);
-        if (k && typed[k] !== undefined && typed[k] !== el.defaultValue) el.value = typed[k];
-        if (k && focused === k) el.focus();
-      });
-      [].forEach.call(box.querySelectorAll('details.cd-edit'), function (el) { if (opened[el.getAttribute('data-drive')]) el.open = true; });
-      Object.keys(browsing).forEach(renderBrowse);
-    }
+    var cloud = d.drives.filter(function (x) { return !isLocal(x); }), local = d.drives.filter(isLocal);
+    var h = cloud.length ? cloud.map(card).join('') : '<div class="card set-card"><div class="set-title">' + T('网盘') + '</div><p class="hint">' +
+      T('网盘的接入方式来自订阅或导入的数据源。加上带网盘的数据源后，在这里登录。') + '</p></div>';
+    foldOpen = local.length === 1;
+    var lh = local.length ? local.map(card).join('') : '<div class="card set-card"><div class="set-title">' + T('还没有添加') + '</div><p class="hint">' +
+      T('点右上角的「+」添加本地文件夹（U 盘、移动硬盘、内部存储）或 WebDAV（NAS）。') + '</p></div>';
+    var changed = false;
+    if (h !== last) { paint(box, h); last = h; changed = true; }
+    if (lh !== lastLocal) { paint(localBox, lh); lastLocal = lh; changed = true; }
+    if (changed) Object.keys(browsing).forEach(renderBrowse);
+    if (local.length) window.swPeek(localBox, 'local-drives', '.sw > .cd-fold');
     clearTimeout(timer);
     polling = d.drives.some(function (x) {
       var q = x.qr;
@@ -5962,10 +6198,13 @@ private val CLOUD_DRIVE_SCRIPT = """
     var c = el.closest('[data-drive]');
     return c ? c.getAttribute('data-drive') : '';
   }
-  box.addEventListener('click', function (e) {
+  boxes.forEach(function (bx) { bx.addEventListener('click', onClick); bx.addEventListener('change', onChange); bx.addEventListener('submit', onSubmit); });
+  function onClick(e) {
     var b = e.target.closest('[data-cd]');
     if (!b || b.tagName === 'INPUT') return;
     var a = b.getAttribute('data-cd'), drive = driveOf(b);
+    if (a === 'edit') { editRow(b.closest('.cd-kv')); return; }
+    if (a === 'edit-cancel') { cancelEdit(b.closest('.cd-kv')); return; }
     if (a === 'qr') act('api/drive/qr/start', { drive: drive });
     else if (a === 'qr-cancel') act('api/drive/qr/cancel', { drive: drive });
     else if (a === 'enable') act('api/drive/enable', { drive: drive }, true);
@@ -5973,30 +6212,40 @@ private val CLOUD_DRIVE_SCRIPT = """
     else if (a === 'logout') {
       var c = b.closest('.card');
       if (confirm(T('退出{0}登录？', c ? c.getAttribute('data-name') : ''))) act('api/drive/logout', { drive: drive });
-    } else if (a === 'browse' || a === 'open') openFolder(drive, b.getAttribute('data-fid') || '');
+    } else if (a === 'browse' || a === 'open') openFolder(drive, b.getAttribute('data-fid') || '', b);
     else if (a === 'browse-close') { delete browsing[drive]; renderBrowse(drive); }
-    else if (a === 'lib-add') act('api/drive/library', { drive: drive, action: 'add', fid: b.getAttribute('data-fid') }).then(function (r) {
-      if (r && r.ok) { delete browsing[drive]; renderBrowse(drive); }
-    });
+    else if (a === 'lib-add') {
+      busy(b, T('正在添加…'));
+      act('api/drive/library', { drive: drive, action: 'add', fid: b.getAttribute('data-fid') }).then(function (r) {
+        if (r && r.ok) { delete browsing[drive]; renderBrowse(drive); } else unbusy(b);
+      });
+    }
     else if (a === 'lib-remove') act('api/drive/library', { drive: drive, action: 'remove', fid: b.getAttribute('data-fid') });
     else if (a === 'remove') {
-      var server = b.closest('.card'), serverName = server ? server.getAttribute('data-name') : '';
-      if (confirm(server && server.getAttribute('data-type') === 'local'
+      var serverName = b.getAttribute('data-name') || '';
+      if (confirm(b.getAttribute('data-type') === 'local'
         ? T('删除{0}？选的媒体文件夹一起删掉，盘上的文件不受影响。', serverName)
         : T('删除{0}？账号密码与选的媒体文件夹一起删掉，服务器上的文件不受影响。', serverName))) {
         delete browsing[drive];
-        act('api/drive/remove', { drive: drive }, true);
+        act('api/drive/remove', { drive: drive }, true).then(function (r) { if (!r || !r.ok) window.swClose(b.closest('.sw')); });
+      } else {
+        window.swClose(b.closest('.sw'));
       }
     }
+  }
+  boxes.forEach(function (bx) {
+    bx.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && e.target.closest('form.cd-inline')) cancelEdit(e.target.closest('.cd-kv'));
+    });
   });
-  box.addEventListener('change', function (e) {
+  function onChange(e) {
     if (e.target.getAttribute('data-cd') === 'transcode') {
       act('api/drive/transcode', { drive: driveOf(e.target), on: e.target.checked ? '1' : '0' });
     } else if (e.target.getAttribute('data-cd') === 'depth') {
       act('api/drive/library', { drive: driveOf(e.target), action: 'depth', depth: e.target.value });
     }
-  });
-  box.addEventListener('submit', function (e) {
+  }
+  function onSubmit(e) {
     var form = e.target;
     if (form.classList.contains('cd-pass')) {
       e.preventDefault();
@@ -6006,9 +6255,9 @@ private val CLOUD_DRIVE_SCRIPT = """
       });
       return;
     }
-    if (form.classList.contains('cd-webdav-edit')) {
+    if (form.classList.contains('cd-inline')) {
       e.preventDefault();
-      act('api/drive/webdav/edit', { drive: form.getAttribute('data-drive'), name: form.elements.name.value.trim(), url: form.elements.url.value.trim() }, true);
+      submitEdit(form);
       return;
     }
     if (!form.classList.contains('cd-cookie')) return;
@@ -6018,11 +6267,11 @@ private val CLOUD_DRIVE_SCRIPT = """
     act('api/drive/cookie', { drive: form.getAttribute('data-drive'), cookie: cookie }).then(function (r) {
       if (r && r.ok) form.elements.cookie.value = '';
     });
-  });
+  }
 })();
 """.trimIndent()
 
-/** debug 包「设置 → 常规」分类列表最后一行「调试」(见 RemoteDebugSettings); release 包的页面里没有. 只给开发者看, 不补译文 */
+/** debug 包设置标签分类列表最后一行「调试」(见 RemoteDebugSettings); release 包的页面里没有. 只给开发者看, 不补译文 */
 private const val SET_DEBUG_ROW =
     """<button type="button" class="set-nav-row" data-group="debug"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 8h-2.81c-.45-.78-1.07-1.45-1.82-1.96L17 4.41 15.59 3l-2.17 2.17C12.96 5.06 12.49 5 12 5c-.49 0-.96.06-1.41.17L8.41 3 7 4.41l1.62 1.63C7.88 6.55 7.26 7.22 6.81 8H4v2h2.09c-.05.33-.09.66-.09 1v1H4v2h2v1c0 .34.04.67.09 1H4v2h2.81c1.04 1.79 2.97 3 5.19 3s4.15-1.21 5.19-3H20v-2h-2.09c.05-.33.09-.66.09-1v-1h2v-2h-2v-1c0-.34-.04-.67-.09-1H20V8zm-6 8h-4v-2h4v2zm0-4h-4v-2h4v2z"/></svg><span class="set-nav-txt"><b>调试</b><small>debug 包才有：开发时临时加的开关</small><small class="set-nav-note" hidden></small></span><span class="set-nav-go">›</span></button>"""
 
@@ -6039,7 +6288,8 @@ private val SETTINGS_SCRIPT = """
   var proxyBox = document.getElementById('set-proxy');
   var bgmBox = document.getElementById('set-bangumi');
   var tmdbBox = document.getElementById('set-tmdb');
-  var genBox = document.getElementById('set-generic');
+  // 清单里的通用项按 page 分到两处: 播放与弹幕组 (genBox, 默认)、数据源标签的 BT 页 (btBox)
+  var genBox = document.getElementById('set-generic'), btBox = document.getElementById('src-bt');
   var dbgBox = document.getElementById('set-debug'); // 只有 debug 包的页面有
   var dfBox = document.getElementById('set-dmfilter');
   var frontBox = document.getElementById('set-front');
@@ -6334,7 +6584,20 @@ private val SETTINGS_SCRIPT = """
   // 通用设置项 (见 RemoteSettingsCatalog): 标题 / 说明是设置页的文案, 服务端按电视的语言给; 这里按输入方式画卡片.
   // 多行 / 文字 / 数字按「保存」提交, 开关与下拉改了就提交. debug 包的「调试」组 (RemoteDebugSettings) 用同一套卡片
   function genHint(s) { return s ? '<p class="hint">' + esc(s).replace(/\n/g, '<br>') + '</p>' : ''; }
-  function renderGeneric(list) { genBox.innerHTML = genCards(list); }
+  // BT 页的项一张一行收起着 (标题 + 现在有几条), 展开才是输入框; 重画时记着哪几张展开着
+  function renderGeneric(list) {
+    var by = { play: [], bt: [] };
+    (list || []).forEach(function (g) { (by[g.page] || by.play).push(g); });
+    genBox.innerHTML = genCards(by.play);
+    var open = {};
+    [].forEach.call(btBox.querySelectorAll('details.gen-fold[open]'), function (el) { open[el.getAttribute('data-fold')] = true; });
+    btBox.innerHTML = by.bt.map(function (g) {
+      var n = g.editor === 'lines' ? (g.value || []).length : -1;
+      return '<details class="card set-card gen-fold" data-fold="' + esc(g.key) + '"' + (open[g.key] ? ' open' : '') + '><summary>' +
+        '<span class="set-title">' + esc(g.title) + '</span>' + (n < 0 ? '' : '<small>' + (n ? T('{0} 条', n) : T('没有')) + '</small>') +
+        '</summary>' + genCard(g, true) + '</details>';
+    }).join('');
+  }
   // 调试组的「播放链路探针」(RemoteDebugProbes): 只读、常驻 (不随调试项用完删掉), 播放中点「刷新」看最新判定.
   // 调试组只给开发者看, 文案不走译文表
   var PROBES_CARD = '<div class="card set-card" data-probes-card><div class="set-title">播放链路探针</div>' +
@@ -6374,30 +6637,32 @@ private val SETTINGS_SCRIPT = """
     if (e.target.closest && e.target.closest('[data-probes-refresh]')) loadProbes();
   });
   function genCards(list) {
-    return (list || []).map(function (g) {
-      var k = ' data-gkey="' + esc(g.key) + '"';
-      if (g.editor === 'toggle') {
-        return '<div class="card set-card"><label class="toggle"><input type="checkbox"' + k + (g.value ? ' checked' : '') + '>' +
-          esc(g.title) + '</label>' + genHint(g.description) + '</div>';
-      }
-      var head = '<div class="set-title">' + esc(g.title) + '</div>' + genHint(g.description);
-      if (g.editor === 'choice') {
-        return '<div class="card set-card">' + head + '<select' + k + '>' + (g.choices || []).map(function (c) {
-          return '<option value="' + esc(c.value) + '"' + (c.value === g.value ? ' selected' : '') + '>' + esc(c.label) + '</option>';
-        }).join('') + '</select></div>';
-      }
-      var ph = g.placeholder ? ' placeholder="' + esc(g.placeholder) + '"' : '';
-      var input = g.editor === 'lines'
-        ? '<textarea name="value" rows="4" spellcheck="false"' + ph + '>' + esc((g.value || []).join('\n')) + '</textarea>'
-        : '<input type="' + (g.editor === 'number' ? 'number' : 'text') + '" name="value" autocomplete="off" spellcheck="false"' + ph +
-          (g.min != null ? ' min="' + g.min + '"' : '') + (g.max != null ? ' max="' + g.max + '"' : '') +
-          (g.step != null ? ' step="' + esc(String(g.step)) + '"' : '') +
-          ' value="' + esc(g.value == null ? '' : String(g.value)) + '">';
-      // 状态 (如订阅拉到多少) 与第二个按钮 (如「立即更新」) 由服务端给, 见 RemoteSettingSpec.status / action
-      return '<form class="card set-card"' + k + '>' + head + input + genHint(g.status) + '<div class="row">' +
-        (g.action ? '<button type="button" class="ghost" data-gaction>' + esc(g.action) + '</button>' : '') +
-        '<button type="submit" class="primary">' + T('保存') + '</button></div></form>';
-    }).join('');
+    return (list || []).map(function (g) { return genCard(g, false); }).join('');
+  }
+  // bare: 放在 BT 页收起的那一行里, 表单不再自成卡片, 标题已在那一行上
+  function genCard(g, bare) {
+    var k = ' data-gkey="' + esc(g.key) + '"';
+    if (g.editor === 'toggle') {
+      return '<div class="card set-card"><label class="toggle"><input type="checkbox"' + k + (g.value ? ' checked' : '') + '>' +
+        esc(g.title) + '</label>' + genHint(g.description) + '</div>';
+    }
+    var head = (bare ? '' : '<div class="set-title">' + esc(g.title) + '</div>') + genHint(g.description);
+    if (g.editor === 'choice') {
+      return '<div class="card set-card">' + head + '<select' + k + '>' + (g.choices || []).map(function (c) {
+        return '<option value="' + esc(c.value) + '"' + (c.value === g.value ? ' selected' : '') + '>' + esc(c.label) + '</option>';
+      }).join('') + '</select></div>';
+    }
+    var ph = g.placeholder ? ' placeholder="' + esc(g.placeholder) + '"' : '';
+    var input = g.editor === 'lines'
+      ? '<textarea name="value" rows="4" spellcheck="false"' + ph + '>' + esc((g.value || []).join('\n')) + '</textarea>'
+      : '<input type="' + (g.editor === 'number' ? 'number' : 'text') + '" name="value" autocomplete="off" spellcheck="false"' + ph +
+        (g.min != null ? ' min="' + g.min + '"' : '') + (g.max != null ? ' max="' + g.max + '"' : '') +
+        (g.step != null ? ' step="' + esc(String(g.step)) + '"' : '') +
+        ' value="' + esc(g.value == null ? '' : String(g.value)) + '">';
+    // 状态 (如订阅拉到多少) 与第二个按钮 (如「立即更新」) 由服务端给, 见 RemoteSettingSpec.status / action
+    return '<form' + (bare ? '' : ' class="card set-card"') + k + '>' + head + input + genHint(g.status) + '<div class="row">' +
+      (g.action ? '<button type="button" class="ghost" data-gaction>' + esc(g.action) + '</button>' : '') +
+      '<button type="submit" class="primary">' + T('保存') + '</button></div></form>';
   }
   // 卡片的提交: 通用项与调试项各走各的接口
   function bindGeneric(box, path) {
@@ -6426,6 +6691,7 @@ private val SETTINGS_SCRIPT = """
     });
   }
   bindGeneric(genBox, 'api/settings/generic/set');
+  bindGeneric(btBox, 'api/settings/generic/set');
   if (dbgBox) bindGeneric(dbgBox, 'api/settings/debug/set');
 })();
 """.trimIndent()
@@ -6716,7 +6982,7 @@ private val CACHE_SCRIPT = """
   var ccSrc = null, ccFull = false, lastCands = null;
   // 各块只在内容变了才重画 (免得关掉正打开的下拉框); 出错提示也走它, 下一次正常就能画回来
   var setHtml = window.setHtml;
-  // 「全选」/「全部用合集缓存」的范围 (记在这台手机上, 设置 → 外观里改): 默认只选正片, 特别篇 (SP / OVA 等, x.sp) 要自己勾
+  // 「全选」/「全部用合集缓存」的范围 (记在这台手机上, 设置 → 这台手机里改): 默认只选正片, 特别篇 (SP / OVA 等, x.sp) 要自己勾
   function pickAllSp() { try { return localStorage.getItem('ani-cache-pick-scope') === 'all'; } catch (e) { return false; } }
   function inScope(x) { return !x.sp || pickAllSp(); }
   window.refreshCachePick = function () { if (lastData && view === 'eps' && !sheet.hidden) renderEpisodes(lastData); };
@@ -6801,8 +7067,8 @@ private val CACHE_SCRIPT = """
       T('；也可以对某一集点「选资源」自己挑。') + '</p>';
     // 有没缓存的特别篇时才说全选的范围 (记在这台手机上, 见 inScope), 顺带说去哪改
     if (d.episodes.some(function (x) { return x.status === 'none' && x.sp; })) {
-      h += '<p class="hint">' + (pickAllSp() ? T('「全选」会同时选择正片和特别篇。可在「设置 → 本机偏好」中更改。')
-        : T('「全选」默认只选择正片。特别篇需要手动选择，可在「设置 → 本机偏好」中更改。')) + '</p>';
+      h += '<p class="hint">' + (pickAllSp() ? T('「全选」会同时选择正片和特别篇。可在「设置 → 这台手机」中更改。')
+        : T('「全选」默认只选择正片。特别篇需要手动选择，可在「设置 → 这台手机」中更改。')) + '</p>';
     }
     d.episodes.forEach(function (x) {
       var size = x.size ? ' · ' + x.size : '';
@@ -8618,7 +8884,7 @@ private val HELP_SCRIPT = """
     T('点击番名：在电视上打开详情页。点击右侧封面或 ▶：按观看进度继续播放（同详情页的播放按钮）。'),
     T('点击某一集：在电视上播放这一集。'),
     T('选资源时可以展开「搜索名与集数」：改过的搜索名会记住，这部番以后缓存和播放都用它；集数只影响这一集，BT 合集编号和 Bangumi 不同时改这里才能下对文件。'),
-    T('「全选」默认只选择正片，特别篇需要手动选择。可在「设置 → 本机偏好」中改为同时选择特别篇。'),
+    T('「全选」默认只选择正片，特别篇需要手动选择。可在「设置 → 这台手机」中改为同时选择特别篇。'),
     T('左滑可删除该集缓存，删除前会再次确认。点击行尾按钮可暂停或继续。长按可进入多选，跨番批量删除。'),
     T('番名那一行右滑：缓存更多剧集；左滑：删除这部番的全部缓存（先确认）。滑过一半松手直接执行。'),
     T('最下面「挑番缓存」：从在看 / 想看里挑番缓存，在看里有新集的排在前面，并标出几集还没缓存；「新番时间表」按星期列出这一周每天更新的番，自己在看 / 想看的用主题色标出。')
@@ -8640,21 +8906,21 @@ private val HELP_SCRIPT = """
     T('「检查更新」后可以直接下载并安装新版本；也可以「上传安装包」，用手机上下好的安装包更新或装测试版，卡片上会显示传的是哪个包。'),
     T('安装时电视上会弹出确认框，用遥控器点「安装」或「更新」；装不上时这里会显示原因。')
   ]) + sec(T('其他'), [
-    T('设置分成几组，点一组进去修改；点左上角的返回或用手机的返回键回到上一级。右上角切到「全部」就把所有设置列在一页里。'),
-    T('「本机偏好」只影响这台手机；代理、BT Tracker、弹幕屏蔽词改完立即生效；「维护」里可以下载电视的日志。')
+    T('设置分成几组，点一组进去修改；点左上角的返回或用手机的返回键回到上一级。最上面的搜索框可以直接找某一项设置。'),
+    T('「这台手机」里的设置只影响这台手机；代理、弹幕屏蔽词改完立即生效；「维护」里可以下载电视的日志。')
   ]);
   var SOURCES = sec(T('数据源'), [
+    T('顶上分五页：列表、订阅、网盘、本地、BT。右上角的「+」按所在的页添加：列表页添加单个数据源或导入 JSON，本地页添加本地文件夹或 WebDAV。'),
     T('订阅：粘贴订阅地址添加，在线数据源都来自订阅；长按订阅可以多选删除。'),
-    T('数据源可以启用 / 停用、上下调整顺序、编辑、复制、导入导出；订阅来的源只能启用或停用。')
+    T('数据源可以启用 / 停用、上下调整顺序、编辑、复制、导入导出；订阅来的源只能启用或停用。'),
+    T('BT 页：额外 Tracker、Peer 过滤规则与 PikPak 账号，点一行展开修改。')
   ]);
   function content() {
     var s = document.querySelector('section.tab:not([hidden])'), tab = s ? s.id.replace('tab-', '') : 'search';
     if (tab === 'player') return [T('播放器'), PLAYER];
     if (tab === 'cache') return [T('缓存'), CACHE];
-    if (tab === 'settings') {
-      var src = document.getElementById('set-sources');
-      return [T('设置'), src && !src.hidden ? SOURCES + GENERAL : GENERAL + SOURCES];
-    }
+    if (tab === 'sources') return [T('数据源'), SOURCES];
+    if (tab === 'settings') return [T('设置'), GENERAL];
     return [T('搜索'), SEARCH];
   }
   function open() {

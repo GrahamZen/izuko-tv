@@ -504,13 +504,13 @@ internal fun TvSettingsItemsBuilder.btItems() {
     val peer = keys.peer
     toggle(
         peer, Lang.tv_settings_peer_filter_ip, Lang.tv_settings_peer_rules_hint,
-        qr = { consoleQr(it, "#settings/resources", legacy = true) },
+        qr = { consoleQr(it, "#sources/bt", legacy = true) },
         read = { it.enableIpFilter },
         write = { copy(enableIpFilter = it) },
     )
     toggle(
         peer, Lang.tv_settings_peer_filter_id, Lang.tv_settings_peer_rules_hint,
-        qr = { consoleQr(it, "#settings/resources", legacy = true) },
+        qr = { consoleQr(it, "#sources/bt", legacy = true) },
         read = { it.enableIdFilter },
         write = { copy(enableIdFilter = it) },
     )
@@ -522,7 +522,7 @@ internal fun TvSettingsItemsBuilder.btItems() {
     )
     toggle(
         peer, Lang.tv_settings_peer_filter_client, Lang.tv_settings_peer_rules_hint,
-        qr = { consoleQr(it, "#settings/resources", legacy = true) },
+        qr = { consoleQr(it, "#sources/bt", legacy = true) },
         read = { it.enableClientFilter },
         write = { copy(enableClientFilter = it) },
     )
@@ -553,7 +553,7 @@ internal fun TvSettingsItemsBuilder.btItems() {
         Lang.tv_settings_pikpak_account, Lang.tv_settings_pikpak_account_hint, keys = listOf(pikpak),
         value = { v -> v[pikpak]?.username?.takeIf { it.isNotEmpty() }?.let { tvText(it) } ?: tvText(Lang.tv_settings_pikpak_not_signed_in) },
         visible = { it[pikpak]?.enabled == true },
-        qr = { consoleQr(it, "#settings/resources", legacy = true) },
+        qr = { consoleQr(it, "#sources/bt", legacy = true) },
     ) { emptyList() }
     val usage = keys.pikpakUsage
     action(

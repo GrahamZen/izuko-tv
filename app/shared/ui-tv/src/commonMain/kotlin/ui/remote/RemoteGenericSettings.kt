@@ -78,6 +78,7 @@ internal object RemoteSettingsCatalog {
             description = Lang.settings_media_torrent_extra_trackers_dialog_description,
             // BT 下载开始前与内置 tracker 一起添加 (见 AnitorrentEngine)
             editor = RemoteSettingEditor.Lines(accepts = ::isTrackerUrl, invalidMessage = "这一行不像 tracker 地址：{0}"),
+            page = RemoteSettingPage.Bt,
         ),
         RemoteSettingSpec(
             key = "trackerSubscriptions",
@@ -90,6 +91,7 @@ internal object RemoteSettingsCatalog {
             editor = RemoteSettingEditor.Lines(accepts = ::isWebUrl, invalidMessage = "这一行不是网址：{0}"),
             status = { RemoteTrackerSubscriptions.status() },
             action = RemoteSettingAction("立即更新") { RemoteTrackerSubscriptions.refresh() },
+            page = RemoteSettingPage.Bt,
         ),
         RemoteSettingSpec(
             key = "preferredAlliances",
@@ -123,6 +125,7 @@ internal object RemoteSettingsCatalog {
             description = Lang.remote_settings_peer_ip_blacklist_description,
             // 黑名单与 IP 规则一样交给 PeerIpFilter 解析, 解析不了的那条不生效
             editor = RemoteSettingEditor.Lines(accepts = ::isIpPattern, invalidMessage = "这一行不是有效的 IP 地址或规则：{0}"),
+            page = RemoteSettingPage.Bt,
         ),
         RemoteSettingSpec(
             key = "peerIpRules",
@@ -132,6 +135,7 @@ internal object RemoteSettingsCatalog {
             title = Lang.remote_settings_peer_ip_rules,
             description = Lang.remote_settings_peer_ip_rules_description,
             editor = RemoteSettingEditor.Lines(accepts = ::isIpPattern, invalidMessage = "这一行不是有效的 IP 地址或规则：{0}"),
+            page = RemoteSettingPage.Bt,
         ),
         RemoteSettingSpec(
             key = "peerIdRules",
@@ -142,6 +146,7 @@ internal object RemoteSettingsCatalog {
             description = Lang.remote_settings_peer_id_rules_description,
             // 规则在建过滤器时直接编译 (PeerIdFilter), 写错的正则不能存进去
             editor = RemoteSettingEditor.Lines(accepts = ::isRegex, invalidMessage = "这一行不是有效的正则表达式：{0}"),
+            page = RemoteSettingPage.Bt,
         ),
         RemoteSettingSpec(
             key = "peerClientRules",
@@ -151,9 +156,8 @@ internal object RemoteSettingsCatalog {
             title = Lang.remote_settings_peer_client_rules,
             description = Lang.remote_settings_peer_client_rules_description,
             editor = RemoteSettingEditor.Lines(accepts = ::isRegex, invalidMessage = "这一行不是有效的正则表达式：{0}"),
+            page = RemoteSettingPage.Bt,
         ),
-        RemoteCacheLocationSetting.spec,
-        RemoteMediaLibrarySetting.spec,
     )
 
     /**
@@ -238,6 +242,12 @@ internal sealed interface RemoteSettingEditor {
 /** 设置卡片上的第二个按钮 (如「立即更新」): [label] 是按钮文字 (简体原文, 走网页译文表), 按下运行 [run], 返回给网页的提示. */
 internal class RemoteSettingAction(val label: String, val run: suspend () -> String)
 
+/** 清单里的一项在 Web 控制台的哪一页: 设置标签的「播放与弹幕」组, 或数据源标签的 BT 页. */
+internal enum class RemoteSettingPage(val id: String) {
+    Play("play"),
+    Bt("bt"),
+}
+
 /**
  * 清单里的一项.
  *
@@ -264,6 +274,8 @@ internal class RemoteSettingSpec<T>(
     val onSaved: (suspend (JsonElement) -> String?)? = null,
     /** 这台设备上有没有这一项 (如片库只在安卓 11 起有): 没有时网页不列, 也不收. 不写时总有. */
     val available: (() -> Boolean)? = null,
+    /** 网页上放在哪一页. */
+    val page: RemoteSettingPage = RemoteSettingPage.Play,
 ) {
     val isAvailable: Boolean get() = available?.invoke() != false
 
@@ -378,6 +390,7 @@ internal object RemoteGenericSettings {
         val status = spec.status?.invoke()
         return buildJsonObject {
             put("key", spec.key)
+            put("page", spec.page.id)
             put("title", title)
             description?.let { put("description", it) }
             placeholder?.let { put("placeholder", it) }
