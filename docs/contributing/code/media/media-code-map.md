@@ -129,7 +129,8 @@
    Android 上 `LibassExoPlayerMediampPlayer` 给本机文件（`file://`，本地缓存与本地文件资源）套 `BufferedReadDataSource` 读缓冲：
    mkv 提取器解析元素头时一次只读一两个字节，`FileDataSource` 每次读都是一次系统调用。
    它拦截后重建的媒体用 `OpeningLoadErrorPolicy`：打开期间（`setMediaData` 返回前）读取出错只重试一次，
-   坏链接约一秒报打开失败、自动选源接着换下一个；打开之后按 Media3 默认重试 3 次、逐次多等。重试间隔一律用 Media3 默认的：
+   重试也不会好的（401 / 403 / 404 / 410、域名解析不出）不重试，坏链接约一秒内报打开失败、自动选源接着换下一个；
+   打开之后按 Media3 默认重试 3 次、逐次多等。重试间隔一律用 Media3 默认的：
    加载器只在等下一次重试的间隙里留着错误让播放器报出来，间隔为 0 时坏链接会被一直重试（设备测试 `OpeningFailFastTest`）。
    开关是 `DevSwitches.openFailFast`。
    播放中卡住缓冲时 `RebufferDiagnostics`（挂在播放器上的 `AnalyticsListener`）往日志写两行 `[Rebuffer]`：卡住那一刻的缓冲余量、
