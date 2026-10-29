@@ -20,14 +20,11 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.filterNotNull
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.ui.foundation.tv.TvBackdropImage
@@ -65,9 +62,6 @@ internal class TvWallOpen(private val scope: CoroutineScope) : TvNativeWallOpena
     /** 返回本页 (页面重建) 时恢复点开的样子要铺的那张. */
     var restoreTarget: () -> TvNativeWallBackdropTarget? = { null }
 
-    /** 页面此刻被盖着 (不在前台), 页面给. */
-    var pageHidden: () -> Boolean = { false }
-
     private var loaded = CompletableDeferred<Unit>()
     private var job: Job? = null
 
@@ -89,20 +83,6 @@ internal class TvWallOpen(private val scope: CoroutineScope) : TvNativeWallOpena
             onOpened()
         }
         return true
-    }
-
-    /**
-     * 当场进、不播点开 (触屏上点卡就进, 背景这时还是上一张的): 照点开过记账 —— 页面被盖住以后, 背景 ([restoreTarget]) 换成 [subjectId] 那张时
-     * 把清晰层铺满、卡片藏起, 回到本页时照点开那样倒放 (清晰图淡回模糊底、卡片淡回来). 背景一直没换过来 (这部没有清晰图) 就照常回来.
-     */
-    fun openBehind(subjectId: Int) {
-        job?.cancel()
-        job = scope.launch {
-            val t = snapshotFlow { restoreTarget()?.takeIf { pageHidden() && it.subjectId == subjectId && it.sharp } }.filterNotNull().first()
-            target = t
-            fade.snapTo(1f)
-            sharp.snapTo(1f)
-        }
     }
 
     /** 清晰层的图解好了. */

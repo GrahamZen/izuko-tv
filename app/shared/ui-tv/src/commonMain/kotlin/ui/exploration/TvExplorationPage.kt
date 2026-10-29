@@ -19,6 +19,7 @@ import me.him188.ani.app.domain.episode.GetAnimeScheduleFlowUseCase
 import me.him188.ani.app.ui.foundation.AniStartupProgress
 import me.him188.ani.app.ui.foundation.tv.FillTvTmdbTextsFromCache
 import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallTone
+import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -593,8 +594,9 @@ private fun TvExplorationPageContent(
     // ------------------------------------------------------------------
     // 焦点簿记 + 两个显式落点请求
     // ------------------------------------------------------------------
-    // 聚焦卡在行内的下标 (返回键分层规则 / 继续观看播放键用); 行内恢复用各行自己保存的下标
-    var focusedCardIndex by remember { mutableIntStateOf(0) }
+    // 聚焦卡在行内的下标 (返回键分层规则 / 继续观看播放键用); 行内恢复用各行自己保存的下标.
+    // 跟 focusedRowKey 一起跨导航保存: 返回本页时焦点交还到卡上之前, hero 按这一对取内容 (见下面推荐行跟着换 hero 那段), 丢了就成了这一行第一张
+    var focusedCardIndex by rememberSaveable { mutableIntStateOf(0) }
     var cardAreaHasFocus by remember { mutableStateOf(false) }
     // focusedRowKey 是**换行就变**的热状态, 直读会把整个页面 body 记成它的订阅者 —— 每按一次
     // 上/下键整页重跑一遍. 报告者弱机上"上下键 127-140ms、左右键 63ms"的差正出在这里
@@ -681,6 +683,7 @@ private fun TvExplorationPageContent(
     // 恢复请求是否已派出. 见下方返回键分层: 本效应调度前那一两帧 cardFocusRequest 还是 null,
     // 那时按返回会被放行成"退出应用确认" —— 曾在某行时用它把这一段也算作焦点在卡片区
     var entryRestoreDispatched by remember { mutableStateOf(false) }
+    val touchInput = LocalTvTouchInputEnabled.current
     LaunchedEffect(Unit) {
         val saved = focusedRowKey
         if (saved == null) {
@@ -698,8 +701,11 @@ private fun TvExplorationPageContent(
         delay(TV_ENTRY_CARD_RESTORE_TIMEOUT)
         if (cardFocusRequest === restore) {
             cardFocusRequest = null
-            focusedRowKey = null
-            heroFocusRequest = TvHeroFocusRequest(lastHeroButton)
+            // 平板 (触屏) 上焦点送没送到看不出来, hero 与停位按存着的行与那张走: 不退回轮播 (触屏下回 hero 按钮 = 退出 hero 态)
+            if (!touchInput) {
+                focusedRowKey = null
+                heroFocusRequest = TvHeroFocusRequest(lastHeroButton)
+            }
         }
     }
     // 页面自己在派落点 (进页恢复 / 返回键分层 / 回到主界面) 期间让全局兜底等一等: 它只让 15 帧就出手, 按 Enter 从最左边

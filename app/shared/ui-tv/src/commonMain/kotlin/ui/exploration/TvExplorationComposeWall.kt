@@ -584,7 +584,12 @@ private class TvExploreComposeSurface(
     restoredIndex: Int,
 ) : TvWallRowsSurface(
     timeline, scope, state.focusRequester, state.savedScrollPx, state.savedRowLeft, state.savedRowFocused, restoredRowKey, restoredIndex,
+    state.savedRowScroll,
 ), TvExploreSurface {
+    override val logTag: String get() = "ExploreRows"
+
+    override val rowScrollPositions: Map<String, Pair<Int, Int>> get() = currentRowScroll
+
     var listener: TvNativeExploreListener?
         get() = rowListener as? TvNativeExploreListener
         set(value) {
@@ -626,6 +631,7 @@ private class TvExploreComposeSurface(
      * 焦点就停在入口节点上 (见 parkFocus).
      */
     fun enter() {
+        log { "入口拿到焦点 (hero=${timeline.active}, 触屏=$touchMode, 行=$focusedRowKey)" }
         val rowKey = focusedRowKey
         when {
             touchMode && !timeline.active -> parkFocus(request = false)

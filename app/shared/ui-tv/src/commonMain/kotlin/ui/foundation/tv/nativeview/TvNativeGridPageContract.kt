@@ -41,6 +41,10 @@ class TvNativeGridPageState internal constructor(
     heroActive: Boolean,
     internal val savedPositions: HashMap<Int, Int>,
     wallOpenIndex: Int,
+    /** 各份网格第一张露出的卡滑出去的像素 (见 [TvGridPageSurface.savedOffsets]). */
+    internal val savedOffsets: HashMap<Int, Int> = HashMap(),
+    /** 各份网格上次聚焦的那张 (见 [TvGridPageSurface.savedFocused]). */
+    internal val savedFocused: HashMap<Int, Int> = HashMap(),
 ) {
     /** 画面 (安卓是原生的 TvNativeGridPageView, 别的端是 Compose 版). */
     var surface: TvGridPageSurface? by mutableStateOf(null)
@@ -82,6 +86,8 @@ class TvNativeGridPageState internal constructor(
     /** 忘掉 [key] 那份网格的位置: 下次显示从第一行排起. */
     fun forgetPosition(key: Int) {
         savedPositions.remove(key)
+        savedOffsets.remove(key)
+        savedFocused.remove(key)
         surface?.forgetPosition(key)
     }
 
@@ -94,6 +100,8 @@ class TvNativeGridPageState internal constructor(
     internal fun capture() {
         val v = surface ?: return
         v.savedPositions().forEach { (key, pos) -> (key as? Int)?.let { savedPositions[it] = pos } }
+        v.savedOffsets().forEach { (key, offset) -> (key as? Int)?.let { savedOffsets[it] = offset } }
+        v.savedFocused().forEach { (key, index) -> (key as? Int)?.let { savedFocused[it] = index } }
         heroActive = v.heroActive
     }
 }
@@ -107,7 +115,11 @@ fun rememberTvNativeGridPageState(): TvNativeGridPageState =
 private val TvNativeGridPageStateSaver = Saver<TvNativeGridPageState, ArrayList<Any>>(
     save = { state ->
         state.capture()
-        arrayListOf(state.heroActive, ArrayList(state.savedPositions.keys), ArrayList(state.savedPositions.values), state.wallOpenIndex)
+        arrayListOf(
+            state.heroActive, ArrayList(state.savedPositions.keys), ArrayList(state.savedPositions.values), state.wallOpenIndex,
+            ArrayList(state.savedOffsets.keys), ArrayList(state.savedOffsets.values),
+            ArrayList(state.savedFocused.keys), ArrayList(state.savedFocused.values),
+        )
     },
     restore = { list ->
         @Suppress("UNCHECKED_CAST")
@@ -115,10 +127,24 @@ private val TvNativeGridPageStateSaver = Saver<TvNativeGridPageState, ArrayList<
 
         @Suppress("UNCHECKED_CAST")
         val values = list[2] as List<Int>
+
+        @Suppress("UNCHECKED_CAST")
+        val offsetKeys = list.getOrNull(4) as? List<Int> ?: emptyList()
+
+        @Suppress("UNCHECKED_CAST")
+        val offsetValues = list.getOrNull(5) as? List<Int> ?: emptyList()
+
+        @Suppress("UNCHECKED_CAST")
+        val focusedKeys = list.getOrNull(6) as? List<Int> ?: emptyList()
+
+        @Suppress("UNCHECKED_CAST")
+        val focusedValues = list.getOrNull(7) as? List<Int> ?: emptyList()
         TvNativeGridPageState(
             heroActive = list[0] as Boolean,
             savedPositions = HashMap(keys.zip(values).toMap()),
             wallOpenIndex = list.getOrNull(3) as? Int ?: -1,
+            savedOffsets = HashMap(offsetKeys.zip(offsetValues).toMap()),
+            savedFocused = HashMap(focusedKeys.zip(focusedValues).toMap()),
         )
     },
 )
@@ -255,6 +281,12 @@ interface TvGridPageSurface {
 
     /** 各份网格停在哪 (按网格的 key): 页面重建时恢复. */
     fun savedPositions(): Map<Any, Int>
+
+    /** 各份网格第一张露出的卡滑出去的像素 (按网格的 key, 同 [savedPositions] 一起恢复); 按行停的端给空. */
+    fun savedOffsets(): Map<Any, Int> = emptyMap()
+
+    /** 各份网格上次聚焦的那张 (按网格的 key): 页面重建后 hero 态的停位按它算; 不记的端给空. */
+    fun savedFocused(): Map<Any, Int> = emptyMap()
 
     fun forgetPosition(key: Any)
 

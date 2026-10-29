@@ -173,10 +173,10 @@ internal fun TvWallRowsList(
     }
     // 等着的落点那一行到了就送
     LaunchedEffect(surface, items) { surface.retryDeferred() }
-    // 挂着的落点那张排出来了就送焦
+    // 挂着的落点那张排出来了就送焦; 同一张再送一次 (focusSends) 也再请求
     LaunchedEffect(surface) {
-        snapshotFlow { surface.pending?.let { surface.requesters[it] } }.collect { requester ->
-            if (requester != null) runCatching { requester.requestFocus() }
+        snapshotFlow { surface.pending?.let { surface.requesters[it] }?.let { surface.focusSends to it } }.collect { send ->
+            if (send != null) runCatching { send.second.requestFocus() }
         }
     }
 
@@ -305,8 +305,9 @@ private fun TvWallRowsRow(
                     holdFocusLook = surface.heldFocus == key,
                     // 卡片墙上点一下 = 聚焦并进 hero 态; hero 态里点另一张只换焦点, 「更多」卡也只聚焦
                     touchTwoStep = !tvWallTapConfirmsWhileFocusing(more, surface.heroEnabled, timeline.active),
-                    // 按触屏的规矩走时卡片墙不画聚焦放大 (hero 态里聚焦那张照画), 按下也不动焦点 (点一下怎么走见 onCardClick)
-                    showFocusLook = !surface.touchMode || timeline.active,
+                    // 按触屏的规矩走时卡片墙不画聚焦放大, hero 态里只画 hero 正显示的那张 (不看焦点此刻落在哪, 见 onCardFocused);
+                    // 按下也不动焦点 (点一下怎么走见 onCardClick)
+                    showFocusLook = !surface.touchMode || timeline.active && surface.heldFocus == key,
                     touchFocusOnPress = !surface.touchMode,
                 )
             }
@@ -330,6 +331,7 @@ internal open class TvWallRowsSurface(
     restoredRowFocused: Map<String, Int>,
     restoredRowKey: String?,
     restoredIndex: Int,
+    restoredRowScroll: Map<String, Pair<Int, Int>> = emptyMap(),
 ) : TvRowWallSurface {
     override var rowListener: TvNativeRowWallListener? = null
 
@@ -411,6 +413,13 @@ internal open class TvWallRowsSurface(
     /** 还没送出去的落点 (那张卡还没排出来): 行键, 下标. */
     var pending: Pair<String, Int>? by mutableStateOf(null)
 
+    /**
+     * [focusCard] 送过几次: 同一张再送一次也要再请求焦点 —— 返回本页时卡刚拿到焦点, 同一帧里页面的进组又把焦点转到入口节点, 入口再送回这张;
+     * 只看 [pending] 的话它没变, 就不会再请求, 卡一直拿不到焦点.
+     */
+    var focusSends: Int by mutableIntStateOf(0)
+        private set
+
     /** 等那一行到了再送的落点 (行键, 下标, 远跳), 见 [focusCard]. */
     protected var deferred: Triple<String, Int, Boolean>? = null
 
@@ -428,8 +437,26 @@ internal open class TvWallRowsSurface(
 
     val requesters = mutableStateMapOf<Pair<String, Int>, FocusRequester>()
 
+    /**
+     * 返回本页时各行停在哪 (见 [currentRowScroll]). 复制一份: 页面那边的表在页面存状态时先清空再按此刻排出来的行重填, 下面几行还没排出来时
+     * 存一次就丢了它们的位置.
+     */
+    private val restoredRowScroll = HashMap(restoredRowScroll)
+
+    /** [rowKey] 行的滚动状态: 第一次排出来时按行首排; 触屏上 (行停在手指放开处) 照存着的位置原样排 (见 [currentRowScroll]). */
     fun rowStateFor(rowKey: String): LazyListState =
-        rowStates.getOrPut(rowKey) { LazyListState(firstVisibleItemIndex = rowLeft[rowKey] ?: 0) }
+        rowStates.getOrPut(rowKey) {
+            val exact = restoredRowScroll[rowKey]?.takeIf { touchInput }
+            LazyListState(firstVisibleItemIndex = exact?.first ?: rowLeft[rowKey] ?: 0, firstVisibleItemScrollOffset = exact?.second ?: 0)
+        }
+
+    /**
+     * 各行此刻停在哪: 第一张露出的卡、它滑出去的像素 (页面重建时恢复, 见 TvExploreSurface.rowScrollPositions). 这次还没排出来过的行照存着的给.
+     */
+    val currentRowScroll: Map<String, Pair<Int, Int>>
+        get() = HashMap(restoredRowScroll).apply {
+            for ((rowKey, state) in rowStates) put(rowKey, state.firstVisibleItemIndex to state.firstVisibleItemScrollOffset)
+        }
 
     /** 只记不挪的行首 (行键 → 行首), 见 [setRowLeftQuietly]. */
     private val quietRowLeft = HashMap<String, Int>()
@@ -446,7 +473,7 @@ internal open class TvWallRowsSurface(
 
     /**
      * 让 [rowKey] 行第 [target] 张 (整行 [count] 张) 完整露出: 算出行首记进 [rowLeft] (行跟着挪), 返回行首. 按触屏的规矩走时从行此刻的位置算,
-     * 那张已经完整露出就只记不挪.
+     * 那张已经完整露出就只记不挪 —— 手指能把行拖进行尾留白 (露出「更多」), 行首比遥控器翻页的上限还靠后, 照那个上限算会把行拽回去.
      */
     private fun revealInRow(rowKey: String, target: Int, count: Int): Int {
         val columns = metrics.columns.coerceAtLeast(1)
@@ -456,6 +483,10 @@ internal open class TvWallRowsSurface(
             return left
         }
         val current = tvRowFirstFullIndex(rowStateFor(rowKey))
+        if (target in current until current + columns) {
+            setRowLeftQuietly(rowKey, current)
+            return current
+        }
         val left = tvStripLeftIndex(current, target, count, columns)
         if (left == current) setRowLeftQuietly(rowKey, left) else rowLeft[rowKey] = left
         return left
@@ -634,7 +665,8 @@ internal open class TvWallRowsSurface(
 
     /**
      * 送焦到 [rowKey] 行的第 [index] 张 (-1 = 这一行上次停的那张). 那张没排出来就先把列表与那一行滚过去, 排出来再送 ([pending]).
-     * [far] = 远跳: 列表按远跳 spring 滚过去. 按触屏的规矩走时卡片墙上不送 (焦点停放, 见 [parkFocus]), hero 态里照送.
+     * [far] = 远跳: 列表按远跳 spring 滚过去. 按触屏的规矩走时卡片墙上不送 (焦点停放, 见 [parkFocus]); hero 态里照送, 但只把焦点交还给那张,
+     * 列表与行都不挪 (返回本页: 进详情页前画面什么样, 回来就什么样).
      * 返回 false = 这一行还没到 (记下了, 到了再送).
      */
     override fun focusCard(rowKey: String, index: Int, far: Boolean): Boolean {
@@ -652,10 +684,12 @@ internal open class TvWallRowsSurface(
         }
         deferred = null
         val target = (if (index >= 0) index else rowFocused[rowKey] ?: rowLeft[rowKey] ?: 0).coerceIn(0, row.cards.size - 1)
-        revealInRow(rowKey, target, row.cards.size)
+        if (!touchMode) revealInRow(rowKey, target, row.cards.size)
         if (!cardAreaHasFocus) heldFocus = rowKey to target
         pending = rowKey to target
+        focusSends++
         log { "送焦 $rowKey/$target${if (far) " (远跳)" else ""}" }
+        if (touchMode) return true
         if (far) farJumping = true
         scrollToStop(item, if (far) TvScrollSpring.Far else TvScrollSpring.Step)
         return true
@@ -674,24 +708,38 @@ internal open class TvWallRowsSurface(
     override fun landFarJump(): Boolean = settleFarJump()
 
     fun onCardFocused(rowKey: String, index: Int) {
+        // 程序送焦还在路上 (返回本页的恢复、按键的落点) 时落到别的卡上的焦点 (页面进组的默认落点、焦点兜底) 不算数: 不滚不报, 接着送那张 ——
+        // 认了它的话 hero 换成它、列表滚到它那一行, 要送的那张 (返回时在下面几行) 排不出来, 一直送不到
+        val target = pending
+        if (target != null && target != (rowKey to index)) {
+            log { "焦点到 $rowKey/$index, 还在送 ${target.first}/${target.second}: 接着送" }
+            focusSends++
+            return
+        }
+        // 按触屏的规矩走时只认程序送来的那张 (返回本页的恢复); 别的来路 (焦点兜底、页面进组的默认落点) 不算数: 不滚不报,
+        // hero 只跟手指点的走 (见 onCardClick)
+        if (touchMode && target == null) return
         heldFocus = null
-        // 按触屏的规矩走时卡片墙上的焦点 (程序以外的来路, 如焦点兜底) 不算数: 不滚不报; 点卡片进 hero 态时才按聚焦走 (见 onCardClick)
-        if (touchMode && !timeline.active) return
-        takeCardFocus(rowKey, index)
-        updateStop(heroToggled = false)
+        // 触屏上送来的那张到位 (返回本页的恢复) 只记账, 画面不挪 (见 focusCard)
+        takeCardFocus(rowKey, index, reveal = !touchMode)
+        if (!touchMode) updateStop(heroToggled = false)
     }
 
-    /** 焦点到了 [rowKey] 行第 [index] 张: 记下、行按需挪 (走到行尾留白里那张才挪, 挪到它刚好完整露出)、报给页面. */
-    private fun takeCardFocus(rowKey: String, index: Int) {
+    /**
+     * 焦点到了 [rowKey] 行第 [index] 张: 记下、行按需挪 (走到行尾留白里那张才挪, 挪到它刚好完整露出; [reveal] 为 false 时不挪)、报给页面.
+     */
+    private fun takeCardFocus(rowKey: String, index: Int, reveal: Boolean = true) {
         parkJob?.cancel()
         val row = items.firstOrNull { it.key == rowKey } as? TvNativeExploreItem.Row
         val count = row?.cards?.size ?: (index + 1)
-        val left = revealInRow(rowKey, index, count)
+        val left = if (reveal) revealInRow(rowKey, index, count) else tvRowFirstFullIndex(rowStateFor(rowKey))
         rowFocused[rowKey] = index
         focusedRowKey = rowKey
         focusedCardIndex = index
         focusedColumn = index - left
         if (pending == rowKey to index) pending = null
+        // 按触屏的规矩走时画成聚焦态的就是这张, 焦点此刻在不在它身上都一样 (见 TvWallRowsRow 的 showFocusLook)
+        if (touchMode) heldFocus = rowKey to index
         log { "焦点到 $rowKey/$index (屏上第 $focusedColumn 列)" }
         setCardAreaFocus(true)
         rowListener?.onCardFocused(rowKey, index, focusedColumn)
@@ -710,6 +758,9 @@ internal open class TvWallRowsSurface(
     fun onCardClick(rowKey: String, index: Int, more: Boolean) {
         val key = rowKey to index
         if (touchMode) {
+            // 手指点的为准: 还在路上的程序送焦作废 (见 onCardFocused)
+            pending = null
+            deferred = null
             val focused = focusedRowKey to focusedCardIndex == key
             val tap = tvWallTouchTap(more, heroEnabled, timeline.active, focused, isAboveFocusedRow(rowKey))
             log { "点了 $rowKey/$index: $tap (hero=${timeline.active})" }
@@ -721,6 +772,8 @@ internal open class TvWallRowsSurface(
 
                 TvWallTouchTap.FocusOnly -> {
                     requesters[key]?.let { runCatching { it.requestFocus() } }
+                    takeCardFocus(rowKey, index)
+                    updateStop(heroToggled = false)
                     return
                 }
 
