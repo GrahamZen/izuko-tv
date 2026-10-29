@@ -465,6 +465,70 @@ class TvSourcePanelModelTest {
         assertEquals("downloadsEmptyDiskCache", emptyText(input(selected = webA1).copy(canOpenDownloads = true, playbackDiskCache = true)))
     }
 
+    private val localFile = media("l1", "local-a", kind = MediaSourceKind.WEB, title = "[Test] 孤独摇滚 - 05 [1080p].mp4")
+
+    /** 一个本地文件夹源 (local-a, 类型是网盘引擎但标了 local) 加在默认的源后面, 能去缓存页, 这一集一条下完、一条在下. */
+    private fun localInput(): TvSourcePanelInput = input(
+        sources = MediaSourceResultListPresentation(sources.list + sourceResult("local-a", MediaSourceKind.WEB)),
+        webSources = webSources + webSource("local-a", listOf(WebSourceChannel("LocalTest", localFile))),
+    ).copy(
+        canOpenDownloads = true,
+        downloads = listOf(
+            TvSourceCacheItem("c1", btDmhy, percent = 100, finished = true),
+            TvSourceCacheItem("c2", btOther, percent = 42, finished = false),
+        ),
+        sourceTypes = mapOf("local-a" to TvSourceType("cloud-drive", "Drive", 0, local = true)),
+    )
+
+    @Test
+    fun `local sources form the first group and the downloads entry moves into it`() {
+        val input = localInput()
+        val content = buildTvSourcePanel(input, TvSourceNav(), strings)
+        // 「本地」取代「下载」排第一个, 后面照旧是 BT 与在线源的组; 胶囊数 = 下完的缓存 + 有结果的本地源
+        assertEquals(listOf(TvSourceRailKeys.GROUP_LOCAL, TvSourceRailKeys.BT, TvSourceRailKeys.GROUP_ONLINE), content.rail.drop(1).take(3).map { it.id })
+        assertTrue(content.rail.none { it.id == TvSourceRailKeys.DOWNLOADS })
+        val local = content.rail[1]
+        assertEquals("groupLocal", local.title)
+        assertEquals(TvSourceRowIcon.Local, local.icon)
+        assertTrue(local.trailing.startsWith("2"), local.trailing)
+        assertTrue(content.rail[3].dividerAbove)
+        // 不按类型: 网盘引擎的本地源不在「网盘」组
+        assertEquals(TvSourceRailKeys.GROUP_LOCAL, content.sourceGroups["web:local-a"])
+        assertTrue(content.rail.none { it.id == TvSourceRailKeys.GROUP_DRIVE })
+
+        // 进这一组: 源那一栏「下载」排第一, 默认落在它上面, 右边是这一集的缓存
+        val inGroup = buildTvSourcePanel(input, TvSourceNav(railKey = TvSourceRailKeys.GROUP_LOCAL), strings)
+        assertEquals(listOf(TvSourceRailKeys.DOWNLOADS, "web:local-a"), inGroup.sources.map { it.id })
+        assertEquals(TvSourceRailKeys.DOWNLOADS, inGroup.sourceKey)
+        assertEquals(listOf("option:downloads-open", "dl:c1", "dl:c2"), inGroup.right.rows.map { it.id })
+        assertEquals(TvSourceRailKeys.GROUP_LOCAL, inGroup.sourceGroups[TvSourceRailKeys.DOWNLOADS])
+        assertTrue(TvSourceRailKeys.DOWNLOADS in inGroup.enterableSources)
+        // 本地源那一行: 右边是它的文件; 记着上次停在它上面也落回它
+        val onLocal = buildTvSourcePanel(input, TvSourceNav(railKey = TvSourceRailKeys.GROUP_LOCAL, sourceKey = "web:local-a"), strings)
+        assertEquals("web:local-a", onLocal.sourceKey)
+        assertEquals("web:local-a", onLocal.right.key)
+        val remembered = TvSourceNav(railKey = TvSourceRailKeys.GROUP_LOCAL, groupSources = mapOf(TvSourceRailKeys.GROUP_LOCAL to "web:local-a"))
+        assertEquals("web:local-a", buildTvSourcePanel(input, remembered, strings).sourceKey)
+        // 要落到「下载」(详情弹窗跟过去): 落「本地」组的「下载」
+        val toDownloads = buildTvSourcePanel(input, TvSourceNav(railKey = TvSourceRailKeys.DOWNLOADS), strings)
+        assertEquals(TvSourceRailKeys.GROUP_LOCAL, toDownloads.railKey)
+        assertEquals(TvSourceRailKeys.DOWNLOADS, toDownloads.sourceKey)
+
+        // 右边开的详情左右键: 「本地」组先走这一集的缓存, 再走本地源的文件
+        val sequence = buildTvSourceDetailsSequence(input, strings, inGroup, inRail = false)
+        assertEquals(listOf(TvSourceRailKeys.DOWNLOADS, "web:local-a"), sequence.entries.map { it.railKey }.distinct().take(2))
+    }
+
+    @Test
+    fun `without the downloads entry the local group is an ordinary group at the front`() {
+        // 缓存页自己的面板不能去缓存页: 「本地」只有一个源, 不出源那一栏
+        val content = buildTvSourcePanel(localInput().copy(canOpenDownloads = false), TvSourceNav(railKey = TvSourceRailKeys.GROUP_LOCAL), strings)
+        assertEquals(listOf(TvSourceRailKeys.GROUP_LOCAL, TvSourceRailKeys.BT), content.rail.drop(1).take(2).map { it.id })
+        assertTrue(content.sources.isEmpty())
+        assertEquals("web:local-a", content.sourceKey)
+        assertEquals(null, content.sourceGroups[TvSourceRailKeys.DOWNLOADS])
+    }
+
     @Test
     fun `lands on the source of the playing web line and the line is highlighted`() {
         val content = buildTvSourcePanel(input(selected = webA2), TvSourceNav(), strings)
@@ -1115,6 +1179,7 @@ class TvSourcePanelModelTest {
         driveLoginAction = "driveLoginAction",
         driveLoginHint = "driveLoginHint",
         siteIpBlocked = "siteIpBlocked %1\$s",
+        groupLocal = "groupLocal",
         groupDrive = "groupDrive",
         groupOnline = "groupOnline",
         groupDirect = "groupDirect",
