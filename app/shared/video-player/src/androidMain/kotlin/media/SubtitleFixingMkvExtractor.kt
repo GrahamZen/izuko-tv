@@ -39,6 +39,7 @@ import kotlin.math.min
  *
  * 另外把视频轨的 DefaultDuration (每帧时长) 换算成帧率写进 Format: media3 只拿它算时间戳, Format 里没有帧率,
  * 播放页「跟随片源」切刷新率 (ContentFrameRateEffect)、统计层、media3 的无缝刷新率提示都靠它.
+ * FLAC 轨补上解码器的输入缓冲大小, 见 [MkvFlacInputSize].
  */
 @AndroidxOptIn(UnstableApi::class)
 internal open class SubtitleFixingMkvExtractor(
@@ -86,6 +87,7 @@ internal open class SubtitleFixingMkvExtractor(
             val track = getCurrentTrack(id)
             super.endMasterElement(id)
             fillFrameRate(track)
+            track.format?.let(MkvFlacInputSize::fill)?.let { track.format = it }
             return
         }
         super.endMasterElement(id)

@@ -172,6 +172,8 @@
     不开解码器，解码器初始化报错，之后同样提示并自动换源。日志 `[VideoDecoder]` 在每次开解码器时记下格式与各解码器认不认它，
     每个进程第一次建播放器时列出本机全部视频解码器声明的最大尺寸、10-bit 与否和 profile。音轨全都放不了时播放器不选音轨、照常放画面，不报错，
     `AudioTrackSupport.allAudioUnplayable` 让电视弹提示请用户手动换源（`TvUnplayableAudioNotice`）。
+    mkv 里的 FLAC 轨由 `SubtitleFixingMkvExtractor` 按 CodecPrivate 里 STREAMINFO 的最大帧长补上解码器输入缓冲大小（`MkvFlacInputSize`）：
+    media3 读 mkv 时不设，系统 FLAC 解码器按默认 32 KiB 开，多声道的一帧放不下，每帧都被跳过，一直没声音。
     字幕的字节在交给解析器与 libass 之前就理顺，下游（`SubtitleView`、libass 画的 `LiftableAssSubtitleView`、
     手机控制中心的截图、控件出现时上移字幕）都只读理顺后的数据，不各自处理压缩与编码：mkv 内封的轨在
     `SubtitleFixingMkvExtractor` 里（zlib 压缩的轨先解压，文字字幕与 ASS 文件头转成 UTF-8），外挂字幕文件在
