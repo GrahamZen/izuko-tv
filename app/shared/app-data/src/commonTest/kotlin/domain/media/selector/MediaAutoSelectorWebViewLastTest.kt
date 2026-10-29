@@ -269,6 +269,30 @@ class MediaAutoSelectorWebViewLastTest {
         assertTrue(job.isCompleted)
     }
 
+    @Test
+    fun `a web view source that never played stays behind other web view sources`() = runFetchMediaSelectorTestSuite {
+        initWeb()
+        val (_, session, sources) = configureFetchSession {
+            object {
+                val sniffingNeverPlays by web { tier = 0 }
+                val sniffing by web { tier = 1 }
+                val directNeverPlays by web { tier = 0 }
+            }
+        }
+        val job = launchSelection(
+            session,
+            webViewSources = setOf(sources.sniffingNeverPlays.instance.mediaSourceId, sources.sniffing.instance.mediaSourceId),
+            neverPlays = setOf(sources.sniffingNeverPlays.instance.mediaSourceId, sources.directNeverPlays.instance.mediaSourceId),
+        )
+        // 有直连的资源 (一次都没播起来的那个) 时要嗅探的都当作最低层级, 其中一次都没播起来的仍排在别的嗅探源后面
+        sources.sniffingNeverPlays.complete(media(kind = WEB, subjectName = "Example Series"))
+        sources.sniffing.complete(media(kind = WEB, subjectName = "Example Series"))
+        sources.directNeverPlays.complete(media(kind = WEB, subjectName = "Example Series"))
+        testScope().runCurrent()
+        assertEquals(sources.sniffing.instance.mediaSourceId, selector.selected.value?.mediaSourceId)
+        assertTrue(job.isCompleted)
+    }
+
     private fun FetchMediaSelectorTestSuite.initWeb() {
         initSubject("Example Series")
         preferenceApi.savedUserPreference.value = MediaPreference.Any
