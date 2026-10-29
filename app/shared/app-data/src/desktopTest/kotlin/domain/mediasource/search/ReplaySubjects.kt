@@ -89,7 +89,12 @@ internal class ReplaySubjects(table: SeriesGraphTable, private val tmdb: TmdbSub
                 UnifiedCollectionType.NOT_COLLECTED,
             )
         }
-        val collection = createTestSubjectCollection(id, episodes, UnifiedCollectionType.NOT_COLLECTED).copy(subjectInfo = subjectInfo)
+        // 条目的首播日期 (选择器认「名字 + 首播年份」的页名要用): 样例里记了 Bangumi 条目的 date 就用它, 同开播时;
+        // 没记的按最早一集的播出日期 (与条目的 date 大多同年, 先行放映、按发售日记的不同)
+        val firstAired = case["date"]?.jsonPrimitive?.contentOrNull?.let(PackedDate::parseFromDate)?.takeIf { it.isValid }
+            ?: episodes.map { it.episodeInfo.airDate }.filter { it.isValid }.minOrNull() ?: PackedDate.Invalid
+        val collection = createTestSubjectCollection(id, episodes, UnifiedCollectionType.NOT_COLLECTED)
+            .copy(subjectInfo = subjectInfo.copy(airDate = firstAired))
         val playback = PlaybackSeriesInfo(id) { service.getSubjectRelationIndex(it) }
         val attached = playback.attach(flowOf(collection)).first()
         val seriesInfo = playback.seriesInfoOf(attached)
