@@ -35,6 +35,8 @@ import me.him188.ani.app.ui.mediafetch.MediaSelectorState
 import me.him188.ani.app.ui.mediafetch.MediaSourceResultListPresentation
 import me.him188.ani.app.ui.mediaselect.manual.ManualBrowseState
 import me.him188.ani.datasources.api.Media
+import me.him188.ani.datasources.api.source.MediaSourceKind
+import me.him188.ani.datasources.api.source.isLowEffort
 import me.him188.ani.utils.coroutines.throttleLatest
 import me.him188.ani.utils.platform.currentTimeMillis
 import org.koin.mp.KoinPlatform
@@ -395,6 +397,7 @@ fun tvSourceTypesFlow(manager: MediaSourceManager = KoinPlatform.getKoin().get()
                 factoryId = instance.factoryId.value,
                 factoryName = factory?.info?.displayName ?: instance.factoryId.value,
                 order = index,
+                local = instance.source.kind == MediaSourceKind.WEB && instance.source.location.isLowEffort(),
             )
         }
     }.distinctUntilChanged()
