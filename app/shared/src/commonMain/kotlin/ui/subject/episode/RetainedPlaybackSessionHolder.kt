@@ -51,6 +51,7 @@ import me.him188.ani.app.ui.foundation.playback.PlaybackSessionStatus
 import me.him188.ani.app.ui.foundation.playback.PlayingCacheInfo
 import me.him188.ani.app.ui.foundation.playback.RetainedPlaybackSessionInfo
 import me.him188.ani.app.videoplayer.player.VideoSurfaceFrameSignal
+import me.him188.ani.app.videoplayer.ui.displayStateFlow
 import me.him188.ani.datasources.api.CachedMedia
 import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.utils.logging.info
@@ -706,7 +707,7 @@ class RetainedPlaybackSessionHolder : ViewModel(), PlaybackSessionEntry, KoinCom
             var lastLogged: PlaybackSessionStatus? = null
             combine(
                 vm.videoStatisticsFlow.map { it.videoLoadingState }.distinctUntilChanged(),
-                vm.player.state,
+                vm.player.displayStateFlow(),
                 vm.pageState.map { selectionProblemOf(it) to it?.sourceSearchProgress() }.distinctUntilChanged(),
                 // 解析 BT 资源先要等 BT 服务起来, 这段时间播放画面写的是「正在启动 BT 服务」
                 combine(vm.loadedMedia, vm.btServiceConnected) { media, connected ->
