@@ -621,6 +621,7 @@
     <string name="tv_source_drive_login_title">登入%1$s</string>
     <string name="tv_source_drive_login_password">這個網盤用帳號密碼登入：用手機掃碼開啟 Web 控制台，在「資料來源」裡填寫。</string>
     <string name="tv_source_site_ip_blocked">網站封鎖了這個網路的 IP，%1$s 後再試</string>
+    <string name="tv_source_group_local">本地</string>
     <string name="tv_source_group_drive">網盤</string>
     <string name="tv_source_group_online">線上</string>
     <string name="tv_source_group_direct">直鏈</string>

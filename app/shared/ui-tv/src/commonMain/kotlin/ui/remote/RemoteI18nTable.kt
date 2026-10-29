@@ -1329,6 +1329,12 @@ private fun part12() = listOf(
     RemoteText("这部番记下的网盘位置", "Saved drive locations for this show", "這部番記下的網盤位置", "這部番記下的網盤位置"),
     RemoteText("还没有记下", "Nothing saved yet", "還沒有記下", "還沒有記下"),
     RemoteText("网盘根目录", "Drive", "網盤根目錄", "網盤根目錄"),
+    // 本地文件夹数据源 (各块盘上的文件夹) 时换的说法
+    RemoteText("在本地文件夹里搜", "Search local folders", "在本地文件夾裡搜", "在本地資料夾裡搜尋"),
+    RemoteText("自动匹配对不上时在这里找：点视频当作当前这一集播放；或者进到放这部番的文件夹，按「就是这个文件夹」，之后每一集都从这里找。点字幕文件（.ass、.srt 等）挂到电视上正在播的视频上。", "Use this when automatic matching misses: tap a video to play it as the current episode, or open the folder that holds this show and tap “This is the folder” so every episode is looked up there. Tap a subtitle file (.ass, .srt, …) to add it to the video playing on the TV.", "自動匹配對不上時在這裡找：點視頻當作當前這一集播放；或者進到放這部番的文件夾，按「就是這個文件夾」，之後每一集都從這裡找。點字幕文件（.ass、.srt 等）掛到電視上正在播的視頻上。", "自動匹配對不上時在這裡找：點影片當作目前這一集播放；或者進到放這部番的資料夾，按「就是這個資料夾」，之後每一集都從這裡找。點字幕檔（.ass、.srt 等）掛到電視上正在播的影片上。"),
+    RemoteText("浏览各块盘", "Browse the drives", "瀏覽各塊盤", "瀏覽各個磁碟"),
+    RemoteText("这部番记下的文件夹", "Saved folders for this show", "這部番記下的文件夾", "這部番記下的資料夾"),
+    RemoteText("各块盘", "Drives", "各塊盤", "各個磁碟"),
     RemoteText("就是这个文件夹", "This is the folder", "就是這個文件夾", "就是這個資料夾"),
     RemoteText("搜索结果", "Search results", "搜索結果", "搜尋結果"),
     RemoteText("加载中…", "Loading…", "加載中…", "載入中…"),
