@@ -45,7 +45,8 @@ import kotlin.time.Duration.Companion.seconds
  * 解析出的视频地址由 `ChainedMediaResolver` 记 ([noteResolved]),
  * 规则源走没走 WebView 由 `RuleMediaSource` 记 ([noteWebView]). 存在设置里, 启动时 [load].
  *
- * 规则源最近几次大多要 WebView 嗅探时, 选源用的层级降一级 ([webViewSources] / [demote]); 别的源的层级仍由订阅决定, 画像只给建议.
+ * 规则源最近几次大多要 WebView 嗅探时, 选源用的层级降一级 ([webViewSources] / [demote]); 最近开播大多失败或一次都没播起来的源
+ * 再往下降 ([failingSources] / [demoteFailing]). 除此之外层级由订阅决定, 画像只给建议.
  */
 object SourceProfiles {
     private const val KEY = "sourceProfiles"
@@ -81,16 +82,34 @@ object SourceProfiles {
     }.distinctUntilChanged()
 
     /**
-     * 最近 [FAILING_WINDOW] 里开播大多失败的源 (见 [failsMostly]): 选源时降 [FAILING_DEMOTION] 级, 免得每次都先在它上面失败一次再换.
+     * 最近 [FAILING_WINDOW] 里开播失败的源, 选源与开查排队时降级 ([demoteFailing]), 免得每次都先在它上面失败一次再换.
      * 过了这段时间失败就不算了, 站点修好后自己升回来.
      */
-    val failingSources: Flow<Set<String>> = state.map { all ->
+    val failingSources: Flow<FailingSources> = state.map { all ->
         val now = currentTimeMillis()
-        all.filterValues { failsMostly(it, now) }.keys
+        FailingSources(
+            mostly = all.filterValues { failsMostly(it, now) }.keys,
+            never = all.filterValues { neverPlays(it, now) }.keys,
+        )
     }.distinctUntilChanged()
 
-    /** 选源时给 [failingSources] 降的级数: 降一级会和同档的源并列, 照样可能先选它 */
+    /** 最近开播大多失败的源 ([failsMostly]) 与其中一次都没播起来的 ([neverPlays]) */
+    data class FailingSources(val mostly: Set<String>, val never: Set<String>)
+
+    /** 选源时给大多失败的源降的级数: 降一级会和同档的源并列, 照样可能先选它 */
     const val FAILING_DEMOTION = 2u
+
+    /**
+     * 选源与开查排队用的层级: 大多失败的源降 [FAILING_DEMOTION] 级; 一次都没播起来的连同各线路降到最低 ([MediaSourceTier.MaximumValue]),
+     * 排在所有别的源后面开查, 别的源都没有能选的资源时才选它.
+     */
+    fun demoteFailing(tiers: MediaSelectorSourceTiers, failing: FailingSources): MediaSelectorSourceTiers {
+        val demoted = demote(tiers, failing.mostly - failing.never, FAILING_DEMOTION)
+        return if (failing.never.isEmpty()) demoted else demoted.copy(
+            tiers = demoted.tiers + failing.never.associateWith { MediaSourceTier.MaximumValue },
+            channelTiers = demoted.channelTiers - failing.never,
+        )
+    }
 
     class ResolvedUrl(val uri: String, val headers: Map<String, String>)
 
@@ -191,15 +210,27 @@ object SourceProfiles {
     fun summary(mediaSourceId: String): SourceProfileSummary? =
         summarize(state.value[mediaSourceId].orEmpty(), searches.value[mediaSourceId].orEmpty())
 
+    /** [now] 往前 [FAILING_WINDOW] 内真实开播 (不算深度测试与改选) 的记录 */
+    private fun recentStarts(list: List<SourceObservation>, now: Long): List<SourceObservation> =
+        list.filter { !it.test && !it.deferred && now - it.at <= FAILING_WINDOW.inWholeMilliseconds }
+
     /**
      * [now] 往前 [FAILING_WINDOW] 内真实开播 (不算深度测试与改选) 的记录里, 失败至少两次且比播起来的多.
      * 播起来之后出错的那条也算一次失败.
      */
     internal fun failsMostly(list: List<SourceObservation>, now: Long): Boolean {
-        val recent = list.filter { !it.test && !it.deferred && now - it.at <= FAILING_WINDOW.inWholeMilliseconds }
+        val recent = recentStarts(list, now)
         val failures = recent.count { !it.ok }
         return failures >= 2 && failures > recent.size - failures
     }
+
+    /** [now] 往前 [FAILING_WINDOW] 内真实开播一次都没播起来, 失败至少 [NEVER_PLAYS_FAILURES] 次 */
+    internal fun neverPlays(list: List<SourceObservation>, now: Long): Boolean {
+        val recent = recentStarts(list, now)
+        return recent.size >= NEVER_PLAYS_FAILURES && recent.none { it.ok }
+    }
+
+    private const val NEVER_PLAYS_FAILURES = 3
 
     internal fun usesWebView(list: List<SourceObservation>): Boolean? {
         val marks = list.mapNotNull { it.webView }.takeLast(RECENT)

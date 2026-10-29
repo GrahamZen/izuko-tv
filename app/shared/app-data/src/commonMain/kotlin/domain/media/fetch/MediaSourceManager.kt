@@ -425,7 +425,7 @@ class MediaSourceManagerImpl(
         SourceProfiles.demote(tiers, observed.filterValues { it }.keys)
             .copy(webViewSources = WebViewSources.of(webViewUses, observed))
     }.combine(SourceProfiles.failingSources) { tiers, failing ->
-        SourceProfiles.demote(tiers, failing, SourceProfiles.FAILING_DEMOTION)
+        SourceProfiles.demoteFailing(tiers, failing)
     }.flowOn(flowCoroutineContext)
         .shareIn(scope, replay = 1, started = SharingStarted.Eagerly)
 

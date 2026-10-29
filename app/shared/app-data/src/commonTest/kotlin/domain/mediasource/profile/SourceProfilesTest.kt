@@ -13,7 +13,9 @@ import me.him188.ani.app.domain.media.selector.MediaSelectorSourceTiers
 import me.him188.ani.datasources.api.source.MediaSourceTier
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class SourceProfilesTest {
     private fun ok(
@@ -141,9 +143,40 @@ class SourceProfilesTest {
     @Test
     fun `failing sources drop two tiers`() {
         val tiers = MediaSelectorSourceTiers(mapOf("a" to MediaSourceTier(0u), "b" to MediaSourceTier(1u)))
-        val demoted = SourceProfiles.demote(tiers, setOf("a"), SourceProfiles.FAILING_DEMOTION)
+        val demoted = SourceProfiles.demoteFailing(tiers, SourceProfiles.FailingSources(mostly = setOf("a"), never = emptySet()))
         assertEquals(MediaSourceTier(2u), demoted["a"])
         assertEquals(MediaSourceTier(1u), demoted["b"])
+    }
+
+    @Test
+    fun `a source that failed every recent start never plays`() {
+        val day = 24 * 3600 * 1000L
+        val now = 10 * day
+        assertTrue(SourceProfiles.neverPlays(listOf(fail(now - 3), fail(now - 2), fail(now - 1)), now))
+        // 播起来过一次、失败不到三次、三天前的失败都不算
+        assertFalse(SourceProfiles.neverPlays(listOf(fail(now - 4), fail(now - 3), ok(now - 2), fail(now - 1)), now))
+        assertFalse(SourceProfiles.neverPlays(listOf(fail(now - 2), fail(now - 1)), now))
+        assertFalse(SourceProfiles.neverPlays(listOf(fail(now - 4 * day), fail(now - 2), fail(now - 1)), now))
+        // 深度测试与改选掉的不算
+        assertFalse(SourceProfiles.neverPlays(listOf(fail(now - 3).copy(test = true), fail(now - 2), fail(now - 1)), now))
+    }
+
+    @Test
+    fun `sources that never played go below every other source with their channels`() {
+        val tiers = MediaSelectorSourceTiers(
+            tiers = mapOf("dead" to MediaSourceTier(0u), "failing" to MediaSourceTier(0u), "fine" to MediaSourceTier(4u)),
+            channelTiers = mapOf("dead" to mapOf("line" to MediaSourceTier(0u))),
+        )
+        val demoted = SourceProfiles.demoteFailing(
+            tiers,
+            SourceProfiles.FailingSources(mostly = setOf("dead", "failing"), never = setOf("dead", "unlisted")),
+        )
+        assertEquals(MediaSourceTier.MaximumValue, demoted["dead"])
+        assertEquals(MediaSourceTier.MaximumValue, demoted.get("dead", "line"))
+        assertEquals(MediaSourceTier.MaximumValue, demoted.getBestTier("dead"))
+        assertEquals(MediaSourceTier.MaximumValue, demoted["unlisted"])
+        assertEquals(MediaSourceTier(2u), demoted["failing"])
+        assertEquals(MediaSourceTier(4u), demoted["fine"])
     }
 
     @Test
