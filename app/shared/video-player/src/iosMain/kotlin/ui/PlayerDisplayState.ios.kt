@@ -25,14 +25,20 @@ import org.openani.mediamp.MediampPlayer
 import org.openani.mediamp.PlayerState
 import org.openani.mediamp.avkit.AVKitMediampPlayer
 import platform.AVFoundation.AVPlayer
+import platform.AVFoundation.AVPlayerItemStatusReadyToPlay
+import platform.AVFoundation.AVPlayerTimeControlStatusPaused
 import platform.AVFoundation.AVPlayerTimeControlStatusPlaying
 import platform.AVFoundation.currentItem
+import platform.AVFoundation.playbackLikelyToKeepUp
 import platform.AVFoundation.rate
 import platform.AVFoundation.timeControlStatus
 import platform.AVFoundation.timebase
 import platform.CoreMedia.CMTimebaseGetRate
 
-/** mediamp 报在缓冲时, 隔 [POLL_MILLIS] 看一次 AVPlayer 是不是在往前播 (在播且 item 时钟在走); 不报缓冲时不看. */
+/**
+ * mediamp 报在缓冲时, 隔 [POLL_MILLIS] 看一次 AVPlayer 是不是在往前播 (在播且 item 时钟在走), 或暂停着而当前位置数据够播;
+ * 不报缓冲时不看.
+ */
 actual fun MediampPlayer.displayStateFlow(): Flow<PlayerState> {
     val avPlayer = (this as? AVKitMediampPlayer)?.impl ?: return state
     return state.flatMapLatest { reported ->
@@ -41,7 +47,7 @@ actual fun MediampPlayer.displayStateFlow(): Flow<PlayerState> {
         } else {
             flow {
                 while (true) {
-                    emit(correctBuffering(reported, avPlayer.isAdvancing()))
+                    emit(correctBuffering(reported, avPlayer.isAdvancing(), avPlayer.isPausedWithData()))
                     delay(POLL_MILLIS)
                 }
             }.flowOn(Dispatchers.Main)
@@ -52,5 +58,11 @@ actual fun MediampPlayer.displayStateFlow(): Flow<PlayerState> {
 private fun AVPlayer.isAdvancing(): Boolean =
     timeControlStatus == AVPlayerTimeControlStatusPlaying && rate > 0f &&
         (currentItem?.timebase?.let { CMTimebaseGetRate(it) } ?: 0.0) > 0.0
+
+private fun AVPlayer.isPausedWithData(): Boolean {
+    val item = currentItem ?: return false
+    return timeControlStatus == AVPlayerTimeControlStatusPaused &&
+        item.status == AVPlayerItemStatusReadyToPlay && item.playbackLikelyToKeepUp
+}
 
 private const val POLL_MILLIS = 250L

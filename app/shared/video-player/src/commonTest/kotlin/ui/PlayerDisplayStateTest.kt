@@ -32,6 +32,25 @@ class PlayerDisplayStateTest {
     }
 
     @Test
+    fun `reported buffering while paused with data at the position counts as paused`() {
+        val pausedBuffering = PlayerState(MediaStatus.Ready, playWhenReady = false, isBuffering = true)
+        val corrected = correctBuffering(pausedBuffering, advancing = false, pausedWithData = true)
+        assertFalse(corrected.isBuffering)
+        assertFalse(corrected.isPlaying)
+    }
+
+    @Test
+    fun `reported buffering while paused without data stays buffering`() {
+        val pausedBuffering = PlayerState(MediaStatus.Ready, playWhenReady = false, isBuffering = true)
+        assertEquals(pausedBuffering, correctBuffering(pausedBuffering, advancing = false, pausedWithData = false))
+    }
+
+    @Test
+    fun `data at the position does not clear buffering while playback is wanted`() {
+        assertEquals(buffering, correctBuffering(buffering, advancing = false, pausedWithData = true))
+    }
+
+    @Test
     fun `states that are not buffering pass through`() {
         val playing = PlayerState(MediaStatus.Ready, playWhenReady = true, isBuffering = false)
         val paused = PlayerState(MediaStatus.Ready, playWhenReady = false, isBuffering = false)
