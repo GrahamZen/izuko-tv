@@ -117,11 +117,50 @@ class SourceProfilesTest {
     }
 
     @Test
+    fun `a source failing most recent starts within three days is failing`() {
+        val day = 24 * 3600 * 1000L
+        val now = 10 * day
+        // 两次失败一次播起来
+        assertEquals(true, SourceProfiles.failsMostly(listOf(fail(now - 3), ok(now - 2, startup = 2000), fail(now - 1)), now))
+        // 只失败一次不算
+        assertEquals(false, SourceProfiles.failsMostly(listOf(fail(now - 1)), now))
+        // 失败与播起来一样多不算
+        assertEquals(false, SourceProfiles.failsMostly(listOf(fail(now - 4), fail(now - 3), ok(now - 2), ok(now - 1)), now))
+        // 三天前的失败不算: 站点修好了自己升回来
+        assertEquals(false, SourceProfiles.failsMostly(listOf(fail(now - 4 * day), fail(now - 4 * day + 1)), now))
+        // 深度测试与改选掉的不算
+        assertEquals(
+            false,
+            SourceProfiles.failsMostly(
+                listOf(fail(now - 2).copy(test = true), fail(now - 1).copy(test = true), SourceObservation(now, ok = false, deferred = true)),
+                now,
+            ),
+        )
+    }
+
+    @Test
+    fun `failing sources drop two tiers`() {
+        val tiers = MediaSelectorSourceTiers(mapOf("a" to MediaSourceTier(0u), "b" to MediaSourceTier(1u)))
+        val demoted = SourceProfiles.demote(tiers, setOf("a"), SourceProfiles.FAILING_DEMOTION)
+        assertEquals(MediaSourceTier(2u), demoted["a"])
+        assertEquals(MediaSourceTier(1u), demoted["b"])
+    }
+
+    @Test
     fun `demote only raises the listed sources`() {
         val tiers = MediaSelectorSourceTiers(mapOf("a" to MediaSourceTier(0u), "b" to MediaSourceTier(2u)))
         val demoted = SourceProfiles.demote(tiers, setOf("a"))
         assertEquals(MediaSourceTier(1u), demoted["a"])
         assertEquals(MediaSourceTier(2u), demoted["b"])
         assertEquals(tiers, SourceProfiles.demote(tiers, emptySet()))
+    }
+
+    @Test
+    fun `demoting a source near the lowest tier stops at the lowest`() {
+        val lowest = MediaSourceTier.MaximumValue
+        val tiers = MediaSelectorSourceTiers(mapOf("a" to lowest, "b" to MediaSourceTier(lowest.value - 1u)))
+        val demoted = SourceProfiles.demote(tiers, setOf("a", "b"), SourceProfiles.FAILING_DEMOTION)
+        assertEquals(lowest, demoted["a"])
+        assertEquals(lowest, demoted["b"])
     }
 }
