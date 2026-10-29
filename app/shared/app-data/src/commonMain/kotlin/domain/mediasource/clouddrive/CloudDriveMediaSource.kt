@@ -91,7 +91,7 @@ class CloudDriveMediaSource(
     override val mediaSourceId: String get() = service.protocol.driveMediaSourceId
     internal val driveId: String get() = service.driveId
     override val kind: MediaSourceKind get() = MediaSourceKind.WEB
-    override val location: MediaSourceLocation get() = MediaSourceLocation.Online
+    override val location: MediaSourceLocation get() = service.protocol.mediaLocation
     override val info: MediaSourceInfo = infoOf(arguments)
 
     private val matcher = DriveSubjectMatcher(service.browser, service.episodeNumbering, service.identities)
@@ -281,7 +281,7 @@ class CloudDriveMediaSource(
                     subtitleKind = details.subtitleKind,
                 ),
                 episodeRange = EpisodeRange.single(episode),
-                location = MediaSourceLocation.Online,
+                location = protocol.mediaLocation,
                 kind = MediaSourceKind.WEB,
             )
         }

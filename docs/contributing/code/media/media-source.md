@@ -70,6 +70,11 @@ WebDAV 列目录不给画面高度与时长：`cloud-drive` 给出候选前读�
 不用登录（账号里没有登录信息时 `CloudDriveService.account` 给一个只有名字的账号）。同 WebDAV 在 Web 控制台添加、在媒体文件夹的索引里按番名找；
 没选媒体文件夹时从各块盘的根目录往下建索引。不读文件头补画质。
 
+本地文件夹与 WebDAV 的数据源和资源按位置标 `MediaSourceLocation`（`CloudDriveProtocol.mediaLocation`）：本地文件夹是 `Local`；
+WebDAV 服务器地址在局域网（私有 / 回环 / 链路本地地址、没有点或 `.local` `.lan` 等结尾的主机名，见 `isLanHost`）时是 `Lan`，
+公网上的（网盘式的 WebDAV 服务）与订阅给的网盘是 `Online`。`Local` / `Lan` 的在选源排序与自动选择里紧跟缓存
+（见[选择器](media-selector.md)），电视选源面板与 Web 控制台的候选把它们与本地缓存放在「本地」那一组。
+
 网盘按名字找条目（搜什么词、搜到的分享与路径点名的是哪一部、视频是这一部的哪一集）与网页类数据源走同一套步骤，见[数据源搜索](media-search.md)。
 改这些规则用离线录放比改前改后的结果（`DriveSeasonReplayTest`，见[数据源搜索](media-search.md#验证)）。
 
