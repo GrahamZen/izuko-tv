@@ -10,12 +10,12 @@
 package me.him188.ani.app.domain.player.extension
 
 import androidx.annotation.VisibleForTesting
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.collections.immutable.persistentHashSetOf
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -221,8 +221,8 @@ class SwitchMediaOnPlayerErrorExtension(
         // 只能自己做)
         blacklist(cached.mediaId)
 
-        // **这一道不挡, 只记录**: handleError 里还有一秒延迟, 之后 fastSelectWebSources 自己
-        // 还可能再等最多一秒容忍窗; 用户恰好在这一两秒里走回播放页、打开选源面板、挑一个源的话,
+        // **这一道不挡, 只记录**: handleError 只有模糊匹配时还要再等最多一秒容忍窗;
+        // 用户恰好在这一秒里走回播放页、打开选源面板、挑一个源的话,
         // 他的选择会被 overrideUserSelection 顶掉. 这个窗口窄到刻意都难复现 (遥控器根本来不及),
         // 而堵住它要么给 handleError 加参数、要么把"预期是哪一条"一路传进 selectImpl —— 都是动
         // 主播放路径上的共享代码, 代价与收益不成比例.
@@ -407,7 +407,7 @@ internal class PlayerLoadErrorHandler(
         // 将当前播放的 mediaId 加入黑名单
         failedMedia?.let { blacklist(it.mediaId) }
 
-        delay(1.seconds) // 稍等让用户看到播放出错
+        // 马上换: 换源时界面显示下一条的解析与加载, 不用停下来给人看报错
         if (mediaSelector.selected.value != failedMedia) return
         if (switchOnLineage(session, mediaSelector, blacklistedMediaIds, failedMedia)) return
 
@@ -437,11 +437,12 @@ internal class PlayerLoadErrorHandler(
                 web = if (waitForSearching) {
                     MediaAutoSelector.Web(sourceTiers = sourceTiers)
                 } else {
-                    // 错误切换不需要等太长时间。一秒内没有能选的、还有在线源没查完时接着等它们:
+                    // 错误切换不需要等太长时间: 手上有条目名精确匹配的就马上选 (不论层级), 模糊匹配等一秒看还在查的源有没有精确的.
+                    // 一秒内没有能选的、还有在线源没查完时接着等它们:
                     // 手上的候选可能来自被暂停的源, 换源时放开重查, 它们之前交出的就清空了, 不等就一个都不选
                     MediaAutoSelector.Web(
                         sourceTiers = sourceTiers,
-                        exactMatchAfter = 1.seconds,
+                        exactMatchAfter = Duration.ZERO,
                         fuzzyMatchAfter = 1.seconds,
                     )
                 },

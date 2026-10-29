@@ -71,21 +71,7 @@ class PlayerLoadErrorHandlerTest {
         val job = testScope().launch { handler.handleError(session, selector) }
         testScope().runCurrent()
 
-        // PINNED: ERR-05 先拉黑当前 selected, 再 delay 1s, delay 期间不换源
-        assertEquals(setOf(mediaA.mediaId), handler.blacklist)
-        assertEquals(mediaA.mediaId, selector.selected.value?.mediaId)
-
-        // PINNED: ERR-05 延迟时长恰好是 1s (不只是"存在延迟"): 999ms 时仍未换源.
-        // 只用一次 advanceTimeBy(1.5s) 跨过去的话, delay 被改成 1.4s 也照样绿.
-        testScope().advanceTimeBy(999.milliseconds)
-        testScope().runCurrent()
-        assertFalse(job.isCompleted)
-        assertEquals(mediaA.mediaId, selector.selected.value?.mediaId)
-
-        // PINNED: ERR-05 跨过 1s 边界后立刻换源 (两个源都是 tier=0, 走 instant 路径, 无需等容忍窗)
-        testScope().advanceTimeBy(2.milliseconds)
-        testScope().runCurrent()
-
+        // PINNED: ERR-05 拉黑当前 selected 后马上换源, 不停下来等
         assertTrue(job.isCompleted)
         assertEquals(mediaB.mediaId, selector.selected.value?.mediaId)
         assertEquals(setOf(mediaA.mediaId), handler.blacklist)
@@ -123,21 +109,23 @@ class PlayerLoadErrorHandlerTest {
     }
 
     @Test
-    fun `ERR-05 高 tier 源只能由 1s 容忍窗超时 fallback 选中`() = runFetchMediaSelectorTestSuite {
+    fun `player error selects an exact match of any tier at once`() = runFetchMediaSelectorTestSuite {
         initSubject("test")
         val (_, session, sources) = configureFetchSession {
             object {
-                // tier=1 高于 InstantSelectTierThreshold(0), 该源永远进不了 instant 候选,
-                // 因此只有 lowTierToleranceDuration 超时后的 fallback 能选出东西.
-                val webA by web { tier = 1 }
+                val webA by web { tier = 0 }
 
-                // 仍在查询的源让容忍窗生效; 所有源都已结束时不必等容忍窗.
+                // tier=1 高于「立即」档的 T0, 原本要等精确档的截止时间
+                val webB by web { tier = 1 }
+
+                // 仍在查询的源让截止时间生效; 所有源都已结束时不必等
                 val pending by web { tier = 0 }
             }
         }
         val mediaA = media(kind = WEB, subjectName = initApi.subjectName)
         val mediaB = media(kind = WEB, subjectName = initApi.subjectName)
-        sources.webA.complete(mediaA, mediaB)
+        sources.webA.complete(mediaA)
+        sources.webB.complete(mediaB)
         testScope().runCurrent()
 
         selector.select(selector.filteredCandidatesMedia.first().single { it.mediaId == mediaA.mediaId })
@@ -149,27 +137,50 @@ class PlayerLoadErrorHandlerTest {
         val job = testScope().launch { handler.handleError(session, selector) }
         testScope().runCurrent()
 
-        assertEquals(setOf(mediaA.mediaId), handler.blacklist)
-        assertEquals(mediaA.mediaId, selector.selected.value?.mediaId)
-
-        // t=1999: delay(1s) 已过, fastSelectWebSources 已进入 select{}, 容忍窗还差 1ms.
-        // PINNED: ERR-05 lowTierToleranceDuration 恰好是 1s.
-        testScope().advanceTimeBy(1.seconds + 999.milliseconds)
-        testScope().runCurrent()
-        assertFalse(job.isCompleted)
-        assertEquals(mediaA.mediaId, selector.selected.value?.mediaId)
-
-        // t=2001: 容忍窗超时, 从已成功查询的源里 fallback 选择, 跳过黑名单里的 mediaA
-        testScope().advanceTimeBy(2.milliseconds)
-        testScope().runCurrent()
-
         assertTrue(job.isCompleted)
         assertEquals(mediaB.mediaId, selector.selected.value?.mediaId)
         assertEquals(setOf(mediaA.mediaId), handler.blacklist)
     }
 
     @Test
-    fun `player error switches to high tier right after the error delay when all sources finished`() =
+    fun `player error waits one second for a fuzzy match while sources are searching`() = runFetchMediaSelectorTestSuite {
+        initSubject("test")
+        val (_, session, sources) = configureFetchSession {
+            object {
+                val webA by web { tier = 0 }
+                val webB by web { tier = 0 }
+                val pending by web { tier = 0 }
+            }
+        }
+        val mediaA = media(kind = WEB, subjectName = initApi.subjectName)
+        val fuzzy = media(kind = WEB, subjectName = "${initApi.subjectName} special")
+        sources.webA.complete(mediaA)
+        sources.webB.complete(fuzzy)
+        testScope().runCurrent()
+
+        selector.select(selector.filteredCandidatesMedia.first().single { it.mediaId == mediaA.mediaId })
+
+        val handler = PlayerLoadErrorHandler(
+            getPreferKind = { MediaSourceKind.WEB },
+            getSourceTiers = { preferenceApi.sourceTiers!! },
+        )
+        val job = testScope().launch { handler.handleError(session, selector) }
+        testScope().runCurrent()
+
+        // PINNED: ERR-05 模糊匹配的容忍窗恰好是 1s: 还在查的源可能给出精确的
+        testScope().advanceTimeBy(999.milliseconds)
+        testScope().runCurrent()
+        assertFalse(job.isCompleted)
+        assertEquals(mediaA.mediaId, selector.selected.value?.mediaId)
+
+        testScope().advanceTimeBy(2.milliseconds)
+        testScope().runCurrent()
+        assertTrue(job.isCompleted)
+        assertEquals(fuzzy.mediaId, selector.selected.value?.mediaId)
+    }
+
+    @Test
+    fun `player error switches at once when all sources finished`() =
         runFetchMediaSelectorTestSuite {
             initSubject("test")
             val (_, session, sources) = configureFetchSession {
@@ -191,14 +202,7 @@ class PlayerLoadErrorHandlerTest {
             val job = testScope().launch { handler.handleError(session, selector) }
             testScope().runCurrent()
 
-            testScope().advanceTimeBy(999.milliseconds)
-            testScope().runCurrent()
-            assertFalse(job.isCompleted)
-            assertEquals(mediaA.mediaId, selector.selected.value?.mediaId)
-
-            testScope().advanceTimeBy(2.milliseconds)
-            testScope().runCurrent()
-
+            // 各源都查完了: 层级高也不等, 直接选
             assertTrue(job.isCompleted)
             assertEquals(mediaB.mediaId, selector.selected.value?.mediaId)
         }
@@ -350,16 +354,23 @@ class PlayerLoadErrorHandlerTest {
     }
 
     @Test
-    fun `manual choice during player error delay cancels automatic replacement`() = runFetchMediaSelectorTestSuite {
+    fun `manual choice while the replacement is waiting cancels it`() = runFetchMediaSelectorTestSuite {
         initSubject("test")
-        val (_, session, sources) = configureFetchSession { object { val web1 by web { tier = 0 } } }
-        sources.web1.complete(media(kind = WEB, subjectName = initApi.subjectName))
+        val (_, session, sources) = configureFetchSession {
+            object {
+                val web1 by web { tier = 0 }
+                val pending by web { tier = 0 }
+            }
+        }
+        sources.web1.complete(media(kind = WEB, subjectName = "${initApi.subjectName} special"))
         testScope().runCurrent()
         val failed = media(kind = WEB, subjectName = initApi.subjectName)
         selector.select(failed)
         val handler = PlayerLoadErrorHandler(getPreferKind = { WEB }, getSourceTiers = { preferenceApi.sourceTiers!! })
         val job = testScope().launch { handler.handleError(session, selector) }
         testScope().runCurrent()
+        // 只有模糊匹配, 还在等容忍窗
+        assertFalse(job.isCompleted)
         val manual = media(kind = WEB, subjectName = initApi.subjectName)
         selector.select(manual)
         testScope().advanceUntilIdle()
@@ -477,8 +488,6 @@ class PlayerLoadErrorHandlerTest {
             val (_, session, sources) = configureFetchSession {
                 object {
                     val remembered by web { tier = 0 }
-
-                    // 层级够不上「立即」档: 放开重查的那一刻 (旧结果还没清空) 也不会被选上
                     val other by web { tier = 1 }
 
                     // 一直在查的高层级源
@@ -486,7 +495,8 @@ class PlayerLoadErrorHandlerTest {
                 }
             }
             val failed = media(kind = WEB, subjectName = initApi.subjectName)
-            val replacement = media(kind = WEB, subjectName = initApi.subjectName)
+            // 模糊匹配要等容忍窗: 放开重查的那一刻 (旧结果还没清空) 不会被马上选上
+            val replacement = media(kind = WEB, subjectName = "${initApi.subjectName} special")
             sources.other.emitEarly(replacement)
             sources.remembered.complete(failed)
             testScope().runCurrent()
