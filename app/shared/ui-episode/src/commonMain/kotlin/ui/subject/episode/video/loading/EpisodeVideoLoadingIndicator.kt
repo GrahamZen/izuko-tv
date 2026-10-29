@@ -93,6 +93,7 @@ import me.him188.ani.app.ui.lang.subject_episode_video_loading_waiting_for_sourc
 import me.him188.ani.app.ui.subject.episode.SourceSearchProgress
 import me.him188.ani.app.ui.subject.episode.SourceSearchStuck
 import me.him188.ani.app.videoplayer.ui.VideoLoadingIndicator
+import me.him188.ani.app.videoplayer.ui.displayStateFlow
 import me.him188.ani.datasources.api.topic.FileSize
 import me.him188.ani.datasources.api.topic.FileSize.Companion.Unspecified
 import me.him188.ani.datasources.api.topic.FileSize.Companion.bytes
@@ -136,7 +137,7 @@ fun EpisodeVideoLoadingIndicator(
     modifier: Modifier = Modifier,
     details: EpisodeLoadingDetails = EpisodeLoadingDetails.None,
 ) {
-    val state by playerState.state.collectAsStateWithLifecycle()
+    val state by remember(playerState) { playerState.displayStateFlow() }.collectAsStateWithLifecycle(playerState.state.value)
 
     val speed by remember(playerState) {
         playerState.downloadSpeedFlow()

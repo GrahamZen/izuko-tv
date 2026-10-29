@@ -59,6 +59,7 @@ import me.him188.ani.app.ui.lang.subject_episode_close
 import me.him188.ani.app.ui.lang.video_player_pause
 import me.him188.ani.app.ui.lang.video_player_play
 import me.him188.ani.app.videoplayer.ui.VideoPlayer
+import me.him188.ani.app.videoplayer.ui.displayStateFlow
 import org.jetbrains.compose.resources.stringResource
 import me.him188.ani.utils.platform.isIos
 import me.him188.ani.utils.logging.info
@@ -228,7 +229,7 @@ private fun MiniPlayerControls(
     onExpand: () -> Unit,
     onClose: () -> Unit,
 ) {
-    val state by vm.player.state.collectAsStateWithLifecycle()
+    val state by remember(vm.player) { vm.player.displayStateFlow() }.collectAsStateWithLifecycle(vm.player.state.value)
     Box(Modifier.fillMaxSize()) {
         if (!visible && (state.mediaStatus != MediaStatus.Ready || state.isBuffering)) {
             CircularProgressIndicator(Modifier.align(Alignment.Center).size(28.dp), color = Color.White, strokeWidth = 3.dp)
