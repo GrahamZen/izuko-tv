@@ -13,7 +13,9 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -22,9 +24,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Forward10
 import androidx.compose.material.icons.rounded.OpenInFull
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Replay10
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -55,7 +59,9 @@ import me.him188.ani.app.ui.foundation.LocalPlatform
 import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.playback_session_now_playing
+import me.him188.ani.app.ui.lang.playback_session_rewind_seconds
 import me.him188.ani.app.ui.lang.subject_episode_close
+import me.him188.ani.app.ui.lang.subject_episode_fast_forward_seconds
 import me.him188.ani.app.ui.lang.video_player_pause
 import me.him188.ani.app.ui.lang.video_player_play
 import me.him188.ani.app.videoplayer.ui.VideoPlayer
@@ -128,7 +134,7 @@ fun rememberTouchMiniPlayer(holder: RetainedPlaybackSessionHolder?, onPlayerPage
 
 /**
  * 小窗本身, 盖在导航之上 (挂在应用根部), 摆法与手势见 [MiniPlayerFrame]: 默认右下角, 可拖、可捏合缩放、双击切两档大小.
- * 点一下出控件 (播放 / 暂停、回到播放页、收起), 3 秒后自己收; 没开播 (找源、缓冲) 时转圈.
+ * 点一下出控件 (播放 / 暂停、前后跳 10 秒、回到播放页、收起), 3 秒后自己收; 没开播 (找源、缓冲) 时转圈.
  */
 @Composable
 fun TouchMiniPlayerHost(miniPlayer: TouchMiniPlayer, onExpand: () -> Unit, modifier: Modifier = Modifier) {
@@ -224,7 +230,7 @@ private fun MiniPlayerSystemPictureInPicture(vm: EpisodeViewModel, onExpand: () 
 private fun MiniPlayerControls(
     vm: EpisodeViewModel,
     visible: Boolean,
-    /** 点了播放 / 暂停: 控件重新计时再收. */
+    /** 点了播放 / 暂停或前后跳: 控件重新计时再收. */
     onInteract: () -> Unit,
     onExpand: () -> Unit,
     onClose: () -> Unit,
@@ -242,17 +248,40 @@ private fun MiniPlayerControls(
                 IconButton(onClose, Modifier.align(Alignment.TopEnd)) {
                     Icon(Icons.Rounded.Close, stringResource(Lang.subject_episode_close), tint = Color.White)
                 }
-                IconButton(
-                    onClick = {
-                        if (state.playWhenReady) vm.player.pause() else vm.player.play()
-                        onInteract()
-                    },
-                    Modifier.align(Alignment.Center).size(MINI_PLAYER_PLAY_BUTTON_SIZE),
+                Row(
+                    Modifier.align(Alignment.Center),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    if (state.playWhenReady) {
-                        Icon(Icons.Rounded.Pause, stringResource(Lang.video_player_pause), Modifier.size(36.dp), tint = Color.White)
-                    } else {
-                        Icon(Icons.Rounded.PlayArrow, stringResource(Lang.video_player_play), Modifier.size(36.dp), tint = Color.White)
+                    val skipSeconds = MINI_PLAYER_SKIP.inWholeSeconds.toInt()
+                    IconButton(
+                        onClick = {
+                            vm.player.skip(-MINI_PLAYER_SKIP.inWholeMilliseconds)
+                            onInteract()
+                        },
+                    ) {
+                        Icon(Icons.Rounded.Replay10, stringResource(Lang.playback_session_rewind_seconds, skipSeconds), tint = Color.White)
+                    }
+                    IconButton(
+                        onClick = {
+                            if (state.playWhenReady) vm.player.pause() else vm.player.play()
+                            onInteract()
+                        },
+                        Modifier.size(MINI_PLAYER_PLAY_BUTTON_SIZE),
+                    ) {
+                        if (state.playWhenReady) {
+                            Icon(Icons.Rounded.Pause, stringResource(Lang.video_player_pause), Modifier.size(36.dp), tint = Color.White)
+                        } else {
+                            Icon(Icons.Rounded.PlayArrow, stringResource(Lang.video_player_play), Modifier.size(36.dp), tint = Color.White)
+                        }
+                    }
+                    IconButton(
+                        onClick = {
+                            vm.player.skip(MINI_PLAYER_SKIP.inWholeMilliseconds)
+                            onInteract()
+                        },
+                    ) {
+                        Icon(Icons.Rounded.Forward10, stringResource(Lang.subject_episode_fast_forward_seconds, skipSeconds), tint = Color.White)
                     }
                 }
             }
@@ -265,6 +294,9 @@ private val MINI_PLAYER_MARGIN = 16.dp
 
 private const val MINI_PLAYER_SCRIM_ALPHA = 0.35f
 private val MINI_PLAYER_PLAY_BUTTON_SIZE = 56.dp
+
+/** 前后跳按钮每次跳多远. */
+private val MINI_PLAYER_SKIP = 10.seconds
 private val MINI_PLAYER_CONTROLS_TIMEOUT = 3.seconds
 
 /** 铺满接住还原最多盖多久 (正常是系统小窗收起 + 播放页出画面, 两三秒内收尾). */

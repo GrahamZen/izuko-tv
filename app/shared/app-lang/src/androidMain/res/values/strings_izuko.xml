@@ -5,6 +5,7 @@
 -->
 <resources>
     <string name="playback_session_now_playing">Now Playing</string>
+    <string name="playback_session_rewind_seconds">Rewind %1$d seconds</string>
     <string name="playback_session_ready_toast">Background playback is ready</string>
     <string name="playback_session_problem_toast">Background playback problem: %1$s</string>
     <string name="playback_session_sound_hint"> (sound can be changed)</string>

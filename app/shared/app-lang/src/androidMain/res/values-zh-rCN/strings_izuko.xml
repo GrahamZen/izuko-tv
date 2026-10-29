@@ -5,6 +5,7 @@
 -->
 <resources>
     <string name="playback_session_now_playing">正在播放</string>
+    <string name="playback_session_rewind_seconds">快退 %1$d 秒</string>
     <string name="playback_session_ready_toast">后台播放已就绪</string>
     <string name="playback_session_problem_toast">后台播放遇到问题：%1$s</string>
     <string name="playback_session_sound_hint">（提示音可更换）</string>
