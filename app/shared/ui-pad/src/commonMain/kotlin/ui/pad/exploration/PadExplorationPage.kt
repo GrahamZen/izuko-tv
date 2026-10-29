@@ -93,7 +93,6 @@ import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
 import me.him188.ani.app.ui.foundation.tv.tvTitleLogoBox
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.exploration_continue_watching
-import me.him188.ani.app.ui.lang.exploration_rec_loading
 import me.him188.ani.app.ui.lang.exploration_rec_more
 import me.him188.ani.app.ui.lang.exploration_schedule
 import me.him188.ani.app.ui.lang.exploration_tv_air_date
@@ -134,7 +133,6 @@ private fun PadExplorationPageContent(state: ExplorationPageState, modifier: Mod
     val playHistories by playHistoryRepository.flow.collectAsStateWithLifecycle(emptyList())
     val recGroups by state.recommendationGroups.collectAsStateWithLifecycle()
     val extendingGroups by state.extendingRecommendationGroups.collectAsStateWithLifecycle()
-    val recRefreshing by state.recommendationsRefreshing.collectAsStateWithLifecycle()
     val followed = state.followedSubjectsPager
     val nsfw = rememberNsfwPolicy()
     val collectionMenu = rememberPadCollectionMenu()
@@ -221,11 +219,6 @@ private fun PadExplorationPageContent(state: ExplorationPageState, modifier: Mod
                             )
                         }
                     }
-                }
-            }
-            if (recGroups.isEmpty() && recRefreshing) {
-                item(key = "rec-loading", contentType = "header") {
-                    PadSectionHeader(stringResource(Lang.exploration_rec_loading))
                 }
             }
             item(key = "bottom-space", contentType = "spacer") {
