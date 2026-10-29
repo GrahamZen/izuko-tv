@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import org.openani.mediamp.MediampPlayer
+import org.openani.mediamp.avkit.AVKitMediampPlayer
 import platform.AVFoundation.AVPlayerLayer
 import kotlin.native.ref.WeakReference
 
@@ -48,6 +49,7 @@ object IosVideoLayerRegistry {
         removeIf { it.key.get() === player }
         layers[WeakReference(player)] = WeakReference(layer)
         _version.value += 1
+        (player as? AVKitMediampPlayer)?.let { IosVideoLayerWake.watch(player, it.impl, layer) { find(player) == layer } }
     }
 
     /** 拆掉 [layer] 所在的视图时调用; 播放器已经登记到别的 layer 上 (交接时新视图先建) 就不动那一条. */
