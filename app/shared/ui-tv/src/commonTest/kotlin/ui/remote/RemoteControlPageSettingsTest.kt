@@ -16,7 +16,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * 「设置」标签的「常规」页: 分类列表与各组卡片对得上; 清单登记的通用项 (见 [RemoteSettingsCatalog]) 有地方画,
+ * 「设置」标签: 分类列表与各组卡片对得上; 清单登记的通用项 (见 [RemoteSettingsCatalog]) 按 page 有地方画,
  * 并提交到 [RemoteSettings] 认的路径.
  */
 class RemoteControlPageSettingsTest {
@@ -40,18 +40,17 @@ class RemoteControlPageSettingsTest {
             }
 
         assertEquals(rows, groups.keys.toList())
-        // 「全部」显示方式下每组前面有组名小标题
+        // 搜索时各组对得上的卡片平铺成一页, 每组前面有组名小标题
         for (g in groups.keys) assertContains(page, "<div class=\"set-group\" data-group=\"$g\" hidden>\n<h2 class=\"set-group-h\">")
-        assertContains(page, """<button type="button" data-smode="all">全部</button>""")
+        assertContains(page, """<input type="search" id="set-q" placeholder="搜索设置" aria-label="搜索设置" autocomplete="off">""")
         assertEquals(
             mapOf(
                 "account" to listOf("set-profiles", "set-account", "set-history"),
-                "look" to listOf("set-look"),
-                "connect" to listOf("set-front", "set-keep"),
+                "play" to listOf("set-generic", "set-dmfilter"),
                 "network" to listOf("set-proxy", "set-bangumi", "set-tmdb"),
-                "resources" to listOf("set-generic", "set-pikpak", "set-dmfilter"),
-                "maintain" to listOf("set-update", "set-logs", "set-perf", "set-backup", "set-migrate"),
+                "device" to listOf("set-look", "set-front", "set-keep"),
                 "feedback" to listOf("set-feedback"),
+                "maintain" to listOf("set-update", "set-logs", "set-perf", "set-backup", "set-migrate"),
             ),
             groups,
         )
@@ -73,11 +72,19 @@ class RemoteControlPageSettingsTest {
         assertFalse(page.contains("data-group=\"debug\""))
     }
 
+    /** 清单里的项按 page 分到播放与弹幕组与数据源标签的 BT 页, 两处都提交到同一个接口; 缓存放在哪、片库只在电视上改 (有引导), 不在清单里. */
     @Test
     fun `catalog settings are rendered generically and saved through one endpoint`() {
-        assertContains(page, """<div id="set-generic"></div>""")
+        for (box in listOf("set-generic", "src-bt")) assertContains(page, """<div id="$box"></div>""")
         assertContains(page, "renderGeneric(d.generic)")
-        assertContains(page, "bindGeneric(genBox, 'api/settings/generic/set')")
+        for (box in listOf("genBox", "btBox")) assertContains(page, "bindGeneric($box, 'api/settings/generic/set')")
+        val pages = RemoteSettingsCatalog.items.associate { it.key to it.page }
+        for (key in listOf("extraTrackers", "trackerSubscriptions", "peerIpBlackList", "peerIpRules", "peerIdRules", "peerClientRules")) {
+            assertEquals(RemoteSettingPage.Bt, pages[key], key)
+        }
+        assertTrue("cacheLocation" !in pages && "mediaLibrary" !in pages)
+        assertTrue("data-group=\"storage\"" !in page)
+        assertEquals(RemoteSettingPage.Play, pages["preferredAlliances"])
     }
 
     /** PikPak 卡片随 `api/settings` 画, 提交到 RemotePikPakSettings 的接口; 设置备份走 RemoteSettingsBackup 的两个接口 */
@@ -114,6 +121,19 @@ class RemoteControlPageSettingsTest {
         assertTrue(texts.size > 10)
         for (t in texts) assertTrue(t in keys, "没有译文：$t")
         for (t in listOf("反馈", "故障反馈，以及标题 logo、对应作品修正的处理进度")) assertTrue(t in keys, "没有译文：$t")
+    }
+
+    /** 「最近改过」在首页最上面 (搜索框下面), 脚本在页面里, 首页画出来时跟着画; 账号、反馈、维护几组不记. */
+    @Test
+    fun `recently changed settings row is on the home page`() {
+        assertContains(page, "<div id=\"set-home\">\n<div id=\"set-recent\" hidden></div>\n<div class=\"card set-nav set-me\">")
+        assertContains(page, SETTINGS_RECENT_SCRIPT)
+        assertContains(page, "if (!q && !g && window.paintRecentSettings) window.paintRecentSettings();")
+        assertContains(SETTINGS_RECENT_SCRIPT, "var SKIP = { account: true, feedback: true, maintain: true };")
+        val keys = REMOTE_I18N_TABLE.map { it.zh }.toSet()
+        for (t in Regex("""(?<![\w.])T\('([^']+)'""").findAll(SETTINGS_RECENT_SCRIPT).map { it.groupValues[1] }) {
+            assertTrue(t in keys, "没有译文：$t")
+        }
     }
 }
 

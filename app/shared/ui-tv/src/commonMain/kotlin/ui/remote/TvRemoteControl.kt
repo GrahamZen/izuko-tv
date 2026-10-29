@@ -100,8 +100,9 @@ import kotlin.time.TimeSource
  *   [takePending]. 电视在播放页时同样直接把搜索页叠上去 (与播放器内嵌详情页点标签同一种方式), 按返回回到播放器.
  * - 结果: 电视搜索页已经加载的结果原样列到手机上, 点一条电视直接进播放页 (见 [RemoteSearchResults]).
  * - 缓存: 电视上的全部缓存按番列出 (状态 / 大小 / 暂停 / 删除) 与剩余空间, 见 [RemoteCacheList]; 给某部番挑几集缓存走 [RemoteCache].
- * - 设置: 用户 (见 [RemoteProfiles])、账号与要打字的设置 (见 [RemoteSettings]), 以及「数据源」页 = 设置里数据源管理那一页的网页版
- *   (列表 / 启停 / 排序 / 新增 / 编辑 / 导入导出), 见 [RemoteSources].
+ * - 数据源: 列表页 = 设置里数据源管理那一页的网页版 (列表 / 启停 / 排序 / 新增 / 编辑 / 导入导出), 见 [RemoteSources];
+ *   另有订阅、网盘、本地 (本地文件夹与 WebDAV)、BT 设置几页.
+ * - 设置: 用户 (见 [RemoteProfiles])、账号与要打字的设置 (见 [RemoteSettings]).
  * - 播放器: 播放页在组合里时登记一个前台 [RemotePlayerHandle]; 保留播放会话在后台时由 TV 根组合登记一个后台的,
  *   前台优先 ([registerPlayer]). 网页的读 (轮询状态) 与写 (选源 / 改查询请求) 都经它. 后台会话照常搜源、选源、
  *   解析 (Web 解析器由保留会话挂在应用根部, 见 `RetainedPlaybackSessionHolder.ComposeRetainedContent`), 唯一的
@@ -954,7 +955,7 @@ object TvRemoteControl {
             // 「缓存」标签: 电视上全部缓存一览 (暂停 / 继续 / 删除), 见 RemoteCacheList
             path == "api/caches" || path.startsWith("api/caches/") ->
                 RemoteCacheList.handle(request, navigator, scope)?.let(::json) ?: LanHttpResponse.status(405, "Method Not Allowed")
-            // 设置标签「数据源」页里的订阅 (须排在 api/sources 通配之前), 见 RemoteSubscriptions
+            // 数据源标签的订阅页 (须排在 api/sources 通配之前), 见 RemoteSubscriptions
             path == "api/sources/subs" || path.startsWith("api/sources/subs/") ->
                 RemoteSubscriptions.handle(request)?.let(::json) ?: LanHttpResponse.status(405, "Method Not Allowed")
             // 「设置」标签顶上的用户 (添加 / 切换 / 改名 / 删除), 见 RemoteProfiles
@@ -968,10 +969,10 @@ object TvRemoteControl {
             // 「设置」标签: 代理 / BT tracker 等要打字的设置, 见 RemoteSettings
             path == "api/settings" || path.startsWith("api/settings/") ->
                 RemoteSettings.handle(request)?.let(::json) ?: LanHttpResponse.status(405, "Method Not Allowed")
-            // 设置标签「数据源」页里的网盘卡片 (登录 / 转码 / 启用数据源), 见 RemoteCloudDrive
+            // 数据源标签网盘页与本地页的卡片 (登录 / 转码 / 启用数据源), 见 RemoteCloudDrive
             path == "api/drives" || path.startsWith("api/drive/") ->
                 RemoteCloudDrive.handle(request, scope) ?: LanHttpResponse.status(405, "Method Not Allowed")
-            // 设置标签的「数据源」页: 设置里数据源管理那一页的网页版, 见 RemoteSources
+            // 数据源标签的列表页: 设置里数据源管理那一页的网页版, 见 RemoteSources
             path == "api/sources" || path.startsWith("api/sources/") ->
                 RemoteSources.handle(request)?.let(::json) ?: LanHttpResponse.status(405, "Method Not Allowed")
             // 「设置」标签底部的日志 (列表 / 下载), 见 RemoteLogs
