@@ -29,7 +29,7 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * Web 控制台「设置 → 资源与弹幕」里的 PikPak 账号 (同设置页 PikPak 那一组的用户名与密码; 「启用 PikPak」开关留在电视上).
+ * Web 控制台「数据源 → BT」里的 PikPak 账号 (同设置页 PikPak 那一组的用户名与密码; 「启用 PikPak」开关留在电视上).
  *
  * 密码**只写不读**: 网页上不回显, 留空 = 保持原来的. 换账号时一并清掉密码与登录会话 (refreshToken), 换密码时清掉会话,
  * 下次用到 PikPak 时引擎按新的账号密码重新登录 —— 与设置页一致 (见 [applyCredentials]).

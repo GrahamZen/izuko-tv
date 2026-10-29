@@ -146,4 +146,11 @@ class RemoteControlPageCloudDriveTest {
         assertNull(json["mobileOpen"])
         assertNull(json["qr"])
     }
+
+    @Test
+    fun `new local folder takes the next free numbered name`() {
+        assertEquals("本地文件夹", RemoteCloudDrive.unusedName("本地文件夹", listOf("测试网盘")))
+        assertEquals("本地文件夹 2", RemoteCloudDrive.unusedName("本地文件夹", listOf("本地文件夹")))
+        assertEquals("本地文件夹 3", RemoteCloudDrive.unusedName("本地文件夹", listOf("本地文件夹", "本地文件夹 2", "本地文件夹 4")))
+    }
 }

@@ -58,7 +58,7 @@ import kotlin.time.Duration.Companion.milliseconds
 /**
  * 选源面板里没登录网盘的数据源 (胶囊写「未登录」) 按确定弹的登录窗: 扫码登录走设置里同一套 ([CloudDriveService.qrLogin]),
  * 成功后 [onLoggedIn] (面板让这些源重新查), 停一下让人看到「已登录」再关. 账号密码登录的网盘 (WebDAV) 电视上填不了,
- * 给 Web 控制台的码, 在那里的「数据源」里填.
+ * 给 Web 控制台的码, 在那里数据源标签的本地页里填.
  */
 @Composable
 internal fun TvDriveLoginDialog(driveId: String, onLoggedIn: () -> Unit, onDismiss: () -> Unit) {
@@ -128,12 +128,12 @@ private fun QrLogin(service: CloudDriveService, name: String, onLoggedIn: () -> 
     }
 }
 
-/** 账号密码登录: 电视上没法输, 扫码打开 Web 控制台的「数据源」去填. */
+/** 账号密码登录: 电视上没法输, 扫码打开 Web 控制台数据源标签的本地页去填. */
 @Composable
 private fun ConsoleLogin() {
     val url by TvRemoteControl.url.collectAsState()
     LaunchedEffect(Unit) { TvRemoteControl.refreshAddress() }
-    RemoteQrCode(url?.let { "$it#sources" }, size = QR_SIZE, quietZone = QR_QUIET_ZONE)
+    RemoteQrCode(url?.let { "$it#sources/local" }, size = QR_SIZE, quietZone = QR_QUIET_ZONE)
     Message(stringResource(Lang.tv_source_drive_login_password))
 }
 
