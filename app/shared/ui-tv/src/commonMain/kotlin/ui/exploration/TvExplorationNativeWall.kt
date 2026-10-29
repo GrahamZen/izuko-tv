@@ -115,6 +115,8 @@ internal class TvExplorationNativeState(
     internal val savedRowLeft: HashMap<String, Int>,
     internal val savedRowFocused: HashMap<String, Int>,
     wallOpened: Boolean = false,
+    /** 各行停在哪 (见 [TvExploreSurface.rowScrollPositions]). */
+    internal val savedRowScroll: HashMap<String, Pair<Int, Int>> = HashMap(),
 ) {
     var surface: TvExploreSurface? by mutableStateOf(null)
         internal set
@@ -159,6 +161,8 @@ internal class TvExplorationNativeState(
         savedRowLeft.putAll(v.rowLeftIndex)
         savedRowFocused.clear()
         savedRowFocused.putAll(v.rowFocusedIndexMap)
+        savedRowScroll.clear()
+        savedRowScroll.putAll(v.rowScrollPositions)
         heroActive = v.heroActive
     }
 }
@@ -180,6 +184,9 @@ private val TvExplorationNativeStateSaver = Saver<TvExplorationNativeState, Arra
             ArrayList(state.savedRowFocused.keys),
             ArrayList(state.savedRowFocused.values),
             state.wallOpened,
+            ArrayList(state.savedRowScroll.keys),
+            ArrayList(state.savedRowScroll.values.map { it.first }),
+            ArrayList(state.savedRowScroll.values.map { it.second }),
         )
     },
     restore = { list ->
@@ -189,12 +196,16 @@ private val TvExplorationNativeStateSaver = Saver<TvExplorationNativeState, Arra
         val leftValues: List<Int> = at(3)
         val focusedKeys: List<String> = at(4)
         val focusedValues: List<Int> = at(5)
+        val scrollKeys = list.getOrNull(7) as? List<String> ?: emptyList()
+        val scrollIndexes = list.getOrNull(8) as? List<Int> ?: emptyList()
+        val scrollOffsets = list.getOrNull(9) as? List<Int> ?: emptyList()
         TvExplorationNativeState(
             heroActive = at(0),
             savedScrollPx = at(1),
             savedRowLeft = HashMap(leftKeys.zip(leftValues).toMap()),
             savedRowFocused = HashMap(focusedKeys.zip(focusedValues).toMap()),
             wallOpened = list.getOrNull(6) as? Boolean ?: false,
+            savedRowScroll = HashMap(scrollKeys.zip(scrollIndexes.zip(scrollOffsets)).toMap()),
         )
     },
 )

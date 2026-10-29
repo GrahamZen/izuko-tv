@@ -694,9 +694,6 @@ class TvNativeGridPageView(
                 // 没有 hero 态的页面上点一下就进: 焦点同时送到这张, 回来时落在它上面
                 TvWallTouchTap.Confirm -> {
                     if (!card.isFocused) card.requestFocus()
-                    // 整屏背景跟着聚焦卡的页面 (新番时间表) 上背景还不是这张的: 当场进, 照点开过记账 —— 回到本页 (页面重建) 按点开的样子恢复,
-                    // 这张的清晰图淡回它的模糊底 (同 iPad 的 Compose 海报墙)
-                    if (!timeline.active && confirmFocusesWall && wallBackdrop != null && !wallMatches(grid, index)) listener?.onWallOpened(index)
                     onClick(index)
                 }
             }

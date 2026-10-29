@@ -23,6 +23,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
@@ -425,35 +426,54 @@ class TvWallComposeTest {
     /** 页面以外的落点 (代替侧边栏). */
     private val outside = FocusRequester()
 
+    /**
+     * [redirectEnter] = 外面包一层探索页根部那样的焦点组: 从页面外进来的焦点先改道到入口节点 (见 TvExplorationPage 的 onEnter),
+     * 入口再转给上次那张卡. [returnTo] = 返回本页 (页面重建): 上次聚焦的行与那一行停的那张.
+     */
     private fun showExplore(
         record: ExploreRecord,
         request: () -> TvCardFocusRequest?,
         heroRequest: () -> TvHeroFocusRequest?,
+        redirectEnter: Boolean = false,
+        returnTo: Pair<String, Int>? = null,
     ): TvExplorationNativeState {
-        val state = TvExplorationNativeState(heroActive = false, savedScrollPx = 0, savedRowLeft = HashMap(), savedRowFocused = HashMap())
+        val savedRowFocused = HashMap<String, Int>()
+        returnTo?.let { (row, index) -> savedRowFocused[row] = index }
+        val state = TvExplorationNativeState(heroActive = false, savedScrollPx = 0, savedRowLeft = HashMap(), savedRowFocused = savedRowFocused)
         val style = testWallStyle()
         val items = exploreItems()
+        val page = if (redirectEnter) {
+            Modifier
+                .focusProperties {
+                    onEnter = { if (state.surface?.hasFocus() != true) state.focusRequester.requestFocus() }
+                }
+                .focusGroup()
+        } else {
+            Modifier
+        }
         show {
             Box(Modifier.size(48.dp).focusRequester(outside).focusable())
-            TvExplorationComposeWall(
-                state = state,
-                metrics = testExploreMetrics(style),
-                cardWidth = with(LocalDensity.current) { style.cardWidthPx.toDp() },
-                items = items,
-                carouselCount = 3,
-                carouselIndex = { 0 },
-                fadeColor = Color.Black,
-                geometry = TvPageBackdropGeometry(0f, 0f, 0.5f, 0.5f, 0.8f, 0.8f, 0f),
-                splitGate = { 1f },
-                listener = record,
-                cardFocusRequest = request,
-                heroFocusRequest = heroRequest,
-                farJumpRow = { null },
-                focusedRowKey = { null },
-                focusedCardIndex = { 0 },
-                menuFor = { { _, _ -> } },
-                modifier = Modifier,
-            )
+            Box(page) {
+                TvExplorationComposeWall(
+                    state = state,
+                    metrics = testExploreMetrics(style),
+                    cardWidth = with(LocalDensity.current) { style.cardWidthPx.toDp() },
+                    items = items,
+                    carouselCount = 3,
+                    carouselIndex = { 0 },
+                    fadeColor = Color.Black,
+                    geometry = TvPageBackdropGeometry(0f, 0f, 0.5f, 0.5f, 0.8f, 0.8f, 0f),
+                    splitGate = { 1f },
+                    listener = record,
+                    cardFocusRequest = request,
+                    heroFocusRequest = heroRequest,
+                    farJumpRow = { null },
+                    focusedRowKey = { returnTo?.first },
+                    focusedCardIndex = { returnTo?.second ?: 0 },
+                    menuFor = { { _, _ -> } },
+                    modifier = Modifier,
+                )
+            }
         }
         return state
     }
@@ -508,6 +528,19 @@ class TvWallComposeTest {
         // 页面经入口送焦进来 (侧边栏按右 / 全局兜底)
         host.onMain { state.focusRequester.requestFocus() }
         host.waitUntil("回到上次那张卡") { record.focused.lastOrNull() == ("r1" to 3) }
+        assertEquals(emptyList(), record.heroButtons)
+    }
+
+    @Test
+    fun `a card request redirected to the entry on the way in still lands on the card`() {
+        val record = ExploreRecord()
+        var request by mutableStateOf<TvCardFocusRequest?>(null)
+        showExplore(record, { request }, { null }, redirectEnter = true, returnTo = "r1" to 3)
+        host.onMain { outside.requestFocus() }
+        host.instrumentation.waitForIdleSync()
+        // 返回本页时的恢复请求 (这一行上次那张): 卡请求焦点时页面的进组把焦点改道到入口, 入口再送同一张
+        host.onMain { request = TvCardFocusRequest("r1", -1) }
+        host.waitUntil("焦点落到第二行第 3 张") { record.focused.lastOrNull() == ("r1" to 3) }
         assertEquals(emptyList(), record.heroButtons)
     }
 
