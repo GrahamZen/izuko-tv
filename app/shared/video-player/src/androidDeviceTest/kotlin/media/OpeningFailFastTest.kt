@@ -30,14 +30,24 @@ import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 
 /**
- * 在线视频的链接坏了 (服务器回错误码) 时, 打开多快报失败 (见 [OpeningLoadErrorPolicy]): 真的 ExoPlayer 连本机一个一律回 404 的服务.
+ * 在线视频的链接坏了 (服务器回错误码) 时, 打开多快报失败 (见 [OpeningLoadErrorPolicy]): 真的 ExoPlayer 连本机一个一律回同一个错误码的服务.
  */
 class OpeningFailFastTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
 
     @Test
-    fun `a bad link fails the open after one retry`() = runBlocking(Dispatchers.Main) {
-        val (result, requests) = openBadLink()
+    fun `a link that is gone fails the open without a retry`() = runBlocking(Dispatchers.Main) {
+        for (status in listOf(404, 403)) {
+            val (result, requests) = openBadLink(status)
+            assertIs<PlaybackException>(result.exceptionOrNull(), "$status $result")
+            // 重试也一样, 打开一次就报错
+            assertEquals(1, requests, "status $status")
+        }
+    }
+
+    @Test
+    fun `a server error fails the open after one retry`() = runBlocking(Dispatchers.Main) {
+        val (result, requests) = openBadLink(503)
         assertIs<PlaybackException>(result.exceptionOrNull(), "$result")
         // 打开一次、马上重试一次, 第二次失败就报错
         assertEquals(2, requests)
@@ -47,7 +57,7 @@ class OpeningFailFastTest {
     fun `with fail fast off a bad link is retried three times as by default`() = runBlocking(Dispatchers.Main) {
         DevSwitches.openFailFast.set("false")
         try {
-            val (result, requests) = openBadLink()
+            val (result, requests) = openBadLink(404)
             assertIs<PlaybackException>(result.exceptionOrNull(), "$result")
             assertEquals(4, requests)
         } finally {
@@ -55,8 +65,8 @@ class OpeningFailFastTest {
         }
     }
 
-    /** 打开一个回 404 的地址; 返回打开的结果与服务收到几次请求. 10 秒还没结果算失败 (一直在重试). */
-    private suspend fun openBadLink(): Pair<Result<Unit>, Int> = NotFoundOrigin().use { origin ->
+    /** 打开一个一律回 [status] 的地址; 返回打开的结果与服务收到几次请求. 10 秒还没结果算失败 (一直在重试). */
+    private suspend fun openBadLink(status: Int): Pair<Result<Unit>, Int> = StatusOrigin(status).use { origin ->
         val job = SupervisorJob()
         val player = LibassExoPlayerMediampPlayer(context, Dispatchers.Main + job)
         try {
@@ -71,8 +81,8 @@ class OpeningFailFastTest {
         }
     }
 
-    /** 一律回 404 的极简 HTTP 服务, 数收到几次请求. */
-    private class NotFoundOrigin : AutoCloseable {
+    /** 一律回 [status] 的极简 HTTP 服务, 数收到几次请求. */
+    private class StatusOrigin(private val status: Int) : AutoCloseable {
         private val closed = AtomicBoolean(false)
         private val serverSocket = ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"))
         private val count = AtomicInteger()
@@ -80,7 +90,7 @@ class OpeningFailFastTest {
         val requests: Int get() = count.get()
         val url: String = "http://127.0.0.1:${serverSocket.localPort}/video.mp4"
 
-        private val acceptThread = thread(name = "NotFoundOrigin", isDaemon = true) {
+        private val acceptThread = thread(name = "StatusOrigin", isDaemon = true) {
             while (!closed.get()) {
                 val socket = try {
                     serverSocket.accept()
@@ -94,7 +104,7 @@ class OpeningFailFastTest {
                         while (!reader.readLine().isNullOrEmpty()) Unit
                         count.incrementAndGet()
                         s.getOutputStream().apply {
-                            write("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray(Charsets.US_ASCII))
+                            write("HTTP/1.1 $status Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray(Charsets.US_ASCII))
                             flush()
                         }
                     }
