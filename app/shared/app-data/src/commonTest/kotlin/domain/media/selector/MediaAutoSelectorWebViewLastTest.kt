@@ -21,6 +21,7 @@ import me.him188.ani.app.domain.media.fetch.MediaFetchSession
 import me.him188.ani.app.domain.media.selector.testFramework.FetchMediaSelectorTestSuite
 import me.him188.ani.app.domain.media.selector.testFramework.runFetchMediaSelectorTestSuite
 import me.him188.ani.app.domain.media.selector.testFramework.tier
+import me.him188.ani.app.domain.mediasource.profile.SourceProfiles
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.source.MediaSourceKind.WEB
 import me.him188.ani.test.DisabledOnNative
@@ -30,7 +31,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 
-/** 解析时要 WebView 嗅探的数据源只兜底 ([MediaSelectorSourceTiers.webViewSources]). */
+/** 解析时要 WebView 嗅探的数据源排在直连的后面 ([MediaSelectorSourceTiers.webViewSources]). */
 @DisabledOnNative
 class MediaAutoSelectorWebViewLastTest {
     @Test
@@ -178,6 +179,96 @@ class MediaAutoSelectorWebViewLastTest {
         assertTrue(job.isCompleted)
     }
 
+    @Test
+    fun `lower tier web view match is selected at the exact deadline while direct sources are still searching`() = runFetchMediaSelectorTestSuite {
+        initWeb()
+        val (_, session, sources) = configureFetchSession {
+            object {
+                val sniffing by web { tier = 1 }
+                val pending by web { tier = 0 }
+            }
+        }
+        val job = launchSelection(session, webViewSources = setOf(sources.sniffing.instance.mediaSourceId))
+        sources.sniffing.complete(media(kind = WEB, subjectName = "Example Series"))
+        testScope().runCurrent()
+        // 「立即」档只选 T0
+        testScope().advanceTimeBy(4.9.seconds)
+        testScope().runCurrent()
+        assertNull(selector.selected.value)
+        // 到了精确匹配的截止时间不再等还在查的直连源
+        testScope().advanceTimeBy(0.2.seconds)
+        testScope().runCurrent()
+        assertEquals(sources.sniffing.instance.mediaSourceId, selector.selected.value?.mediaSourceId)
+        assertTrue(job.isCompleted)
+    }
+
+    @Test
+    fun `lower tier web view match waits only the grace when no better direct source is searching`() = runFetchMediaSelectorTestSuite {
+        initWeb()
+        val (_, session, sources) = configureFetchSession {
+            object {
+                val sniffing by web { tier = 1 }
+                val better by web { tier = 0 }
+                val sameTier by web { tier = 1 }
+            }
+        }
+        val job = launchSelection(session, webViewSources = setOf(sources.sniffing.instance.mediaSourceId))
+        sources.better.complete(emptyList<Media>())
+        sources.sniffing.complete(media(kind = WEB, subjectName = "Example Series"))
+        testScope().runCurrent()
+        testScope().advanceTimeBy(1.9.seconds)
+        testScope().runCurrent()
+        assertNull(selector.selected.value)
+        testScope().advanceTimeBy(0.2.seconds)
+        testScope().runCurrent()
+        assertEquals(sources.sniffing.instance.mediaSourceId, selector.selected.value?.mediaSourceId)
+        assertTrue(job.isCompleted)
+    }
+
+    @Test
+    fun `a source that never played does not hold a web view match`() = runFetchMediaSelectorTestSuite {
+        initWeb()
+        val (_, session, sources) = configureFetchSession {
+            object {
+                val sniffing by web { tier = 0 }
+                val neverPlays by web { tier = 0 }
+            }
+        }
+        val job = launchSelection(
+            session,
+            webViewSources = setOf(sources.sniffing.instance.mediaSourceId),
+            neverPlays = setOf(sources.neverPlays.instance.mediaSourceId),
+        )
+        sources.sniffing.complete(media(kind = WEB, subjectName = "Example Series"))
+        testScope().runCurrent()
+        assertEquals(sources.sniffing.instance.mediaSourceId, selector.selected.value?.mediaSourceId)
+        assertTrue(job.isCompleted)
+    }
+
+    @Test
+    fun `a web view match beats an exact match from a source that never played`() = runFetchMediaSelectorTestSuite {
+        initWeb()
+        val (_, session, sources) = configureFetchSession {
+            object {
+                val sniffing by web { tier = 1 }
+                val neverPlays by web { tier = 0 }
+                val pending by web { tier = 0 }
+            }
+        }
+        val job = launchSelection(
+            session,
+            webViewSources = setOf(sources.sniffing.instance.mediaSourceId),
+            neverPlays = setOf(sources.neverPlays.instance.mediaSourceId),
+        )
+        sources.neverPlays.complete(media(kind = WEB, subjectName = "Example Series"))
+        sources.sniffing.complete(media(kind = WEB, subjectName = "Example Series"))
+        testScope().runCurrent()
+        testScope().advanceTimeBy(5.1.seconds)
+        testScope().runCurrent()
+        assertEquals(sources.sniffing.instance.mediaSourceId, selector.selected.value?.mediaSourceId)
+        assertTrue(job.isCompleted)
+    }
+
     private fun FetchMediaSelectorTestSuite.initWeb() {
         initSubject("Example Series")
         preferenceApi.savedUserPreference.value = MediaPreference.Any
@@ -187,15 +278,20 @@ class MediaAutoSelectorWebViewLastTest {
     }
 
     context(scope: TestScope)
-    private fun FetchMediaSelectorTestSuite.launchSelection(session: MediaFetchSession, webViewSources: Set<String>): Job =
-        scope.launch(start = CoroutineStart.UNDISPATCHED) {
-            MediaAutoSelector(selector).select(
-                session,
-                MediaAutoSelector.Config(
-                    web = MediaAutoSelector.Web(sourceTiers = preferenceApi.sourceTiers!!.copy(webViewSources = webViewSources)),
-                ),
-            )
+    private fun FetchMediaSelectorTestSuite.launchSelection(
+        session: MediaFetchSession,
+        webViewSources: Set<String>,
+        /** 画像里近几天一次都没播起来的源 */
+        neverPlays: Set<String> = emptySet(),
+    ): Job {
+        val tiers = SourceProfiles.demoteFailing(
+            preferenceApi.sourceTiers!!.copy(webViewSources = webViewSources),
+            SourceProfiles.FailingSources(mostly = neverPlays, never = neverPlays),
+        )
+        return scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            MediaAutoSelector(selector).select(session, MediaAutoSelector.Config(web = MediaAutoSelector.Web(sourceTiers = tiers)))
         }
+    }
 
     context(scope: TestScope)
     private fun testScope(): TestScope = implicit()
