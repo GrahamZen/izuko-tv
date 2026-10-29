@@ -142,6 +142,51 @@ class ExactSubjectNamesTest {
     }
 
     @Test
+    fun `final season written in Chinese is exact`() {
+        val magia = ExactSubjectNames(
+            listOf("魔法纪录 魔法少女小圆外传 Final SEASON -浅梦的黎明-", "魔法纪录 魔法少女小圆外传 Final SEASON -浅梦之晓-"),
+            simplify,
+        )
+        assertTrue(magia.matches("魔法纪录：魔法少女小圆外传 最终季 -浅梦之晓-"))
+        assertTrue(ExactSubjectNames(listOf("进击的巨人 The Final Season"), simplify).matches("进击的巨人 最终季"))
+        assertTrue(ExactSubjectNames(listOf("进击的巨人 最终季"), simplify).matches("Shingeki no Kyojin / 进击的巨人 The Final Season"))
+        // 最终季的另一部分仍是模糊
+        assertFalse(ExactSubjectNames(listOf("进击的巨人 The Final Season"), simplify).matches("进击的巨人 最终季 Part.2"))
+        assertFalse(ExactSubjectNames(listOf("进击的巨人 The Final Season Part 2"), simplify).matches("进击的巨人 最终季"))
+        // 只是名字里带这两个词的不换
+        assertFalse(ExactSubjectNames(listOf("Final Seasons"), simplify).matches("最终季s"))
+    }
+
+    @Test
+    fun `a name one ordinary character apart is exact`() {
+        val classroom = ExactSubjectNames(listOf("欢迎来到实力至上主义的教室 第二季"), simplify)
+        assertTrue(classroom.matches("欢迎来到实力至上主义教室 第二季"))
+        assertTrue(classroom.matches("欢迎来到实力至上主义教室第二季"))
+        val bookworm = ExactSubjectNames(listOf("小书痴的下克上 〜为了成为图书管理员而不择手段〜 第二季"), simplify)
+        assertTrue(bookworm.matches("小书痴的下克上：为了成为图书管理员不择手段！第二季"))
+        val pillars = ExactSubjectNames(listOf("鬼灭之刃 柱合会议・蝶屋敷篇"), simplify)
+        assertTrue(pillars.matches("鬼灭之刃 柱众会议・蝶屋敷篇"))
+        // 差两个字的仍是模糊
+        assertFalse(classroom.matches("欢迎来到实力主义教室 第二季"))
+    }
+
+    @Test
+    fun `one character that marks a season part or version keeps the name fuzzy`() {
+        // 季号、前后篇
+        val classroom = ExactSubjectNames(listOf("欢迎来到实力至上主义的教室 第二季"), simplify)
+        assertFalse(classroom.matches("欢迎来到实力至上主义的教室 第三季"))
+        assertFalse(ExactSubjectNames(listOf("进击的巨人 最终季 完结篇 前篇"), simplify).matches("进击的巨人 最终季 完结篇 后篇"))
+        // 续作前缀
+        assertFalse(ExactSubjectNames(listOf("吊带袜天使 第一季"), simplify).matches("新 吊带袜天使 第一季"))
+        assertFalse(ExactSubjectNames(listOf("怪怪守护神 第一季"), simplify).matches("继怪怪守护神 第一季"))
+        // 数字与英文字母
+        assertFalse(ExactSubjectNames(listOf("超时空要塞 爱还记得吗"), simplify).matches("超时空要塞7 爱还记得吗"))
+        assertFalse(ExactSubjectNames(listOf("机动战士高达 水星的魔女"), simplify).matches("机动战士高达Z 水星的魔女"))
+        // 名字太短的不靠差一个字认
+        assertFalse(ExactSubjectNames(listOf("怪物王女"), simplify).matches("怪物王子"))
+    }
+
+    @Test
     fun `a subject without names matches nothing`() {
         assertFalse(ExactSubjectNames(emptyList(), simplify).matches("死神"))
         assertFalse(ExactSubjectNames(listOf(""), simplify).matches(""))
