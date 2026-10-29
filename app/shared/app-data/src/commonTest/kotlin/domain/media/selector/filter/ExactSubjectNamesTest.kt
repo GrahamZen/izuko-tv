@@ -93,6 +93,55 @@ class ExactSubjectNamesTest {
     }
 
     @Test
+    fun `another title before the name and the air year after it is exact`() {
+        val fate = ExactSubjectNames(listOf("Fate/stay night"), simplify, airYear = 2006)
+        assertTrue(fate.matches("命运之夜 Fate/stay night 2006"))
+        assertTrue(fate.matches("命运之夜 Fate/stay night (2006)"))
+        // 同系列的别部、年份对不上的、没写年份的仍是模糊
+        assertFalse(fate.matches("命运之夜 无限剑制 Fate/stay night [Unlimited Blade Works]"))
+        assertFalse(fate.matches("命运之夜 Fate/stay night 2014"))
+        assertFalse(fate.matches("命运之夜 Fate/stay night"))
+        // 名字与前面的叫法连在一起的不算 (不知道哪里断开)
+        assertFalse(fate.matches("命运之夜Fate/stay night 2006"))
+        // 太短的名字不靠前缀认
+        val k = ExactSubjectNames(listOf("K"), simplify, airYear = 2012)
+        assertFalse(k.matches("Persona K 2012"))
+    }
+
+    @Test
+    fun `two names of the subject written together are exact`() {
+        val monster = ExactSubjectNames(listOf("怪物", "MONSTER", "魔剎"), simplify)
+        assertTrue(monster.matches("怪物 MONSTER"))
+        assertTrue(monster.matches("MONSTER 怪物"))
+        val another = ExactSubjectNames(listOf("Another", "アナザー", "替身"), simplify)
+        assertTrue(another.matches("替身 Another"))
+        assertTrue(another.matches("替身Another"))
+        // 还多出别的字的、同一个名字写两遍的仍是模糊
+        assertFalse(monster.matches("怪物 MONSTER 国语版"))
+        assertFalse(monster.matches("怪物怪物"))
+        assertFalse(another.matches("心之彼端二 Another Day"))
+        val tsugumomo = ExactSubjectNames(listOf("怪怪守护神", "つぐもも"), simplify)
+        assertFalse(tsugumomo.matches("继怪怪守护神"))
+        assertFalse(tsugumomo.matches("怪怪守护神2"))
+    }
+
+    @Test
+    fun `dashes decorations and uppercase numerals written another way are exact`() {
+        val kenshin = ExactSubjectNames(listOf("浪客剑心 －明治剑客浪漫谭－ 京都动乱"), simplify)
+        assertTrue(kenshin.matches("浪客剑心-明治剑客浪漫谭-京都动乱"))
+        assertTrue(ExactSubjectNames(listOf("摇曳露营△ 第二季"), simplify).matches("摇曳露营第二季"))
+        val lover = ExactSubjectNames(listOf("我们不可能成为恋人！绝对不行。 (※似乎可行？) 〜再次闪耀！〜"), simplify)
+        assertTrue(lover.matches("我们不可能成为恋人！绝对不行。 (似乎可行？) 〜再次闪耀！〜"))
+        assertTrue(lover.matches("我们不可能成为恋人！绝对不行。 (※似乎可行？) 〜再次闪耀！"))
+        val fireForce = ExactSubjectNames(listOf("炎炎消防队 叁之章 第2部分"), simplify)
+        assertTrue(fireForce.matches("炎炎消防队 三之章 第2部分"))
+        assertFalse(fireForce.matches("炎炎消防队 三之章"))
+        // 「？」照旧不当标点: 辉夜第一季与第二季的名字只差这个问号
+        val kaguya = ExactSubjectNames(listOf("辉夜大小姐想让我告白～天才们的恋爱头脑战～"), simplify)
+        assertFalse(kaguya.matches("辉夜大小姐想让我告白？～天才们的恋爱头脑战～"))
+    }
+
+    @Test
     fun `a subject without names matches nothing`() {
         assertFalse(ExactSubjectNames(emptyList(), simplify).matches("死神"))
         assertFalse(ExactSubjectNames(listOf(""), simplify).matches(""))
