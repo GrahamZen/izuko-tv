@@ -47,6 +47,7 @@ import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.source.BrowseSubject
 import me.him188.ani.datasources.api.source.FactoryId
 import me.him188.ani.datasources.api.source.MediaSourceKind
+import me.him188.ani.datasources.api.source.MediaSourceLocation
 import me.him188.ani.datasources.api.topic.EpisodeRange
 import me.him188.ani.datasources.api.topic.FileSize
 import me.him188.ani.datasources.api.topic.isSingleEpisode
@@ -71,7 +72,8 @@ internal object TvSourceRailKeys {
     const val WEB_PREFIX = "web:"
     const val GROUP_PREFIX = "group:"
 
-    /** 「网盘」「在线」「直链」三组, 各组收哪些类型见 [TV_SOURCE_GROUPS]. */
+    /** 「本地」「网盘」「在线」「直链」四组, 各组收哪些源见 [TV_SOURCE_GROUPS]. */
+    const val GROUP_LOCAL = GROUP_PREFIX + "local"
     const val GROUP_DRIVE = GROUP_PREFIX + "drive"
     const val GROUP_ONLINE = GROUP_PREFIX + "online"
     const val GROUP_DIRECT = GROUP_PREFIX + "direct"
@@ -148,6 +150,9 @@ enum class TvSourceRowIcon {
 
     /** 表头最右边的「数据源设置」. */
     Settings,
+
+    /** 「本地」那一组. */
+    Local,
 
     /** 「网盘」那一组. */
     Drive,
@@ -372,9 +377,12 @@ data class TvSourcePanelInput(
 /** 在播的那一条眼下怎么样 (表头「正在播放」的右端): 出错了 / 卡着缓冲 (挂了一阵) 时写出来, 让人知道为什么要换. */
 enum class TvSourcePlayback { Normal, Buffering, Failed }
 
-/** 一个数据源实例的类型 ([factoryId], 类型名 [factoryName]) 与它在数据源设置里排第几 ([order]). */
+/**
+ * 一个数据源实例的类型 ([factoryId], 类型名 [factoryName]) 与它在数据源设置里排第几 ([order]).
+ * [local]: 资源在本机或局域网 (本地文件夹、局域网里的 WebDAV), 不论类型都归「本地」那一组.
+ */
 @Immutable
-data class TvSourceType(val factoryId: String, val factoryName: String, val order: Int)
+data class TvSourceType(val factoryId: String, val factoryName: String, val order: Int, val local: Boolean = false)
 
 /**
  * 在线源的一组 (胶囊行的一颗): [factoryIds] 是归进这一组的数据源类型, [title] 取组名.
@@ -388,9 +396,11 @@ internal class TvSourceGroupSpec(
 
 /**
  * 在线源按类型怎么分组, 按表里的顺序排在胶囊行上. 新的数据源类型要归进已有的组就把它加进那一组的 [TvSourceGroupSpec.factoryIds];
- * 表里没有的类型各成一组 (名字用类型名, 排在表里这几组后面).
+ * 表里没有的类型各成一组 (名字用类型名, 排在表里这几组后面). 「本地」那一组不按类型, 收 [TvSourceType.local] 的源,
+ * 能去缓存页时「下载」也在它的源那一栏里 (排第一), 整组排在胶囊行最前面 (见 buildTvSourcePanel).
  */
 internal val TV_SOURCE_GROUPS: List<TvSourceGroupSpec> = listOf(
+    TvSourceGroupSpec(TvSourceRailKeys.GROUP_LOCAL, emptySet(), TvSourceRowIcon.Local) { it.groupLocal },
     TvSourceGroupSpec(
         TvSourceRailKeys.GROUP_DRIVE,
         setOf(CloudDriveMediaSource.FactoryId, CloudDriveShareSearchMediaSource.FactoryId, CloudDriveAddedShareMediaSource.FactoryId),
@@ -408,8 +418,9 @@ internal val TV_SOURCE_GROUPS: List<TvSourceGroupSpec> = listOf(
     ) { it.groupDirect },
 )
 
-/** 在线源归哪一组 (见 [TV_SOURCE_GROUPS]); 不知道类型的归「在线」. */
+/** 在线源归哪一组 (见 [TV_SOURCE_GROUPS]); 本机、局域网的归「本地」, 不知道类型的归「在线」. */
 internal fun tvSourceGroupKey(type: TvSourceType?): String {
+    if (type?.local == true) return TvSourceRailKeys.GROUP_LOCAL
     val factoryId = type?.factoryId ?: return TvSourceRailKeys.GROUP_ONLINE
     return TV_SOURCE_GROUPS.firstOrNull { spec -> spec.factoryIds.any { it.value == factoryId } }?.key
         ?: (TvSourceRailKeys.GROUP_PREFIX + factoryId)
@@ -589,6 +600,7 @@ data class TvSourceStrings(
     /** 站点拉黑了这个网络 (查询失败那一组), 参数是解封前不再查的时刻. */
     val siteIpBlocked: String,
     /** 在线源各组的名字 (见 [tvSourceGroupKey]; 其余类型用类型名). */
+    val groupLocal: String,
     val groupDrive: String,
     val groupOnline: String,
     val groupDirect: String,
@@ -693,18 +705,17 @@ fun buildTvSourcePanel(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvS
     val fileSources = liveWebSources.mapNotNull { webFilesOf(it, input, strings) }
     val filterable = hasBt || fileSources.isNotEmpty()
 
+    // 「本地」那一组 (本机、局域网上的文件) 有源时排第一个, 能去缓存页时「下载」是它源那一栏的第一行 (都是不用从网上找的)
+    val localGroup = groups.firstOrNull { it.key == TvSourceRailKeys.GROUP_LOCAL }
+    val downloadsInLocal = localGroup != null && input.canOpenDownloads
+
     val rail = buildList {
         // 「下载」排第一个, 挨着「BT 与缓存」: 这一集的缓存在它下面一眼看全 (不用逐个数据源翻), 去缓存页下别的集也从这儿走
-        if (input.canOpenDownloads) {
-            add(
-                TvSourceRow(
-                    id = TvSourceRailKeys.DOWNLOADS,
-                    style = TvSourceRowStyle.Rail,
-                    title = strings.downloads,
-                    icon = TvSourceRowIcon.Downloads,
-                    trailing = input.downloads.size.takeIf { it > 0 }?.toString().orEmpty(),
-                ),
-            )
+        if (localGroup != null) {
+            val playing = playingWebSource != null && localGroup.contains(playingWebSource)
+            add(groupRailRow(localGroup, playing, input, strings, downloads = if (downloadsInLocal) input.downloads.count { it.finished } else 0))
+        } else if (input.canOpenDownloads) {
+            add(downloadsRow(input, strings))
         }
         if (hasBt) {
             val btWorking = input.sources.btSources.any { it.isWorking }
@@ -722,8 +733,8 @@ fun buildTvSourcePanel(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvS
                 ),
             )
         }
-        val topGroup = hasBt || input.canOpenDownloads
-        groups.forEachIndexed { index, group ->
+        val topGroup = hasBt || input.canOpenDownloads || localGroup != null
+        groups.filter { it !== localGroup }.forEachIndexed { index, group ->
             val row = groupRailRow(group, playing = playingWebSource != null && group.contains(playingWebSource), input, strings)
             add(if (index == 0 && topGroup) row.copy(dividerAbove = true) else row)
         }
@@ -815,29 +826,38 @@ fun buildTvSourcePanel(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvS
     // 要落到某个在线源 (落回上次停的源、详情弹窗换到别的源): 落它所在的组与它
     val navSource = nav.railKey?.takeIf { it.startsWith(TvSourceRailKeys.WEB_PREFIX) }
         ?.let { key -> liveWebSources.firstOrNull { TvSourceRailKeys.web(it.instanceId) == key } }
-    val navRailKey = navSource?.let { source -> groups.first { it.contains(source) }.key } ?: nav.railKey
+    // 要落到「下载」(详情弹窗跟过去、上次停在那儿) 而它在「本地」那一组里: 落那一组
+    val navRailKey = navSource?.let { source -> groups.first { it.contains(source) }.key }
+        ?: nav.railKey?.let { if (it == TvSourceRailKeys.DOWNLOADS && downloadsInLocal) TvSourceRailKeys.GROUP_LOCAL else it }
     val railKey = navRailKey?.takeIf { key -> !isCommandKey(key) && rail.any { it.id == key } }
         ?: playingKey
         ?: rail.firstOrNull { !isCommandKey(it.id) }?.id
 
-    // 组里的源: 指定的 → 这一组上次停的 (回到上次到过的地方) → 源那一栏的第一行 (没折进「没有结果」的第一个; 还在查、被暂停的也不跳过,
-    // 跳过一个用户会翻回去看为什么) → 第一个. 在播的组也一样: 要回在播的那一条按表头的「正在播放」(落到那个源与那一行)
+    // 组里的源: 指定的 → 这一组上次停的 (回到上次到过的地方) → 源那一栏的第一行 (「本地」组里是「下载」, 否则没折进「没有结果」的第一个;
+    // 还在查、被暂停的也不跳过, 跳过一个用户会翻回去看为什么) → 第一个. 在播的组也一样: 要回在播的那一条按表头的「正在播放」(落到那个源与那一行)
     val group = groups.firstOrNull { it.key == railKey }
-    val source = group?.let { g ->
-        g.find(navSource?.let { TvSourceRailKeys.web(it.instanceId) } ?: nav.sourceKey)
-            ?: g.find(nav.groupSources[g.key])
-            ?: g.sources.firstOrNull { !input.isEmptySource(it, strings) }
-            ?: g.sources.first()
+    val withDownloads = group != null && group === localGroup && downloadsInLocal
+    val explicit = navSource?.let { TvSourceRailKeys.web(it.instanceId) } ?: nav.sourceKey ?: nav.railKey?.takeIf { it == TvSourceRailKeys.DOWNLOADS }
+    val remembered = group?.let { nav.groupSources[it.key] }
+    val sourceKey = when {
+        group == null -> null
+        withDownloads && explicit == TvSourceRailKeys.DOWNLOADS -> TvSourceRailKeys.DOWNLOADS
+        group.find(explicit) != null -> explicit
+        withDownloads && remembered == TvSourceRailKeys.DOWNLOADS -> TvSourceRailKeys.DOWNLOADS
+        group.find(remembered) != null -> remembered
+        withDownloads -> TvSourceRailKeys.DOWNLOADS
+        else -> TvSourceRailKeys.web((group.sources.firstOrNull { !input.isEmptySource(it, strings) } ?: group.sources.first()).instanceId)
     }
-    val sourceKey = source?.let { TvSourceRailKeys.web(it.instanceId) }
+    val source = group?.find(sourceKey)
     // 源那一栏: 有结果的 (与还在查、要处理的) 按设置里的顺序在前, 查完没结果的折成最后一行, 展开了跟在它后面.
     // 刚按了「继续查」的那个 (焦点多半就在它上面) 查完没结果也留在原处, 换到别的源后再折 —— 不在焦点底下抽走一行 (见 [TvSourceNav.keepInPlace]).
     // 只留这一种: 在展开的那段里选中没结果的源再收起, 它照常折回去, 不挪到上面
     val keep = sourceKey?.takeIf { it == nav.keepInPlace && !nav.showEmptySources }
-    val sources = if (group != null && group.sources.size > 1) {
+    val sources = if (group != null && (group.sources.size > 1 || withDownloads)) {
         val (empty, rest) = group.sources.partition { input.isEmptySource(it, strings) && TvSourceRailKeys.web(it.instanceId) != keep }
         fun row(source: WebSource) = webRailRow(source, playing = playingWebSource?.instanceId == source.instanceId, input, strings)
         buildList {
+            if (withDownloads) add(downloadsRow(input, strings))
             rest.forEach { add(row(it)) }
             if (empty.isNotEmpty()) {
                 add(
@@ -860,6 +880,7 @@ fun buildTvSourcePanel(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvS
     val sourceHidden = sources.isNotEmpty() && sources.none { it.id == sourceKey }
     val right = when {
         railKey == null -> TvSourceRight(key = "empty")
+        sourceKey == TvSourceRailKeys.DOWNLOADS -> downloadsPane(input, strings)
         source != null && sourceKey != null -> if (sourceHidden) TvSourceRight(key = sourceKey) else webPane(sourceKey, source, input, strings, nav)
         group != null -> TvSourceRight(key = railKey)
         railKey == TvSourceRailKeys.BT -> btPane(input, nav, strings)
@@ -928,7 +949,8 @@ fun buildTvSourcePanel(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvS
         railKey = railKey,
         sources = sources,
         sourceKey = sourceKey,
-        sourceGroups = groups.flatMap { g -> g.sources.map { TvSourceRailKeys.web(it.instanceId) to g.key } }.toMap(),
+        sourceGroups = groups.flatMap { g -> g.sources.map { TvSourceRailKeys.web(it.instanceId) to g.key } }.toMap() +
+            (if (downloadsInLocal) mapOf(TvSourceRailKeys.DOWNLOADS to TvSourceRailKeys.GROUP_LOCAL) else emptyMap()),
         enterableSources = if (sources.isEmpty() || group == null) {
             emptySet()
         } else {
@@ -936,7 +958,7 @@ fun buildTvSourcePanel(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvS
                 val key = TvSourceRailKeys.web(s.instanceId)
                 val rows = if (key == sourceKey) right.rows else webPane(key, s, input, strings).rows
                 key.takeIf { rows.any { it.focusable } }
-            }
+            }.apply { if (withDownloads) add(TvSourceRailKeys.DOWNLOADS) }
         },
         right = right.copy(rows = applyFrozenOrder(right.rows, nav.frozenOrder)),
         filter = if (filterable) filterOptions(input, fileSources.flatMap { it.matched }, strings) else emptyList(),
@@ -993,8 +1015,15 @@ private fun webGroupsOf(input: TvSourcePanelInput, strings: TvSourceStrings): Li
  * 一组的胶囊: 右端是组里有结果的源有几个, 后面跟着一个文件一行的源 (网盘类) 里最高的分辨率 (见 [countWithBest]); 一个都还没有、还有源在查时转圈.
  * 正在播的资源在这一组里时标 [TvSourceRow.playing] (不换图标).
  */
-private fun groupRailRow(group: TvWebGroup, playing: Boolean, input: TvSourcePanelInput, strings: TvSourceStrings): TvSourceRow {
-    val withResults = group.sources.count { it.channels.isNotEmpty() }
+private fun groupRailRow(
+    group: TvWebGroup,
+    playing: Boolean,
+    input: TvSourcePanelInput,
+    strings: TvSourceStrings,
+    /** 「本地」组里的「下载」: 这一集下完的缓存几条, 算进右端的数目 */
+    downloads: Int = 0,
+): TvSourceRow {
+    val withResults = group.sources.count { it.channels.isNotEmpty() } + downloads
     val loading = withResults == 0 && group.sources.any { it.isLoading }
     // 一条结果都没有、又有源被暂停: 画暂停, 不写「0」(查完没有与还没查完分得开)
     val paused = withResults == 0 && !loading && group.sources.any { input.isPausedSource(it.instanceId) }
@@ -1053,13 +1082,15 @@ fun buildTvSourceDetailsSequence(
     val groups = webGroupsOf(input, strings)
     val list = content.rail.filterNot { isCommandKey(it.id) }.flatMap { railRow ->
         val group = groups.firstOrNull { it.key == railRow.id }
-        val keys = group?.sources?.map { TvSourceRailKeys.web(it.instanceId) } ?: listOf(railRow.id)
+        // 「本地」组里排第一的「下载」(见 buildTvSourcePanel)
+        val downloads = if (group?.key == TvSourceRailKeys.GROUP_LOCAL && input.canOpenDownloads) listOf(TvSourceRailKeys.DOWNLOADS) else emptyList()
+        val keys = group?.sources?.map { TvSourceRailKeys.web(it.instanceId) }?.let { downloads + it } ?: listOf(railRow.id)
         keys.flatMap { key ->
             val rows = when {
                 key == paneKey && content.right.key == key -> content.right.rows
+                key == TvSourceRailKeys.DOWNLOADS -> downloadsPane(input, strings).rows
                 group != null -> group.find(key)?.let { webPane(key, it, input, strings).rows }.orEmpty()
                 key == TvSourceRailKeys.BT -> btPane(input, TvSourceNav(railKey = key), strings).rows
-                key == TvSourceRailKeys.DOWNLOADS -> downloadsPane(input, strings).rows
                 key == TvSourceRailKeys.FAILED -> failedPane(failedSourcesOf(input), strings).rows
                 else -> emptyList()
             }
@@ -1158,12 +1189,12 @@ private fun webSourceDetails(source: WebSource, input: TvSourcePanelInput, strin
 }
 
 /**
- * 详情里的「下载」: 点了直接开始下 (宿主的 cache, 同 Web 控制台的「缓存」). 宿主不让缓存 (缓存页自己的面板)、本身就是本地缓存、
- * 这一集已经有缓存 (下完的或正在下的, 含播 BT 时边下边播建的那份, 见 [TvSourcePanelInput.downloads]) 时不给 —— 一集只缓存一份,
- * 点了也只会被拒 (「这一集已经在下载了」).
+ * 详情里的「下载」: 点了直接开始下 (宿主的 cache, 同 Web 控制台的「缓存」). 宿主不让缓存 (缓存页自己的面板)、本身就是本地缓存
+ * 或本机上的文件 (本地文件夹)、这一集已经有缓存 (下完的或正在下的, 含播 BT 时边下边播建的那份, 见 [TvSourcePanelInput.downloads])
+ * 时不给 —— 一集只缓存一份, 点了也只会被拒 (「这一集已经在下载了」).
  */
 private fun downloadButton(media: Media, input: TvSourcePanelInput, strings: TvSourceStrings): TvSourceButton? {
-    if (!input.canCache || media.kind == MediaSourceKind.LocalCache) return null
+    if (!input.canCache || media.kind == MediaSourceKind.LocalCache || media.location == MediaSourceLocation.Local) return null
     if (input.downloads.isNotEmpty()) return null
     return TvSourceButton(strings.menuCache, TvSourceAction.Cache(media), TvSourceRowIcon.Download)
 }
@@ -1600,6 +1631,15 @@ private fun btPane(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvSourc
         wide = true,
     )
 }
+
+/** 「下载」那一行: 胶囊行的第一个, 有「本地」那一组时是它源那一栏的第一行. 右端是这一集有几条缓存. */
+private fun downloadsRow(input: TvSourcePanelInput, strings: TvSourceStrings) = TvSourceRow(
+    id = TvSourceRailKeys.DOWNLOADS,
+    style = TvSourceRowStyle.Rail,
+    title = strings.downloads,
+    icon = TvSourceRowIcon.Downloads,
+    trailing = input.downloads.size.takeIf { it > 0 }?.toString().orEmpty(),
+)
 
 /**
  * 「下载」的分支: 第一行去缓存页 (下别的集), 下面是这一集的每一条缓存 —— 来自哪个源、下完了没有 / 下了多少. 下完且选择器里有对应的本地缓存

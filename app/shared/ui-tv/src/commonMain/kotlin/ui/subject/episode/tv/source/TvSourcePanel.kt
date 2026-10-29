@@ -31,6 +31,7 @@ import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -136,6 +137,7 @@ import me.him188.ani.app.ui.lang.tv_source_failed
 import me.him188.ani.app.ui.lang.tv_source_failed_state
 import me.him188.ani.app.ui.lang.tv_source_group_direct
 import me.him188.ani.app.ui.lang.tv_source_group_drive
+import me.him188.ani.app.ui.lang.tv_source_group_local
 import me.him188.ani.app.ui.lang.tv_source_group_online
 import me.him188.ani.app.ui.lang.tv_source_hide_empty_sources
 import me.him188.ani.app.ui.lang.tv_source_hide_excluded
@@ -388,6 +390,7 @@ fun rememberTvSourcePanelStyle(): TvSourcePanelStyle {
                 TvSourceRowIcon.Torrent -> Icons.Rounded.CloudDownload
                 TvSourceRowIcon.Downloads -> Icons.Rounded.Download
                 TvSourceRowIcon.Filter -> Icons.Rounded.FilterList
+                TvSourceRowIcon.Local -> Icons.Rounded.Storage
                 TvSourceRowIcon.Drive -> Icons.Rounded.FolderOpen
                 TvSourceRowIcon.Link -> Icons.Rounded.Link
                 TvSourceRowIcon.Settings -> Icons.Rounded.Settings
@@ -585,6 +588,7 @@ private val TV_SOURCE_STRING_RESOURCES: List<StringResource> = listOf(
     Lang.tv_source_drive_login_action,
     Lang.tv_source_drive_login_hint,
     Lang.tv_source_site_ip_blocked,
+    Lang.tv_source_group_local,
     Lang.tv_source_group_drive,
     Lang.tv_source_group_online,
     Lang.tv_source_group_direct,
@@ -714,6 +718,7 @@ fun rememberTvSourceStrings(): TvSourceStrings {
             driveLoginAction = next(),
             driveLoginHint = next(),
             siteIpBlocked = next(),
+            groupLocal = next(),
             groupDrive = next(),
             groupOnline = next(),
             groupDirect = next(),

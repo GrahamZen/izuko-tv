@@ -248,6 +248,7 @@ internal class MediaAutoSelector(private val mediaSelector: MediaSelector) {
                 return Decision.Wait
             }
         }
+        localFileCandidate(preferred, candidates)?.let { return Decision.Select(it.result, "local file") }
 
         if (stage == Stage.PreferredSource && preferredSource?.state?.isFinal == true &&
             snapshot.context.allFieldsLoaded()

@@ -2938,11 +2938,11 @@ private val SCRIPT = """
       groups.forEach(function (g) { h += groupHtml(g, s); });
       return h;
     }
-    // 没点某个源时: 按类型分成可各自收起的几段 —— 本地缓存 / 网盘 / 在线源 / BT 源 (BT 一搜几百条, 在线源不该要翻过它们才找得到).
-    // 网盘与电视选源面板一样单独一段, 排在在线源前面
+    // 没点某个源时: 按类型分成可各自收起的几段 —— 本地 / 网盘 / 在线源 / BT 源 (BT 一搜几百条, 在线源不该要翻过它们才找得到).
+    // 同电视选源面板: 本地缓存与本机、局域网上的文件 (kind local) 同在「本地」, 网盘单独一段, 都排在在线源前面
     // 默认全展开, 可手动收起; 点了某个源的胶囊 / 播放卡上的数据源胶囊时展开对应那段; 开合记在 secOpen, 轮询重画照着画
     SECTIONS.forEach(function (k) {
-      var gs = groups.filter(function (g) { return (g.kind || 'web') === k[0]; });
+      var gs = groups.filter(function (g) { return secOf(g) === k[0]; });
       if (!gs.length) return;
       var n = gs.reduce(function (a, g) { return a + g.total; }, 0);
       var hasSel = gs.some(function (g) { return g.items.some(function (it) { return it.id === s.selectedId; }); });
@@ -2985,12 +2985,14 @@ private val SCRIPT = """
         }).join(' ') + '</div>'
       : '';
   }
-  var SECTIONS = [['cache', T('本地缓存')], ['drive', T('网盘')], ['web', T('在线源')], ['bt', T('BT 源')]];
-  var secOpen = { cache: true, drive: true, web: true, bt: true };
+  var SECTIONS = [['local', T('本地')], ['drive', T('网盘')], ['web', T('在线源')], ['bt', T('BT 源')]];
+  var secOpen = { local: true, drive: true, web: true, bt: true };
+  // 候选的一组 (一个源) 在哪一段: 本地缓存 (cache) 与本机、局域网上的文件 (local) 都在「本地」
+  function secOf(g) { var k = g.kind || 'web'; return k === 'cache' ? 'local' : k; }
   // 某个源 (id) 在哪一段; 展开那一段, 下次重画照着画
   window.openSourceSection = function (id) {
     var g = lastState && lastState.groups.filter(function (x) { return x.id === id; })[0];
-    if (g) secOpen[g.kind || 'web'] = true;
+    if (g) secOpen[secOf(g)] = true;
   };
   // 播放卡上的数据源胶囊 (另一段脚本) 点了要展开并重画列表
   window.lastPlayerState = function () { return lastState; };
@@ -6338,7 +6340,7 @@ private val SETTINGS_SCRIPT = """
   var PROBES_CARD = '<div class="card set-card" data-probes-card><div class="set-title">播放链路探针</div>' +
     '<p class="hint">只读：当前解码器与色彩三项、最近几次 HLS 去广告的判定。播放中点「刷新」看最新的。</p>' +
     '<div data-probes><p class="hint">读取中…</p></div>' +
-    '<div class="row"><button type="button" data-probes-refresh>刷新</button></div></div>';
+    '<div class="row"><button type="button" class="ghost" data-probes-refresh>刷新</button></div></div>';
   function renderDebug(list) {
     if (!dbgBox) return;
     dbgBox.innerHTML = (list && list.length ? genCards(list)
@@ -9117,7 +9119,7 @@ private val DRIVE_SCRIPT = """
   var sheet = document.getElementById('drive-sheet'), body = document.getElementById('drive-body');
   // path: null = 显示的是搜索结果; [] = 根目录; [{fid, name}, ...] = 从外到里点进去的文件夹
   var st = {
-    drive: '', driveName: '', canSearch: true, loggedIn: true, keyword: '', typed: false, names: [], folders: [], files: [],
+    drive: '', driveName: '', canSearch: true, loggedIn: true, local: false, keyword: '', typed: false, names: [], folders: [], files: [],
     canAttach: false, subtitles: [], items: null, more: 0, path: null, message: '', busy: false,
   };
   function api(path, params) {
@@ -9150,11 +9152,14 @@ private val DRIVE_SCRIPT = """
     var old = body.querySelector('#drive-form input');
     if (old) st.keyword = old.value;
     var name = esc(st.driveName);
+    // 本地文件夹 (st.local) 不是网盘: 没有账号, 根目录是各块盘
     var h = '<form id="drive-form"><label class="f">' +
-      (st.canSearch ? '<span>' + T('搜索网盘') + '</span><input type="text" name="q" autocomplete="off" placeholder="' + T('番名或文件夹名') + '">' : '') +
-      '<em>' + T('自动匹配对不上时在这里找：点视频当作当前这一集播放；或者进到放这部番的文件夹，按「就是这个文件夹」，之后每一集都从这里找。点字幕文件（.ass、.srt 等）挂到电视上正在播的视频上。记下的位置跟着这个网盘账号。') + '</em></label>' +
+      (st.canSearch ? '<span>' + (st.local ? T('在本地文件夹里搜') : T('搜索网盘')) + '</span><input type="text" name="q" autocomplete="off" placeholder="' + T('番名或文件夹名') + '">' : '') +
+      '<em>' + (st.local
+        ? T('自动匹配对不上时在这里找：点视频当作当前这一集播放；或者进到放这部番的文件夹，按「就是这个文件夹」，之后每一集都从这里找。点字幕文件（.ass、.srt 等）挂到电视上正在播的视频上。')
+        : T('自动匹配对不上时在这里找：点视频当作当前这一集播放；或者进到放这部番的文件夹，按「就是这个文件夹」，之后每一集都从这里找。点字幕文件（.ass、.srt 等）挂到电视上正在播的视频上。记下的位置跟着这个网盘账号。')) + '</em></label>' +
       '<div class="row">' + (st.canSearch ? '<button type="submit" class="primary"' + (st.busy ? ' disabled' : '') + '>' + T('搜索') + '</button>' : '') +
-      '<button type="button" data-dv-root>' + T('浏览网盘根目录') + '</button></div></form>';
+      '<button type="button" class="ghost" data-dv-root>' + (st.local ? T('浏览各块盘') : T('浏览网盘根目录')) + '</button></div></form>';
     // 这部番的搜索名 (编辑查询请求里那些), 点一下就搜, 不用手打
     if (st.canSearch && st.names.length) {
       h += '<p class="hint">' + T('这部番的搜索名，点一下直接搜') + '</p><div class="chips">' + st.names.map(function (n) {
@@ -9164,7 +9169,7 @@ private val DRIVE_SCRIPT = """
     if (!st.loggedIn) {
       h += '<div class="now-status attention"><b>' + T('还没登录{0}', name) + '</b><span>' + T('先在「数据源」页登录{0}', name) + '</span></div>';
     }
-    h += '<div class="card set-card"><div class="set-title">' + T('这部番记下的网盘位置') + '</div>';
+    h += '<div class="card set-card"><div class="set-title">' + (st.local ? T('这部番记下的文件夹') : T('这部番记下的网盘位置')) + '</div>';
     if (!st.folders.length && !st.files.length) h += '<p class="hint">' + T('还没有记下') + '</p>';
     st.folders.forEach(function (f) { h += pickRow(f, T('文件夹')); });
     st.files.forEach(function (f) { h += pickRow(f, f.meta); });
@@ -9182,7 +9187,7 @@ private val DRIVE_SCRIPT = """
     if (st.items || st.busy || st.message) {
       h += '<div class="card set-card">';
       if (st.path) {
-        h += '<div class="chips"><button type="button" class="chip' + (st.path.length ? '' : ' on') + '" data-dv-crumb="-1">' + T('网盘根目录') + '</button>' +
+        h += '<div class="chips"><button type="button" class="chip' + (st.path.length ? '' : ' on') + '" data-dv-crumb="-1">' + (st.local ? T('各块盘') : T('网盘根目录')) + '</button>' +
           st.path.map(function (p, i) {
             return '<button type="button" class="chip' + (i === st.path.length - 1 ? ' on' : '') + '" data-dv-crumb="' + i + '">' + esc(p.name) + '</button>';
           }).join('') + '</div>';
@@ -9230,6 +9235,7 @@ private val DRIVE_SCRIPT = """
       if (!d.ok) { toast(d.message); return; }
       st.loggedIn = d.loggedIn !== false;
       st.canSearch = d.canSearch !== false;
+      st.local = d.local === true;
       st.names = d.names || [];
       st.folders = d.folders || [];
       st.files = d.files || [];
