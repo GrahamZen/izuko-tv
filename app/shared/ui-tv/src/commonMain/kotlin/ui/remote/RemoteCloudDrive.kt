@@ -63,7 +63,8 @@ import kotlin.time.Duration.Companion.seconds
  * 手机上可以按协议给的唤起链接跳到网盘 App 里确认, 也可以用另一台设备扫 `api/drive/qr.svg?drive=<id>`.
  *
  * WebDAV 服务器 (NAS) 是用户在这里自己加的网盘 ([WebDavSources]): 卡片上是账号密码登录、媒体文件夹 (浏览服务器的文件夹选)、改名字与地址、删除;
- * 添加的表单在「新增数据源」里. 本地文件夹 ([LocalFolderDrive]) 也是在这里加的: 不用登录, 卡片上是权限状态、媒体文件夹 (浏览各块盘选)、改名字、删除.
+ * 添加的表单在数据源标签本地页「+」打开的添加面板里. 本地文件夹 ([LocalFolderDrive]) 也是在那里加的: 不用登录, 卡片上是权限状态、媒体文件夹 (浏览各块盘选)、改名字、删除.
+ * 云盘的卡片在网盘页, WebDAV 服务器与本地文件夹的在本地页.
  *
  * 也给另外两处 (播放器页的「添加网盘分享」「从网盘挑」) 提供已配置的网盘.
  */
@@ -489,16 +490,21 @@ internal object RemoteCloudDrive {
 
     /**
      * 加一个本地文件夹数据源. 平台读不了盘上的文件夹时不加; 还没有权限时照样加上 (卡片上提示去开),
-     * 加完网页打开文件夹浏览选媒体文件夹.
+     * 加完网页打开文件夹浏览选媒体文件夹. 网页不问名字: 用「本地文件夹」, 重名时编号 ([unusedName]), 之后在卡片上改.
      */
     private fun addLocalFolder(request: LanHttpRequest): JsonObject {
         if (localFolderAccess() == null) return status(tr("这台设备不能读本地文件夹"), ok = false)
-        val protocol = LocalFolderDrive.newProtocol(request.field("name").trim().ifEmpty { tr("本地文件夹") })
+        val name = request.field("name").trim().ifEmpty { unusedName(tr("本地文件夹"), configuredDrives().map { nameOf(it) }) }
+        val protocol = LocalFolderDrive.newProtocol(name)
         runBlocking { WebDavSources.add(manager, protocol) }
         awaitDrives { drives -> drives.any { it.driveId == protocol.id } }
         logger.info { "Added local folder drive ${protocol.id} from the web console" }
         return status(tr("已添加{0}", protocol.name))
     }
+
+    /** 没被 [taken] 用过就用 [base], 用过了往后编号: 「本地文件夹 2」「本地文件夹 3」… */
+    internal fun unusedName(base: String, taken: Collection<String>): String =
+        if (base !in taken) base else generateSequence(2) { it + 1 }.map { "$base $it" }.first { it !in taken }
 
     /**
      * 在电视上打开给权限的地方 ([LocalFolderAccess.openGrant]): 「所有文件访问」的系统页面 (同片库), 或「存储」权限的授权框

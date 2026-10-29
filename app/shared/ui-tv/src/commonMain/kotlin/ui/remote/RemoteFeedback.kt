@@ -396,7 +396,7 @@ internal object RemoteFeedback {
     private fun localTime(millis: Long): LocalDateTime = LocalDateTime.ofInstant(Instant.ofEpochMilli(millis), ZoneId.systemDefault())
 }
 
-/** 「设置 → 常规」分类列表里「反馈」那一行. */
+/** 设置标签分类列表里「反馈」那一行. */
 internal const val FEEDBACK_SET_ROW =
     """<button type="button" class="set-nav-row" data-group="feedback"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-7 12h-2v-2h2v2zm0-4h-2V6h2v4z"/></svg><span class="set-nav-txt"><b>反馈</b><small>故障反馈，以及标题 logo、对应作品修正的处理进度</small><small class="set-nav-note" hidden></small></span><span class="set-nav-go">›</span></button>"""
 

@@ -11,7 +11,7 @@ package me.him188.ani.app.ui.remote
 
 /**
  * 「设置」里两张手写的卡片:
- * - 「资源与弹幕 → PikPak」(`#set-pikpak`, 接口见 [RemotePikPakSettings]): 用户名与密码, 密码只写不读 (留空 = 不改).
+ * - 「数据源 → BT → PikPak」(`#set-pikpak`, 接口见 [RemotePikPakSettings]): 用户名与密码, 密码只写不读 (留空 = 不改).
  *   数据随 `api/settings` 来, SETTINGS_SCRIPT 的 render 调 `window.renderPikPak`; 保存后按回应只重画这一张.
  * - 「维护 → 设置备份」(`#set-backup`, 接口见 [RemoteSettingsBackup]): 导出成文件存在手机上; 导入时选文件,
  *   先在手机上认一下像不像备份、确认会覆盖全部设置, 再把文件原文发给电视.
