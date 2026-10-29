@@ -118,10 +118,20 @@ class CloudDriveShareSaveTest {
 
     /**
      * 网盘满了的情形: 转存文件夹里已有 o1、o2 两个副本 (o1 早); 前 [fullSaves] 次转存任务回空间不够的错误码.
-     * 删除任务的进度查询回「完成」. [free] 是 `GET /api/account/capacity` 报的剩余空间; 为 null 时协议没有这项.
+     * 删除任务的进度查询回「完成」. [free] 是 `GET /api/account/capacity` 报的剩余空间, 删除完成时加上删掉的大小;
+     * [lagReads] 大于 0 时删除完成后还要再查这么多次才加上 (网盘的已用量要过一会儿才降). 为 null 时协议没有这项.
+     * 剩余空间还没加上时转存一律回空间不够.
      */
-    private fun fullDriveService(fullSaves: Int, requests: MutableList<HttpRequestData>, free: Long? = 0): CloudDriveService {
+    private fun fullDriveService(
+        fullSaves: Int,
+        requests: MutableList<HttpRequestData>,
+        free: Long? = 0,
+        lagReads: Int = 0,
+    ): CloudDriveService {
         var saveTasks = 0
+        var deleted = false
+        var readsAfterDelete = 0
+        var reported = free ?: 0
         val protocol = if (free == null) TestDrive.protocol else TestDrive.protocol.copy(
             api = TestDrive.protocol.api.copy(
                 capacity = DriveCapacityOp(DriveRequest("GET", "https://{host}/api/account/capacity"), total = "data.total", used = "data.used"),
@@ -131,7 +141,10 @@ class CloudDriveShareSaveTest {
         return testDriveService(accountsOf(CloudDriveAccount(cookie = "sid=p1", shareSaveFolderId = "save1")), protocol) { request ->
             requests += request
             when (request.path()) {
-                "/api/account/capacity" -> reply("""{"code":0,"data":{"total":$total,"used":${total - (free ?: 0)}}}""")
+                "/api/account/capacity" -> {
+                    if (deleted && ++readsAfterDelete > lagReads) reported = (free ?: 0) + 2_000_000_000
+                    reply("""{"code":0,"data":{"total":$total,"used":${total - reported}}}""")
+                }
                 "/api/files/list" -> reply(
                     listJson(
                         DriveFile("o1", fileName = "o1.mkv", size = 2_000_000_000, updatedAt = 1000),
@@ -142,8 +155,13 @@ class CloudDriveShareSaveTest {
                 "/api/share/open" -> reply("""{"code":0,"data":{"token":"st1","title":"t"}}""")
                 "/api/share/save" -> reply("""{"code":0,"data":{"task":"save-task"}}""")
                 "/api/files/delete" -> reply("""{"code":0,"data":{"task":"delete-task"}}""")
-                "/api/tasks/delete-task" -> reply("""{"code":0,"data":{"state":"done"}}""")
-                "/api/tasks/save-task" -> if (++saveTasks <= fullSaves) {
+                "/api/tasks/delete-task" -> {
+                    deleted = true
+                    if (lagReads == 0) reported = (free ?: 0) + 2_000_000_000
+                    reply("""{"code":0,"data":{"state":"done"}}""")
+                }
+
+                "/api/tasks/save-task" -> if (++saveTasks <= fullSaves || free != null && deleted && reported < ref.size) {
                     reply("""{"code":4507,"message":"quota exceeded"}""")
                 } else {
                     reply("""{"code":0,"data":{"state":"done","result":{"ids":["new1"]}}}""")
@@ -168,6 +186,31 @@ class CloudDriveShareSaveTest {
         val order = requests.map { it.path() }
         assertTrue(order.indexOf("/api/tasks/delete-task") < order.lastIndexOf("/api/share/save"), "$order")
         assertEquals(2, requests.count { it.path() == "/api/share/save" })
+    }
+
+    @Test
+    fun `drive full - waits until the freed space shows up before saving again`() = runTest {
+        val requests = mutableListOf<HttpRequestData>()
+        // 删除完成后还要再查三次, 剩余空间才降下来; 马上转存的话照样回空间不够
+        val service = fullDriveService(fullSaves = 1, requests, lagReads = 3)
+
+        assertEquals("https://dl.drive.test/new1", service.resolveSharePlayback(ref).url)
+        assertEquals(2, requests.count { it.path() == "/api/share/save" })
+        val order = requests.map { it.path() }
+        val delete = order.indexOf("/api/tasks/delete-task")
+        assertEquals(4, order.subList(delete, order.lastIndexOf("/api/share/save")).count { it == "/api/account/capacity" })
+        assertEquals(3_000L, testScheduler.currentTime)
+    }
+
+    @Test
+    fun `drive full - stops waiting for the freed space after a while and saves anyway`() = runTest {
+        val requests = mutableListOf<HttpRequestData>()
+        val service = fullDriveService(fullSaves = 1, requests, lagReads = Int.MAX_VALUE)
+
+        val error = assertFailsWith<CloudDriveCapacityException> { service.resolveSharePlayback(ref) }
+        assertTrue(error.isCapacityLimit)
+        assertEquals(2, requests.count { it.path() == "/api/share/save" })
+        assertEquals(30_000L, testScheduler.currentTime)
     }
 
     @Test
