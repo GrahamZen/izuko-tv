@@ -109,6 +109,8 @@ internal object RemoteCloudDrivePicks {
             put("name", RemoteCloudDrive.nameOf(drive))
             put("loggedIn", loggedIn)
             put("canSearch", drive.protocol.supportsSearch)
+            // 本地文件夹: 网页上不说「网盘」「网盘账号」, 根目录叫各块盘
+            put("local", drive.protocol.isLocalFolder)
             put("keyword", request?.let { it.subjectNameCN ?: it.subjectNames.firstOrNull() }.orEmpty())
             // 这部番的搜索名 (编辑查询请求里那些, 改过就是改过的), 手机上点一下就搜, 不用手打
             putJsonArray("names") {

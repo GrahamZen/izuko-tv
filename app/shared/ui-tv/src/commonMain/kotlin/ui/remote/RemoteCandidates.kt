@@ -33,6 +33,7 @@ import me.him188.ani.app.ui.lang.media_selector_item_subject_title_mismatch
 import me.him188.ani.app.ui.lang.media_selector_item_unsupported_playback
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.source.MediaSourceKind
+import me.him188.ani.datasources.api.source.isLowEffort
 import org.koin.mp.KoinPlatform
 import kotlin.reflect.KClass
 
@@ -95,14 +96,19 @@ internal object RemoteCandidates {
                 addJsonObject {
                     put("id", sourceId)
                     put("name", sourceName(sourceId, list.first().original))
-                    // 网页按类型把候选分成可各自收起的几段 (本地缓存 / 网盘 / 在线 / BT), BT 一搜几百条, 不该挡在在线源前面.
-                    // 网盘的资源也是在线类型, 按播放地址是不是网盘的认出来, 同电视选源面板单独一段
+                    // 网页按类型把候选分成可各自收起的几段 (本地 / 网盘 / 在线 / BT), BT 一搜几百条, 不该挡在在线源前面.
+                    // 网盘的资源也是在线类型, 按播放地址是不是网盘的认出来, 同电视选源面板单独一段; 本机、局域网上的文件
+                    // (本地文件夹、局域网 WebDAV, 见 CloudDriveProtocol.mediaLocation) 与本地缓存同在「本地」那段
                     put(
                         "kind",
                         when (list.first().original.kind) {
                             MediaSourceKind.LocalCache -> "cache"
                             MediaSourceKind.BitTorrent -> "bt"
-                            else -> if (isCloudDriveMedia(list.first().original)) "drive" else "web"
+                            else -> when {
+                                list.first().original.location.isLowEffort() -> "local"
+                                isCloudDriveMedia(list.first().original) -> "drive"
+                                else -> "web"
+                            }
                         },
                     )
                     put("total", list.size)
