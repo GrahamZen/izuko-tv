@@ -458,7 +458,8 @@ button { font: inherit; border: 0; cursor: pointer; }
 .icb { display: inline-flex; align-items: center; justify-content: center; padding: 0 !important; width: 38px; height: 34px; }
 /* 原来用字符凑的 ‹ ✕ × ▶ 换成 SVG: 字体里的这些符号各平台大小 / 基线不一 (iOS 上 ✕ 偏细偏小) */
 .sheet-btn { display: inline-flex; align-items: center; justify-content: center; }
-.sheet-btn svg { width: 20px; height: 20px; fill: currentColor; }
+/* 不许压缩: 有的浏览器给按钮的默认左右内边距很大, 38px 的圆按钮里图标会被挤成一个点 (尺寸那条另把 padding 归零) */
+.sheet-btn svg { flex: none; width: 20px; height: 20px; fill: currentColor; }
 .sugg .x svg { display: block; width: 18px; height: 18px; fill: currentColor; }
 .dm-form button svg { display: block; width: 20px; height: 20px; fill: currentColor; }
 .cl-go svg { width: 12px; height: 12px; fill: currentColor; vertical-align: -1px; }
@@ -1082,7 +1083,7 @@ input[type=checkbox], input[type=radio] { accent-color: var(--p); }
 .sheet[hidden] { display: none; }
 .sheet-head { display: flex; align-items: center; gap: 8px; padding: 12px 12px 10px; border-bottom: 1px solid var(--line2); }
 .sheet-title { flex: 1; min-width: 0; font-size: 16px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sheet-btn { flex: none; width: 38px; height: 38px; border-radius: 19px; background: var(--chip); color: var(--on-chip); font-size: 18px; }
+.sheet-btn { flex: none; width: 38px; height: 38px; padding: 0; border-radius: 19px; background: var(--chip); color: var(--on-chip); font-size: 18px; }
 .sheet-btn[hidden] { display: none; }
 .sheet-body { flex: 1; overflow-y: auto; padding: 8px 16px 24px; }
 .cache-ep { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
