@@ -18,7 +18,7 @@ import kotlinx.serialization.json.putJsonObject
 import me.him188.ani.app.videoplayer.diagnostics.PlayerProbes
 
 /**
- * `GET api/settings/debug/probes`: 把播放链路上那些「只能看屏确认」的判定读出来, 网页「设置 → 常规 → 调试」里那张只读卡片
+ * `GET api/settings/debug/probes`: 把播放链路上那些「只能看屏确认」的判定读出来, 网页「设置 → 调试」里那张只读卡片
  * 与 `console.sh probes` 读的就是它。只在 debug 包里给 (门控同 [RemoteDebugSettings.enabled]); 与调试开关不同, 这张卡片是常驻的,
  * 不随「用完删掉」一起删。
  *

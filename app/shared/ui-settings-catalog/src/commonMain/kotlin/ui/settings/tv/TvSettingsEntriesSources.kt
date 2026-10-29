@@ -289,7 +289,7 @@ internal fun TvSettingsItemsBuilder.mediaSourceItems() {
     ) { sub -> listOf(TvSettingsEdit.Run { env -> env.deps.settings.mediaSourceSubscriptionGroupState.delete(sub) }) }
 
     // 网盘: 没登录的那一行, 焦点停上去就要一张登录二维码画在说明栏 (手机上的网盘 App 扫), 离开就作废; 过期了按确定换一张.
-    // WebDAV 服务器 (NAS) 要填地址与账号密码: 添加与没登录时的二维码都打开手机控制台的数据源页
+    // WebDAV 服务器 (NAS) 要填地址与账号密码: 添加与没登录时的二维码都打开手机控制台数据源标签的本地页
     header(Lang.tv_settings_drives)
     action(
         Lang.tv_settings_drive_webdav_add, Lang.tv_settings_drive_webdav_add_description,
@@ -326,7 +326,7 @@ internal fun TvSettingsItemsBuilder.mediaSourceItems() {
         qr = { v, drive ->
             when {
                 drive.account.isLoggedIn -> null
-                drive.service.protocol.supportsPasswordLogin -> consoleQr(v, "#sources")
+                drive.service.protocol.supportsPasswordLogin -> consoleQr(v, "#sources/local")
                 else -> driveLoginQr(drive, v[keys.driveQr]?.get(drive.service.driveId))
             }
         },
