@@ -31,7 +31,9 @@ import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.source.MediaSourceTier
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
+import me.him188.ani.utils.platform.currentTimeMillis
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.seconds
 
@@ -52,6 +54,9 @@ object SourceProfiles {
 
     /** 有新记录后等这么久没再变才写盘: 一次搜索各源同时出结果, 合成一次写入 (设置是整份重写的). */
     private val SAVE_DELAY = 10.seconds
+
+    /** 开播失败只看这么久以内的 (见 [failsMostly]) */
+    private val FAILING_WINDOW = 3.days
 
     /** 同一个源这么久内只探测一次视频 (分辨率 / 码率几天内基本不变), 见 [shouldProbe]. */
     private val PROBE_INTERVAL = 24.hours
@@ -74,6 +79,18 @@ object SourceProfiles {
     val webViewUsage: Flow<Map<String, Boolean>> = state.map { all ->
         buildMap { for ((id, list) in all) usesWebView(list)?.let { put(id, it) } }
     }.distinctUntilChanged()
+
+    /**
+     * 最近 [FAILING_WINDOW] 里开播大多失败的源 (见 [failsMostly]): 选源时降 [FAILING_DEMOTION] 级, 免得每次都先在它上面失败一次再换.
+     * 过了这段时间失败就不算了, 站点修好后自己升回来.
+     */
+    val failingSources: Flow<Set<String>> = state.map { all ->
+        val now = currentTimeMillis()
+        all.filterValues { failsMostly(it, now) }.keys
+    }.distinctUntilChanged()
+
+    /** 选源时给 [failingSources] 降的级数: 降一级会和同档的源并列, 照样可能先选它 */
+    const val FAILING_DEMOTION = 2u
 
     class ResolvedUrl(val uri: String, val headers: Map<String, String>)
 
@@ -159,14 +176,30 @@ object SourceProfiles {
         }
     }
 
-    /** 选源用的层级: [ids] 里的源 (见 [webViewSources]) 降一级. */
-    fun demote(tiers: MediaSelectorSourceTiers, ids: Set<String>): MediaSelectorSourceTiers =
+    /** 选源用的层级: [ids] 里的源 (见 [webViewSources]) 降 [levels] 级, 最低降到 [MediaSourceTier.MaximumValue] 为止 (不绕回最高). */
+    fun demote(tiers: MediaSelectorSourceTiers, ids: Set<String>, levels: UInt = 1u): MediaSelectorSourceTiers =
         if (ids.isEmpty()) tiers else tiers.copy(
-            tiers = tiers.tiers.mapValues { (id, tier) -> if (id in ids) MediaSourceTier(tier.value + 1u) else tier },
+            tiers = tiers.tiers.mapValues { (id, tier) ->
+                when {
+                    id !in ids -> tier
+                    tier.value > MediaSourceTier.MaximumValue.value - levels -> MediaSourceTier.MaximumValue
+                    else -> MediaSourceTier(tier.value + levels)
+                }
+            },
         )
 
     fun summary(mediaSourceId: String): SourceProfileSummary? =
         summarize(state.value[mediaSourceId].orEmpty(), searches.value[mediaSourceId].orEmpty())
+
+    /**
+     * [now] 往前 [FAILING_WINDOW] 内真实开播 (不算深度测试与改选) 的记录里, 失败至少两次且比播起来的多.
+     * 播起来之后出错的那条也算一次失败.
+     */
+    internal fun failsMostly(list: List<SourceObservation>, now: Long): Boolean {
+        val recent = list.filter { !it.test && !it.deferred && now - it.at <= FAILING_WINDOW.inWholeMilliseconds }
+        val failures = recent.count { !it.ok }
+        return failures >= 2 && failures > recent.size - failures
+    }
 
     internal fun usesWebView(list: List<SourceObservation>): Boolean? {
         val marks = list.mapNotNull { it.webView }.takeLast(RECENT)
