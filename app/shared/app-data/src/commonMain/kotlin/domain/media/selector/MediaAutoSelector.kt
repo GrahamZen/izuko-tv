@@ -354,8 +354,9 @@ internal class MediaAutoSelector(private val mediaSelector: MediaSelector) {
         val webCandidates = reachableCandidates.filter { !(directPending && it.result.mediaSourceId in viaWebView) }
         val webViewLowest = webCandidates.any { it.result.mediaSourceId !in viaWebView }
         val tierOf = { candidate: MaybeExcludedMedia.Included ->
-            if (webViewLowest && candidate.result.mediaSourceId in viaWebView) WebViewLowestTier
-            else web.sourceTiers.get(candidate.result.mediaSourceId, candidate.result.properties.alliance)
+            val tier = web.sourceTiers.get(candidate.result.mediaSourceId, candidate.result.properties.alliance)
+            // 要嗅探的源里一次都没播起来的仍在它们后面
+            if (webViewLowest && candidate.result.mediaSourceId in viaWebView && tier != NeverPlaysTier) WebViewLowestTier else tier
         }
         if (webSources.any { it.results.isNotEmpty() } && !snapshot.context.allFieldsLoaded()) return Decision.Wait
 
