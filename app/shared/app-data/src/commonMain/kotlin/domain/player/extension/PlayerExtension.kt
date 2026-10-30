@@ -100,9 +100,16 @@ interface PlayerExtensionContext {
     suspend fun broadcast(event: PlayerExtensionEvent)
 
     /**
-     * 把当前选中的资源原地重新装进播放器一次, 装好后回到 [positionMillis]. 选中的资源还没装进播放器时返回 `false`.
+     * 把当前选中的资源原地重新装进播放器一次 (地址也重新取), 装好后回到 [positionMillis] (`null` 时回到记忆的进度),
+     * [playWhenReady] 为 false 时停在那里不播. 选中的资源还没装进播放器时返回 `false`.
      */
-    suspend fun reloadCurrentMedia(positionMillis: Long): Boolean = false
+    suspend fun reloadCurrentMedia(positionMillis: Long?, playWhenReady: Boolean = true): Boolean = false
+
+    /** 系统没网: 停下播放器, 加载状态改成 [VideoLoadingState.WaitingForNetwork]. 恢复后由调用方 [reloadCurrentMedia]. */
+    suspend fun stopForNetwork() {}
+
+    /** 还没装资源时显示或撤掉「在等网」的加载提示 ([VideoLoadingState.WaitingForNetwork]). */
+    fun showWaitingForNetwork(waiting: Boolean) {}
 }
 
 inline fun <reified T : PlayerExtensionEvent> PlayerExtensionContext.subscribeEvents(): Flow<T> {

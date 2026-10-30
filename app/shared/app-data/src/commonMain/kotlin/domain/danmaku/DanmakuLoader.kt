@@ -84,7 +84,22 @@ class DanmakuLoaderImpl internal constructor(
     @Volatile
     private var currentRequestKey: DanmakuRequestKey? = null
 
-    private val originalFetchResultFlow = requestFlow.distinctUntilChanged().transformLatest { request ->
+    /** 每 +1 一次, 当前这一集重新取一次弹幕, 见 [retryFailedFetch]. */
+    private val fetchRetries = MutableStateFlow(0)
+
+    /** 最近一次从网上取弹幕有服务失败了. */
+    @Volatile
+    private var remoteFetchFailed = false
+
+    /** 这一集从网上取弹幕失败了或者还没取完时重新取一次 (断网恢复后); 已经取到的不动. */
+    fun retryFailedFetch() {
+        if (remoteFetchFailed || danmakuLoadingStateFlow.value == DanmakuLoadingState.Loading) {
+            remoteFetchFailed = false
+            fetchRetries.update { it + 1 }
+        }
+    }
+
+    private val originalFetchResultFlow = combine(requestFlow.distinctUntilChanged(), fetchRetries) { request, _ -> request }.transformLatest { request ->
         emit(null) // 每次更换 mediaFetchSession 时 (ep 变更), 首先清空历史弹幕
 
         if (request == null) {
@@ -107,6 +122,7 @@ class DanmakuLoaderImpl internal constructor(
                 }
                 launch {
                     val result = fetchFromAllRemotes(fetchRequest).first()
+                    remoteFetchFailed = result.any { it.matchInfo.fetchFailed }
                     danmakuLoadingStateFlow.value = DanmakuLoadingState.Success
                     remoteCanReplaceLocal = result.canReplaceLocalCache()
                     if (remoteCanReplaceLocal || !localResult.hasDisplayableDanmakus()) {

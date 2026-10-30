@@ -54,6 +54,12 @@ sealed interface VideoLoadingState {
         val engineKey: MediaCacheEngineKey?,
     ) : VideoLoadingState, Progressing
 
+    /**
+     * 系统没网, 播放器停着等恢复, 恢复后重新取一次地址接着放 (见 [me.him188.ani.app.domain.player.extension.PlaybackFailureRecovery]).
+     * 算在等, 不算失败: 不换源, 也不记这条资源的失败.
+     */
+    data object WaitingForNetwork : VideoLoadingState, Progressing
+
     sealed class Failed : VideoLoadingState
     data object ResolutionTimedOut : Failed()
     data object NetworkError : Failed()

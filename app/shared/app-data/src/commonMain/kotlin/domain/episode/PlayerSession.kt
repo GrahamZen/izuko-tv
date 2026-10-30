@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.him188.ani.app.data.models.preference.HlsAdFilteringMode
@@ -153,6 +154,7 @@ class PlayerSession(
         media: Media?,
         episodeInfo: EpisodeMetadata,
         startPositionMillis: Long = 0L,
+        playWhenReady: Boolean = true,
     ) = coroutineScope {
         val backgroundScope = this
         _videoLoadingStateFlow.value = VideoLoadingState.Initial // 避免一直显示已取消 (.Cancelled)
@@ -203,7 +205,7 @@ class PlayerSession(
             logger.info { "Set media data to player at ${startPositionMillis}ms: ${preparedData.toLogText()}" }
             PlayTimeline.mark("set_media", "at ${startPositionMillis}ms")
             // v2: setMediaData 挂起直到媒体真正打开, 播放意图和起播位置随打开一并生效.
-            player.setMediaData(preparedData, playWhenReady = true, startPositionMillis = startPositionMillis)
+            player.setMediaData(preparedData, playWhenReady = playWhenReady, startPositionMillis = startPositionMillis)
             PlayTimeline.mark("player_opened")
             hlsPlaybackProxySession = preparedHlsPlaybackProxySession
             preparedHlsPlaybackProxySession = null
@@ -267,6 +269,27 @@ class PlayerSession(
         stopPlayer()
         PlayTimeline.mark("t_stop_player_done")
         closeHlsPlaybackProxySession()
+    }
+
+    /**
+     * 断网时停下播放器, 加载提示改成在等网. 恢复后重新 [loadMedia].
+     *
+     * 先改加载状态再停: 播放器一停错误就没了, 那一刻要已经是在等网, 不然换源那边以为失败结束了, 把等网本身取消.
+     */
+    suspend fun stopForNetwork() {
+        _videoLoadingStateFlow.value = VideoLoadingState.WaitingForNetwork
+        stopPlayback()
+    }
+
+    /** 还没装资源时的等网提示: 只在没东西可显示时换上, 只撤自己换上的. 开始加载 ([loadMedia]) 时也会撤掉. */
+    fun showWaitingForNetwork(waiting: Boolean) {
+        _videoLoadingStateFlow.update { state ->
+            when {
+                waiting && (state == VideoLoadingState.Initial || state == VideoLoadingState.Cancelled) -> VideoLoadingState.WaitingForNetwork
+                !waiting && state == VideoLoadingState.WaitingForNetwork -> VideoLoadingState.Initial
+                else -> state
+            }
+        }
     }
 
     /**
