@@ -201,8 +201,6 @@ data class TvNativeWallStyle(
      * 模糊背景上时中等亮度的底上也清楚. 新番时间表与 hero 态铺模糊背景的探索 / 追番 / 搜索页开着. 只用于浅色字 (深色主题); 深色字照常画.
      */
     val labelVibrancy: Boolean = false,
-    /** 行尾「更多」卡的玻璃外观 (见 [TvNativeMoreGlassStyle]), 按主题深浅取. */
-    val moreGlass: TvNativeMoreGlassStyle = TV_NATIVE_MORE_GLASS_DARK,
     /** 聚焦提示 (高光、停手压暗、取色光晕, 见 [TvNativeFocusCues]); 默认不做. */
     val focusCues: TvNativeFocusCueStyle = TvNativeFocusCueStyle.None,
 ) {
@@ -344,7 +342,6 @@ fun rememberTvNativeWallStyle(
                     null
                 },
                 labelVibrancy = labelVibrancy && !light,
-                moreGlass = if (light) TV_NATIVE_MORE_GLASS_LIGHT else TV_NATIVE_MORE_GLASS_DARK,
                 focusCues = if (fixedAnchor) {
                     TvNativeFocusCueStyle.None
                 } else {
