@@ -44,6 +44,20 @@ class UnsupportedFormatTest {
     }
 
     @Test
+    fun `video the player could not recognize is named by its original codec`() {
+        // mkv 里 VfW 方式封的 DivX 3: 播放器记成 video/x-unknown, 编码串里是 FourCC
+        val divx3 = "MediaCodecVideoRenderer error, index=0, format=Format(1, null, video/x-matroska, video/x-unknown, DIV3, -1, null, " +
+            "[640, 480, 23.976, null], [-1, -1]), format_supported=NO_EXCEEDS_CAPABILITIES"
+        assertEquals(UnsupportedFormat(isAudio = false, name = "DivX 3 480p"), UnsupportedFormat.of(error(divx3)))
+        // media3 不认、留成未知格式的 mkv 画面轨: 编码串里是 CodecID
+        val real = divx3.replace("DIV3", "V_REAL/RV40").replace("[640, 480", "[720, 576")
+        assertEquals(UnsupportedFormat(isAudio = false, name = "RealVideo 576p"), UnsupportedFormat.of(error(real)))
+        // 没记原来的编码时照 MIME 写
+        val bare = divx3.replace("DIV3", "null")
+        assertEquals(UnsupportedFormat(isAudio = false, name = "X-UNKNOWN 480p"), UnsupportedFormat.of(error(bare)))
+    }
+
+    @Test
     fun `found down the cause chain and without a container`() {
         val inner = error(
             "MediaCodecAudioRenderer error, index=1, format=Format(3, null, null, audio/vnd.dts.hd;profile=lbr, null, -1, en, " +
@@ -67,5 +81,10 @@ class UnsupportedFormatTest {
         assertEquals("E-AC3 Atmos", MediaFormatNames.of("audio/eac3-joc"))
         assertEquals("X-FOO", MediaFormatNames.of("audio/x-foo"))
         assertNull(MediaFormatNames.of(null))
+        assertEquals("DivX 3", MediaFormatNames.ofCodec("mp43"))
+        assertEquals("MPEG-1", MediaFormatNames.ofCodec("V_MPEG1"))
+        assertEquals("SNOW", MediaFormatNames.ofCodec("V_SNOW"))
+        assertEquals("VP6", MediaFormatNames.ofCodec("vp6f"))
+        assertEquals("ABCD", MediaFormatNames.ofCodec("ABCD"))
     }
 }
