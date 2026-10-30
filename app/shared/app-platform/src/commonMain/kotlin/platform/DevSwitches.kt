@@ -168,6 +168,9 @@ object DevSwitches {
     /** 记忆源阶段最多等几秒, 到了就放开别的源; 0 为一直等 */
     val searchMemoryWaitCap = number("searchMemoryWaitCap", "开播: 记忆源最多等几秒 (0 = 一直等)", default = 0f, range = 0f..60f, persistent = true)
 
+    /** 固定分享合集的文件夹索引多少小时内直接用, 过了只在对上的文件夹还读得出这一部时用 (见 DriveShareSearchEngine) */
+    val driveShareIndexTtlHours = number("driveShareIndexTtlHours", "开播: 网盘合集索引几小时内直接用", default = 6f, range = 0f..48f, persistent = true)
+
     /** 数据源查询用低优先级线程 (见 SearchDispatchers), 重启后生效 */
     val searchLowPriority = toggle("searchLowPriority", "开播: 数据源查询用低优先级线程 (重启生效)", default = true, persistent = true)
 
