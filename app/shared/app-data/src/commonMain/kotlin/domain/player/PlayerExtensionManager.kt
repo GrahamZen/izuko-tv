@@ -64,8 +64,8 @@ class PlayerExtensionManager(
             broadcastEvent.emit(event)
         }
 
-        override suspend fun reloadCurrentMedia(positionMillis: Long): Boolean {
-            return state.reloadCurrentMedia(positionMillis)
+        override suspend fun reloadCurrentMedia(positionMillis: Long, playWhenReady: Boolean): Boolean {
+            return state.reloadCurrentMedia(positionMillis, playWhenReady)
         }
     }
 

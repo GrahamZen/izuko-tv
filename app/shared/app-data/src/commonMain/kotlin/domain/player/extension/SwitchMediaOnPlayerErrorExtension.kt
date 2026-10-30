@@ -310,9 +310,13 @@ class SwitchMediaOnPlayerErrorExtension(
                                 logger.warn(error.cause) { "Player errored (${error.description}), decoder broken by the seek preview, reloading ${media.mediaId} in place" }
                             }
 
-                            // 解码器被抢走 (见 isDecoderPreempted) 是设备上的事, 这条源本身没问题: 原地重载, 不拉黑
+                            // 解码器被抢走 (见 isDecoderPreempted) 是设备上的事, 这条源本身没问题: 原地重载, 不拉黑;
+                            // 出错前暂停着 (如暂停后进了屏保) 就重载完照样停着
                             isDecoderPreempted(error.cause) && media != null && media.mediaId != reloadedMediaId &&
-                                    context.reloadCurrentMedia(context.player.currentPositionMillis.value) -> {
+                                    context.reloadCurrentMedia(
+                                        context.player.currentPositionMillis.value,
+                                        playWhenReady = context.player.state.value.playWhenReady,
+                                    ) -> {
                                 reloadedMediaId = media.mediaId
                                 logger.warn(error.cause) {
                                     "Player errored (${error.description}), decoder preempted, reloading ${media.mediaId} in place"
