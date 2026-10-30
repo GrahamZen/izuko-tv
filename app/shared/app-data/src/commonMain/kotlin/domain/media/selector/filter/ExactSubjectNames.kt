@@ -118,9 +118,11 @@ internal class ExactSubjectNames(
         /**
          * [MediaListFilters.normalizeForCompare] 不当标点的符号: 全角与长短不一的横线、波浪线「〜」(U+301C, 与「～」不是同一个字)、
          * 名字里的装饰符号「△」「※」. 站点抄条目名时常换成别的或去掉 (「浪客剑心 －明治剑客浪漫谭－」写作「浪客剑心-明治剑客浪漫谭-」,
-         * 「摇曳露营△」写作「摇曳露营」)
+         * 「摇曳露营△」写作「摇曳露营」).
+         * 半角横线也在内: 它只在名字开头几个字之后才被当标点, 紧跟在一两个字后面的会留着 (「鴉-KARAS-」规整成「鴉-KARAS」,
+         * 「鴉 -KARAS-」却是「鴉KARAS」)
          */
-        val EXTRA_PUNCTUATION = Regex("""[－‐–―〜△※]""")
+        val EXTRA_PUNCTUATION = Regex("""[-－‐–―〜△※]""")
 
         /** 条目名照日文原名用的大写数字 (「炎炎消防队 叁之章」, 原名「参ノ章」), 站点多写作「三之章」 */
         val UPPERCASE_NUMERALS = mapOf('壹' to '一', '贰' to '二', '叁' to '三', '肆' to '四')

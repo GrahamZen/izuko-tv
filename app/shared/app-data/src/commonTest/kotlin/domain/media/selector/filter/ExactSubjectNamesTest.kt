@@ -136,6 +136,10 @@ class ExactSubjectNamesTest {
         val fireForce = ExactSubjectNames(listOf("炎炎消防队 叁之章 第2部分"), simplify)
         assertTrue(fireForce.matches("炎炎消防队 三之章 第2部分"))
         assertFalse(fireForce.matches("炎炎消防队 三之章"))
+        // 名字开头一两个字后紧跟的半角横线 (「鴉-KARAS-」): 不当标点的话与「鴉 -KARAS-」规整出来的不一样
+        val karas = ExactSubjectNames(listOf("鴉 -KARAS-", "鸦 -KARAS-"), simplify)
+        assertTrue(karas.matches("鴉-KARAS-"))
+        assertTrue(karas.matches("鸦-KARAS-"))
         // 「？」照旧不当标点: 辉夜第一季与第二季的名字只差这个问号
         val kaguya = ExactSubjectNames(listOf("辉夜大小姐想让我告白～天才们的恋爱头脑战～"), simplify)
         assertFalse(kaguya.matches("辉夜大小姐想让我告白？～天才们的恋爱头脑战～"))
