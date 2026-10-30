@@ -490,16 +490,21 @@ internal object RemoteCloudDrive {
 
     /**
      * 加一个本地文件夹数据源. 平台读不了盘上的文件夹时不加; 还没有权限时照样加上 (卡片上提示去开),
-     * 加完网页打开文件夹浏览选媒体文件夹.
+     * 加完网页打开文件夹浏览选媒体文件夹. 网页不问名字: 用「本地文件夹」, 重名时编号 ([unusedName]), 之后在卡片上改.
      */
     private fun addLocalFolder(request: LanHttpRequest): JsonObject {
         if (localFolderAccess() == null) return status(tr("这台设备不能读本地文件夹"), ok = false)
-        val protocol = LocalFolderDrive.newProtocol(request.field("name").trim().ifEmpty { tr("本地文件夹") })
+        val name = request.field("name").trim().ifEmpty { unusedName(tr("本地文件夹"), configuredDrives().map { nameOf(it) }) }
+        val protocol = LocalFolderDrive.newProtocol(name)
         runBlocking { WebDavSources.add(manager, protocol) }
         awaitDrives { drives -> drives.any { it.driveId == protocol.id } }
         logger.info { "Added local folder drive ${protocol.id} from the web console" }
         return status(tr("已添加{0}", protocol.name))
     }
+
+    /** 没被 [taken] 用过就用 [base], 用过了往后编号: 「本地文件夹 2」「本地文件夹 3」… */
+    internal fun unusedName(base: String, taken: Collection<String>): String =
+        if (base !in taken) base else generateSequence(2) { it + 1 }.map { "$base $it" }.first { it !in taken }
 
     /**
      * 在电视上打开给权限的地方 ([LocalFolderAccess.openGrant]): 「所有文件访问」的系统页面 (同片库), 或「存储」权限的授权框
