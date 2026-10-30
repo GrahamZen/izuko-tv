@@ -23,3 +23,5 @@ actual fun DanmakuLayer(
 ) {
     DanmakuHost(state, modifier.graphicsLayer { this.alpha = alpha() })
 }
+
+actual val danmakuLayerHasOwnSurface: Boolean get() = false

@@ -27,11 +27,12 @@ import me.him188.ani.app.ui.foundation.theme.EasingDurations
 import me.him188.ani.danmaku.ui.DanmakuHostState
 import me.him188.ani.danmaku.ui.DanmakuLayer
 import me.him188.ani.danmaku.ui.DanmakuLayerSnapshots
+import me.him188.ani.danmaku.ui.danmakuLayerHasOwnSurface
 import org.openani.mediamp.MediampPlayer
 
 /**
  * 播放页的弹幕: [PlayerDanmakuHost] 把播放状态和弹幕事件喂给 [state], 画在单独的 [DanmakuLayer] 里, 并登记给 Web 控制台截图.
- * 要在视频之前组合 (见 [DanmakuLayer]).
+ * 与视频面谁先组合见 [TvDanmakuAroundVideo].
  *
  * [enabled] 切换时整层淡入淡出 (时长同 `AniAnimatedVisibility`), 淡出完从组合里摘掉, 关着时不收弹幕.
  * [hidden] 为 true 时整层透明但照常收弹幕, 在画的时候读, 不引起重组.
@@ -68,4 +69,20 @@ internal fun TvPlayerDanmaku(
         // 与上面 PlayerDanmakuHost 转告的暂停同一判据; 播放器状态的值在哪个线程都能读
         playing = remember(player) { { player.state.value.isPlaying } },
     )
+}
+
+/**
+ * 弹幕层与视频面的组合先后, 看弹幕此刻画在哪 ([danmakuLayerHasOwnSurface]): 画在单独表面上时弹幕在前, 退回画在界面里时视频面在前 ——
+ * 两种表面都在窗口上挖洞, 把画在它之前的窗口内容清成透明, 摆反了不是字幕被清掉就是弹幕整层看不见.
+ * 换画法时只有弹幕挪位置 (重新组合, 同关了再开), 视频面的槽位不变.
+ */
+@Composable
+internal fun TvDanmakuAroundVideo(
+    danmaku: @Composable () -> Unit,
+    video: @Composable () -> Unit,
+    danmakuOnOwnSurface: Boolean = danmakuLayerHasOwnSurface,
+) {
+    if (danmakuOnOwnSurface) danmaku()
+    video()
+    if (!danmakuOnOwnSurface) danmaku()
 }
