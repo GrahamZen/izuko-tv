@@ -174,6 +174,8 @@
     `AudioTrackSupport.allAudioUnplayable` 让电视弹提示请用户手动换源（`TvUnplayableAudioNotice`）。
     mkv 里的 FLAC 轨由 `SubtitleFixingMkvExtractor` 按 CodecPrivate 里 STREAMINFO 的最大帧长补上解码器输入缓冲大小（`MkvFlacInputSize`）：
     media3 读 mkv 时不设，系统 FLAC 解码器按默认 32 KiB 开，多声道的一帧放不下，每帧都被跳过，一直没声音。
+    mkv 最后 1 MiB 内的解析错误当作文件读完（`MkvTailTolerantExtractor`，建 `DefaultMediaSourceFactory` 时包在 mkv 提取器外）：
+    有的文件在最后一个元素后面跟着填充或残缺的尾巴，播放器预读到文件末尾时报错会让还没播到那里的整集失败、换源；文件中间出错照常报。
     字幕的字节在交给解析器与 libass 之前就理顺，下游（`SubtitleView`、libass 画的 `LiftableAssSubtitleView`、
     手机控制中心的截图、控件出现时上移字幕）都只读理顺后的数据，不各自处理压缩与编码：mkv 内封的轨在
     `SubtitleFixingMkvExtractor` 里（zlib 压缩的轨先解压，文字字幕与 ASS 文件头转成 UTF-8），外挂字幕文件在
