@@ -293,6 +293,13 @@ sealed interface RuleStep {
      *
      * [filterByKeyword] 为 `true` 时只留名字含有搜索关键词的条目, 给只提供「全部条目」列表、没有搜索接口的站点用.
      * 比较前两边都去掉空白与标点、中文数字换成阿拉伯数字、繁体转成简体 (安卓上), 不分大小写.
+     *
+     * [aliasPath] 取站点给的别名, 默认是苹果 CMS 接口的 `vod_sub` (没有这个字段的站点取不到, 不影响): 字符串按两边带空白的 `/`、逗号、顿号拆开,
+     * 数组取每一项; 写空字符串表示不取. 别名只拿来认部 (页名省掉了副标题、写成站点自己的叫法时, 别名里常有条目服务上的名字).
+     *
+     * 搜索结果里没有别名的站点, [aliasUrl] 给出另取别名的地址: 模板里写 `{ids}` 时一个请求取全部 (逗号连起来的条目 id, 即 [idPath] 取到的),
+     * 写 `{id}` 时每个条目一个请求. 回应 (JSON) 里 [aliasListPath] 处是条目 (一个或一列), 按 [idPath] 对上搜到的条目, 按 [aliasPath] 取别名.
+     * 只在搜到的页名没有一个是这一部的名字时才去取 (见 `RuleMediaSource`), 搜索段里有几个 `jsonSubjects` 时用第一个配了它的.
      */
     @Serializable
     @SerialName("jsonSubjects")
@@ -303,6 +310,9 @@ sealed interface RuleStep {
         val urlPath: String = "",
         val urlTemplate: String = "",
         val filterByKeyword: Boolean = false,
+        val aliasPath: String = "vod_sub",
+        val aliasUrl: String = "",
+        val aliasListPath: String = "",
     ) : RuleStep
 
     /**
