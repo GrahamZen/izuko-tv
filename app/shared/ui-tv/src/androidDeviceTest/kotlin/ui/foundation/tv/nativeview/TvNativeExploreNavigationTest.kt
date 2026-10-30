@@ -138,15 +138,14 @@ class TvNativeExploreNavigationTest {
 
     /**
      * 换成 [rows] 行、每行 [cards] 张的列表 (行键见 [longRow]), 滚动带动画: 长按连发要看平滑滚动落后焦点的那一段.
-     * [moreCard] = 每行末尾再接一张「更多」卡 (第 [cards] 张).
+     * [placeholders] = 每行末尾再接几张占位 (还能接着推荐的推荐行尾, 从第 [cards] 张起).
      */
-    private fun useLongRows(rows: Int, cards: Int, moreCard: Boolean = false) = host.onMain {
+    private fun useLongRows(rows: Int, cards: Int, placeholders: Int = 0) = host.onMain {
         view.animatedScroll = true
         view.setItems(
             listOf(TvNativeExploreItem.Spacer("spacer")) +
                 (0 until rows).map { row ->
-                    val more = if (moreCard) listOf(TvNativeCard(imageUrl = null, title = "更多", more = TvNativeMore.Idle)) else emptyList()
-                    TvNativeExploreItem.Row(longRow(row), testCards(cards, "第 $row 行") + more)
+                    TvNativeExploreItem.Row(longRow(row), testCards(cards, "第 $row 行") + List(placeholders) { null })
                 },
         )
     }
@@ -466,9 +465,9 @@ class TvNativeExploreNavigationTest {
     }
 
     @Test
-    fun `going back to the row start from the more card lands on the first card even with quick direction keys`() {
-        // 行尾的「更多」卡 (第 30 张) 上按返回 = 本行回首卡 (远跳), 途中连按两下方向键
-        useLongRows(rows = 3, cards = 30, moreCard = true)
+    fun `going back to the row start from a trailing placeholder lands on the first card even with quick direction keys`() {
+        // 行尾的占位 (第 30 张) 上按返回 = 本行回首卡 (远跳), 途中连按两下方向键
+        useLongRows(rows = 3, cards = 30, placeholders = 2)
         host.onMain { view.focusCard(longRow(1), 30) }
         waitCard(longRow(1), 30)
         SystemClock.sleep(700)

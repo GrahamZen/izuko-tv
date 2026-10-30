@@ -103,9 +103,6 @@ interface TvNativeRowWallListener {
 
     fun onCardLongPress(rowKey: String, index: Int, anchor: Rect)
 
-    /** 行尾「更多」卡 ([TvNativeCard.more]) 上按确定: 卡片墙上与 hero 态里都直接回调, 不进 hero 态、不进详情页. */
-    fun onMoreClick(rowKey: String) {}
-
     /** 卡片被绑定 (分页的访问提示). */
     fun onBindCard(rowKey: String, index: Int)
 
@@ -1429,10 +1426,8 @@ open class TvNativeRowWallView private constructor(
         override fun onFocused(index: Int) = onCardFocused(rowKey, index)
 
         override fun onClick(index: Int) {
-            if (isMoreCard(rowKey, index)) {
-                rowListener?.onMoreClick(rowKey)
-                return
-            }
+            // 占位 (分页还没到的、推荐行尾正在接的) 上按确定不做什么
+            if (isPlaceholder(rowKey, index)) return
             // 卡片墙上先切到 hero 态, hero 态里才进详情页 (这时有 hero 背景图, 走放大转场); 没有 hero 态时直接交给页面
             if (heroEnabled && !timeline.active) {
                 setHeroActive(true)
@@ -1446,16 +1441,18 @@ open class TvNativeRowWallView private constructor(
         }
 
         override fun onLongPress(index: Int, anchor: Rect) {
-            if (isMoreCard(rowKey, index)) return
+            if (isPlaceholder(rowKey, index)) return
             rowListener?.onCardLongPress(rowKey, pageIndex(rowKey, index), anchor)
         }
 
-        // 卡片墙上点一下 = 聚焦并进 hero 态; hero 态里点另一张只换焦点 (确认就进详情页了), 「更多」卡也只聚焦
-        override fun tapConfirmsWhileFocusing(index: Int): Boolean = heroEnabled && !timeline.active && !isMoreCard(rowKey, index)
+        // 卡片墙上点一下 = 聚焦并进 hero 态; hero 态里点另一张只换焦点 (确认就进详情页了), 占位也只聚焦
+        override fun tapConfirmsWhileFocusing(index: Int): Boolean = heroEnabled && !timeline.active && !isPlaceholder(rowKey, index)
     }
 
-    private fun isMoreCard(rowKey: String, index: Int): Boolean =
-        (list.items.getOrNull(list.indexOfKey(rowKey)) as? TvNativeExploreItem.Row)?.cards?.getOrNull(index)?.more != null
+    private fun isPlaceholder(rowKey: String, index: Int): Boolean {
+        val cards = (list.items.getOrNull(list.indexOfKey(rowKey)) as? TvNativeExploreItem.Row)?.cards ?: return false
+        return index in cards.indices && cards[index] == null
+    }
 
     /** 点开 [rowKey] 行第 [index] 张 (聚焦的那张): 背景此刻是这张卡的、能变清晰就先对焦, 到位再进 (返回 true); 否则 false, 调用方当场进. */
     private fun openWithWallFocus(rowKey: String, index: Int): Boolean {
