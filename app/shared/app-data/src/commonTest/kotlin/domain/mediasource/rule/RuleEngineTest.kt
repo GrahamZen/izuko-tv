@@ -304,6 +304,76 @@ class RuleEngineTest {
     }
 
     @Test
+    fun `json subjects carry the aliases the site gives`() = runTest {
+        // 苹果 CMS 接口的 vod_sub: 几个别名用 ` / ` 或逗号隔开, 有的带着开头的冒号
+        val site = FakeSite(
+            mapOf(
+                "https://www.example.com/api.php/Vod/get_list?vod_name=x" to """
+                    {"code":1,"info":{"rows":[
+                      {"vod_id":100,"vod_name":"赛马娘 第二季","vod_sub":"ウマ娘 プリティーダービー Season 2 / Pretty Derby，马娘"},
+                      {"vod_id":101,"vod_name":"攻壳机动队SSS","vod_sub":": 攻壳机动队 S.A.C. Solid State Society / Fate/stay night"},
+                      {"vod_id":102,"vod_name":"团子大家族Clannad","vod_sub":"クラナド,CLANNAD,团子大家族Clannad"},
+                      {"vod_id":103,"vod_name":"鸦","vod_sub":"","names":["鴉-KARAS-","KARAS"]}
+                    ]}}
+                """.trimIndent(),
+            ),
+        )
+        val search = RuleStep.JsonSubjects(listPath = "info.rows", idPath = "vod_id", namePath = "vod_name", urlTemplate = "/detail/{id}")
+        val config = RuleConfig(baseUrl = "https://www.example.com", search = listOf(RuleStep.Fetch(url = "/api.php/Vod/get_list?vod_name={keyword}"), search))
+        assertEquals(
+            listOf(
+                listOf("ウマ娘 プリティーダービー Season 2", "Pretty Derby", "马娘"),
+                listOf("攻壳机动队 S.A.C. Solid State Society", "Fate/stay night"),
+                listOf("クラナド", "CLANNAD"),
+                emptyList(),
+            ),
+            engine(config, site).search("x").map { it.aliases },
+        )
+        // 别的字段 (数组), 或者不取
+        val fromArray = config.copy(search = listOf(config.search.first(), search.copy(aliasPath = "names")))
+        assertEquals(listOf("鴉-KARAS-", "KARAS"), engine(fromArray, site).search("x").last().aliases)
+        val none = config.copy(search = listOf(config.search.first(), search.copy(aliasPath = "")))
+        assertTrue(engine(none, site).search("x").all { it.aliases.isEmpty() })
+    }
+
+    @Test
+    fun `site aliases are looked up by id when the search results have none`() = runTest {
+        // 搜索接口只给名字; 详情接口 (每个条目一个请求) 与批量接口 (一次取全部) 里有 vod_sub
+        val site = FakeSite(
+            mapOf(
+                "https://www.example.com/list?wd=x" to """{"info":{"rows":[{"vod_id":100,"vod_name":"赛马娘 第二季"},{"vod_id":27166,"vod_name":"鸦"}]}}""",
+                "https://www.example.com/detail?vod_id=100" to """{"code":1,"info":{"vod_id":100,"vod_name":"赛马娘 第二季","vod_sub":"ウマ娘 プリティーダービー Season 2 / Pretty Derby"}}""",
+                "https://www.example.com/provide?ac=detail&ids=100,27166" to """{"list":[{"vod_id":27166,"vod_name":"鸦","vod_sub":"鴉-KARAS-"}]}""",
+            ),
+        )
+        val search = RuleStep.JsonSubjects(
+            listPath = "info.rows", idPath = "vod_id", namePath = "vod_name", urlTemplate = "/play/{id}",
+            aliasUrl = "/detail?vod_id={id}", aliasListPath = "info",
+        )
+        val perItem = engine(RuleConfig(baseUrl = "https://www.example.com", search = listOf(RuleStep.Fetch(url = "/list?wd={keyword}"), search)), site)
+        assertTrue(perItem.hasAliasLookup)
+        val found = perItem.search("x")
+        assertEquals(listOf(emptyList<String>(), emptyList()), found.map { it.aliases })
+        // 鸦的详情取不到 (404): 照旧没有别名
+        assertEquals(
+            listOf(listOf("ウマ娘 プリティーダービー Season 2", "Pretty Derby"), emptyList()),
+            perItem.siteAliases(found).map { it.aliases },
+        )
+        val batch = engine(
+            RuleConfig(
+                baseUrl = "https://www.example.com",
+                search = listOf(RuleStep.Fetch(url = "/list?wd={keyword}"), search.copy(aliasUrl = "/provide?ac=detail&ids={ids}", aliasListPath = "list")),
+            ),
+            site,
+        )
+        assertEquals(listOf(emptyList(), listOf("鴉-KARAS-")), batch.siteAliases(batch.search("x")).map { it.aliases })
+        // 没配置时不取
+        val none = engine(RuleConfig(baseUrl = "https://www.example.com", search = listOf(RuleStep.Fetch(url = "/list?wd={keyword}"), search.copy(aliasUrl = ""))), site)
+        assertEquals(false, none.hasAliasLookup)
+        assertEquals(none.search("x"), none.siteAliases(none.search("x")))
+    }
+
+    @Test
     fun `json subjects build urls from item fields`() = runTest {
         val site = FakeSite(
             mapOf(

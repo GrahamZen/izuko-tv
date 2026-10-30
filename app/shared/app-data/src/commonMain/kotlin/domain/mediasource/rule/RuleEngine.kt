@@ -11,6 +11,11 @@ package me.him188.ani.app.domain.mediasource.rule
 
 import io.ktor.http.Url
 import io.ktor.http.decodeURLQueryComponent
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -24,6 +29,7 @@ import me.him188.ani.app.domain.mediasource.directapi.applyTransforms
 import me.him188.ani.app.domain.mediasource.directapi.decodeBase64Lenient
 import me.him188.ani.app.domain.mediasource.directapi.selectByPath
 import me.him188.ani.app.domain.mediasource.directapi.stringByPath
+import me.him188.ani.app.domain.mediasource.search.SubjectSearchPlan
 import me.him188.ani.app.domain.mediasource.toSimplifiedChinese
 import me.him188.ani.app.domain.mediasource.web.BlockedException
 import me.him188.ani.datasources.api.util.namedGroup
@@ -57,7 +63,14 @@ data class RuleHttpResponse(
 )
 
 /** 站点上的一个条目. */
-data class RuleSubject(val name: String, val url: String)
+data class RuleSubject(
+    val name: String,
+    val url: String,
+    /** 站点给的别名 ([RuleStep.JsonSubjects.aliasPath]), 不含 [name]. 只拿来认部 ([SubjectSearchPlan.nameWithSiteAliases]). */
+    val aliases: List<String> = emptyList(),
+    /** 站点上的条目 id ([RuleStep.JsonSubjects.idPath]), 另取别名 ([RuleEngine.siteAliases]) 用; 只在配了 [RuleStep.JsonSubjects.aliasUrl] 时记下. */
+    val id: String? = null,
+)
 
 /** 站点上的一集. */
 data class RuleEpisode(val name: String, val url: String)
@@ -132,6 +145,56 @@ class RuleEngine(
             ),
         ) ?: return emptyList()
         return state.subjects.orEmpty()
+    }
+
+    /** 搜索段里第一个配了 [RuleStep.JsonSubjects.aliasUrl] 的条目列表步骤 */
+    private val aliasStep: RuleStep.JsonSubjects? = config.search.jsonSubjectSteps().firstOrNull { it.aliasUrl.isNotBlank() }
+
+    /** 能另取站点别名 ([siteAliases]) */
+    val hasAliasLookup: Boolean get() = aliasStep != null
+
+    /**
+     * 按 [RuleStep.JsonSubjects.aliasUrl] 另取站点给 [subjects] 的别名, 并进各条目的 [RuleSubject.aliases]: 模板里有 `{ids}` 时一个请求取全部,
+     * 有 `{id}` 时每个条目一个请求 (最多 [ALIAS_CONCURRENCY] 个同时, 最多取 [MAX_ALIAS_LOOKUPS] 个条目). 没配置、请求出错时那些条目原样返回.
+     */
+    suspend fun siteAliases(subjects: List<RuleSubject>): List<RuleSubject> {
+        val step = aliasStep ?: return subjects
+        val ids = subjects.mapNotNull { it.id }.distinct().take(MAX_ALIAS_LOOKUPS)
+        if (ids.isEmpty()) return subjects
+        val found: Map<String, List<String>> = if ("{ids}" in step.aliasUrl) {
+            aliasesFrom(step, mapOf("ids" to ids.joinToString(",")))
+        } else coroutineScope {
+            val gate = Semaphore(ALIAS_CONCURRENCY)
+            ids.map { id -> async { gate.withPermit { aliasesFrom(step, mapOf("id" to id)) } } }.awaitAll()
+                .fold(emptyMap()) { acc, map -> acc + map }
+        }
+        return subjects.map { subject ->
+            val extra = found[subject.id].orEmpty().filter { it != subject.name }
+            if (extra.isEmpty()) subject else subject.copy(aliases = (subject.aliases + extra).distinct())
+        }
+    }
+
+    /** 请求一次 [RuleStep.JsonSubjects.aliasUrl] (模板变量 [variables]), 返回条目 id 到别名. 出错时为空. */
+    private suspend fun aliasesFrom(step: RuleStep.JsonSubjects, variables: Map<String, String>): Map<String, List<String>> {
+        val state = RuleState(value = "", variables = variables, inputUrl = null, pageUrl = config.baseUrl)
+        val url = RuleText.resolveUrl(config.baseUrl, substitute(step.aliasUrl, state)) ?: return emptyMap()
+        val response = try {
+            http.request(RuleHttpRequest("GET", RuleText.normalizeUrl(url), requestHeaders(state, emptyMap()), null, null))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            trace?.onStep("aliases", false, e.toString())
+            return emptyMap()
+        }
+        if (response.status >= 400) {
+            trace?.onStep("aliases", false, "HTTP ${response.status} $url")
+            return emptyMap()
+        }
+        val items = runCatching { jsonItems(response.text, step.aliasListPath) }.getOrElse { return emptyMap() }
+        return items.mapNotNull { item ->
+            val id = item.stringByPath(step.idPath)?.trim()?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+            id to jsonItemAliases(item, step.aliasPath, item.stringByPath(step.namePath).orEmpty())
+        }.toMap()
     }
 
     /** 打开条目页, 返回线路与剧集. */
@@ -566,10 +629,27 @@ class RuleEngine(
             val name = item.stringByPath(step.namePath)?.trim()?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
             if (keyword != null && keyword !in normalizeForFilter(name)) return@mapNotNull null
             val url = jsonItemUrl(item, state, step.idPath, step.urlPath, step.urlTemplate, base) ?: return@mapNotNull null
-            RuleSubject(name, url)
+            val id = item.stringByPath(step.idPath)?.trim()?.takeIf { it.isNotEmpty() && step.aliasUrl.isNotBlank() }
+            RuleSubject(name, url, jsonItemAliases(item, step.aliasPath, name), id)
         }.distinctBy { it.url }
         if (subjects.isEmpty()) return fail(label, if (keyword != null) "JSON 里没有名字含有关键词的条目" else "JSON 里没有取到条目")
         return ok(label, state.copy(subjects = subjects), "${subjects.size} 个条目")
+    }
+
+    /** [item] 在 [path] 下的别名: 字符串按 [ALIAS_SEPARATOR] 拆开, 数组取每一项; 去掉首尾的空白与冒号, 不要与 [name] 相同的. */
+    private fun jsonItemAliases(item: JsonNode, path: String, name: String): List<String> {
+        if (path.isBlank()) return emptyList()
+        return item.selectByPath(path).flatMap { node ->
+            when (val element = (node as JsonNode).element) {
+                is JsonArray -> element.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+                is JsonPrimitive -> listOfNotNull(element.contentOrNull)
+                else -> emptyList()
+            }
+        }
+            .flatMap { it.split(ALIAS_SEPARATOR) }
+            .map { alias -> alias.trim { it.isWhitespace() || it == ':' || it == '：' } }
+            .filter { it.isNotEmpty() && it != name }
+            .distinct()
     }
 
     /** 按关键词筛条目时比较用的关键词; 不筛 (或这一段没有关键词) 为 `null`. */
@@ -765,6 +845,24 @@ class RuleEngine(
         private const val CONTENT_TYPE_FORM = "application/x-www-form-urlencoded"
         private const val CONTENT_TYPE_JSON = "application/json"
         private const val MAX_URL_LENGTH = 8192
+
+        /** 一个字段里列几个别名时的分隔: 两边带空白的 `/` (名字里本身的 `Fate/stay night` 不拆)、逗号、顿号、竖线 */
+        private val ALIAS_SEPARATOR = Regex("""\s+/\s+|\s*[,，、|]\s*""")
+
+        /** 另取别名时最多取这么多个条目 (搜索结果的前几个) */
+        private const val MAX_ALIAS_LOOKUPS = 16
+
+        /** 每个条目一个请求地另取别名时, 最多同时几个 (一次搜索十来个条目, 两轮取完) */
+        private const val ALIAS_CONCURRENCY = 8
+
+        /** 这些步骤里 (含 `first` 的各分支) 的条目列表步骤 */
+        private fun List<RuleStep>.jsonSubjectSteps(): List<RuleStep.JsonSubjects> = flatMap { step ->
+            when (step) {
+                is RuleStep.JsonSubjects -> listOf(step)
+                is RuleStep.First -> step.branches.flatMap { it.jsonSubjectSteps() }
+                else -> emptyList()
+            }
+        }
         private val RAW_TEXT_TAGS = setOf("script", "style")
         private const val NAME_HINTS = "h1, h2, h3, h4, h5, h6, .title, [class*=title], [class*=name]"
         private val VIDEO_URL = Regex("""https?://[^\s"'<>\\]+?\.(?:m3u8|mp4|flv|mkv)(?:[?#][^\s"'<>\\]*)?""", RegexOption.IGNORE_CASE)
