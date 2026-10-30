@@ -69,6 +69,25 @@ class SourceStartOrderTest {
     }
 
     @Test
+    fun `the remembered source starts right after the local caches`() {
+        val sources = listOf(
+            FakeSource("t0", 0),
+            FakeSource("remembered-t3", 3),
+            FakeSource("cache", null, MediaSourceKind.LocalCache),
+            FakeSource("t1", 1),
+        )
+        assertEquals(
+            listOf("cache", "remembered-t3", "t0", "t1"),
+            SourceStartOrder.of(sources, first = "remembered-t3", summaryOf = { null }).map { sources[it].mediaSourceId },
+        )
+        // 记住的源不在这一轮里: 照常排
+        assertEquals(
+            listOf("cache", "t0", "t1", "remembered-t3"),
+            SourceStartOrder.of(sources, first = "gone", summaryOf = { null }).map { sources[it].mediaSourceId },
+        )
+    }
+
+    @Test
     fun `faster sources start first among sources that played fine`() {
         val sources = listOf(FakeSource("slow", 0), FakeSource("fast", 0), FakeSource("unknown", 0))
         val profiles = mapOf(

@@ -15,7 +15,10 @@ import kotlinx.atomicfu.locks.synchronized
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -25,6 +28,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flatMapMerge
 import kotlinx.coroutines.flow.flow
@@ -39,6 +43,7 @@ import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.transform
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.io.IOException
 import me.him188.ani.app.data.models.episode.EpisodeInfo
 import me.him188.ani.app.data.models.episode.displayName
@@ -59,6 +64,8 @@ import me.him188.ani.app.domain.mediasource.instance.MediaSourceInstance
 import me.him188.ani.app.domain.mediasource.search.AnimeNames
 import me.him188.ani.app.domain.mediasource.web.BlockReason
 import me.him188.ani.app.domain.mediasource.web.BlockedException
+import me.him188.ani.app.domain.player.diagnostics.PlayTimeline
+import me.him188.ani.app.platform.DevSwitches
 import me.him188.ani.app.platform.currentAniBuildConfig
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.paging.SizedSource
@@ -81,6 +88,7 @@ import me.him188.ani.utils.platform.collections.ImmutableEnumMap
 import me.him188.ani.utils.platform.currentTimeMillis
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 private val DEFAULT_RATE_LIMIT_RETRY_DELAY = 30.seconds
@@ -188,6 +196,10 @@ class MediaSourceMediaFetcher(
     private val searchLimiter: MediaSourceSearchLimiter? = null,
     /** 选源用的层级表, 开查先后与排队按它 (见 [SourceStartOrder.startTierOf]); 还没有时为 null */
     private val sourceTiers: () -> MediaSelectorSourceTiers? = { null },
+    /** 条目 (请求的 subjectId) 记住的数据源 (自动选源先只等它), 开查时排最前 (见 [SourceStartOrder.of] 的 `first`); 没有时为 null */
+    private val rememberedSourceOf: (suspend (subjectId: String) -> String?)? = null,
+    /** [rememberedSourceOf] 跑在这上面. 不用查询的线程池: 冷启动时那里排满了各源的活, 读一次库要等一两秒 */
+    private val lookupContext: CoroutineContext = Dispatchers.Default,
 ) : MediaFetcher {
     private inner class MediaSourceResultImpl(
         override val instanceId: String,
@@ -201,7 +213,7 @@ class MediaSourceMediaFetcher(
         /** 这个源查询时要占名额的上限; null 不占 (见 [SelfLimitedMediaSource]). */
         private val searchLimiter: MediaSourceSearchLimiter?,
         /** 开查时这个源换到的线程池通道 (见 [SearchDispatchers.forSource]) */
-        private val searchLane: () -> CoroutineContext = { EmptyCoroutineContext },
+        private val searchLane: suspend () -> CoroutineContext = { EmptyCoroutineContext },
         /** 排队等名额按的层级 (见 [SourceStartOrder.startTierOf]) */
         private val searchTier: MediaSourceTier? = sourceInfo.tier,
     ) : MediaSourceFetchResult, SynchronizedObject() {
@@ -552,14 +564,34 @@ class MediaSourceMediaFetcher(
                         },
                     flowContext = flowContext,
                     searchLimiter = searchLimiter.takeUnless { instance.source is SelfLimitedMediaSource },
-                    searchLane = { SearchDispatchers.forSource(searchRanks.getValue(instance.instanceId)) },
+                    searchLane = { SearchDispatchers.forSource(searchRanks.await().getValue(instance.instanceId)) },
                     searchTier = SourceStartOrder.startTierOf(instance.source.mediaSourceId, instance.source.info.tier, startTiers),
                 )
             }
 
-        /** 各源在开查先后里的位次 (见 [SourceStartOrder]) */
-        private val searchRanks: Map<String, Int> by lazy {
-            SourceStartOrder.of(mediaSourceResults, startTiers).withIndex().associate { (rank, index) -> mediaSourceResults[index].instanceId to rank }
+        /** 这部番记住的源 ([rememberedSourceOf]), 建会话时就在 [lookupContext] 上开始读; 开关关着或没给 [rememberedSourceOf] 时为 null. */
+        private val rememberedSource: Deferred<String?>? = rememberedSourceOf
+            ?.takeIf { DevSwitches.searchRememberedFirst.value }
+            ?.let { lookup ->
+                CoroutineScope(lookupContext).async {
+                    PlayTimeline.mark("t_first_lookup")
+                    lookup(request.first().subjectId)
+                }
+            }
+
+        /**
+         * 各源在开查先后里的位次 (见 [SourceStartOrder]), 第一个开查的源来取时算一次. 这部番记住的源 ([rememberedSourceOf]) 排最前、
+         * 先拿搜索线程, 限流也排它到队首: 自动选源先只等它, 别的源再多也先查它 ([DevSwitches.searchRememberedFirst] 关时不管它).
+         * 记住的源建会话时就开始读 ([rememberedSource]), 到这里最多再等 [REMEMBERED_SOURCE_TIMEOUT], 还没读到就照常排.
+         */
+        private val searchRanks: Deferred<Map<String, Int>> = CoroutineScope(flowContext).async(start = CoroutineStart.LAZY) {
+            val remembered = rememberedSource?.let { lookup ->
+                withTimeoutOrNull(REMEMBERED_SOURCE_TIMEOUT) { lookup.await() }
+                    .also { PlayTimeline.mark("search_first", it ?: if (lookup.isCompleted) "none" else "timed out") }
+            }
+            if (remembered != null) searchLimiter?.prioritize(remembered)
+            SourceStartOrder.of(mediaSourceResults, startTiers, first = remembered)
+                .withIndex().associate { (rank, index) -> mediaSourceResults[index].instanceId to rank }
         }
 
         override val cumulativeResults: Flow<List<Media>> = kotlin.run {
@@ -637,6 +669,9 @@ class MediaSourceMediaFetcher(
     private companion object {
         private val logger = logger<MediaSourceMediaFetcher>()
         private const val ENABLE_WATCHDOG = false
+
+        /** 读条目记住的源最多等这么久, 读不出来就照常排, 不让各源开查跟着等 */
+        private val REMEMBERED_SOURCE_TIMEOUT = 300.milliseconds
     }
 }
 
