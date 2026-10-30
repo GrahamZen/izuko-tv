@@ -197,6 +197,12 @@ class TvPlayerOverlayState(
     val commentImageZoom = TvImageZoomState()
 
     /**
+     * 评论面板上次停在哪一楼 (主楼的 stableId; 焦点走到的、点开过的): 收起控制层或换了胶囊再打开评论面板时落回这一楼 (见 TvCommentsPanel).
+     * 换集、换排序时清掉; null = 从第一楼开始. 活到离开播放页.
+     */
+    internal var lastCommentThreadId: String? = null
+
+    /**
      * 面板条目焦点找回锚: 每次自增一下, 面板宿主就把焦点送回**当前聚焦的那一条**
      * (由条目获焦时登记请求器, 见 TvPlayerPanelHost).
      *
