@@ -199,17 +199,39 @@ class SplitSeasonPageMatcher private constructor(
         private const val OWN_PAGE_EXTRA_ENTRIES = 2
 
         /**
-         * 正在观看拆分季的后半并且有足够信息时创建: 当前条目是第一段、[sort] 或 [ep] 不是整数、[ownNames] 没有名字时为 `null`.
+         * 正在观看拆分季的后半并且有足够信息时创建: 当前条目是第一段、[sort] 或 [ep] 不是整数、[ownNames] 没有认得出这一段的名字时为 `null`.
          *
-         * @param ownNames 当前条目的所有名字, 用来认出自己的页面.
+         * @param ownNames 当前条目的所有名字, 用来认出自己的页面. 只用其中认得出这一段的 ([distinctiveOwnNames]).
          */
         fun create(season: SplitSeason, ownNames: List<String>, sort: EpisodeSort, ep: EpisodeSort?): SplitSeasonPageMatcher? {
             if (season.selfIndex == 0) return null
             val sortNumber = sort.integerOrNull() ?: return null
             val epNumber = ep?.integerOrNull() ?: return null
-            val names = ownNames.filter { it.isNotBlank() }
+            val names = distinctiveOwnNames(season, ownNames.filter { it.isNotBlank() })
             if (names.isEmpty()) return null
             return SplitSeasonPageMatcher(season, names, epNumber, sortNumber)
+        }
+
+        /**
+         * [ownNames] 里认得出是当前这一段的名字: 与别的段同名、或就是某个名字去掉分段标记后的季名的不算.
+         * 选源时补上的别名可能就是季名 (港台译名按条目名里的季号补成「XX 第二季」), 当成自己的名字会把只装着前半的合并页
+         * 认成自己的页面, 按 ep 选到前半的同号集.
+         */
+        private fun distinctiveOwnNames(season: SplitSeason, ownNames: List<String>): List<String> {
+            val seasonNames = buildSet {
+                season.parts.forEachIndexed { index, part ->
+                    for (name in part.names) {
+                        val normalized = normalize(name).lowercase()
+                        if (index != season.selfIndex) add(normalized)
+                        for (marker in part.markers) {
+                            if (!containsMarker(name, marker)) continue
+                            val base = normalized.replace(normalize(marker).lowercase(), "")
+                            if (base != normalized && base.isNotEmpty()) add(base)
+                        }
+                    }
+                }
+            }
+            return ownNames.filter { normalize(it).lowercase() !in seasonNames }
         }
 
         private fun normalize(name: String): String =

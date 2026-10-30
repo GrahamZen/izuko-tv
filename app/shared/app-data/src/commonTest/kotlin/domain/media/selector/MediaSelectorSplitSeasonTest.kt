@@ -63,6 +63,19 @@ class MediaSelectorSplitSeasonTest {
     }
 
     @Test
+    fun `ReZero S2 part 2 with the season name among its aliases skips the part 1 page`() = runSimpleMediaSelectorTestSuite {
+        // 港台译名按条目名里的季号补成的别名就是季名 (前半的名字)
+        initSplitSeason(ReZero, 316247, sort = 39, ep = 1, extraAliases = listOf("Re：从零开始的异世界生活 第二季"))
+        val partOneOnly = addPage("Re：从零开始的异世界生活 第二季", 1..13)
+        val continuing = addPage("Re：从零开始的异世界生活 第二季 Part.2", 14..25, source = "web2")
+        val merged = addPage("Re：从零开始的异世界生活 第二季", 1..25, source = "web3")
+
+        assertPage(partOneOnly)
+        assertPage(continuing, 14 to "included EXACT SEASON")
+        assertPage(merged, 14 to "included EXACT SEASON")
+    }
+
+    @Test
     fun `ReZero S2 part 2 on own page restarting from 1`() = runSimpleMediaSelectorTestSuite {
         initSplitSeason(ReZero, 316247, sort = 43, ep = 5)
         val restarting = addPage("Re：从零开始的异世界生活 第二季 Part.2", 1..12)
@@ -367,12 +380,19 @@ class MediaSelectorSplitSeasonTest {
     /**
      * 按 Bangumi 数据初始化 [series] 中的条目 [selfId], 正在观看 sort 为 [sort], ep 为 [ep] 的一集.
      * 系列名与续集名按 `SubjectSeriesInfo.compute` 的规则去掉当前条目自己的名字, 拆分季用服务端对该条目下发的结果.
+     * [extraAliases] 是选源时另外补上的别名 (港台译名), 系列信息算好之后才加, 不影响系列名.
      */
-    private fun MediaSelectorTestSuite.initSplitSeason(series: SplitSeasonTestData.Series, selfId: Int, sort: Int, ep: Int) {
+    private fun MediaSelectorTestSuite.initSplitSeason(
+        series: SplitSeasonTestData.Series,
+        selfId: Int,
+        sort: Int,
+        ep: Int,
+        extraAliases: List<String> = emptyList(),
+    ) {
         val selfIndex = series.subjects.indexOfFirst { it.first == selfId }
         val own = series.names(selfId)
         initSubject(own.first()) {
-            aliases(*own.drop(1).toTypedArray())
+            aliases(*(own.drop(1) + extraAliases).toTypedArray())
             episodeSort = EpisodeSort(sort)
             episodeEp = EpisodeSort(ep)
             seriesInfo(seasonSort = selfIndex + 1) {
