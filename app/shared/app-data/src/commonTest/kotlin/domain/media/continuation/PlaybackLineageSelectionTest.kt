@@ -436,6 +436,57 @@ class PlaybackLineageSelectionTest {
     }
 
     @Test
+    fun `a gone lineage takes the remembered source on the same source along`() = runFetchMediaSelectorTestSuite {
+        initWeb()
+        val repository = PlaybackLineageRepository(createTestPreferencesDataStore()).apply { setLineage(SUBJECT_ID, lineage) }
+        val (_, session, sources) = configureFetchSession {
+            object {
+                val other by web()
+            }
+        }
+        sources.other.complete(media(kind = WEB, subjectName = "Example Series", alliance = "线路"))
+        testScope().runCurrent()
+        val remembered = mutableMapOf(SUBJECT_ID to lineage.mediaSourceId)
+        val forgetter = RememberedSourceForgetter { subjectId, mediaSourceId ->
+            if (remembered[subjectId] == mediaSourceId) remembered.remove(subjectId)
+        }
+        val episode = preferenceApi.mediaSelectorContext.value.episodeInfo!!
+
+        // 只是没有这一集: 线索与记住的源都留着
+        assertFalse(PlaybackLineageSelection(repository, FakeContinuation(LineageResolution.NotFound), HAS_CACHE_RECORD, forgetter).select(SUBJECT_ID, episode, session, selector))
+        assertEquals(lineage.mediaSourceId, remembered[SUBJECT_ID])
+
+        // 线索失效: 记住的源就是线索所在的源, 一起忘掉
+        assertFalse(PlaybackLineageSelection(repository, FakeContinuation(LineageResolution.Gone), HAS_CACHE_RECORD, forgetter).select(SUBJECT_ID, episode, session, selector))
+        assertNull(repository.lineageOf(SUBJECT_ID))
+        assertNull(remembered[SUBJECT_ID])
+    }
+
+    @Test
+    fun `a gone lineage leaves a remembered source on another source alone`() = runFetchMediaSelectorTestSuite {
+        initWeb()
+        val repository = PlaybackLineageRepository(createTestPreferencesDataStore()).apply { setLineage(SUBJECT_ID, lineage) }
+        val (_, session, sources) = configureFetchSession {
+            object {
+                val other by web()
+            }
+        }
+        sources.other.complete(media(kind = WEB, subjectName = "Example Series", alliance = "线路"))
+        testScope().runCurrent()
+        val remembered = mutableMapOf(SUBJECT_ID to "other")
+        val forgetter = RememberedSourceForgetter { subjectId, mediaSourceId ->
+            if (remembered[subjectId] == mediaSourceId) remembered.remove(subjectId)
+        }
+
+        assertFalse(
+            PlaybackLineageSelection(repository, FakeContinuation(LineageResolution.Gone), HAS_CACHE_RECORD, forgetter)
+                .select(SUBJECT_ID, preferenceApi.mediaSelectorContext.value.episodeInfo!!, session, selector),
+        )
+        assertNull(repository.lineageOf(SUBJECT_ID))
+        assertEquals("other", remembered[SUBJECT_ID])
+    }
+
+    @Test
     fun `no lineage - nothing is selected and nothing is resolved`() = runFetchMediaSelectorTestSuite {
         initWeb()
         val repository = PlaybackLineageRepository(createTestPreferencesDataStore())
