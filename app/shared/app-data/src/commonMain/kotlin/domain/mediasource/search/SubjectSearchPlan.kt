@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.domain.mediasource.search
 
+import me.him188.ani.app.domain.media.selector.filter.ExactSubjectNames
 import me.him188.ani.app.domain.media.selector.filter.SeasonNumberConflict
 import me.him188.ani.app.domain.mediasource.MediaListFilter
 import me.him188.ani.app.domain.mediasource.MediaListFilterContext
@@ -186,6 +187,34 @@ class SubjectSearchPlan private constructor(private val request: MediaFetchReque
      */
     fun identify(name: String): SubjectMatch =
         if (names.rejectsPageTitle(name)) SubjectMatch.OTHER else nameRules.identify(name)
+
+    /** 选择器定精确匹配的名字规则 (资源的条目名与这一部的名字算不算同一个); 首播年份按最早播出的一集 */
+    private val exactNames by lazy {
+        ExactSubjectNames(ownNames, airYear = request.episodes.mapNotNull { it.airDate.takeIf { date -> date.isValid }?.year }.minOrNull())
+    }
+
+    /** [name] 就是这一部的名字: 选择器把这个条目名的资源算精确匹配 ([ExactSubjectNames]). */
+    fun isOwnName(name: String): Boolean = exactNames.matches(name)
+
+    /**
+     * 站点上叫 [name]、站点另给了别名 [aliases] (苹果 CMS 接口的 `vod_sub` 等) 的条目, 拿来认部的名字. 页名常省掉副标题或写成站点自己的叫法
+     * (「赛马娘 第二季」「鸦」「团子大家族Clannad」), 别名里才有条目服务上的名字.
+     * [name] 不是这一部的名字 (选择器不算精确, [ExactSubjectNames]) 而别名里有是的 (名字表也不认作别的作品, [identify]) 时换成那个别名, 有几个时取与这一部靠前的名字
+     * (中文名、原名) 相同的; 其余用 [name]. 只换成精确的: 别名只是含着这一部的名字时选择器照样只算模糊, 换了也不能立即选,
+     * 还会把「团子大家族 剧场版」这种页 (别名「劇場版 CLANNAD」) 当成 TV 版打开.
+     *
+     * 页名或别名写明的季与这一部的不同时不换: 别名常带系列总名 (第一季的名字), 第四季的页别名里也有它.
+     */
+    fun nameWithSiteAliases(name: String, aliases: List<String>): String {
+        if (aliases.isEmpty() || exactNames.matches(name)) return name
+        val season = DriveSubjectSeason.declaredIn(ownNames) ?: 1
+        val otherSeason = (listOf(name) + aliases).any { DriveNameParser.parseSubjectSeason(it).let { declared -> declared != null && declared != season } }
+        if (otherSeason) return name
+        return aliases.filter { exactNames.matches(it) && identify(it) != SubjectMatch.OTHER }.minByOrNull { alias ->
+            val key = MediaListFilters.normalizeForCompare(alias).lowercase()
+            ownNames.indexOfFirst { MediaListFilters.normalizeForCompare(it).lowercase() == key }.takeIf { it >= 0 } ?: ownNames.size
+        } ?: name
+    }
 
     /** 搜到的资源里有这一部的 (资源的条目名是站点上的页名): 关键词链搜到这里就不再试回退关键词. */
     fun foundOwn(media: List<DefaultMedia>): Boolean =
