@@ -75,6 +75,9 @@ sealed interface RulePlayResult {
 
     /** 没取到. */
     data object Failed : RulePlayResult
+
+    /** 没取到, 站点明确说要登录才能播 ([message] 是站点的原话, 见 [RuleLoginRequired]). */
+    data class LoginRequired(val message: String) : RulePlayResult
 }
 
 /**
@@ -149,6 +152,7 @@ class RuleEngine(
 
     /** 从剧集页取视频地址. */
     suspend fun play(episodeUrl: String): RulePlayResult {
+        val stage = StageErrors()
         val state = runStage(
             "play",
             config.play,
@@ -158,20 +162,25 @@ class RuleEngine(
                 inputUrl = episodeUrl,
                 pageUrl = episodeUrl,
             ),
-        ) ?: return RulePlayResult.Failed
+            stage,
+        ) ?: return playFailed(stage)
         if (state.sniffVideo) return RulePlayResult.Sniff
         val value = state.value.trim()
         // 地址里的空格是允许的 (站点给的直链常带空格, 规整时会编码), 换行与 `<` 说明还是页面内容
         if (value.isEmpty() || value.length > MAX_URL_LENGTH || value.any { it == '\n' || it == '\r' || it == '<' }) {
             trace?.onStep("play", false, "最后的值不是地址: ${RuleText.preview(value)}")
-            return RulePlayResult.Failed
+            return playFailed(stage)
         }
         val url = RuleText.resolveUrl(state.pageUrl, value) ?: run {
             trace?.onStep("play", false, "最后的值不是地址: ${RuleText.preview(value)}")
-            return RulePlayResult.Failed
+            return playFailed(stage)
         }
         return RulePlayResult.Direct(RuleText.normalizeUrl(url), mediaHeaders(state))
     }
+
+    /** 播放段没取到地址: 最后一次请求回来的内容里站点说了要登录时为 [RulePlayResult.LoginRequired] */
+    private fun playFailed(stage: StageErrors): RulePlayResult =
+        stage.lastResponse?.let(RuleLoginRequired::messageOf)?.let { RulePlayResult.LoginRequired(it) } ?: RulePlayResult.Failed
 
     /**
      * 播放时的请求头: 规则的 [RuleConfig.headers] (视频地址常常要求与页面相同的 Referer), 缺的再用 [RuleConfig.matchVideo] 的补上,
@@ -199,10 +208,17 @@ class RuleEngine(
     /** 记录这一段里最后一个异常: 所有分支都失败时把它抛出去, 让调用方知道是请求出错而不是没结果. */
     private class StageErrors {
         var last: Exception? = null
+
+        /** 这一段最后一次请求回来的内容 (没取到地址时看站点是不是说了要登录) */
+        var lastResponse: String? = null
     }
 
-    private suspend fun runStage(name: String, steps: List<RuleStep>, initial: RuleState): RuleState? {
-        val errors = StageErrors()
+    private suspend fun runStage(
+        name: String,
+        steps: List<RuleStep>,
+        initial: RuleState,
+        errors: StageErrors = StageErrors(),
+    ): RuleState? {
         val result = runSteps(steps, initial, name, errors)
         if (result == null) errors.last?.let { throw it }
         return result
@@ -259,9 +275,9 @@ class RuleEngine(
 
     private suspend fun runStep(step: RuleStep, state: RuleState, label: String, errors: StageErrors): RuleState? =
         when (step) {
-            is RuleStep.Fetch -> fetch(state, label, step.url, step.method, step.headers, step.body, step.contentType, step.cookies)
+            is RuleStep.Fetch -> fetch(state, label, errors, step.url, step.method, step.headers, step.body, step.contentType, step.cookies)
             is RuleStep.Sniff -> when (step.goal) {
-                RuleStep.Sniff.GOAL_HTML -> fetch(state, label, step.url, "GET", emptyMap(), "", "", "")
+                RuleStep.Sniff.GOAL_HTML -> fetch(state, label, errors, step.url, "GET", emptyMap(), "", "", "")
                 else -> ok(label, state.copy(sniffVideo = true), "交给 WebView 嗅探")
             }
 
@@ -357,6 +373,7 @@ class RuleEngine(
     private suspend fun fetch(
         state: RuleState,
         label: String,
+        errors: StageErrors,
         url: String,
         method: String,
         stepHeaders: Map<String, String>,
@@ -377,6 +394,7 @@ class RuleEngine(
         }
         val request = RuleHttpRequest(method.trim().uppercase().ifEmpty { "GET" }, RuleText.normalizeUrl(absolute), headers, bodyText, type)
         val response = http.request(request)
+        errors.lastResponse = response.text
         if (response.status >= 500) throw RuleServerErrorException(response.status, request.url)
         if (response.status >= 400) return fail(label, "HTTP ${response.status} ${request.url}")
         val variables = if (cookieVariable.isBlank()) {
