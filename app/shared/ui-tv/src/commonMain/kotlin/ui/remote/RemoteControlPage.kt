@@ -5104,7 +5104,6 @@ private val SOURCES_SCRIPT = """
   // 类型名 (面板标题用)
   function addName(kind) {
     if (kind === 'import') return T('导入 JSON');
-    if (kind === 'local') return T('本地文件夹');
     if (kind === 'webdav') return 'WebDAV';
     var t = data && data.templates[+kind];
     return t ? t.name : T('添加数据源');
@@ -5157,10 +5156,16 @@ private val SOURCES_SCRIPT = """
       }, 300);
       return;
     }
+    // 本地文件夹不填表: 直接建一个 (名字在卡片上改)
+    if (kind === 'local') {
+      clearAdd();
+      if (window.localFolderAdd) window.localFolderAdd.create();
+      return;
+    }
     var panel = document.getElementById('src-new-panel'), list = document.getElementById('src-new-list');
     if (!panel) return;
-    var t = kind === 'import' || kind === 'webdav' || kind === 'local' ? null : data.templates[+kind];
-    if (!t && kind !== 'import' && kind !== 'webdav' && kind !== 'local') return;
+    var t = kind === 'import' || kind === 'webdav' ? null : data.templates[+kind];
+    if (!t && kind !== 'import' && kind !== 'webdav') return;
     addKind = kind;
     list.hidden = true;
     panel.hidden = false;
@@ -5180,10 +5185,6 @@ private val SOURCES_SCRIPT = """
     }
     if (kind === 'webdav') {
       panel.innerHTML = '<form class="src-new-form" data-kind="webdav">' + window.webdavAdd.form() + btns('cancel-new', T('添加')) + '</form>';
-      return;
-    }
-    if (kind === 'local') {
-      panel.innerHTML = '<form class="src-new-form" data-kind="local">' + window.localFolderAdd.form() + btns('cancel-new', T('添加')) + '</form>';
       return;
     }
     var hint = t.description ? '<p class="hint">' + esc(t.description) + '</p>' : '';
@@ -5244,11 +5245,11 @@ private val SOURCES_SCRIPT = """
       }).catch(function () { done(); fail(); });
       return;
     }
-    if (form.getAttribute('data-kind') === 'webdav' || form.getAttribute('data-kind') === 'local') {
+    if (form.getAttribute('data-kind') === 'webdav') {
       var add = form.querySelector('button[type="submit"]');
       if (add.disabled) return;
       add.disabled = true;
-      (form.getAttribute('data-kind') === 'local' ? window.localFolderAdd : window.webdavAdd).submit(form).then(function (r) {
+      window.webdavAdd.submit(form).then(function (r) {
         add.disabled = false;
         if (r && r.ok) clearAdd();
       });
@@ -5994,24 +5995,23 @@ private val CLOUD_DRIVE_SCRIPT = """
       if (row.isConnected) cancelEdit(row);
     });
   }
-  // 添加面板里选本地文件夹时的表单与提交: 添加成功后换到本地页、滚到它的卡片, 有权限时打开选媒体文件夹
+  // 添加面板或本地页「+」里点本地文件夹: 不填表, 直接建一个 (名字由电视端给, 重名编号; 在卡片上改).
+  // 建好后换到本地页、滚到它的卡片, 有权限时打开选媒体文件夹
+  var creatingLocal = false;
   window.localFolderAdd = {
-    form: function () {
-      return '<p class="hint">' + T('读电视上接着的 U 盘、移动硬盘与内部存储里的视频。添加后，播放时会在选的文件夹里按番名找，直接播放原文件。') + '</p>' +
-        '<label class="f"><span>' + T('名字') + '</span><input type="text" name="name" autocomplete="off" placeholder="' + T('本地文件夹') + '"></label>' +
-        '<p class="hint">' + T('添加后会打开设备上的存储，选上放动画的文件夹（媒体文件夹），找番更快也更准。') + '</p>';
-    },
-    submit: function (form) {
+    create: function () {
+      if (creatingLocal) return;
+      creatingLocal = true;
+      toast(T('正在添加…'));
       var before = driveIds;
-      return act('api/drive/local/add', { name: form.elements.name.value.trim() }, true).then(function (r) {
+      act('api/drive/local/add', {}, true).then(function (r) {
+        creatingLocal = false;
         var added = r && r.ok && r.drives ? r.drives.filter(function (x) { return x.type === 'local' && !before[x.id]; })[0] : null;
-        if (added) {
-          if (window.showSrcTab) window.showSrcTab('local');
-          var c = localBox.querySelector('.card[data-drive="' + CSS.escape(added.id) + '"]');
-          if (c) { c.open = true; c.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
-          if (added.accessible) openFolder(added.id, '');
-        }
-        return r;
+        if (!added) return;
+        if (window.showSrcTab) window.showSrcTab('local');
+        var c = localBox.querySelector('.card[data-drive="' + CSS.escape(added.id) + '"]');
+        if (c) { c.open = true; c.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+        if (added.accessible) openFolder(added.id, '');
       });
     }
   };

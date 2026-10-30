@@ -9,7 +9,7 @@
 
 package me.him188.ani.app.ui.remote
 
-/** 数据源页本地文件夹卡片与添加表单的文案 (见 [RemoteCloudDrive], 译文表见 [REMOTE_I18N_TABLE]). */
+/** 数据源页本地文件夹卡片的文案 (见 [RemoteCloudDrive], 译文表见 [REMOTE_I18N_TABLE]). */
 internal fun localFolderTexts() = listOf(
     RemoteText("本地文件夹", "Local folders", "本地文件夾", "本機資料夾"),
     RemoteText("能读取", "Readable", "能讀取", "能讀取"),
@@ -23,8 +23,6 @@ internal fun localFolderTexts() = listOf(
     RemoteText("电视上没有弹出授权框时，在电脑上运行：{0}", "If no prompt appears on the TV, run this on a computer: {0}", "電視上沒有彈出授權框時，在電腦上運行：{0}", "電視上沒有出現授權對話框時，在電腦上執行：{0}"),
     RemoteText("还没有添加：播放时在各块盘里按番名找（从盘的根目录往下）。添加放动画的文件夹，找得更快也更准。", "None added yet: playback searches every drive by title, starting from the top folder. Add the folders that hold your anime for faster, more accurate matches.", "還沒有添加：播放時在各塊盤裡按番名找（從盤的根目錄往下）。添加放動畫的文件夾，找得更快也更準。", "還沒有新增：播放時在各個磁碟裡按番名找（從磁碟的根目錄往下）。新增放動畫的資料夾，找得更快也更準。"),
     RemoteText("修改名字", "Rename", "修改名字", "修改名字"),
-    RemoteText("读电视上接着的 U 盘、移动硬盘与内部存储里的视频。添加后，播放时会在选的文件夹里按番名找，直接播放原文件。", "Reads videos on the USB drives, external disks and internal storage connected to the TV. Once added, playback looks for videos in the chosen folders by title and plays the original files.", "讀電視上接著的 U 盤、移動硬盤與內部存儲裡的視頻。添加後，播放時會在選的文件夾裡按番名找，直接播放原文件。", "讀取電視上接著的隨身碟、外接硬碟與內部儲存空間裡的影片。新增後，播放時會在選的資料夾裡按番名找，直接播放原檔案。"),
-    RemoteText("添加后会打开设备上的存储，选上放动画的文件夹（媒体文件夹），找番更快也更准。", "After adding, the device’s storage opens so you can choose the folders that hold your anime (media folders) for faster, more accurate matches.", "添加後會打開設備上的存儲，選上放動畫的文件夾（媒體文件夾），找番更快也更準。", "新增後會開啟裝置上的儲存空間，選上放動畫的資料夾（媒體資料夾），找番更快也更準。"),
     RemoteText("删除{0}？选的媒体文件夹一起删掉，盘上的文件不受影响。", "Remove {0}? Its media folders are removed too. Files on the drives are not affected.", "刪除{0}？選的媒體文件夾一起刪掉，盤上的文件不受影響。", "刪除{0}？選的媒體資料夾一起刪掉，磁碟上的檔案不受影響。"),
     RemoteText("设备上的存储", "Storage on this device", "設備上的存儲", "裝置上的儲存空間"),
     RemoteText("这台设备不能读本地文件夹", "This device can’t read local folders", "這台設備不能讀本地文件夾", "這台裝置不能讀取本機資料夾"),
