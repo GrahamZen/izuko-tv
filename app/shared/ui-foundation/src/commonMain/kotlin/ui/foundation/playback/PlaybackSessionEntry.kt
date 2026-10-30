@@ -137,6 +137,9 @@ enum class PlaybackPreparingStage {
     /** 还在搜数据源, 或查完了在等自动选中. */
     SearchingSources,
 
+    /** 系统没网, 恢复后接着放. */
+    WaitingForNetwork,
+
     /** 选中的是 BT 资源, 在等 BT 服务起来 (第一次要十几秒). */
     StartingBtService,
 

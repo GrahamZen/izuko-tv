@@ -320,6 +320,7 @@ private fun KoinApplication.otherModules(
     single<FeedbackRecordRepository> { FeedbackRecordRepository(get<SettingsRepository>().feedbackRecords) }
     single<FeedbackDevice> { FeedbackDevice(getContext().feedbackDeviceId(), getContext().feedbackEnvironment()) }
     single<LowRamDevice> { LowRamDevice(getContext().isLowRamDevice()) }
+    single<NetworkStatus> { getContext().createNetworkStatus() }
     single<SubjectFeedbackService> {
         SubjectFeedbackService(
             listCache = get<SettingsRepository>().feedbackEndpointCache,

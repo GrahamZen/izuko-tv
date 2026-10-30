@@ -11,6 +11,7 @@
 
 package me.him188.ani.app.domain.player.extension
 
+import kotlin.time.TimeMark
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -36,6 +37,7 @@ import me.him188.ani.app.domain.media.resolver.TestUniversalMediaResolver
 import me.him188.ani.app.domain.mediasource.GetPreferredWebMediaSourceUseCase
 import me.him188.ani.app.domain.mediasource.SetPreferredWebMediaSourceUseCase
 import me.him188.ani.app.domain.settings.GetMediaSelectorSettingsFlowUseCase
+import me.him188.ani.app.platform.NetworkStatus
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.utils.coroutines.childScope
@@ -208,6 +210,39 @@ class ObserveWebMediaSourcePreferenceExtensionTest : AbstractPlayerExtensionTest
         // No preference should be set for non-web media
         assertEquals(0, setPreferenceCalls.size)
 
+        testScope.cancel()
+    }
+
+    @Test
+    fun `keep preference if preferred source fails while the network is down`() = runTest {
+        val web1: CompletableDeferred<List<Media>>
+        val web2: CompletableDeferred<List<Media>>
+        val available = MutableStateFlow(false)
+        val context = createCase { _, suite ->
+            web1 = suite.mediaSelectorTestBuilder.delayedMediaSource("web1", kind = MediaSourceKind.WEB)
+            web2 = suite.mediaSelectorTestBuilder.delayedMediaSource("web2", kind = MediaSourceKind.WEB)
+            suite.registerComponent<NetworkStatus> {
+                object : NetworkStatus {
+                    override val isAvailable = available
+                    override val lastLostAt: TimeMark? = null
+                }
+            }
+        }
+        val (testScope, suite, state) = context
+
+        preferredWebMediaSource.value = "web1"
+        setPreferenceCalls.add(subjectId to "web1")
+
+        startMediaFetcher(state, testScope)
+        web1.completeExceptionally(IllegalStateException("network down"))
+        advanceUntilIdle()
+        assertEquals(listOf(subjectId to "web1"), setPreferenceCalls.toList())
+
+        // 网回来后别的源状态一变, 这里又走一遍: 还是那次断网时的失败, 不能这时才算到它头上
+        available.value = true
+        web2.complete(listOf(suite.mediaSelectorTestBuilder.createMedia("web2", kind = MediaSourceKind.WEB)))
+        advanceUntilIdle()
+        assertEquals(listOf(subjectId to "web1"), setPreferenceCalls.toList())
         testScope.cancel()
     }
 

@@ -23,7 +23,8 @@ import kotlin.time.TimeSource
 /**
  * 钉住「主播放器的解码器被抢走」的认定: 认出来才会原地重载, 而不是把好源拉黑换掉;
  * 认宽了则会让片源本身解不了的情况多等一次才换源.
- * 真机现场: 2026-09-26 测试包用户的 RESOURCES_RECLAIMED, 以及 issue #10 (OMX 抢占, Java 层只剩解码失败).
+ * 真机现场: 2026-09-26 测试包用户的 RESOURCES_RECLAIMED, issue #10 (OMX 抢占, Java 层只剩解码失败),
+ * 以及暂停后进屏保、回前台接回画面时解码器已不在运行 (MediaTek 安卓 14).
  */
 class DecoderPreemptedErrorTest {
     private class FakeThrowable(
@@ -56,6 +57,28 @@ class DecoderPreemptedErrorTest {
         val error = playbackError("ERROR_CODE_DECODING_RESOURCES_RECLAIMED", 4006, FakeThrowable("Error 0xffffffe0"))
         assertTrue(isDecoderPreempted(error))
         assertFalse(PlayerLoadError("code=DECODING", error).isPlayerLifecycleError())
+    }
+
+    @Test
+    fun `回前台接回画面时解码器已经不在运行算`() {
+        // 用户日志原文: 解码器在后台被系统收走, 播放器没收到收回的错误, 回前台 setOutputSurface 才撞上, 报成普通的运行时错误
+        val error = FakeThrowable(
+            "ExoPlayer playback failed: ERROR_CODE_FAILED_RUNTIME_CHECK (1004): Unexpected runtime error",
+            FakeThrowable(
+                "Unexpected runtime error",
+                IllegalStateException("setSurface() is valid only at Executing states; currently at Uninitialized state"),
+            ),
+        )
+        assertTrue(isDecoderPreempted(error))
+    }
+
+    @Test
+    fun `别的运行时错误不算`() {
+        val error = FakeThrowable(
+            "ExoPlayer playback failed: ERROR_CODE_FAILED_RUNTIME_CHECK (1004): Unexpected runtime error",
+            FakeThrowable("Unexpected runtime error", IllegalStateException("Player is accessed on the wrong thread")),
+        )
+        assertFalse(isDecoderPreempted(error))
     }
 
     @Test
