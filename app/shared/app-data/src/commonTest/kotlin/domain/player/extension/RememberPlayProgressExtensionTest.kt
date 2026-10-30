@@ -718,6 +718,22 @@ class RememberPlayProgressExtensionTest : AbstractPlayerExtensionTest() {
     }
 
     @Test
+    fun `原地重载时说了不播就停在重载的位置`() = runTest {
+        val (testScope, suite, state) = createCase()
+        advanceUntilIdle()
+        loadSelectedMedia(suite, state)
+        assertTrue(suite.player.state.value.playWhenReady)
+
+        // 暂停后进屏保、回来时解码器没了: 重载完照样停着
+        assertTrue(state.reloadCurrentMedia(42_000, playWhenReady = false))
+        advanceUntilIdle()
+        assertEquals(42_000, suite.player.currentPositionMillis.value)
+        assertFalse(suite.player.state.value.playWhenReady)
+
+        testScope.cancel()
+    }
+
+    @Test
     fun `存下的进度超过这个资源的长度时从头播`() = runTest {
         val (testScope, suite, state) = createCase()
         advanceUntilIdle()
