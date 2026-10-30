@@ -26,6 +26,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.hours
 
 /**
@@ -39,7 +40,7 @@ class DriveShareIndexFileStoreTest {
         tempDirectory.deleteRecursively()
     }
 
-    private val now = 100.hours.inWholeMilliseconds
+    private val now = 1000.hours.inWholeMilliseconds
 
     private fun index(indexedAtMillis: Long) = DriveShareIndex(
         depth = 2,
@@ -56,13 +57,16 @@ class DriveShareIndexFileStoreTest {
         val file = tempDirectory.resolve("indexes.json")
         val store = store(file)
         store.put("coll", index(now - 1.hours.inWholeMilliseconds))
-        store.put("old", index(now - 7.hours.inWholeMilliseconds))
+        store.put("stale", index(now - 7.hours.inWholeMilliseconds))
+        store.put("old", index(now - 31.days.inWholeMilliseconds))
         advanceUntilIdle()
         assertTrue(file.exists())
 
         val reopened = store(file)
         assertEquals(index(now - 1.hours.inWholeMilliseconds), reopened.get("coll"))
-        // 过期的写回时就丢了
+        // 过了六小时的照样留着: 搜索先拿旧索引找 (见 DriveShareSearchEngine)
+        assertEquals(index(now - 7.hours.inWholeMilliseconds), reopened.get("stale"))
+        // 很久没重列过的写回时丢掉
         assertNull(reopened.get("old"))
     }
 
