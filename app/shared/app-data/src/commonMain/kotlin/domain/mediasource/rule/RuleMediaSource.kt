@@ -459,11 +459,13 @@ class RuleMediaSource(
         scope: KeywordSearchScope?,
     ): OnlineSearchResult {
         val ttl = rule.searchCacheTtlMillis.milliseconds
-        val subjects = repository.siteMemory.searchResults(mediaSourceId, keyword, ttl) {
+        // 记的是站点原样的条目 (带别名): 同系列各季共用这份结果, 各自按自己的名字认
+        val found = repository.siteMemory.searchResults(mediaSourceId, keyword, ttl) {
             delayUntilNextAllowedSearch()
             PlayTimeline.mark("t_http", info.displayName)
-            engine.search(keyword).map { it.toSubjectInfo() }.also { PlayTimeline.mark("t_http_done", info.displayName) }
+            engine.search(keyword).also { PlayTimeline.mark("t_http_done", info.displayName) }
         }.orEmpty()
+        val subjects = withSiteAliasesIfNeeded(found, keyword, plan, ttl).map { it.toSubjectInfo(plan) }
         logger.info { "RuleMediaSource '$mediaSourceId': search '$keyword' -> ${subjects.size} subjects" }
         PlayTimeline.mark("search_results", "${info.displayName} '$keyword' ${subjects.size}")
         val ordered = plan.pagesToOpen(subjects, matchConfig.autoMatch.preferShorterName) { it.name }
@@ -567,13 +569,33 @@ class RuleMediaSource(
         return SelectorChannelFormat.convertSpecialEpisodes(name, raw)
     }
 
-    private fun RuleSubject.toSubjectInfo() = WebSearchSubjectInfo(
-        internalId = url,
-        name = name,
-        fullUrl = url,
-        partialUrl = url,
-        origin = null,
-    )
+    /**
+     * 搜到的页名没有一个是这一部的名字 ([SubjectSearchPlan.isOwnName]) 时, 按规则另取站点别名 ([RuleEngine.siteAliases]) 再认:
+     * 页名对得上的时候不多发请求. 取回的别名与搜索结果一样各季共用.
+     */
+    private suspend fun withSiteAliasesIfNeeded(found: List<RuleSubject>, keyword: String, plan: SubjectSearchPlan, ttl: Duration): List<RuleSubject> {
+        if (!engine.hasAliasLookup || found.isEmpty() || found.any { plan.isOwnName(it.name) }) return found
+        return repository.siteMemory.searchResults(mediaSourceId, "$keyword (aliases)", ttl) {
+            PlayTimeline.mark("t_aliases", info.displayName)
+            engine.siteAliases(found).also { PlayTimeline.mark("t_aliases_done", info.displayName) }
+        } ?: found
+    }
+
+    /**
+     * 条目名取页名与站点别名里认得出是这一部的 ([SubjectSearchPlan.nameWithSiteAliases]), 开页、资源与搜索缓存里的条目名都用它:
+     * 选择器按资源的条目名再认一次, 留着页名的话只有别名对得上的条目在那里又被排除.
+     */
+    private fun RuleSubject.toSubjectInfo(plan: SubjectSearchPlan): WebSearchSubjectInfo {
+        val judged = plan.nameWithSiteAliases(name, aliases)
+        if (judged != name) logger.info { "RuleMediaSource '$mediaSourceId': page '$name' is this subject by the site alias '$judged'" }
+        return WebSearchSubjectInfo(
+            internalId = url,
+            name = judged,
+            fullUrl = url,
+            partialUrl = url,
+            origin = null,
+        )
+    }
 
     // endregion
 

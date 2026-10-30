@@ -121,7 +121,13 @@ RSS 源配置的 `titleToLink`（`RssTitleToLink`）在解析出条目之后、�
 站点上的东西取到之后，挑出当前这一集、搜索缓存、生成 `Media`、浏览协议都复用 `SelectorMediaSource` 的实现，
 匹配相关的配置（`autoMatch`、`matchEpisodeSortFromName`、`matchVideo`）含义相同。
 关键词与打开哪些条目页同网页抓取数据源（[搜索计划](#搜索计划)），每个关键词最多打开 `maxSubjects` 个：
-有的站搜索结果固定是一整页按相关度排的条目，后面是只沾一两个字的，不是这一部的不开。资源的 `download` 是剧集页（`WebVideo`），
+有的站搜索结果固定是一整页按相关度排的条目，后面是只沾一两个字的，不是这一部的不开。
+`jsonSubjects` 还按 `aliasPath`（默认是苹果 CMS 接口的 `vod_sub`，写空不取）取站点给的别名：页名省掉副标题、写成站点自己的叫法时
+（「赛马娘 第二季」「鸦」「团子大家族Clannad」），别名里常有条目服务上的名字。条目名取页名与别名里认得出是这一部的
+（`SubjectSearchPlan.nameWithSiteAliases`，见[搜索与认部](media-search.md)），开页、资源与搜索缓存都用它。
+搜索接口不给别名的站点（girigiri 的列表接口只有名字，详情接口才有 `vod_sub`）用 `aliasUrl` 另取：`{ids}` 一个请求取全部，`{id}` 每个条目一个请求
+（`aliasListPath` 是回应里条目的位置，按 `idPath` 对上）；只在搜到的页名没有一个是这一部的名字时才取，平常不多发请求；
+站点搜索结果的内存记忆（`SiteSearchMemory`）存原样的条目，同系列各季共用一份、各自按自己的名字认。资源的 `download` 是剧集页（`WebVideo`），
 播放时 `WebVideoDirectResolver.resolveDirectly` 执行播放段；取不到或要求嗅探时，先看这一集手上有没有不用嗅探的资源可换（`WebViewDeferral`，
 见 [MediaSelector](media-selector.md)），没有才由播放器按 `matchVideo` 用 WebView 打开剧集页。
 播放段最后一次请求回来的 JSON 里提示字段（`message` / `msg` / `error` 等）明确说要登录时（`RuleLoginRequired`）不开 WebView，
