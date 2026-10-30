@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -92,6 +93,12 @@ class SubjectRewatch(
         subjectId in map && row?.collectionType == UnifiedCollectionType.DOING
     }.distinctUntilChanged()
 
+    /** 正在重温的条目 (一页卡片的长按菜单用, 不逐条查库). */
+    val rewatchingIdsFlow: Flow<Set<Int>> = flow {
+        loaded()
+        emitAll(entries.filterNotNull().map { it.keys })
+    }.distinctUntilChanged()
+
     suspend fun isActive(subjectId: Int): Boolean = subjectId in loaded()
 
     /**
@@ -131,6 +138,20 @@ class SubjectRewatch(
         remove(subjectId)
         logger.info { "Rewatch ended: subject $subjectId" }
         return true
+    }
+
+    /**
+     * 结束重温并直接改成 [type] (见 [SubjectRewatchDao.endRewatchInto]): 改收藏状态时用, 本地一步到位, 不经过看过.
+     *
+     * @return 开始重温时 Bangumi 那份 (看过 + 收藏更新时间), 调用方写 Bangumi 失败时退回它; 没在重温 (或本地已经不是在看, 这时只删记录) 为 null,
+     * 调用方照常改
+     */
+    suspend fun endInto(subjectId: Int, type: UnifiedCollectionType): Pair<UnifiedCollectionType, Long>? {
+        val entry = loaded()[subjectId] ?: return null
+        val ended = database.subjectRewatch().endRewatchInto(subjectId, type, clock(), entry.episodes)
+        remove(subjectId)
+        logger.info { "Rewatch ended into $type: subject $subjectId" }
+        return if (ended) UnifiedCollectionType.DONE to entry.lastUpdated else null
     }
 
     /** 换了登录账号: 记录全部作废, 库里那几行等新账号的数据重取时盖掉 (新登录会把取数时间清零, 见 `SessionManager`). */

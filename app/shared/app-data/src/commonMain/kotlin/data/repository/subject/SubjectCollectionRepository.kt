@@ -160,6 +160,9 @@ abstract class SubjectCollectionRepository(
     /** 这一部是不是正在重温, 见 [SubjectRewatch]. 改收藏状态 ([setSubjectCollectionTypeOrDelete]) 即结束重温. */
     open fun rewatchingFlow(subjectId: Int): Flow<Boolean> = flowOf(false)
 
+    /** 正在重温的条目, 见 [SubjectRewatch.rewatchingIdsFlow]. */
+    open fun rewatchingSubjectsFlow(): Flow<Set<Int>> = flowOf(emptySet())
+
     /** 开始重温, 见 [SubjectRewatch.start]. */
     open suspend fun startRewatch(subjectId: Int): RewatchStartResult = RewatchStartResult.NOT_DONE
 
@@ -314,6 +317,8 @@ class SubjectCollectionRepositoryImpl(
     override fun episodesFetchStateFlow(subjectId: Int): Flow<EpisodesFetchState> = episodesFetchTracker.stateFlow(subjectId)
 
     override fun rewatchingFlow(subjectId: Int): Flow<Boolean> = rewatch?.rewatchingFlow(subjectId) ?: flowOf(false)
+
+    override fun rewatchingSubjectsFlow(): Flow<Set<Int>> = rewatch?.rewatchingIdsFlow ?: flowOf(emptySet())
 
     override suspend fun startRewatch(subjectId: Int): RewatchStartResult =
         withContext(defaultDispatcher) { rewatch?.start(subjectId) ?: RewatchStartResult.NOT_DONE }
@@ -941,21 +946,29 @@ class SubjectCollectionRepositoryImpl(
         type: UnifiedCollectionType?,
     ) {
         return withContext(defaultDispatcher) {
-            // 改收藏状态即结束重温, 库里先还原成 Bangumi 那份; 改回的就是看过的话 Bangumi 上本来就是, 不用再写
-            if (rewatch?.end(subjectId) == true && type == UnifiedCollectionType.DONE) return@withContext
+            // 改收藏状态即结束重温 (见 SubjectRewatch): 改回看过 = Bangumi 上本来就是, 只还原本地;
+            // 改成别的就从在看直接改过去 (endInto), 不经过看过
+            if (type == UnifiedCollectionType.DONE && rewatch?.end(subjectId) == true) return@withContext
             if (localProfile) {
-                setLocalCollectionType(subjectId, type ?: UnifiedCollectionType.NOT_COLLECTED)
+                if (rewatch?.endInto(subjectId, type ?: UnifiedCollectionType.NOT_COLLECTED) == null) {
+                    setLocalCollectionType(subjectId, type ?: UnifiedCollectionType.NOT_COLLECTED)
+                }
                 return@withContext
             }
             sessionManager.checkAccessAniApiNow()
             if (type == null || type == UnifiedCollectionType.NOT_COLLECTED) {
+                rewatch?.end(subjectId)
                 deleteSubjectCollection(subjectId)
             } else {
                 // 必须把当前评分一起送过去: bangumi 收到带 type 而不带 rate 的请求会把评分清零
                 val currentScore = subjectCollectionDao.findById(subjectId).first()
                     ?.selfRatingInfo?.score?.takeIf { it > 0 }
-                // 先改本地 (界面上的收藏状态立刻变), 见 setCollectionTypeLocalFirst
-                subjectCollectionDao.setCollectionTypeLocalFirst(subjectId, type) {
+                // 先改本地 (界面上的收藏状态立刻变), 见 setCollectionTypeLocalFirst; 重温中的写 Bangumi 失败时退回开始时的看过
+                subjectCollectionDao.setCollectionTypeLocalFirst(
+                    subjectId,
+                    type,
+                    endRewatchInto = { rewatch?.endInto(subjectId, type) },
+                ) {
                     subjectService.patchSubjectCollection(
                         subjectId,
                         SubjectCollectionUpdate(collectionType = type, score = currentScore),
@@ -1034,10 +1047,15 @@ class SubjectCollectionRepositoryImpl(
 internal suspend fun SubjectCollectionDao.setCollectionTypeLocalFirst(
     subjectId: Int,
     type: UnifiedCollectionType,
+    /**
+     * 这一部在重温时结束重温并改成 [type], 返回改之前 (开始重温时) Bangumi 那份的收藏类型与更新时间; 没在重温返回 null,
+     * 照常改 (见 `SubjectRewatch.endInto`).
+     */
+    endRewatchInto: suspend () -> Pair<UnifiedCollectionType, Long>? = { null },
     send: suspend () -> Unit,
 ) = writeLocalFirst(
     writeLocal = {
-        findById(subjectId).first()
+        endRewatchInto() ?: findById(subjectId).first()
             ?.let { it.collectionType to it.lastUpdated }
             .also { updateType(subjectId, type) }
     },
