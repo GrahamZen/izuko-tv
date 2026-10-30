@@ -633,6 +633,26 @@ class TvNativeExploreNavigationTest {
     }
 
     @Test
+    fun `restarted rows go back to the first card and the focused one follows when the focus leaves`() {
+        // 第 0 行停在第 12 张, 焦点在第 1 行第 15 张; 各行换成了新的一批 (推荐换一批)
+        useLongRows(rows = 3, cards = 30)
+        host.onMain { view.focusCard(longRow(0), 12) }
+        waitCard(longRow(0), 12)
+        host.onMain { view.focusCard(longRow(1), 15) }
+        waitCard(longRow(1), 15)
+        SystemClock.sleep(700)
+        host.onMain { view.restartRows { it.startsWith("long-row-") } }
+        // 不持焦的行当场回到第一张, 记下的行首也忘掉; 持焦的那一行先不动
+        host.waitUntil("第 0 行回到第一张") { rowView(longRow(0))?.leftIndex() == 0 }
+        assertEquals(null, host.onMain { view.rowLeftIndex[longRow(0)] })
+        assertEquals(longRow(1) to 15, card())
+        // 焦点到了别的行: 原来那一行也回到第一张
+        host.onMain { view.focusCard(longRow(0), 0) }
+        waitCard(longRow(0), 0)
+        host.waitUntil("第 1 行回到第一张") { rowView(longRow(1))?.leftIndex() == 0 }
+    }
+
+    @Test
     fun `a third back on the way to the section first row settles it and goes to the hero buttons`() {
         backTwiceFromDeepInRow()
         SystemClock.sleep(60)
