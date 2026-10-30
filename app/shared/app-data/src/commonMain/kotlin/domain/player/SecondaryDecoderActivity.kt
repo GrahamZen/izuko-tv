@@ -44,6 +44,8 @@ object SecondaryDecoderActivity {
  * 播放器报的 [error] 是不是主播放器的解码器被抢走了: 源本身没有问题, 重新装一次通常就能接着播.
  *
  * - `RESOURCES_RECLAIMED`: 系统收回, 一定是.
+ * - 解码器已经不在运行 (MediaCodec 的状态检查: `setSurface() is valid only at Executing states; currently at Uninitialized state`):
+ *   应用在后台 (如屏保) 时系统把解码器收走了, 播放器没收到收回的错误, 回前台给它接回画面时才撞上, 报成普通的运行时错误. 一定是.
  * - `ERROR_CODE_DECODING_FAILED`: 只有 [SecondaryDecoderActivity.PREEMPTION_WINDOW] 内取过缩略图才算, 其余照旧当作片源的问题.
  *
  * 按消息匹配: mediamp 的 PlaybackException 消息带着 ExoPlayer 的错误码名, 这里是 commonMain, 看不见 ExoPlayer 的异常类.
@@ -54,8 +56,12 @@ fun isDecoderPreempted(error: Throwable?): Boolean {
     while (current != null && depth++ < 8) {
         val message = current.message.orEmpty()
         if (message.contains("RESOURCES_RECLAIMED")) return true
+        if (message.contains(CODEC_NOT_RUNNING)) return true
         if (message.contains("ERROR_CODE_DECODING_FAILED") && SecondaryDecoderActivity.usedRecently()) return true
         current = current.cause
     }
     return false
 }
+
+/** MediaCodec 已经不在运行 (被释放、被收回) 时再操作它, 状态检查报的错 */
+private const val CODEC_NOT_RUNNING = "is valid only at Executing states"

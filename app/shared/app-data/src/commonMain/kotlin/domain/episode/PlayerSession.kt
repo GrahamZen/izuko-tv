@@ -153,6 +153,7 @@ class PlayerSession(
         media: Media?,
         episodeInfo: EpisodeMetadata,
         startPositionMillis: Long = 0L,
+        playWhenReady: Boolean = true,
     ) = coroutineScope {
         val backgroundScope = this
         _videoLoadingStateFlow.value = VideoLoadingState.Initial // 避免一直显示已取消 (.Cancelled)
@@ -203,7 +204,7 @@ class PlayerSession(
             logger.info { "Set media data to player at ${startPositionMillis}ms: ${preparedData.toLogText()}" }
             PlayTimeline.mark("set_media", "at ${startPositionMillis}ms")
             // v2: setMediaData 挂起直到媒体真正打开, 播放意图和起播位置随打开一并生效.
-            player.setMediaData(preparedData, playWhenReady = true, startPositionMillis = startPositionMillis)
+            player.setMediaData(preparedData, playWhenReady = playWhenReady, startPositionMillis = startPositionMillis)
             PlayTimeline.mark("player_opened")
             hlsPlaybackProxySession = preparedHlsPlaybackProxySession
             preparedHlsPlaybackProxySession = null

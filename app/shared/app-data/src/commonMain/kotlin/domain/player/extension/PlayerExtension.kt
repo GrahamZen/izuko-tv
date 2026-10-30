@@ -100,9 +100,10 @@ interface PlayerExtensionContext {
     suspend fun broadcast(event: PlayerExtensionEvent)
 
     /**
-     * 把当前选中的资源原地重新装进播放器一次, 装好后回到 [positionMillis]. 选中的资源还没装进播放器时返回 `false`.
+     * 把当前选中的资源原地重新装进播放器一次, 装好后回到 [positionMillis], [playWhenReady] 为 false 时停在那里不播.
+     * 选中的资源还没装进播放器时返回 `false`.
      */
-    suspend fun reloadCurrentMedia(positionMillis: Long): Boolean = false
+    suspend fun reloadCurrentMedia(positionMillis: Long, playWhenReady: Boolean = true): Boolean = false
 }
 
 inline fun <reified T : PlayerExtensionEvent> PlayerExtensionContext.subscribeEvents(): Flow<T> {

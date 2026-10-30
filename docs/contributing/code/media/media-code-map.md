@@ -180,6 +180,9 @@
     视频渲染器在 supportsFormat 里把它报成超出能力照样选上（`UnplayableVideoTrack`），开解码器时报错，同样提示放不了并自动换源。
     mkv 里 media3 整条丢掉的画面轨（RealVideo、MPEG-1 等）留成未知格式，未知格式在编码串里记下原来的 FourCC 或 CodecID（`MkvUnknownVideo`），
     提示里由 `UnsupportedFormat` 写出格式名。
+    出错是设备的解码器出了事、片源本身没问题时不换源：系统收回解码器（`RESOURCES_RECLAIMED`）、取缩略图的解码器把它抢走、
+    应用在后台（如屏保）时解码器被收走而回前台接回画面才发现（MediaCodec 的「valid only at Executing states」），由 `isDecoderPreempted` 认出，
+    `SwitchMediaOnPlayerErrorExtension` 按当时的进度原地重装同一资源一次、不拉黑；出错前暂停着就重装完照样停着。
     mkv 最后 1 MiB 内的解析错误当作文件读完（`MkvTailTolerantExtractor`，建 `DefaultMediaSourceFactory` 时包在 mkv 提取器外）：
     有的文件在最后一个元素后面跟着填充或残缺的尾巴，播放器预读到文件末尾时报错会让还没播到那里的整集失败、换源；文件中间出错照常报。
     字幕的字节在交给解析器与 libass 之前就理顺，下游（`SubtitleView`、libass 画的 `LiftableAssSubtitleView`、

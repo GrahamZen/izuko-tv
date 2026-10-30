@@ -129,10 +129,12 @@ class EpisodeFetchSelectPlayState(
     )
 
     /**
-     * 原地重载请求, 值是重载后要回到的位置. 由 [LoadMediaOnSelectExtension] 在当前选中的资源上执行,
+     * 原地重载请求: 重载后要回到的位置, 以及打开后播不播. 由 [LoadMediaOnSelectExtension] 在当前选中的资源上执行,
      * 与换源同在一条 `collectLatest` 里, 选中项一变, 未执行的重载随之作废.
      */
-    private val reloadRequests = MutableSharedFlow<Long>(
+    private class ReloadRequest(val positionMillis: Long, val playWhenReady: Boolean)
+
+    private val reloadRequests = MutableSharedFlow<ReloadRequest>(
         extraBufferCapacity = 1,
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
@@ -285,14 +287,14 @@ class EpisodeFetchSelectPlayState(
     }
 
     /**
-     * 把当前选中的资源原地重新装进播放器, 装好后回到 [positionMillis].
+     * 把当前选中的资源原地重新装进播放器, 装好后回到 [positionMillis], [playWhenReady] 为 false 时停在那里不播.
      * 选中的资源还在加载 (还没有 [LoadMediaOnSelectExtension] 在等重载请求) 时返回 `false`.
      *
      * @see PlayerExtensionContext.reloadCurrentMedia
      */
-    suspend fun reloadCurrentMedia(positionMillis: Long): Boolean {
+    suspend fun reloadCurrentMedia(positionMillis: Long, playWhenReady: Boolean = true): Boolean {
         if (reloadRequests.subscriptionCount.value == 0) return false
-        reloadRequests.emit(positionMillis)
+        reloadRequests.emit(ReloadRequest(positionMillis, playWhenReady))
         return true
     }
 
@@ -374,11 +376,15 @@ class EpisodeFetchSelectPlayState(
                                 onMediaLoaded(episodeInfo.episodeId)
                             }
 
-                            reloadRequests.collect { positionMillis ->
-                                logger.info { "Reloading media ${media.mediaId} in place, resuming at $positionMillis ms" }
+                            reloadRequests.collect { request ->
+                                val positionMillis = request.positionMillis
+                                logger.info {
+                                    "Reloading media ${media.mediaId} in place, resuming at $positionMillis ms" +
+                                        if (request.playWhenReady) "" else " paused"
+                                }
                                 // 先让记忆进度的扩展知道这次要回到哪里, 再装: 从这个位置打开, 开播时它据此确认已经回到这里
                                 onReloadMedia(episodeInfo.episodeId, positionMillis)
-                                playerSession.loadMedia(media, episodeInfo.toEpisodeMetadata(), positionMillis)
+                                playerSession.loadMedia(media, episodeInfo.toEpisodeMetadata(), positionMillis, request.playWhenReady)
                             }
                         }
                     }
