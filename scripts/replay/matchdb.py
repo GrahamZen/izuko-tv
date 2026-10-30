@@ -14,6 +14,7 @@
     uv run --no-project python scripts/replay/matchdb.py runs                                # 记过哪些
 
 标注只跟着资源走 (用例集 + 条目 + 数据源 + 资源键), 与哪次录放无关: 标过一次, 以后每次对照都用得上.
+网页资源的键是资源 id (见 web_key), 不带条目名: 同一条资源从别的页出来、挂了别的条目名, 仍是同一条.
 """
 import argparse
 import json
@@ -68,6 +69,7 @@ def connect(args):
     path = args.db or os.path.join(data_dir(args), 'matchdb.sqlite')
     db = sqlite3.connect(path)
     db.executescript(SCHEMA)
+    migrate_web_keys(db)
     return db
 
 
@@ -83,7 +85,43 @@ def read_run(args, set_name, label):
         rows = json.load(open(os.path.join(base, 'websearch', f'result-{label}.json'), encoding='utf-8'))
         for r in rows:
             for media in r.get('included') or []:
-                yield r['id'], r['name'], r['source'], media, media
+                yield r['id'], r['name'], r['source'], web_key(media), media
+
+
+def web_key(describe):
+    """网页资源的键: 说明 (条目名 | 集名 | 集范围 | 资源 id) 里的资源 id. 同一条资源常从几个页出来 (站点把同系列的别的视频列在每一页),
+    去重后留下哪一页的条目名看哪页先到, 键里带着条目名就会被当成两条."""
+    return describe.rsplit(' | ', 1)[-1]
+
+
+def migrate_web_keys(db):
+    """旧库的网页资源以整段说明为键: 改成资源 id ([web_key]), 同一条资源的几行并成一行 (标注留着, 各次结果指向留下的那行).
+    几行标得不一样 (一行对一行错) 时都留着原样不并, 列出来要人看."""
+    rows = db.execute("SELECT id, case_id, source, key, verdict FROM items WHERE set_name = 'web' AND key LIKE '% | %'").fetchall()
+    if not rows:
+        return
+    groups = {}
+    for item_id, case_id, source, key, verdict in rows:
+        groups.setdefault((case_id, source, web_key(key)), []).append((item_id, verdict))
+    conflicts = 0
+    with db:
+        for (case_id, source, new_key), members in groups.items():
+            existing = db.execute("SELECT id, verdict FROM items WHERE set_name = 'web' AND case_id = ? AND source = ? AND key = ?",
+                                  (case_id, source, new_key)).fetchone()
+            members = members + ([existing] if existing else [])
+            verdicts = {v for _, v in members if v}
+            if len(verdicts) > 1:
+                conflicts += 1
+                print(f'标注不一致, 没并: {case_id} [{source}] {new_key}')
+                continue
+            keep = next((i for i, v in members if v), members[0][0])
+            for item_id, _ in members:
+                if item_id == keep: continue
+                db.execute('INSERT OR IGNORE INTO results (run_id, item_id) SELECT run_id, ? FROM results WHERE item_id = ?', (keep, item_id))
+                db.execute('DELETE FROM results WHERE item_id = ?', (item_id,))
+                db.execute('DELETE FROM items WHERE id = ?', (item_id,))
+            db.execute('UPDATE items SET key = ?, verdict = ? WHERE id = ?', (new_key, next(iter(verdicts), None), keep))
+    print(f'网页资源改以资源 id 为键: {len(rows)} 行并成 {len(groups) - conflicts} 行, 标注不一致 {conflicts} 处')
 
 
 def run_id(db, set_name, label):
@@ -104,7 +142,9 @@ def cmd_import(args):
                          (args.set, args.label, int(time.time()), args.note)).lastrowid
         count = 0
         for case_id, case_name, source, key, describe in read_run(args, args.set, args.label):
-            db.execute('INSERT OR IGNORE INTO items (set_name, case_id, case_name, source, key, describe) VALUES (?, ?, ?, ?, ?, ?)',
+            # 说明随最近一次 (网页资源的条目名可能换了一页的)
+            db.execute('INSERT INTO items (set_name, case_id, case_name, source, key, describe) VALUES (?, ?, ?, ?, ?, ?) '
+                       'ON CONFLICT (set_name, case_id, source, key) DO UPDATE SET describe = excluded.describe',
                        (args.set, case_id, case_name, source, key, describe))
             item = db.execute('SELECT id FROM items WHERE set_name = ? AND case_id = ? AND source = ? AND key = ?',
                               (args.set, case_id, source, key)).fetchone()[0]
