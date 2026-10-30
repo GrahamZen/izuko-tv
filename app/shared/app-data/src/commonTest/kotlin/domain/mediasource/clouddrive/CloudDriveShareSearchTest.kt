@@ -10,7 +10,10 @@
 package me.him188.ani.app.domain.mediasource.clouddrive
 
 import io.ktor.http.decodeURLQueryComponent
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
 import me.him188.ani.app.domain.mediasource.search.TitleForms
 import me.him188.ani.app.domain.mediasource.search.TitleIdentities
@@ -423,14 +426,75 @@ class CloudDriveShareSearchTest {
     }
 
     @Test
-    fun `stored fixed share index older than six hours is listed again`() = runTest {
+    fun `stored fixed share index older than six hours is listed again for a subject it does not have`() = runTest {
         val shares = shares(mapOf("coll" to collection))
         val store = MemoryIndexStore()
         fixedEngine(shares, store, now = 1_000).search(request("葬送的芙莉莲"))
+        // 合集后来加了一部
+        shares.folders["coll"] = collection + mapOf(
+            "autumn" to collection.getValue("autumn") + dir("new", "新的番"),
+            "new" to listOf(video("x01", "01.mp4")),
+        )
         val later = 1_000 + 7.hours.inWholeMilliseconds
-        fixedEngine(shares, store, now = later).search(request("偶像大师"))
+        val matched = fixedEngine(shares, store, now = later).search(request("新的番"))
+        assertEquals(listOf("x01"), matched.map { it.file.fid })
         assertEquals(2, shares.listed.count { it.second == TestDrive.SHARE_ROOT })
         assertEquals(later, store.saved.getValue("coll").indexedAtMillis)
+    }
+
+    @Test
+    fun `stored fixed share index older than six hours is used while its folder still holds the subject`() = runTest {
+        val shares = shares(mapOf("coll" to collection))
+        val store = MemoryIndexStore()
+        fixedEngine(shares, store, now = 1_000).search(request("葬送的芙莉莲"))
+        val matched = fixedEngine(shares, store, now = 1_000 + 7.hours.inWholeMilliseconds).search(request("偶像大师"))
+        assertEquals(listOf("i01"), matched.map { it.file.fid })
+        assertEquals(1, shares.listed.count { it.second == TestDrive.SHARE_ROOT })
+        assertEquals(1_000, store.saved.getValue("coll").indexedAtMillis)
+    }
+
+    @Test
+    fun `stored fixed share index whose folder no longer holds the subject is listed again`() = runTest {
+        val shares = shares(mapOf("coll" to collection))
+        val store = MemoryIndexStore()
+        fixedEngine(shares, store, now = 1_000).search(request("葬送的芙莉莲"))
+        // 分享者把这部挪到了新文件夹, 旧文件夹不再共享 (列出来是空的)
+        shares.folders["coll"] = collection - "frieren" + mapOf(
+            "autumn" to listOf(dir("frieren-new", "A 4k 葬送的芙莉莲"), dir("other", "别的番")),
+            "frieren-new" to listOf(video("n01", "01.mp4"), video("n02", "02.mp4")),
+        )
+        val matched = fixedEngine(shares, store, now = 1_000 + 7.hours.inWholeMilliseconds).search(request("葬送的芙莉莲"))
+        assertEquals(listOf("n01", "n02"), matched.map { it.file.fid })
+        assertEquals(2, shares.listed.count { it.second == TestDrive.SHARE_ROOT })
+    }
+
+    /** 列分享 [slowShare] 的每一层都要等 [delayMillis] (虚拟时钟) 的 [DriveShareBrowser]. */
+    private class SlowShares(
+        private val inner: FakeShares,
+        private val slowShare: String,
+        private val delayMillis: Long,
+    ) : DriveShareBrowser by inner {
+        override suspend fun listFolder(shareId: String, passcode: String, folderId: String): List<DriveFile> {
+            if (shareId == slowShare) delay(delayMillis)
+            return inner.listFolder(shareId, passcode, folderId)
+        }
+    }
+
+    @Test
+    fun `a fixed share hands over its folders without waiting for the other shares to be listed`() = runTest {
+        val shares = shares(
+            mapOf(
+                "coll" to collection,
+                "big" to mapOf(TestDrive.SHARE_ROOT to listOf(dir("big-other", "别的番"))),
+            ),
+        )
+        val config = DriveShareSearchConfig(shares = listOf("番剧合集 https://share.drive.test/s/coll?pwd=ab12", "大合集 https://share.drive.test/s/big"))
+        val engine = DriveShareSearchEngine(config, SlowShares(shares, slowShare = "big", delayMillis = 60_000), links) { null }
+
+        val first = engine.searchInBatches(request("葬送的芙莉莲")).first { it.isNotEmpty() }
+        assertEquals(listOf("f01", "f02", "f03"), first.map { it.file.fid })
+        // 大合集还在列 (要 60 秒), 芙莉莲所在的合集列好就交出了
+        assertTrue(currentTime < 60_000, "handed over at $currentTime ms")
     }
 
     @Test

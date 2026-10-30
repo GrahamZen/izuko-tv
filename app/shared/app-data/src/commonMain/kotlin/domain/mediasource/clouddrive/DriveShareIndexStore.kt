@@ -37,7 +37,7 @@ import me.him188.ani.utils.logging.warn
 import me.him188.ani.utils.platform.currentTimeMillis
 import kotlin.coroutines.CoroutineContext
 import kotlin.time.Duration
-import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.seconds
 
 /** 分享里列出来的一个文件夹: [path] 是从分享根起的名字 (第一个是分享的标题). */
@@ -71,12 +71,13 @@ interface DriveShareIndexStore {
 
 /**
  * 存在一个 JSON 文件里: 第一次用到时整份读进内存, 改了之后等一会儿 ([saveDelay]) 整份写回 —— 一次搜索会连着列好几十个分享, 攒成一次写.
- * 写回时丢掉超过 [maxAge] 的 (反正要重列). 文件坏了当作没有.
+ * 写回时丢掉超过 [maxAge] 没重列过的. 过了搜索直接用的时限 (六小时) 的照样留着: 搜索先拿旧索引找, 对上的文件夹还在就不重列
+ * (见 DriveShareSearchEngine.searchFixedShares). 文件坏了当作没有.
  */
 class DriveShareIndexFileStore(
     private val file: SystemPath,
     parentCoroutineContext: CoroutineContext,
-    private val maxAge: Duration = 6.hours,
+    private val maxAge: Duration = 30.days,
     private val saveDelay: Duration = 2.seconds,
     private val now: () -> Long = { currentTimeMillis() },
     /** 读写文件在哪里跑. */

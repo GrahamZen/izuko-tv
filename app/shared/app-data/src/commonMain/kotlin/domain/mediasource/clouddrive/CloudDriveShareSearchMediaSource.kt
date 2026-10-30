@@ -51,6 +51,8 @@ import me.him188.ani.app.domain.foundation.sourceRequestUserAgent
 import me.him188.ani.app.domain.mediasource.search.TitleForms
 import me.him188.ani.app.domain.mediasource.search.TitleIdentities
 import me.him188.ani.app.domain.mediasource.search.TitleIdentity
+import me.him188.ani.app.domain.player.diagnostics.PlayTimeline
+import me.him188.ani.app.platform.DevSwitches
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.PackedDate
@@ -78,6 +80,7 @@ import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 import me.him188.ani.utils.platform.currentTimeMillis
 import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -198,7 +201,9 @@ internal class DriveShareSearchEngine(
      * 选源面板不用等最慢的那个分享. 不同分享里的同一个文件不去重.
      */
     fun searchInBatches(request: MediaFetchRequest): Flow<List<DriveShareMatch>> = channelFlow {
+        if (fixedShares.isNotEmpty()) PlayTimeline.mark("fixed_start")
         val identity = identities.of(request)
+        if (fixedShares.isNotEmpty()) PlayTimeline.mark("fixed_identity", "${fixedShares.size} shares")
         val fixed = if (fixedShares.isEmpty()) emptyList() else searchFixedShares(request, identity) { send(it) }
         if (fixed.any { it.isEpisodeOf(request) } || config.searchUrl.isBlank()) return@channelFlow
         searchSites(request, identity) { send(it) }
@@ -209,7 +214,14 @@ internal class DriveShareSearchEngine(
     private val indexLock = Mutex()
     private val indexes = HashMap<String, DriveShareIndex>()
 
-    /** 固定分享里对得上的文件夹; 每读完一个文件夹就交给 [deliver]. */
+    /**
+     * 固定分享里对得上的文件夹; 每读完一个文件夹就交给 [deliver].
+     *
+     * 各个分享分开找: 哪个分享先有索引就先在里面找、先读对上的文件夹, 不等别的分享列完 —— 合集有十几个分享、同时只列 [SHARE_CONCURRENCY] 个,
+     * 要的那个常常早就列好了. 索引过了 [SHARE_INDEX_TTL] 时先拿旧索引找: 合集的目录很少变, 旧索引里对上的文件夹读出了这一部的剧集就用,
+     * 不重列这个分享; 旧索引里没有、或对上的文件夹读不出这一部 (分享者挪走、取消共享了) 才重列再找.
+     * 同名优先与外层盖里层 ([hitsIn]) 在一个分享里判; 一共最多读 [MAX_FIXED_FOLDERS] 个文件夹.
+     */
     private suspend fun searchFixedShares(
         request: MediaFetchRequest,
         identity: TitleIdentity?,
@@ -218,29 +230,26 @@ internal class DriveShareSearchEngine(
         val keywords = SubjectSearchPlan.of(request).keywords(KeywordStyle.literal(DriveSubjectMatcher.NAME_KEYWORDS)).primary
             .map { TitleForms.compact(it.keyword) }
         if (keywords.isEmpty()) return emptyList()
-        val semaphore = Semaphore(SHARE_CONCURRENCY)
-        val indexed = coroutineScope {
-            fixedShares.map { link ->
-                async { semaphore.withPermit { indexOf(link)?.let { index -> index.folders.map { link to it } }.orEmpty() } }
-            }.awaitAll().flatten()
-        }
-        // 有和番名完全相同的文件夹就只要它: 合集里同系列的作品挨着放 (「偶像大师」与「偶像大师 灰姑娘女孩」)
-        val hits = keywords.flatMap { keyword ->
-            val matched = indexed.filter { (_, folder) ->
-                folderMatches(folder.path.last(), keyword) && identity?.namesOtherWork(folder.path) != true
-            }
-            matched.filter { (_, folder) -> folderTitle(folder.path.last()) == keyword }.ifEmpty { matched }
-        }.distinctBy { (link, folder) -> link.shareId to folder.fid }
-        // 外层文件夹对上了, 里层就不用再单独列
-        val selected = hits.filterNot { (link, folder) ->
-            hits.any { (other, outer) -> other.shareId == link.shareId && outer !== folder && folder.path.size > outer.path.size && folder.path.take(outer.path.size) == outer.path }
-        }.take(MAX_FIXED_FOLDERS)
-        logger.info { "Fixed shares: ${selected.size} folders for ${keywords.first()}: ${selected.map { it.second.path.joinToString("/") }}" }
+        val depth = config.shareIndexDepth.coerceIn(1, MAX_INDEX_DEPTH)
         val skipFolders = reader.subjectSeason(request, identity).otherSeasonFolders()
-        return coroutineScope {
-            selected.map { (link, folder) ->
+        PlayTimeline.mark("fixed_season")
+        // 列分享与读文件夹各用各的名额: 对上的文件夹不排在别的分享的列表后面
+        val listing = Semaphore(SHARE_CONCURRENCY)
+        val reading = Semaphore(SHARE_CONCURRENCY)
+        val readLock = Mutex()
+        val readFolders = LinkedHashMap<Pair<String, String>, String>()
+
+        suspend fun readHits(link: DriveShareLink, index: DriveShareIndex): List<DriveShareMatch> = coroutineScope {
+            val folders = readLock.withLock {
+                hitsIn(index, keywords, identity).filter { folder ->
+                    val key = link.shareId to folder.fid
+                    key in readFolders || readFolders.size < MAX_FIXED_FOLDERS && readFolders.put(key, folder.path.joinToString("/")) == null
+                }
+            }
+            folders.map { folder ->
                 async {
-                    semaphore.withPermit {
+                    reading.withPermit {
+                        PlayTimeline.mark("fixed_read_start", "${link.shareId} ${folder.path.last()}")
                         try {
                             val videos = reader.readFolder(link.shareId, link.passcode, folder.fid, folder.path.drop(1), skipFolders)
                             reader.match(request, FoundShare(link.shareId, link.passcode, folder.path.last()), videos, identity)
@@ -250,24 +259,66 @@ internal class DriveShareSearchEngine(
                             logger.warn { "Failed to read folder ${folder.path} of share ${link.shareId}: $e" }
                             emptyList()
                         }
-                    }.also { deliver(it) }
+                    }.also {
+                        PlayTimeline.mark("fixed_read", "${link.shareId} ${it.size}")
+                        deliver(it)
+                    }
                 }
             }.awaitAll().flatten()
         }
+
+        val found = coroutineScope {
+            fixedShares.map { link ->
+                async {
+                    PlayTimeline.mark("fixed_share", link.shareId)
+                    val cached = cachedIndexOf(link, depth)
+                    PlayTimeline.mark("fixed_index", "${link.shareId} ${if (cached == null) "none" else if (cached.isFresh()) "fresh" else "stale"}")
+                    if (cached != null && cached.isFresh()) return@async readHits(link, cached)
+                    if (cached != null) {
+                        val matches = readHits(link, cached)
+                        if (matches.isNotEmpty()) {
+                            logger.info { "Fixed share ${link.shareId}: the folders of its index from ${(now() - cached.indexedAtMillis).milliseconds.inWholeHours}h ago still hold this subject, not listing it again" }
+                            return@async matches
+                        }
+                    }
+                    val index = listing.withPermit { listIndex(link, depth) } ?: return@async emptyList()
+                    PlayTimeline.mark("fixed_listed", link.shareId)
+                    readHits(link, index)
+                }
+            }.awaitAll().flatten()
+        }
+        logger.info { "Fixed shares: ${readFolders.size} folders for ${keywords.first()}: ${readFolders.values.toList()}" }
+        return found
     }
 
     /**
-     * 分享 [link] 前几层的文件夹, [SHARE_INDEX_TTL] 内不重列: 先看内存, 再看 [indexStore] (应用重启后), 都没有才列.
-     * 打不开时为 null (下次再试).
+     * 索引 [index] 里对得上 [keywords] 的文件夹. 有和番名完全相同的文件夹就只要它: 合集里同系列的作品挨着放 (「偶像大师」与「偶像大师 灰姑娘女孩」);
+     * 外层文件夹对上了, 里层就不用再单独列.
      */
-    private suspend fun indexOf(link: DriveShareLink): DriveShareIndex? {
-        val depth = config.shareIndexDepth.coerceIn(1, MAX_INDEX_DEPTH)
-        fun DriveShareIndex.isFresh() = this.depth == depth && now() - indexedAtMillis in 0 until SHARE_INDEX_TTL.inWholeMilliseconds
-        indexLock.withLock { indexes[link.shareId]?.takeIf { it.isFresh() }?.let { return it } }
-        indexStore.get(link.shareId)?.takeIf { it.isFresh() }?.let { saved ->
-            indexLock.withLock { indexes[link.shareId] = saved }
-            return saved
+    private fun hitsIn(index: DriveShareIndex, keywords: List<String>, identity: TitleIdentity?): List<DriveShareIndexedFolder> {
+        val hits = keywords.flatMap { keyword ->
+            val matched = index.folders.filter { folder ->
+                folderMatches(folder.path.last(), keyword) && identity?.namesOtherWork(folder.path) != true
+            }
+            matched.filter { folder -> folderTitle(folder.path.last()) == keyword }.ifEmpty { matched }
+        }.distinctBy { it.fid }
+        return hits.filterNot { folder ->
+            hits.any { outer -> outer !== folder && folder.path.size > outer.path.size && folder.path.take(outer.path.size) == outer.path }
         }
+    }
+
+    private fun DriveShareIndex.isFresh(): Boolean = now() - indexedAtMillis in 0 until SHARE_INDEX_TTL.inWholeMilliseconds
+
+    /** 分享 [link] 列到 [depth] 层的索引, 不管多旧: 先看内存, 再看 [indexStore] (应用重启后); 都没有时为 null. */
+    private suspend fun cachedIndexOf(link: DriveShareLink, depth: Int): DriveShareIndex? {
+        indexLock.withLock { indexes[link.shareId] }?.takeIf { it.depth == depth }?.let { return it }
+        val saved = indexStore.get(link.shareId)?.takeIf { it.depth == depth } ?: return null
+        indexLock.withLock { indexes.getOrPut(link.shareId) { saved } }
+        return saved
+    }
+
+    /** 现列分享 [link] 前 [depth] 层的文件夹, 记进内存与 [indexStore]. 打不开时为 null (下次再试). */
+    private suspend fun listIndex(link: DriveShareLink, depth: Int): DriveShareIndex? {
         val folders = try {
             val title = shares.open(link.shareId, link.passcode)
             val result = ArrayList<DriveShareIndexedFolder>()
@@ -520,8 +571,11 @@ internal class DriveShareSearchEngine(
 
         private val PAGE_SEARCH_INTERVAL = 3.5.seconds
 
-        /** 固定分享的文件夹列表缓存多久: 合集更新不频繁, 每次查询都重列几十个文件夹太慢. */
-        private val SHARE_INDEX_TTL = 6.hours
+        /**
+         * 固定分享的文件夹列表多久内直接用: 合集更新不频繁, 每次查询都重列几十个文件夹太慢. 过了这么久, 旧列表只在对上的文件夹
+         * 还读得出这一部时用 (见 [searchFixedShares]), 否则重列. 默认 6 小时, 调试开关 [DevSwitches.driveShareIndexTtlHours] 可调.
+         */
+        private val SHARE_INDEX_TTL get() = DevSwitches.driveShareIndexTtlHours.value.toDouble().hours
 
         /** 一个固定分享最多记多少个文件夹, 往下最多列几层. */
         private const val MAX_INDEXED_FOLDERS = 3000
@@ -649,6 +703,7 @@ class CloudDriveShareSearchMediaSource(
      * 有要的这一集就不再去查别处 (追番时第二集起只列一个文件夹); 没有 (新的一集还没更新、线索失效) 时照常查.
      */
     override suspend fun fetch(query: MediaFetchRequest): SizedSource<MediaMatch> {
+        PlayTimeline.mark("share_fetch", arguments.name)
         val (drive, engine) = engine() ?: run {
             logger.warn { "${arguments.name}: cloud drive ${arguments.drive} is not configured" }
             return SinglePagePagedSource { emptyList<MediaMatch>().asFlow() }
@@ -663,6 +718,7 @@ class CloudDriveShareSearchMediaSource(
         val totalSizeState = MutableStateFlow<Int?>(null)
         return batchedSizedSource(
             channelFlow {
+                PlayTimeline.mark("share_collect", arguments.name)
                 val seen = HashSet<String>()
                 suspend fun deliver(matches: List<DriveShareMatch>) {
                     val fresh = matches.filter { seen.add("${it.share.shareId}/${it.file.fid}") }

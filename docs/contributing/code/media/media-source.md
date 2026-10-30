@@ -47,6 +47,12 @@ interface MediaSource {
 - `cloud-drive-added-shares`：用户在 Web 控制台给条目添加的分享链接；
 - `cloud-drive-share-search`：从固定的分享合集（按文件夹名对番名）或站点的搜索接口里找别人的分享，播放时转存到自己的网盘。
 
+固定的分享合集（`DriveShareSearchEngine.searchFixedShares`）给每个分享列前几层文件夹建索引（存进 `DriveShareIndexStore`，应用重启后还在），
+按文件夹名对番名。各个分享分开找：哪个分享先有索引就先在里面找、读对上的文件夹并交出剧集，不等合集里别的分享列完（同时只列两个分享，
+读文件夹另有名额）。索引 6 小时内直接用（调试开关 `driveShareIndexTtlHours`）；更旧的先拿来找，对上的文件夹还读得出这一部就用、不重列这个分享，
+旧索引里没有、或对上的文件夹读不出这一部（分享者挪走、不再共享）才重列再找。同名优先（有和番名完全相同的文件夹就只要它）
+在一个分享里判，一次最多读六个文件夹。
+
 资源的 `download` 是占位地址（模板也在协议里），播放时由 `CloudDriveMediaResolver` 认出属于哪个网盘再取直链。
 资源的条目名取 `MediaFetchRequest.catalogSubjectName`（条目服务上的名字，用户改搜索名时不变，见 `CloudDriveMediaSource.subjectNameOf`）：
 文件已经按条目对上了，而选择器判条目名不匹配只认条目服务的名字。
