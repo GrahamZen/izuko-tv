@@ -52,7 +52,8 @@ import kotlin.time.Duration.Companion.seconds
  *    别的线索等它的数据源: 它边查边交出的里有线索上的资源就用 (拆分季除外), 否则等它查完 (被暂停的照用暂停前拿到的) 再找一次, 这一轮正常查完了还没有就不再重搜 (重搜也是同样的结果),
  *    数据源被暂停、出错或等不到时才直接去取 ([EpisodeContinuation.resolve]);
  * 4. 直接取回来的资源不在候选里, 先按选源器的过滤规则判一次 (排除的字幕组、早于本集开播、条目名、别的季…), 被排除就当没找到;
- *    线索彻底失效时忘掉它.
+ *    线索彻底失效时忘掉它; 自动选源记住的源就是线索所在的源时一并忘掉 ([rememberedSource]): 那个版本已经没了,
+ *    接着等这个源从头搜完 (固定分享的合集要重列十几个分享) 多半还是找不到, 交给自动选源照常选, 选上的再记成记住的源.
  *
  * 找到就自动选上 (不改选源偏好) 并返回 true; 找不到返回 false, 由调用方照常选 —— 选源设置只在这时才起作用.
  * 自动选上别的版本的缓存不换线索 (见 PlaybackLineageExtension), 下一集没有缓存时照样顺着线索找.
@@ -62,6 +63,7 @@ class PlaybackLineageSelection(
     private val repository: PlaybackLineageRepository,
     private val continuation: EpisodeContinuation,
     private val cacheRecords: EpisodeCacheRecords,
+    private val rememberedSource: RememberedSourceForgetter = RememberedSourceForgetter.None,
 ) {
     suspend fun select(subjectId: Int, episode: EpisodeInfo, session: MediaFetchSession, selector: MediaSelector): Boolean {
         if (selector.selected.value != null) return false
@@ -197,6 +199,7 @@ class PlaybackLineageSelection(
             LineageResolution.Gone -> {
                 logger.info { "Playback lineage of subject $subjectId is gone, forgetting it: $lineage" }
                 repository.setLineage(subjectId, null)
+                rememberedSource.forgetIf(subjectId, lineage.mediaSourceId)
                 null
             }
 
