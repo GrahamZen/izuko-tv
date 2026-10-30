@@ -41,6 +41,13 @@ data class UnsupportedFormat(
         /** cause 链的深度上限: 链可能自引用. */
         private const val MAX_DEPTH = 8
 
+        /** 解析时认不出的画面格式 */
+        private const val UNKNOWN_VIDEO = "video/x-unknown"
+
+        /** Format 里紧跟编码 MIME [mime] 的编码串; 没写为 null */
+        private fun codecsAfter(format: String, mime: String): String? =
+            format.substringAfter("$mime, ", "").substringBefore(", ").takeIf { it.isNotEmpty() && it != "null" }
+
         /** [error] 或它的 cause 链上有设备放不了的格式时返回它, 否则 null. */
         fun of(error: Throwable?): UnsupportedFormat? {
             var current = error
@@ -59,7 +66,9 @@ data class UnsupportedFormat(
             // Format 依次写 id、名字、容器 MIME、编码 MIME: 有两个时第二个是编码的; 只有一个时是容器没写
             val mimes = MIME.findAll(format).map { it.value }.toList()
             val mime = (if (mimes.size >= 2) mimes[1] else mimes.firstOrNull()) ?: return null
-            val name = MediaFormatNames.of(mime) ?: return null
+            // 解析时就认不出的画面: 播放器在编码串里记了原来的编码 (FourCC 或 mkv 的 CodecID)
+            val name = (if (mime == UNKNOWN_VIDEO) codecsAfter(format, mime)?.let(MediaFormatNames::ofCodec) else null)
+                ?: MediaFormatNames.of(mime) ?: return null
             if (mime.startsWith("audio/")) return UnsupportedFormat(isAudio = true, name = name)
             val height = VIDEO_SIZE.find(format)?.groupValues?.get(2)?.toIntOrNull()?.takeIf { it > 0 }
             val profile = if (mime == "video/avc") AVC_PROFILE.find(format)?.groupValues?.get(1)?.toIntOrNull(16)?.let(AVC_PROFILE_NAMES::get) else null
@@ -98,11 +107,45 @@ object MediaFormatNames {
         "video/mpeg2" to "MPEG-2",
         "video/wvc1" to "VC-1",
         "video/mp4v-es" to "MPEG-4",
+        "video/divx" to "DivX",
+        "video/mp43" to "DivX 3",
+        "video/mp42" to "MS-MPEG4 v2",
+        "video/mjpeg" to "MJPEG",
+        "video/3gpp" to "H.263",
+    )
+
+    /** 解析时认不出的画面原来的编码: VfW 的 FourCC (大小写不论) 与 mkv 的 CodecID */
+    private val codecNames = mapOf(
+        "DIV3" to "DivX 3", "DIV4" to "DivX 3", "MP43" to "DivX 3", "MPG3" to "DivX 3",
+        "MP42" to "MS-MPEG4 v2", "DIV2" to "MS-MPEG4 v2",
+        "MP41" to "MS-MPEG4 v1", "MPG4" to "MS-MPEG4 v1",
+        "WMV1" to "WMV7", "WMV2" to "WMV8", "WMV3" to "WMV9",
+        "MJPG" to "MJPEG",
+        "VP60" to "VP6", "VP61" to "VP6", "VP62" to "VP6", "VP6F" to "VP6",
+        "FLV1" to "Sorenson Spark",
+        "CVID" to "Cinepak",
+        "V_MPEG1" to "MPEG-1",
+        "V_THEORA" to "Theora",
+        "V_MPEGI/ISO/VVC" to "H.266",
+        "V_PRORES" to "ProRes",
+        "V_FFV1" to "FFV1",
+        "V_DIRAC" to "Dirac",
+        "V_QUICKTIME" to "QuickTime",
+        "V_UNCOMPRESSED" to "Uncompressed",
     )
 
     /** 表里没有的写 MIME 的子类型 (`audio/x-foo` → `X-FOO`); [mimeType] 为空时返回 null. */
     fun of(mimeType: String?): String? {
         if (mimeType.isNullOrBlank()) return null
         return names[mimeType] ?: mimeType.substringAfter('/').substringBefore(';').uppercase()
+    }
+
+    /**
+     * 解析时认不出的画面原来的编码 ([codec] 是 VfW 的 FourCC 如 `DIV3`, 或 mkv 的 CodecID 如 `V_REAL/RV40`) 的叫法;
+     * 表里没有的 CodecID 去掉 `V_` 前缀, FourCC 原样.
+     */
+    fun ofCodec(codec: String): String = when {
+        codec.startsWith("V_REAL/") -> "RealVideo"
+        else -> codecNames[codec] ?: codecNames[codec.uppercase()] ?: codec.removePrefix("V_")
     }
 }

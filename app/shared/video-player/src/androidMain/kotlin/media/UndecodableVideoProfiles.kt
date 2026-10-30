@@ -61,6 +61,7 @@ internal object UndecodableVideoProfiles {
  * 系统解码器的视频渲染器, 但 [UndecodableVideoProfiles] 里的规格在没有解码器声明支持时不开解码器: 候选解码器清空,
  * 解码器初始化报错, 错误里带着 `format_supported=NO_EXCEEDS_CAPABILITIES`, 之后与其他设备放不了的格式一样提示并自动换源.
  * 声明了支持的解码器 (少数芯片能解 10-bit H.264) 照常用. 判断能不能选这条轨 (supportsFormat) 不经过这里, 选轨不变.
+ * 根本没有解码器的画面格式则在 supportsFormat 里报成超出能力照样选上, 同样在开解码器时报错 (见 [UnplayableVideoTrack]).
  *
  * 另外按 [VideoDecoderParking.MSG_PARK] 停用解码器: 画面不在眼前、内存紧时释放, 画面回来再建;
  * 按 [SeekPreviewDecoderRebuild.MSG_REBUILD_ON_NEXT_OUTPUT] 在下一次换输出面时重建解码器.
@@ -69,9 +70,10 @@ internal object UndecodableVideoProfiles {
 internal class UndecodableProfileGuardingVideoRenderer(
     builder: MediaCodecVideoRenderer.Builder,
 ) : MediaCodecVideoRenderer(builder) {
-    // 杜比视界 profile 7 没有解码器支持时当 HDR10 基础层放 (见 DolbyVisionBaseLayer): 选轨与找解码器都按基础层算
+    // 杜比视界 profile 7 没有解码器支持时当 HDR10 基础层放 (见 DolbyVisionBaseLayer): 选轨与找解码器都按基础层算.
+    // 没有解码器的画面也选上, 开解码器时报错、提示并换源, 不只放声音 (见 UnplayableVideoTrack)
     override fun supportsFormat(mediaCodecSelector: MediaCodecSelector, format: Format): Int =
-        super.supportsFormat(mediaCodecSelector, DolbyVisionBaseLayer.decodableFormat(format))
+        UnplayableVideoTrack.selectAnyway(format, super.supportsFormat(mediaCodecSelector, DolbyVisionBaseLayer.decodableFormat(format)))
 
     override fun getMediaFormat(
         format: Format,
