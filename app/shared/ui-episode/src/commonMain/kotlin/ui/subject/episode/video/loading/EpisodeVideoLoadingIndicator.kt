@@ -87,6 +87,7 @@ import me.him188.ani.app.ui.lang.subject_episode_video_loading_searching_sources
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_torrent_metadata
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_torrent_no_peers
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_torrent_peers
+import me.him188.ani.app.ui.lang.subject_episode_video_loading_waiting_for_network
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_waiting_for_sources
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_waiting_for_sources_more
 import me.him188.ani.app.ui.subject.episode.SourceSearchProgress
@@ -307,6 +308,13 @@ fun EpisodeVideoLoadingIndicator(
                         }
 
                         TextWithBorder(text, textAlign = TextAlign.Center)
+                    }
+
+                    VideoLoadingState.WaitingForNetwork -> {
+                        TextWithBorder(
+                            stringResource(Lang.subject_episode_video_loading_waiting_for_network),
+                            textAlign = TextAlign.Center,
+                        )
                     }
 
                     is VideoLoadingState.Failed -> {
