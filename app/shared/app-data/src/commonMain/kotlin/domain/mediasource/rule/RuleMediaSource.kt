@@ -84,6 +84,8 @@ import me.him188.ani.datasources.api.matcher.WebViewConfig
 import me.him188.ani.datasources.api.paging.SizedSource
 import me.him188.ani.datasources.api.paging.emptySizedSource
 import me.him188.ani.app.domain.media.fetch.mapKeepingBatches
+import me.him188.ani.app.domain.media.resolver.MediaResolutionException
+import me.him188.ani.app.domain.media.resolver.ResolutionFailures
 import me.him188.ani.datasources.api.source.BrowseChannel
 import me.him188.ani.datasources.api.source.BrowseEpisode
 import me.him188.ani.datasources.api.source.BrowseSubject
@@ -633,6 +635,8 @@ class RuleMediaSource(
                     RulePlayResult.Failed
                 }
                 logger.info { "RuleMediaSource '$mediaSourceId': play $pageUrl -> $result" }
+                // 站点明确说要登录: 开 WebView 也嗅不到视频, 直接算这次开播失败 (画像记一次), 换下一个资源
+                if (result is RulePlayResult.LoginRequired) throw MediaResolutionException(ResolutionFailures.NO_MATCHING_RESOURCE)
                 SourceProfiles.noteWebView(mediaSourceId, webView = result !is RulePlayResult.Direct)
                 return (result as? RulePlayResult.Direct)?.let { WebVideo(it.url, it.headers) }
             }

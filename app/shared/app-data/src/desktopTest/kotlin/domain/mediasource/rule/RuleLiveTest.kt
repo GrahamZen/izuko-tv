@@ -130,6 +130,7 @@ class RuleLiveTest {
             return when (val play = engine.play(episode.url)) {
                 RulePlayResult.Sniff -> "${source.name} | $summary | 播放: 要 WebView 嗅探 ${episode.url}"
                 RulePlayResult.Failed -> failed("$summary | 播放失败")
+                is RulePlayResult.LoginRequired -> failed("$summary | 播放要登录: ${play.message}")
                 is RulePlayResult.Direct -> "${source.name} | $summary | 播放: ${probe(play)}"
             }
         } catch (e: Exception) {
