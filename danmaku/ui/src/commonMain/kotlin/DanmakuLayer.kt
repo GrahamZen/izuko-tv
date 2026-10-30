@@ -21,6 +21,8 @@ import androidx.compose.ui.graphics.ImageBitmap
  *
  * 这一层在系统合成里叠在视频之上、界面窗口之下, 并且会在窗口上挖洞: 要在视频之前组合, 否则会把画在它之前的窗口内容
  * (视频控件里的字幕) 清成透明. 因此字幕在弹幕之上.
+ * 退回 [DanmakuHost] 时反过来, 要在视频之后组合: 视频的表面同样在窗口上挖洞, 会把画在它之前的弹幕清掉.
+ * 此刻是哪一种看 [danmakuLayerHasOwnSurface].
  *
  * @param alpha 整层的不透明度, 在弹幕的不透明度设置之上再乘, 供显隐动画用; 为 0 时不画. 在画的时候读, 变化不引起重组.
  * @param snapshots 截图用, 见 [DanmakuLayerSnapshots]. 不支持的平台不登记.
@@ -36,6 +38,12 @@ expect fun DanmakuLayer(
     snapshots: DanmakuLayerSnapshots? = null,
     playing: (() -> Boolean)? = null,
 )
+
+/**
+ * [DanmakuLayer] 此刻是不是画在单独的表面上: true 要在视频之前组合, false (退回 [DanmakuHost], 画在界面里) 要在视频之后组合.
+ * 会变: Android 上发现这台设备画不了 GL 层时变成 false 并一直保持, 在组合里读的跟着重组.
+ */
+expect val danmakuLayerHasOwnSurface: Boolean
 
 /** 截此刻弹幕层上画着的内容: 透明底, 与层同尺寸. */
 class DanmakuLayerSnapshots {
