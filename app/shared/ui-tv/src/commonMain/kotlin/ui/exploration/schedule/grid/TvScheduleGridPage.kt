@@ -170,6 +170,8 @@ import me.him188.ani.app.ui.lang.exploration_tv_schedule_today
 import me.him188.ani.app.ui.search.LoadErrorCard
 import me.him188.ani.app.ui.subject.collection.TvCollectionGlassRailTab
 import me.him188.ani.app.ui.subject.collection.components.EditCollectionTypeDropDown
+import me.him188.ani.app.ui.subject.details.layout.TvRewatchMenuItem
+import me.him188.ani.app.ui.subject.details.layout.rememberTvRewatches
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 import me.him188.ani.utils.analytics.Analytics
 import me.him188.ani.utils.analytics.AnalyticsEvent.Companion.SubjectEnter
@@ -534,11 +536,15 @@ fun TvScheduleGridPage(
 
     // 长按卡片的收藏菜单 (锚在原生网格报上来的封面框旁边); 打开后吞掉长按残余的确认键, 避免误触第一项.
     // remember 无 key: 工厂交给原生网格的接线, 每次新实例都会让它跟着重组. 收藏类型在菜单里现读
+    // 末尾的「重温」见 TvRewatches: 重温中收藏类型那几项都不勾
+    val rewatches = rememberTvRewatches()
     val collectionMenuFor: (AiringScheduleItemPresentation) -> @Composable (expanded: Boolean, onDismiss: () -> Unit) -> Unit = remember {
         { item ->
             { expanded, onDismiss ->
+                val type = collectionTypes[item.subjectId] ?: UnifiedCollectionType.NOT_COLLECTED
+                val rewatch = rewatches.of(item.subjectId)
                 EditCollectionTypeDropDown(
-                    currentType = collectionTypes[item.subjectId] ?: UnifiedCollectionType.NOT_COLLECTED,
+                    currentType = type.takeUnless { rewatch.rewatching },
                     expanded = expanded,
                     onDismissRequest = onDismiss,
                     onClick = { action ->
@@ -549,6 +555,7 @@ fun TvScheduleGridPage(
                     },
                     modifier = Modifier.consumeHeldConfirmKey(),
                     positionProvider = rememberTvBesideAnchorPositionProvider(),
+                    trailingItems = { TvRewatchMenuItem(rewatch, type, onDismiss) },
                 )
             }
         }

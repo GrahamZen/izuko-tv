@@ -282,6 +282,8 @@ import me.him188.ani.app.ui.search.LoadErrorCard
 import me.him188.ani.app.ui.search.collectItemsWithLifecycle
 import me.him188.ani.app.ui.search.isLoadingFirstPageOrRefreshing
 import me.him188.ani.app.ui.subject.collection.components.EditCollectionTypeDropDown
+import me.him188.ani.app.ui.subject.details.layout.TvRewatchMenuItem
+import me.him188.ani.app.ui.subject.details.layout.rememberTvRewatches
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
@@ -1519,11 +1521,15 @@ private fun TvSearchResultsPane(
 
     // 卡片长按弹出的收藏下拉 (与探索页/追番页一致); 打开后短暂吞掉长按残余的确认键, 避免误触第一项.
     // 菜单锚在原生网格报上来的封面框上 (见 TvNativeGridPageHost). remember: 工厂只建一份, 面板重组时不换实例
+    // 末尾的「重温」见 TvRewatches: 重温中收藏类型那几项都不勾
+    val rewatches = rememberTvRewatches()
     val collectionMenuFor: (Int) -> @Composable (expanded: Boolean, onDismiss: () -> Unit) -> Unit = remember {
         { subjectId ->
             { expanded, onDismiss ->
+                val type = collectionTypeCache[subjectId] ?: UnifiedCollectionType.NOT_COLLECTED
+                val rewatch = rewatches.of(subjectId)
                 EditCollectionTypeDropDown(
-                    currentType = collectionTypeCache[subjectId] ?: UnifiedCollectionType.NOT_COLLECTED,
+                    currentType = type.takeUnless { rewatch.rewatching },
                     expanded = expanded,
                     onDismissRequest = onDismiss,
                     onClick = { action ->
@@ -1537,6 +1543,7 @@ private fun TvSearchResultsPane(
                     modifier = Modifier.consumeHeldConfirmKey(),
                     // 摆在长按的那张卡旁边 (右边放得下放右边, 否则左边), 不压住封面
                     positionProvider = rememberTvBesideAnchorPositionProvider(),
+                    trailingItems = { TvRewatchMenuItem(rewatch, type, onDismiss) },
                 )
             }
         }
