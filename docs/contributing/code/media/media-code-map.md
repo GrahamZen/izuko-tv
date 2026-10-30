@@ -176,6 +176,10 @@
     media3 读 mkv 时不设，系统 FLAC 解码器按默认 32 KiB 开，多声道的一帧放不下，每帧都被跳过，一直没声音。
     mkv 里按 VfW 兼容方式（`V_MS/VFW/FOURCC`）封的 XviD、DivX、H.264 等画面也在这里照 media3 读 AVI 的认法改成 `video/mp4v-es` / `video/avc`（`MkvFourCcVideo`）：
     media3 读 mkv 时把它们认成未知格式，画面轨选不上，只有声音和字幕。
+    画面格式设备根本没有解码器时（老芯片上的 AV1、DivX 3、解析时认不出的格式），ExoPlayer 本来不选这条画面轨、只放声音；
+    视频渲染器在 supportsFormat 里把它报成超出能力照样选上（`UnplayableVideoTrack`），开解码器时报错，同样提示放不了并自动换源。
+    mkv 里 media3 整条丢掉的画面轨（RealVideo、MPEG-1 等）留成未知格式，未知格式在编码串里记下原来的 FourCC 或 CodecID（`MkvUnknownVideo`），
+    提示里由 `UnsupportedFormat` 写出格式名。
     mkv 最后 1 MiB 内的解析错误当作文件读完（`MkvTailTolerantExtractor`，建 `DefaultMediaSourceFactory` 时包在 mkv 提取器外）：
     有的文件在最后一个元素后面跟着填充或残缺的尾巴，播放器预读到文件末尾时报错会让还没播到那里的整集失败、换源；文件中间出错照常报。
     字幕的字节在交给解析器与 libass 之前就理顺，下游（`SubtitleView`、libass 画的 `LiftableAssSubtitleView`、

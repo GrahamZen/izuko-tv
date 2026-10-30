@@ -39,7 +39,8 @@ import kotlin.math.min
  *
  * 另外把视频轨的 DefaultDuration (每帧时长) 换算成帧率写进 Format: media3 只拿它算时间戳, Format 里没有帧率,
  * 播放页「跟随片源」切刷新率 (ContentFrameRateEffect)、统计层、media3 的无缝刷新率提示都靠它.
- * FLAC 轨补上解码器的输入缓冲大小, 见 [MkvFlacInputSize]; VfW 方式封的 XviD、H.264 等画面改认成设备能解的格式, 见 [MkvFourCcVideo].
+ * FLAC 轨补上解码器的输入缓冲大小, 见 [MkvFlacInputSize]; VfW 方式封的 XviD、H.264 等画面改认成设备能解的格式, 见 [MkvFourCcVideo];
+ * media3 解不出的画面轨留成未知格式并记下原来的编码, 见 [MkvUnknownVideo].
  */
 @AndroidxOptIn(UnstableApi::class)
 internal open class SubtitleFixingMkvExtractor(
@@ -85,10 +86,14 @@ internal open class SubtitleFixingMkvExtractor(
             entry = null
             // 读完 TrackEntry 时 media3 建好 Format, 交给输出要等整个 Tracks 读完, 中间补上帧率
             val track = getCurrentTrack(id)
+            // media3 会整条丢掉的画面轨留成未知格式 (见 MkvUnknownVideo)
+            val dropped = track.codecId?.takeIf { MkvUnknownVideo.isDropped(track.type, it) }
+            if (dropped != null) track.codecId = MkvUnknownVideo.PLACEHOLDER_CODEC_ID
             super.endMasterElement(id)
             fillFrameRate(track)
             track.format?.let(MkvFlacInputSize::fill)?.let { track.format = it }
             track.format?.let { MkvFourCcVideo.fill(it, track.codecId, track.codecPrivate) }?.let { track.format = it }
+            track.format?.let { MkvUnknownVideo.label(it, dropped ?: track.codecId, track.codecPrivate) }?.let { track.format = it }
             return
         }
         super.endMasterElement(id)
