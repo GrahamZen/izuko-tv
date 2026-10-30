@@ -58,6 +58,7 @@ import me.him188.ani.app.domain.media.download.DownloadRequestSessionFactory
 import me.him188.ani.app.domain.media.continuation.EpisodeContinuation
 import me.him188.ani.app.domain.media.continuation.EpisodeContinuations
 import me.him188.ani.app.domain.media.continuation.PlaybackLineageSelection
+import me.him188.ani.app.domain.media.continuation.PreferencesRememberedSourceForgetter
 import me.him188.ani.app.domain.media.continuation.TorrentContinuation
 import me.him188.ani.app.domain.media.continuation.WebSourceContinuation
 import me.him188.ani.app.domain.media.selector.GetPreferredMediaSourceSortingUseCase
@@ -154,7 +155,7 @@ fun KoinApplication.useCaseModules() = module {
             ),
         )
     }
-    single<PlaybackLineageSelection> { PlaybackLineageSelection(get(), get(), get()) }
+    single<PlaybackLineageSelection> { PlaybackLineageSelection(get(), get(), get(), PreferencesRememberedSourceForgetter(get())) }
 }
 
 val GlobalKoin get() = KoinPlatform.getKoin()
