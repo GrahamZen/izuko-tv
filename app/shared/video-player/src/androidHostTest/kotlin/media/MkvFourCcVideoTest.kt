@@ -38,6 +38,13 @@ class MkvFourCcVideoTest {
     }
 
     @Test
+    fun `h264 in vfw mode is read as h264`() {
+        for (fourCc in listOf("H264", "h264", "avc1", "AVC1", "X264", "x264")) {
+            assertEquals(MimeTypes.VIDEO_H264, MkvFourCcVideo.fill(unknown, "V_MS/VFW/FOURCC", bitmapInfoHeader(fourCc))?.sampleMimeType, fourCc)
+        }
+    }
+
+    @Test
     fun `other fourccs and codec ids are left alone`() {
         assertNull(MkvFourCcVideo.fill(unknown, "V_MS/VFW/FOURCC", bitmapInfoHeader("WVC1")))
         assertNull(MkvFourCcVideo.fill(unknown, "V_MS/VFW/FOURCC", bitmapInfoHeader("MJPG")))
