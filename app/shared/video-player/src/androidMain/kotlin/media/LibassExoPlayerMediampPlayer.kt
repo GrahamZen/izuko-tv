@@ -940,7 +940,7 @@ private class LibassMediaSourcePipeline(
             deferredFonts = fonts
             fontDeferringExtractorsFactory(fonts)
         } ?: extractorsFactory
-        return DefaultMediaSourceFactory(dataSourceFactory, extractors)
+        return DefaultMediaSourceFactory(dataSourceFactory, extractors.withTolerantMkvTail())
             .setSubtitleParserFactory(subtitleParserFactory)
             .setLoadErrorHandlingPolicy(loadErrorPolicy)
             .createMediaSource(mediaItem)
