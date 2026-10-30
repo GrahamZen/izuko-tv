@@ -42,9 +42,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
-/** 这台设备画不了 GL 弹幕层 (见 [GlDanmakuLayerView] 的 onUnavailable): 之后的播放页都直接用 [DanmakuHost]. */
-@Volatile
-private var glLayerUnavailable = false
+/** 这台设备画不了 GL 弹幕层 (见 [GlDanmakuLayerView] 的 onUnavailable): 之后的播放页都直接用 [DanmakuHost]. 只在界面线程上写. */
+private var glLayerUnavailable by mutableStateOf(false)
+
+actual val danmakuLayerHasOwnSurface: Boolean get() = !glLayerUnavailable
 
 @Composable
 actual fun DanmakuLayer(
@@ -54,9 +55,8 @@ actual fun DanmakuLayer(
     snapshots: DanmakuLayerSnapshots?,
     playing: (() -> Boolean)?,
 ) {
-    var useGl by remember { mutableStateOf(!glLayerUnavailable) }
-    if (useGl) {
-        GlDanmakuLayer(state, modifier, alpha, snapshots, playing, onUnavailable = { glLayerUnavailable = true; useGl = false })
+    if (!glLayerUnavailable) {
+        GlDanmakuLayer(state, modifier, alpha, snapshots, playing, onUnavailable = { glLayerUnavailable = true })
     } else {
         // 退回在界面里画; 不登记截图
         DanmakuHost(state, modifier.graphicsLayer { this.alpha = alpha() })

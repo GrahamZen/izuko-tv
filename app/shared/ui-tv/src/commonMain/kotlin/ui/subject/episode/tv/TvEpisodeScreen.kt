@@ -1705,27 +1705,32 @@ fun TvEpisodeScreenContent(
                     )
                     .focusable(), // 根节点可聚焦: 纯视频态持焦收按键
             ) {
-                // 弹幕层: 单独的表面, 要在视频面之前组合 (见 DanmakuLayer).
-                // 拖动预览画在全屏上时藏起来: 弹幕停在开始拖的那一刻, 盖在预览位置的画面上对不上
-                TraceSection("Izuko:Player/Danmaku") {
-                    TvPlayerDanmaku(
-                        vm.player, danmakuHostState, vm.uiDanmakuEventFlow,
-                        enabled = page.danmakuEnabled,
-                        hidden = { seekPreview?.hidesFullScreenExtras == true },
-                        modifier = Modifier.matchParentSize(),
-                    )
-                }
-
-                // 视频面: 独立稳定槽位, 覆盖层任何变化不触碰. 控制层在场时底部字幕挪到它上面
+                // 弹幕层与视频面的先后看弹幕画在哪 (见 TvDanmakuAroundVideo)
                 val subtitleObstructionTop = remember(overlay) { { overlay.subtitleObstructionTopPx() } }
-                CompositionLocalProvider(LocalSubtitleObstructionTop provides subtitleObstructionTop) {
-                    TraceSection("Izuko:Player/VideoPlayer") {
-                        VideoPlayer(
-                            vm.player,
-                            Modifier.matchParentSize(),
-                        )
-                    }
-                }
+                TvDanmakuAroundVideo(
+                    danmaku = {
+                        // 拖动预览画在全屏上时藏起来: 弹幕停在开始拖的那一刻, 盖在预览位置的画面上对不上
+                        TraceSection("Izuko:Player/Danmaku") {
+                            TvPlayerDanmaku(
+                                vm.player, danmakuHostState, vm.uiDanmakuEventFlow,
+                                enabled = page.danmakuEnabled,
+                                hidden = { seekPreview?.hidesFullScreenExtras == true },
+                                modifier = Modifier.matchParentSize(),
+                            )
+                        }
+                    },
+                    video = {
+                        // 视频面: 独立稳定槽位, 覆盖层任何变化不触碰. 控制层在场时底部字幕挪到它上面
+                        CompositionLocalProvider(LocalSubtitleObstructionTop provides subtitleObstructionTop) {
+                            TraceSection("Izuko:Player/VideoPlayer") {
+                                VideoPlayer(
+                                    vm.player,
+                                    Modifier.matchParentSize(),
+                                )
+                            }
+                        }
+                    },
+                )
 
                 // 触屏手势层 (电视上不组合): 在视频面之上、一切覆盖层之下 —— 覆盖层里可点/可滚的节点
                 // 在 z 序上压着它, 命中它们的事件到不了这里, 只有落在空白处的手势才算画面手势
