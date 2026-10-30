@@ -71,6 +71,22 @@ interface SubjectRewatchDao {
     }
 
     /**
+     * 结束重温并直接改成 [type] (不先还原成看过: 按收藏类型分标签的页面上, 中间那一下看过会让卡片离开当前标签又回来).
+     * 本地还是在看才改 (收藏更新时间记成 [now]); 各集看过照 [episodes] 还原并标成过期, 用到时按 Bangumi 重取.
+     * 条目不标过期: 调用方紧接着写 Bangumi, 这时重取到的还是旧的收藏类型.
+     *
+     * @return 改了没有 (本地已经不是在看就没改)
+     */
+    @Transaction
+    suspend fun endRewatchInto(subjectId: Int, type: UnifiedCollectionType, now: Long, episodes: Map<Int, UnifiedCollectionType>): Boolean {
+        if (replaceType(subjectId, UnifiedCollectionType.DOING, type, now) == 0) return false
+        setAllEpisodeTypes(subjectId, UnifiedCollectionType.NOT_COLLECTED)
+        for ((episodeId, episodeType) in episodes) setEpisodeType(subjectId, episodeId, episodeType)
+        expireEpisodes(subjectId)
+        return true
+    }
+
+    /**
      * Bangumi 上在别处改了收藏类型、重温作废时: 各集看过先还原成开始时的 (别停在这一轮的), 再标成过期, 用到时按 Bangumi 重取.
      * 收藏类型由调用方照取到的写.
      */

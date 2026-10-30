@@ -145,6 +145,8 @@ import me.him188.ani.app.ui.lang.exploration_rec_trending
 import me.him188.ani.app.ui.lang.exploration_recommendations
 import me.him188.ani.app.ui.main.TvWallScaleEntry
 import me.him188.ani.app.ui.subject.collection.components.EditCollectionTypeDropDown
+import me.him188.ani.app.ui.subject.details.layout.TvRewatchMenuItem
+import me.him188.ani.app.ui.subject.details.layout.rememberTvRewatches
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 import me.him188.ani.utils.analytics.Analytics
 import me.him188.ani.utils.analytics.AnalyticsEvent.Companion.SubjectEnter
@@ -487,11 +489,15 @@ private fun TvExplorationPageContent(
     // infoCache (聚焦时异步拉取的 SubjectCollectionInfo), 未就绪则按未收藏处理.
     // remember: 工厂是 TvExplorationNativeWall 的参数, 每次重组换新实例的话它的参数就不相等、跳不过,
     // 页面 body 每重组一次它跟着重组一次. 另外三页 (追番/搜索/时间表) 也是 remember 的
+    // 末尾的「重温」见 TvRewatches: 重温中收藏类型那几项都不勾
+    val rewatches = rememberTvRewatches()
     val collectionMenuFor: (Int) -> @Composable (expanded: Boolean, onDismiss: () -> Unit) -> Unit = remember {
         { subjectId ->
             { expanded, onDismiss ->
+                val type = infoCache[subjectId]?.collectionType ?: UnifiedCollectionType.NOT_COLLECTED
+                val rewatch = rewatches.of(subjectId)
                 EditCollectionTypeDropDown(
-                    currentType = infoCache[subjectId]?.collectionType ?: UnifiedCollectionType.NOT_COLLECTED,
+                    currentType = type.takeUnless { rewatch.rewatching },
                     expanded = expanded,
                     onDismissRequest = onDismiss,
                     onClick = { action ->
@@ -504,6 +510,7 @@ private fun TvExplorationPageContent(
                     modifier = Modifier.consumeHeldConfirmKey(),
                     // 摆在长按的那张卡旁边 (右边放得下放右边, 否则左边), 不压住封面
                     positionProvider = rememberTvBesideAnchorPositionProvider(),
+                    trailingItems = { TvRewatchMenuItem(rewatch, type, onDismiss) },
                 )
             }
         }

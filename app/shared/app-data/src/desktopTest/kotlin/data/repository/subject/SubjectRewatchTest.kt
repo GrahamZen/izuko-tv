@@ -9,10 +9,13 @@
 
 package me.him188.ani.app.data.repository.subject
 
+import io.ktor.client.plugins.ClientRequestException
 import kotlinx.coroutines.flow.first
 import me.him188.ani.app.data.persistent.database.createTestAniDatabase
 import me.him188.ani.app.data.persistent.database.dao.EpisodeCollectionEntity
 import me.him188.ani.app.data.persistent.database.dao.EpisodeCollectionPendingOpEntity
+import me.him188.ani.app.data.repository.FakeRemote
+import me.him188.ani.app.data.repository.badRequest
 import me.him188.ani.app.data.repository.realTimeTest
 import me.him188.ani.app.data.repository.testSubjectCollectionEntity
 import me.him188.ani.datasources.api.EpisodeSort
@@ -31,7 +34,9 @@ import kotlin.io.path.createTempDirectory
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
@@ -153,6 +158,100 @@ class SubjectRewatchTest {
         assertEquals(DONE, row().collectionType)
         assertEquals(WATCHED_AT, row().lastUpdated)
         assertEquals(listOf(DONE, DONE, NOT_COLLECTED), episodeTypes())
+    }
+
+    @Test
+    fun `endInto switches straight to the new type and restores the watched episodes`() = realTimeTest {
+        seedDone()
+        val rewatch = rewatch()
+        rewatch.start(SUBJECT)
+        episodes.updateSelfCollectionType(SUBJECT, SUBJECT * 100 + 3, DONE)
+
+        assertEquals(DONE to WATCHED_AT, rewatch.endInto(SUBJECT, WISH))
+
+        assertEquals(WISH, row().collectionType)
+        assertEquals(NOW, row().lastUpdated)
+        assertEquals(listOf(DONE, DONE, NOT_COLLECTED), episodeTypes())
+        // 分集按 Bangumi 重取; 条目不过期 (调用方紧接着写 Bangumi, 这时重取到的还是看过)
+        assertEquals(listOf(0L), episodeFetchTimes())
+        assertEquals(FETCHED_AT, row().lastFetched)
+        assertFalse(rewatch.isActive(SUBJECT))
+        assertEquals(emptySet(), rewatch.rewatchingIdsFlow.first())
+        assertFalse(file.exists())
+    }
+
+    @Test
+    fun `endInto doing keeps the subject doing without the rewatch`() = realTimeTest {
+        seedDone()
+        val rewatch = rewatch()
+        rewatch.start(SUBJECT)
+
+        rewatch.endInto(SUBJECT, DOING)
+
+        assertEquals(DOING, row().collectionType)
+        assertEquals(listOf(DONE, DONE, NOT_COLLECTED), episodeTypes())
+        assertFalse(rewatch.rewatchingFlow(SUBJECT).first())
+    }
+
+    @Test
+    fun `endInto does nothing for subjects not rewatching`() = realTimeTest {
+        seedDone()
+        val rewatch = rewatch()
+
+        assertNull(rewatch.endInto(SUBJECT, WISH))
+
+        assertEquals(DONE, row().collectionType)
+        assertEquals(listOf(DONE, DONE, NOT_COLLECTED), episodeTypes())
+    }
+
+    @Test
+    fun `changing the collection while rewatching writes the new type before the request`() = realTimeTest {
+        seedDone()
+        val rewatch = rewatch()
+        rewatch.start(SUBJECT)
+        val remote = FakeRemote<UnifiedCollectionType>()
+        // 请求发出时本地已经是新的类型, 中间没有经过看过
+        remote.behaviors += { assertEquals(WISH, row().collectionType) }
+
+        subjects.setCollectionTypeLocalFirst(SUBJECT, WISH, endRewatchInto = { rewatch.endInto(SUBJECT, WISH) }) { remote.send(WISH) }
+
+        assertEquals(listOf(WISH), remote.calls)
+        assertEquals(WISH, row().collectionType)
+        assertFalse(rewatch.isActive(SUBJECT))
+    }
+
+    @Test
+    fun `changing the collection while rewatching reverts to the watched record when Bangumi rejects it`() = realTimeTest {
+        seedDone()
+        val rewatch = rewatch()
+        rewatch.start(SUBJECT)
+        val remote = FakeRemote<UnifiedCollectionType>()
+        val rejected = badRequest()
+        remote.behaviors += { throw rejected }
+
+        assertFailsWith<ClientRequestException> {
+            subjects.setCollectionTypeLocalFirst(SUBJECT, WISH, endRewatchInto = { rewatch.endInto(SUBJECT, WISH) }) { remote.send(WISH) }
+        }
+
+        assertEquals(DONE, row().collectionType)
+        assertEquals(WATCHED_AT, row().lastUpdated)
+        assertEquals(listOf(DONE, DONE, NOT_COLLECTED), episodeTypes())
+        assertFalse(rewatch.isActive(SUBJECT))
+    }
+
+    @Test
+    fun `rewatching ids follow start and end`() = realTimeTest {
+        seedDone()
+        seedDone(OTHER)
+        val rewatch = rewatch()
+        assertEquals(emptySet(), rewatch.rewatchingIdsFlow.first())
+
+        rewatch.start(SUBJECT)
+        rewatch.start(OTHER)
+        assertEquals(setOf(SUBJECT, OTHER), rewatch.rewatchingIdsFlow.first())
+
+        rewatch.end(OTHER)
+        assertEquals(setOf(SUBJECT), rewatch.rewatchingIdsFlow.first())
     }
 
     @Test
