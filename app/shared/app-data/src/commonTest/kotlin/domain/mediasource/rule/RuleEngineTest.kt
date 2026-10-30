@@ -285,6 +285,25 @@ class RuleEngineTest {
     }
 
     @Test
+    fun `play is login required when the play api says so`() = runTest {
+        val api = "https://api.example.com/episode/1/play"
+        val site = FakeSite(mapOf(api to """{"code":200,"message":"操作成功","data":{"canPlay":false,"message":"请先登录","playUrl":null}}"""))
+        val config = RuleConfig(play = listOf(RuleStep.Fetch(), RuleStep.Regex(pattern = """"playUrl"\s*:\s*"([^"]+)"""")))
+        assertEquals(RulePlayResult.LoginRequired("请先登录"), engine(config, site).play(api))
+        // 回的是错误状态码也一样
+        val unauthorized = RuleEngine(config, RuleHttp { RuleHttpResponse(it.url, 401, """{"msg":"请先登录"}""") })
+        assertEquals(RulePlayResult.LoginRequired("请先登录"), unauthorized.play(api))
+    }
+
+    @Test
+    fun `play is failed when the page only has a login link`() = runTest {
+        val page = "https://www.example.com/play/1"
+        val site = FakeSite(mapOf(page to """<html><a href="/login">登录</a><div id="player"></div></html>"""))
+        val config = RuleConfig(play = listOf(RuleStep.Fetch(), RuleStep.VideoUrl))
+        assertEquals(RulePlayResult.Failed, engine(config, site).play(page))
+    }
+
+    @Test
     fun `json subjects build urls from item fields`() = runTest {
         val site = FakeSite(
             mapOf(

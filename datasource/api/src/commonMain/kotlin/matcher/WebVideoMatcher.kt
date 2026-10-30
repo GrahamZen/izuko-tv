@@ -48,7 +48,8 @@ fun interface WebVideoMatcher { // SPI service load
 interface WebVideoDirectResolver {
     /**
      * @param pageUrl 播放页地址 (即 `media.download.uri`)
-     * @return 取到的视频地址; `null` = 没配置 / 这个源用不了这条路, 调用方应退回 WebView
+     * @return 取到的视频地址; `null` = 没配置 / 这个源用不了这条路, 调用方应退回 WebView.
+     * 站点明确说这一集播不了 (如要登录) 时抛出解析失败, 不退回 WebView.
      */
     suspend fun resolveDirectly(pageUrl: String, context: WebVideoMatcherContext): WebVideo?
 }
