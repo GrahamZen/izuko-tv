@@ -42,6 +42,31 @@ class WebSearchWholeWorkEntryTest {
     }
 
     @Test
+    fun `the only OVA or SP on a page is the whole work for single episode subjects`() {
+        // 「攻壳机动队SSS」页两条线路都只有一集「OVA」
+        val sss = listOf(entry("OVA"), entry("OVA"))
+        assertEquals(EpisodeSort(1), sss.sortOf("OVA", subjectEpisodeCount = 1))
+        assertEquals(EpisodeSort(1), listOf(entry("SP")).sortOf("SP", subjectEpisodeCount = 1))
+        assertEquals(EpisodeSort(1), listOf(entry("OAD1")).sortOf("OAD1", subjectEpisodeCount = null))
+        // 多集的番, 或页上还有别的集: 仍是特别篇
+        assertEquals(EpisodeSort("OVA"), sss.sortOf("OVA", subjectEpisodeCount = 12))
+        assertEquals(EpisodeSort("OVA"), listOf(entry("OVA"), entry("SP")).sortOf("OVA", subjectEpisodeCount = 1))
+    }
+
+    @Test
+    fun `trailers openings and a second OVA are not the whole work`() {
+        for (name in listOf("PV", "OP", "ED", "MAD", "OVA2", "SP3")) {
+            assertEquals(EpisodeSort(name), listOf(entry(name)).sortOf(name, subjectEpisodeCount = 1), name)
+        }
+    }
+
+    @Test
+    fun `the special being watched still matches itself`() {
+        val page = listOf(entry("SP"))
+        assertEquals(EpisodeSort("SP"), page.matchingEpisodeSortOf(page[0], EpisodeSort("SP"), null, "", subjectEpisodeCount = 1))
+    }
+
+    @Test
     fun `episodes with numbers keep their sorts in multi episode subjects`() {
         val page = listOf(entry("第01集 1080P"), entry("第一集 1080P"), entry("01"))
         assertEquals(EpisodeSort(1), page.sortOf("第01集 1080P", subjectEpisodeCount = 12))

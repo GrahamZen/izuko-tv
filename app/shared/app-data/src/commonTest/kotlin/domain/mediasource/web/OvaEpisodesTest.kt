@@ -22,6 +22,7 @@ import me.him188.ani.app.domain.mediasource.web.format.SelectorChannelFormatNoCh
 import me.him188.ani.app.domain.mediasource.web.format.SelectorSubjectFormatA
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.source.MediaFetchRequest
+import me.him188.ani.datasources.api.topic.contains
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -85,11 +86,43 @@ class OvaEpisodesTest {
         assertEquals(listOf("https://example.com/play/1.html"), media.map { it.originalUrl })
     }
 
-    private fun request(names: List<String>) = MediaFetchRequest(
+    @Test
+    fun `the only OVA on the page of a single episode subject is its episode one`() = runTest {
+        // 单集的特别篇条目, 站点页上只有一集「OVA」
+        val engine = MockEngine { request ->
+            val url = request.url.toString()
+            val html = when {
+                url.startsWith("https://example.com/search") ->
+                    """<html><body><div class="result"><a href="/subject/8.html" title="魔法少女 特别篇">魔法少女 特别篇</a></div></body></html>"""
+
+                url == "https://example.com/subject/8.html" ->
+                    """<html><body><div class="list"><a href="/play/1.html">OVA</a></div></body></html>"""
+
+                else -> return@MockEngine respondError(HttpStatusCode.NotFound)
+            }
+            respond(html, headers = headersOf(HttpHeaders.ContentType, ContentType.Text.Html.toString()))
+        }
+        val config = SelectorSearchConfig(
+            searchUrl = "https://example.com/search?wd={keyword}",
+            requestInterval = Duration.ZERO,
+            subjectFormatId = SelectorSubjectFormatA.id,
+            selectorSubjectFormatA = SelectorSubjectFormatA.Config(selectLists = "div.result > a"),
+            channelFormatId = SelectorChannelFormatNoChannel.id,
+            selectorChannelFormatNoChannel = SelectorChannelFormatNoChannel.Config(selectEpisodes = ".list > a"),
+        )
+        val single = createTestSelectorMediaSource(config, engine).fetch(request(listOf("魔法少女 特别篇"), episodeCount = 1)).results.toList()
+        assertEquals(listOf(true), single.map { EpisodeSort(1) in it.media.episodeRange!! })
+        // 多集的番里这一集仍是特别篇, 不当第 1 集
+        val series = createTestSelectorMediaSource(config, engine).fetch(request(listOf("魔法少女 特别篇"), episodeCount = 12)).results.toList()
+        assertTrue(series.none { EpisodeSort(1) in it.media.episodeRange!! })
+    }
+
+    private fun request(names: List<String>, episodeCount: Int = 0) = MediaFetchRequest(
         subjectId = "0",
         episodeId = "1",
         subjectNames = names,
         episodeSort = EpisodeSort(1),
         episodeName = "",
+        episodes = List(episodeCount) { MediaFetchRequest.Episode(episodeId = "${it + 1}", sort = EpisodeSort(it + 1)) },
     )
 }
