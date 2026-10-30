@@ -124,6 +124,8 @@ RSS 源配置的 `titleToLink`（`RssTitleToLink`）在解析出条目之后、�
 有的站搜索结果固定是一整页按相关度排的条目，后面是只沾一两个字的，不是这一部的不开。资源的 `download` 是剧集页（`WebVideo`），
 播放时 `WebVideoDirectResolver.resolveDirectly` 执行播放段；取不到或要求嗅探时，先看这一集手上有没有不用嗅探的资源可换（`WebViewDeferral`，
 见 [MediaSelector](media-selector.md)），没有才由播放器按 `matchVideo` 用 WebView 打开剧集页。
+播放段最后一次请求回来的 JSON 里提示字段（`message` / `msg` / `error` 等）明确说要登录时（`RuleLoginRequired`）不开 WebView，
+这次解析直接失败、换下一个资源，数据源画像记一次开播失败。
 GET 请求被站点验证挡住时改由 `WebSessionManager` 加载，与 `SelectorMediaSource` 共用验证码会话。
 
 `fetch` 可以把响应设的 Cookie 存进变量（`cookies`），交给 `mediaHeaders` 让播放器带上：有的站点取视频地址的接口同时发下载视频要的 Cookie，
