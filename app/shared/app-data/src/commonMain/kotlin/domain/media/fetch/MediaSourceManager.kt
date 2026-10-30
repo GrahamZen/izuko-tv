@@ -331,6 +331,7 @@ class MediaSourceManagerImpl(
             flowContext = SearchDispatchers.current,
             searchLimiter = MediaSourceSearchLimiter.Default,
             sourceTiers = { sourceTiers.replayCache.firstOrNull() },
+            rememberedSourceOf = rememberedSourceLookup(),
         )
     }
     override val webVideoMatcherLoader: MediaSourceWebVideoMatcherLoader = MediaSourceWebVideoMatcherLoader(

@@ -149,6 +149,9 @@ flowchart TD
 
 - **开查的先后**（`SourceStartOrder`）：本地缓存最先；其余按选源时这个源能到的最好层级（线路层级、画像降级都算上，`startTierOf`），
   同层在线源在 BT 前，再按真实播放的成败与画像估的用时。只按源自报的层级的话，自报 T4、线路有 T1 的源要排在所有 T1~T3 后面，常常还没轮到就被暂停。
+  这部番记住的源（自动选源的 `preferred_web_media_source`）排在本地缓存之后最前，名额也排它到队首：自动选源先只等它，
+  排在别的源后面的话弱机上要等二三十秒才轮到线程（`DevSwitches.searchRememberedFirst`）。它在建查询会话时就在查询线程池之外开始读，
+  各源开查时最多再等 300 毫秒，没读到就照常排：冷启动时查询线程池排满，放在池里读一次库要一两秒。
 - **同时查几个**（`MediaSourceSearchLimiter`）：上限是设置「同时搜索的数据源」（`MediaSelectorSettings.searchConcurrency`，默认不限）。
   吃不消时（查的时候系统内存告警、开搜时系统已报内存低、搜索把播放拖卡、上次开搜时在前台被系统杀掉）按阶梯往下调一级，写回设置并经
   `SettingAdjustments` 告知（`SearchConcurrency`、`AndroidSearchConcurrency`）。名额按开查的先后发；名额空着时同时来的一批先收齐一会儿再发，

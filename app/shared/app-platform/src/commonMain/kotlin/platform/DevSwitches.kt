@@ -165,6 +165,9 @@ object DevSwitches {
     /** 记住的源 (自动选源的记忆源阶段只等它) 在同时查的名额里排到最前 */
     val searchMemoryFirst = toggle("searchMemoryFirst", "开播: 记忆源插队", persistent = true)
 
+    /** 开查时这部番记住的源排在开查先后的最前 (先拿搜索线程), 限流也排它到队首 (见 SourceStartOrder) */
+    val searchRememberedFirst = toggle("searchRememberedFirst", "开播: 记住的源开查就排最前 (先拿搜索线程)", default = true, persistent = true)
+
     /** 记忆源阶段最多等几秒, 到了就放开别的源; 0 为一直等 */
     val searchMemoryWaitCap = number("searchMemoryWaitCap", "开播: 记忆源最多等几秒 (0 = 一直等)", default = 0f, range = 0f..60f, persistent = true)
 
