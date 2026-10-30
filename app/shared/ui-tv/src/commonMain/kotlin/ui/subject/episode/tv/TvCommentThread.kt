@@ -97,7 +97,7 @@ class TvThreadReply(
 )
 
 /**
- * 播放器里只读的评论详情: 一整楼 ([TvCommentThreadContent]) 摆在胶囊上方从屏幕顶铺到胶囊行的一栏, 半透明黑底 (字多).
+ * 播放器里只读的评论详情: 一整楼 ([TvCommentThreadContent]) 摆在胶囊上方从屏幕顶到胶囊行的一栏, 不铺底, 主楼与回复各一张半透明黑卡 (同评论面板的条目).
  * 最下面再按下停住 (不回胶囊: 往下翻长楼时一路按着, 不能翻到底就掉回胶囊); 返回关掉 (根路由).
  * 图在那一块上长按确认键全屏放大 (大图由控制层铺满整屏画, 见 TvPlayerControlsOverlay).
  */
@@ -111,6 +111,8 @@ internal fun TvCommentThreadView(
     val root = target.quoted ?: return
     TvPlayerLayerPanel(
         modifier = modifier,
+        // 不铺一整条底: 主楼与回复各一张半透明黑卡浮在画面上, 卡与卡之间透出画面 (同评论面板的条目)
+        backdrop = false,
         // 上下不留: 滚动的那一列自己从顶上让出渐隐那一截再排, 滚不完时在上下边缘渐隐
         contentPadding = PaddingValues(horizontal = TV_THREAD_SIDE_PADDING),
         lockDown = true,
@@ -244,25 +246,27 @@ internal class TvCommentThreadColors(
     val text: Color,
     /** 名字后的签名、楼层时间、「回复 @某人」. */
     val secondary: Color,
-    /** 回复卡的底 (比外壳的底亮一档) / 聚焦时的底与描边. */
+    /** 回复卡的底 / 聚焦时的底与描边 (主楼聚焦时同回复卡). */
     val card: Color,
     val cardFocused: Color,
     val ring: Color,
     val threadLine: Color,
     val star: Color,
+    /** 主楼平时的底; 透明 = 不套卡 (外壳有底时). */
+    val rootCard: Color = Color.Transparent,
 )
 
-/** 播放器里 (半透明黑底上): 同评论面板的卡. */
+/** 播放器里 (外壳不铺底, 卡直接压在画面上): 主楼与回复都同评论面板的条目 (半透明黑, 聚焦更黑 + 白描边). */
 internal val TvPlayerCommentThreadColors = TvCommentThreadColors(
     name = Color.White,
     text = Color.White.copy(alpha = 0.9f),
     secondary = Color.White.copy(alpha = 0.6f),
-    // 比叠层的半透明黑底亮一档 (同 YouTube 回复卡比底亮), 聚焦再亮一点 + 白描边
-    card = Color.White.copy(alpha = 0.07f),
-    cardFocused = Color.White.copy(alpha = 0.14f),
+    card = TV_PANEL_ITEM_COLOR,
+    cardFocused = TV_PANEL_ITEM_FOCUSED_COLOR,
     ring = Color.White,
     threadLine = TV_COMMENT_THREAD_LINE_COLOR,
     star = Color.White,
+    rootCard = TV_PANEL_ITEM_COLOR,
 )
 
 /** 弹窗里 (玻璃面板上): 字跟主题, 聚焦同评论列表卡 (高亮底 + 主题色描边). */
@@ -312,7 +316,7 @@ private fun Modifier.tvThreadImageZoom(
     )
 }
 
-/** 主楼: 平时不套卡, 整块可停焦点, 聚焦时同回复卡 (亮一档 + 描边); 比看得见的长就在里面翻页 (见 tvReadableBlock). */
+/** 主楼: 平时的底见 [TvCommentThreadColors.rootCard], 整块可停焦点, 聚焦时同回复卡 (聚焦底 + 描边); 比看得见的长就在里面翻页 (见 tvReadableBlock). */
 @Composable
 private fun TvThreadRoot(
     comment: TvQuotedComment,
@@ -331,7 +335,8 @@ private fun TvThreadRoot(
             .tvThreadImageZoom(comment, imageZoom, viewportTop, imageBottoms)
             .fillMaxWidth()
             .clip(shape)
-            .ifThen(focused) { background(colors.cardFocused).border(2.dp, colors.ring, shape) }
+            .background(if (focused) colors.cardFocused else colors.rootCard)
+            .ifThen(focused) { border(2.dp, colors.ring, shape) }
             .tvReadableBlock()
             .focusable(interactionSource = interactionSource)
             .padding(horizontal = 12.dp, vertical = 10.dp),
