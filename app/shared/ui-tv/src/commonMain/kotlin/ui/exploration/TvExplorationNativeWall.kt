@@ -95,7 +95,6 @@ import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeHeroSource
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeHeroStatus
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeHeroText
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeHost
-import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeMore
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeTextSpan
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeWallBackdropTarget
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeWallOpenEffects
@@ -125,11 +124,6 @@ import me.him188.ani.app.ui.foundation.tv.tvTitle
 import me.him188.ani.app.ui.foundation.tv.tvUseOriginalTitle
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.exploration_continue_watching
-import me.him188.ani.app.ui.lang.exploration_rec_more
-import me.him188.ani.app.ui.lang.exploration_rec_more_generic
-import me.him188.ani.app.ui.lang.exploration_rec_more_hero_peek
-import me.him188.ani.app.ui.lang.exploration_rec_more_hero_seed
-import me.him188.ani.app.ui.lang.exploration_rec_more_loading
 import me.him188.ani.app.ui.lang.exploration_schedule
 import me.him188.ani.app.ui.lang.exploration_tv_air_date
 import me.him188.ani.app.ui.lang.exploration_tv_all_caught_up
@@ -255,6 +249,9 @@ private val TvExplorationNativeStateSaver = Saver<TvExplorationNativeState, Arra
 internal fun tvExploreFixedAnchor(): Boolean =
     LocalThemeSettings.current.tvExploreLayout == TvExploreLayout.FixedFocus && !LocalTvTouchInputEnabled.current
 
+/** 还能接着推荐的行尾放几张占位: 翻得比接得快时焦点先落在占位上, 接上的新卡在原位顶掉它们 (见 TV_NATIVE_CARDS_TAIL_SLACK). */
+private const val TV_REC_AUTO_LOAD_PLACEHOLDERS = 2
+
 /** 循环行 (见 TvNativeExploreItem.Row.loopPeriod) 把这一行重复多少遍: 一直按住右键也要走一分钟多才到头. */
 private const val TV_EXPLORE_LOOP_COPIES = 100
 
@@ -268,7 +265,8 @@ private class TvLoopedCards(private val base: List<TvNativeCard?>, private val c
  * 原生海报墙的列表项 (结构见 TvNativeExploreList.kt): hero 占位 + 继续观看 (标题 + 一行) + 各组推荐 (标题 + 行).
  * 继续观看行按分页快照给 (没到的是占位), 卡上带集数观看进度条 (见 followedCardProgress), 番名下面写追更信息、有新集的画没看几集的角标
  * (同追番页「追更」, 见 tvProgressCardLine).
- * 还能接着推荐的组 ([RecommendationGroup.extendable]) 行尾多一张「更多」卡, [extending] 里的组画成加载中.
+ * 还能接着推荐的组 ([RecommendationGroup.extendable]) 行尾多 [TV_REC_AUTO_LOAD_PLACEHOLDERS] 张占位: 往右翻快到头时页面自动接下一批
+ * (见 TvExplorationPage), 接上的新卡顶掉它们.
  * 钉死锚点版式 ([tvExploreFixedAnchor]) 下未登录时的整份推荐 ([RecommendationGroupKind.FEED], 切成定长的几行) 按右循环: 行里是这几张重复很多遍.
  */
 @Composable
@@ -278,12 +276,8 @@ internal fun rememberTvExplorationNativeItems(
     recRows: List<TvRecRow>,
     recFlat: List<RecommendedSubjectInfo>,
     playHistories: List<EpisodeHistory>,
-    extending: Set<String>,
 ): List<TvNativeExploreItem> {
     val followedTitle = stringResource(Lang.exploration_continue_watching)
-    val moreTitle = stringResource(Lang.exploration_rec_more)
-    val moreGenericTitle = stringResource(Lang.exploration_rec_more_generic)
-    val moreLoadingTitle = stringResource(Lang.exploration_rec_more_loading)
     val groupTitles = recRows.map { if (it.header) tvRecGroupTitle(it.group) else "" }
     val followed: List<FollowedSubjectInfo?>? = if (hasFollowed) followedItems.itemSnapshotList else null
     // NSFW 设为模糊时封面打码 (见 withNsfwCards; 隐藏的在数据那头已经去掉了, 见 SubjectNsfw)
@@ -300,8 +294,8 @@ internal fun rememberTvExplorationNativeItems(
         followed?.map { item -> item?.let { tvProgressCardLine(it.subjectCollectionInfo, progressStrings, now, timeZone) } }
     }
     return remember(
-        hasFollowed, followed, recRows, recFlat, playHistories, followedTitle, groupTitles, extending,
-        moreTitle, moreGenericTitle, moreLoadingTitle, nsfw.snapshot, useOriginalTitle, tmdbTitles, followedLines, fixedAnchor,
+        hasFollowed, followed, recRows, recFlat, playHistories, followedTitle, groupTitles,
+        nsfw.snapshot, useOriginalTitle, tmdbTitles, followedLines, fixedAnchor,
     ) {
         val result = ArrayList<TvNativeExploreItem>()
         val loopRows = HashSet<String>()
@@ -330,24 +324,10 @@ internal fun rememberTvExplorationNativeItems(
                     TvNativeCard(imageUrl = it.imageLarge, title = tmdbTitles[it.bangumiId] ?: it.preferredDisplayName(useOriginalTitle), subjectId = it.bangumiId)
                 }
             }
-            // 「更多」卡接在一组的最后一行末尾 (能接着推荐的组都是一组一行; 切成多行的只有匿名推荐, 它不接)
+            // 占位接在一组的最后一行末尾 (能接着推荐的组都是一组一行; 切成多行的只有匿名推荐, 它不接)
             val lastRowOfGroup = recRows.getOrNull(recRow + 1)?.group !== row.group
-            val more = if (row.group.extendable && lastRowOfGroup) {
-                val loading = row.group.key in extending
-                TvNativeCard(
-                    // 玻璃底铺一张竖版封面的模糊小图 (见 TvNativeCard.more): 种子行是种子, 其余是下次接出来的第一部; 没有就用这一行最后一张
-                    imageUrl = row.group.moreImageUrl ?: cards.lastOrNull()?.imageUrl,
-                    title = when {
-                        loading -> moreLoadingTitle
-                        row.group.seedSubjectId != null -> moreTitle
-                        else -> moreGenericTitle
-                    },
-                    more = if (loading) TvNativeMore.Loading else TvNativeMore.Idle,
-                )
-            } else {
-                null
-            }
-            result.add(TvNativeExploreItem.Row(tvRecRowKey(recRow), if (more != null) cards + more else cards))
+            val placeholders = if (row.group.extendable && lastRowOfGroup) TV_REC_AUTO_LOAD_PLACEHOLDERS else 0
+            result.add(TvNativeExploreItem.Row(tvRecRowKey(recRow), cards + List(placeholders) { null }))
             if (fixedAnchor && row.group.kind == RecommendationGroupKind.FEED) loopRows += tvRecRowKey(recRow)
         }
         result.withNsfwCards(nsfw).map { item ->
@@ -661,8 +641,6 @@ private fun tvExplorationNativeSource(
 /**
  * hero 文字: 标题; 条目信息到了才有 ★评分、开播状态 · 总集数 (总集数用正文色)、开播年月;
  * 继续观看的条目多一行下一集 (集号 · 集名 · 剩余分钟 / 已看完); 简介优先下一集的 TMDB 单集简介, 再整部简介, 再 Bangumi 兜底.
- * 焦点在「更多」卡上 ([TvHeroTarget.more]) 时下一集那一行的位置写「按确定，推荐更多…」(种子行嵌种子名, 放不下跑马灯; 别的组嵌组标题, 放不下折行),
- * 简介只留第一句、最多两行.
  */
 @Composable
 private fun tvExplorationNativeHeroText(
@@ -692,13 +670,8 @@ private fun tvExplorationNativeHeroText(
         }
     }
     val score = info.subjectInfo.ratingInfo.score
-    val more = target.more
-    val status = when {
-        more != null -> tvExplorationNativeMoreStatus(more, onSurface)
-        // 「继续观看」那一行与追番页的同为主要色 (它加粗, 与下面的简介靠字重分开, 见 rememberTvNativeHeroTextStyle)
-        target.fromFollowed -> tvExplorationNativeStatus(info, playHistories, onSurface)
-        else -> null
-    }
+    // 「继续观看」那一行与追番页的同为主要色 (它加粗, 与下面的简介靠字重分开, 见 rememberTvNativeHeroTextStyle)
+    val status = if (target.fromFollowed) tvExplorationNativeStatus(info, playHistories, onSurface) else null
     // 两张表是进程级共享的 (邻居预取会写进来): 收进 derivedStateOf, 写入别的条目时不重组
     // 非中文界面讲本条目的 TMDB 简介排在 Bangumi 的前面 (见 tvHeroTmdbSummary)
     val tmdbSummary = tvHeroTmdbSummary(target.subjectId)
@@ -726,55 +699,10 @@ private fun tvExplorationNativeHeroText(
         rating = score.takeIf { (it.toFloatOrNull() ?: 0f) > 0f },
         meta = meta,
         status = status,
-        summary = if (more != null) tvSummaryFirstSentence(summary) else summary,
-        summaryMaxLines = if (more != null) TV_MORE_HERO_SUMMARY_LINES else 0,
+        summary = summary,
         logo = logo.logo,
         logoPending = logo.pending,
     )
-}
-
-/**
- * 「更多」卡的 hero 那一行. 种子行: 一句话里嵌着种子名, 名字长短不定, 单独一段 (放不下跑马灯), 前后两段不截断;
- * 别的组: 组标题是固定的那几个, 整句一段字, 放不下就折行.
- */
-@Composable
-private fun tvExplorationNativeMoreStatus(group: RecommendationGroup, color: Int): TvNativeHeroStatus {
-    if (group.seedSubjectId == null) {
-        return TvNativeHeroStatus(
-            lead = stringResource(Lang.exploration_rec_more_hero_peek, tvRecGroupTitle(group)),
-            name = null,
-            tail = null,
-            color = color,
-            wrap = true,
-        )
-    }
-    val name = group.titleArg.orEmpty()
-    val sentence = stringResource(Lang.exploration_rec_more_hero_seed, TV_MORE_HERO_NAME_SLOT)
-    return TvNativeHeroStatus(
-        lead = sentence.substringBefore(TV_MORE_HERO_NAME_SLOT),
-        name = name,
-        tail = sentence.substringAfter(TV_MORE_HERO_NAME_SLOT, ""),
-        color = color,
-        nameSeparator = "",
-    )
-}
-
-/**
- * 简介的第一句 (「更多」卡的 hero 只提一句): 第一段里到第一个句末标点 (连同紧跟的右引号 / 右括号) 为止; 不到 [minChars] 字就接着带下一句;
- * 没有句末标点就整段 (显示时限行数, 多的省略).
- */
-internal fun tvSummaryFirstSentence(summary: String, minChars: Int = 12): String {
-    // trim() 连段首的全角空格一起去 (按 Unicode 判空白)
-    val paragraph = summary.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() } ?: return ""
-    var from = 0
-    while (true) {
-        val stop = paragraph.indexOfAny(TV_SENTENCE_ENDS, from)
-        if (stop < 0) return paragraph
-        var end = stop + 1
-        while (end < paragraph.length && paragraph[end] in TV_SENTENCE_CLOSERS) end++
-        if (end >= minChars || end >= paragraph.length) return paragraph.substring(0, end)
-        from = end
-    }
 }
 
 /**
@@ -782,15 +710,6 @@ internal fun tvSummaryFirstSentence(summary: String, minChars: Int = 12): String
  * 卡格两边各含一道聚焦框空隙, 这里扣掉. 与其他卡片尺寸一样跟着海报墙大小缩放.
  */
 private val TV_EXPLORE_FIXED_ANCHOR_COLUMN_SPACING = 10.dp - TvFocusRing.Gap * 2
-
-private val TV_SENTENCE_ENDS = charArrayOf('。', '！', '？', '!', '?')
-private const val TV_SENTENCE_CLOSERS = "」』”’）)】"
-
-/** 「更多」卡的 hero 简介最多几行. */
-private const val TV_MORE_HERO_SUMMARY_LINES = 2
-
-/** 文案里名字的占位 (格式化后按它切成前后两段). */
-private const val TV_MORE_HERO_NAME_SLOT = "\uE000"
 
 /** 继续观看的下一集行, 三态: 已看完最新一集 / 看到一半剩几分钟 / 下一集. */
 @Composable

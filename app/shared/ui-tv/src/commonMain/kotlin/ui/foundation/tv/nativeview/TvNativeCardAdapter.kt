@@ -91,6 +91,24 @@ class TvNativeCardAdapter(
         notifyDataSetChanged()
     }
 
+    /**
+     * 卡按下标作键的一组 (探索页的横滑行) 换数据: 同一下标换了内容的几段原地重绑, 末尾多出的插入、少了的去掉. 不整体刷新 ——
+     * 整体刷新后 leanback 从第 0 张重新排起、屏上的卡全绑一遍, 正往右翻时就是一帧卡顿 (Shield 上四十多毫秒).
+     */
+    fun submitByPosition(cards: List<TvNativeCard?>) {
+        if (cards == this.cards) return
+        val old = this.cards
+        this.cards = cards
+        this.keyOf = { it.toLong() }
+        if (old.isEmpty()) {
+            notifyDataSetChanged()
+            return
+        }
+        for (range in tvNativeCardsChangedRanges(old, cards)) notifyItemRangeChanged(range.first, range.last - range.first + 1)
+        if (cards.size > old.size) notifyItemRangeInserted(old.size, cards.size - old.size)
+        if (cards.size < old.size) notifyItemRangeRemoved(cards.size, old.size - cards.size)
+    }
+
     override fun getItemCount(): Int = cards.size
 
     override fun getItemId(position: Int): Long = keyOf(position)
@@ -255,3 +273,23 @@ internal class TvNativeConfirmKey {
 /** 确定键 (遥控器中键 / 回车 / 小键盘回车). */
 internal fun tvNativeIsConfirmKey(keyCode: Int): Boolean =
     keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
+
+/** [old] 与 [new] 同一下标内容不同的几段 (只看两边都有的那些下标). */
+internal fun tvNativeCardsChangedRanges(old: List<TvNativeCard?>, new: List<TvNativeCard?>): List<IntRange> {
+    val n = minOf(old.size, new.size)
+    val ranges = ArrayList<IntRange>()
+    var i = 0
+    while (i < n) {
+        if (old[i] == new[i]) {
+            i++
+            continue
+        }
+        val start = i
+        while (i < n && old[i] != new[i]) i++
+        ranges += start until i
+    }
+    return ranges
+}
+
+/** 按下标原地换数据时末尾最多少几张仍原地换 (推荐行尾的两张占位撤掉); 少得更多 (推荐重算) 整行重绑. */
+internal const val TV_NATIVE_CARDS_TAIL_SLACK = 2

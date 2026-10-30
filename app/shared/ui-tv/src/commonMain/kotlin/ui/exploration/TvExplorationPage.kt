@@ -174,6 +174,8 @@ import me.him188.ani.app.data.network.TrendsRepository
 import me.him188.ani.app.ui.foundation.LocalSketch
 import me.him188.ani.app.ui.foundation.tv.TvHeroImagePrefetch
 import me.him188.ani.app.ui.foundation.tv.isOriginalSizeTmdbUrl
+import me.him188.ani.app.ui.foundation.tv.LocalTvNavKeyTracker
+import me.him188.ani.app.ui.foundation.tv.LocalTvScrollActivity
 
 /**
  * TV 沉浸式探索页 (海报墙): 顶上是热门轮播 (轮播条目的 TMDB 背景图 + 标题 / 评分连载 / 简介 + 「立即观看」「新番时间表」两颗按钮
@@ -376,23 +378,6 @@ private fun TvExplorationPageContent(
             // 供返回本页时做初值, 见 TvExplorationLastHero.target
             TvExplorationLastHero.target = heroTarget
         }
-    // 焦点在行尾「更多」卡上时背景与文字换成按下去接着推荐的依据: 种子行是种子那部 (这一行就是按它推的), 别的组是藏在「更多」卡底下的
-    // 下一部 (按下去第一个露出来); 文字里多一行「按确定推荐更多…」(见 TvHeroTarget.more). 封面 (TMDB 横版图都没有时的背景) 是种子 / 下一部的
-    // 竖版封面. 两样都没有 (旧批次) 时背景留在刚才那张
-    val focusMoreHero: (TvRecRow) -> Unit = { row ->
-        val group = row.group
-        val seed = group.seedSubjectId
-        val peek = group.peek
-        val target = when {
-            seed != null -> TvHeroTarget(seed, group.titleArg.orEmpty(), coverUrl = group.moreImageUrl.orEmpty(), more = group)
-            peek != null -> TvHeroTarget(peek.bangumiId, tvTmdbTitleOr(peek.bangumiId, usesTmdbTitle) { peek.preferredDisplayName(useOriginalTitle) }, coverUrl = peek.imageLarge, more = group)
-            else -> null
-        }
-        if (target != null && target != heroTarget) {
-            heroTarget = target
-            TvExplorationLastHero.target = target
-        }
-    }
     // 进详情页: 先等目标页首屏的材料备齐再跳, 备不齐则最多等 [TV_NAV_READY_BUDGET].
     //
     // 这是 Android 官方 postponeEnterTransition 的思路 —— 把等待挪到**跳转之前**.
@@ -553,10 +538,13 @@ private fun TvExplorationPageContent(
     // 推荐按组画: 一组一行, 各有标题与来源 (见 RecommendationGroupKind). 组的条数不固定
     // (种子那一组最多 9 条, /recs 的上限), 所以行容量必须问组要, 不能按固定行宽切平铺下标.
     // 没登录 / 没有收藏时的「推荐」(FEED) 是一组两百条, 切成多行、只有首行带标题, 见 TvRecRow
-    val recGroups by state.recommendationGroups.collectAsStateWithLifecycle()
+    val navKeys = LocalTvNavKeyTracker.current
+    val scrollActivity = LocalTvScrollActivity.current
+    // 正在翻: 方向键按着或列表在上下滚 (同原生墙的 backdropNavigating)
+    val wallNavigating: () -> Boolean = { navKeys?.held == true || scrollActivity?.isScrolling == true }
+    // 页面画的推荐组; 往右翻快到头时自动接上的新卡什么时候放上去见下面接料那段 (还能接的组行尾是占位, 见 rememberTvExplorationNativeItems)
+    var recGroups by remember { mutableStateOf(state.recommendationGroups.value) }
     val recFlat = remember(recGroups) { recGroups.flatMap { it.items } }
-    // 正在「更多」的组: 行尾那张卡画成加载中 (见 rememberTvExplorationNativeItems)
-    val extendingGroups by state.extendingRecommendationGroups.collectAsStateWithLifecycle()
     // 未登录的推荐 (一整组 FEED) 按屏上完整放得下的张数切行: 一行正好排满、不横向溢出, 往下多排几行;
     // 登录后的分组一组一条横滑行 (见 tvRecRowsOf)
     val recRows = remember(recGroups, wallColumns) { tvRecRowsOf(recGroups, wallColumns) }
@@ -629,22 +617,46 @@ private fun TvExplorationPageContent(
                 ?: return@collect
             val row = recRows[recRow]
             if (cardIndex >= row.size) {
-                if (row.group.extendable) {
-                    focusMoreHero(row)
-                } else if (row.size > 0) {
-                    // 焦点停在行尾「更多」卡上而它收起了 (再也接不出新的): 挪到这一行最后一张, 不让焦点悬空
+                // 焦点在行尾占位上: 还能接时 hero 留在刚才那张; 这一组再也接不出新的 (占位撤了): 挪到这一行最后一张, 不让焦点悬空
+                if (!row.group.extendable && row.size > 0) {
                     cardFocusRequest = TvCardFocusRequest(rowKey, cardIndex = row.size - 1)
                 }
                 return@collect
             }
             val item = recFlat.getOrNull(row.start + cardIndex) ?: return@collect
-            // 已经是它了就别动: 每次重组都重报一遍会把 hero 媒体流水线的连发合并打乱. 按「更多」接出来的第一张就是刚才 hero 上的下一部,
-            // 同一部也要重报: 去掉「按确定推荐更多」那一行
-            if (item.bangumiId == heroTarget?.subjectId && heroTarget?.more == null) return@collect
+            // 已经是它了就别动: 每次重组都重报一遍会把 hero 媒体流水线的连发合并打乱
+            if (item.bangumiId == heroTarget?.subjectId) return@collect
             onFocusItem(
                 item.bangumiId, tvTmdbTitleOr(item.bangumiId, usesTmdbTitle) { item.preferredDisplayName(useOriginalTitle) }, null, false, item.imageLarge,
                 tvRecNeighborsOf(recFlat, recRows, recRow, cardIndex),
             )
+        }
+    }
+
+    // 自动接下一批 (同分页的预取): 焦点走到离这一组末尾不到一屏, 就让这一组往后接 (见 RecommendationRepository.extendGroup; 同一组正在接时不重复发),
+    // 按着方向键也接 —— 取数在后台, 页面上什么都不动. 接到了还没放上去的, 不再接下一批
+    val currentRecRows by rememberUpdatedState(recRows)
+    LaunchedEffect(recRows, wallColumns) {
+        snapshotFlow { focusedRowKey to focusedCardIndex }.collect { (rowKey, cardIndex) ->
+            val recRow = rowKey?.removePrefix(TV_REC_ROW_KEY_PREFIX)?.toIntOrNull() ?: return@collect
+            val row = recRows.getOrNull(recRow) ?: return@collect
+            val lastRowOfGroup = recRows.getOrNull(recRow + 1)?.group !== row.group
+            if (!row.group.extendable || !lastRowOfGroup || cardIndex < row.size - wallColumns.coerceAtLeast(1)) return@collect
+            val pending = state.recommendationGroups.value.firstOrNull { it.key == row.group.key }?.items?.size != row.group.items.size
+            if (!pending) state.extendRecommendationGroup(row.group.key)
+        }
+    }
+    // 推荐变了 (接上新卡、续作换成最早一季、重算) 等停稳 (方向键松开、列表不滚) 再放上去: 正翻着时换数据要重组整页、改那一行, 就是一帧卡顿.
+    // 焦点已经顶到行尾占位上时这一行也不动, 当场放 —— 一直按着往右的人接着翻进新卡. 流在这里收、不在页面里读, 一次变化只让页面重组一次
+    LaunchedEffect(state.recommendationGroups) {
+        state.recommendationGroups.collectLatest { live ->
+            if (live !== recGroups) {
+                snapshotFlow {
+                    val row = focusedRowKey?.removePrefix(TV_REC_ROW_KEY_PREFIX)?.toIntOrNull()?.let { currentRecRows.getOrNull(it) }
+                    !wallNavigating() || (row != null && focusedCardIndex >= row.size)
+                }.first { it }
+            }
+            recGroups = live
         }
     }
 
@@ -935,12 +947,9 @@ private fun TvExplorationPageContent(
                 val recRow = rowKey.removePrefix(TV_REC_ROW_KEY_PREFIX).toIntOrNull()
                 if (recRow != null && recRow in recRows.indices) {
                     val row = recRows[recRow]
-                    if (index >= row.size) {
-                        focusMoreHero(row)
-                    } else {
-                        recFlat.getOrNull(row.start + index)?.let {
-                            onFocusItem(it.bangumiId, tvTmdbTitleOr(it.bangumiId, usesTmdbTitle) { it.preferredDisplayName(useOriginalTitle) }, null, false, it.imageLarge, tvRecNeighborsOf(recFlat, recRows, recRow, index))
-                        }
+                    // 行尾占位上 hero 留在刚才那张
+                    recFlat.getOrNull(row.start + index)?.takeIf { index < row.size }?.let {
+                        onFocusItem(it.bangumiId, tvTmdbTitleOr(it.bangumiId, usesTmdbTitle) { it.preferredDisplayName(useOriginalTitle) }, null, false, it.imageLarge, tvRecNeighborsOf(recFlat, recRows, recRow, index))
                     }
                 }
             }
@@ -980,15 +989,6 @@ private fun TvExplorationPageContent(
                 nativeRecItemAt(rowKey, index)?.bangumiId
             }
             if (subjectId != null) nativeState.menu = subjectId to anchor
-        }
-
-        override fun onMoreClick(rowKey: String) {
-            val group = rowKey.removePrefix(TV_REC_ROW_KEY_PREFIX).toIntOrNull()
-                ?.let { recRows.getOrNull(it) }?.group
-                ?.takeIf { it.extendable }
-                ?: return
-            // 接到的几条追加在「更多」卡原来的位置上: 焦点不动就落在新接的第一张 (卡按下标绑定), 背景跟着换 (见上面按下标补报的那段)
-            state.extendRecommendationGroup(group.key)
         }
 
         override fun onBindCard(rowKey: String, index: Int) {
@@ -1115,7 +1115,7 @@ private fun TvExplorationPageContent(
             .focusGroup(),
     ) {
         // 原生海报墙的几何见 tvExplorationWallLayout
-        val nativeItems = rememberTvExplorationNativeItems(hasFollowed, followedItems, recRows, recFlat, playHistories, extendingGroups)
+        val nativeItems = rememberTvExplorationNativeItems(hasFollowed, followedItems, recRows, recFlat, playHistories)
         TvExplorationNativeSources(
             state = nativeState,
             heroPipeline = heroPipeline,
@@ -1419,11 +1419,6 @@ internal data class TvHeroTarget(
      * 变化 (都由聚焦位置决定), 不会给本数据类引入额外的相等性抖动.
      */
     val neighbors: TvHeroNeighbors = TvHeroNeighbors(),
-    /**
-     * 焦点在这一组行尾的「更多」卡上 (本条目是种子行的种子 / 别的组藏在「更多」卡底下的下一部): 文字多一行「按确定推荐更多…」, 简介只留一句
-     * (见 tvExplorationNativeHeroText). null = 普通的聚焦卡.
-     */
-    val more: RecommendationGroup? = null,
 ) {
     /** 交给共享流水线/展示层的最小描述, 见 [TvHeroMediaSpec]. */
     fun toHeroMediaSpec() = TvHeroMediaSpec(subjectId, fromFollowed, coverUrl, neighbors)
