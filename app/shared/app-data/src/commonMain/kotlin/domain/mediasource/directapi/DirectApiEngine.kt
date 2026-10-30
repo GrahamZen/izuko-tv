@@ -31,6 +31,10 @@ import me.him188.ani.datasources.api.topic.EpisodeRange
 import me.him188.ani.utils.ktor.ScopedHttpClient
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
+import kotlin.coroutines.cancellation.CancellationException
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.TimeMark
+import kotlin.time.TimeSource
 
 /**
  * 按 [DirectApiConfig] 执行"搜条目 -> 找剧集 -> 取地址"三步.
@@ -40,12 +44,18 @@ import me.him188.ani.utils.logging.warn
 internal class DirectApiEngine(
     private val config: DirectApiConfig,
     private val client: ScopedHttpClient,
+    private val timeSource: TimeSource = TimeSource.Monotonic,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
-    /** bangumi 条目 id -> 站内条目 id. 站内搜索要好几次请求, 值得缓存, 包括"找不到"这个结果. */
+    /**
+     * bangumi 条目 id -> 站内条目 id. 站内搜索要好几次请求, 值得缓存. 只记搜成了的结果: 被取消或有请求失败的那次不记;
+     * "找不到"只记 [NOT_FOUND_TTL], 站点之后上架了还能搜到.
+     */
     private val subjectIdCacheLock = Mutex()
-    private val subjectIdCache = LinkedHashMap<String, String?>()
+    private val subjectIdCache = LinkedHashMap<String, CachedSubject>()
+
+    private class CachedSubject(val subjectId: String?, val at: TimeMark)
 
     suspend fun checkConnection(): Boolean {
         val url = buildUrl(config.subject.request.url, baseVariables() + ("subjectName" to "test"))
@@ -76,25 +86,35 @@ internal class DirectApiEngine(
 
     private suspend fun resolveSubject(request: MediaFetchRequest, bangumiSubjectId: String): ResolvedSubject? {
         val cachedId = subjectIdCacheLock.withLock {
-            if (subjectIdCache.containsKey(bangumiSubjectId)) {
-                subjectIdCache[bangumiSubjectId] ?: return null // 缓存过“这个条目在本站找不到”
-            } else {
-                null
+            val cached = subjectIdCache[bangumiSubjectId]
+            when {
+                cached == null -> null
+                cached.subjectId != null -> cached.subjectId
+                cached.at.elapsedNow() < NOT_FOUND_TTL -> return null // 刚搜过, 这个条目在本站找不到
+                else -> {
+                    subjectIdCache.remove(bangumiSubjectId)
+                    null
+                }
             }
         }
         if (cachedId != null) {
             val variables = baseVariables(request) + ("subjectId" to cachedId)
             return ResolvedSubject(cachedId, resolveEpisodes(request, variables).episodes)
         }
-        val resolved = searchSubject(request, bangumiSubjectId)
-        subjectIdCacheLock.withLock {
-            if (subjectIdCache.size >= SUBJECT_ID_CACHE_SIZE) {
-                subjectIdCache.keys.firstOrNull()?.let { subjectIdCache.remove(it) }
+        val search = searchSubject(request, bangumiSubjectId)
+        if (!search.requestFailed) {
+            subjectIdCacheLock.withLock {
+                if (subjectIdCache.size >= SUBJECT_ID_CACHE_SIZE) {
+                    subjectIdCache.keys.firstOrNull()?.let { subjectIdCache.remove(it) }
+                }
+                subjectIdCache[bangumiSubjectId] = CachedSubject(search.resolved?.subjectId, timeSource.markNow())
             }
-            subjectIdCache[bangumiSubjectId] = resolved?.subjectId
         }
-        return resolved
+        return search.resolved
     }
+
+    /** [requestFailed]: 搜索或校验的请求有失败的 (连不上、超时、非 2xx、响应解析不了), 结果不作数, 不缓存. */
+    private class SubjectSearch(val resolved: ResolvedSubject?, val requestFailed: Boolean)
 
     /**
      * 在站点上找出这个 bangumi 条目.
@@ -107,34 +127,43 @@ internal class DirectApiEngine(
      * 所以精确命中过分集 id 的候选优先, 一个都命不中时退回第一个通过校验的候选 (与只看条目校验时一致)。
      * 顺利的情况 —— 第一个通过校验的候选就命中 —— 不会多发任何请求。
      */
-    private suspend fun searchSubject(request: MediaFetchRequest, bangumiSubjectId: String): ResolvedSubject? {
+    private suspend fun searchSubject(request: MediaFetchRequest, bangumiSubjectId: String): SubjectSearch {
         val subject = config.subject
         var fallback: ResolvedSubject? = null
+        var requestFailed = false
         // 条目的名字都没找到时再用系列名 (搜索计划): 只在校验 bangumi 条目 id 时用, 宽的词搜出的第一季才不会被当成这一部
         val names = request.subjectNames.filter { it.isNotBlank() }.take(subject.maxNames.coerceAtLeast(1))
         val seriesNames = if (subject.verify != null) SubjectSearchPlan.of(request).seriesNames.take(1) else emptyList()
         for (name in (names + seriesNames).distinct()) {
             val variables = baseVariables() + mapOf("subjectName" to name, "bangumiSubjectId" to bangumiSubjectId)
-            val items = fetchItems(subject.request, variables)
-            for (item in items.take(subject.maxCandidates.coerceAtLeast(1))) {
+            val root = fetchRoot(subject.request, variables)
+            if (root == null) {
+                requestFailed = true
+                continue
+            }
+            for (item in root.selectByPath(subject.request.itemsPath).take(subject.maxCandidates.coerceAtLeast(1))) {
                 val candidateId = item.stringByPath(subject.idPath) ?: continue
                 val verify = subject.verify
                 if (verify != null) {
                     val verifyRoot = fetchRoot(
                         verify,
                         variables + mapOf("candidateId" to candidateId, "subjectId" to candidateId),
-                    ) ?: continue
+                    )
+                    if (verifyRoot == null) {
+                        requestFailed = true
+                        continue
+                    }
                     if (verifyRoot.stringByPath(subject.verifyPath) != bangumiSubjectId) continue
                 }
                 val match = resolveEpisodes(request, baseVariables(request) + ("subjectId" to candidateId))
                 val resolved = ResolvedSubject(candidateId, match.episodes)
                 // 不校验就只能信搜索结果的第一条
-                if (verify == null) return resolved
-                if (match.exactMatches > 0) return resolved
+                if (verify == null) return SubjectSearch(resolved, requestFailed)
+                if (match.exactMatches > 0) return SubjectSearch(resolved, requestFailed)
                 if (fallback == null) fallback = resolved
             }
         }
-        return fallback
+        return SubjectSearch(fallback, requestFailed)
     }
 
     /**
@@ -243,11 +272,14 @@ internal class DirectApiEngine(
         return parseResponse(bytes, request.format, json)
     }
 
+    /** 请求失败时为 null. 取消照常抛出: 吞掉的话这次没搜完的结果会被当成"找不到"缓存起来 (见 [resolveSubject]). */
     private suspend fun fetchBytes(url: String): ByteArray? = try {
         val userAgent = sourceRequestUserAgent(config.userAgent)
         client.use {
             get(url) { overrideUserAgent(userAgent) }.readRawBytes()
         }
+    } catch (e: CancellationException) {
+        throw e
     } catch (e: Exception) {
         logger.warn(e) { "Request failed: $url" }
         null
@@ -270,6 +302,7 @@ internal class DirectApiEngine(
 
     private companion object {
         private const val SUBJECT_ID_CACHE_SIZE = 64
+        private val NOT_FOUND_TTL = 30.minutes
         private const val MAX_PARALLEL_EPISODE_REQUESTS = 6
         private val logger = logger<DirectApiEngine>()
     }
