@@ -179,6 +179,9 @@ internal class TvExplorationNativeState(
     /** 菜单锚点 (长按卡片): 条目, 封面在窗口里的框. */
     internal var menu: Pair<Int, AndroidRect>? by mutableStateOf(null)
 
+    /** 最近一次交给视图的「各行从第一张看起」(见 [TvRecRowsRestart]); 每个只做一次, 重建视图也不再做. */
+    internal var appliedRowsRestart: TvRecRowsRestart? = null
+
     /** hero 态模糊背景点开途中 (对焦还没到位、还没进详情页, 见 TvNativeExploreView.heroBlur): 返回键取消点开. */
     internal var wallOpening: Boolean by mutableStateOf(false)
 
@@ -248,6 +251,9 @@ private val TvExplorationNativeStateSaver = Saver<TvExplorationNativeState, Arra
 @Composable
 internal fun tvExploreFixedAnchor(): Boolean =
     LocalThemeSettings.current.tvExploreLayout == TvExploreLayout.FixedFocus && !LocalTvTouchInputEnabled.current
+
+/** 页面要这些行从第一张看起 (推荐换一批, 见 TvNativeRowWallView.restartRows). 按实例区分: 每换一批一个新的. */
+internal class TvRecRowsRestart(val rows: (String) -> Boolean)
 
 /** 还能接着推荐的行尾放几张占位: 翻得比接得快时焦点先落在占位上, 接上的新卡在原位顶掉它们 (见 TV_NATIVE_CARDS_TAIL_SLACK). */
 private const val TV_REC_AUTO_LOAD_PLACEHOLDERS = 2
@@ -363,6 +369,7 @@ internal fun TvExplorationNativeWall(
     focusedCardIndex: () -> Int,
     menuFor: (subjectId: Int) -> @Composable (expanded: Boolean, onDismiss: () -> Unit) -> Unit,
     modifier: Modifier = Modifier,
+    rowsRestart: TvRecRowsRestart? = null,
 ) {
     val sketch = LocalSketch.current
     val scope = rememberCoroutineScope()
@@ -482,6 +489,11 @@ internal fun TvExplorationNativeWall(
                 view.update(style, metrics, textStyle, buttonStyle)
                 view.setButtons(watchNow, playIcon, schedule, scheduleIcon)
                 view.setItems(items)
+                // 推荐换了一批 (见 TvExplorationPage): 新内容交给视图之后再让各行回到第一张, 淡入的是新的那批
+                if (rowsRestart != null && rowsRestart !== state.appliedRowsRestart) {
+                    state.appliedRowsRestart = rowsRestart
+                    view.restartRows(rowsRestart.rows)
+                }
                 view.setCarousel(carouselCount, selected, dotColor)
             },
             modifier = Modifier.focusRequester(state.focusRequester),

@@ -40,6 +40,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.TimeSource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
@@ -579,6 +580,8 @@ private fun TvExplorationPageContent(
     // 显式落点请求 (进页恢复 / 返回键分层 / 回到主界面; 其余焦点移动由原生视图自己走), 由 TvExplorationNativeWall
     // 转给原生视图送焦. 实例身份比较: 连发同参请求也会再送一次.
     var cardFocusRequest by remember { mutableStateOf<TvCardFocusRequest?>(null) }
+    // 换了一批、焦点正被送回第一行第一张 (见下面接料那段): 落地前焦点底下那张换了作品也不报 hero, 落地时照常报. 只在协程与回调里读写
+    var recRestartLanding by remember { mutableStateOf(false) }
     // hero 落点请求. **同样按实例身份比较** (见 [TvHeroFocusRequest]): 直接存枚举的话, 请求没
     // 落地时值不变 → 转发的快照流收不到新值 → 同一颗按钮再请求多少次都不会重新送焦.
     var heroFocusRequest by remember { mutableStateOf<TvHeroFocusRequest?>(null) }
@@ -625,7 +628,7 @@ private fun TvExplorationPageContent(
             }
             val item = recFlat.getOrNull(row.start + cardIndex) ?: return@collect
             // 已经是它了就别动: 每次重组都重报一遍会把 hero 媒体流水线的连发合并打乱
-            if (item.bangumiId == heroTarget?.subjectId) return@collect
+            if (item.bangumiId == heroTarget?.subjectId || recRestartLanding) return@collect
             onFocusItem(
                 item.bangumiId, tvTmdbTitleOr(item.bangumiId, usesTmdbTitle) { item.preferredDisplayName(useOriginalTitle) }, null, false, item.imageLarge,
                 tvRecNeighborsOf(recFlat, recRows, recRow, cardIndex),
@@ -646,20 +649,6 @@ private fun TvExplorationPageContent(
             if (!pending) state.extendRecommendationGroup(row.group.key)
         }
     }
-    // 推荐变了 (接上新卡、续作换成最早一季、重算) 等停稳 (方向键松开、列表不滚) 再放上去: 正翻着时换数据要重组整页、改那一行, 就是一帧卡顿.
-    // 焦点已经顶到行尾占位上时这一行也不动, 当场放 —— 一直按着往右的人接着翻进新卡. 流在这里收、不在页面里读, 一次变化只让页面重组一次
-    LaunchedEffect(state.recommendationGroups) {
-        state.recommendationGroups.collectLatest { live ->
-            if (live !== recGroups) {
-                snapshotFlow {
-                    val row = focusedRowKey?.removePrefix(TV_REC_ROW_KEY_PREFIX)?.toIntOrNull()?.let { currentRecRows.getOrNull(it) }
-                    !wallNavigating() || (row != null && focusedCardIndex >= row.size)
-                }.first { it }
-            }
-            recGroups = live
-        }
-    }
-
     // 整屏底色 (主壳画, 见 TvPosterWallTone): 卡片墙是深灰, hero 态整屏压成 hero 的底 (近黑); 热门轮播只把自己那块铺成 hero 的底 ——
     // 登记一条分界线, 跟着轮播背景图的下缘走、随列表滚动 (线以上黑, 往下一段渐变到深灰): 轮播态在第一行海报后面, 第一行居中时正好在它的
     // 组标题上沿, 再往下翻随轮播滚出屏, 不用整屏换色. hero 态里照样登记 (那时整屏已黑), 进出时线以上一直是黑的
@@ -671,9 +660,39 @@ private fun TvExplorationPageContent(
         heroBottom = { nativeState.splitY },
     )
     // 返回键的远跳走 TvScrollSpring.Far (Apple TV 页面滚动那一组, 逐格那条 spring 跳十来行一闪而过、还掉帧).
-    // wallFarJumpRow: 返回键分层的目标行 (回本行首卡 / 跳回组首行) —— 转发落点请求时据此让原生视图按远跳滚过去 (见 TvExplorationNativeWall),
-    // 焦点落到卡上或回到轮播按钮就清掉. 只在处理按键 / 回调 / 协程里读写, 不进组合
+    // wallFarJumpRow: 返回键分层 / 换一批的目标行 (回本行首卡 / 跳回组首行 / 回第一行推荐) —— 转发落点请求时据此让原生视图按远跳滚过去
+    // (见 TvExplorationNativeWall), 焦点落到卡上或回到轮播按钮就清掉. 只在处理按键 / 回调 / 协程里读写, 不进组合
     var wallFarJumpRow by remember { mutableStateOf<String?>(null) }
+
+    // 按了换一批 (见 TvPageShuffleHandler): 新的一批放上去时焦点在推荐行上, 就都从头看起 —— 各行回到第一张并淡入, 焦点回第一行第一张
+    // (远跳, 同返回键回组首行). 焦点在别处时照常原地换. 按下的时刻只在协程与按键回调里读写
+    val shuffleRequestedAt = remember { mutableStateOf<TimeSource.Monotonic.ValueTimeMark?>(null) }
+    var recRowsRestart by remember { mutableStateOf<TvRecRowsRestart?>(null) }
+    // 推荐变了 (接上新卡、续作换成最早一季、重算) 等停稳 (方向键松开、列表不滚) 再放上去: 正翻着时换数据要重组整页、改那一行, 就是一帧卡顿.
+    // 焦点已经顶到行尾占位上时这一行也不动, 当场放 —— 一直按着往右的人接着翻进新卡. 流在这里收、不在页面里读, 一次变化只让页面重组一次
+    LaunchedEffect(state.recommendationGroups) {
+        state.recommendationGroups.collectLatest { live ->
+            if (live !== recGroups) {
+                snapshotFlow {
+                    val row = focusedRowKey?.removePrefix(TV_REC_ROW_KEY_PREFIX)?.toIntOrNull()?.let { currentRecRows.getOrNull(it) }
+                    !wallNavigating() || (row != null && focusedCardIndex >= row.size)
+                }.first { it }
+            }
+            val previousBatch = recGroups.firstOrNull()?.computedAt
+            recGroups = live
+            val shuffle = shuffleRequestedAt.value
+            if (shuffle != null && live.isNotEmpty() && live.first().computedAt != previousBatch) {
+                shuffleRequestedAt.value = null
+                if (shuffle.elapsedNow() < TV_REC_SHUFFLE_RESTART_WINDOW && focusedRowKey?.startsWith(TV_REC_ROW_KEY_PREFIX) == true) {
+                    recRowsRestart = TvRecRowsRestart { it.startsWith(TV_REC_ROW_KEY_PREFIX) }
+                    recRestartLanding = true
+                    val first = tvRecRowKey(0)
+                    wallFarJumpRow = first
+                    cardFocusRequest = TvCardFocusRequest(first, cardIndex = 0)
+                }
+            }
+        }
+    }
 
     // 进页/返回的初始焦点: 曾在某行 -> 恢复该行 (cardIndex=-1: 行自己跨导航保存的聚焦卡);
     // 曾在 hero -> 上次停的那颗 hero 按钮 (首次进入 = 主按钮). 此后页面外进来的焦点走页面根 onEnter (见下).
@@ -911,10 +930,13 @@ private fun TvExplorationPageContent(
     // 不是"更没更"
     TvPageRefreshHandler { state.refreshFollowedSubjects() }
     // 「换一批」只换推荐; 「继续观看」是任务入口, 不该被换掉
-    TvPageShuffleHandler { state.shuffleRecommendations() }
+    TvPageShuffleHandler {
+        shuffleRequestedAt.value = TimeSource.Monotonic.markNow()
+        state.shuffleRecommendations()
+    }
 
     // 原生海报墙的事件 (见 TvExplorationNativeWall.kt): 焦点簿记、hero 媒体、导航都走上面这一套入口
-    // 下标超出这一行 = 行尾「更多」卡, 不是条目 (往后数会数到下一组去)
+    // 下标超出这一行 = 行尾占位, 不是条目 (往后数会数到下一组去)
     val nativeRecItemAt: (String, Int) -> RecommendedSubjectInfo? = { rowKey, index ->
         rowKey.removePrefix(TV_REC_ROW_KEY_PREFIX).toIntOrNull()
             ?.let { recRows.getOrNull(it) }
@@ -957,6 +979,7 @@ private fun TvExplorationPageContent(
             if (cardFocusRequest?.rowKey == rowKey) cardFocusRequest = null
             // 远跳落地 (或焦点已换到别的行) 就清掉
             wallFarJumpRow = null
+            recRestartLanding = false
             nativeState.capture()
         }
 
@@ -999,6 +1022,7 @@ private fun TvExplorationPageContent(
         override fun onHeroButtonFocused(button: Int) {
             val which = if (button == 1) TvHeroFocusButton.SCHEDULE else TvHeroFocusButton.PRIMARY
             focusedRowKey = null
+            recRestartLanding = false
             lastHeroButton = which
             prefetchSchedule(if (which == TvHeroFocusButton.PRIMARY) TV_EXPLORATION_SCHEDULE_PREFETCH_DELAY_MILLIS else 0)
             if (heroFocusRequest?.button == which) heroFocusRequest = null
@@ -1148,6 +1172,7 @@ private fun TvExplorationPageContent(
             focusedRowKey = { focusedRowKey },
             focusedCardIndex = { focusedCardIndex },
             menuFor = collectionMenuFor,
+            rowsRestart = recRowsRestart,
             modifier = nativePlayKeyModifier,
         )
 
@@ -1454,6 +1479,9 @@ private const val TV_REC_HEADER_KEY_PREFIX = "rec-header-"
 internal fun tvRecHeaderKey(recRow: Int) = "$TV_REC_HEADER_KEY_PREFIX$recRow"
 internal const val TV_REC_ROW_KEY_PREFIX = "rec-row-"
 internal fun tvRecRowKey(recRow: Int) = "$TV_REC_ROW_KEY_PREFIX$recRow"
+
+/** 按了换一批之后多久内到的新一批还让推荐行从头看起 (见 TvPageShuffleHandler 那段); 再晚到的照常原地换. */
+private val TV_REC_SHUFFLE_RESTART_WINDOW = 60.seconds
 
 // ---------------------------------------------------------------------------
 // 几何常量: 页面按这些算好原生海报墙的尺寸 (见 TvNativeExploreMetrics)

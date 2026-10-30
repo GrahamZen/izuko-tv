@@ -193,6 +193,7 @@ private fun Flow<List<RecommendationGroup>>.withoutHiddenNsfwItems(): Flow<List<
                     extendable = group.extendable,
                     moreImageUrl = group.moreImageUrl,
                     peek = group.peek?.takeUnless { it.bangumiId in hidden },
+                    computedAt = group.computedAt,
                 )
             }
         }

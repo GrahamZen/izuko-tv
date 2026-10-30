@@ -396,6 +396,9 @@ open class TvNativeRowWallView private constructor(
     /** 各行上次停的那张 (从行外进来 / 返回键分层回这一行时落在它上面), 按行键. */
     private val rowFocusedIndex = HashMap<String, Int>()
 
+    /** 换成了新的一批、焦点还在上面的行: 焦点到了别的行时回到第一张 (见 [restartRows]). */
+    private val restartWhenLeft = HashSet<String>()
+
     /**
      * 下一次从页面外进来 ([onRequestFocusInDescendants]) 落在纵向离这个高度 (窗口坐标) 最近的那一行、屏上最右边那张, 不回上次那张 (见 [enterNearRow]);
      * null = 回上次那张. 用一次就复位.
@@ -647,6 +650,38 @@ open class TvNativeRowWallView private constructor(
                 rowListener?.onCardFocused(rowKey, pageIndex(rowKey, index), focusedColumn)
             }
         }
+    }
+
+    /**
+     * [rows] 这些行换成了全新的一批 (推荐换一批): 都从第一张看起 —— 行首与上次停的那张一起忘掉, 已回收的行重新排出来时也从第一张起;
+     * 屏上的当场回到第一张并淡入, 看得出换过了. 焦点还在上面的那一行等焦点到了别的行再回 (页面接着把焦点送走, 见 TvExplorationPage).
+     * 新内容先交给 [setItems] 再调, 淡入的是新的那批.
+     */
+    fun restartRows(rows: (String) -> Boolean) {
+        list.rowLeftIndex.keys.removeAll(rows)
+        rowFocusedIndex.keys.removeAll(rows)
+        val columns = metrics.columns.coerceAtLeast(1)
+        for (i in 0 until list.childCount) {
+            val row = list.getChildAt(i) as? TvNativeRowView ?: continue
+            val key = row.tag as? String ?: continue
+            if (!rows(key)) continue
+            if (row.hasFocus()) restartWhenLeft += key else row.jumpToCard(0, columns) {}
+            row.alpha = 0f
+            row.animate().alpha(1f).setDuration(TV_NATIVE_ROW_RESTART_FADE_MILLIS).withLayer().start()
+        }
+    }
+
+    /** 焦点到了 [focusedRow]: [restartWhenLeft] 里别的行回到第一张; 焦点落回的那一行由焦点定它停在哪. */
+    private fun restartRowsLeftBehind(focusedRow: String) {
+        restartWhenLeft.remove(focusedRow)
+        val columns = metrics.columns.coerceAtLeast(1)
+        for (key in restartWhenLeft) {
+            list.rowLeftIndex.remove(key)
+            rowFocusedIndex.remove(key)
+            val item = list.indexOfKey(key)
+            (if (item >= 0) list.rowAt(item) else null)?.jumpToCard(0, columns) {}
+        }
+        restartWhenLeft.clear()
     }
 
     /** 聚焦那一组的卡全没了 (一行都不剩): 焦点交给顶部区域 / 页面. */
@@ -1523,6 +1558,7 @@ open class TvNativeRowWallView private constructor(
         focusedRowKey = rowKey
         focusedCardIndex = index
         focusedColumn = index - left
+        if (restartWhenLeft.isNotEmpty()) restartRowsLeftBehind(rowKey)
         if (pendingRow == rowKey || farJumpRow == null) pendingRow = null
         pendingInstant = false
         setCardAreaFocus(true)
@@ -2051,6 +2087,9 @@ private const val TV_NATIVE_LANDING_STALE_MILLIS = 400L
 
 /** 远跳的纵向距离在这么多行 (含组标题) 以内按逐格的 spring 滚 (见 TvNativeRowWallView.focusCard). */
 private const val TV_NATIVE_NEAR_JUMP_ROWS = 2
+
+/** 换了一批的行淡入多久 (见 TvNativeRowWallView.restartRows). */
+private const val TV_NATIVE_ROW_RESTART_FADE_MILLIS = 250L
 
 /** 换内容滑动开始时跨出那一屏宽的卡淡出多久 (见 TvNativeRowWallView.beginLane): 赶在整片滑起来之前没掉. */
 private const val TV_NATIVE_LANE_CARD_OUT_MILLIS = 120L

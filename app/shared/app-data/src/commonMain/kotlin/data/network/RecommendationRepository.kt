@@ -215,6 +215,7 @@ class RecommendationRepository(
                             else -> null
                         }?.takeIf { it.isNotEmpty() },
                         peek = peek,
+                        computedAt = groupRows.first().computedAt,
                     )
                 }
         }.onStart {

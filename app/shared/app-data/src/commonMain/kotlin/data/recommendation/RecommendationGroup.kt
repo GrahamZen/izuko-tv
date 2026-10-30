@@ -135,4 +135,6 @@ class RecommendationGroup(
     val moreImageUrl: String? = null,
     /** 预告: 这一组下次接出来的第一部 (不在 [items] 里, 焦点在「更多」卡上时 hero 显示它). 种子行与没有预告的组为 null. */
     val peek: RecommendedSubjectInfo? = null,
+    /** 这一组所在的那一批推荐是什么时候算的: 换一批 / 重算后换成新的, 往后接上新条目不变. 0 = 不知道. */
+    val computedAt: Long = 0,
 )
