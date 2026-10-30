@@ -59,6 +59,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableIntState
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.derivedStateOf
@@ -248,6 +249,8 @@ internal fun TvPlayerPanelHost(
 ) {
     val danmakuListState = rememberLazyListState()
     val commentsList = remember { TvNativeCommentListController() }
+    // 评论面板这次浮出要不要落回上次停的那一楼 (见 TvCommentsPanel): 楼的数据重新收集要一两帧才到, 由面板等到了再找
+    val commentsRestorePending = remember { mutableStateOf(false) }
 
     // 当前聚焦条目下标 (吸底滚动用; 同一时刻只有一个面板在场, 共享一个)
     val focusedIndex = remember { mutableIntStateOf(-1) }
@@ -271,10 +274,12 @@ internal fun TvPlayerPanelHost(
                 runCatching { danmakuListState.scrollToItem(0) }
             }
 
+            // 评论: 先回第一楼, 上次停过某一楼的话面板再落回那一楼 (收起控制层、换了胶囊再回来都算)
             TvPlayerPanel.COMMENTS -> {
                 focusedIndex.intValue = -1
                 commentsList.entryIndex = TV_NATIVE_COMMENT_ENTRY_NEAREST_BOTTOM
                 commentsList.scrollTo(0)
+                commentsRestorePending.value = true
             }
 
             else -> {}
@@ -300,6 +305,8 @@ internal fun TvPlayerPanelHost(
             }
             // 不挂起的那个: 不在场的那张列表 (从没排过版) 用 scrollToItem 会一直等它第一次排版
             danmakuListState.requestScrollToItem(0)
+            overlay.lastCommentThreadId = null
+            commentsRestorePending.value = false
             commentsList.entryIndex = TV_NATIVE_COMMENT_ENTRY_NEAREST_BOTTOM
             commentsList.scrollTo(0)
         }
@@ -311,7 +318,8 @@ internal fun TvPlayerPanelHost(
             if (target != TvPlayerFocusTarget.PANEL) return@collectLatest
             val panel = overlay.activePanel ?: return@collectLatest
             if (panel == TvPlayerPanel.COMMENTS) {
-                // 胶囊上按确定进第一楼 (按上进来是回到上次离开的那楼, 见 TvCommentsPanel)
+                // 胶囊上按确定进第一楼 (按上进来是回到上次离开的那楼, 见 TvCommentsPanel); 还没落回去的那一下不再落
+                commentsRestorePending.value = false
                 commentsList.entryIndex = 0
                 commentsList.scrollTo(0)
             }
@@ -433,7 +441,7 @@ internal fun TvPlayerPanelHost(
             null, TvPlayerPanel.RECOMMENDATIONS, TvPlayerPanel.STAFF, TvPlayerPanel.CHARACTERS -> Box(Modifier.height(0.dp))
 
             TvPlayerPanel.COMMENTS -> TvCommentsPanel(
-                vm, page, overlay, commentsList, focusedIndex, itemFocus,
+                vm, page, overlay, commentsList, commentsRestorePending, focusedIndex, itemFocus,
                 // 原生列表到边 (条目上的方向键原生那边先收到): 同上面的规则, 往下回胶囊、往左右去相邻胶囊
                 onExit = { edge ->
                     when (edge) {
@@ -875,6 +883,8 @@ private fun TvCommentsPanel(
     page: EpisodePageState,
     overlay: TvPlayerOverlayState,
     list: TvNativeCommentListController,
+    /** 面板这次浮出要落回上次停的那一楼 ([TvPlayerOverlayState.lastCommentThreadId]): 楼的数据到了就找, 找完清掉. */
+    restorePending: MutableState<Boolean>,
     focusedIndex: MutableIntState,
     itemFocus: TvPanelItemFocusRegistry,
     onExit: (TvNativeCommentEdge) -> Unit,
@@ -904,8 +914,21 @@ private fun TvCommentsPanel(
         if (listedSort == sort) return@LaunchedEffect
         listedSort = sort
         focusedIndex.intValue = -1
+        overlay.lastCommentThreadId = null
         list.entryIndex = TV_NATIVE_COMMENT_ENTRY_NEAREST_BOTTOM
         list.scrollTo(0)
+    }
+    // 收起控制层 / 换了胶囊再打开: 落回上次停的那一楼, 按 id 找 —— 刷新过、那一楼不在了就留在第一楼 (宿主已经复位).
+    // 宿主的复位与这里谁先跑都行: 宿主复位后才置 restorePending, 这里等它为真、楼也到了才落. 不挂起, 清掉键不会把自己取消在半路
+    LaunchedEffect(restorePending.value, threads) {
+        if (!restorePending.value || threads.isEmpty()) return@LaunchedEffect
+        restorePending.value = false
+        val id = overlay.lastCommentThreadId ?: return@LaunchedEffect
+        val index = threads.indexOfFirst { it.comment.stableId == id }
+        if (index >= 0) {
+            list.entryIndex = index
+            list.scrollTo(index)
+        }
     }
     // 详情里正在显示的是哪一楼 (左右键翻相邻的楼的锚). -1 = 没开
     var shownIndex by remember { mutableIntStateOf(-1) }
@@ -931,8 +954,9 @@ private fun TvCommentsPanel(
             ),
         )
         shownIndex = index
-        // 详情关掉后焦点回到这一楼
+        // 详情关掉后焦点回到这一楼; 收起再打开面板也落回这一楼
         list.entryIndex = index
+        overlay.lastCommentThreadId = thread.stableId
         // 不动播放状态: 详情多数时候只是"看完整评论", 与弹幕列表、推荐这些面板一样是边看边翻, 停一下再自己按播放很烦
     }
 
@@ -982,10 +1006,11 @@ private fun TvCommentsPanel(
             if (newPress) onExit(edge)
             true
         },
-        // 下次按上进来落回这一楼
+        // 下次按上进来落回这一楼; 收起控制层再打开面板也是 (按 id 记, 见 TvPlayerOverlayState.lastCommentThreadId)
         onFocusedPosition = {
             focusedIndex.intValue = it
             list.entryIndex = it
+            threads.getOrNull(it)?.let { thread -> overlay.lastCommentThreadId = thread.comment.stableId }
         },
     )
 }
