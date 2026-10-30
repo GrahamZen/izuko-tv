@@ -23,7 +23,7 @@ import me.him188.ani.datasources.api.source.MediaSourceTier
  * 几十个源几乎同时起步, 谁先拿到限流名额 ([MediaSourceSearchLimiter]: 最高层级的在线源来一个给一个) 看的是谁先排上,
  * 按列表顺序订的话, 播过、播得起来的源可能排在一串新导入的同层级源后面, 等它们让出名额.
  *
- * 先后: 本地缓存最先; 再按限流排队的先后 ([MediaSourceSearchLimiter.priorityOf]: 层级 (见 [startTierOf]), 同层在线源在 BT 前);
+ * 先后: 本地缓存最先; 其次是这部番记住的源 ([of] 的 `first`: 自动选源先只等它, 别的源再多也先查它); 再按限流排队的先后 ([MediaSourceSearchLimiter.priorityOf]: 层级 (见 [startTierOf]), 同层在线源在 BT 前);
  * 同一档里真实播放成功过、且成功不少于失败的在前, 没播过的其次, 失败多于成功的最后; 再按画像估的「搜索 + 开播」用时 ([SourceProfileSummary], 没测过的按 [DEFAULT_SEARCH_MILLIS] / [DEFAULT_STARTUP_MILLIS]);
  * 都一样时保持列表的顺序.
  */
@@ -43,10 +43,11 @@ internal object SourceStartOrder {
     fun startTiers(read: () -> MediaSelectorSourceTiers?): MediaSelectorSourceTiers? =
         if (DevSwitches.searchStartByBestTier.value) read() else null
 
-    /** [results] 的下标, 按开查的先后排. [tiers] 见 [startTierOf]. */
+    /** [results] 的下标, 按开查的先后排. [tiers] 见 [startTierOf]; [first] 是这部番记住的源 (数据源 id), 排在本地缓存之后最前. */
     fun of(
         results: List<MediaSourceFetchResult>,
         tiers: MediaSelectorSourceTiers? = null,
+        first: String? = null,
         summaryOf: (mediaSourceId: String) -> SourceProfileSummary? = SourceProfiles::summary,
     ): List<Int> {
         val keys = results.map { result ->
@@ -58,7 +59,11 @@ internal object SourceStartOrder {
             }
             val expected = (summary?.searchMillis ?: DEFAULT_SEARCH_MILLIS) + (summary?.startupMillis ?: DEFAULT_STARTUP_MILLIS)
             Triple(
-                if (result.kind == MediaSourceKind.LocalCache) -1L else MediaSourceSearchLimiter.priorityOf(result.kind, startTierOf(result.mediaSourceId, result.sourceInfo.tier, tiers)),
+                when {
+                    result.kind == MediaSourceKind.LocalCache -> -2L
+                    first != null && (result.instanceId == first || result.mediaSourceId == first) -> -1L
+                    else -> MediaSourceSearchLimiter.priorityOf(result.kind, startTierOf(result.mediaSourceId, result.sourceInfo.tier, tiers))
+                },
                 record,
                 expected,
             )

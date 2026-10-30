@@ -13,9 +13,11 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Runnable
 import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import me.him188.ani.app.domain.mediasource.instance.createTestMediaSourceInstance
@@ -67,7 +69,119 @@ class MediaFetcherSearchLaneTest {
     @AfterTest
     fun restore() {
         DevSwitches.searchPrioritized.set("0")
+        DevSwitches.searchRememberedFirst.set("1")
         SearchDispatchers.install(Dispatchers.Default)
+    }
+
+    @Test
+    fun `the remembered source of the subject gets the first lane`() = runTest {
+        val lanes = HashMap<Int, HeldLane>()
+        SearchDispatchers.install(Dispatchers.Default) { rank -> lanes.getOrPut(rank) { HeldLane() } }
+        DevSwitches.searchPrioritized.set("1")
+        val fetched = mutableListOf<String>()
+        fun tracked(name: String) = TestHttpMediaSource(
+            mediaSourceId = name,
+            kind = MediaSourceKind.WEB,
+            fetch = {
+                fetched += name
+                emptySizedSource()
+            },
+            info = MediaSourceInfo(displayName = name),
+        )
+        val fetcher = MediaSourceMediaFetcher(
+            configProvider = { MediaFetcherConfig.Default },
+            mediaSources = listOf(tracked("a"), tracked("b"), tracked("remembered")).map { createTestMediaSourceInstance(it) },
+            flowContext = coroutineContext[ContinuationInterceptor] ?: EmptyCoroutineContext,
+            rememberedSourceOf = { subjectId -> "remembered".takeIf { subjectId == request.subjectId } },
+            lookupContext = coroutineContext[ContinuationInterceptor] ?: EmptyCoroutineContext,
+        )
+        val session = fetcher.newSession(request)
+        backgroundScope.launch { session.cumulativeResults.collect() }
+        runCurrent()
+
+        // 只放行第一条通道: 先开查的是记住的源
+        repeat(10) {
+            lanes.getValue(0).release()
+            runCurrent()
+        }
+        assertEquals(listOf("remembered"), fetched)
+        lanes.values.forEach { it.release() }
+    }
+
+    @Test
+    fun `the remembered source is read when the session is created and not when the first source starts`() = runTest {
+        val lanes = HashMap<Int, HeldLane>()
+        SearchDispatchers.install(Dispatchers.Default) { rank -> lanes.getOrPut(rank) { HeldLane() } }
+        DevSwitches.searchPrioritized.set("1")
+        val fetched = mutableListOf<String>()
+        fun tracked(name: String) = TestHttpMediaSource(
+            mediaSourceId = name,
+            kind = MediaSourceKind.WEB,
+            fetch = {
+                fetched += name
+                emptySizedSource()
+            },
+            info = MediaSourceInfo(displayName = name),
+        )
+        val fetcher = MediaSourceMediaFetcher(
+            configProvider = { MediaFetcherConfig.Default },
+            mediaSources = listOf(tracked("a"), tracked("remembered")).map { createTestMediaSourceInstance(it) },
+            flowContext = coroutineContext[ContinuationInterceptor] ?: EmptyCoroutineContext,
+            // 弱机冷启动时读一次库要一两秒, 比各源开查时肯等的久
+            rememberedSourceOf = {
+                delay(1_000)
+                "remembered"
+            },
+            lookupContext = coroutineContext[ContinuationInterceptor] ?: EmptyCoroutineContext,
+        )
+        val session = fetcher.newSession(request)
+        // 建好会话到开查之间还有选源器、播放器的活
+        advanceTimeBy(1_500)
+        backgroundScope.launch { session.cumulativeResults.collect() }
+        runCurrent()
+        advanceTimeBy(1_000)
+        runCurrent()
+
+        repeat(10) {
+            lanes.getValue(0).release()
+            runCurrent()
+        }
+        assertEquals(listOf("remembered"), fetched)
+        lanes.values.forEach { it.release() }
+    }
+
+    @Test
+    fun `the remembered source keeps its usual lane when the switch is off`() = runTest {
+        val lanes = HashMap<Int, HeldLane>()
+        SearchDispatchers.install(Dispatchers.Default) { rank -> lanes.getOrPut(rank) { HeldLane() } }
+        DevSwitches.searchPrioritized.set("1")
+        DevSwitches.searchRememberedFirst.set("0")
+        val fetched = mutableListOf<String>()
+        fun tracked(name: String) = TestHttpMediaSource(
+            mediaSourceId = name,
+            kind = MediaSourceKind.WEB,
+            fetch = {
+                fetched += name
+                emptySizedSource()
+            },
+            info = MediaSourceInfo(displayName = name),
+        )
+        val fetcher = MediaSourceMediaFetcher(
+            configProvider = { MediaFetcherConfig.Default },
+            mediaSources = listOf(tracked("a"), tracked("remembered")).map { createTestMediaSourceInstance(it) },
+            flowContext = coroutineContext[ContinuationInterceptor] ?: EmptyCoroutineContext,
+            rememberedSourceOf = { "remembered" },
+            lookupContext = coroutineContext[ContinuationInterceptor] ?: EmptyCoroutineContext,
+        )
+        backgroundScope.launch { fetcher.newSession(request).cumulativeResults.collect() }
+        runCurrent()
+
+        repeat(10) {
+            lanes.getValue(0).release()
+            runCurrent()
+        }
+        assertEquals(listOf("a"), fetched)
+        lanes.values.forEach { it.release() }
     }
 
     @Test
