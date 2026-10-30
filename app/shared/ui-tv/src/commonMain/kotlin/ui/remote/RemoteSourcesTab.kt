@@ -121,9 +121,11 @@ internal val SOURCES_TAB_SCRIPT = """
     closeMenu();
     plus.setAttribute('data-act', ACTIONS[stab] || 'add');
   };
-  // kind: '' = 类型列表, 'webdav' / 'local' = 直接打开那个类型的表单 (见 SOURCES_SCRIPT 的 addSourceType); 不传 = 只打开面板, 内容不动
+  // kind: '' = 类型列表, 'webdav' = 直接打开它的表单 (见 SOURCES_SCRIPT 的 addSourceType); 不传 = 只打开面板, 内容不动.
+  // 'local' 不开面板, 直接建一个本地文件夹 (见 CLOUD_DRIVE_SCRIPT 的 localFolderAdd)
   function openAdd(kind) {
     closeMenu();
+    if (kind === 'local' && window.localFolderAdd) { window.localFolderAdd.create(); return; }
     window.sheets.open(sheet);
     if (kind !== undefined && window.addSourceType) window.addSourceType(kind);
   }
