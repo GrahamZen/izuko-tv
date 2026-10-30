@@ -23,7 +23,8 @@ import me.him188.ani.datasources.api.source.serializeArguments
 import me.him188.ani.utils.ktor.asScopedHttpClient
 
 /**
- * 测试用的规则源: 搜 `/search/{keyword}/`, 结果里每个 `.result a` 是一个条目, 条目页里 `.list` 的每个链接是一集.
+ * 测试用的规则源: 搜 `/search/{keyword}/`, 结果里每个 `.result a` 是一个条目, 条目页里 `.list` 的每个链接是一集,
+ * 取流按 [play] 的步骤.
  * 验证码会话的后台任务放在 [sessionScope] (不放进测试调度器), 测完要取消.
  */
 internal fun createTestRuleMediaSource(
@@ -31,6 +32,7 @@ internal fun createTestRuleMediaSource(
     repository: SelectorMediaSourceEpisodeCacheRepository,
     sessionScope: CoroutineScope,
     mediaSourceId: String = "test-source",
+    play: List<RuleStep> = emptyList(),
 ): RuleMediaSource {
     val client = HttpClient(engine).asScopedHttpClient()
     return RuleMediaSource(
@@ -44,6 +46,7 @@ internal fun createTestRuleMediaSource(
                         baseUrl = "https://example.com",
                         search = listOf(RuleStep.Fetch(url = "/search/{keyword}/"), RuleStep.Subjects(list = listOf(".result a"))),
                         detail = listOf(RuleStep.Fetch(), RuleStep.Episodes(lists = listOf(".list"))),
+                        play = play,
                     ),
                 ),
             ),
