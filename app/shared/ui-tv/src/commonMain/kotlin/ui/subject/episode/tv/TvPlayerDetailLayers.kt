@@ -416,6 +416,7 @@ private val TV_PLAYER_GALLERY_BACKDROP_RIGHT_FADE = 64.dp
  * 回胶囊后再按上会落进被它挡住的详情里).
  *
  * @param fillHeight 撑满给的高 (人物页、画廊、回复评论); false = 按内容收高.
+ * @param backdrop false = 不铺底, 内容自己一块块带底 (只读的评论详情: 主楼与回复各一张卡, 同评论面板的条目).
  * @param gallery 画廊那一层 (见 [TV_PLAYER_GALLERY_BACKDROP_COLOR]).
  * @param contentHidden 底与内容画成透明 (上面又盖了一层不透底的叠层, 如表情选择器): 半透明的底叠两层会透出下面那层的字.
  * @param overlay 盖在本层之上的内容 (与本层同在一个 Box 里, 可以 matchParentSize).
@@ -424,6 +425,7 @@ private val TV_PLAYER_GALLERY_BACKDROP_RIGHT_FADE = 64.dp
 internal fun TvPlayerLayerPanel(
     modifier: Modifier = Modifier,
     fillHeight: Boolean = true,
+    backdrop: Boolean = true,
     gallery: Boolean = false,
     contentPadding: PaddingValues = TV_PLAYER_LAYER_CONTENT_PADDING,
     lockDown: Boolean = false,
@@ -455,7 +457,7 @@ internal fun TvPlayerLayerPanel(
                 .fillMaxWidth()
                 .ifThen(fillHeight) { fillMaxHeight() }
                 .graphicsLayer { alpha = if (contentHidden) 0f else 1f }
-                .tvPlayerLayerBackdrop(backdropColor, rightFade = if (gallery) TV_PLAYER_GALLERY_BACKDROP_RIGHT_FADE else 0.dp),
+                .ifThen(backdrop) { tvPlayerLayerBackdrop(backdropColor, rightFade = if (gallery) TV_PLAYER_GALLERY_BACKDROP_RIGHT_FADE else 0.dp) },
             color = Color.Transparent,
             // 底是自己画的渐隐条, 在配色表里查不到 "on" 色, 必须显式给
             contentColor = MaterialTheme.colorScheme.onSurface,
