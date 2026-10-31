@@ -57,7 +57,7 @@ import me.him188.ani.datasources.api.source.serializeArguments
  * 接口 (都带公共参数 `client=tv` 与请求头 `Referer`):
  * - 文件: `GET /api/files/search` `GET /api/files/list` `POST /api/files/download` `POST /api/files/play`
  *   `POST /api/files/folder` `POST /api/files/delete`, 后台任务 `GET /api/tasks/{taskId}`
- * - 分享 (不带登录 Cookie): `POST /api/share/open` `GET /api/share/list`; 转存 `POST /api/share/save`
+ * - 分享 (不带登录 Cookie): `POST /api/share/open` `GET /api/share/list` `POST /api/share/search`; 转存 `POST /api/share/save`
  * - 账号: `GET /api/account/tier` `GET /api/account/profile`
  * - 扫码 (另一个域名, 不带公共参数): `/qr/start` → `/qr/poll` → `/qr/exchange`
  *
@@ -169,6 +169,10 @@ internal object TestDrive {
                 items = "data.items",
                 total = "data.total",
                 pageSize = 50,
+            ),
+            searchShare = DriveListOp(
+                post("/api/share/search", "share" to "{shareId}", "token" to "{shareToken}", "q" to "{keyword}").copy(cookie = false),
+                items = "data.items",
             ),
             saveFromShare = DriveValueOp(
                 post(
@@ -370,6 +374,22 @@ internal class FakeShares(
         return folders[shareId]?.get(folderId).orEmpty()
     }
 
+    /** 能在分享里按名字搜文件夹 ([searchFolders]); 关着时同不支持的网盘. */
+    var searchable: Boolean = false
+
+    /** 搜过的 (分享, 名字). */
+    val searched = mutableListOf<Pair<String, String>>()
+
+    /** 各层名字含 [keyword] 的文件夹 (父文件夹 id 填好), 不记进 [listed]. */
+    override suspend fun searchFolders(shareId: String, passcode: String, keyword: String): List<DriveFile>? {
+        if (!searchable) return null
+        searched += shareId to keyword
+        if (shareId in unavailable) throw CloudDriveShareUnavailableException("404", "分享不存在")
+        return folders[shareId].orEmpty().flatMap { (folderId, files) ->
+            files.filter { it.dir && keyword in it.fileName }.map { it.inFolder(folderId) }
+        }
+    }
+
     /** 回分享接口的请求; 不是分享接口时为 null. */
     fun respond(scope: MockRequestHandleScope, request: HttpRequestData): HttpResponseData? = when {
         request.method == HttpMethod.Post && request.url.encodedPath == "/api/share/open" -> {
@@ -392,6 +412,24 @@ internal class FakeShares(
                 scope.reply("""{"code":404,"message":"分享不存在"}""")
             } else {
                 scope.reply(listJson(folders[shareId]?.get(request.url.parameters["parent"].orEmpty()).orEmpty()))
+            }
+        }
+
+        request.url.encodedPath == "/api/share/search" -> {
+            val body = request.jsonBody()
+            val shareId = body.string("share")
+            if (shareId in unavailable || body.string("token") != "tk-$shareId") {
+                scope.reply("""{"code":404,"message":"分享不存在"}""")
+            } else {
+                val keyword = body.string("q")
+                searched += shareId to keyword
+                scope.reply(
+                    listJson(
+                        folders[shareId].orEmpty().flatMap { (folderId, files) ->
+                            files.filter { keyword in it.fileName }.map { it.inFolder(folderId) }
+                        },
+                    ),
+                )
             }
         }
 
