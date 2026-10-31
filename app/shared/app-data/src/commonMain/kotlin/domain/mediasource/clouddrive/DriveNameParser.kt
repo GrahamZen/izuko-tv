@@ -174,7 +174,7 @@ internal object DriveNameParser {
     private fun episodeSort(integer: String, decimal: String): EpisodeSort =
         if (decimal.isEmpty()) EpisodeSort(integer.toInt()) else EpisodeSort("${integer.toInt()}.$decimal")
 
-    private fun removeExtension(fileName: String): String {
+    internal fun removeExtension(fileName: String): String {
         val dot = fileName.lastIndexOf('.')
         if (dot <= 0 || fileName.length - dot > 6) return fileName
         return fileName.substring(0, dot)
