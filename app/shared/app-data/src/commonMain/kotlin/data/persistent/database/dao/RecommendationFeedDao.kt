@@ -38,7 +38,7 @@ data class RecommendationFeedEntity(
     val imageLarge: String,
     /** 什么时候算出来的; 判过期用. 全表相同. */
     val computedAt: Long,
-    /** 组标题的填充参数: 种子行是种子的名字; 「换换口味」是出行时挑中的标签 (标题不显示, 「更多」按它接着找). 同组各行相同. */
+    /** 组标题的填充参数: 种子行是种子的名字; 「换换口味」是出行时挑中的标签 (标题不显示, 往后接时按它接着找). 同组各行相同. */
     val titleArg: String? = null,
     /**
      * 算出这批结果的**算法版本**: 改了召回或排序就把 [CURRENT_ALGO_VERSION] +1, 旧结果当场
