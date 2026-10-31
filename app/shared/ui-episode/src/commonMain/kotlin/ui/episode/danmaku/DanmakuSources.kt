@@ -34,21 +34,30 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.Res
 import me.him188.ani.app.ui.foundation.a
+import me.him188.ani.app.ui.foundation.consumeHeldConfirmKey
+import me.him188.ani.app.ui.foundation.ifThen
+import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
+import me.him188.ani.app.ui.foundation.tvLongPressKey
+import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
 import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenu
 import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenuItem
 import me.him188.ani.app.ui.lang.Lang
@@ -93,6 +102,7 @@ fun DanmakuSourceChips(
     onAdjustShift: (DanmakuServiceId) -> Unit,
     modifier: Modifier = Modifier,
     firstItemModifier: Modifier = Modifier,
+    onMenuExpandedChanged: (Boolean) -> Unit = {},
 ) {
     FlowRow(
         modifier = modifier,
@@ -106,6 +116,7 @@ fun DanmakuSourceChips(
                     onToggle = { onToggleSource(sourceItem.serviceId, !sourceItem.enabled) },
                     onManualMatch = { onManualMatch(sourceItem.serviceId) },
                     onAdjustShift = { onAdjustShift(sourceItem.serviceId) },
+                    onMenuExpandedChanged = onMenuExpandedChanged,
                     modifier = if (index == 0) firstItemModifier else Modifier,
                 )
             }
@@ -119,16 +130,27 @@ private fun DanmakuSourceMenuAnchor(
     onToggle: () -> Unit,
     onManualMatch: () -> Unit,
     onAdjustShift: () -> Unit,
+    onMenuExpandedChanged: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var showDropdown by rememberSaveable { mutableStateOf(false) }
     val isAnimeko = sourceItem.serviceId == DanmakuServiceId.Animeko
     val moreOptionsText = stringResource(Lang.subject_episode_more_options)
+    // 纯遥控器: 长按开菜单, 短按照旧启停; 小三角只作提示, 不停焦点. 长按的连发没人接时 Compose 会当成「进入子项」, 把焦点送到小三角上
+    val remoteOnly = LocalAniUiBehavior.current.focusDrivenNavigation && !LocalTvTouchInputEnabled.current
+    val currentOnMenuExpandedChanged by rememberUpdatedState(onMenuExpandedChanged)
+    // 存成局部值: onDispose 跑的时候状态已经是新值, 直接读的话关菜单时收不回这一次上报
+    val menuOpen = showDropdown
+    DisposableEffect(menuOpen) {
+        if (menuOpen) currentOnMenuExpandedChanged(true)
+        onDispose { if (menuOpen) currentOnMenuExpandedChanged(false) }
+    }
     Box {
         FilterChip(
             selected = sourceItem.enabled,
             onClick = onToggle,
             modifier = modifier
+                .ifThen(remoteOnly) { tvLongPressKey(onLongPress = { showDropdown = true }, onShortPress = onToggle) }
                 .testTag("danmaku-source-${sourceItem.serviceId.value}"),
             label = {
                 Row(
@@ -143,6 +165,7 @@ private fun DanmakuSourceMenuAnchor(
                         modifier = Modifier
                             .offset(x = 8.dp)
                             .testTag("danmaku-source-menu-${sourceItem.serviceId.value}")
+                            .ifThen(remoteOnly) { focusProperties { canFocus = false } }
                             .clickable { showDropdown = true },
                     )
                 }
@@ -171,6 +194,8 @@ private fun DanmakuSourceMenuAnchor(
             currentShiftMillis = sourceItem.shiftMillis,
             onClickAdjustShift = onAdjustShift,
             onClickChange = onManualMatch.takeUnless { isAnimeko },
+            // 长按开的菜单: 吞掉这次按住的余波 (第一项就是启停, 不能被点掉); 菜单是独立窗口, 播放键由它自己接
+            modifier = Modifier.consumeHeldConfirmKey(enabled = remoteOnly).tvOverlayWindowKeys { showDropdown = false },
             serviceId = sourceItem.serviceId,
         )
     }

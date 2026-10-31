@@ -625,6 +625,8 @@ private fun TvDanmakuListPanel(
                             }
                         },
                         onAdjustShift = { serviceId -> editingShiftServiceId = serviceId },
+                        // 菜单开着时控制层不自动收起 (收了菜单也跟着没了)
+                        onMenuExpandedChanged = overlay::onPopupExpandedChanged,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                         // 面板入口落点 (index 0): 锚点必须挂在真实可聚焦的第一颗 chip 上.
                         firstItemModifier = Modifier
