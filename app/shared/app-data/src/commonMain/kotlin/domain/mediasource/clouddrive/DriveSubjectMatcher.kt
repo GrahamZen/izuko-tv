@@ -25,9 +25,11 @@ import me.him188.ani.app.domain.mediasource.search.SubjectSearchPlan
 import me.him188.ani.app.domain.mediasource.search.TitleForms
 import me.him188.ani.app.domain.mediasource.search.TitleIdentities
 import me.him188.ani.app.domain.mediasource.search.TitleIdentity
+import me.him188.ani.app.domain.mediasource.search.TitleParts
 import me.him188.ani.app.domain.mediasource.search.WorkKind
 import me.him188.ani.app.domain.mediasource.search.WorkKinds
 import me.him188.ani.datasources.api.EpisodeSort
+import me.him188.ani.datasources.api.PackedDate
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
@@ -37,6 +39,9 @@ import me.him188.ani.utils.logging.warn
  * 在网盘里找一个条目的视频文件.
  */
 internal interface DriveBrowser {
+    /** 搜索只是在本机的索引里比名字 (见 [DriveLibraryIndex]), 不发搜索请求: 名字与回退关键词不用省着搜. */
+    val searchesIndex: Boolean get() = false
+
     /**
      * 按名字搜索整个网盘 (第一页).
      */
@@ -75,11 +80,22 @@ internal fun interface TmdbEpisodeNumbering {
 }
 
 /**
+ * [found] 覆盖了条目已播出的每一集正片 (sort 或 ep 对得上). 播出日期在今天以后的不算: 连载中的番还没播的集哪儿都搜不到,
+ * 算上它们就永远覆盖不全, 每次都把扩大搜索全搜一遍. 不知道播出日期的照算.
+ */
+internal fun MediaFetchRequest.coversAiredEpisodes(found: Set<EpisodeSort>): Boolean {
+    val today = PackedDate.now()
+    return episodes.filter { it.sort is EpisodeSort.Normal && (!it.airDate.isValid || it.airDate <= today) }
+        .all { it.sort in found || it.ep in found }
+}
+
+/**
  * 把条目对到网盘里的视频文件.
  *
  * 1. 关键词来自搜索计划 ([SubjectSearchPlan.keywords], 按标题原样找的排法 [KeywordStyle.literal]): 条目每个名字的主标题
  *    (中文名、原名、别名, 去掉季标记与副标题) 一起搜; 英文别名很重要, 剧集发布的文件夹常常只有英文名. 都没搜到相关的文件时,
  *    依次再搜别的写法、副标题、系列名与别的叫法 (最多 [MAX_FALLBACK_SEARCHES] 次), 搜到为止.
+ *    在索引里找 ([DriveBrowser.searchesIndex]) 不发请求, 不受这些个数限制, 见 [matchInIndex].
  * 2. 服务端的匹配比较宽 (英文按词), 所以再在本地核对: 归一化后的文件或文件夹名要包含关键词.
  * 3. 搜到的文件夹往下展开几层 (网盘搜索常只返回命中的文件夹本身, 里面的文件名不含关键词时不会单独返回).
  * 4. 展开文件夹时, 按季分好的一层里不是这个条目的季的文件夹 (见 [DriveSubjectSeason.otherSeasonFolders]) 不往下列:
@@ -107,6 +123,7 @@ internal class DriveSubjectMatcher(
 
     suspend fun match(request: MediaFetchRequest): List<MatchedFile> {
         val identity = identities.of(request)
+        if (browser.searchesIndex) return matchInIndex(request, identity)
         val keywords = SubjectSearchPlan.of(request).keywords(KeywordStyle.literal(NAME_KEYWORDS), subtitles = identity?.parts?.keywords.orEmpty())
         if (keywords.primary.isEmpty()) return emptyList()
 
@@ -122,6 +139,39 @@ internal class DriveSubjectMatcher(
         return matchEpisodes(request, candidates, tmdbEpisodes, identity = identity)
     }
 
+    /**
+     * 在索引里找: 条目的名字全部都比; 认出的还没有这一集或没覆盖已播出的每一集时接着比回退关键词
+     * (写法变体在比较写法 [TitleForms.compact] 下与主关键词相同, 不用比). 回退关键词只补名字没认出的集:
+     * 按系列名找到的不能与名字认出的混在同一集的候选里.
+     */
+    private suspend fun matchInIndex(request: MediaFetchRequest, identity: TitleIdentity?): List<MatchedFile> {
+        val keywords = SubjectSearchPlan.of(request).keywords(KeywordStyle.literal(Int.MAX_VALUE), subtitles = identity?.parts?.keywords.orEmpty())
+        if (keywords.primary.isEmpty()) return emptyList()
+        val tmdbEpisodes = numbering.of(request)
+        val skipFolders = DriveSubjectSeason.of(request, tmdbEpisodes, identity).otherSeasonFolders()
+        suspend fun matchesIn(hits: List<Hit>) =
+            matchEpisodes(request, collectCandidates(hits.ownFoldersFirst(identity), skipFolders), tmdbEpisodes, identity = identity)
+
+        val named = matchesIn(searchAll(keywords.primary))
+        val found = named.mapTo(HashSet()) { it.episode }
+        val hasThisEpisode = request.episodeSort in found || request.episodeEp in found
+        if (keywords.wider.isEmpty() || hasThisEpisode && request.coversAiredEpisodes(found)) return named
+        return named + matchesIn(searchAll(keywords.wider, failOnError = false)).filter { it.episode !in found }
+    }
+
+    /** 命中的文件夹里点名这一部的排前面、点名别的部的排最后: 往下展开的个数有上限 ([MAX_MATCHED_FOLDERS]), 短别名碰巧含在别的番的文件夹名里时不能挤掉它. */
+    private fun List<Hit>.ownFoldersFirst(identity: TitleIdentity?): List<Hit> {
+        if (identity == null) return this
+        return sortedBy { hit ->
+            if (!hit.file.dir) return@sortedBy 1
+            when (identity.namingOf(hit.file.fileName)) {
+                TitleIdentity.Naming.OWN, TitleIdentity.Naming.SEVERAL -> 0
+                TitleIdentity.Naming.NONE -> 1
+                TitleIdentity.Naming.OTHER -> 2
+            }
+        }
+    }
+
     /** 搜 [keyword] 搜到的文件或文件夹. 名字包含关键词 (比较写法) 的才算相关 ([isRelevant]): 服务端的匹配比较宽. */
     private class Hit(val keyword: SearchKeyword, val file: DriveFile) {
         val isRelevant: Boolean get() = TitleForms.compact(keyword.keyword) in TitleForms.compact(file.fileName)
@@ -129,7 +179,7 @@ internal class DriveSubjectMatcher(
 
     /**
      * 用户指定「这个条目就在这个文件夹里」时: 把文件夹 (往下 [MAX_DEPTH] 层) 里的视频按文件名认集, 不按条目名认季
-     * (文件名写了季集且条目在对应表里时照样按表换算). 文件夹打不开 (被删了) 时返回空.
+     * (文件名写了季集且条目在对应表里时照样按表换算), 写着别的标题的不要 ([withoutOtherTitles]). 文件夹打不开 (被删了) 时返回空.
      */
     suspend fun matchPickedFolder(request: MediaFetchRequest, folderId: String, folderName: String): List<MatchedFile> {
         val candidates = try {
@@ -142,7 +192,33 @@ internal class DriveSubjectMatcher(
             logger.warn(e) { "Failed to list picked drive folder $folderId" }
             return emptyList()
         }
-        return matchEpisodes(request, candidates, numbering.of(request), trustFolders = true)
+        return matchEpisodes(request, withoutOtherTitles(request, folderName, candidates), numbering.of(request), trustFolders = true)
+    }
+
+    /**
+     * 指定的文件夹 [folderName] 里的视频, 去掉写着别的标题的: 「下载」这类什么番都放的文件夹里, 只看集号会把别的番认成这一部.
+     * 文件名或指定的文件夹往下的某一层写着这一部的留下, 没写标题的 (`04.mkv`、`第一季/05.mkv`) 也留下.
+     * 指定的文件夹本身写着这一部, 或里面一个写着这一部的都没有 (用的名字条目上没有) 时全留: 文件夹是用户指定的.
+     * 只认够长的名字 ([TitleForms.isDistinctive]): 「Air」会含在别的番的名字里, 认错了反而把这一部的去掉.
+     */
+    private fun withoutOtherTitles(request: MediaFetchRequest, folderName: String, candidates: List<Candidate>): List<Candidate> {
+        val titles = SubjectSearchPlan.of(request).ownNames
+            .map { TitleForms.compact(TitleForms.mainTitle(it)) }
+            .filter(TitleForms::isDistinctive)
+
+        fun namesSubject(name: String): Boolean = TitleForms.compact(name).let { compact -> titles.any { it in compact } }
+        if (namesSubject(folderName)) return candidates
+        val segments = candidates.associateWith { listOf(DriveNameParser.removeExtension(it.file.fileName)) + it.folders.drop(1) }
+        val named = candidates.filterTo(HashSet()) { candidate -> segments.getValue(candidate).any(::namesSubject) }
+        if (named.isEmpty()) return candidates
+        val kept = candidates.filter { it in named || segments.getValue(it).all { segment -> TitleParts.namesIn(segment).isEmpty() } }
+        if (kept.size < candidates.size) {
+            logger.info {
+                "Picked drive folder $folderName holds other titles: kept ${kept.size} of ${candidates.size} videos, " +
+                        "dropped ${(candidates - kept.toSet()).take(LOGGED_NAMES).map { it.file.fileName }}"
+            }
+        }
+        return kept
     }
 
     /**
