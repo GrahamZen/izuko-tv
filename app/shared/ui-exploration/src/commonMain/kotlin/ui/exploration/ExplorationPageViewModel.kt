@@ -97,7 +97,6 @@ open class ExplorationPageViewModel(private val koin: Koin = GlobalKoin) : Abstr
             .stateIn(backgroundScope, SharingStarted.Eagerly, emptyList()),
         recommendationsRefreshProgress = recommendationRepository.refreshProgress,
         onExtendRecommendationGroup = { recommendationRepository.extendGroup(it) },
-        extendingRecommendationGroups = recommendationRepository.extendingGroups,
         horizontalScrollTipFlow = horizontalScrollTipFlow,
         onSetDisableHorizontalScrollTip = {
             backgroundScope.launch {
@@ -183,7 +182,7 @@ private fun Flow<List<RecommendationGroup>>.withoutHiddenNsfwItems(): Flow<List<
             val items = group.items.filterNot { it.bangumiId in hidden }
             when {
                 items.isEmpty() -> null
-                items.size == group.items.size && group.peek?.bangumiId !in hidden -> group
+                items.size == group.items.size -> group
                 else -> RecommendationGroup(
                     kind = group.kind,
                     titleArg = group.titleArg,
@@ -191,8 +190,6 @@ private fun Flow<List<RecommendationGroup>>.withoutHiddenNsfwItems(): Flow<List<
                     key = group.key,
                     seedSubjectId = group.seedSubjectId,
                     extendable = group.extendable,
-                    moreImageUrl = group.moreImageUrl,
-                    peek = group.peek?.takeUnless { it.bangumiId in hidden },
                     computedAt = group.computedAt,
                 )
             }
