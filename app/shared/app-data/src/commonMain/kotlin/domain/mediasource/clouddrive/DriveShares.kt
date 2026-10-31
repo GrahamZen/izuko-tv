@@ -158,6 +158,12 @@ internal interface DriveShareBrowser {
     suspend fun open(shareId: String, passcode: String): String
 
     suspend fun listFolder(shareId: String, passcode: String, folderId: String): List<DriveFile>
+
+    /**
+     * 在整个分享里 (各层) 按名字 [keyword] 搜文件夹, 只要第一页 (按相关度排). 网盘不支持时为 null.
+     * 分享失效时抛 [CloudDriveShareUnavailableException].
+     */
+    suspend fun searchFolders(shareId: String, passcode: String, keyword: String): List<DriveFile>? = null
 }
 
 /** 要打开的一个分享: 站点结果里找到的, 或用户添加的. */
