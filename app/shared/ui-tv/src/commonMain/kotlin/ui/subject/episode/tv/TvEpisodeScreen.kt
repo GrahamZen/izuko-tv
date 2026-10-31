@@ -1037,7 +1037,7 @@ fun TvEpisodeScreenContent(
                     overlay.markInteraction()
                     // 与分层路由里那条返回键完全同一个动作 (拖拽预览就地取消 + 收起全部组件).
                     // 单列一条只是为了绕开那边的 focusRegion 分支 —— 焦点在按钮上时那个字段是旧值,
-                    // 恰好停在 PANEL 的话返回会变成"回进度条", 控制层反而收不起来.
+                    // 恰好停在 PANEL 的话返回会变成"回胶囊", 控制层反而收不起来.
                     // 收起之后焦点仍归这颗按钮, 由落点解析器对 ROOT 的改派保证 (见下)
                     if (isKeyUp) exitScrub(commit = false)
                     return@router true
@@ -1230,10 +1230,10 @@ fun TvEpisodeScreenContent(
                 overlay.markInteraction()
                 if (isBack) {
                     if (isKeyUp) {
-                        // 面板条目上: 返回回进度条 (面板随焦点区域变化收起); 其余: 全部隐藏.
+                        // 面板条目上: 返回退一层, 回到打开它的胶囊 (面板留着, 同胶囊上方的画廊); 其余: 全部隐藏.
                         // 拖拽预览中: 丢弃圆点位置, 画面留在原处, 播放状态恢复成进来之前的样子 (返回 = 取消)
                         if (overlay.focusRegion == TvPlayerFocusRegion.PANEL) {
-                            overlay.focusProgress()
+                            if (overlay.activePanel != null) overlay.detailLayers.focusPill() else overlay.focusProgress()
                         } else {
                             exitScrub(commit = false)
                         }

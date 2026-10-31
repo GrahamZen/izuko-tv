@@ -80,7 +80,7 @@ enum class TvEpisodeStripState {
 /**
  * 焦点当前所在的区域. 由各行容器的 onFocusChanged 上报 —— 只在获得焦点时更新,
  * 失焦不清除 (焦点交接的瞬间两边都是无焦点, 清除会产生瞬时 NONE 抖动).
- * 根按键路由据此决定边界行为 (如图标行按下进详情页, 面板内按返回回进度条).
+ * 根按键路由据此决定边界行为 (如图标行按下进详情页, 面板内按返回回胶囊).
  */
 enum class TvPlayerFocusRegion {
     NONE,
@@ -586,7 +586,7 @@ class TvPlayerOverlayState(
         replyingComment = null
     }
 
-    /** 把焦点送回进度条行 (面板内按返回等). */
+    /** 把焦点送回进度条行. */
     fun focusProgress() {
         requestFocus(TvPlayerFocusTarget.PROGRESS)
     }
