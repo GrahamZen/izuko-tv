@@ -107,6 +107,9 @@ interface PlayerExtensionContext {
 
     /** 系统没网: 停下播放器, 加载状态改成 [VideoLoadingState.WaitingForNetwork]. 恢复后由调用方 [reloadCurrentMedia]. */
     suspend fun stopForNetwork() {}
+
+    /** 还没装资源时显示或撤掉「在等网」的加载提示 ([VideoLoadingState.WaitingForNetwork]). */
+    fun showWaitingForNetwork(waiting: Boolean) {}
 }
 
 inline fun <reified T : PlayerExtensionEvent> PlayerExtensionContext.subscribeEvents(): Flow<T> {

@@ -71,6 +71,10 @@ class PlayerExtensionManager(
         override suspend fun stopForNetwork() {
             state.stopForNetwork()
         }
+
+        override fun showWaitingForNetwork(waiting: Boolean) {
+            state.showWaitingForNetwork(waiting)
+        }
     }
 
     val extensions: List<PlayerExtension> by lazy {

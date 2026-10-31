@@ -205,7 +205,15 @@ class PlaybackFailureRecoveryTest : AbstractPlayerExtensionTest() {
         assertTrue(network.isNetworkDownFor(failure(unreachableError())))
         assertFalse(network.isNetworkDownFor(failure(unreachableError()), trustUnreachable = false))
         network.lose()
-        assertTrue(network.isNetworkDownFor(failure(httpError(403))))
+        assertTrue(network.isNetworkDownFor(failure(connectError())))
+    }
+
+    @Test
+    fun `a server that answered proves the network is up whatever the system says`() {
+        val network = FakeNetwork(TestTimeSource())
+        network.lose()
+        assertFalse(network.isNetworkDownFor(failure(httpError(403))))
+        assertFalse(network.isNetworkDownFor(failure(httpError(500))))
     }
 
     @Test
@@ -357,8 +365,8 @@ class PlaybackFailureRecoveryTest : AbstractPlayerExtensionTest() {
         var result: Boolean? = null
         val job = launch { result = case.recovery.recover(failure(error), case.media) }
 
-        // 断多久都不换源, 也不重试
-        advanceTimeBy(10.minutes)
+        // 还没到再试一次的时候
+        advanceTimeBy(20.seconds)
         runCurrent()
         assertFalse(job.isCompleted)
         assertEquals(VideoLoadingState.WaitingForNetwork, case.state.playerSession.videoLoadingState.value)
@@ -373,6 +381,27 @@ class PlaybackFailureRecoveryTest : AbstractPlayerExtensionTest() {
         assertEquals(315_000L, case.player.currentPositionMillis.value)
         assertTrue(case.player.state.value.playWhenReady)
         assertTrue(case.state.playerSession.videoLoadingState.value is VideoLoadingState.Succeed)
+        case.scope.cancel()
+    }
+
+    @Test
+    fun `a system that keeps reporting no network still gets a try every so often`() = runTest {
+        val case = createCase()
+        loadAndPlay(case)
+        val opens = case.player.openCallCount
+
+        case.network.lose()
+        val error = connectError()
+        case.player.injectError(error)
+        runCurrent()
+        val job = launch { case.recovery.recover(failure(error), case.media) }
+        advanceTimeBy(32.seconds)
+        advanceUntilIdle()
+
+        assertTrue(job.isCompleted)
+        assertEquals(opens + 1, case.player.openCallCount)
+        assertEquals(315_000L, case.player.currentPositionMillis.value)
+        assertTrue(case.player.state.value.isPlaying)
         case.scope.cancel()
     }
 
@@ -408,7 +437,7 @@ class PlaybackFailureRecoveryTest : AbstractPlayerExtensionTest() {
 
         case.network.lose()
         val job = launch { case.recovery.recover(PlayerLoadError("code=IO", connectError()), case.media) }
-        advanceTimeBy(1.minutes)
+        advanceTimeBy(20.seconds)
         runCurrent()
         assertFalse(job.isCompleted)
 
@@ -456,10 +485,17 @@ class PlaybackFailureRecoveryTest : AbstractPlayerExtensionTest() {
     }
 
     @Test
-    fun `a failure with no selected media is left to switching`() = runTest {
+    fun `a failure with nothing selected and no network does not go to switching`() = runTest {
         val case = createCase()
         case.network.lose()
-        assertFalse(case.recovery.recover(failure(connectError()), null))
+        assertTrue(case.recovery.recover(failure(connectError()), null))
+        case.scope.cancel()
+    }
+
+    @Test
+    fun `a failure with nothing selected and a working network goes to switching`() = runTest {
+        val case = createCase()
+        assertFalse(case.recovery.recover(failure(httpError(500)), null))
         case.scope.cancel()
     }
 }

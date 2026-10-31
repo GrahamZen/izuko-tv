@@ -152,8 +152,11 @@ class SourceProfileExtension(
                 }
 
                 is MediaSourceFetchState.Succeed -> SearchObservation.Outcome.OK
-                // 没登录网盘不是这个源的毛病, 不记
-                is MediaSourceFetchState.Failed -> if (state.cause.isCloudDriveLoginRequired()) return@collect else SearchObservation.Outcome.FAILED
+                // 没登录网盘、断网都不是这个源的毛病, 不记
+                is MediaSourceFetchState.Failed -> {
+                    val notTheSource = state.cause.isCloudDriveLoginRequired() || network.confirmNetworkDownFor(PlayerLoadError("search failed", state.cause))
+                    if (notTheSource) return@collect else SearchObservation.Outcome.FAILED
+                }
                 is MediaSourceFetchState.CaptchaRequired -> SearchObservation.Outcome.CAPTCHA
                 is MediaSourceFetchState.RateLimited -> SearchObservation.Outcome.RATE_LIMITED
                 else -> return@collect
