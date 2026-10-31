@@ -46,7 +46,7 @@ class RemoteControlPageSettingsTest {
         assertEquals(
             mapOf(
                 "account" to listOf("set-profiles", "set-account", "set-history"),
-                "play" to listOf("set-generic", "set-dmfilter"),
+                "play" to listOf("set-generic", "set-dmfilter", "set-dmservers"),
                 "network" to listOf("set-proxy", "set-bangumi", "set-tmdb"),
                 "device" to listOf("set-look", "set-front", "set-keep"),
                 "feedback" to listOf("set-feedback"),
