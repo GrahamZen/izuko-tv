@@ -188,7 +188,7 @@ class CloudDriveMediaSource(
             // 参数坏了也不能抛: 会让整个数据源列表建不出来
             val arguments = runCatching { config.deserializeArgumentsOrNull(CloudDriveArguments.serializer()) }.getOrNull()
                 ?: return UnconfiguredMediaSource(mediaSourceId)
-            return CloudDriveMediaSource(registry.serviceFor(arguments.protocol), arguments)
+            return CloudDriveMediaSource(registry.serviceOf(arguments.protocol), arguments)
         }
     }
 
