@@ -75,8 +75,8 @@ class CloudDriveRegistryTest {
                 save("dmhy", "dmhy"),
                 driveSave(TestDrive.protocol, isEnabled = false),
                 driveSave(other),
-                // 同一个网盘的第二个数据源不再建服务
-                driveSave(TestDrive.protocol.copy(name = "重复"), instanceId = "duplicate"),
+                // 同一个网盘的第二个数据源不再建服务; 两个都停用着, 用排在前面的那份协议
+                driveSave(TestDrive.protocol.copy(name = "重复"), instanceId = "duplicate", isEnabled = false),
             ),
         )
         val drives = test.registry.drives.first { it != null }!!
@@ -86,6 +86,24 @@ class CloudDriveRegistryTest {
         assertNull(test.registry.service("nodrive"))
         assertNull(test.registry.addedShareService("nodrive"))
         assertSame(drives.first(), test.registry.addedShareService(TestDrive.ID)?.drive)
+    }
+
+    /** 控制台把订阅来的网盘源复制成本地源改了协议、停用原来那份: 用启用着的副本的协议, 建数据源实例也不换回去. */
+    @Test
+    fun `an enabled copy of a drive source wins over the disabled one it was copied from`() = runTest {
+        val edited = TestDrive.protocol.copy(name = "改过的")
+        val test = testRegistry(
+            saves = listOf(
+                save("dmhy", "dmhy"),
+                driveSave(TestDrive.protocol, isEnabled = false),
+                driveSave(edited, instanceId = "copy"),
+            ),
+        )
+        val drive = test.registry.drives.first { it != null }!!.single()
+        assertEquals("改过的", drive.protocol.name)
+        // 停用的那份数据源建实例时拿到的是同一个服务, 协议不变
+        assertSame(drive, test.registry.serviceOf(TestDrive.protocol))
+        assertEquals("改过的", drive.protocol.name)
     }
 
     /** 一个「网盘」数据源的参数坏了 (没有协议) 只跳过它, 别的网盘照常出来. */

@@ -96,14 +96,19 @@ class CloudDriveRegistry(
         scope.launch {
             instances.flow.collect { saves ->
                 // 一个数据源的参数坏了只跳过它: 抛出去的话这个协程就停了, 所有网盘都一直等不到
-                val protocols = saves.filter { it.factoryId == CloudDriveMediaSource.FactoryId }
+                val parsed = saves.filter { it.factoryId == CloudDriveMediaSource.FactoryId }
                     .mapNotNull { save ->
                         runCatching { save.config.deserializeArgumentsOrNull(CloudDriveArguments.serializer())?.protocol }
                             .onFailure { logger.error(it) { "Invalid cloud drive source ${save.instanceId}" } }
                             .getOrNull()
+                            ?.let { save to it }
                     }
-                    .distinctBy { it.id }
-                _drives.value = protocols.map { serviceFor(it) }
+                // 同一个网盘有好几份时 (订阅来的复制成本地源改过、原来那份停用) 用启用着的那份的协议, 都启用或都停用时用排在前面的;
+                // 网盘按第一次出现的位置排
+                val chosen = parsed.groupBy { it.second.id }.mapValues { (_, same) -> same.firstOrNull { it.first.isEnabled } ?: same.first() }
+                val sources = parsed.map { it.second.id }.distinct().map { chosen.getValue(it) }
+                _drives.value = sources.map { (save, protocol) -> serviceFor(protocol, save.instanceId) }
+                val protocols = sources.map { it.second }
                 for (protocol in protocols) {
                     val legacy = protocol.legacy ?: continue
                     try {
@@ -118,11 +123,25 @@ class CloudDriveRegistry(
         }
     }
 
-    /** 网盘 [protocol] 的服务, 没有就新建; 已有时换上这份协议 (订阅更新). */
-    fun serviceFor(protocol: CloudDriveProtocol): CloudDriveService = synchronized(lock) {
-        services[protocol.id]?.also { it.updateProtocol(protocol) }
-            ?: CloudDriveService(protocol, accounts, httpClient(), numbering, identities, playbackLineages, localFolderRoots).also { services[protocol.id] = it }
+    /** 网盘 [protocol] 的服务, 没有就新建; 已有时换上这份协议 (订阅更新). [source] 是协议来自的数据源, 只记日志. */
+    fun serviceFor(protocol: CloudDriveProtocol, source: String? = null): CloudDriveService = synchronized(lock) {
+        services[protocol.id]?.also {
+            if (it.protocol != protocol) logger.info { "Cloud drive ${protocol.id} takes the protocol of source $source" }
+            it.updateProtocol(protocol)
+        } ?: newService(protocol)
     }
+
+    /**
+     * 网盘 [protocol] 的服务, 已有时照用它现在的协议: 同一个网盘有好几个数据源时, 用哪份协议由数据源列表定 (见 init 里的选法),
+     * 不跟着最后建出来的那个数据源换. 没有就按 [protocol] 新建.
+     */
+    fun serviceOf(protocol: CloudDriveProtocol): CloudDriveService = synchronized(lock) {
+        services[protocol.id] ?: newService(protocol)
+    }
+
+    private fun newService(protocol: CloudDriveProtocol): CloudDriveService =
+        CloudDriveService(protocol, accounts, httpClient(), numbering, identities, playbackLineages, localFolderRoots)
+            .also { services[protocol.id] = it }
 
     /** 已配置的网盘 [driveId]; 没有时为 null. */
     fun service(driveId: String): CloudDriveService? = drives.value?.firstOrNull { it.driveId == driveId }
