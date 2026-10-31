@@ -404,6 +404,7 @@ private fun part3() = listOf(
     RemoteText("回到播放器就能接着看", "Go back to the player to keep watching", "回到播放器就能接著看", "回到播放器就能接著看"),
     RemoteText("准备中", "Preparing", "準備中", "準備中"),
     RemoteText("正在查找数据源", "Finding sources", "正在查找數據源", "正在查詢資料源"),
+    RemoteText("网络已断开，恢复后自动继续", "Network disconnected. Playback resumes when it reconnects", "網路已斷開，恢復後自動繼續", "網絡已斷開，恢復後自動繼續"),
     RemoteText("正在解析资源链接", "Resolving resource link", "正在解析資源連結", "正在解析資源連結"),
     RemoteText("资源解析成功，正在准备视频", "Stream resolved, preparing the video", "資源解析成功，正在準備影片", "資源解析成功，正在準備影片"),
     RemoteText("正在获取种子信息", "Fetching torrent metadata", "正在獲取種子資訊", "正在取得種子資訊"),

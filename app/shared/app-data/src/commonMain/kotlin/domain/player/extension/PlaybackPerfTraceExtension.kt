@@ -77,6 +77,7 @@ class PlaybackPerfTraceExtension(
         VideoLoadingState.ResolvingSource -> "解析资源"
         is VideoLoadingState.DecodingData -> "解码数据"
         is VideoLoadingState.Succeed -> "成功"
+        VideoLoadingState.WaitingForNetwork -> "等网"
         is VideoLoadingState.Failed -> "失败 (" + (state::class.simpleName ?: "?") + ")"
     }
 

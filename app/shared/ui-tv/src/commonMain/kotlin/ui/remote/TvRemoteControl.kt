@@ -1493,6 +1493,7 @@ object TvRemoteControl {
                         tr("正在查找数据源")
                     }
 
+                    PlaybackPreparingStage.WaitingForNetwork -> tr("网络已断开，恢复后自动继续")
                     PlaybackPreparingStage.StartingBtService -> tr("正在启动 BT 服务，第一次要十几秒…")
                     PlaybackPreparingStage.ResolvingSource -> tr("正在解析资源链接")
                     PlaybackPreparingStage.PreparingVideo -> tr("资源解析成功，正在准备视频")

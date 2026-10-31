@@ -271,6 +271,16 @@ class PlayerSession(
     }
 
     /**
+     * 断网时停下播放器, 加载提示改成在等网. 恢复后重新 [loadMedia].
+     *
+     * 先改加载状态再停: 播放器一停错误就没了, 那一刻要已经是在等网, 不然换源那边以为失败结束了, 把等网本身取消.
+     */
+    suspend fun stopForNetwork() {
+        _videoLoadingStateFlow.value = VideoLoadingState.WaitingForNetwork
+        stopPlayback()
+    }
+
+    /**
      * 换集时停下上一集: [stopPlayback] 之外把加载状态放回 [VideoLoadingState.Initial]. 不放回的话上一集的「已装好」或「加载失败」
      * 一直留着, 下一集要是一个资源都没选中 (都没找到、等着手动选), 播放画面既不提示正在查找也不提示没找到, 只剩空白.
      */

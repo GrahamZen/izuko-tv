@@ -23,6 +23,7 @@
     <string name="subject_episode_video_loading_needs_manual_selection">找到 %1$d 條資源，但沒有自動選中\n請到「選擇資料來源」手動選擇</string>
     <string name="subject_episode_video_loading_no_media">%1$d 個資料來源都沒有找到這一集</string>
     <string name="subject_episode_video_loading_resolving_source_short">正在解析資源連結</string>
+    <string name="subject_episode_video_loading_waiting_for_network">網路已斷開，恢復後自動繼續</string>
     <string name="subject_episode_video_loading_resolve_deadline">最多再等 %1$d 秒</string>
     <string name="subject_episode_video_loading_resolve_deadline_auto_switch">最多再等 %1$d 秒，逾時自動換源</string>
     <string name="subject_episode_video_loading_unsupported_audio">這台電視放不了這個影片的音訊格式（%1$s），請更換資料來源</string>

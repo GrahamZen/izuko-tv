@@ -26,6 +26,7 @@ import me.him188.ani.app.ui.lang.subject_episode_video_loading_decoding_data
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_failed_prefix
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_resolving_source_short
 import me.him188.ani.app.ui.lang.subject_episode_video_loading_torrent_metadata
+import me.him188.ani.app.ui.lang.subject_episode_video_loading_waiting_for_network
 import me.him188.ani.app.ui.subject.episode.video.loading.renderCause
 import me.him188.ani.app.ui.subject.episode.video.loading.videoLoadingCauseLabels
 import org.jetbrains.compose.resources.stringResource
@@ -79,6 +80,7 @@ fun playbackSessionStatusText(status: PlaybackSessionStatus?): PlaybackSessionSt
             }
 
             // 之后几步用播放画面上那几句 (画面上的第二行说明这里放不下): 面板与画面说的是同一件事
+            PlaybackPreparingStage.WaitingForNetwork -> stringResource(Lang.subject_episode_video_loading_waiting_for_network)
             PlaybackPreparingStage.StartingBtService -> stringResource(Lang.playback_session_status_starting_bt_service)
             PlaybackPreparingStage.ResolvingSource ->
                 stringResource(Lang.subject_episode_video_loading_resolving_source_short)

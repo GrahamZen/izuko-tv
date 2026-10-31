@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.domain.episode
 
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
@@ -38,6 +39,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.data.repository.media.SelectorMediaSourceEpisodeCacheRepository
 import me.him188.ani.app.data.repository.player.EpisodePlayHistoryRepository
 import me.him188.ani.app.domain.foundation.LoadError
@@ -132,7 +134,7 @@ class EpisodeFetchSelectPlayState(
      * 原地重载请求: 重载后要回到的位置, 以及打开后播不播. 由 [LoadMediaOnSelectExtension] 在当前选中的资源上执行,
      * 与换源同在一条 `collectLatest` 里, 选中项一变, 未执行的重载随之作废.
      */
-    private class ReloadRequest(val positionMillis: Long, val playWhenReady: Boolean)
+    private class ReloadRequest(val positionMillis: Long?, val playWhenReady: Boolean)
 
     private val reloadRequests = MutableSharedFlow<ReloadRequest>(
         extraBufferCapacity = 1,
@@ -287,15 +289,24 @@ class EpisodeFetchSelectPlayState(
     }
 
     /**
-     * 把当前选中的资源原地重新装进播放器, 装好后回到 [positionMillis], [playWhenReady] 为 false 时停在那里不播.
+     * 把当前选中的资源原地重新装进播放器, 装好后回到 [positionMillis] (`null` 时回到记忆的进度), [playWhenReady] 为 false 时停在那里不播.
      * 选中的资源还在加载 (还没有 [LoadMediaOnSelectExtension] 在等重载请求) 时返回 `false`.
      *
      * @see PlayerExtensionContext.reloadCurrentMedia
      */
-    suspend fun reloadCurrentMedia(positionMillis: Long, playWhenReady: Boolean = true): Boolean {
+    suspend fun reloadCurrentMedia(positionMillis: Long?, playWhenReady: Boolean = true): Boolean {
         if (reloadRequests.subscriptionCount.value == 0) return false
         reloadRequests.emit(ReloadRequest(positionMillis, playWhenReady))
         return true
+    }
+
+    /**
+     * @see PlayerExtensionContext.stopForNetwork
+     */
+    suspend fun stopForNetwork() {
+        // 打开时报的错: 收尾的 loadMedia 还要写加载状态, 等它写完, 不然「在等网」会被盖掉
+        withTimeoutOrNull(5.seconds) { reloadRequests.subscriptionCount.first { it > 0 } }
+        playerSession.stopForNetwork()
     }
 
     private suspend fun EpisodeSession.startSessionScopeTasks() {
@@ -378,6 +389,8 @@ class EpisodeFetchSelectPlayState(
 
                             reloadRequests.collect { request ->
                                 val positionMillis = request.positionMillis
+                                    ?: extensionManager.startPositionMillis(episodeInfo.episodeId)
+                                    ?: 0L
                                 logger.info {
                                     "Reloading media ${media.mediaId} in place, resuming at $positionMillis ms" +
                                         if (request.playWhenReady) "" else " paused"

@@ -43,10 +43,9 @@ import me.him188.ani.app.domain.media.selector.MediaSelector
 import me.him188.ani.app.domain.media.selector.MediaSelectorSourceTiers
 import me.him188.ani.app.domain.mediasource.GetMediaSelectorSourceTiersUseCase
 import me.him188.ani.app.domain.player.VideoLoadingState
-import me.him188.ani.app.domain.player.SeekPreviewDecoderFault
-import me.him188.ani.app.domain.player.isDecoderPreempted
 import me.him188.ani.app.domain.settings.GetMediaSelectorSettingsFlowUseCase
 import me.him188.ani.app.domain.settings.GetVideoScaffoldConfigUseCase
+import me.him188.ani.app.platform.NetworkStatus
 import me.him188.ani.datasources.api.CachedMedia
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.source.MediaSourceKind
@@ -72,6 +71,7 @@ class SwitchMediaOnPlayerErrorExtension(
     private val lineageSelection: PlaybackLineageSelection by koin.inject()
     private val getSourceTiersUseCase: GetMediaSelectorSourceTiersUseCase by koin.inject()
     private val mediaCacheManager: MediaDownloadManager by koin.inject()
+    private val network: NetworkStatus = koin.getOrNull<NetworkStatus>() ?: NetworkStatus.AlwaysAvailable
 
 
     override fun onStart(
@@ -134,11 +134,15 @@ class SwitchMediaOnPlayerErrorExtension(
                                 )
                             }
 
+                            val recovery = PlaybackFailureRecovery(context, network)
+                            launch { recovery.trackPlayback(mediaFetchSessionFlow) }
+
                             launch {
                                 handler.observeLoadErrorAndHandle(
                                     mediaFetchSessionFlow,
                                     videoLoadingStateFlow,
                                     playerStateFlow,
+                                    recovery,
                                 )
                             }
 
@@ -264,13 +268,11 @@ class SwitchMediaOnPlayerErrorExtension(
     private suspend fun PlayerLoadErrorHandler.observeLoadErrorAndHandle(
         mediaFetchSessionFlow: Flow<MediaFetchSelectBundle?>,
         videoLoadingStateFlow: Flow<VideoLoadingState>,
-        playerStateFlow: Flow<PlayerState>
+        playerStateFlow: Flow<PlayerState>,
+        recovery: PlaybackFailureRecovery,
     ) {
         mediaFetchSessionFlow.collectLatest { bundle ->
             if (bundle == null) return@collectLatest
-
-            // 因解码器被收回而原地重载过的资源, 每个只重载一次, 再出同样的错就照常换源
-            var reloadedMediaId: String? = null
 
             combine(
                 videoLoadingStateFlow, // 解析链接出错 (未匹配到链接)
@@ -280,10 +282,18 @@ class SwitchMediaOnPlayerErrorExtension(
                 // 还是播放器解码失败, 也拿不到 ExoPlayer 的错误码 (issue #12).
                 val mediaStatus = playerState.mediaStatus
                 when {
+                    // 等网时还算失败着: 变成没有失败的话, 下面的 collectLatest 会把正在等的取消掉
+                    videoLoadingState == VideoLoadingState.WaitingForNetwork -> PlayerLoadError(
+                        videoLoadingState.toString(),
+                        null,
+                        videoLoadingState,
+                    )
+
                     videoLoadingState is VideoLoadingState.Failed &&
                             PlayerLoadErrorHandler.canRecoverBySwitching(videoLoadingState) -> PlayerLoadError(
                         videoLoadingState.toString(),
                         (videoLoadingState as? VideoLoadingState.UnknownError)?.cause,
+                        videoLoadingState,
                     )
 
                     mediaStatus is MediaStatus.Error -> PlayerLoadError(
@@ -295,36 +305,8 @@ class SwitchMediaOnPlayerErrorExtension(
                 }
             }.distinctUntilChangedBy { it != null }
                 .collectLatest { error ->
-                    if (error != null) {
-                        val media = bundle.mediaSelector.selected.value
-                        when {
-                            error.isPlayerLifecycleError() -> {
-                                // 离开播放页时释放 Surface 超时之类, 跟这条源能不能播无关, 见 isPlayerLifecycleError
-                                logger.info {
-                                    "Player errored (${error.description}), but it is a player lifecycle error, keeping current media"
-                                }
-                            }
-
-                            // 拖动预览换输出弄坏了解码器 (见 SeekPreviewDecoderFault): 换哪个源都一样坏, 原地重载, 不拉黑
-                            SeekPreviewDecoderFault.isFault(error.cause) && media != null && context.reloadAfterSeekPreviewDecoderFault() -> {
-                                logger.warn(error.cause) { "Player errored (${error.description}), decoder broken by the seek preview, reloading ${media.mediaId} in place" }
-                            }
-
-                            // 解码器被抢走 (见 isDecoderPreempted) 是设备上的事, 这条源本身没问题: 原地重载, 不拉黑;
-                            // 出错前暂停着 (如暂停后进了屏保) 就重载完照样停着
-                            isDecoderPreempted(error.cause) && media != null && media.mediaId != reloadedMediaId &&
-                                    context.reloadCurrentMedia(
-                                        context.player.currentPositionMillis.value,
-                                        playWhenReady = context.player.state.value.playWhenReady,
-                                    ) -> {
-                                reloadedMediaId = media.mediaId
-                                logger.warn(error.cause) {
-                                    "Player errored (${error.description}), decoder preempted, reloading ${media.mediaId} in place"
-                                }
-                            }
-
-                            else -> handleError(bundle.mediaFetchSession, bundle.mediaSelector, error)
-                        }
+                    if (error != null && !recovery.recover(error, bundle.mediaSelector.selected.value)) {
+                        handleError(bundle.mediaFetchSession, bundle.mediaSelector, error)
                     } // else: cancel selection
                 }
         }
@@ -348,6 +330,8 @@ class SwitchMediaOnPlayerErrorExtension(
 internal class PlayerLoadError(
     val description: String,
     val cause: Throwable?,
+    /** 来自加载状态的失败是哪个状态; 播放器报的错为 `null`. */
+    val state: VideoLoadingState? = null,
 )
 
 internal class PlayerLoadErrorHandler(
@@ -464,9 +448,11 @@ internal class PlayerLoadErrorHandler(
          *
          * 网页引擎不可用是环境问题而不是资源问题, 换源只会让每个网页资源以同样的方式失败一遍,
          * 并且把真正的原因藏在一串"自动切换"之后. 此时保留报错让用户看到.
+         *
+         * 已取消不是失败: 换集、离开播放页或改选时加载被取消, 这时选中的可能已经是新选的那条, 接着加载的也已经有人负责.
          */
         fun canRecoverBySwitching(state: VideoLoadingState.Failed): Boolean =
-            state !is VideoLoadingState.WebEngineUnavailable
+            state !is VideoLoadingState.WebEngineUnavailable && state !is VideoLoadingState.Cancelled
     }
 
     @VisibleForTesting

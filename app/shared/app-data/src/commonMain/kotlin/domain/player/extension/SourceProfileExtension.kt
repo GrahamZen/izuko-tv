@@ -36,6 +36,7 @@ import me.him188.ani.app.domain.mediasource.profile.SourceObservation
 import me.him188.ani.app.domain.mediasource.profile.SourceProfiles
 import me.him188.ani.app.domain.player.PlaybackFailureLog.Reason
 import me.him188.ani.app.domain.player.VideoLoadingState
+import me.him188.ani.app.platform.NetworkStatus
 import me.him188.ani.app.videoplayer.diagnostics.PlayerProbes
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.source.MediaSourceKind
@@ -55,12 +56,13 @@ import kotlin.time.Duration.Companion.seconds
 class SourceProfileExtension(
     private val context: PlayerExtensionContext,
     private val client: ScopedHttpClient,
+    private val network: NetworkStatus = NetworkStatus.AlwaysAvailable,
 ) : PlayerExtension("SourceProfile") {
     private sealed interface Event {
         class Selected(val media: Media?) : Event
         class Loading(val state: VideoLoadingState) : Event
         class Playback(val state: PlaybackState) : Event
-        data object PlayerError : Event
+        class PlayerError(val error: Throwable) : Event
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -88,7 +90,7 @@ class SourceProfileExtension(
                     selected.map { Event.Selected(it) },
                     context.videoLoadingStateFlow.map { Event.Loading(it) },
                     context.player.playbackState.map { Event.Playback(it) },
-                    errors.map { Event.PlayerError },
+                    errors.map { Event.PlayerError(it) },
                 ).collect { event ->
                     when (event) {
                         is Event.Selected -> tracking = event.media?.takeIf { it.kind != MediaSourceKind.LocalCache }
@@ -98,7 +100,9 @@ class SourceProfileExtension(
                             val t = tracking ?: return@collect
                             val state = event.state
                             if (state is VideoLoadingState.Succeed) t.onLoaded()
-                            if (state is VideoLoadingState.Failed && state != VideoLoadingState.Cancelled && t.onLoadFailed()) {
+                            val failed = state as? VideoLoadingState.Failed
+                            val cause = (state as? VideoLoadingState.UnknownError)?.cause
+                            if (failed != null && blamesSource(PlayerLoadError(state.toString(), cause, failed), t) && t.onLoadFailed()) {
                                 // 自己网盘的事 (没登录、空间不够) 放不了不是这个源的毛病, 不记
                                 if (state is VideoLoadingState.UnknownError && state.cause.isCloudDriveAccountProblem()) return@collect
                                 val reason = PlaybackFailureReportExtension.reasonOf(state)
@@ -113,10 +117,10 @@ class SourceProfileExtension(
                             }
                         }
 
-                        Event.PlayerError -> {
+                        is Event.PlayerError -> {
                             val t = tracking ?: return@collect
                             // 打开成功、还没播起来就出错, 和播起来之后出错, 各记一条
-                            if (t.onPlayerError()) {
+                            if (blamesSource(PlayerLoadError("player error", event.error), t) && t.onPlayerError()) {
                                 launch { record(t, ok = false, reason = Reason.PLAYER_ERROR) }
                             }
                         }
@@ -125,6 +129,17 @@ class SourceProfileExtension(
             }
         }
     }
+
+    /** 这次失败算不算这条资源的错: 断网、地址过期、解码器被抢不算, 判断同换源 ([decidePlaybackFailure]). */
+    private fun blamesSource(error: PlayerLoadError, attempt: SourceAttempt): Boolean =
+        decidePlaybackFailure(
+            error,
+            PlaybackFailureFacts(
+                canRefreshLink = attempt.outcome == true,
+                canReloadDecoder = true,
+                networkDown = network.isNetworkDownFor(error),
+            ),
+        ) == PlaybackFailureAction.SWITCH_SOURCE
 
     /** 一个源的查询从开始 ([MediaSourceFetchState.Working]) 到出结果记一条; 暂停、放弃 (我们自己停的) 不记. */
     private suspend fun recordSearches(result: MediaSourceFetchResult) {
@@ -195,7 +210,11 @@ class SourceProfileExtension(
         private val PROBE_TIMEOUT = 30.seconds
 
         override fun create(context: PlayerExtensionContext, koin: Koin): SourceProfileExtension {
-            return SourceProfileExtension(context, koin.get<HttpClientProvider>().get(ScopedHttpClientUserAgent.BROWSER))
+            return SourceProfileExtension(
+                context,
+                koin.get<HttpClientProvider>().get(ScopedHttpClientUserAgent.BROWSER),
+                koin.getOrNull<NetworkStatus>() ?: NetworkStatus.AlwaysAvailable,
+            )
         }
     }
 }
