@@ -459,6 +459,17 @@ class CloudDriveService internal constructor(
 
         override suspend fun listFolder(shareId: String, passcode: String, folderId: String): List<DriveFile> =
             listShareFolder(shareId, passcode, folderId, shareToken(shareId, passcode), throttled = false).files
+
+        override suspend fun searchFolders(shareId: String, passcode: String, keyword: String): List<DriveFile>? {
+            if (!api.supportsShareSearch) return null
+            val list = try {
+                api.searchShare(shareId, passcode, shareToken(shareId, passcode).token, keyword)
+            } catch (e: CloudDriveShareUnavailableException) {
+                // 缓存的令牌可能过期了, 换一个再试一次
+                api.searchShare(shareId, passcode, shareToken(shareId, passcode, refresh = true).token, keyword)
+            }
+            return list.files.filter { it.dir }
+        }
     }
 
     /**

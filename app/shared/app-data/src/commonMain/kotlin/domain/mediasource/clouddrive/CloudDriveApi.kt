@@ -233,6 +233,22 @@ internal class CloudDriveApi(
     /** [listShareFolder] 每页几个. */
     val shareListPageSize: Int get() = protocol().api.listShare?.pageSize ?: DEFAULT_PAGE_SIZE
 
+    /** 网盘能在分享里按名字搜 (协议有 [DriveApiConfig.searchShare]). */
+    val supportsShareSearch: Boolean get() = protocol().api.searchShare != null
+
+    /** 在分享 [shareId] 里 (各层) 按名字 [keyword] 搜文件与文件夹, 第 [page] 页. 分享失效或令牌过期时抛 [CloudDriveShareUnavailableException]. */
+    suspend fun searchShare(shareId: String, passcode: String, token: String, keyword: String, page: Int = 1): DriveFileList {
+        val op = protocol().api.searchShare ?: throw CloudDriveUnsupportedException("searchShare")
+        val vars = mapOf(
+            "shareId" to shareId.json,
+            "passcode" to passcode.json,
+            "shareToken" to token.json,
+            "keyword" to keyword.json,
+            "page" to page.json,
+        )
+        return listPage("searchShare", op, vars, share = true)
+    }
+
     /**
      * 把分享里的 [files] 转存到自己网盘的 [toFolderId] 下, 返回转存后的文件 id (转存一个文件时就是它的 id). 需要登录.
      *

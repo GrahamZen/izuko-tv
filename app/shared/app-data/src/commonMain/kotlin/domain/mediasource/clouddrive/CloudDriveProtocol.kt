@@ -220,6 +220,7 @@ data class DriveRequest(
  * - [task]: `{taskId}` `{retry}` (第几次查, 从 0 起)
  * - [shareToken]: `{shareId}` `{passcode}`
  * - [listShare]: `{shareId}` `{passcode}` `{shareToken}` `{folderId}` `{page}` `{pageSize}`
+ * - [searchShare]: `{shareId}` `{passcode}` `{shareToken}` `{keyword}` `{page}` `{pageSize}`
  * - [saveFromShare]: `{shareId}` `{passcode}` `{shareToken}` `{fileIds}` `{fileTokens}` (列表, 与 fileIds 一一对应) `{folderId}` (存到哪)
  *   `{shareRootId}` (分享的根, 见 [DriveShareConfig.rootFolderId])
  *
@@ -230,6 +231,8 @@ data class DriveRequest(
  * @property createFolder 取值是新文件夹的 id
  * @property deleteFiles 取值是后台任务 id (空表示已经完成)
  * @property saveFromShare 取值是后台任务 id; 任务完成时 [DriveTaskOp.resultIds] 给出新文件的 id
+ * @property searchShare 在整个分享里 (各层) 按名字搜文件与文件夹. 有它时, 固定分享合集的目录索引过期或没有时按番名搜文件夹, 不在开播时逐层重列
+ *   (见 DriveShareSearchEngine); 结果的父文件夹 id 按 [DriveFileFields.parentId] 取
  */
 @Serializable
 data class DriveApiConfig(
@@ -246,6 +249,7 @@ data class DriveApiConfig(
     val shareToken: DriveShareTokenOp? = null,
     val listShare: DriveListOp? = null,
     val saveFromShare: DriveValueOp? = null,
+    val searchShare: DriveListOp? = null,
 )
 
 /** 取一个值的操作. */

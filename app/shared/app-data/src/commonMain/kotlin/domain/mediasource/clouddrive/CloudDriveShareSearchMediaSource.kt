@@ -15,10 +15,16 @@ import io.ktor.client.statement.readRawBytes
 import io.ktor.http.ContentType
 import io.ktor.client.plugins.contentnegotiation.exclude
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asFlow
@@ -81,6 +87,7 @@ import me.him188.ani.utils.logging.warn
 import me.him188.ani.utils.platform.currentTimeMillis
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -181,6 +188,8 @@ internal class DriveShareSearchEngine(
     private val indexStore: DriveShareIndexStore = DriveShareIndexStore.None,
     /** 墙上时间 (毫秒): 存下来的索引跨重启比新旧. */
     private val now: () -> Long = { currentTimeMillis() },
+    /** 在后台重列过期的固定分享索引 (见 [refreshIndexLater]): 不随某一次搜索被暂停、取消. */
+    private val backgroundScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     /** 请求站点搜索接口; 失败返回 null, 站点本身出错 (5xx、连不上) 时抛 [ShareSiteUnavailableException]. */
     private val fetch: suspend (url: String) -> ByteArray?,
 ) {
@@ -219,7 +228,9 @@ internal class DriveShareSearchEngine(
      *
      * 各个分享分开找: 哪个分享先有索引就先在里面找、先读对上的文件夹, 不等别的分享列完 —— 合集有十几个分享、同时只列 [SHARE_CONCURRENCY] 个,
      * 要的那个常常早就列好了. 索引过了 [SHARE_INDEX_TTL] 时先拿旧索引找: 合集的目录很少变, 旧索引里对上的文件夹读出了这一部的剧集就用,
-     * 不重列这个分享; 旧索引里没有、或对上的文件夹读不出这一部 (分享者挪走、取消共享了) 才重列再找.
+     * 不重列这个分享; 旧索引里没有、或对上的文件夹读不出这一部 (分享者挪走、取消共享了)、或根本没有索引时, 在分享里按番名搜文件夹
+     * ([searchedIndexOf], 十几个分享同时搜, 一两秒) —— 搜不到就是这个分享里没有, 不重列; 网盘不支持搜索或搜索出错才重列再找.
+     * 没重列的过期索引搜完在后台重列 ([refreshIndexLater]).
      * 同名优先与外层盖里层 ([hitsIn]) 在一个分享里判; 一共最多读 [MAX_FIXED_FOLDERS] 个文件夹.
      */
     private suspend fun searchFixedShares(
@@ -227,8 +238,9 @@ internal class DriveShareSearchEngine(
         identity: TitleIdentity?,
         deliver: suspend (List<DriveShareMatch>) -> Unit,
     ): List<DriveShareMatch> {
-        val keywords = SubjectSearchPlan.of(request).keywords(KeywordStyle.literal(DriveSubjectMatcher.NAME_KEYWORDS)).primary
-            .map { TitleForms.compact(it.keyword) }
+        val names = SubjectSearchPlan.of(request).keywords(KeywordStyle.literal(DriveSubjectMatcher.NAME_KEYWORDS)).primary
+            .map { it.keyword }
+        val keywords = names.map { TitleForms.compact(it) }
         if (keywords.isEmpty()) return emptyList()
         val depth = config.shareIndexDepth.coerceIn(1, MAX_INDEX_DEPTH)
         val skipFolders = reader.subjectSeason(request, identity).otherSeasonFolders()
@@ -267,6 +279,9 @@ internal class DriveShareSearchEngine(
             }.awaitAll().flatten()
         }
 
+        val searchNames = names.distinct().take(MAX_FOLDER_SEARCH_NAMES)
+        val searching = Semaphore(FOLDER_SEARCH_CONCURRENCY)
+
         val found = coroutineScope {
             fixedShares.map { link ->
                 async {
@@ -278,7 +293,15 @@ internal class DriveShareSearchEngine(
                         val matches = readHits(link, cached)
                         if (matches.isNotEmpty()) {
                             logger.info { "Fixed share ${link.shareId}: the folders of its index from ${(now() - cached.indexedAtMillis).milliseconds.inWholeHours}h ago still hold this subject, not listing it again" }
+                            refreshIndexLater(link, depth)
                             return@async matches
+                        }
+                    }
+                    if (DevSwitches.driveShareFolderSearch.value) {
+                        searchedIndexOf(link, searchNames, keywords, identity, depth, searching)?.let { index ->
+                            PlayTimeline.mark("fixed_searched", "${link.shareId} ${index.folders.size}")
+                            refreshIndexLater(link, depth)
+                            return@async readHits(link, index)
                         }
                     }
                     val index = listing.withPermit { listIndex(link, depth) } ?: return@async emptyList()
@@ -315,6 +338,60 @@ internal class DriveShareSearchEngine(
         val saved = indexStore.get(link.shareId)?.takeIf { it.depth == depth } ?: return null
         indexLock.withLock { indexes.getOrPut(link.shareId) { saved } }
         return saved
+    }
+
+    /**
+     * 在分享 [link] 里按番名 [names] 搜文件夹 (依次试, 搜回的文件夹里有按 [keywords] 认得出的就停), 搜回的当作这个分享的一份临时索引, 不存.
+     * 服务端按相关度模糊匹配, 搜回的文件夹照样过 [hitsIn]; 认出的文件夹套着的、也认得出的里层去掉 (读外层时一起读到).
+     * 网盘不支持、或搜索出错时为 null (由调用方重列).
+     */
+    private suspend fun searchedIndexOf(
+        link: DriveShareLink,
+        names: List<String>,
+        keywords: List<String>,
+        identity: TitleIdentity?,
+        depth: Int,
+        searching: Semaphore,
+    ): DriveShareIndex? {
+        val found = LinkedHashMap<String, DriveFile>()
+        try {
+            val title = shares.open(link.shareId, link.passcode)
+            fun indexOf(folders: Collection<DriveFile>) =
+                DriveShareIndex(depth, now(), folders.map { DriveShareIndexedFolder(it.fid, listOf(title, it.fileName)) })
+            for (name in names) {
+                val folders = searching.withPermit { shares.searchFolders(link.shareId, link.passcode, name) } ?: return null
+                folders.forEach { found.putIfAbsent(it.fid, it) }
+                val accepted = hitsIn(indexOf(found.values), keywords, identity).mapTo(HashSet()) { it.fid }
+                if (accepted.isNotEmpty()) return indexOf(found.values.filterNot { it.parentFid in accepted && it.fid in accepted })
+            }
+            return indexOf(found.values)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            logger.warn { "Failed to search folders of share ${link.shareId}, listing it instead: $e" }
+            return null
+        }
+    }
+
+    private val refreshingIndexes = HashSet<String>()
+    private val refreshPermit = Semaphore(1)
+
+    /**
+     * 过一会儿在后台重列分享 [link] 的索引 (这一次搜索用了旧索引或按名字搜, 没有重列): 一次一个分享, 同一个分享同时只排一次,
+     * 列完存起来, 之后的搜索直接用新的.
+     */
+    private fun refreshIndexLater(link: DriveShareLink, depth: Int) {
+        backgroundScope.launch {
+            if (!indexLock.withLock { refreshingIndexes.add(link.shareId) }) return@launch
+            try {
+                delay(INDEX_REFRESH_DELAY)
+                refreshPermit.withPermit {
+                    if (cachedIndexOf(link, depth)?.isFresh() != true) listIndex(link, depth)
+                }
+            } finally {
+                withContext(NonCancellable) { indexLock.withLock { refreshingIndexes.remove(link.shareId) } }
+            }
+        }
     }
 
     /** 现列分享 [link] 前 [depth] 层的文件夹, 记进内存与 [indexStore]. 打不开时为 null (下次再试). */
@@ -583,6 +660,13 @@ internal class DriveShareSearchEngine(
 
         /** 固定分享里一次最多打开几个对上的文件夹. */
         private const val MAX_FIXED_FOLDERS = 6
+
+        /** 固定分享按名字搜文件夹: 每个分享最多试几个名字, 各分享一起最多同时发几个搜索请求. */
+        private const val MAX_FOLDER_SEARCH_NAMES = 3
+        private const val FOLDER_SEARCH_CONCURRENCY = 16
+
+        /** 过期的固定分享索引搜完多久才在后台重列: 不和开播抢网络. */
+        private val INDEX_REFRESH_DELAY = 1.minutes
 
         private val TITLE_TAG = Regex("""<title>(.*?)</title>""", RegexOption.DOT_MATCHES_ALL)
 
