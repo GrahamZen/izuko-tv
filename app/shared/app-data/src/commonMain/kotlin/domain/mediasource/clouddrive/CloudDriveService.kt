@@ -150,6 +150,8 @@ class CloudDriveService internal constructor(
     )
 
     internal val browser = object : DriveBrowser {
+        override val searchesIndex: Boolean get() = this@CloudDriveService.protocol.searchesLibrary
+
         /**
          * 只取第一页, 文件夹在前 (排序由协议的请求参数决定): 一部番常整个放在一个文件夹里, 而名字相同的单个文件 (各季、字幕、.nfo)
          * 能把第一页占满, 文件在前的话那个文件夹会被挤到后面几页. 没有服务端搜索时在媒体文件夹的索引里找.
