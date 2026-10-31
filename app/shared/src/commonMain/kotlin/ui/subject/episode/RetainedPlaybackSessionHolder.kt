@@ -888,10 +888,11 @@ internal fun statusOf(
         else -> PlaybackSessionStatus.Buffering
     }
 
+    // 排在选择层面的判断前面: 断网时搜不到不算「都没有找到」
+    loading == VideoLoadingState.WaitingForNetwork -> PlaybackSessionStatus.Preparing(PlaybackPreparingStage.WaitingForNetwork)
+
     selection == SelectionProblem.NeedsManualSelection -> PlaybackSessionStatus.NeedsSelection
     selection == SelectionProblem.NoMedia -> PlaybackSessionStatus.NoMedia
-
-    loading == VideoLoadingState.WaitingForNetwork -> PlaybackSessionStatus.Preparing(PlaybackPreparingStage.WaitingForNetwork)
 
     loading == VideoLoadingState.ResolvingSource -> PlaybackSessionStatus.Preparing(
         if (awaitingBtService) PlaybackPreparingStage.StartingBtService else PlaybackPreparingStage.ResolvingSource,
@@ -920,6 +921,7 @@ private fun problemOf(
     loading is VideoLoadingState.Failed && loading != VideoLoadingState.Cancelled ->
         RetainedPlaybackNotice.LoadFailed(loading)
 
+    loading == VideoLoadingState.WaitingForNetwork -> null
     playerState.mediaStatus is MediaStatus.Error -> RetainedPlaybackNotice.PlayerError
     // 已经在播 (地址交给了播放器): 选择层面的问题不成立, 同 statusOf —— 否则后台会弹一句假的「请手动选择数据源」
     loading is VideoLoadingState.Succeed -> null

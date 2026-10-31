@@ -14,6 +14,7 @@ import app.cash.turbine.test
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -152,6 +153,50 @@ class DanmakuLoaderTest {
         }
     }
 
+    @Test
+    fun `a failed remote fetch is fetched again on retry`() = runTest {
+        val remoteResults = MutableSharedFlow<List<DanmakuFetchResult>>()
+        var remoteFetches = 0
+        val loader = createLoader(flowOf(emptyList()), remoteResults, onFetchRemote = { remoteFetches++ })
+
+        loader.fetchResultFlow.test {
+            awaitItem()
+            runCurrent()
+            remoteResults.emit(failedResults())
+            runCurrent()
+            assertEquals(1, remoteFetches)
+
+            // 断网恢复
+            loader.retryFailedFetch()
+            runCurrent()
+            assertEquals(2, remoteFetches)
+
+            remoteResults.emit(listOf(remoteResult()))
+            awaitResultIds(listOf("remote"))
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `a successful remote fetch is not fetched again on retry`() = runTest {
+        val remoteResults = MutableSharedFlow<List<DanmakuFetchResult>>()
+        var remoteFetches = 0
+        val loader = createLoader(flowOf(emptyList()), remoteResults, onFetchRemote = { remoteFetches++ })
+
+        loader.fetchResultFlow.test {
+            awaitItem()
+            runCurrent()
+            remoteResults.emit(listOf(remoteResult()))
+            awaitResultIds(listOf("remote"))
+
+            loader.retryFailedFetch()
+            runCurrent()
+            assertEquals(1, remoteFetches)
+            expectNoEvents()
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
     private fun TestScope.createLoader(
         localResults: Flow<List<DanmakuFetchResult>>,
         remoteResults: Flow<List<DanmakuFetchResult>>,
@@ -226,6 +271,21 @@ class DanmakuLoaderTest {
                 method = DanmakuMatchMethod.ExactId(SUBJECT_ID, EPISODE_ID),
             ),
             list = listOf(danmakuInfo("override", DanmakuServiceId.Animeko)),
+        )
+    }
+
+    private fun failedResults(): List<DanmakuFetchResult> {
+        return listOf(
+            DanmakuFetchResult(
+                providerId = DanmakuProviderId.Dandanplay,
+                matchInfo = DanmakuMatchInfo(
+                    serviceId = DanmakuServiceId.Dandanplay,
+                    count = 0,
+                    method = DanmakuMatchMethod.NoMatch,
+                    fetchFailed = true,
+                ),
+                list = emptyList(),
+            ),
         )
     }
 

@@ -26,6 +26,7 @@ import me.him188.ani.app.domain.media.selector.eventHandling
 import me.him188.ani.app.domain.mediasource.GetPreferredWebMediaSourceUseCase
 import me.him188.ani.app.domain.mediasource.SetPreferredWebMediaSourceUseCase
 import me.him188.ani.app.domain.settings.GetMediaSelectorSettingsFlowUseCase
+import me.him188.ani.app.platform.NetworkStatus
 import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
@@ -42,6 +43,7 @@ class ObserveWebMediaSourcePreferenceExtension(
     private val getPreferredWebMediaSource: GetPreferredWebMediaSourceUseCase by koin.inject()
     private val setPreferredWebMediaSource: SetPreferredWebMediaSourceUseCase by koin.inject()
     private val getMediaSelectorSettings: GetMediaSelectorSettingsFlowUseCase by koin.inject()
+    private val network: NetworkStatus = koin.getOrNull<NetworkStatus>() ?: NetworkStatus.AlwaysAvailable
 
     private val logger = logger<ObserveWebMediaSourcePreferenceExtension>()
 
@@ -82,6 +84,8 @@ class ObserveWebMediaSourcePreferenceExtension(
                         }
                     }
 
+                    var failedWithoutNetwork: MediaSourceFetchState.Failed? = null
+
                     // 监听 Web 源加载失败的情况, 删除偏好.
                     // 条目级查询会话跨集共用, 只有源自身失败 (Failed) 才算; 被中途取消 (Abandoned) 不算.
                     combine(
@@ -96,7 +100,13 @@ class ObserveWebMediaSourcePreferenceExtension(
                     ) { preferredWebMediaSourceId, results ->
                         results.forEach {
                             if (it.mediaSourceId != preferredWebMediaSourceId) return@forEach
-                            if (it.state.value is MediaSourceFetchState.Failed) {
+                            val failed = it.state.value as? MediaSourceFetchState.Failed ?: return@forEach
+                            if (failed === failedWithoutNetwork) return@forEach
+                            // 断网时哪个源都查不了, 不是这个源的问题. 这一次失败只判一次:
+                            // 别的源状态一变这里又会走一遍, 那时网可能已经回来, 就认不出是断网时失败的了
+                            if (network.confirmNetworkDownFor(PlayerLoadError("search failed", failed.cause))) {
+                                failedWithoutNetwork = failed
+                            } else {
                                 logger.info {
                                     "Remove web source preference for subject ${context.subjectId} from ${it.mediaSourceId}. " +
                                             "because source state in this session is ${it.state.value.str()}."

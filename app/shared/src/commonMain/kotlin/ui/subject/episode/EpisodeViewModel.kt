@@ -137,6 +137,7 @@ import me.him188.ani.app.domain.player.extension.MediaFetchAnalyticsExtension
 import me.him188.ani.app.domain.player.extension.ObserveWebMediaSourcePreferenceExtension
 import me.him188.ani.app.domain.player.extension.PlaybackLineageExtension
 import me.him188.ani.app.domain.player.extension.PauseMediaFetchWhilePlayingExtension
+import me.him188.ani.app.domain.player.extension.SearchAfterNetworkOutageExtension
 import me.him188.ani.app.domain.player.extension.pauseSearchingWhilePlaying
 import me.him188.ani.app.domain.player.extension.PlayCacheWithoutSearchingExtension
 import me.him188.ani.app.domain.player.extension.PlaybackSpeedExtension
@@ -157,6 +158,8 @@ import me.him188.ani.app.domain.settings.GetMediaSelectorSettingsUseCase
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.navigation.EpisodeNavigationGuardRegistry
 import me.him188.ani.app.platform.Context
+import me.him188.ani.app.platform.NetworkStatus
+import me.him188.ani.app.platform.onEachRecovery
 import me.him188.ani.app.ui.comment.BangumiCommentSticker
 import me.him188.ani.app.ui.comment.CommentEditorState
 import me.him188.ani.app.ui.comment.CommentMapperContext
@@ -485,6 +488,7 @@ open class EpisodeViewModel(
                 getNextEpisode = { currentEpisodeId -> computeAutoPlayNextEpisodeId(currentEpisodeId) },
             ),
             SwitchMediaOnPlayerErrorExtension,
+            SearchAfterNetworkOutageExtension,
             SeekPreviewDecoderFaultExtension,
             PlaybackFailureReportExtension,
             SourceProfileExtension,
@@ -997,13 +1001,26 @@ open class EpisodeViewModel(
 
 
     private val commentStateRestarter = FlowRestarter()
+
+    @Volatile
+    private var episodeCommentsLoadFailed = false
+
+    /** 断网恢复后把这一页没取到的再取一次, 已经取到的不动; 资源由 [SearchAfterNetworkOutageExtension] 重新搜索. */
+    @OptIn(UnsafeEpisodeSessionApi::class)
+    private suspend fun retryFailedLoadsAfterNetworkOutage(network: NetworkStatus) {
+        network.onEachRecovery {
+            if (fetchPlayState.infoLoadErrorFlow.first() != null) fetchPlayState.restartLoad()
+            episodeDanmakuLoader.retryFailedFetch()
+            if (episodeCommentsLoadFailed) commentStateRestarter.restart()
+        }
+    }
     private val commentLoadFailureChannel = Channel<Throwable>(Channel.BUFFERED)
 
     @OptIn(UnsafeEpisodeSessionApi::class)
     val episodeCommentsPager = episodeIdFlow
         .restartable(commentStateRestarter)
         .flatMapLatest { episodeId ->
-            episodeCommentRepository.subjectEpisodeCommentsPager(episodeId.toLong())
+            episodeCommentRepository.subjectEpisodeCommentsPager(episodeId.toLong()) { failed -> episodeCommentsLoadFailed = failed }
         }.cachedIn(backgroundScope)
 
     @OptIn(UnsafeEpisodeSessionApi::class)
@@ -1512,6 +1529,8 @@ open class EpisodeViewModel(
     }
 
     init {
+        koin.getOrNull<NetworkStatus>()?.let { network -> launchInBackground { retryFailedLoadsAfterNetworkOutage(network) } }
+
         // 正在播的这一集与缓冲余量: 缓存下载据此给播放让路 (见 PlaybackActivity). 播放页销毁时撤掉
         launchInBackground {
             try {

@@ -309,6 +309,13 @@ class EpisodeFetchSelectPlayState(
         playerSession.stopForNetwork()
     }
 
+    /**
+     * @see PlayerExtensionContext.showWaitingForNetwork
+     */
+    fun showWaitingForNetwork(waiting: Boolean) {
+        playerSession.showWaitingForNetwork(waiting)
+    }
+
     private suspend fun EpisodeSession.startSessionScopeTasks() {
         /**
          * Session-scope tasks are non-stopping, and is not aware of app lifecycle.

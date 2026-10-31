@@ -63,7 +63,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
-import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeMark
 import kotlin.time.TimeSource
@@ -127,6 +126,12 @@ class SwitchMediaOnPlayerErrorExtensionTest : AbstractPlayerExtensionTest() {
         PlaybackErrorCode.IO,
         "ExoPlayer playback failed: ERROR_CODE_IO_BAD_HTTP_STATUS (2004): Source error",
         FakeThrowable("Source error", FakeThrowable("Response code: $status")),
+    )
+
+    private fun networkError() = PlaybackException(
+        PlaybackErrorCode.IO,
+        "ExoPlayer playback failed: ERROR_CODE_IO_NETWORK_CONNECTION_FAILED (2001): Source error",
+        FakeThrowable("Source error", FakeThrowable("Failed to connect to example.com")),
     )
 
     private fun TestScope.createCase(): Case {
@@ -259,8 +264,8 @@ class SwitchMediaOnPlayerErrorExtensionTest : AbstractPlayerExtensionTest() {
         val stopsBefore = case.loadingStatesAtStop.size
 
         case.network.lose()
-        case.player.injectError(httpError(500))
-        advanceTimeBy(10.minutes)
+        case.player.injectError(networkError())
+        advanceTimeBy(20.seconds)
         runCurrent()
 
         assertEquals(VideoLoadingState.WaitingForNetwork, case.state.playerSession.videoLoadingState.value)
@@ -282,6 +287,67 @@ class SwitchMediaOnPlayerErrorExtensionTest : AbstractPlayerExtensionTest() {
     }
 
     @Test
+    fun `a wrong report of no network does not wait forever`() = runTest {
+        val case = createCase()
+        loadAndPlay(case)
+        val resolves = case.resolver.resolves
+
+        // 系统一直说没网, 其实是通的
+        case.network.lose()
+        case.player.injectError(networkError())
+        advanceTimeBy(32.seconds)
+        advanceUntilIdle()
+
+        assertEquals(resolves + 1, case.resolver.resolves)
+        assertEquals(0, case.switchAttempts())
+        assertEquals(315_000L, case.player.currentPositionMillis.value)
+        assertTrue(case.player.state.value.isPlaying)
+        case.scope.cancel()
+    }
+
+    @Test
+    fun `a try that fails during a real outage goes back to waiting`() = runTest {
+        val case = createCase()
+        loadAndPlay(case)
+        val resolves = case.resolver.resolves
+
+        case.network.lose()
+        case.resolver.failures += MediaResolutionException(ResolutionFailures.FETCH_TIMEOUT)
+        case.player.injectError(networkError())
+        advanceTimeBy(32.seconds)
+        runCurrent()
+
+        assertEquals(resolves + 1, case.resolver.resolves)
+        assertEquals(VideoLoadingState.WaitingForNetwork, case.state.playerSession.videoLoadingState.value)
+        assertEquals(0, case.switchAttempts())
+
+        case.network.restore()
+        advanceTimeBy(2.seconds)
+        advanceUntilIdle()
+        assertEquals(resolves + 2, case.resolver.resolves)
+        assertEquals(315_000L, case.player.currentPositionMillis.value)
+        assertTrue(case.player.state.value.isPlaying)
+        case.scope.cancel()
+    }
+
+    @Test
+    fun `an http error while the system reports no network resolves the link again without waiting`() = runTest {
+        val case = createCase()
+        loadAndPlay(case)
+        val resolves = case.resolver.resolves
+
+        case.network.lose()
+        case.player.injectError(httpError(401))
+        advanceTimeBy(1.seconds)
+        advanceUntilIdle()
+
+        assertEquals(resolves + 1, case.resolver.resolves)
+        assertEquals(0, case.switchAttempts())
+        assertTrue(case.player.state.value.isPlaying)
+        case.scope.cancel()
+    }
+
+    @Test
     fun `a resolve timeout without network waits and resolves again`() = runTest {
         val case = createCase()
         case.suite.mediaSelectorTestBuilder.delayedMediaSource("source").complete(TestMediaList.take(2))
@@ -290,7 +356,7 @@ class SwitchMediaOnPlayerErrorExtensionTest : AbstractPlayerExtensionTest() {
         case.network.lose()
 
         case.state.mediaSelectorFlow.filterNotNull().first().select(TestMediaList[0])
-        advanceTimeBy(5.minutes)
+        advanceTimeBy(20.seconds)
         runCurrent()
 
         // 解析失败后播放器是停着的, 没有播放器错误撑着: 等网不能被当成「错误消失了」取消
@@ -334,8 +400,8 @@ class SwitchMediaOnPlayerErrorExtensionTest : AbstractPlayerExtensionTest() {
         loadAndPlay(case)
 
         case.network.lose()
-        case.player.injectError(httpError(500))
-        advanceTimeBy(1.minutes)
+        case.player.injectError(networkError())
+        advanceTimeBy(20.seconds)
         runCurrent()
         assertEquals(VideoLoadingState.WaitingForNetwork, case.state.playerSession.videoLoadingState.value)
 

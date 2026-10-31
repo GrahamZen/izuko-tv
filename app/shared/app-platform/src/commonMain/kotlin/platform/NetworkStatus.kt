@@ -9,9 +9,13 @@
 
 package me.him188.ani.app.platform
 
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeMark
 
 /**
@@ -32,3 +36,20 @@ interface NetworkStatus {
 }
 
 expect fun Context.createNetworkStatus(): NetworkStatus
+
+/** 恢复后等一下再取东西: 刚连上时 DNS 可能还没好. */
+val NETWORK_SETTLE: Duration = 1.seconds
+
+/** 每次断网恢复时调 [action] (等 [NETWORK_SETTLE] 之后, 等的时候又断了就接着等). 一直挂着. */
+suspend fun NetworkStatus.onEachRecovery(action: suspend () -> Unit) {
+    var wasDown = false
+    isAvailable.collectLatest { available ->
+        if (!available) {
+            wasDown = true
+        } else if (wasDown) {
+            delay(NETWORK_SETTLE)
+            wasDown = false
+            action()
+        }
+    }
+}

@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.domain.episode.MediaFetchSelectBundle
 import me.him188.ani.app.domain.player.SeekPreviewDecoderFault
 import me.him188.ani.app.domain.player.VideoLoadingState
@@ -21,6 +22,7 @@ import me.him188.ani.app.domain.player.httpErrorStatus
 import me.him188.ani.app.domain.player.isDecoderPreempted
 import me.him188.ani.app.domain.player.isNetworkFailure
 import me.him188.ani.app.domain.player.isNotVideoResponse
+import me.him188.ani.app.platform.NETWORK_SETTLE
 import me.him188.ani.app.platform.NetworkStatus
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.utils.logging.info
@@ -44,7 +46,7 @@ internal enum class PlaybackFailureAction {
     /** 解码器被抢走: 原地重载一次, 不拉黑. */
     RELOAD_DECODER,
 
-    /** 系统没网: 换哪个在线源都一样连不上. 不拉黑、不换源、不限时长, 恢复后原地重新取一次地址. */
+    /** 系统没网: 换哪个在线源都一样连不上. 不拉黑、不换源、不限时长, 恢复后原地重新取一次地址; 等的时候也隔一会试一次, 防系统误报. */
     WAIT_FOR_NETWORK,
 
     /** 播起来过的资源的地址被拒绝了, 多半是签名过期: 原地重新取一次地址, 不拉黑. */
@@ -68,7 +70,7 @@ internal class PlaybackFailureFacts(
 /**
  * 所有「播放失败后怎么办」的判断都在这里. 换源、数据源画像 ([SourceProfileExtension]) 都按它的结论: 只有 [PlaybackFailureAction.SWITCH_SOURCE] 算这条资源的错.
  *
- * 先后有讲究: 等网前面的几种与网络无关; 断网排在链接失效前面, 断网时取不到新地址.
+ * 先后有讲究: 等网前面的几种与网络无关.
  */
 internal fun decidePlaybackFailure(error: PlayerLoadError, facts: PlaybackFailureFacts): PlaybackFailureAction = when {
     error.state == VideoLoadingState.WaitingForNetwork -> PlaybackFailureAction.WAIT_FOR_NETWORK
@@ -88,13 +90,15 @@ private val RECENT_LOSS = 20.seconds
 private val SYSTEM_REPORT_LAG = 1500.milliseconds
 
 /**
+ * 等网时隔这么久不管系统怎么说都试一次: 系统误报没网时不至于一直等下去. 真没网时这一次很快失败, 接着等.
+ */
+private val NETWORK_RECHECK = 30.seconds
+
+/**
  * 拖动预览换输出弄坏了解码器之后, 等这么久再原地重载: 坏掉的硬解要一会儿才缓得过来, 马上重开多半还是坏的.
  * 解码器还没缓过来时重开的也会坏, 认出的那一轮 ([SeekPreviewDecoderFault.FAULT_WINDOW]) 里每次都这样重试, 过了那一轮才换源.
  */
 private val SEEK_PREVIEW_RELOAD_DELAY = 3.seconds
-
-/** 恢复后等一下再取地址: 刚连上时 DNS 可能还没好. */
-private val NETWORK_SETTLE = 1.seconds
 
 /**
  * 同一条资源至少隔这么久才再重新取一次地址. 签名地址的有效期以小时计, 刚取的就被拒绝说明不是过期;
@@ -107,6 +111,9 @@ private val REJECTED_LINK_STATUSES = setOf(401, 403, 404, 410, 412)
 
 /** 地址被服务器拒绝, 或回的不是视频 (站点把过期的地址转到了网页). */
 private fun Throwable.isLinkRejected(): Boolean = httpErrorStatus() in REJECTED_LINK_STATUSES || isNotVideoResponse()
+
+/** 服务器回了 HTTP 错误状态或别的内容, 说明连得上. */
+private fun Throwable.isServerResponse(): Boolean = httpErrorStatus() != null || isNotVideoResponse()
 
 /** 连接层报了网络不可达 (`ENETUNREACH`). 网络好的时候也可能出现: 连 IPv6 地址而这个网络没有 IPv6 路由. */
 private fun Throwable.isNetworkUnreachable(): Boolean {
@@ -126,7 +133,7 @@ private fun PlayerLoadError.isNetworkKind(): Boolean =
     state == VideoLoadingState.ResolutionTimedOut || state == VideoLoadingState.NetworkError || cause?.isNetworkFailure() == true
 
 /**
- * 这次失败看起来是断网造成的: 系统没网, 连接报了网络不可达, 或者刚断过网而这次是网络类失败.
+ * 这次失败看起来是断网造成的: 系统没网, 连接报了网络不可达, 或者刚断过网而这次是网络类失败. 服务器回了话的一律不算.
  * 系统有网时的网络类失败 (解析不出域名、连不上) 多半是那个站点的事, 算这条资源的错.
  *
  * @param handledLoss 已经为它等过网的那次断网, 不再算
@@ -137,10 +144,21 @@ internal fun NetworkStatus.isNetworkDownFor(
     handledLoss: TimeMark? = null,
     trustUnreachable: Boolean = true,
 ): Boolean {
+    // 服务器回了话, 网就是通的: 系统报的状态可能是误报, 不能只听它的
+    if (error.cause?.isServerResponse() == true) return false
     if (!isAvailable.value) return true
     if (trustUnreachable && error.cause?.isNetworkUnreachable() == true) return true
     val lost = lastLostAt ?: return false
     return lost !== handledLoss && error.isNetworkKind() && lost.elapsedNow() <= RECENT_LOSS
+}
+
+/**
+ * 同 [isNetworkDownFor], 用在不急着下结论的地方 (记数据源的失败、忘掉记住的源): 网络类失败先等系统跟上,
+ * 这样断网刚开始、系统还没报的那一下也认得出.
+ */
+internal suspend fun NetworkStatus.confirmNetworkDownFor(error: PlayerLoadError): Boolean {
+    if (isAvailable.value && error.isNetworkKind()) delay(SYSTEM_REPORT_LAG)
+    return isNetworkDownFor(error, trustUnreachable = false)
 }
 
 /**
@@ -208,7 +226,8 @@ internal class PlaybackFailureRecovery(
             PlaybackFailureAction.IGNORE -> true
             PlaybackFailureAction.RELOAD_AFTER_SEEK_PREVIEW -> media != null && reloadAfterSeekPreview(media, error)
             PlaybackFailureAction.RELOAD_DECODER -> media != null && reloadDecoder(media, error)
-            PlaybackFailureAction.WAIT_FOR_NETWORK -> media != null && waitForNetworkAndReload(media, error)
+            // 还没选中资源时重新搜索那边在等 (SearchAfterNetworkOutageExtension), 这时自动选源也选不出什么
+            PlaybackFailureAction.WAIT_FOR_NETWORK -> media == null || waitForNetworkAndReload(media, error)
             PlaybackFailureAction.REFRESH_LINK -> media != null && refreshLink(media, error)
             PlaybackFailureAction.SWITCH_SOURCE -> false
         }
@@ -253,10 +272,10 @@ internal class PlaybackFailureRecovery(
         logger.warn(error.cause) { "Player errored (${error.description}), no network, waiting to resume ${media.mediaId}" }
         val waitStarted = timeSource.markNow()
         context.stopForNetwork()
-        network.isAvailable.first { it }
+        withTimeoutOrNull(NETWORK_RECHECK) { network.isAvailable.first { it } }
         delay(NETWORK_SETTLE)
         handledLoss = network.lastLostAt
-        logger.info { "Network is back after ${waitStarted.elapsedNow()}, resolving ${media.mediaId} again" }
+        logger.info { "Waited ${waitStarted.elapsedNow()} for the network (available=${network.isAvailable.value}), resolving ${media.mediaId} again" }
         return reload(media)
     }
 

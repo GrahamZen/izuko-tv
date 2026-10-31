@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.him188.ani.app.data.models.preference.HlsAdFilteringMode
@@ -278,6 +279,17 @@ class PlayerSession(
     suspend fun stopForNetwork() {
         _videoLoadingStateFlow.value = VideoLoadingState.WaitingForNetwork
         stopPlayback()
+    }
+
+    /** 还没装资源时的等网提示: 只在没东西可显示时换上, 只撤自己换上的. 开始加载 ([loadMedia]) 时也会撤掉. */
+    fun showWaitingForNetwork(waiting: Boolean) {
+        _videoLoadingStateFlow.update { state ->
+            when {
+                waiting && (state == VideoLoadingState.Initial || state == VideoLoadingState.Cancelled) -> VideoLoadingState.WaitingForNetwork
+                !waiting && state == VideoLoadingState.WaitingForNetwork -> VideoLoadingState.Initial
+                else -> state
+            }
+        }
     }
 
     /**
