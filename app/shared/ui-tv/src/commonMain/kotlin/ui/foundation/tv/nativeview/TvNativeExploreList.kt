@@ -472,7 +472,7 @@ class TvNativeExploreList(
                         row.bind(item.cards, { it.toLong() }, rowLeftIndex[item.key] ?: 0, m.columns)
                     } else if (row.cards.items != item.cards) {
                         if (item.cards.size >= row.cards.items.size - TV_NATIVE_CARDS_TAIL_SLACK) {
-                            // 末尾接上新卡、占位或「更多」卡换掉、个别几张换了一部 (续作换成最早一季): 行的位置与持焦的卡不动,
+                            // 末尾接上新卡顶掉占位、个别几张换了一部 (续作换成最早一季): 行的位置与持焦的卡不动,
                             // 只重绑换了的那几张 (卡按下标作键, 见 submitByPosition)
                             row.cards.submitByPosition(item.cards)
                         } else {

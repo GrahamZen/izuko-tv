@@ -39,7 +39,7 @@ enum class TvExploreLayout {
 
 /**
  * TV: 海报墙 (探索 / 追番 / 搜索, 以及新番时间表) 的卡片上按确定做什么. 见 [ThemeSettings.tvPosterConfirm].
- * 播放键、长按 (收藏菜单)、推荐行末的「更多」卡三档都不变.
+ * 播放键、长按 (收藏菜单) 三档都不变.
  */
 @Serializable
 enum class TvPosterConfirmAction {
