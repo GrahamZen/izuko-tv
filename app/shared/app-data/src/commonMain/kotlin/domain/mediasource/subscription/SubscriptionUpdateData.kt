@@ -10,10 +10,13 @@
 package me.him188.ani.app.domain.mediasource.subscription
 
 import kotlinx.serialization.DeserializationStrategy
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.encoding.Decoder
+import me.him188.ani.app.domain.danmaku.server.DanmakuServerEntry
 import me.him188.ani.app.domain.mediasource.codec.ExportedMediaSourceData
 
 /**
@@ -26,6 +29,7 @@ import me.him188.ani.app.domain.mediasource.codec.ExportedMediaSourceData
  *
  * @see MediaSourceSubscription
  */
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class SubscriptionUpdateData(
     val schemaVersion: Int = CURRENT_SCHEMA_VERSION,
@@ -37,6 +41,11 @@ data class SubscriptionUpdateData(
     val websiteUrl: String? = null,
     val iconUrl: String? = null,
     val mediaSources: List<ExportedMediaSourceData>,
+    /**
+     * 订阅带的弹幕服务器, 可以没有. 导出数据源时不写这个字段.
+     */
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val danmakuServers: List<DanmakuServerEntry> = emptyList(),
 ) {
     val metadata: SubscriptionMetadata
         get() = SubscriptionMetadata(name, description, websiteUrl, iconUrl)
@@ -65,6 +74,8 @@ class UnsupportedSubscriptionSchemaException(
  * 读取 [SubscriptionUpdateData], 同时接受以下旧格式:
  * - 订阅文件 `{"exportedMediaSourceDataList": {"mediaSources": [...]}}`
  * - 导出的数据源 `{"mediaSources": [...]}`
+ *
+ * 只带 `danmakuServers` 没有数据源的订阅也可以.
  */
 object SubscriptionUpdateDataReader : DeserializationStrategy<SubscriptionUpdateData> {
     override val descriptor: SerialDescriptor get() = AnyVersion.serializer().descriptor
@@ -79,6 +90,7 @@ object SubscriptionUpdateDataReader : DeserializationStrategy<SubscriptionUpdate
         }
         val mediaSources = data.mediaSources
             ?: data.exportedMediaSourceDataList?.mediaSources
+            ?: emptyList<ExportedMediaSourceData>().takeIf { data.danmakuServers.isNotEmpty() }
             ?: throw SerializationException("Subscription has no mediaSources")
         return SubscriptionUpdateData(
             name = data.name,
@@ -86,6 +98,7 @@ object SubscriptionUpdateDataReader : DeserializationStrategy<SubscriptionUpdate
             websiteUrl = data.websiteUrl,
             iconUrl = data.iconUrl,
             mediaSources = mediaSources,
+            danmakuServers = data.danmakuServers,
         )
     }
 
@@ -98,6 +111,7 @@ object SubscriptionUpdateDataReader : DeserializationStrategy<SubscriptionUpdate
         val iconUrl: String? = null,
         val mediaSources: List<ExportedMediaSourceData>? = null,
         val exportedMediaSourceDataList: LegacyMediaSourceList? = null,
+        val danmakuServers: List<DanmakuServerEntry> = emptyList(),
     )
 
     @Serializable

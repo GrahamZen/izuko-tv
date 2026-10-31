@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.flow.retry
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -56,7 +57,6 @@ import me.him188.ani.utils.logging.warn
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.coroutines.cancellation.CancellationException
-import kotlin.time.Duration.Companion.seconds
 
 /**
  * 这一集还没匹配到 dandanplay 的弹幕库, 发不了弹幕 (见 [DanmakuRepository.post]): 弹幕加载出来 (或手动匹配) 之后才知道发到哪个库.
@@ -76,6 +76,7 @@ class DanmakuRepository(
     private val settingsRepository: SettingsRepository,
     /** 条目对应的 AniDB 条目编号 (bgm-tmdb 对应表的 anidb 列), 见 [DanmakuFetchRequest.anidbId]. */
     private val anidbIdOf: suspend (subjectId: Int) -> Int? = { null },
+    private val extraProviders: DanmakuExtraProviders? = null,
 ) : HasBackgroundScope by BackgroundScope(parentCoroutineContext) {
 
     private val localProvider = LocalDanmakuProvider(danmakuDao)
@@ -115,8 +116,8 @@ class DanmakuRepository(
     val selfId: Flow<String?> get() = flowOf(null)
 
     fun getInteractiveDanmakuFetcherOrNull(providerId: DanmakuProviderId): DanmakuFetcher? {
-        return remoteProviders
-            .firstOrNull { it is MatchingDanmakuProvider && it.providerId == providerId }
+        return (remoteProviders.firstOrNull { it is MatchingDanmakuProvider && it.providerId == providerId }
+            ?: extraProviders?.matchingOrNull(providerId))
             ?.let { DanmakuFetcher(it) }
     }
 
@@ -131,15 +132,13 @@ class DanmakuRepository(
     fun fetchFromAllRemotes(request: DanmakuFetchRequest): Flow<List<DanmakuFetchResult>> {
         return flow {
             val request = request.withAnidbId(anidbIdOf(request.subjectId))
-            val fetchers = remoteProviders.map { DanmakuFetcher(it) }
-            val results = fetchers.map { fetcher ->
-                fetcher.fetch(request)
+            val fetchers = (remoteProviders + extraProviders?.all().orEmpty()).map { DanmakuFetcher(it) }
+            fetchAllConcurrently(fetchers, request).collect { flattened ->
+                // 记下这一集对应的弹幕库 id, 发弹幕要用 (见 dandanplayEpisodeIds)
+                flattened.firstNotNullOfOrNull { it.matchInfo.sourceEpisodeId }
+                    ?.let { dandanplayEpisodeIds[request.episodeId] = it }
+                emit(flattened)
             }
-            val flattened = results.flatten()
-            // 记下这一集对应的弹幕库 id, 发弹幕要用 (见 dandanplayEpisodeIds)
-            flattened.firstNotNullOfOrNull { it.matchInfo.sourceEpisodeId }
-                ?.let { dandanplayEpisodeIds[request.episodeId] = it }
-            emit(flattened)
         }
     }
 
@@ -153,7 +152,7 @@ class DanmakuRepository(
     fun cacheDanmakuIfNeeded(request: DanmakuFetchRequest) = backgroundScope.launch {
         if (shouldCache(request.subjectId, request.episodeId)) {
             val remotes = fetchFromAllRemotes(request)
-            saveToLocal(request.subjectId, request.episodeId, remotes.first())
+            saveToLocal(request.subjectId, request.episodeId, remotes.last())
         }
     }
 
@@ -175,7 +174,7 @@ class DanmakuRepository(
         episodeId: Int,
         list: List<DanmakuFetchResult>
     ) {
-        val entriesWithoutLocalSource = list
+        val entriesWithoutLocalSource = list.withoutImported()
             .filter { it.providerId != DanmakuProviderId.Local }
             .flatMap { it.toEntityList(subjectId, episodeId) }
         logger.info { "saveToLocal, subjectId: $subjectId, episodeId: $episodeId, danmaku size: ${entriesWithoutLocalSource.size}" }
@@ -273,7 +272,7 @@ class DanmakuFetcher(
     ): List<DanmakuFetchResult> {
         return flow {
             emit(
-                withTimeout(60.seconds) {
+                withTimeout(provider.fetchTimeout) {
                     when (provider) {
                         is MatchingDanmakuProvider -> {
                             provider.fetchAutomatic(request)
