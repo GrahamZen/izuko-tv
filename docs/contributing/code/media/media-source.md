@@ -67,6 +67,10 @@ interface MediaSource {
 这类网盘由用户在 Web 控制台添加（`WebDavSources`，默认层级 T0），协议里只有名字、地址与媒体文件夹，账号密码不随数据源导出。
 没有服务端搜索时（WebDAV，或指定了媒体文件夹的接口网盘，见 `searchesLibrary`），`cloud-drive` 在媒体文件夹的索引
 （`DriveLibraryIndex`：往下列 `library.depth` 层，用 `refreshMinutes` 后后台重建）里按名字找番，之后与搜索结果一样往下展开、认季认集。
+索引里比名字不发请求（`DriveSubjectMatcher.matchInIndex`）：条目的名字全部都比；认出的还没有这一集或没覆盖已播出的每一集时接着比回退关键词，它们只补名字没认出的集；
+命中的文件夹里点名这一部的先展开。
+用户指定的文件夹不按名字认部，只去掉写着别的标题的视频（`withoutOtherTitles`）：里面有写着这一部的时，写着别的标题的不要，没写标题的留着；
+文件夹本身写着这一部、或里面一个写着这一部的都没有时全留。
 WebDAV 列目录不给画面高度与时长：`cloud-drive` 给出候选前读候选视频的文件头（`DriveVideoInfoProbe`，mkv / mp4，经 `MediaStreamProbe`）
 补上，才标得对分辨率、显示得出码率；结果按文件记在账号里只读一次。只等当前这一集的（最多 1 秒），其余各集在后台读；
 条目级查询切集不再查，后来才读到的由 `DriveVideoInfoRefresh` 记下，切集复用查询时让这个源重查一次。

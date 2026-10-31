@@ -59,9 +59,7 @@ import me.him188.ani.app.domain.mediasource.search.TitleIdentities
 import me.him188.ani.app.domain.mediasource.search.TitleIdentity
 import me.him188.ani.app.domain.player.diagnostics.PlayTimeline
 import me.him188.ani.app.platform.DevSwitches
-import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.Media
-import me.him188.ani.datasources.api.PackedDate
 import me.him188.ani.datasources.api.paging.SinglePagePagedSource
 import me.him188.ani.datasources.api.paging.SizedSource
 import me.him188.ani.datasources.api.source.ConnectionStatus
@@ -500,16 +498,8 @@ internal class DriveShareSearchEngine(
         }
     }
 
-    /**
-     * [matches] 覆盖了条目已播出的每一集正片 (sort 或 ep 对得上). 播出日期在今天以后的不算: 连载中的番还没播的集哪儿都搜不到,
-     * 算上它们就永远覆盖不全, 每次都把扩大搜索全搜一遍. 不知道播出日期的照算.
-     */
-    private fun coversAllEpisodes(matches: List<DriveShareMatch>, request: MediaFetchRequest): Boolean {
-        val episodes = matches.mapTo(HashSet()) { it.episode }
-        val today = PackedDate.now()
-        return request.episodes.filter { it.sort is EpisodeSort.Normal && (!it.airDate.isValid || it.airDate <= today) }
-            .all { it.sort in episodes || it.ep in episodes }
-    }
+    private fun coversAllEpisodes(matches: List<DriveShareMatch>, request: MediaFetchRequest): Boolean =
+        request.coversAiredEpisodes(matches.mapTo(HashSet()) { it.episode })
 
     /**
      * 播放线索里的分享文件夹 [location] 对得上的剧集 (认季的规则与名字同搜到时). 分享失效 (取消、违规)、
