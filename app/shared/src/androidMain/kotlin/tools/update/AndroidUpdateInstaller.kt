@@ -64,7 +64,7 @@ class AndroidUpdateInstaller(
 
 
     // Function to install APK
-    private fun installApk(
+    fun installApk(
         context: Context,
         file: File,
     ) {

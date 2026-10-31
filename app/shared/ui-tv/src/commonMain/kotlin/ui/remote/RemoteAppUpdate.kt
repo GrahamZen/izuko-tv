@@ -11,6 +11,7 @@ package me.him188.ani.app.ui.remote
 
 import android.annotation.SuppressLint
 import android.app.PendingIntent
+import android.content.ActivityNotFoundException
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -41,6 +42,7 @@ import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.foundation.HttpClientProvider
 import me.him188.ani.app.domain.foundation.get
 import me.him188.ani.app.domain.update.UpdateManager
+import me.him188.ani.app.tools.update.AndroidUpdateInstaller
 import me.him188.ani.app.tools.update.DefaultFileDownloader
 import me.him188.ani.app.tools.update.DownloadPackage
 import me.him188.ani.app.tools.update.SourceOutcome
@@ -126,6 +128,10 @@ internal object RemoteAppUpdate {
 
     @Volatile
     private var sessionId = -1
+
+    /** 当前安装会话装的那个文件, 确认界面打不开时拿它走系统安装界面 (见 [openSystemInstaller]) */
+    @Volatile
+    private var sessionFile: File? = null
 
     /** 等 Izuko 回到前台再拉起的安装确认界面 */
     @Volatile
@@ -808,6 +814,7 @@ internal object RemoteAppUpdate {
             return
         }
         sessionId = id
+        sessionFile = file
         try {
             installer.openSession(id).use { session ->
                 val total = file.length()
@@ -909,12 +916,27 @@ internal object RemoteAppUpdate {
     private fun launchConfirm(ctx: Context, confirm: Intent) {
         pendingConfirm = null
         try {
-            ctx.startActivity(confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            try {
+                ctx.startActivity(confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            } catch (e: ActivityNotFoundException) {
+                logger.warn(e) { "Remote install: no confirmation screen on this TV, opening the package in the system installer" }
+                openSystemInstaller(ctx)
+            }
             setState(state.copy(phase = Phase.CONFIRM, progress = null))
         } catch (e: Exception) {
             logger.warn(e) { "Remote install: cannot open the confirmation" }
             fail(tr("打不开安装确认界面：{0}", systemErrorText(e)))
         }
+    }
+
+    /**
+     * 有的电视换掉了系统安装器, 会话的确认界面没有人接 (小米 MiTV-MFFU0, Android 14), 而打开安装包这条路还在 (电视自己的更新卡片走的就是它):
+     * 作废会话, 把文件交给系统安装界面. 这条路拿不到结果: 装自己时下次启动照常核对 ([checkPendingResult]), 装别的包就停在「请在电视上确认」.
+     */
+    private fun openSystemInstaller(ctx: Context) {
+        val file = checkNotNull(sessionFile) { "No package for the install session" }
+        abandonSession(ctx)
+        AndroidUpdateInstaller(ctx).installApk(ctx, file)
     }
 
     private fun failureText(status: Int, message: String?): String {
