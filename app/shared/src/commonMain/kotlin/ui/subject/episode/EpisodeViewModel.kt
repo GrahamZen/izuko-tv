@@ -74,6 +74,7 @@ import me.him188.ani.app.data.models.preference.VideoEnhancementDefaultMode
 import me.him188.ani.app.data.models.preference.VideoScaffoldConfig
 import me.him188.ani.app.data.models.preference.effectiveFullSearchMode
 import me.him188.ani.app.data.models.preference.parseMpvOptions
+import me.him188.ani.app.data.models.preference.withinPlaybackSpeedCap
 import me.him188.ani.app.data.models.subject.SubjectInfo
 import me.him188.ani.app.data.models.subject.SubjectProgressInfo
 import me.him188.ani.app.data.models.subject.nameCnOrName
@@ -455,7 +456,7 @@ open class EpisodeViewModel(
         settingsRepository.videoScaffoldConfig.flow,
         playbackSpeedOverride,
     ) { config, override ->
-        override ?: config.playbackSpeed
+        override ?: config.withinPlaybackSpeedCap().playbackSpeed
     }.distinctUntilChanged()
 
     /** 选源面板开着: 「打开选源面板时」那档开着期间搜索一直查完, 不因开播而暂停 (见 [PauseMediaFetchWhilePlayingExtension]). */
@@ -701,7 +702,7 @@ open class EpisodeViewModel(
     ).videoStatisticsFlow
 
     val videoScaffoldConfig: VideoScaffoldConfig by settingsRepository.videoScaffoldConfig
-        .flow.produceState(VideoScaffoldConfig.Default)
+        .flow.map { it.withinPlaybackSpeedCap() }.produceState(VideoScaffoldConfig.Default.withinPlaybackSpeedCap())
 
     /** 当前生效的用户倍速范围. */
     val playbackSpeedRange: ClosedFloatingPointRange<Float>

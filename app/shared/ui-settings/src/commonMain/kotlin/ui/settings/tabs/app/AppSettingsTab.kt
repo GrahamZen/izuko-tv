@@ -53,6 +53,8 @@ import me.him188.ani.app.data.models.preference.UISettings
 import me.him188.ani.app.data.models.preference.UpdateSettings
 import me.him188.ani.app.data.models.preference.VideoScaffoldConfig
 import me.him188.ani.app.data.models.preference.VideoEnhancementDefaultMode
+import me.him188.ani.app.data.models.preference.platformMaxPlaybackSpeed
+import me.him188.ani.app.data.models.preference.withinPlaybackSpeedCap
 import me.him188.ani.app.data.network.protocol.ReleaseClass
 import me.him188.ani.app.navigation.MainScreenPage
 import me.him188.ani.app.navigation.getIcon
@@ -968,7 +970,7 @@ fun SettingsScope.PlayerGroup(
             SeekPreviewDisplayItem(config, videoScaffoldConfig)
         }
         HorizontalDividerItem()
-        PlaybackSpeedItems(config, videoScaffoldConfig)
+        PlaybackSpeedItems(config.withinPlaybackSpeedCap(), videoScaffoldConfig)
         PlayerGroupPlatform(videoScaffoldConfig, playerKernelConfig)
         // 「后台就绪提示音」与上面那条"保留播放状态"是同一个功能的两个参数: 没有回到会话的入口就
         // 不会有后台提示, 这条也就无从谈起. 所以用同一个门控.
@@ -1112,7 +1114,7 @@ private fun SettingsScope.PlaybackSpeedItems(
     val persistedRange = if (rangeConfigurable) {
         config.minPlaybackSpeed..config.maxPlaybackSpeed
     } else {
-        VideoScaffoldConfig.MIN_SUPPORTED_PLAYBACK_SPEED..VideoScaffoldConfig.MAX_SUPPORTED_PLAYBACK_SPEED
+        VideoScaffoldConfig.MIN_SUPPORTED_PLAYBACK_SPEED..platformMaxPlaybackSpeed
     }
 
     // 范围拖动期间的瞬态值, 提交后清空; 拖动期间下方长按倍速 Slider 实时使用该范围
@@ -1140,8 +1142,9 @@ private fun SettingsScope.PlaybackSpeedItems(
                 rangeDragOverride = committedConfig.minPlaybackSpeed..committedConfig.maxPlaybackSpeed
                 videoScaffoldConfig.update(committedConfig)
             },
-            valueRange = VideoScaffoldConfig.MIN_SUPPORTED_PLAYBACK_SPEED..VideoScaffoldConfig.MAX_SUPPORTED_PLAYBACK_SPEED,
-            steps = 14,
+            valueRange = VideoScaffoldConfig.MIN_SUPPORTED_PLAYBACK_SPEED..platformMaxPlaybackSpeed,
+            steps = ((platformMaxPlaybackSpeed - VideoScaffoldConfig.MIN_SUPPORTED_PLAYBACK_SPEED) /
+                VideoScaffoldConfig.MIN_PLAYBACK_SPEED_RANGE_WIDTH).roundToInt() - 1,
             valueIndicator = { Text(it.formatSpeedValue()) },
             valueLabel = {
                 Text("${effectiveRange.start.formatSpeedValue()}x–${effectiveRange.endInclusive.formatSpeedValue()}x")
@@ -1218,7 +1221,7 @@ private fun SettingsScope.StartPlaybackSpeedItem(
     config: VideoScaffoldConfig,
     videoScaffoldConfig: SettingsState<VideoScaffoldConfig>,
 ) {
-    val range = VideoScaffoldConfig.MIN_SUPPORTED_PLAYBACK_SPEED..VideoScaffoldConfig.MAX_SUPPORTED_PLAYBACK_SPEED
+    val range = VideoScaffoldConfig.MIN_SUPPORTED_PLAYBACK_SPEED..platformMaxPlaybackSpeed
     val speedStops = ((range.endInclusive - range.start) / SLIDER_VALUE_STEP).roundToInt() + 1
     val speed = quantizeSliderValue(config.playbackSpeed, range)
     val stop = if (config.rememberPlaybackSpeed) 0 else ((speed - range.start) / SLIDER_VALUE_STEP).roundToInt() + 1
