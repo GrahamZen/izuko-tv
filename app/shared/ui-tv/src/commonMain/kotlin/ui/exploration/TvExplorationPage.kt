@@ -39,6 +39,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource
 import androidx.compose.ui.Alignment
@@ -636,15 +637,24 @@ private fun TvExplorationPageContent(
         }
     }
 
-    // 自动接下一批 (同分页的预取): 焦点走到离这一组末尾不到一屏, 就让这一组往后接 (见 RecommendationRepository.extendGroup; 同一组正在接时不重复发),
+    // 自动接下一批 (同分页的预取, 见 RecommendationRepository.extendGroup; 同一组正在接时不重复发): 焦点离这一组末尾不到
+    // TV_REC_AUTO_LOAD_LEAD_SCREENS 屏就接 —— 一批 12 张是两屏, 往右走着时始终多备一批, 行尾占位进屏前新卡已经到了 (索尼上算一批 0.1~0.33 秒,
+    // 按住往右一屏约 0.3 秒). 刚从上下移进这一行、还没左右走时先停 TV_REC_AUTO_LOAD_ENTER_DELAY 再接, 上下连走穿过的行不接.
     // 按着方向键也接 —— 取数在后台, 页面上什么都不动. 接到了还没放上去的, 不再接下一批
     val currentRecRows by rememberUpdatedState(recRows)
     LaunchedEffect(recRows, wallColumns) {
-        snapshotFlow { focusedRowKey to focusedCardIndex }.collect { (rowKey, cardIndex) ->
-            val recRow = rowKey?.removePrefix(TV_REC_ROW_KEY_PREFIX)?.toIntOrNull() ?: return@collect
-            val row = recRows.getOrNull(recRow) ?: return@collect
+        var enteredRow: String? = null
+        var enteredAt = 0
+        snapshotFlow { focusedRowKey to focusedCardIndex }.collectLatest { (rowKey, cardIndex) ->
+            if (rowKey != enteredRow) {
+                enteredRow = rowKey
+                enteredAt = cardIndex
+            }
+            val recRow = rowKey?.removePrefix(TV_REC_ROW_KEY_PREFIX)?.toIntOrNull() ?: return@collectLatest
+            val row = recRows.getOrNull(recRow) ?: return@collectLatest
             val lastRowOfGroup = recRows.getOrNull(recRow + 1)?.group !== row.group
-            if (!row.group.extendable || !lastRowOfGroup || cardIndex < row.size - wallColumns.coerceAtLeast(1)) return@collect
+            if (!row.group.extendable || !lastRowOfGroup || !tvRecAutoLoadDue(cardIndex, row.size, wallColumns)) return@collectLatest
+            if (cardIndex == enteredAt) delay(TV_REC_AUTO_LOAD_ENTER_DELAY)
             val pending = state.recommendationGroups.value.firstOrNull { it.key == row.group.key }?.items?.size != row.group.items.size
             if (!pending) state.extendRecommendationGroup(row.group.key)
         }
@@ -669,13 +679,14 @@ private fun TvExplorationPageContent(
     val shuffleRequestedAt = remember { mutableStateOf<TimeSource.Monotonic.ValueTimeMark?>(null) }
     var recRowsRestart by remember { mutableStateOf<TvRecRowsRestart?>(null) }
     // 推荐变了 (接上新卡、续作换成最早一季、重算) 等停稳 (方向键松开、列表不滚) 再放上去: 正翻着时换数据要重组整页、改那一行, 就是一帧卡顿.
-    // 焦点已经顶到行尾占位上时这一行也不动, 当场放 —— 一直按着往右的人接着翻进新卡. 流在这里收、不在页面里读, 一次变化只让页面重组一次
+    // 焦点离这一行末尾不到一屏 (再走一格行尾占位就进屏) 时当场放: 新卡接在屏外, 行的位置与持焦的卡不动, 一直按着往右的人看不到占位、接着翻进新卡.
+    // 流在这里收、不在页面里读, 一次变化只让页面重组一次
     LaunchedEffect(state.recommendationGroups) {
         state.recommendationGroups.collectLatest { live ->
             if (live !== recGroups) {
                 snapshotFlow {
                     val row = focusedRowKey?.removePrefix(TV_REC_ROW_KEY_PREFIX)?.toIntOrNull()?.let { currentRecRows.getOrNull(it) }
-                    !wallNavigating() || (row != null && focusedCardIndex >= row.size)
+                    !wallNavigating() || (row != null && tvRecTailNear(focusedCardIndex, row.size, wallColumns))
                 }.first { it }
             }
             val previousBatch = recGroups.firstOrNull()?.computedAt
@@ -1482,6 +1493,23 @@ internal fun tvRecRowKey(recRow: Int) = "$TV_REC_ROW_KEY_PREFIX$recRow"
 
 /** 按了换一批之后多久内到的新一批还让推荐行从头看起 (见 TvPageShuffleHandler 那段); 再晚到的照常原地换. */
 private val TV_REC_SHUFFLE_RESTART_WINDOW = 60.seconds
+
+/** 焦点离一组末尾不到这么多屏就往后接 (见自动接下一批那段): 一批两屏, 三屏 = 往右走着时始终多备一批. */
+private const val TV_REC_AUTO_LOAD_LEAD_SCREENS = 3
+
+/** 焦点在一组最后一行的第 [cardIndex] 张 (这一行 [rowSize] 张, 一屏 [columns] 列) 时该往后接了: 离末尾不到 [TV_REC_AUTO_LOAD_LEAD_SCREENS] 屏. */
+internal fun tvRecAutoLoadDue(cardIndex: Int, rowSize: Int, columns: Int): Boolean =
+    cardIndex >= rowSize - TV_REC_AUTO_LOAD_LEAD_SCREENS * columns.coerceAtLeast(1)
+
+/**
+ * 焦点离这一行末尾不到一屏, 再走一格行尾占位 (下标 [rowSize]) 就进屏: 屏上最右到焦点右边 [columns] 张那一格 (固定焦点露出的半张;
+ * 海报墙样式焦点不在最左, 露得更少). 新接的卡这时按着方向键也当场放.
+ */
+internal fun tvRecTailNear(cardIndex: Int, rowSize: Int, columns: Int): Boolean =
+    cardIndex >= rowSize - columns.coerceAtLeast(1) - 1
+
+/** 刚从上下移进一行、还没左右走时等这么久再往后接: 上下连走穿过的行不接. */
+private val TV_REC_AUTO_LOAD_ENTER_DELAY = 300.milliseconds
 
 // ---------------------------------------------------------------------------
 // 几何常量: 页面按这些算好原生海报墙的尺寸 (见 TvNativeExploreMetrics)
