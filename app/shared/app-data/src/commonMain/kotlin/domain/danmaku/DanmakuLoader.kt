@@ -117,21 +117,28 @@ class DanmakuLoaderImpl internal constructor(
                 val fetchRequest = request.toFetchRequest()
                 var localResult: List<DanmakuFetchResult>? = null
                 var remoteCanReplaceLocal = false
+                var latestRemote = emptyList<DanmakuFetchResult>()
                 launch(start = CoroutineStart.ATOMIC) {
                     val result = fetchFromLocal(fetchRequest).first()
                     localResult = result
                     if (!remoteCanReplaceLocal && result.hasDisplayableDanmakus()) {
-                        emit(result)
+                        emit(result + latestRemote.importedOnly())
                         danmakuLoadingStateFlow.value = DanmakuLoadingState.Success
                     }
                 }
                 launch {
-                    val result = fetchFromAllRemotes(fetchRequest).first()
-                    remoteFetchFailed = result.any { it.matchInfo.fetchFailed }
-                    danmakuLoadingStateFlow.value = DanmakuLoadingState.Success
-                    remoteCanReplaceLocal = result.canReplaceLocalCache()
-                    if (remoteCanReplaceLocal || !localResult.hasDisplayableDanmakus()) {
-                        emit(result)
+                    // 各来源回来一个发一次, 结果是累积的
+                    fetchFromAllRemotes(fetchRequest).collect { result ->
+                        danmakuLoadingStateFlow.value = DanmakuLoadingState.Success
+                        latestRemote = result
+                        remoteFetchFailed = result.any { it.matchInfo.fetchFailed }
+                        remoteCanReplaceLocal = result.withoutImported().canReplaceLocalCache()
+                        if (remoteCanReplaceLocal || !localResult.hasDisplayableDanmakus()) {
+                            emit(result)
+                        } else if (result.importedOnly().isNotEmpty()) {
+                            // 本地缓存还留着, 导入的弹幕也要显示
+                            emit(localResult.orEmpty() + result.importedOnly())
+                        }
                     }
                 }
             }

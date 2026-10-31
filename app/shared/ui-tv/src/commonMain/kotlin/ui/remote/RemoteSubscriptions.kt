@@ -26,6 +26,8 @@ import kotlinx.serialization.json.putJsonArray
 import me.him188.ani.app.data.models.ApiFailure
 import me.him188.ani.app.data.repository.media.MediaSourceSubscriptionRepository
 import me.him188.ani.app.data.repository.user.SettingsRepository
+import me.him188.ani.app.domain.danmaku.server.SavedDanmakuServers
+import me.him188.ani.app.domain.danmaku.server.mergeDanmakuServers
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
 import me.him188.ani.app.domain.mediasource.subscription.MediaSourceSubscription
 import me.him188.ani.app.domain.mediasource.subscription.MediaSourceSubscriptionUpdater
@@ -116,7 +118,18 @@ internal object RemoteSubscriptions {
                             put("status", tr("{0} 更新失败：{1}", timeText(last.timeMillis), errorText(last.error)))
                         }
 
-                        else -> put("status", tr("{0} 更新成功，包含 {1} 个数据源", timeText(last.timeMillis), last.mediaSourceCount))
+                        else -> {
+                            // 只数用得上的: 地址不对、格式不认识的条目不算
+                            val danmakuServers = mergeDanmakuServers(SavedDanmakuServers(), listOf(sub)).size
+                            put(
+                                "status",
+                                if (danmakuServers > 0) {
+                                    tr("{0} 更新成功，包含 {1} 个数据源、{2} 台弹幕服务器", timeText(last.timeMillis), last.mediaSourceCount, danmakuServers)
+                                } else {
+                                    tr("{0} 更新成功，包含 {1} 个数据源", timeText(last.timeMillis), last.mediaSourceCount)
+                                },
+                            )
+                        }
                     }
                 }
             }
