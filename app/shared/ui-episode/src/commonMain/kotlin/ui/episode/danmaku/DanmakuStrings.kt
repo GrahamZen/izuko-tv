@@ -17,8 +17,10 @@ import me.him188.ani.app.ui.lang.subject_episode_danmaku_match_none
 import me.him188.ani.app.ui.lang.subject_episode_danmaku_match_semi_fuzzy
 import me.him188.ani.app.ui.lang.subject_episode_danmaku_service_bilibili
 import me.him188.ani.app.ui.lang.subject_episode_danmaku_service_dandanplay
+import me.him188.ani.app.ui.lang.subject_episode_danmaku_service_imported
 import me.him188.ani.danmaku.api.DanmakuServiceId
 import me.him188.ani.danmaku.api.provider.DanmakuMatchMethod
+import me.him188.ani.danmaku.api.provider.Imported
 import org.jetbrains.compose.resources.stringResource
 
 @Composable
@@ -29,8 +31,9 @@ fun renderDanmakuServiceId(serviceId: DanmakuServiceId): String = when (serviceI
     DanmakuServiceId.Bilibili -> stringResource(Lang.subject_episode_danmaku_service_bilibili)
     DanmakuServiceId.Dandanplay -> stringResource(Lang.subject_episode_danmaku_service_dandanplay)
     DanmakuServiceId.Tucao -> "Tucao"
+    DanmakuServiceId.Imported -> stringResource(Lang.subject_episode_danmaku_service_imported)
 
-    // `else` should not reach in production
+    // 弹幕服务器: 来源 id 就是服务器名
     else -> serviceId.value
 }
 

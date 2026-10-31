@@ -815,9 +815,10 @@ object TvRemoteControl {
         }
         fun create(port: Int) = LanHttpServer(
             ::handle, port = port, token = token,
-            // 放宽请求体上限的只有上传安装包的分块、导入设置备份与反馈的照片三处
+            // 放宽请求体上限的只有上传安装包的分块、导入设置备份、反馈的照片与导入弹幕文件这几处
             maxBodyBytes = { path ->
-                RemoteSettingsBackup.maxBodyBytes(path) ?: RemoteFeedback.maxBodyBytes(path) ?: RemoteAppUpdate.maxBodyBytes(path)
+                RemoteSettingsBackup.maxBodyBytes(path) ?: RemoteFeedback.maxBodyBytes(path) ?: RemoteDanmaku.maxBodyBytes(path)
+                    ?: RemoteAppUpdate.maxBodyBytes(path)
             },
             // 手机授权完经 Worker 跳回来的那一跳带不了 token, 见 RemoteAccount.relayReturn
             publicHandlers = mapOf(BangumiOAuthRelay.RETURN_PATH to RemoteAccount::relayReturn),
@@ -949,6 +950,9 @@ object TvRemoteControl {
                 json(player?.let { RemotePlayerExtras.handle(it, request) } ?: result(false, tr("电视当前不在播放页")))
             // 不依赖播放页的收藏状态 (手机搜索结果左滑「收藏」), 见 RemotePlayerExtras.subjectCollection
             path == "api/subject/collection" -> json(RemotePlayerExtras.subjectCollection(request))
+            // 弹幕服务器与导入弹幕, 见 RemoteDanmaku
+            path.startsWith("api/danmaku/") ->
+                RemoteDanmaku.handle(player, request)?.let(::json) ?: LanHttpResponse.status(405, "Method Not Allowed")
             // 缓存 (选集 / 挑资源 / 自动批量), 见 RemoteCache
             path == "api/cache" || path.startsWith("api/cache/") ->
                 RemoteCache.handle(request)?.let(::json) ?: LanHttpResponse.status(405, "Method Not Allowed")

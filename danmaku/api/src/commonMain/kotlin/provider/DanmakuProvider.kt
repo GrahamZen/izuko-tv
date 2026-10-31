@@ -14,6 +14,7 @@ import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.PackedDate
 import kotlin.jvm.JvmInline
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * 弹幕查询器
@@ -31,6 +32,9 @@ sealed interface DanmakuProvider {
      * 但是当该 [DanmakuProvider] 查询没有任何结果时, UI 必须显示该来源无结果, 届时会使用此 id.
      */
     val mainServiceId: DanmakuServiceId
+
+    /** 一次 [fetchAutomatic] 最多等多久. 弹幕服务器可能要现抓现导入, 比弹弹 play 慢得多. */
+    val fetchTimeout: Duration get() = 60.seconds
 
     suspend fun fetchAutomatic(
         request: DanmakuFetchRequest,

@@ -27,6 +27,11 @@ data class DanmakuSettings(
      */
     val sendLocation: DanmakuLocation = DanmakuLocation.NORMAL,
 
+    /**
+     * 播放器里关掉的弹幕源 (`DanmakuServiceId` 的值), 和弹幕总开关一样换番记住. 见 `rememberSourceSwitches`.
+     */
+    val disabledServices: Set<String> = emptySet(),
+
     @Suppress("PropertyName")
     @Transient val _placeholder: Int = 0,
 ) {

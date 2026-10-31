@@ -89,6 +89,7 @@ import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.comment.PostCommentUseCase
 import me.him188.ani.app.domain.danmaku.DanmakuRepository
 import me.him188.ani.app.domain.danmaku.SetDanmakuEnabledUseCase
+import me.him188.ani.app.domain.danmaku.rememberSourceSwitches
 import me.him188.ani.app.domain.episode.EpisodeCompletionContext.isKnownOnAir
 import me.him188.ani.app.domain.episode.EpisodeDanmakuLoader
 import me.him188.ani.app.domain.episode.EpisodeFetchSelectPlayState
@@ -950,7 +951,7 @@ open class EpisodeViewModel(
         getDanmakuRegexFilterListFlowUseCase = getDanmakuRegexFilterListFlowUseCase,
         backgroundScope,
         sharingStarted = SharingStarted.WhileSubscribed(5_000),
-    )
+    ).also { it.rememberSourceSwitches(settingsRepository.danmakuSettings, backgroundScope) }
 
     /**
      * Danmaku event flow to be processed by UI DanmakuHost.

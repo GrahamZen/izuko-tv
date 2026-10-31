@@ -11,6 +11,7 @@ package me.him188.ani.utils.ktor
 
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.http.HttpHeaders
+import io.ktor.util.AttributeKey
 
 /**
  * 视频直链写进日志的样子: 只到域名 (`https://dl.example.com/…`). 网盘与 CDN 的直链在参数 (有的在路径) 里带着签名, 拿到就能下载.
@@ -24,8 +25,16 @@ fun directLinkForLog(url: String): String {
     return if (host.length == rest.length) url else "$scheme://$host/…"
 }
 
-/** 请求日志里这个请求的地址: 取视频字节的 (带 Range) 只到域名 (见 [directLinkForLog]), 其余照写全. */
+/** 请求日志里这个请求的地址: 取视频字节的 (带 Range) 与标了 [hideUrlInLog] 的只到域名 (见 [directLinkForLog]), 其余照写全. */
 internal fun HttpRequestBuilder.urlForLog(): String {
     val url = this.url.toString()
-    return if (headers.contains(HttpHeaders.Range)) directLinkForLog(url) else url
+    val hidden = headers.contains(HttpHeaders.Range) || attributes.contains(HideUrlInLogAttribute)
+    return if (hidden) directLinkForLog(url) else url
+}
+
+private val HideUrlInLogAttribute = AttributeKey<Unit>("AniHideUrlInLog")
+
+/** 这个请求的地址里有访问令牌之类的东西, 日志只写到域名. */
+fun HttpRequestBuilder.hideUrlInLog() {
+    attributes.put(HideUrlInLogAttribute, Unit)
 }
