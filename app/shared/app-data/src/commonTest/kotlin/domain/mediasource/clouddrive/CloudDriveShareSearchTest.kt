@@ -13,8 +13,11 @@ import io.ktor.http.decodeURLQueryComponent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
+import kotlinx.io.IOException
 import me.him188.ani.app.domain.mediasource.search.TitleForms
 import me.him188.ani.app.domain.mediasource.search.TitleIdentities
 import me.him188.ani.app.domain.mediasource.search.TitleIdentity
@@ -25,6 +28,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.minutes
 
 /**
  * 「分享搜索」: 查固定的分享、搜站点、打开分享、按文件名对集.
@@ -409,9 +413,12 @@ class CloudDriveShareSearchTest {
         }
     }
 
-    /** 每个都是新的搜索 (内存里什么也没有), 等于应用重启过. */
-    private fun fixedEngine(shares: DriveShareBrowser, store: DriveShareIndexStore, now: Long, depth: Int = 2) =
-        DriveShareSearchEngine(fixedConfig.copy(shareIndexDepth = depth), shares, links, indexStore = store, now = { now }) { null }
+    /** 每个都是新的搜索 (内存里什么也没有), 等于应用重启过. 后台重列跑在测试的虚拟时钟上. */
+    private fun TestScope.fixedEngine(shares: DriveShareBrowser, store: DriveShareIndexStore, now: Long, depth: Int = 2) =
+        DriveShareSearchEngine(
+            fixedConfig.copy(shareIndexDepth = depth), shares, links,
+            indexStore = store, now = { now }, backgroundScope = backgroundScope,
+        ) { null }
 
     @Test
     fun `fixed share index is stored and reused after a restart`() = runTest {
@@ -495,6 +502,75 @@ class CloudDriveShareSearchTest {
         assertEquals(listOf("f01", "f02", "f03"), first.map { it.file.fid })
         // 大合集还在列 (要 60 秒), 芙莉莲所在的合集列好就交出了
         assertTrue(currentTime < 60_000, "handed over at $currentTime ms")
+    }
+
+    @Test
+    fun `an expired fixed share index is searched by name instead of listed again and is listed later in the background`() = runTest {
+        val shares = shares(mapOf("coll" to collection))
+        val store = MemoryIndexStore()
+        fixedEngine(shares, store, now = 1_000).search(request("葬送的芙莉莲"))
+        // 合集后来加了一部, 旧索引里没有
+        shares.folders["coll"] = collection + mapOf(
+            "autumn" to collection.getValue("autumn") + dir("new", "新的番"),
+            "new" to listOf(video("x01", "01.mp4")),
+        )
+        shares.searchable = true
+        val later = 1_000 + 7.hours.inWholeMilliseconds
+        val matched = fixedEngine(shares, store, now = later).search(request("新的番"))
+
+        assertEquals(listOf("x01"), matched.map { it.file.fid })
+        assertEquals(listOf("coll" to "新的番"), shares.searched)
+        // 搜的时候不重列, 过一会儿在后台重列存起来
+        assertEquals(1, shares.listed.count { it.second == TestDrive.SHARE_ROOT })
+        advanceTimeBy(2.minutes)
+        assertEquals(2, shares.listed.count { it.second == TestDrive.SHARE_ROOT })
+        assertEquals(later, store.saved.getValue("coll").indexedAtMillis)
+    }
+
+    @Test
+    fun `a fixed share without an index is searched by name and only the found folder is read`() = runTest {
+        val shares = shares(mapOf("coll" to collection)).apply { searchable = true }
+        val matched = fixedEngine(shares, MemoryIndexStore(), now = 1_000).search(request("葬送的芙莉莲"))
+        assertEquals(listOf("f01", "f02", "f03"), matched.map { it.file.fid })
+        assertEquals(listOf("coll" to "frieren"), shares.listed)
+    }
+
+    @Test
+    fun `a subject missing from the fixed shares is ruled out by name search without listing them`() = runTest {
+        val shares = shares(mapOf("coll" to collection)).apply { searchable = true }
+        val matched = fixedEngine(shares, MemoryIndexStore(), now = 1_000).search(request("没有这部番"))
+        assertEquals(emptyList(), matched)
+        assertEquals(emptyList(), shares.listed)
+        assertTrue(shares.searched.isNotEmpty())
+    }
+
+    @Test
+    fun `name search hits the collection folder only - the folder inside it is read with it`() = runTest {
+        // 两个都不是完全同名, 同名优先管不着
+        val nested = collection + mapOf(
+            "autumn" to listOf(dir("frieren", "A 4k 葬送的芙莉莲 全集"), dir("other", "别的番")),
+            "frieren" to listOf(dir("frieren-sp", "葬送的芙莉莲 特典"), video("f01", "01.mp4"), video("f02", "02.mp4")),
+            "frieren-sp" to listOf(video("sp1", "SP01.mp4")),
+        )
+        val shares = shares(mapOf("coll" to nested)).apply { searchable = true }
+        fixedEngine(shares, MemoryIndexStore(), now = 1_000).search(request("葬送的芙莉莲"))
+        // 里层也搜得到、也认得出, 但已经套在读的那个文件夹里: 不单独再读一遍
+        assertEquals(1, shares.listed.count { it.second == "frieren-sp" })
+        assertEquals(1, shares.listed.count { it.second == "frieren" })
+    }
+
+    /** 按名字搜一律出错的网盘. */
+    private class FailingSearch(private val inner: FakeShares) : DriveShareBrowser by inner {
+        override suspend fun searchFolders(shareId: String, passcode: String, keyword: String): List<DriveFile>? =
+            throw IOException("连不上")
+    }
+
+    @Test
+    fun `a fixed share whose name search fails is listed instead`() = runTest {
+        val shares = shares(mapOf("coll" to collection))
+        val matched = fixedEngine(FailingSearch(shares), MemoryIndexStore(), now = 1_000).search(request("葬送的芙莉莲"))
+        assertEquals(listOf("f01", "f02", "f03"), matched.map { it.file.fid })
+        assertEquals(1, shares.listed.count { it.second == TestDrive.SHARE_ROOT })
     }
 
     @Test

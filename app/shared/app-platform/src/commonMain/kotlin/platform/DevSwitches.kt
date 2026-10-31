@@ -174,6 +174,9 @@ object DevSwitches {
     /** 固定分享合集的文件夹索引多少小时内直接用, 过了只在对上的文件夹还读得出这一部时用 (见 DriveShareSearchEngine) */
     val driveShareIndexTtlHours = number("driveShareIndexTtlHours", "开播: 网盘合集索引几小时内直接用", default = 6f, range = 0f..48f, persistent = true)
 
+    /** 固定分享合集的索引过期或没有时, 在分享里按番名搜文件夹, 不在开播时重列; 关时照旧重列 (见 DriveShareSearchEngine) */
+    val driveShareFolderSearch = toggle("driveShareFolderSearch", "开播: 网盘合集索引过期时按番名搜文件夹 (关 = 重列)", default = true, persistent = true)
+
     /** 数据源查询用低优先级线程 (见 SearchDispatchers), 重启后生效 */
     val searchLowPriority = toggle("searchLowPriority", "开播: 数据源查询用低优先级线程 (重启生效)", default = true, persistent = true)
 
