@@ -360,7 +360,9 @@ class TvNativeExploreView(
                 // 轮播的模糊背景跟着轮播的图走 (滚动、随上面几行淡没), 往下渐变成卡片墙的底色;
                 // hero 态里按上回轮播时 (尺寸缩放过去) 底边跟着淡入
                 wall.alpha = if (carouselGone) 0f else carouselA * splitGate
-                wall.translationY = -shift * (1f - md)
+                // 固定焦点版式轮播只在列表停在顶上时露着 (焦点一落到卡上就是 hero 态), 不跟着滚: 跟着滚的话 hero 态回轮播那段
+                // (列表往回滚、尺寸同时缩放) 本层先抬起再落回, 底边露出下面的卡片墙底色, 像一条黑带从屏底升起又缩回
+                wall.translationY = if (fixedAnchor) 0f else -shift * (1f - md)
                 val fadeTop = TV_CAROUSEL_BLUR_FADE_START * m.pageHeightPx
                 val fadeBottom = TV_CAROUSEL_BLUR_FADE_END * m.pageHeightPx
                 wall.setFloor(fadeTop, (fadeBottom - fadeTop).coerceAtLeast(1f), wallColor, opacity = 1f - md)

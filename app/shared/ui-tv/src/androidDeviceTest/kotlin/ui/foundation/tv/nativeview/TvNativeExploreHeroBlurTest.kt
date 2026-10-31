@@ -197,6 +197,40 @@ class TvNativeExploreHeroBlurTest {
         host.waitUntil("登记了整屏背景") { TvHeroZoomHandoff.sourceDebug().contains("${SERIES}card.png") }
     }
 
+    /**
+     * 固定焦点版式从 hero 态回轮播: 列表往回滚、尺寸同时缩放, 模糊背景不能跟着滚 (先抬起再落回, 底边露出下面的底色, 屏底升起一条黑带).
+     */
+    @Test
+    fun `with the fixed anchor the blurred backdrop stays put while going back to the carousel`() {
+        host.onMain {
+            view.fixedAnchor = true
+            // 列表要滚着回去: 一下跳到顶的话背景不会被抬起来
+            view.animatedScroll = true
+            view.focusHeroButton(0)
+        }
+        host.waitUntil("回到轮播") { listener.heroButton == 0 && !view.heroActive && wall.currentTarget?.subjectId == CAROUSEL_SUBJECT }
+        repeat(2) { host.press(KeyEvent.KEYCODE_DPAD_DOWN) }
+        host.waitUntil("焦点落到卡上进了 hero 态、模糊背景淡满") {
+            view.heroActive && wall.alpha == 1f && wall.currentTarget?.subjectId == CARD_SUBJECT
+        }
+        val lifts = mutableListOf<Float>()
+        val check = ViewTreeObserver.OnPreDrawListener {
+            if (wall.currentTarget?.subjectId == CAROUSEL_SUBJECT) lifts += wall.translationY
+            true
+        }
+        host.onMain {
+            view.viewTreeObserver.addOnPreDrawListener(check)
+            view.focusHeroButton(0)
+        }
+        host.waitUntil("回到轮播、模糊背景是轮播那一部") {
+            listener.heroButton == 0 && !view.heroActive && wall.alpha == 1f && wall.currentTarget?.subjectId == CAROUSEL_SUBJECT
+        }
+        host.waitUntil("卡片墙底色那层撤了") { Color.alpha(floorColor()) == 0 }
+        host.onMain { view.viewTreeObserver.removeOnPreDrawListener(check) }
+        assertTrue(lifts.isNotEmpty(), "看到了换成轮播模糊背景之后的帧")
+        assertEquals(emptyList(), lifts.filter { it != 0f }, "模糊背景跟着列表挪了")
+    }
+
     @Test
     fun `confirm in the hero state sharpens the backdrop and hides the rows and the hero image before opening`() {
         enterHero()
