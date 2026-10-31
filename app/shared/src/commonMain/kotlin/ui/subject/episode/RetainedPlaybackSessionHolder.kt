@@ -891,6 +891,8 @@ internal fun statusOf(
     selection == SelectionProblem.NeedsManualSelection -> PlaybackSessionStatus.NeedsSelection
     selection == SelectionProblem.NoMedia -> PlaybackSessionStatus.NoMedia
 
+    loading == VideoLoadingState.WaitingForNetwork -> PlaybackSessionStatus.Preparing(PlaybackPreparingStage.WaitingForNetwork)
+
     loading == VideoLoadingState.ResolvingSource -> PlaybackSessionStatus.Preparing(
         if (awaitingBtService) PlaybackPreparingStage.StartingBtService else PlaybackPreparingStage.ResolvingSource,
     )

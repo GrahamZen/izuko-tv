@@ -23,6 +23,7 @@
     <string name="subject_episode_video_loading_needs_manual_selection">Found %1$d resources, but none was picked automatically\nPick one in “Select resource”</string>
     <string name="subject_episode_video_loading_no_media">None of the %1$d sources found this episode</string>
     <string name="subject_episode_video_loading_resolving_source_short">Resolving resource link</string>
+    <string name="subject_episode_video_loading_waiting_for_network">Network disconnected. Playback resumes when it reconnects</string>
     <string name="subject_episode_video_loading_resolve_deadline">Up to %1$d more seconds</string>
     <string name="subject_episode_video_loading_resolve_deadline_auto_switch">Up to %1$d more seconds, then switching automatically</string>
     <string name="subject_episode_video_loading_unsupported_audio">This TV cannot play the audio format of this video (%1$s). Please switch resources</string>
