@@ -12,6 +12,7 @@ package me.him188.ani.app.domain.mediasource.subscription
 import kotlinx.serialization.Serializable
 import me.him188.ani.app.data.models.ApiFailure
 import kotlin.time.Duration
+import me.him188.ani.app.domain.danmaku.server.DanmakuServerEntry
 import kotlin.time.Duration.Companion.hours
 
 /**
@@ -30,6 +31,10 @@ data class MediaSourceSubscription(
      * 最近一次成功更新时从订阅获取的 [SubscriptionMetadata]. 从未成功更新时为 `null`.
      */
     val metadata: SubscriptionMetadata? = null,
+    /**
+     * 最近一次成功更新时订阅带的弹幕服务器, 见 [DanmakuServerEntry]. 随订阅一起删除、停用.
+     */
+    val danmakuServers: List<DanmakuServerEntry> = emptyList(),
 ) {
     @Serializable
     class UpdateError(

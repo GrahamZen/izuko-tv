@@ -72,6 +72,7 @@ import me.him188.ani.datasources.bangumi.BangumiApiProvider
 import org.koin.core.KoinApplication
 import org.koin.core.scope.Scope
 import org.koin.dsl.module
+import me.him188.ani.app.domain.danmaku.danmakuExtraDefinitions
 import me.him188.ani.utils.io.SystemPath
 
 
@@ -275,8 +276,10 @@ fun KoinApplication.repositoryModules(
             getSubjectEpisodeInfoBundleFlowUseCase = get(),
             settingsRepository = get(),
             anidbIdOf = { subjectId -> get<TmdbSubjectMapRepository>().lookup(subjectId)?.anidbId },
+            extraProviders = get(),
         )
     }
+    danmakuExtraDefinitions(getContext)
 
     single<SettingsRepository> { PreferencesRepositoryImpl(getContext().dataStores.preferencesStore) }
 

@@ -90,7 +90,7 @@ internal fun renderRemoteControlPage(
     <div id="player-stats"></div></details>
     <details class="card req" id="dm-box" hidden><summary>弹幕<small id="dm-sum"></small></summary>
     <div class="dm-wrap"><form class="dm-form" id="dm-send"><input type="text" name="text" maxlength="100" autocomplete="off" placeholder="发一条弹幕（在电视当前进度）"><button type="submit" class="primary" aria-label="发送" title="发送"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.4 20.4 20.85 12.92a1 1 0 0 0 0-1.84L3.4 3.6a.99.99 0 0 0-1.39.91L2 9.12c0 .5.37.93.87.99L17 12 2.87 13.88c-.5.07-.87.5-.87 1l.01 4.61c0 .71.73 1.2 1.39.91z"/></svg></button></form>
-    <div id="dm-body"></div><div id="dm-match"></div></div></details>
+    <div id="dm-body"></div><div id="dm-match"></div><div id="dm-import"></div></div></details>
     <details class="card req" id="tr-box" hidden><summary>音轨与字幕</summary><div class="dm-wrap" id="tr-body"></div></details>
     <details class="card req" id="cm-box" hidden><summary>评论与评分<small id="cm-sum"></small></summary><div class="dm-wrap" id="cm-body"></div></details>
     <details class="card req" id="tg-box"><summary>一起看<small id="tg-sum"></small></summary><div class="dm-wrap" id="tg-body"></div></details>
@@ -137,6 +137,7 @@ internal fun renderRemoteControlPage(
     <h2 class="set-group-h">播放与弹幕</h2>
     <div id="set-generic"></div>
     <div id="set-dmfilter"></div>
+    <div id="set-dmservers"></div>
     </div>
     <div class="set-group" data-group="network" hidden>
     <h2 class="set-group-h">网络</h2>
@@ -199,7 +200,7 @@ internal fun renderRemoteControlPage(
     </nav>
     <script>
     var INITIAL_TAB = '$initialTab';
-    """.trimIndent() + "\n" + SCRIPT + "\n" + REQUEST_SCRIPT + "\n" + CONTROL_SCRIPT + "\n" + DANMAKU_SCRIPT + "\n" + REVIEW_SCRIPT + "\n" + CACHE_SCRIPT + "\n" + CACHE_LIST_SCRIPT + "\n" + SOURCES_SCRIPT + "\n" + SOURCES_TAB_SCRIPT + "\n" + SOURCE_PROFILE_SCRIPT + "\n" + SUBS_SCRIPT + "\n" + CLOUD_DRIVE_SCRIPT + "\n" + SETTINGS_SCRIPT + "\n" + SETTINGS_EXTRAS_SCRIPT + "\n" + SETTINGS_RECENT_SCRIPT + "\n" + DEVICE_MIGRATION_SCRIPT + "\n" +LOOK_SCRIPT + "\n" + LOGS_SCRIPT + "\n" + PERF_SCRIPT + "\n" + PROFILES_SCRIPT + "\n" + ACCOUNT_SCRIPT + "\n" + HISTORY_SCRIPT + "\n" + HELP_SCRIPT + "\n" + PICK_SCRIPT + "\n" + UPDATE_SCRIPT + "\n" + SHARES_SCRIPT + "\n" + DRIVE_SCRIPT + "\n" + SHOT_SCRIPT + "\n" + MIRROR_SCRIPT + "\n" + FAIL_SCRIPT + "\n" + FEEDBACK_SCRIPT + "\n" + TOGETHER_SCRIPT + "\n" + """
+    """.trimIndent() + "\n" + SCRIPT + "\n" + REQUEST_SCRIPT + "\n" + CONTROL_SCRIPT + "\n" + DANMAKU_SCRIPT + "\n" + DANMAKU_EXTRAS_SCRIPT + "\n" + REVIEW_SCRIPT + "\n" + CACHE_SCRIPT + "\n" + CACHE_LIST_SCRIPT + "\n" + SOURCES_SCRIPT + "\n" + SOURCES_TAB_SCRIPT + "\n" + SOURCE_PROFILE_SCRIPT + "\n" + SUBS_SCRIPT + "\n" + CLOUD_DRIVE_SCRIPT + "\n" + SETTINGS_SCRIPT + "\n" + SETTINGS_EXTRAS_SCRIPT + "\n" + SETTINGS_RECENT_SCRIPT + "\n" + DEVICE_MIGRATION_SCRIPT + "\n" +LOOK_SCRIPT + "\n" + LOGS_SCRIPT + "\n" + PERF_SCRIPT + "\n" + PROFILES_SCRIPT + "\n" + ACCOUNT_SCRIPT + "\n" + HISTORY_SCRIPT + "\n" + HELP_SCRIPT + "\n" + PICK_SCRIPT + "\n" + UPDATE_SCRIPT + "\n" + SHARES_SCRIPT + "\n" + DRIVE_SCRIPT + "\n" + SHOT_SCRIPT + "\n" + MIRROR_SCRIPT + "\n" + FAIL_SCRIPT + "\n" + FEEDBACK_SCRIPT + "\n" + TOGETHER_SCRIPT + "\n" + """
     </script>
     </body>
     </html>
@@ -6708,7 +6709,7 @@ private val DANMAKU_SCRIPT = """
   var dmBox = document.getElementById('dm-box'), dmBody = document.getElementById('dm-body');
   var dmSum = document.getElementById('dm-sum'), dmMatch = document.getElementById('dm-match');
   var trBox = document.getElementById('tr-box'), trBody = document.getElementById('tr-body');
-  var lastDm = '', lastTr = '', title = '', shifts = {}, picked = null;
+  var lastDm = '', lastTr = '', title = '', shifts = {}, picked = null, matchers = [];
   function remember(box, key) {
     try { box.open = localStorage.getItem(key) === '1'; } catch (e) {}
     box.addEventListener('toggle', function () { try { localStorage.setItem(key, box.open ? '1' : ''); } catch (e) {} });
@@ -6851,6 +6852,7 @@ private val DANMAKU_SCRIPT = """
     if (d) {
       var total = 0;
       d.sources.forEach(function (x) { if (x.on) total += x.count; shifts[x.service] = x.shift; });
+      matchers = d.matchers || [];
       dmSum.textContent = d.enabled ? (d.loading && !d.sources.length ? T('加载中') : T('{0} 条', total)) : T('已关闭');
       var h = '<label class="toggle"><input type="checkbox" data-dm="all"' + (d.enabled ? ' checked' : '') + '>' + T('显示弹幕') + '</label>';
       if (!d.sources.length) h += '<p class="hint">' + (d.loading ? T('正在加载弹幕…') : T('这一集没有找到弹幕')) + '</p>';
@@ -6869,7 +6871,7 @@ private val DANMAKU_SCRIPT = """
           (x.shift ? shiftBtn(x.service, 'reset', T('归零')) : '') + '</div></div>';
       });
       h += '<p class="hint">' + T('偏移为正数时弹幕晚出现。点数字可以直接输入，按住数字左右拖动能微调（0.1 秒一档）。各源开关与偏移只对这次播放有效。') + '</p>';
-      if (d.canMatch) h += '<button type="button" class="ghost wide" data-dm="match">' + T('弹幕对不上？手动匹配（弹弹play）') + '</button>';
+      if (d.canMatch) h += '<button type="button" class="ghost wide" data-dm="match">' + (matchers.length > 1 ? T('弹幕对不上？手动匹配') : T('弹幕对不上？手动匹配（弹弹play）')) + '</button>';
       // 正在就地输入 / 正拖着时不重画: 会把输入框连同光标、或拖动中的那个数字一起换掉
       if (h !== lastDm && !shiftEditing && dragSv == null) {
         dmBody.innerHTML = h;
@@ -6901,12 +6903,16 @@ private val DANMAKU_SCRIPT = """
     } else if (k === 'edit') {
       openShiftEdit(b.getAttribute('data-sv'));
     } else if (k === 'match') {
-      dmMatch.innerHTML = '<form class="dm-form"><input type="text" name="q" autocomplete="off" placeholder="' + T('番剧名') + '" value="' +
+      var pick = matchers.length > 1 ? '<label class="f"><span>' + T('弹幕来源') + '</span><select id="dm-matcher">' + matchers.map(function (x) {
+        return '<option value="' + esc(x.id) + '">' + esc(x.name) + '</option>';
+      }).join('') + '</select></label>' : '';
+      dmMatch.innerHTML = pick + '<form class="dm-form"><input type="text" name="q" autocomplete="off" placeholder="' + T('番剧名') + '" value="' +
         esc(title) + '"><button type="submit" class="primary">' + T('搜索') + '</button></form><div class="dm-list" id="dm-results"></div>' +
         '<div class="row"><button type="button" class="ghost" data-mt="cancel">' + T('取消手动匹配') + '</button></div>';
     }
   });
   function results() { return document.getElementById('dm-results'); }
+  function matcherId() { var el = document.getElementById('dm-matcher'); return el ? el.value : ''; }
   function hint(text) { results().innerHTML = '<p class="hint">' + text + '</p>'; }
   dmMatch.addEventListener('submit', function (e) {
     e.preventDefault();
@@ -6914,7 +6920,7 @@ private val DANMAKU_SCRIPT = """
     if (!q) return;
     e.target.elements.q.blur();
     hint(T('正在搜索…'));
-    post('api/player/danmaku/search', { q: q }).then(function (r) {
+    post('api/player/danmaku/search', { q: q, provider: matcherId() }).then(function (r) {
       if (!r.ok) { hint(esc(r.message)); return; }
       results().innerHTML = r.items.length ? '<p class="hint">' + T('选一个条目') + '</p>' + r.items.map(function (x) {
         return '<button type="button" data-mt="subject" data-id="' + esc(x.id) + '" data-name="' + esc(x.name) + '">' + esc(x.name) + '</button>';
@@ -6927,7 +6933,7 @@ private val DANMAKU_SCRIPT = """
     var k = b.getAttribute('data-mt');
     if (k === 'cancel') { dmMatch.innerHTML = ''; return; }
     if (k === 'subject') {
-      picked = { sid: b.getAttribute('data-id'), sname: b.getAttribute('data-name') };
+      picked = { sid: b.getAttribute('data-id'), sname: b.getAttribute('data-name'), provider: matcherId() };
       hint(T('正在加载剧集…'));
       post('api/player/danmaku/episodes', picked).then(function (r) {
         if (!r.ok) { hint(esc(r.message)); return; }
@@ -6941,7 +6947,7 @@ private val DANMAKU_SCRIPT = """
     } else if (k === 'episode' && picked) {
       hint(T('正在加载弹幕…'));
       post('api/player/danmaku/apply', {
-        sid: picked.sid, sname: picked.sname, eid: b.getAttribute('data-id'), ename: b.getAttribute('data-name')
+        sid: picked.sid, sname: picked.sname, eid: b.getAttribute('data-id'), ename: b.getAttribute('data-name'), provider: picked.provider
       }).then(function (r) {
         toast(r.message);
         if (r.ok) { dmMatch.innerHTML = ''; poll(true); } else hint(esc(r.message));
