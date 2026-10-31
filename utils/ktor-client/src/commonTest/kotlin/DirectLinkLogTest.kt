@@ -42,4 +42,13 @@ class DirectLinkLogTest {
         val api = HttpRequestBuilder().apply { url("https://api.example.com/search?q=abc") }
         assertEquals("https://api.example.com/search?q=abc", api.urlForLog())
     }
+
+    @Test
+    fun `requests marked as private are shortened in the request log`() {
+        val request = HttpRequestBuilder().apply {
+            url("https://example.com/secret-token/api/v2/search?q=abc")
+            hideUrlInLog()
+        }
+        assertEquals("https://example.com/…", request.urlForLog())
+    }
 }

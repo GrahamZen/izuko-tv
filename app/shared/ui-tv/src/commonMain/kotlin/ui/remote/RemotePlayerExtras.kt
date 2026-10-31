@@ -28,6 +28,7 @@ import me.him188.ani.app.data.repository.subject.SubjectCollectionRepository
 import me.him188.ani.app.domain.danmaku.DanmakuLoadingState
 import me.him188.ani.app.domain.danmaku.DanmakuNotMatchedException
 import me.him188.ani.app.domain.danmaku.DanmakuRepository
+import me.him188.ani.app.domain.danmaku.server.DanmakuServerRegistry
 import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
 import me.him188.ani.app.domain.player.tracks.AudioTrackSupport
 import me.him188.ani.app.domain.profile.UserProfiles
@@ -72,6 +73,7 @@ internal object RemotePlayerExtras {
     private val logger = logger<RemotePlayerExtras>()
 
     private val danmakuRepository: DanmakuRepository get() = KoinPlatform.getKoin().get()
+    private val danmakuServers: DanmakuServerRegistry get() = KoinPlatform.getKoin().get()
 
     /** 处理 `api/player/danmaku/` 下与 `api/player/track` 的写请求. */
     fun handle(handle: RemotePlayerHandle, request: LanHttpRequest): JsonObject {
@@ -99,12 +101,13 @@ internal object RemotePlayerExtras {
                     result(true, "")
                 }
 
-                "api/player/danmaku/search" -> search(f["q"].orEmpty().trim())
-                "api/player/danmaku/episodes" -> episodes(handle, DanmakuSubject(f["sid"].orEmpty(), f["sname"].orEmpty()))
+                "api/player/danmaku/search" -> search(f["q"].orEmpty().trim(), f["provider"])
+                "api/player/danmaku/episodes" -> episodes(handle, DanmakuSubject(f["sid"].orEmpty(), f["sname"].orEmpty()), f["provider"])
                 "api/player/danmaku/apply" -> apply(
                     handle,
                     DanmakuSubject(f["sid"].orEmpty(), f["sname"].orEmpty()),
                     DanmakuEpisode(f["eid"].orEmpty(), f["ename"].orEmpty()),
+                    f["provider"],
                 )
 
                 "api/player/danmaku/send" -> sendDanmaku(handle, f["text"].orEmpty())
@@ -134,12 +137,16 @@ internal object RemotePlayerExtras {
         }
     }
 
-    private fun matcher(): MatchingDanmakuProvider? =
-        danmakuRepository.getInteractiveDanmakuFetcherOrNull(DanmakuProviderId.Dandanplay)?.startInteractiveMatch()
+    /** @param provider 网页选的弹幕来源; 没选 (只有弹弹play 一个) 时是空的 */
+    private fun matcherId(provider: String?): DanmakuProviderId =
+        provider?.takeIf { it.isNotEmpty() }?.let(::DanmakuProviderId) ?: DanmakuProviderId.Dandanplay
 
-    private fun search(q: String): JsonObject {
+    private fun matcher(provider: String?): MatchingDanmakuProvider? =
+        danmakuRepository.getInteractiveDanmakuFetcherOrNull(matcherId(provider))?.startInteractiveMatch()
+
+    private fun search(q: String, provider: String?): JsonObject {
         if (q.isEmpty()) return result(false, tr("请输入番剧名"))
-        val m = matcher() ?: return result(false, tr("弹弹play 不可用"))
+        val m = matcher(provider) ?: return result(false, tr("这个弹幕来源不可用"))
         val list = runBlocking { withTimeoutOrNull(NETWORK_TIMEOUT) { m.fetchSubjectList(q) } }
             ?: return result(false, tr("搜索超时，请重试"))
         return buildJsonObject {
@@ -153,9 +160,9 @@ internal object RemotePlayerExtras {
         }
     }
 
-    private fun episodes(handle: RemotePlayerHandle, subject: DanmakuSubject): JsonObject {
+    private fun episodes(handle: RemotePlayerHandle, subject: DanmakuSubject, provider: String?): JsonObject {
         if (subject.id.isEmpty()) return result(false, tr("无效的条目"))
-        val m = matcher() ?: return result(false, tr("弹弹play 不可用"))
+        val m = matcher(provider) ?: return result(false, tr("这个弹幕来源不可用"))
         val list = runBlocking { withTimeoutOrNull(NETWORK_TIMEOUT) { m.fetchEpisodeList(subject) } }
             ?: return result(false, tr("加载剧集超时，请重试"))
         // 标出与当前这一集集号相同的那一条, 手机上自动滚过去 (弹弹play 的集名通常是「第5话 标题」)
@@ -175,13 +182,13 @@ internal object RemotePlayerExtras {
         }
     }
 
-    private fun apply(handle: RemotePlayerHandle, subject: DanmakuSubject, episode: DanmakuEpisode): JsonObject {
+    private fun apply(handle: RemotePlayerHandle, subject: DanmakuSubject, episode: DanmakuEpisode, provider: String?): JsonObject {
         if (subject.id.isEmpty() || episode.id.isEmpty()) return result(false, tr("无效的剧集"))
-        val m = matcher() ?: return result(false, tr("弹弹play 不可用"))
+        val m = matcher(provider) ?: return result(false, tr("这个弹幕来源不可用"))
         val results = runBlocking { withTimeoutOrNull(NETWORK_TIMEOUT) { m.fetchDanmakuList(subject, episode) } }
             ?: return result(false, tr("加载弹幕超时，请重试"))
         val total = results.sumOf { it.list.size }
-        handle.runOnUi { handle.vm.onMatchingDanmakuComplete(DanmakuProviderId.Dandanplay, results) }
+        handle.runOnUi { handle.vm.onMatchingDanmakuComplete(matcherId(provider), results) }
         logger.info { "Remote control applied manual danmaku match: $total danmaku" }
         return result(true, tr("已换成「{0}」{1}，共 {2} 条弹幕", subject.name, episode.name, total))
     }
@@ -337,10 +344,23 @@ internal object RemotePlayerExtras {
             put("enabled", page.danmakuEnabled)
             put("loading", stats.danmakuLoadingState is DanmakuLoadingState.Loading)
             put("canMatch", danmakuRepository.getInteractiveDanmakuFetcherOrNull(DanmakuProviderId.Dandanplay) != null)
+            putJsonArray("matchers") {
+                addJsonObject {
+                    put("id", DanmakuProviderId.Dandanplay.id)
+                    put("name", tr("弹弹play"))
+                }
+                for (server in danmakuServers.cachedProviders) {
+                    if (!server.supportsAutoMatch) continue
+                    addJsonObject {
+                        put("id", server.providerId.id)
+                        put("name", server.endpoint.name)
+                    }
+                }
+            }
             putJsonArray("sources") {
                 for (r in stats.fetchResults) addJsonObject {
                     put("service", r.serviceId.value)
-                    put("name", SERVICE_NAMES[r.serviceId.value] ?: r.serviceId.value)
+                    put("name", SERVICE_NAMES[r.serviceId.value]?.let { tr(it) } ?: r.serviceId.value)
                     put("count", r.matchInfo.count)
                     put("on", r.config.enabled)
                     put("shift", r.config.shiftMillis)
@@ -472,5 +492,6 @@ internal object RemotePlayerExtras {
         "Acfun" to "AcFun",
         "Baha" to "巴哈姆特",
         "Tucao" to "吐槽",
+        "Imported" to "导入",
     )
 }

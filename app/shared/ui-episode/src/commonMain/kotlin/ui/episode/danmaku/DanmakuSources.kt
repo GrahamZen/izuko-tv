@@ -64,12 +64,14 @@ import me.him188.ani.app.ui.lang.subject_episode_danmaku_rematch
 import me.him188.ani.app.ui.lang.subject_episode_danmaku_service_baha_short
 import me.him188.ani.app.ui.lang.subject_episode_danmaku_service_bilibili_short
 import me.him188.ani.app.ui.lang.subject_episode_danmaku_service_dandanplay_short
+import me.him188.ani.app.ui.lang.subject_episode_danmaku_service_imported_short
 import me.him188.ani.app.ui.lang.subject_episode_danmaku_time_shift_item
 import me.him188.ani.app.ui.lang.subject_episode_disable
 import me.him188.ani.app.ui.lang.subject_episode_enable
 import me.him188.ani.app.ui.lang.subject_episode_more_options
 import me.him188.ani.danmaku.api.DanmakuServiceId
 import me.him188.ani.danmaku.api.provider.DanmakuMatchMethod
+import me.him188.ani.danmaku.api.provider.Imported
 import me.him188.ani.utils.platform.format1f
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
@@ -156,7 +158,7 @@ private fun DanmakuSourceMenuAnchor(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(if (isAnimeko) 4.dp else (-4).dp),
                 ) {
-                    Text(if (sourceItem.count == 0) renderDanmakuServiceId(sourceItem.serviceId) else "${sourceItem.count}")
+                    DanmakuSourceChipLabel(sourceItem.serviceId, sourceItem.count)
 
                     Icon(
                         Icons.Outlined.ArrowDropDown,
@@ -192,7 +194,7 @@ private fun DanmakuSourceMenuAnchor(
             onSetEnabled = { onToggle() },
             currentShiftMillis = sourceItem.shiftMillis,
             onClickAdjustShift = onAdjustShift,
-            onClickChange = onManualMatch.takeUnless { isAnimeko },
+            onClickChange = onManualMatch.takeUnless { isAnimeko || sourceItem.serviceId == DanmakuServiceId.Imported },
             // 长按开的菜单: 吞掉这次按住的余波 (第一项就是启停, 不能被点掉)
             modifier = Modifier.consumeHeldConfirmKey(enabled = remoteOnly),
             serviceId = sourceItem.serviceId,
@@ -316,7 +318,9 @@ private fun getDanmakuServiceIconInfo(serviceId: DanmakuServiceId): String {
         DanmakuServiceId.AcFun -> "Ac"
         DanmakuServiceId.Baha -> stringResource(Lang.subject_episode_danmaku_service_baha_short)
         DanmakuServiceId.Tucao -> "TC"
-        else -> "?"
+        DanmakuServiceId.Imported -> stringResource(Lang.subject_episode_danmaku_service_imported_short)
+        // 弹幕服务器: 来源 id 就是服务器名
+        else -> serviceId.value.take(1).uppercase()
     }
 }
 

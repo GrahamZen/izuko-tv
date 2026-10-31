@@ -265,7 +265,7 @@ class MediaSourceSubscriptionUpdater(
                     mediaSourceCount = remoteEntries.size,
                     unsupportedMediaSourceCount = remoteEntries.count { it.arguments == null },
                 )
-                current.copy(metadata = updateData.metadata)
+                current.copy(metadata = updateData.metadata, danmakuServers = updateData.danmakuServers)
             } else {
                 current
             }
