@@ -38,6 +38,7 @@ import me.him188.ani.danmaku.api.provider.DanmakuProviderId
 import me.him188.ani.utils.coroutines.SingleTaskExecutor
 import kotlin.concurrent.Volatile
 import kotlin.time.Duration.Companion.seconds
+import me.him188.ani.utils.coroutines.flows.FailedReadRetry
 
 /**
  * A general danmaku loader, that fetches danmaku from the network and cache and provides a [Flow] of [DanmakuCollection]
@@ -84,18 +85,22 @@ class DanmakuLoaderImpl internal constructor(
     @Volatile
     private var currentRequestKey: DanmakuRequestKey? = null
 
-    /** 每 +1 一次, 当前这一集重新取一次弹幕, 见 [retryFailedFetch]. */
+    /** 每 +1 一次, 当前这一集重新取一次弹幕. */
     private val fetchRetries = MutableStateFlow(0)
 
     /** 最近一次从网上取弹幕有服务失败了. */
     @Volatile
     private var remoteFetchFailed = false
 
-    /** 这一集从网上取弹幕失败了或者还没取完时重新取一次 (断网恢复后); 已经取到的不动. */
-    fun retryFailedFetch() {
-        if (remoteFetchFailed || danmakuLoadingStateFlow.value == DanmakuLoadingState.Loading) {
-            remoteFetchFailed = false
-            fetchRetries.update { it + 1 }
+    init {
+        // 没取完的也算: 断网时开始的请求可能恢复后才超时
+        flowScope.launch {
+            FailedReadRetry.onRequest {
+                if (remoteFetchFailed || danmakuLoadingStateFlow.value == DanmakuLoadingState.Loading) {
+                    remoteFetchFailed = false
+                    fetchRetries.update { it + 1 }
+                }
+            }
         }
     }
 
