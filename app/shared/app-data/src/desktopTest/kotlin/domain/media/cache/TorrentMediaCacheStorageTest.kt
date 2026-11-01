@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.domain.media.cache
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -18,6 +19,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
@@ -30,6 +32,7 @@ import me.him188.ani.app.domain.media.createTestDefaultMedia
 import me.him188.ani.app.domain.media.createTestMediaProperties
 import me.him188.ani.app.domain.media.resolver.EpisodeMetadata
 import me.him188.ani.app.domain.torrent.TorrentEngine
+import me.him188.ani.app.torrent.anitorrent.session.AnitorrentDownloadSession
 import me.him188.ani.app.torrent.anitorrent.test.TestAnitorrentTorrentDownloader
 import me.him188.ani.app.torrent.anitorrent.test.TestTorrentDescriptor
 import me.him188.ani.app.torrent.anitorrent.test.TestTorrentFileInfo
@@ -50,10 +53,12 @@ import me.him188.ani.datasources.api.unwrapCached
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
 import java.io.File
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNotSame
 import kotlin.test.assertNull
@@ -408,6 +413,171 @@ class TorrentMediaCacheStorageTest : AbstractTorrentMediaCacheEngineTest() {
         advanceUntilIdle()
         assertEquals(false, metadataStore.data.first().single().metadata.paused)
         assertEquals(FilePriority.NORMAL, restored.requestingPriority())
+    }
+
+    /**
+     * 恢复时种子停在「校验盘上的数据」, 放行之前认不出文件: 真机上没有新的续传数据时 (被系统杀掉、覆盖安装) 要校验好几分钟.
+     * [holding] 时开始的会话按到达顺序排在 [waiting] 里, 之后开始的当场认完.
+     */
+    private class HeldChecks {
+        @Volatile
+        var holding = true
+        val waiting = CopyOnWriteArrayList<CompletableDeferred<Unit>>()
+
+        suspend fun onStarted(session: AnitorrentDownloadSession) {
+            if (holding) CompletableDeferred<Unit>().also { waiting += it }.await()
+            session.onTorrentChecked()
+        }
+    }
+
+    private val testMedia2 = createTestDefaultMedia(
+        mediaId = "dmhy.3",
+        mediaSourceId = "dmhy",
+        originalTitle = "夜晚的水母不会游泳 02 测试剧集2",
+        download = ResourceLocation.MagnetLink("magnet:?xt=urn:btih:2"),
+        originalUrl = "https://example.com/2",
+        publishedTime = 1724493292759,
+        episodeRange = EpisodeRange.single(EpisodeSort(2)),
+        properties = createTestMediaProperties(),
+        kind = MediaSourceKind.BitTorrent,
+        location = MediaSourceLocation.Online,
+    )
+
+    /**
+     * 存好 [media] 的下载再关掉存储, 之后新建的存储带着 [checks] 启动恢复, 等到 [checking] 条下载停在校验上
+     * (恢复同时只做几条, 多出来的排着)
+     */
+    private suspend fun TestScope.restartWithHeldChecks(
+        checks: HeldChecks,
+        vararg media: Pair<DefaultMedia, String>,
+        checking: Int = media.size,
+    ): TorrentMediaCacheStorage {
+        val first = createStorage(createEngine(onDownloadStarted = { it.onTorrentChecked() }))
+        for ((m, episodeId) in media) first.cache(m, mediaCacheMetadata(episodeId = episodeId), resume = true)
+        advanceUntilIdle()
+        first.close()
+
+        val restarted = createStorage(createEngine(onDownloadStarted = checks::onStarted))
+        // 先收下服务的连接状态: 启动恢复之后才收到的话算作重连, 会再刷新一遍
+        advanceUntilIdle()
+        restarted.restorePersistedCaches()
+        awaitReal { checks.waiting.size == checking }
+        assertEquals(checking, checks.waiting.size, "the restored downloads are checking their files")
+        checks.holding = false
+        return restarted
+    }
+
+    private fun mediaOfTorrent(n: Int) = createTestDefaultMedia(
+        mediaId = "dmhy.${100 + n}",
+        mediaSourceId = "dmhy",
+        originalTitle = "夜晚的水母不会游泳 02 测试剧集$n",
+        download = ResourceLocation.MagnetLink("magnet:?xt=urn:btih:${100 + n}"),
+        originalUrl = "https://example.com/${100 + n}",
+        publishedTime = 1724493292760 + n,
+        episodeRange = EpisodeRange.single(EpisodeSort(2)),
+        properties = createTestMediaProperties(),
+        kind = MediaSourceKind.BitTorrent,
+        location = MediaSourceLocation.Online,
+    )
+
+    @Test
+    fun `caching an episode whose restore is still waiting for its turn reuses the restored download`() = runTest(timeout = 30.seconds) {
+        val checks = HeldChecks()
+        // 恢复同时只做 8 条: 第 9 条排着, 还没开始恢复
+        val media = (1..9).map { mediaOfTorrent(it) to it.toString() }
+        val restarted = restartWithHeldChecks(checks, *media.toTypedArray(), checking = 8)
+        val (queued, episodeId) = media.last()
+
+        val again = async { restarted.cache(queued, mediaCacheMetadata(episodeId = episodeId), resume = true) }
+        awaitReal(500.milliseconds) { again.isCompleted }
+        assertFalse(again.isCompleted, "a second download of the episode was opened")
+
+        checks.waiting.forEach { it.complete(Unit) }
+        val cache = again.await()
+        val listed = restarted.listFlow.first { it.size == media.size }
+        assertSame(listed.single { it.origin.mediaId == queued.mediaId }, cache)
+        assertEquals(media.size, metadataStore.data.first().size)
+    }
+
+    @Test
+    fun `a restored download is listed only after it has resumed`() = runTest {
+        val first = createStorage(createEngine(onDownloadStarted = { it.onTorrentChecked() }))
+        first.cache(testMedia, mediaCacheMetadata(), resume = true)
+        advanceUntilIdle()
+        first.close()
+
+        val restarted = createStorage(createEngine(onDownloadStarted = { it.onTorrentChecked() }))
+        advanceUntilIdle()
+        // 列出来的那一刻就看: 同一集的新建这时会直接复用它, 之后才接着下载的话, 用户刚点的继续会被恢复的暂停状态盖掉
+        val atListing = CopyOnWriteArrayList<FilePriority>()
+        backgroundScope.launch(Dispatchers.Unconfined) {
+            restarted.listFlow.collect { list ->
+                list.forEach { atListing += (it as TorrentMediaCacheEngine.TorrentMediaCache).requestingPriority() }
+            }
+        }
+        restarted.restorePersistedCaches()
+        restarted.listFlow.first { it.isNotEmpty() }
+        assertEquals(FilePriority.NORMAL, atListing.first(), "the download was listed before it resumed")
+    }
+
+    @Test
+    fun `a new download does not wait for restored downloads that are still checking their files`() = runTest {
+        val checks = HeldChecks()
+        val restarted = restartWithHeldChecks(checks, testMedia to "1")
+
+        val created = async { restarted.cache(testMedia2, mediaCacheMetadata(episodeId = "2"), resume = true) }
+        awaitReal { created.isCompleted }
+        assertTrue(created.isCompleted, "creating a download waited for the restore")
+        // 恢复出来的要等认完文件才出现: 选源时列缓存会取播放地址, 没认完的会卡住
+        assertEquals(listOf(testMedia2.mediaId), restarted.listFlow.value.map { it.origin.mediaId })
+
+        val shown = CopyOnWriteArrayList<List<String>>()
+        backgroundScope.launch { restarted.listFlow.collect { list -> shown += list.map { it.origin.mediaId } } }
+        checks.waiting.forEach { it.complete(Unit) }
+        val all = restarted.listFlow.first { it.size == 2 }
+        assertEquals(setOf(testMedia.mediaId, testMedia2.mediaId), all.mapTo(HashSet()) { it.origin.mediaId })
+        assertEquals(2, metadataStore.data.first().size)
+        // 刷新要等启动恢复做完 (含清扫) 才开始: 恢复完合并列表时没把恢复期间新建的那份去掉
+        restarted.refreshCache()
+        assertTrue(shown.dropWhile { it.size < 2 }.all { it.size == 2 }, "the list after the restore: $shown")
+    }
+
+    @Test
+    fun `caching an episode that is still being restored reuses the restored download`() = runTest {
+        val checks = HeldChecks()
+        val restarted = restartWithHeldChecks(checks, testMedia to "1")
+
+        val again = async { restarted.cache(testMedia, mediaCacheMetadata(episodeId = "1"), resume = true) }
+        awaitReal(500.milliseconds) { again.isCompleted }
+        assertFalse(again.isCompleted, "a second download of the episode was opened")
+
+        checks.waiting.forEach { it.complete(Unit) }
+        val cache = again.await()
+        assertSame(restarted.listFlow.first { it.isNotEmpty() }.single(), cache)
+        assertEquals(1, metadataStore.data.first().size)
+    }
+
+    @Test
+    fun `a download deleted while another one is still restoring is not put back`() = runTest {
+        val checks = HeldChecks()
+        val restarted = restartWithHeldChecks(checks, testMedia to "1", testMedia2 to "2")
+
+        checks.waiting[0].complete(Unit)
+        val shown = restarted.listFlow.first { it.isNotEmpty() }.single()
+        val deleted = async { restarted.delete(shown) }
+        awaitReal { deleted.isCompleted }
+        assertTrue(deleted.isCompleted, "deleting waited for the other restore")
+        assertTrue(deleted.await())
+
+        val lists = CopyOnWriteArrayList<List<String>>()
+        backgroundScope.launch { restarted.listFlow.collect { list -> lists += list.map { it.origin.mediaId } } }
+        checks.waiting[1].complete(Unit)
+        val left = restarted.listFlow.first { it.isNotEmpty() }.single()
+        assertNotEquals(shown.origin.mediaId, left.origin.mediaId)
+        // 刷新要等启动恢复做完才开始: 恢复完合并列表时没把删掉的那份放回去
+        restarted.refreshCache()
+        assertTrue(lists.none { shown.origin.mediaId in it }, "the list after the delete: $lists")
+        assertEquals(listOf(left.origin.mediaId), metadataStore.data.first().map { it.origin.mediaId })
     }
 
     @Test
