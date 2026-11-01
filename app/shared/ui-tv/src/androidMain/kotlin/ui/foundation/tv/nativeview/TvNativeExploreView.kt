@@ -24,6 +24,15 @@ import kotlinx.coroutines.CoroutineScope
 import me.him188.ani.app.ui.foundation.focus.TvScrollSpring
 import me.him188.ani.app.ui.foundation.tv.TV_HERO_BUTTON_FADE_IN_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TV_HERO_BUTTON_FADE_OUT_MILLIS
+import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_HERO_SPLIT_BAND
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_CAROUSEL_BUTTONS_BOTTOM
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_CAROUSEL_DOT
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_CAROUSEL_DOTS_BOTTOM
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_CAROUSEL_DOT_GAP
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_CAROUSEL_DOT_INACTIVE_ALPHA
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_CAROUSEL_DOT_SELECTED
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_CAROUSEL_TEXT_BOTTOM
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_HERO_FLOOR_START
 import kotlin.math.roundToInt
 
 /**
@@ -111,6 +120,98 @@ class TvNativeExploreView(
 
     override fun showsCardSummaryOverridden(): Boolean = true
 
+    // ---- 平板版画法 (见 padHero, TvPadHeroGeometry) ----
+
+    /** 平板版: 轮播区高 —— 页顶到首组标题 (列表停在顶上时 hero 占位垫着的那一段). */
+    private val padCarouselRegionPx: Int get() = metrics.listTopPx + metrics.spacerPx
+
+    /** 平板版: 轮播时文字块下沿 (从页顶算; 列表滚动时跟着上移). */
+    private val padCarouselTextBottomPx: Int get() = padCarouselRegionPx - dpPx(TV_PAD_CAROUSEL_TEXT_BOTTOM)
+
+    override fun padBackdropHeightPx(): Int = padCarouselRegionPx
+
+    override fun padTextBoxBottomPx(): Int = maxOf(padCarouselTextBottomPx, padCardTextBottomPx)
+
+    /**
+     * 平板版画法: 按钮从文字块里挪出来横排在轮播区左下 (文字块往上长, 按钮的位置不随文字长短变), 圆点靠左在按钮下面、改成小圆点;
+     * 触屏上只留「新番时间表」(点轮播画面就是进详情页, 见 [carouselTap]).
+     */
+    override fun onPadHeroChanged(enabled: Boolean) {
+        val m = metrics
+        if (enabled) {
+            heroBox.extra = null
+            if (buttons.parent == null) addView(buttons)
+            buttons.orientation = LinearLayout.HORIZONTAL
+            (scheduleButton.layoutParams as LinearLayout.LayoutParams).apply {
+                topMargin = 0
+                marginStart = m.buttonGapPx
+            }
+            dots.alignStart = true
+            dots.setGeometry(
+                dpPx(TV_PAD_CAROUSEL_DOT).toFloat(), dpPx(TV_PAD_CAROUSEL_DOT_SELECTED).toFloat(), dpPx(TV_PAD_CAROUSEL_DOT_GAP).toFloat(),
+                TV_PAD_CAROUSEL_DOT_INACTIVE_ALPHA,
+            )
+        } else {
+            if (buttons.parent === this) removeView(buttons)
+            buttons.orientation = LinearLayout.VERTICAL
+            (scheduleButton.layoutParams as LinearLayout.LayoutParams).apply {
+                topMargin = m.buttonGapPx
+                marginStart = 0
+            }
+            heroBox.extra = buttons
+            dots.alignStart = false
+            dots.setGeometry(m.dotPx, m.dotSelectedWidthPx, m.dotGapPx, m.dotInactiveAlpha)
+        }
+        carouselTap = if (enabled && touchInput) newCarouselTap() else null
+        applyPadButtons()
+        applyPadText(card = showsCard)
+    }
+
+    /**
+     * 列表叠在 hero 之上、按下点在 hero 按钮上时把手势让给按钮 (列表整页大, 不让的话按钮收不到); 按钮按下即聚焦, 第一下点就是点击;
+     * 轮播区左右滑翻轮播 (见 [TvNativeHorizontalSwipe]); 平板版画法点轮播画面进详情页 (见 [carouselTap]).
+     */
+    override fun onTouchInputChanged(enabled: Boolean) {
+        primaryButton.focusOnPress = enabled
+        scheduleButton.focusOnPress = enabled
+        list.touchPassThrough = if (enabled) ::heroButtonAt else null
+        carouselSwipe = if (enabled) {
+            TvNativeHorizontalSwipe(context, this, ::inCarouselSwipeArea) { listener?.onSwitchCarousel(it) }
+        } else {
+            null
+        }
+        carouselTap = if (enabled && padHero) newCarouselTap() else null
+        applyPadButtons()
+    }
+
+    override fun onTouchModeChanged() = applyPadButtons()
+
+    /** 平板版画法在触屏上 (用手指时) 只留「新番时间表」; 平板接着键盘 / 遥控器按键时两颗都在. */
+    private fun applyPadButtons() {
+        val hide = padHero && touchMode
+        primaryButton.visibility = if (hide) GONE else VISIBLE
+    }
+
+    /** 平板版画法: 点轮播画面 (按钮以外) 进这一部的详情页, 同「立即观看」. 只在触屏设备上装. */
+    private var carouselTap: TvNativeHeroBlankTap? = null
+
+    private fun newCarouselTap() = TvNativeHeroBlankTap(
+        this,
+        { padHero && !showsCard && !carouselGone && carouselAlpha() >= 0.5f && !wallFocus.opening },
+        heroAreaBottom = {
+            val location = IntArray(2)
+            getLocationInWindow(location)
+            location[1] + padCarouselRegionPx - list.scrolledPx()
+        },
+        onHeroTap = { if (!openCarouselWithWallFocus()) listener?.onHeroButtonClick(0) },
+        onBlankTap = {},
+    )
+
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        carouselTap?.onTouch(ev)
+        return super.dispatchTouchEvent(ev)
+    }
+
     fun setButtons(primaryText: String, primaryIcon: Bitmap?, scheduleText: String, scheduleIcon: Bitmap?) {
         primaryButton.bind(primaryText, primaryIcon)
         scheduleButton.bind(scheduleText, scheduleIcon)
@@ -133,9 +234,19 @@ class TvNativeExploreView(
     // 焦点 (顶部区域: 两颗 hero 按钮)
     // ------------------------------------------------------------------
 
-    /** 送焦到 hero 按钮. 还没布局 (刚建出来) 时记下, 布局完成再送. */
+    /**
+     * 送焦到 hero 按钮. 还没布局 (刚建出来) 时记下, 布局完成再送. 按触屏的规矩走时不送 (焦点不带着滚动): 记下这一颗, 焦点停放
+     * (见 touchPark), 页面照样收到这一颗拿到焦点.
+     */
     fun focusHeroButton(button: Int): Boolean {
         cancelPending()
+        if (touchMode) {
+            pendingHeroButton = -1
+            lastHeroButton = button
+            // 已经停放着: 照样报这一颗 (页面据此清掉落点请求)
+            if (touchParkedNow) onTouchParked() else touchPark()
+            return true
+        }
         if (!isLaidOut) {
             pendingHeroButton = button
             return false
@@ -173,6 +284,7 @@ class TvNativeExploreView(
 
     /** 从页面外进来 (侧边栏按右 / 返回、全局兜底): 回上次那张卡, 否则回上次停的那颗 hero 按钮. */
     override fun onRequestFocusInDescendants(direction: Int, previouslyFocusedRect: Rect?): Boolean {
+        if (touchParkOnEntry()) return false
         val rowKey = focusedRowKey
         if (rowKey != null) {
             focusCard(rowKey, -1)
@@ -183,6 +295,32 @@ class TvNativeExploreView(
 
     /** 探索页的焦点交接由页面的落点与 [onAllRowsGone] 管, 不另外改送系统送来的焦点. */
     override val redirectStrayFocus: Boolean get() = false
+
+    /** 按触屏的规矩停放了焦点: 对页面同焦点回到上次那颗 hero 按钮 (页面回到轮播态), 列表不动. */
+    override fun onTouchParked() {
+        focusedRowKey = null
+        listener?.onHeroButtonFocused(lastHeroButton)
+        listener?.onFocusParked()
+        applyFrame()
+    }
+
+    /**
+     * 触屏上从第一排的 hero 态退出: 同电视在首行按上回轮播 ([onHeroButtonFocused]) —— 那一排当场让出, 聚焦卡还看得见时就换到轮播
+     * (背景图缩放过去、交叉淡入, 文字按换条目的节奏换), 列表滚回顶 ([scrollToTop]; 手指拖动引起的不滚, 由手指带着). 焦点照触屏的规矩停放 (见 touchPark).
+     */
+    override fun exitHeroToTop(scrollToTop: Boolean): Boolean {
+        val key = focusedRowKey ?: return false
+        val first = list.items.indexOfFirst { it is TvNativeExploreItem.Row }
+        if (first < 0 || list.indexOfKey(key) != first) return false
+        focusedRowKey = null
+        setCardAreaFocus(false)
+        timeline.setActive(false, animated = true)
+        TvNativeFocusCues.setSpotlight(this, on = false, animated = true)
+        listener?.onHeroActiveChanged(false)
+        if (scrollToTop) list.scrollToStop(0, TvScrollSpring.Far, animatedScroll)
+        applyFrame()
+        return true
+    }
 
     override fun settleTouchAtTop(nearTop: Boolean): Boolean {
         if (!nearTop) return false
@@ -236,21 +374,6 @@ class TvNativeExploreView(
     // 触摸 (只在触屏设备上, 见 touchInput)
     // ------------------------------------------------------------------
 
-    /**
-     * 列表叠在 hero 之上、按下点在 hero 按钮上时把手势让给按钮 (列表整页大, 不让的话按钮收不到); 按钮按下即聚焦, 第一下点就是点击;
-     * 轮播区左右滑翻轮播 (见 [TvNativeHorizontalSwipe]).
-     */
-    override fun onTouchInputChanged(enabled: Boolean) {
-        primaryButton.focusOnPress = enabled
-        scheduleButton.focusOnPress = enabled
-        list.touchPassThrough = if (enabled) ::heroButtonAt else null
-        carouselSwipe = if (enabled) {
-            TvNativeHorizontalSwipe(context, this, ::inCarouselSwipeArea) { listener?.onSwitchCarousel(it) }
-        } else {
-            null
-        }
-    }
-
     override fun onInterceptTouchEvent(ev: MotionEvent): Boolean =
         carouselSwipe?.onIntercept(ev) == true || super.onInterceptTouchEvent(ev)
 
@@ -260,7 +383,8 @@ class TvNativeExploreView(
 
     /** 屏幕坐标 ([rawX], [rawY]) 落在看得见的 hero 按钮上. */
     private fun heroButtonAt(rawX: Float, rawY: Float): Boolean {
-        if (!heroBox.extraPresent || heroBox.alpha * buttons.alpha < 0.5f) return false
+        val shown = if (padHero) buttons.visibility == VISIBLE else heroBox.extraPresent && heroBox.alpha >= 0.5f
+        if (!shown || buttons.alpha < 0.5f) return false
         return touchHits(primaryButton, rawX, rawY) || touchHits(scheduleButton, rawX, rawY)
     }
 
@@ -300,7 +424,8 @@ class TvNativeExploreView(
     // 逐帧联动
     // ------------------------------------------------------------------
 
-    override fun splitY(): Float = metrics.carouselBottomPx - carouselShift()
+    // 平板版画法的轮播区 / hero 区自己铺满、下缘渐变到卡片墙底色: 整屏底色不分界
+    override fun splitY(): Float = if (padHero) -dpPx(TV_POSTER_WALL_HERO_SPLIT_BAND).toFloat() else metrics.carouselBottomPx - carouselShift()
 
     private fun carouselShift(): Float {
         val m = metrics
@@ -349,12 +474,19 @@ class TvNativeExploreView(
                 // 轮播的模糊背景跟着轮播的图走 (滚动、随上面几行淡没), 往下渐变成卡片墙的底色;
                 // hero 态里按上回轮播时 (尺寸缩放过去) 底边跟着淡入
                 wall.alpha = if (carouselGone) 0f else carouselA * splitGate
-                // 固定焦点版式轮播只在列表停在顶上时露着 (焦点一落到卡上就是 hero 态), 不跟着滚: 跟着滚的话 hero 态回轮播那段
-                // (列表往回滚、尺寸同时缩放) 本层先抬起再落回, 底边露出下面的卡片墙底色, 像一条黑带从屏底升起又缩回
-                wall.translationY = if (fixedAnchor) 0f else -shift * (1f - md)
-                val fadeTop = TV_CAROUSEL_BLUR_FADE_START * m.pageHeightPx
-                val fadeBottom = TV_CAROUSEL_BLUR_FADE_END * m.pageHeightPx
-                wall.setFloor(fadeTop, (fadeBottom - fadeTop).coerceAtLeast(1f), wallColor, opacity = 1f - md)
+                if (padHero) {
+                    // 平板版: 同电视跟着轮播的图走 (比列表多上移一截, 见 carouselShift), 从轮播区的这个高度起渐变到卡片墙的底色, 到轮播区底边全遮
+                    wall.translationY = -shift * (1f - md)
+                    val region = padCarouselRegionPx.toFloat()
+                    wall.setFloor(region * TV_PAD_HERO_FLOOR_START, region * (1f - TV_PAD_HERO_FLOOR_START), wallColor, opacity = 1f - md)
+                } else {
+                    // 固定焦点版式轮播只在列表停在顶上时露着 (焦点一落到卡上就是 hero 态), 不跟着滚: 跟着滚的话 hero 态回轮播那段
+                    // (列表往回滚、尺寸同时缩放) 本层先抬起再落回, 底边露出下面的卡片墙底色, 像一条黑带从屏底升起又缩回
+                    wall.translationY = if (fixedAnchor) 0f else -shift * (1f - md)
+                    val fadeTop = TV_CAROUSEL_BLUR_FADE_START * m.pageHeightPx
+                    val fadeBottom = TV_CAROUSEL_BLUR_FADE_END * m.pageHeightPx
+                    wall.setFloor(fadeTop, (fadeBottom - fadeTop).coerceAtLeast(1f), wallColor, opacity = 1f - md)
+                }
             }
             // 叠在模糊背景上 (轮播、hero 态里背景图看得见时) 背景图的边缘擦成透明. 看不见时不擦, 不走离屏层
             backdrop.feather = !showsCard || heroShown > 0f
@@ -363,7 +495,9 @@ class TvNativeExploreView(
         }
         // 铺着模糊背景: 进详情页从整屏背景起, 背景图不登记成放大转场的来源; 轮播那一部没有清晰图 (只有竖版封面) 时照旧从背景图放大
         backdrop.zoomSource = !heroBlur || (!showsCard && wall?.currentTarget?.sharp != true)
-        val scale = 1f + (m.cardBackdropScale - 1f) * md
+        // 平板版: 图高铺满轮播区 / hero 区 (两块高不同, 缩放过去). 往下翻时同电视: 图比文字与列表多上移一截 (见 carouselShift), 两者错开
+        val cardScale = if (padHero) padCardBackdropPx.toFloat() / padCarouselRegionPx else m.cardBackdropScale
+        val scale = 1f + (cardScale - 1f) * md
         backdrop.scaleX = scale
         backdrop.scaleY = scale
         backdrop.translationY = -shift * (1f - md)
@@ -372,10 +506,19 @@ class TvNativeExploreView(
             backdrop.treatment = treatmentFor?.invoke(md)
         }
         backdrop.publishZoom()
-        heroBox.translationY = -scrolled * (1f - md)
+        if (padHero) {
+            // 平板版: 文字块贴着两路各自的下沿 (块在两者中低的那个位置上排, 见 padTextBoxBottomPx), 轮播时跟着列表上移
+            val box = padTextBoxBottomPx()
+            val toBottom = (padCarouselTextBottomPx - box) * (1f - md) + (padCardTextBottomPx - box) * md
+            heroBox.translationY = toBottom - scrolled * (1f - md)
+            buttons.translationY = -scrolled * (1f - md)
+            dots.translationY = -scrolled * (1f - md)
+        } else {
+            heroBox.translationY = -scrolled * (1f - md)
+            dots.translationY = -shift * (1f - md)
+        }
         heroBox.alpha = if (showsCard) timeline.text else carouselA
         dots.alpha = dotsFade * carouselA * (1f - wallFade)
-        dots.translationY = -shift * (1f - md)
         buttons.alpha = buttonsAlpha * (1f - wallFade)
         // 轮播标题随文字块移出屏幕上缘就停跑马灯 (看不见的跑马灯照样每帧重画)
         titleHeightPx = heroText.titleHeight.takeIf { it > 0 } ?: titleHeightPx
@@ -414,6 +557,7 @@ class TvNativeExploreView(
         applyButtons(visible = !card, animated = settled)
         applyDots(visible = !card)
         heroText.summaryWidthPx = if (card) metrics.cardSummaryWidthPx else metrics.carouselSummaryWidthPx
+        applyPadText(card)
         heroBox.requestLayout()
     }
 
@@ -484,6 +628,7 @@ class TvNativeExploreView(
     // ------------------------------------------------------------------
 
     override fun measureTopArea() {
+        if (padHero) buttons.measure(MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED), MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
         dots.measure(
             MeasureSpec.makeMeasureSpec(metrics.pageWidthPx.coerceAtLeast(0), MeasureSpec.EXACTLY),
             MeasureSpec.makeMeasureSpec((metrics.dotPx.toInt() * 3).coerceAtLeast(0), MeasureSpec.EXACTLY),
@@ -492,6 +637,16 @@ class TvNativeExploreView(
 
     override fun layoutTopArea() {
         val m = metrics
+        if (padHero) {
+            // 平板版: 自下而上圆点 → 按钮, 贴轮播区左下 (文字块的左缘)
+            val x = m.bleedLeftPx + m.heroStartPx
+            val by = padCarouselRegionPx - dpPx(TV_PAD_CAROUSEL_BUTTONS_BOTTOM) - buttons.measuredHeight
+            buttons.layout(x, by, x + buttons.measuredWidth, by + buttons.measuredHeight)
+            val dotCenter = padCarouselRegionPx - dpPx(TV_PAD_CAROUSEL_DOTS_BOTTOM) - dpPx(TV_PAD_CAROUSEL_DOT) / 2
+            val dy = dotCenter - dots.measuredHeight / 2
+            dots.layout(x, dy, x + dots.measuredWidth, dy + dots.measuredHeight)
+            return
+        }
         val dy = m.dotsCenterYPx - dots.measuredHeight / 2
         dots.layout(m.bleedLeftPx, dy, m.bleedLeftPx + dots.measuredWidth, dy + dots.measuredHeight)
     }

@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import me.him188.ani.app.ui.exploration.TV_PAD_CAROUSEL_SECONDARY_BUTTON_ALPHA
 import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tv.TV_HERO_BUTTON_CORNER
@@ -63,9 +64,9 @@ import me.him188.ani.app.ui.foundation.tv.TV_SCROLL_HIDDEN_TEXT_SLIDE_DISTANCE
 import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
 import me.him188.ani.app.ui.foundation.tv.TvPolishFlags
 import me.him188.ani.app.ui.foundation.tv.rememberTvTitleLogoBox
+import me.him188.ani.app.ui.foundation.tv.tvDetailsTitleShadow
 import me.him188.ani.app.ui.foundation.tv.tvHeroButtonContainerColor
 import me.him188.ani.app.ui.foundation.tv.tvHeroButtonOutlineColor
-import me.him188.ani.app.ui.foundation.tv.tvDetailsTitleShadow
 import me.him188.ani.app.ui.foundation.tv.tvHeroContentColor
 import me.him188.ani.app.ui.foundation.tv.tvHeroSecondaryContentColor
 
@@ -293,6 +294,38 @@ fun rememberTvNativeHeroTextStyle(
         }
     }
 }
+
+/**
+ * 平板版画法的轮播按钮 (同 iPad 的 TvPadCarouselButtons): 胶囊、只有字 (labelLarge 加粗), 主按钮正文色实底配底色字, 次按钮正文色淡底, 不描边;
+ * 聚焦 (平板接着键盘 / 遥控器时) 同电视版.
+ */
+@Composable
+fun rememberTvNativePadHeroButtonStyle(): TvNativeHeroButtonStyle {
+    val tv = rememberTvNativeHeroButtonStyle()
+    val density = LocalDensity.current
+    val colors = MaterialTheme.colorScheme
+    val typography = MaterialTheme.typography
+    return remember(tv, density, colors, typography) {
+        with(density) {
+            val text = typography.labelLarge.copy(fontWeight = FontWeight.SemiBold).toTvNativeTextStyle(density, colors.onSurface)
+            val heightPx = TV_NATIVE_PAD_BUTTON_HEIGHT.roundToPx()
+            tv.copy(
+                text = text,
+                paddingHorizontalPx = TV_NATIVE_PAD_BUTTON_PADDING_HORIZONTAL.roundToPx(),
+                paddingVerticalPx = ((heightPx - text.lineHeightPx) / 2).coerceAtLeast(0),
+                cornerPx = heightPx / 2f,
+                outlineColor = Color.Transparent.toArgb(),
+                filledColor = colors.onSurface.toArgb(),
+                unfilledColor = colors.onSurface.copy(alpha = TV_PAD_CAROUSEL_SECONDARY_BUTTON_ALPHA).toArgb(),
+                filledContentColor = colors.surface.toArgb(),
+            )
+        }
+    }
+}
+
+/** 平板版按钮的高与左右内边距 (同 M3 Button). */
+private val TV_NATIVE_PAD_BUTTON_HEIGHT = 40.dp
+private val TV_NATIVE_PAD_BUTTON_PADDING_HORIZONTAL = 24.dp
 
 /**
  * hero 操作按钮的外观: 取值同 TvHeroButton 在海报墙主题下 (按 [TV_HERO_BUTTON_SCALE] 缩放的内边距 / 图标 / titleSmall 字号, 底板与描边色).

@@ -16,6 +16,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Rect
 import android.os.SystemClock
+import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
@@ -26,11 +27,18 @@ import androidx.recyclerview.widget.RecyclerView
 import com.github.panpf.sketch.Sketch
 import kotlinx.coroutines.CoroutineScope
 import me.him188.ani.app.ui.foundation.focus.TV_TRANSIT_PARK_KEY_GRACE_MILLIS
+import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_ASPECT_RATIO
 import me.him188.ani.app.ui.foundation.tv.TV_TAB_CONTENT_SLIDE_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TvBackdropTreatment
 import me.him188.ani.app.ui.foundation.tv.TvWallConfirm
+import me.him188.ani.app.ui.foundation.tv.TvWallTouchTap
 import me.him188.ani.app.ui.foundation.tv.tvWallConfirm
 import me.him188.ani.app.ui.foundation.tv.tvWallTapConfirmsWhileFocusing
+import me.him188.ani.app.ui.foundation.tv.tvWallTouchTap
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_HERO_SUMMARY_WIDTH_FRACTION
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_HERO_TEXT_BOTTOM
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_HERO_TITLE_WIDTH_FRACTION
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_HERO_WALL_SUMMARY_LINES
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -135,18 +143,103 @@ class TvNativeGridPageView(
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean =
-        touchSwipe?.onTouch(event) == true || super.onTouchEvent(event)
+        // 按在 hero 区 / 空白处而子视图都不接的这一下由本视图接住, 抬起才派发得到 (见 TvNativeHeroBlankTap)
+        touchSwipe?.onTouch(event) == true || heroBlankTap?.tracking == true || super.onTouchEvent(event)
 
-    /** 触屏设备上 hero 态里点卡片之间的空白处退回卡片墙 (见 [TvNativeHeroBlankTap]); 宿主在触摸开关打开时给 true, 电视上不装. */
-    var exitHeroOnBlankTap: Boolean = false
+    /**
+     * 触屏设备 (平板装了 TV 包) 才为 true, 宿主按 LocalTvTouchInputEnabled 给; 电视上恒 false. 手指点卡片照触屏的规矩 (见 [touchMode]);
+     * hero 态里点卡片之间的空白处退回卡片墙、点 hero 区打开聚焦那张 (见 [TvNativeHeroBlankTap]).
+     */
+    var touchInput: Boolean = false
         set(value) {
             if (field == value) return
             field = value
-            heroBlankTap = if (value) TvNativeHeroBlankTap(this, { timeline.active && !wallFocus.opening }) { setHeroActive(false) } else null
+            heroBlankTap = if (value) {
+                TvNativeHeroBlankTap(this, { timeline.active && !wallFocus.opening }, ::heroAreaBottomInWindow, ::openFocusedCard) {
+                    setHeroActive(false)
+                }
+            } else {
+                null
+            }
+            applyTouchLook()
         }
     private var heroBlankTap: TvNativeHeroBlankTap? = null
 
+    /**
+     * 此刻按触屏的规矩走 (同 iPad 的 Compose 海报墙): 触屏设备上最近一次输入是手指 (见 [lastInputTouch]). 手指点卡片按
+     * tvWallTouchTap 判 (按下不动焦点), 卡片墙上不画聚焦效果 (hero 态里照画).
+     */
+    private val touchMode: Boolean get() = touchInput && lastInputTouch
+
+    /** 本页最近一次收到的输入是手指 (同 TvNativeRowWallView.lastInputTouch). */
+    internal var lastInputTouch: Boolean = true
+        set(value) {
+            if (field == value) return
+            field = value
+            applyTouchLook()
+        }
+
+    /**
+     * 按触屏的规矩走时网格的卡片墙上不画聚焦效果、焦点不带着滚动 (见 [touchMode]; 一组一行的内容自己管). 进出 hero 态、换网格与换输入方式时
+     * 对一次.
+     */
+    private fun applyTouchLook() {
+        current?.let {
+            it.cards.setTouchLookHidden(it, touchMode && !timeline.active)
+            it.touchFree = touchMode
+        }
+    }
+
+    /** 按触屏的规矩把焦点停在了本视图自己身上 (见 [touchPark]). */
+    private var touchParked = false
+
+    /**
+     * 按触屏的规矩走时手指拖动网格: 焦点停在本视图自己身上 (持焦的卡随手指滚出屏被回收也不丢焦点、不被系统塞给别处), 之后按方向键落到屏上
+     * 离视口中线最近的那一行 (见 [dispatchKeyEvent]). 与换标签的停放 ([parkFocus]) 不同, 不报给页面: 焦点仍算在网格里.
+     */
+    private fun touchPark() {
+        if (isFocused) return
+        descendantFocusability = FOCUS_BEFORE_DESCENDANTS
+        isFocusableInTouchMode = true
+        touchParked = requestFocus()
+        if (!touchParked) unparkFocus()
+    }
+
+    /** 按触屏的规矩走时网格被手指拖起来: hero 态里原地退回卡片墙, 焦点停放. */
+    private fun onGridDragStart(grid: TvNativeGridView) {
+        if (grid !== current || !touchMode) return
+        if (timeline.active) setHeroActive(false, animated = true) else touchPark()
+    }
+
+    /** 原地退回卡片墙 (按触屏的规矩走时): hero 背景与文字照常淡出, 网格 / 一组一行的内容停在原地. */
+    private fun exitHeroInPlace(animated: Boolean) {
+        timeline.setActive(false, animated)
+        applyTouchLook()
+        TvNativeFocusCues.setSpotlight(this, false, animated)
+        current?.exitHeroInPlace(animated && animatedScroll)
+        rowsShown()?.onHostHeroChanged(animated)
+        listener?.onHeroActiveChanged(false)
+    }
+
+    /** hero 区 (背景图与文字, hero 态聚焦行行顶以上) 下缘在窗口里的纵坐标. */
+    private fun heroAreaBottomInWindow(): Int {
+        rowsShown()?.let { return it.heroAreaBottomInWindow() }
+        getLocationInWindow(windowXY)
+        return windowXY[1] + metrics.gridTopPx + metrics.grid.heroLinePx
+    }
+
+    /** 触屏上 hero 态里点 hero 区 (背景图、文字, 及淡没在那里的上面几行): 同点聚焦的那张. */
+    private fun openFocusedCard() {
+        rowsShown()?.let {
+            it.openFocusedCard()
+            return
+        }
+        val grid = current ?: return
+        if (timeline.active && grid.selectedPosition >= 0) GridListener(grid).onClick(grid.selectedPosition)
+    }
+
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        if (ev.actionMasked == MotionEvent.ACTION_DOWN && ev.isFromSource(InputDevice.SOURCE_TOUCHSCREEN)) lastInputTouch = true
         heroBlankTap?.onTouch(ev)
         return super.dispatchTouchEvent(ev)
     }
@@ -321,11 +414,38 @@ class TvNativeGridPageView(
         this.style = style
         this.metrics = metrics
         heroText.style = heroTextStyle
-        heroText.titleWidthPx = metrics.titleWidthPx
-        heroText.summaryWidthPx = metrics.summaryWidthPx
+        applyHeroTextWidths()
         if (changed) {
             grids.forEach { it.metrics = gridMetrics() }
             requestLayout()
+        }
+    }
+
+    /**
+     * 平板版 hero 的摆法 (宿主在触屏设备上给; 几何见 TvPadHeroGeometry): hero 区铺到聚焦行行顶为止,
+     * 背景图高度铺满它、贴右上角, 文字贴它左下往上长 (简介压成一段、最多 [TV_PAD_HERO_WALL_SUMMARY_LINES] 行), 宽度按页面宽的比例.
+     */
+    var padHero: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            heroText.padLayout = value
+            heroText.summaryCapLines = if (value) TV_PAD_HERO_WALL_SUMMARY_LINES else 0
+            applyHeroTextWidths()
+            requestLayout()
+        }
+
+    /** 平板版: hero 区高 —— 页顶到 hero 态聚焦行的行顶. */
+    private val padRegionPx: Int get() = metrics.gridTopPx + metrics.grid.heroLinePx
+
+    private fun applyHeroTextWidths() {
+        val m = metrics
+        if (padHero) {
+            heroText.titleWidthPx = (m.pageWidthPx * TV_PAD_HERO_TITLE_WIDTH_FRACTION).roundToInt()
+            heroText.summaryWidthPx = (m.pageWidthPx * TV_PAD_HERO_SUMMARY_WIDTH_FRACTION).roundToInt()
+        } else {
+            heroText.titleWidthPx = m.titleWidthPx
+            heroText.summaryWidthPx = m.summaryWidthPx
         }
     }
 
@@ -366,6 +486,7 @@ class TvNativeGridPageView(
         // 没记过位置的 (头一回显示 / 被 forgetPosition 忘掉的) 从第一张排起: 复用的那份网格还停在上一个 key 的位置上
         next.selectedPosition = savedPosition[key] ?: 0
         current = next
+        applyTouchLook()
         // 进页恢复的那一张只属于建视图后的第一份网格; 换了标签就作废
         if (cur == null && landingHeld >= 0) next.cards.setFocusLookHeld(next, landingHeld) else landingHeld = -1
         slideIn(cur, next, direction, animated)
@@ -505,6 +626,7 @@ class TvNativeGridPageView(
         val grid = TvNativeGridView(context, style, sketch, gridMetrics())
         grid.animatedScroll = animatedScroll
         grid.listener = GridListener(grid)
+        grid.onTouchDragStart = { onGridDragStart(grid) }
         grid.cards.onBind = { index -> if (grid === current) onBindCard?.invoke(index) }
         grid.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
@@ -554,6 +676,32 @@ class TvNativeGridPageView(
         // hero 态里 / 没有 hero 态 (确认就进详情页或播放) 点一下只换焦点
         override fun tapConfirmsWhileFocusing(index: Int): Boolean =
             grid === current && tvWallTapConfirmsWhileFocusing(isPlaceholder = false, heroEnabled, timeline.active)
+
+        override val touchTaps: Boolean get() = touchInput
+
+        override fun onTouchTap(index: Int, card: View) {
+            if (grid !== current) return
+            val focused = grid.selectedPosition
+            val columns = metrics.grid.columns.coerceAtLeast(1)
+            val above = focused >= 0 && index / columns < focused / columns
+            when (tvWallTouchTap(isPlaceholder = false, heroEnabled, timeline.active, card.isFocused, above)) {
+                TvWallTouchTap.OpenFocused -> openFocusedCard()
+                TvWallTouchTap.FocusOnly -> card.requestFocus()
+                TvWallTouchTap.FocusAndConfirm -> {
+                    card.requestFocus()
+                    onClick(index)
+                }
+
+                // 没有 hero 态的页面上点一下就进: 焦点同时送到这张, 回来时落在它上面
+                TvWallTouchTap.Confirm -> {
+                    if (!card.isFocused) card.requestFocus()
+                    // 整屏背景跟着聚焦卡的页面 (新番时间表) 上背景还不是这张的: 当场进, 照点开过记账 —— 回到本页 (页面重建) 按点开的样子恢复,
+                    // 这张的清晰图淡回它的模糊底 (同 iPad 的 Compose 海报墙)
+                    if (!timeline.active && confirmFocusesWall && wallBackdrop != null && !wallMatches(grid, index)) listener?.onWallOpened(index)
+                    onClick(index)
+                }
+            }
+        }
 
         override fun onTopRowUp(): Boolean = listener?.onTopRowUp() ?: false
 
@@ -697,6 +845,7 @@ class TvNativeGridPageView(
     override fun requestChildFocus(child: View?, focused: View?) {
         super.requestChildFocus(child, focused)
         // 停放的焦点落地了 (新那份网格的卡拿到焦点)
+        touchParked = false
         unparkFocus()
         // 一组一行的内容拿到焦点不算 (它自己报卡片区的焦点)
         setGridFocus(child === gridBox && current?.hasFocus() == true)
@@ -753,12 +902,23 @@ class TvNativeGridPageView(
      * 到了照常落地.
      */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN && tvNativeIsWallInputKey(event.keyCode)) lastInputTouch = false
         TvNativeFocusCues.onKey(this, event)
         val code = event.keyCode
         val direction = code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN ||
             code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT
         // 整屏背景: 点开途中吞掉方向键与确认键, 按下确认键当场解清晰图 (见 TvNativeWallFocus.handleKey)
         if (wallFocus.handleKey(event)) return true
+        if (isFocused && touchParked && direction && event.action == KeyEvent.ACTION_DOWN) {
+            // 按触屏的规矩停放后按了方向键 (回到电视的规矩): 落到屏上离中线最近的那一行、上次那一列
+            touchParked = false
+            val grid = current
+            val columns = metrics.grid.columns.coerceAtLeast(1)
+            val target = grid?.indexNearestViewportCenter(grid.selectedPosition.coerceAtLeast(0) % columns)
+            unparkFocus()
+            if (grid != null && target != null) grid.focusItem(target) else rowsShown()?.requestCardsFocus()
+            return true
+        }
         if (!isFocused || parkedAt < 0 || !(direction || tvNativeIsConfirmKey(code))) return super.dispatchKeyEvent(event)
         if (direction && event.action == KeyEvent.ACTION_DOWN) {
             val expired = SystemClock.uptimeMillis() - parkedAt >= TV_TRANSIT_PARK_KEY_GRACE_MILLIS
@@ -771,6 +931,7 @@ class TvNativeGridPageView(
         super.onAttachedToWindow()
         viewTreeObserver.addOnGlobalFocusChangeListener(focusWatcher)
         viewTreeObserver.addOnGlobalLayoutListener(layoutWatcher)
+        applyTouchLook()
         TvNativeFocusCues.attachPage(this)
     }
 
@@ -792,7 +953,14 @@ class TvNativeGridPageView(
      */
     override fun setHeroActive(active: Boolean, animated: Boolean) {
         if (timeline.active == active || active && !heroEnabled) return
+        // 按触屏的规矩走时退出 (按返回、点空白处、拖动): 停在原地; 网格上的焦点停放 (一组一行的内容自己停放)
+        if (!active && touchMode) {
+            exitHeroInPlace(animated)
+            if (rowsShown() == null) touchPark()
+            return
+        }
         timeline.setActive(active, animated)
+        applyTouchLook()
         TvNativeFocusCues.setSpotlight(this, active, animated)
         current?.setHeroActive(active, animated = animated && animatedScroll)
         rowsShown()?.onHostHeroChanged(animated)
@@ -842,6 +1010,7 @@ class TvNativeGridPageView(
     }
 
     private fun applyHero() {
+        applyTouchLook()
         val visible = timeline.visible
         val wallShown = heroBlur && wallBackdrop?.currentTarget != null
         if (visible && !enteringPending && backdrop.currentTarget == null && heroText.shownSubjectId == null) {
@@ -949,8 +1118,16 @@ class TvNativeGridPageView(
         val m = metrics
         fun exactly(px: Int) = MeasureSpec.makeMeasureSpec(px.coerceAtLeast(0), MeasureSpec.EXACTLY)
         wallBackdrop?.measure(exactly(m.bleedLeftPx + m.pageWidthPx), exactly(m.pageHeightPx))
-        backdrop.measure(exactly(m.backdropWidthPx), exactly(m.backdropHeightPx))
-        heroBox.measure(exactly(m.heroWidthPx), exactly(m.heroHeightPx))
+        if (padHero) {
+            // 平板版: 图高铺满 hero 区 (16:9), 文字块从 hero 区顶上的那条线排到文字下沿, 贴底排 (见 TvNativeHeroTextView.padLayout)
+            val region = padRegionPx
+            backdrop.measure(exactly((region * TV_BACKDROP_ASPECT_RATIO).roundToInt()), exactly(region))
+            val textBottom = region - (TV_PAD_HERO_TEXT_BOTTOM.value * resources.displayMetrics.density).roundToInt()
+            heroBox.measure(exactly((m.pageWidthPx * TV_PAD_HERO_TITLE_WIDTH_FRACTION).roundToInt()), exactly(textBottom - m.heroTopPx))
+        } else {
+            backdrop.measure(exactly(m.backdropWidthPx), exactly(m.backdropHeightPx))
+            heroBox.measure(exactly(m.heroWidthPx), exactly(m.heroHeightPx))
+        }
         val g = m.grid
         val gridHeight = m.pageHeightPx - m.gridTopPx + g.topBleedPx + g.bottomBleedPx
         gridBox.measure(exactly(m.bleedLeftPx + m.pageWidthPx), exactly(gridHeight))

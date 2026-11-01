@@ -9,7 +9,6 @@
 
 package me.him188.ani.app.ui.foundation.tv.nativeview
 
-import androidx.compose.ui.graphics.toComposeRect
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
@@ -17,6 +16,7 @@ import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.drawable.ColorDrawable
 import android.os.SystemClock
+import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
@@ -24,19 +24,29 @@ import android.view.ViewGroup
 import android.view.ViewTreeObserver
 import android.widget.FrameLayout
 import androidx.compose.runtime.Immutable
+import androidx.compose.ui.graphics.toComposeRect
+import androidx.compose.ui.unit.Dp
 import androidx.recyclerview.widget.RecyclerView
 import com.github.panpf.sketch.Sketch
 import kotlinx.coroutines.CoroutineScope
 import me.him188.ani.app.ui.foundation.focus.TvScrollSpring
 import me.him188.ani.app.ui.foundation.tv.TV_CARD_PAST_DIM_ALPHA
+import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_ASPECT_RATIO
 import me.him188.ani.app.ui.foundation.tv.TV_SCROLL_HIDDEN_TEXT_IN_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TV_SCROLL_STILL_FRAMES
 import me.him188.ani.app.ui.foundation.tv.TV_SCROLL_STILL_PX
 import me.him188.ani.app.ui.foundation.tv.TvBackdropTreatment
 import me.him188.ani.app.ui.foundation.tv.TvKeyRepeatGate
 import me.him188.ani.app.ui.foundation.tv.TvWallConfirm
+import me.him188.ani.app.ui.foundation.tv.TvWallTouchTap
 import me.him188.ani.app.ui.foundation.tv.tvWallConfirm
 import me.him188.ani.app.ui.foundation.tv.tvWallTapConfirmsWhileFocusing
+import me.him188.ani.app.ui.foundation.tv.tvWallTouchTap
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_HERO_SUMMARY_LINES
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_HERO_SUMMARY_WIDTH_FRACTION
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_HERO_TEXT_BOTTOM
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_HERO_TITLE_WIDTH_FRACTION
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_HERO_WALL_SUMMARY_LINES
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -188,6 +198,54 @@ open class TvNativeRowWallView private constructor(
      */
     var openFocusesWall: Boolean = true
 
+    /**
+     * 平板版 hero 的摆法 (宿主在触屏设备上给; 几何见 TvPadHeroGeometry): 背景图高度铺满 hero 区、贴右上角,
+     * 文字贴 hero 区左下往上长 (简介压成一段、限行数), 宽度按页面宽的比例. 宾客模式下 hero 归宿主, 这里不管.
+     */
+    var padHero: Boolean = false
+        set(value) {
+            if (field == value || guest != null) return
+            field = value
+            heroText.padLayout = value
+            applyPadText(card = true)
+            onPadHeroChanged(value)
+            requestLayout()
+            applyFrame()
+        }
+
+    /** 子类跟着 [padHero] 换顶部区域的摆法 (探索页的按钮与圆点). */
+    protected open fun onPadHeroChanged(enabled: Boolean) {}
+
+    /** 平板版: 聚焦卡的 hero 区高 —— 页顶到聚焦行的组标题 (文字块排在它里面). */
+    protected val padCardRegionPx: Int get() = metrics.listTopPx + metrics.heroHeaderTopPx
+
+    /** 平板版: 聚焦卡时背景图的高 —— 页顶到聚焦行的卡片顶, 组标题压在图下缘的渐隐里 (同电视与网格页的 hero). */
+    protected val padCardBackdropPx: Int get() = padCardRegionPx + metrics.headerPx
+
+    /** 平板版: 标题宽 (文字块宽). */
+    protected val padTitleWidthPx: Int get() = (metrics.pageWidthPx * TV_PAD_HERO_TITLE_WIDTH_FRACTION).roundToInt()
+
+    /** 平板版: 聚焦卡时文字块下沿 (从页顶算). */
+    protected val padCardTextBottomPx: Int get() = padCardRegionPx - dpPx(TV_PAD_HERO_TEXT_BOTTOM)
+
+    /** 平板版背景图的高 (宽按 16:9); 子类 (探索页) 按轮播区量, 聚焦卡时缩放. */
+    protected open fun padBackdropHeightPx(): Int = padCardBackdropPx
+
+    /** 平板版文字块的下沿 (块的位置; 子类按两路内容各自的下沿平移). */
+    protected open fun padTextBoxBottomPx(): Int = padCardTextBottomPx
+
+    /** 平板版的简介宽度与行数: 聚焦卡 ([card]) / 轮播. */
+    protected fun applyPadText(card: Boolean) {
+        if (padHero) {
+            heroText.summaryWidthPx = (metrics.pageWidthPx * TV_PAD_HERO_SUMMARY_WIDTH_FRACTION).roundToInt()
+            heroText.summaryCapLines = if (card) TV_PAD_HERO_WALL_SUMMARY_LINES else TV_PAD_HERO_SUMMARY_LINES
+        } else {
+            heroText.summaryCapLines = 0
+        }
+    }
+
+    protected fun dpPx(dp: Dp): Int = (dp.value * resources.displayMetrics.density).roundToInt()
+
     /** hero 态里组标题跟着上面几行淡没 (聚焦行的也藏, 同网格页的 hero 态只剩一排卡); false = 聚焦行的组标题留着 (探索页). */
     override var hideHeadersInHero: Boolean = false
         set(value) {
@@ -197,8 +255,8 @@ open class TvNativeRowWallView private constructor(
         }
 
     /**
-     * 触屏设备 (平板装了 TV 包) 才为 true, 宿主按 LocalTvTouchInputEnabled 给; 电视上恒 false. hero 态里点卡片之间的空白处退回卡片墙
-     * (见 [TvNativeHeroBlankTap]); 顶部区域另有的触摸处理见 [onTouchInputChanged].
+     * 触屏设备 (平板装了 TV 包) 才为 true, 宿主按 LocalTvTouchInputEnabled 给; 电视上恒 false. 手指点卡片照触屏的规矩 (见 [touchMode]);
+     * hero 态里点卡片之间的空白处退回卡片墙、点 hero 区打开聚焦那张 (见 [TvNativeHeroBlankTap]); 顶部区域另有的触摸处理见 [onTouchInputChanged].
      */
     override var touchInput: Boolean = false
         set(value) {
@@ -206,21 +264,199 @@ open class TvNativeRowWallView private constructor(
             field = value
             // 宾客模式下由宿主装 (点在整页的空白处)
             heroBlankTap = if (value && guest == null) {
-                TvNativeHeroBlankTap(this, { timeline.active && !wallFocus.opening }) { setHeroActive(false) }
+                TvNativeHeroBlankTap(this, { timeline.active && !wallFocus.opening }, ::heroAreaBottomInWindow, ::openFocusedCard) {
+                    setHeroActive(false)
+                }
             } else {
                 null
             }
+            list.freeTouchScroll = value
+            applyTouchLook()
             onTouchInputChanged(value)
         }
+
+    /**
+     * 此刻按触屏的规矩走 (同 iPad 的 Compose 海报墙): 触屏设备上最近一次输入是手指 (见 [lastInputTouch]). 手指点卡片按
+     * tvWallTouchTap 判 (按下不动焦点), 卡片墙上不画聚焦效果 (hero 态里照画); 列表由手指自由滚, 焦点不带着滚动 —— 卡片墙上焦点停在本视图
+     * 自己身上 (见 [touchPark]), 只有进 hero 态、hero 态里换卡才滚到停位; 退出 hero 态停在原地.
+     */
+    protected val touchMode: Boolean get() = touchInput && lastInputTouch
+
+    /**
+     * 本页最近一次收到的输入是手指 (同 iPad 的 tvWallInputMode): 手指按下算触屏, 方向键与确认键算回到电视的规矩; 焦点在页外时按的键不算.
+     * 不用系统的触摸模式: 页面里的焦点请求 (弹窗关掉后交还焦点等) 也会让窗口退出触摸模式, 手指还在用.
+     */
+    internal var lastInputTouch: Boolean = true
+        set(value) {
+            if (field == value) return
+            field = value
+            applyTouchLook()
+            onTouchModeChanged()
+        }
+
+    /** 按触屏的规矩把焦点停在了本视图自己身上 (见 [touchPark]). */
+    private var touchParked = false
+
+    /** 焦点此刻按触屏的规矩停放在本视图上 (见 [touchPark]). */
+    protected val touchParkedNow: Boolean get() = touchParked && isFocused
+
+    /** 停放时还在 hero 态: 等 hero 淡完再报给页面 (见 [touchPark]). */
+    private var touchParkReportPending = false
+
+    /**
+     * 按触屏的规矩走时焦点不留在卡上: 停在本视图自己身上 (看不见、不画聚焦; 持焦的卡随手指滚出屏被回收也不丢焦点、不被系统塞给别的卡).
+     * 还在 hero 态就原地退回卡片墙 (hero 背景与文字淡出, 列表不滚回卡片墙的停位); 焦点离开卡片区等 hero 淡完才报给页面 ([onTouchParked]),
+     * 这之前聚焦行留着 (hero 还画着那张卡). 之后按方向键落到屏上离视口中线最近的那一行 (见 [landFromTouchPark]).
+     * 同 iPad 的 Compose 海报墙 (TvExploreComposeSurface.parkFocus).
+     */
+    protected fun touchPark() {
+        if (touchParkedNow && !timeline.active) return
+        cancelPending()
+        list.heldFocus = null
+        touchParked = true
+        if (!isFocused) {
+            descendantFocusability = FOCUS_BEFORE_DESCENDANTS
+            isFocusableInTouchMode = true
+            if (!requestFocus()) unparkFocus()
+        }
+        if (timeline.active) {
+            touchParkReportPending = true
+            exitHeroInPlace()
+        } else {
+            reportTouchParked()
+        }
+    }
+
+    /**
+     * 按触屏的规矩走时从页面外进来、落在卡片墙上 (不在 hero 态): 同 [touchPark], 焦点停在本视图自己身上. 返回 true 时调用方的
+     * onRequestFocusInDescendants 随即返回 false, 由 ViewGroup 接着把焦点给本视图.
+     */
+    protected fun touchParkOnEntry(): Boolean {
+        if (!touchMode || timeline.active) return false
+        cancelPending()
+        list.heldFocus = null
+        touchParked = true
+        descendantFocusability = FOCUS_BEFORE_DESCENDANTS
+        isFocusableInTouchMode = true
+        reportTouchParked()
+        return true
+    }
+
+    private fun reportTouchParked() {
+        touchParkReportPending = false
+        setCardAreaFocus(false)
+        onTouchParked()
+    }
+
+    /** 按触屏的规矩停放了焦点 (见 [touchPark]): 子类 (探索页) 据此回到轮播态. */
+    protected open fun onTouchParked() {}
+
+    /** hero 淡完了: 补报挂着的停放 (见 [touchPark]). */
+    private fun flushTouchParkReport() {
+        if (touchParkReportPending && !timeline.visible) reportTouchParked()
+    }
+
+    /**
+     * 原地退回卡片墙 (按触屏的规矩走时): hero 背景与文字照常淡出, 列表不滚回卡片墙的停位, 只把 hero 态开头几行的整片下推撤掉.
+     * 宾客模式下交给宿主 (宿主同样停在原地).
+     */
+    private fun exitHeroInPlace() {
+        if (!timeline.active) return
+        guest?.let {
+            it.requestHeroActive(false)
+            return
+        }
+        if (exitHeroToTop(scrollToTop = !touchParkingByDrag)) {
+            applyTouchLook()
+            return
+        }
+        timeline.setActive(false, animated = true)
+        applyTouchLook()
+        TvNativeFocusCues.setSpotlight(this, false, animated = true)
+        rowListener?.onHeroActiveChanged(false)
+        shiftToStop(-1, TvScrollSpring.Far)
+    }
+
+    /**
+     * 按触屏的规矩退出 hero 态时, 聚焦的是紧挨着顶部区域的第一排: 子类 (探索页) 照电视在首行按上那样回到顶部区域 (轮播) 并返回 true,
+     * 换过去有过渡; [scrollToTop] = 列表滚回顶 (手指拖动引起的退出不滚, 列表跟着手指). 默认 false: 原地退回卡片墙 (见 [exitHeroInPlace]).
+     */
+    protected open fun exitHeroToTop(scrollToTop: Boolean): Boolean = false
+
+    /** 正在因手指拖动 (列表或行) 停放焦点 (见 [touchParkByDrag]). */
+    private var touchParkingByDrag = false
+
+    /** 手指一拖引起的停放 ([touchPark]): hero 态里退出时列表不滚, 由手指带着. */
+    private fun touchParkByDrag() {
+        touchParkingByDrag = true
+        try {
+            touchPark()
+        } finally {
+            touchParkingByDrag = false
+        }
+    }
+
+    /**
+     * 按触屏的规矩停放后按了方向键 (回到电视的规矩): 落到屏上离视口中线最近的那一行、上次那一列 (手指横着拖过的行按此刻的行首算);
+     * 离顶部区域更近时交给 [settleTouchAtTop], 一行都没排出来时交给 [focusEntry].
+     */
+    private fun landFromTouchPark() {
+        touchParked = false
+        getLocationInWindow(windowXY)
+        val rowKey = rowNearest(windowXY[1] + metrics.listTopPx + metrics.viewportPx / 2)
+        val items = list.items
+        val first = items.indexOfFirst { it is TvNativeExploreItem.Row }
+        val nearTop = rowKey == null || first >= 0 && list.scrolledPx() < metrics.centeredScroll(items, first) / 2
+        unparkFocus()
+        if (settleTouchAtTop(nearTop)) return
+        if (rowKey == null) {
+            focusEntry()
+            return
+        }
+        list.rowAt(list.indexOfKey(rowKey))?.let { list.rowLeftIndex[rowKey] = it.leftIndex() }
+        holdCardAtColumn(rowKey, focusedColumn)
+        resolvePending(scrollIfMissing = true)
+    }
+
+    /** 换了输入方式 (见 [lastInputTouch]): 子类跟着换 (探索页平板版画法在触屏上只留「新番时间表」). */
+    protected open fun onTouchModeChanged() {}
+
+    /** 按触屏的规矩走时卡片墙上不画聚焦效果 (见 [touchMode]); 进出 hero 态、hero 时间线每一帧与换输入方式时对一次. */
+    private fun applyTouchLook() {
+        list.touchLookHidden = touchMode && !timeline.active
+    }
+
+    /** hero 区 (背景图与文字, 聚焦行的组标题以上) 下缘在窗口里的纵坐标. */
+    internal fun heroAreaBottomInWindow(): Int {
+        getLocationInWindow(windowXY)
+        return windowXY[1] + metrics.listTopPx + metrics.heroHeaderTopPx
+    }
+
+    /** 触屏上 hero 态里点 hero 区 (背景图、文字, 及淡没在那里的上面几行): 同点聚焦的那张. */
+    internal fun openFocusedCard() {
+        val rowKey = focusedRowKey ?: return
+        if (!timeline.active) return
+        RowListener(rowKey).onClick(focusedCardIndex)
+    }
+
+    private fun isAboveFocusedRow(rowKey: String): Boolean {
+        val focused = focusedRowKey?.let { list.indexOfKey(it) } ?: -1
+        return focused >= 0 && list.indexOfKey(rowKey) in 0 until focused
+    }
     private var heroBlankTap: TvNativeHeroBlankTap? = null
 
     /** 子类的触摸处理跟着 [touchInput] 装卸. */
     protected open fun onTouchInputChanged(enabled: Boolean) {}
 
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        if (ev.actionMasked == MotionEvent.ACTION_DOWN && ev.isFromSource(InputDevice.SOURCE_TOUCHSCREEN)) lastInputTouch = true
         heroBlankTap?.onTouch(ev)
         return super.dispatchTouchEvent(ev)
     }
+
+    // 按在 hero 区 / 空白处而子视图都不接的这一下由本视图接住, 抬起才派发得到 (见 TvNativeHeroBlankTap)
+    @SuppressLint("ClickableViewAccessibility")
+    override fun onTouchEvent(event: MotionEvent): Boolean = heroBlankTap?.tracking == true || super.onTouchEvent(event)
 
     /** hero 态 (聚焦卡) 在整页底下铺模糊背景 (见 [TvNativeHeroStage.heroBlur]); 背景图的边缘擦成透明露出模糊背景, 整屏底色不压黑. */
     var heroBlur: Boolean
@@ -371,6 +607,8 @@ open class TvNativeRowWallView private constructor(
         override val transitions: Boolean get() = this@TvNativeRowWallView.transitions
 
         override fun onHeroFrame() {
+            applyTouchLook()
+            flushTouchParkReport()
             applyFrame()
             reportTone()
         }
@@ -407,10 +645,15 @@ open class TvNativeRowWallView private constructor(
         list.cardListener = { rowKey -> RowListener(rowKey) }
         list.onBindCard = { rowKey, index -> rowListener?.onBindCard(rowKey, pageIndex(rowKey, index)) }
         list.onItemsMoved = { onListMoved() }
+        list.onRowDragStart = { if (touchMode) touchParkByDrag() }
         list.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
                 scrollTracker.onStateChanged(this@TvNativeRowWallView, newState)
-                if (newState == RecyclerView.SCROLL_STATE_DRAGGING) touchDragged = true
+                if (newState == RecyclerView.SCROLL_STATE_DRAGGING) {
+                    touchDragged = true
+                    // 按触屏的规矩走: 手指一拖, 焦点停放 (hero 态里原地退回卡片墙), 列表跟着手指走
+                    if (touchMode) touchParkByDrag()
+                }
                 if (newState == RecyclerView.SCROLL_STATE_IDLE) {
                     finishFarJump()
                     if (touchDragged) settleAfterTouch()
@@ -768,6 +1011,11 @@ open class TvNativeRowWallView private constructor(
      */
     override fun focusCard(rowKey: String, index: Int, far: Boolean): Boolean {
         onFocusCardRequested()
+        // 按触屏的规矩走时卡片墙上不送焦 (焦点不带着滚动): 停放
+        if (touchMode && !timeline.active) {
+            touchPark()
+            return true
+        }
         // 新的落点请求: 远跳途中排队的确认作废
         farJumpConfirmQueued = false
         clickOnLandingRow = null
@@ -1063,11 +1311,17 @@ open class TvNativeRowWallView private constructor(
      */
     fun setHeroActive(active: Boolean) {
         if (timeline.active == active || active && !heroEnabled) return
+        // 按触屏的规矩走时退出 (页面按返回、点空白处): 停在原地, 焦点停放
+        if (!active && touchMode) {
+            touchPark()
+            return
+        }
         guest?.let {
             it.requestHeroActive(active)
             return
         }
         timeline.setActive(active, animated = true)
+        applyTouchLook()
         if (!fixedAnchor) TvNativeFocusCues.setSpotlight(this, active, animated = true)
         rowListener?.onHeroActiveChanged(active)
         // 焦点没换, 只是进出 hero 态: 停位换成 hero 线 / 视口正中, 走 Far
@@ -1084,8 +1338,10 @@ open class TvNativeRowWallView private constructor(
      * (换标签滑进来、返回本页恢复).
      */
     internal fun onHostHeroChanged(animated: Boolean) {
+        applyTouchLook()
         if (animated) {
-            updateStop(heroToggled = true)
+            // 按触屏的规矩走时退出 hero 态停在原地 (见 exitHeroInPlace)
+            if (touchMode && !timeline.active) shiftToStop(-1, TvScrollSpring.Far) else updateStop(heroToggled = true)
         } else {
             val item = focusedRowKey?.let { list.indexOfKey(it) } ?: -1
             if (item >= 0) {
@@ -1097,7 +1353,11 @@ open class TvNativeRowWallView private constructor(
     }
 
     /** 宾客模式: 宿主的 hero 时间线 / 点开的淡化走了一帧. */
-    internal fun onHostHeroFrame() = applyFrame()
+    internal fun onHostHeroFrame() {
+        applyTouchLook()
+        flushTouchParkReport()
+        applyFrame()
+    }
 
     /** 点开对焦到位: 交给页面进详情页 (宾客模式下由宿主转过来). */
     internal fun onHostWallOpened(index: Int) {
@@ -1131,6 +1391,8 @@ open class TvNativeRowWallView private constructor(
      */
     private fun settleAfterTouch() {
         touchDragged = false
+        // 按触屏的规矩走时停在哪是哪 (见 touchMode)
+        if (touchInput) return
         val goal = list.scrolledPx() + tvNativeFlingDistance(context, list.takeTouchFlingVelocity())
         val items = list.items
         val hero = timeline.active
@@ -1159,6 +1421,7 @@ open class TvNativeRowWallView private constructor(
     // ------------------------------------------------------------------
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN && tvNativeIsWallInputKey(event.keyCode)) lastInputTouch = false
         // 宾客模式下这两样宿主已经过了
         if (guest == null) {
             TvNativeFocusCues.onKey(this, event)
@@ -1181,6 +1444,10 @@ open class TvNativeRowWallView private constructor(
         if (!vertical && !horizontal) return false
         if (farJumpRow != null) {
             landFarJumpNow()
+            return true
+        }
+        if (touchParkedNow) {
+            landFromTouchPark()
             return true
         }
         if (isFocused && descendantFocusability == FOCUS_BEFORE_DESCENDANTS) {
@@ -1310,6 +1577,7 @@ open class TvNativeRowWallView private constructor(
     override fun focusableViewAvailable(v: View?) = Unit
 
     override fun onRequestFocusInDescendants(direction: Int, previouslyFocusedRect: Rect?): Boolean {
+        if (touchParkOnEntry()) return false
         // 有挂着的落点 (换数据时聚焦那一行没了, 持焦的卡随之被拆, 系统从窗口根上重新送焦走到这里): 照原定的落点送, 不改成上次那张
         val pending = pendingRow
         if (pending != null && farJumpRow == null && list.indexOfKey(pending) >= 0) {
@@ -1384,6 +1652,21 @@ open class TvNativeRowWallView private constructor(
 
         override fun tapConfirmsWhileFocusing(index: Int): Boolean =
             tvWallTapConfirmsWhileFocusing(isPlaceholder(rowKey, index), heroEnabled, timeline.active)
+
+        override val touchTaps: Boolean get() = touchInput
+
+        override fun onTouchTap(index: Int, card: View) {
+            when (tvWallTouchTap(isPlaceholder(rowKey, index), heroEnabled, timeline.active, card.isFocused, isAboveFocusedRow(rowKey))) {
+                TvWallTouchTap.OpenFocused -> openFocusedCard()
+                TvWallTouchTap.FocusOnly -> card.requestFocus()
+                TvWallTouchTap.FocusAndConfirm -> {
+                    card.requestFocus()
+                    onClick(index)
+                }
+
+                TvWallTouchTap.Confirm -> onClick(index)
+            }
+        }
     }
 
     private fun isPlaceholder(rowKey: String, index: Int): Boolean {
@@ -1474,7 +1757,8 @@ open class TvNativeRowWallView private constructor(
         if (fixedAnchor && heroEnabled && !timeline.active && guest == null) {
             // 钉死锚点: 焦点落到卡上就进 hero 态 (按 hero 线滚过去, 见 setHeroActive)
             setHeroActive(true)
-        } else {
+        } else if (!touchMode || timeline.active) {
+            // 按触屏的规矩走时卡片墙上焦点不带着滚动 (见 touchMode)
             updateStop(heroToggled = false)
         }
         applyFrame()
@@ -1548,7 +1832,9 @@ open class TvNativeRowWallView private constructor(
 
     override fun requestChildFocus(child: View?, focused: View?) {
         super.requestChildFocus(child, focused)
-        // 远跳停放的焦点落地了 (目标卡 / 顶部区域拿到焦点)
+        touchParked = false
+        touchParkReportPending = false
+        // 远跳 / 触屏停放的焦点落地了 (目标卡 / 顶部区域拿到焦点)
         if (isFocusable) {
             descendantFocusability = FOCUS_AFTER_DESCENDANTS
             isFocusable = false
@@ -1567,12 +1853,16 @@ open class TvNativeRowWallView private constructor(
      * 远跳停放时焦点在本视图自己身上, 仍算在卡片区.
      */
     private val focusWatcher = ViewTreeObserver.OnGlobalFocusChangeListener { _, newFocus ->
-        if (!tvNativeIsInside(newFocus, this)) setCardAreaFocus(false)
+        if (!tvNativeIsInside(newFocus, this)) {
+            touchParked = false
+            setCardAreaFocus(false)
+        }
     }
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         viewTreeObserver.addOnGlobalFocusChangeListener(focusWatcher)
+        applyTouchLook()
         // 宾客模式下聚焦提示按宿主那一页算
         if (guest == null) TvNativeFocusCues.attachPage(this)
     }
@@ -1805,8 +2095,14 @@ open class TvNativeRowWallView private constructor(
         fun exactly(px: Int) = MeasureSpec.makeMeasureSpec(px.coerceAtLeast(0), MeasureSpec.EXACTLY)
         if (guest == null) {
             wallBackdrop?.measure(exactly(width), exactly(height))
-            backdrop.measure(exactly(m.backdropWidthPx), exactly(m.backdropHeightPx))
-            heroBox.measure(exactly(m.pageWidthPx - m.heroStartPx - m.heroEndPadPx), exactly(m.heroBlockExpandedPx))
+            if (padHero) {
+                val backdropHeight = padBackdropHeightPx()
+                backdrop.measure(exactly((backdropHeight * TV_BACKDROP_ASPECT_RATIO).roundToInt()), exactly(backdropHeight))
+                heroBox.measure(exactly(padTitleWidthPx), exactly(padTextBoxBottomPx() - m.heroTopPx))
+            } else {
+                backdrop.measure(exactly(m.backdropWidthPx), exactly(m.backdropHeightPx))
+                heroBox.measure(exactly(m.pageWidthPx - m.heroStartPx - m.heroEndPadPx), exactly(m.heroBlockExpandedPx))
+            }
         }
         list.measure(exactly(width), exactly(height - m.listTopPx + m.listTopBleedPx))
         if (anchorRing.parent != null) anchorRing.measure(exactly(style.cardWidthPx), exactly(style.cardHeightPx))
@@ -1896,6 +2192,14 @@ open class TvNativeRowWallView private constructor(
         override fun measureContent(widthMeasureSpec: Int, heightMeasureSpec: Int) {
             val m = metrics
             val width = MeasureSpec.getSize(widthMeasureSpec)
+            if (padHero) {
+                // 平板版: 文字占满整块、贴底排 (见 TvNativeHeroTextView.padLayout), 按钮不在块里
+                val height = MeasureSpec.getSize(heightMeasureSpec)
+                heroText.titleWidthPx = width
+                heroText.measure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY))
+                setMeasuredDimension(width, height)
+                return
+            }
             val ex = extra?.takeIf { extraPresent }
             val block = if (ex != null) m.heroBlockExpandedPx else m.heroBlockPx
             var extraHeight = 0
@@ -1995,3 +2299,9 @@ private const val TV_NATIVE_ROW_RESTART_FADE_MILLIS = 250L
 
 /** 换内容滑动开始时跨出那一屏宽的卡淡出多久 (见 TvNativeRowWallView.beginLane): 赶在整片滑起来之前没掉. */
 private const val TV_NATIVE_LANE_CARD_OUT_MILLIS = 120L
+
+/** 算「用键盘 / 遥控器操作」的键 (同 iPad 的 tvWallInputMode): 方向键与确认键. */
+internal fun tvNativeIsWallInputKey(keyCode: Int): Boolean = when (keyCode) {
+    KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> true
+    else -> tvNativeIsConfirmKey(keyCode)
+}

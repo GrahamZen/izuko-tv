@@ -51,7 +51,10 @@ import me.him188.ani.app.ui.foundation.tv.TvTitleLogoGlow
 import me.him188.ani.app.ui.foundation.tv.TvTitleLogoGrid
 import me.him188.ani.app.ui.foundation.tv.TvTitleLogoGrids
 import me.him188.ani.app.ui.foundation.tv.TvTitleLogoUnreadable
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_HERO_LOGO_TALL_SCALE
+import me.him188.ani.app.ui.foundation.tv.wall.tvPadHeroSummary
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 
 /** hero 标题 logo 背后铺的整屏模糊背景 (见 [TvNativeHeroTextView.logoBackdrop]). */
@@ -164,6 +167,27 @@ class TvNativeHeroTextView(
             field = value
             requestLayout()
         }
+
+    /**
+     * 平板版 hero 的排法 (见 TvPadHeroGeometry): 文字贴着本视图底边往上排 (块高给多少都贴底), 简介分段换行压成一段、最多 [summaryCapLines] 行;
+     * 评分照 iPad 写成信息行字号的「★ 7.4」(星是字, 主要文字色). false = 电视版: 从顶上排起, 简介占满剩余高度, 评分「7.4/10」配主题色的星.
+     */
+    var padLayout: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            applyStyle()
+        }
+
+    /** 简介最多几行, 0 = 不另限 (照剩余高度). */
+    var summaryCapLines: Int = 0
+        set(value) {
+            if (field == value) return
+            field = value
+            requestLayout()
+        }
+
+    private fun summaryTextOf(text: TvNativeHeroText): String = if (padLayout) tvPadHeroSummary(text.summary) else text.summary
 
     /** Compose 根视图 (放大转场的框按它的坐标登记). */
     var composeRoot: View? = null
@@ -319,7 +343,12 @@ class TvNativeHeroTextView(
             title.maxLines = s.titleMaxLines
         }
         title.marqueeRepeatLimit = s.marqueeRepeat
-        s.rating.applyTo(rating)
+        if (padLayout) {
+            s.meta.applyTo(rating)
+            rating.setTextColor(s.rating.color)
+        } else {
+            s.rating.applyTo(rating)
+        }
         s.meta.applyTo(meta)
         s.summary.applyTo(summary)
         status.applyStyle(s.status, s.marqueeRepeat)
@@ -565,9 +594,9 @@ class TvNativeHeroTextView(
         val info = text.infoReady
         val hasRating = text.rating != null
         metaRow.visibility = if (info && (hasRating || text.meta.isNotEmpty())) VISIBLE else GONE
-        star.visibility = if (hasRating) VISIBLE else GONE
+        star.visibility = if (hasRating && !padLayout) VISIBLE else GONE
         rating.visibility = if (hasRating) VISIBLE else GONE
-        rating.text = text.rating?.let { "$it/10" }
+        rating.text = text.rating?.let { if (padLayout) "★ $it" else "$it/10" }
         // vibrancy: 次要色的字 (信息行里的开播状态 / 年月、探索页的下一集行) 与简介换成次要那一档, 其余颜色 (总集数、追番页的主色) 不换
         val vibrant = text.vibrant
         val secondary = tvVibrancySecondary(style.title.color)
@@ -580,7 +609,7 @@ class TvNativeHeroTextView(
         status.visibility = if (info && st != null) VISIBLE else GONE
         if (st != null) status.bind(st, color = if (vibrant && st.color == style.status.color) secondary else st.color, vibrant = vibrant)
         summary.visibility = if (info) VISIBLE else GONE
-        summary.text = text.summary
+        summary.text = summaryTextOf(text)
         summary.setTextColor(if (vibrant) secondary else style.summary.color)
         summary.setTvVibrancy(vibrant)
         if (old?.subjectId != text.subjectId) {
@@ -959,10 +988,12 @@ class TvNativeHeroTextView(
     private fun activeLogoSize(titleW: Int): TvNativeTitleSlot.LogoSize? {
         if (!logoReserved) return null
         val target = logoTarget ?: return null
-        val box = style.logoBox ?: return null
+        val tvBox = style.logoBox ?: return null
+        // 平板版: 高度上限放宽 (见 TV_PAD_HERO_LOGO_TALL_SCALE), 槽高就是 logo 的高 (文字块贴底往上长, 不给矮的 logo 留空)
+        val box = if (padLayout) tvBox.copy(maxHeightPx = (tvBox.maxHeightPx * TV_PAD_HERO_LOGO_TALL_SCALE).roundToInt()) else tvBox
         val capped = if (titleW > 0 && box.maxWidthPx > titleW) box.copy(maxWidthPx = titleW) else box
         val size = capped.sizeOf(target.aspectRatio)
-        return TvNativeTitleSlot.LogoSize(size.widthPx, size.heightPx, box.maxHeightPx)
+        return TvNativeTitleSlot.LogoSize(size.widthPx, size.heightPx, if (padLayout) size.heightPx else box.maxHeightPx)
     }
 
     /**
@@ -1111,10 +1142,11 @@ class TvNativeHeroTextView(
             count++
         }
         if (summary.visibility != GONE) {
-            // 简介占满剩余高度: 放得下几行就几行, 最后一行省略号
+            // 简介占满剩余高度: 放得下几行就几行 (平板版另限 summaryCapLines 行), 最后一行省略号
             val remaining = (height - used - gap()).coerceAtLeast(0)
             val lineHeight = max(1, s.summary.lineHeightPx.takeIf { it > 0 } ?: summary.lineHeight)
-            val maxLines = remaining / lineHeight
+            val cap = summaryCapLines.takeIf { it > 0 } ?: Int.MAX_VALUE
+            val maxLines = min(remaining / lineHeight, cap)
             if (summary.maxLines != maxLines) summary.maxLines = maxLines
             summary.measure(
                 MeasureSpec.makeMeasureSpec(summaryW, MeasureSpec.EXACTLY),
@@ -1125,8 +1157,10 @@ class TvNativeHeroTextView(
     }
 
     override fun layoutContent(width: Int, height: Int) {
-        var y = 0
         var count = 0
+        // 平板版排法贴底: 从剩下的那截往下排
+        var y = if (padLayout) height - lines.filter { it.visibility != GONE }.sumOf { it.measuredHeight + style.lineSpacingPx } + style.lineSpacingPx else 0
+        y = y.coerceAtLeast(0)
         for (line in lines) {
             if (line.visibility == GONE) continue
             if (count > 0) y += style.lineSpacingPx

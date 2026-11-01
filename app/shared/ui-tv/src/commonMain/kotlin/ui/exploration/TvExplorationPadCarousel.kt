@@ -33,6 +33,12 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeHeroSource
 import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_CAROUSEL_DOT
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_CAROUSEL_DOTS_BOTTOM
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_CAROUSEL_DOT_GAP
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_CAROUSEL_DOT_INACTIVE_ALPHA
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_CAROUSEL_DOT_SELECTED
+import me.him188.ani.app.ui.foundation.tv.wall.TV_PAD_CAROUSEL_TEXT_BOTTOM
 import me.him188.ani.app.ui.foundation.tv.wall.TvPadHeroLayer
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.exploration_schedule
@@ -47,7 +53,7 @@ import org.jetbrains.compose.resources.stringResource
 
 /**
  * 轮播区的画面与文字 (压在卡片列表底下): [source] 是轮播这一部; 文字块下面留出按钮那一排 (按钮另起一层, 见 [TvPadCarouselButtons]).
- * 换一部的过渡固定一种 (同自动翻页), 手势不拖着画面走.
+ * 换一部的过渡固定一种 (同自动翻页), 手势不拖着画面走. [backdropShift] 见 [TvPadHeroLayer].
  */
 @Composable
 internal fun TvPadCarouselLayer(
@@ -57,6 +63,7 @@ internal fun TvPadCarouselLayer(
     textStart: Dp,
     pageWidth: Dp,
     modifier: Modifier = Modifier,
+    backdropShift: () -> Float = { 0f },
 ) {
     TvPadHeroLayer(
         source,
@@ -64,6 +71,7 @@ internal fun TvPadCarouselLayer(
         textBottom = TV_PAD_CAROUSEL_TEXT_BOTTOM,
         pageWidth = pageWidth,
         modifier = modifier,
+        backdropShift = backdropShift,
     ) {
         if (count > 1) {
             TvPadCarouselDots(
@@ -120,11 +128,11 @@ internal fun TvPadCarouselButtons(
 @Composable
 private fun TvPadCarouselDots(count: Int, selected: Int, modifier: Modifier = Modifier) {
     val color = MaterialTheme.colorScheme.onSurface
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(TV_PAD_CAROUSEL_DOT_GAP), verticalAlignment = Alignment.CenterVertically) {
         repeat(count) { index ->
             Box(
                 Modifier
-                    .size(width = if (index == selected) 16.dp else 6.dp, height = 6.dp)
+                    .size(width = if (index == selected) TV_PAD_CAROUSEL_DOT_SELECTED else TV_PAD_CAROUSEL_DOT, height = TV_PAD_CAROUSEL_DOT)
                     .clip(CircleShape)
                     .background(color.copy(alpha = if (index == selected) 1f else TV_PAD_CAROUSEL_DOT_INACTIVE_ALPHA)),
             )
@@ -132,10 +140,4 @@ private fun TvPadCarouselDots(count: Int, selected: Int, modifier: Modifier = Mo
     }
 }
 
-private const val TV_PAD_CAROUSEL_SECONDARY_BUTTON_ALPHA = 0.16f
-private const val TV_PAD_CAROUSEL_DOT_INACTIVE_ALPHA = 0.4f
-
-/** 圆点、按钮、文字块的下沿离轮播区底边多远: 自下而上圆点 → 按钮 → 文字, 文字块往上长, 按钮的位置不随文字长短变. */
-private val TV_PAD_CAROUSEL_DOTS_BOTTOM = 18.dp
-internal val TV_PAD_CAROUSEL_BUTTONS_BOTTOM = 40.dp
-private val TV_PAD_CAROUSEL_TEXT_BOTTOM = 96.dp
+internal const val TV_PAD_CAROUSEL_SECONDARY_BUTTON_ALPHA = 0.16f
