@@ -38,6 +38,7 @@ import me.him188.ani.app.ui.subject.collection.progress.SubjectProgressStateFact
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 import me.him188.ani.datasources.api.topic.isDoneOrDropped
 import me.him188.ani.datasources.api.topic.toggleCollected
+import me.him188.ani.utils.coroutines.flows.FailedReadRetry
 import me.him188.ani.utils.coroutines.flows.FlowRestarter
 import me.him188.ani.utils.coroutines.flows.restartable
 import me.him188.ani.utils.logging.info
@@ -87,6 +88,7 @@ open class UserCollectionsViewModel : AbstractViewModel(), KoinComponent {
     // 而本 ViewModel 由 androidx viewModel {} 取得, 不会被 remember, init() 永远不会执行.
     // 放在 state 之后, 保证收集回调里用到的 state 已初始化 (backgroundScope 由父类构造器创建, 可用).
     init {
+        launchInBackground { FailedReadRetry.onRequest { if (state.collectionCounts == null) countsRestarter.restart() } }
         launchInBackground {
             sessionStateProvider.eventFlow.filter { it is SessionEvent.NewLogin }.collectLatest {
                 logger.info { "登录信息变更, 清空缓存" }
