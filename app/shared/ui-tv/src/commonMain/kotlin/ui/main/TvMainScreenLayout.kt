@@ -21,6 +21,7 @@ import me.him188.ani.app.ui.foundation.layout.LocalShellContentStartInset
 import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallTone
 import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.rememberTvPosterWallTone
+import me.him188.ani.app.ui.foundation.tv.tvNoFontPadding
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallHeroBackground
 import me.him188.ani.app.ui.foundation.tv.tvTmdbSubjectTitleFilled
 import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
@@ -82,7 +83,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.intl.Locale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -424,7 +424,7 @@ private fun BoxScope.TvExitHintToast(state: MutableTransitionState<Boolean>, tex
                 // 而条高又决定 pill 的半径 —— 差 4dp 就会让圆角看起来"不太一样"
                 style = MaterialTheme.typography.bodyMedium.copy(
                     lineHeight = TV_EXIT_HINT_LINE_HEIGHT,
-                    platformStyle = PlatformTextStyle(includeFontPadding = false),
+                    platformStyle = tvNoFontPadding,
                 ),
                 maxLines = 1,
             )

@@ -55,7 +55,7 @@ class TvTextResolver(private val template: (StringResource) -> String?) {
 }
 
 /** 按位置 (`%1$s` / `%2$d`) 或顺序 (`%s` / `%d`) 填参数, `%%` 是百分号; 同 Compose 资源的格式. */
-internal fun formatTvTemplate(template: String, args: List<String>): String {
+fun formatTvTemplate(template: String, args: List<String>): String {
     if (args.isEmpty() && '%' !in template) return template
     var next = 0
     return PLACEHOLDER.replace(template) { match ->

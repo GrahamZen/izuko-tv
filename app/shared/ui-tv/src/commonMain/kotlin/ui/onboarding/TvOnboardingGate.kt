@@ -9,7 +9,7 @@
 
 package me.him188.ani.app.ui.onboarding
 
-import android.content.Context
+import me.him188.ani.app.platform.Context
 
 /**
  * 首次启动引导要不要出现: 没做过就出现, 做完 (登录或跳过) 记一个标记, 之后不再出现. 设置里「重新走一遍首次引导」把标记清掉再重启应用.
@@ -18,24 +18,14 @@ import android.content.Context
  * 按安装时间判会被当成「升级」漏掉 —— 而他们正需要引导 (检测网络、确认登录). 本包名在 1.0.0 之前没有别的版本,
  * 所以「没有标记」就等于「还没做过引导」.
  */
-object TvOnboardingGate {
-    private const val PREFS = "tv_onboarding"
-    private const val KEY_DONE = "done"
+expect object TvOnboardingGate {
+    fun isPending(context: Context): Boolean
 
-    fun isPending(context: Context): Boolean =
-        !context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_DONE, false)
-
-    fun markDone(context: Context) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_DONE, true).apply()
-    }
+    fun markDone(context: Context)
 
     /** 同 [markDone], 同步写盘: 换电视搬完设置后紧接着重启进程. */
-    fun markDoneNow(context: Context) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_DONE, true).commit()
-    }
+    fun markDoneNow(context: Context)
 
     /** 下次启动重新走引导. 紧接着要重启进程, 所以同步写盘. */
-    fun reset(context: Context) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_DONE, false).commit()
-    }
+    fun reset(context: Context)
 }

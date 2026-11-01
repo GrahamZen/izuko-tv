@@ -113,7 +113,6 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.graphicsLayer
@@ -254,7 +253,6 @@ import me.him188.ani.app.ui.foundation.tv.TvZoomedImageOverlay
 import me.him188.ani.app.ui.foundation.tv.lerpTvBackdropTreatment
 import me.him188.ani.app.ui.foundation.tv.nativeview.TV_WALL_BACKDROP_CROSSFADE_MILLIS
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeCard
-import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeEpisodeRow
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativePosterStrip
 import me.him188.ani.app.ui.foundation.tv.rememberTvFocusLandingWindow
 import me.him188.ani.app.ui.foundation.tv.rememberTvImageZoomState
@@ -262,7 +260,7 @@ import me.him188.ani.app.ui.foundation.tv.rememberTvTitleLogo
 import me.him188.ani.app.ui.foundation.tv.rememberTvTitleLogoBox
 import me.him188.ani.app.ui.foundation.tv.rememberTvTmdbTitles
 import me.him188.ani.app.ui.foundation.tv.shownTvTitleLogo
-import me.him188.ani.app.ui.foundation.tv.transformation
+import me.him188.ani.app.ui.foundation.tv.tvLogoTransformation
 import me.him188.ani.app.ui.foundation.tv.tvBackdropFadeFromBlackStops
 import me.him188.ani.app.ui.foundation.tv.tvBackdropFadeToBlackStops
 import me.him188.ani.app.ui.foundation.tv.tvBackdropTreatmentPainter
@@ -1749,7 +1747,7 @@ fun SubjectDetailsTvPage(
                 // 不再有"选集"标题行: 该位置改放聚焦集的小标题 (见 FocusEpisodeCarousel),
                 // "看过/全X话"连载进度与 Hero 重复已去掉
                 // 卡片行换原生 View (轮播的其余部分照旧是 Compose)
-                rowContent = { TvNativeEpisodeRow(it) },
+                rowContent = tvEpisodeRowContent,
             )
             }
             }
@@ -2190,7 +2188,7 @@ private fun TvTitleLogoLayer(
         contentScale = ContentScale.Fit,
         alignment = Alignment.BottomStart,
         crossfade = false,
-        transformations = listOfNotNull(look.transformation()),
+        transformations = listOfNotNull(look.tvLogoTransformation()),
     )
 }
 
@@ -3691,7 +3689,7 @@ private fun TvHeroBackdrop(
                 // 图一到就预传 GPU: 换图放大时详情页那张、淡入进页时的背景, 头一次上屏那一帧不当场上传纹理 (同一张图已经画过的不重复传)
                 onSuccess = {
                     it.bitmap?.prepareToDraw()
-                    if (logoJudged) it.bitmap?.let { bitmap -> TvTitleLogoDetailsLooks.putBackdrop(imageUrl, bitmap.asAndroidBitmap()) }
+                    if (logoJudged) it.bitmap?.let { bitmap -> TvTitleLogoDetailsLooks.putBackdrop(imageUrl, bitmap) }
                     onSuccess(it)
                 },
             )

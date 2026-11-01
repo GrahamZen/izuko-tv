@@ -138,8 +138,8 @@ fun <T> TvRailWallSelection<T>.enterWall(
         return true
     }
     val row = if (!switched && visitedWall()) {
-        wall.view?.let { view ->
-            view.firstIndexBelowTopLine()?.let { it / (view.grid?.metrics?.columns ?: 1).coerceAtLeast(1) }
+        wall.surface?.let { surface ->
+            surface.firstIndexBelowTopLine()?.let { it / surface.columns.coerceAtLeast(1) }
         }
     } else {
         null

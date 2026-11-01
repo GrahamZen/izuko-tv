@@ -69,8 +69,9 @@ import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.ui.foundation.AsyncImage
 import me.him188.ani.app.ui.foundation.lan.QrCodeImage
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
-import me.him188.ani.app.ui.foundation.tv.TvTitleLogoFlip
+import me.him188.ani.app.ui.foundation.tv.tvTitleLogoLightTransformation
 import me.him188.ani.app.ui.foundation.tv.rememberTvTitleLogoLanguage
+import me.him188.ani.app.ui.foundation.tv.tvLanguageDisplayName
 import me.him188.ani.app.ui.foundation.widgets.AniCenteredPanelDialog
 import me.him188.ani.app.ui.foundation.widgets.AniFocusActionButton
 import me.him188.ani.app.ui.foundation.widgets.AniFocusRingSurface
@@ -327,10 +328,7 @@ private fun resultText(result: SubjectFeedbackService.Result, kind: FeedbackKind
 
 /** 语言码 (如 `ja`) 按界面语言的名字 (「日文」). */
 @Composable
-private fun languageName(language: String): String {
-    val ui = java.util.Locale.forLanguageTag(Locale.current.toLanguageTag())
-    return java.util.Locale.forLanguageTag(language).getDisplayLanguage(ui).ifBlank { language }
-}
+private fun languageName(language: String): String = tvLanguageDisplayName(language, Locale.current.toLanguageTag())
 
 /** 进页 / 换内容时把焦点送到 [requester] 上 (等一帧, 那一格排出来了才送得到). */
 @Composable
@@ -508,7 +506,7 @@ private fun LogoPreview(logo: TmdbTitleLogo?, label: String?, modifier: Modifier
                     Modifier.fillMaxWidth().weight(1f),
                     contentScale = ContentScale.Fit,
                     crossfade = false,
-                    transformations = listOf(TvTitleLogoFlip(lightText = true)),
+                    transformations = listOfNotNull(tvTitleLogoLightTransformation()),
                 )
                 if (label != null) {
                     Text(label, color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelSmall, maxLines = 1)

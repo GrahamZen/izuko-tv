@@ -70,7 +70,6 @@ import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.ui.foundation.theme.glassContainerColor
 import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
 import me.him188.ani.app.ui.foundation.tvLongPressKey
-import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_storage_cache_location_internal
 import me.him188.ani.app.ui.lang.tv_background_task_cache_move
@@ -78,15 +77,8 @@ import me.him188.ani.app.ui.lang.tv_background_task_cache_move_cancel
 import me.him188.ani.app.ui.lang.tv_background_task_cache_move_resume
 import me.him188.ani.app.ui.lang.tv_background_task_cache_move_stop
 import me.him188.ani.app.ui.lang.tv_background_task_cache_move_waiting
-import me.him188.ani.app.ui.lang.tv_background_task_device_migration
-import me.him188.ani.app.ui.lang.tv_background_task_device_migration_stop
-import me.him188.ani.app.ui.lang.tv_background_task_device_migration_stopped
 import me.him188.ani.app.ui.lang.tv_background_task_media_library
 import me.him188.ani.app.ui.lang.tv_background_task_next
-import me.him188.ani.app.ui.lang.tv_background_task_profile_import
-import me.him188.ani.app.ui.lang.tv_background_task_profile_import_waiting
-import me.him188.ani.app.ui.profile.ProfileImportSession
-import me.him188.ani.app.ui.remote.RemoteDeviceMigration
 import me.him188.ani.datasources.api.topic.FileSize.Companion.bytes
 import org.jetbrains.compose.resources.stringResource
 import kotlin.time.Duration
@@ -138,9 +130,6 @@ internal fun rememberTvBackgroundTasks(closePlayer: (() -> Unit)?): List<TvBackg
     val publisher = remember { GlobalKoin.getOrNull<MediaLibraryPublisher>() }
     val publishFlow = remember { publisher?.progress?.atMostEvery(500.milliseconds) ?: flowOf(null) }
     val publish by publishFlow.collectAsState(publisher?.progress?.value)
-    val import by ProfileImportSession.state.collectAsState()
-    val migration by RemoteDeviceMigration.progress.collectAsState()
-    val toaster = LocalToaster.current
 
     val internalName = stringResource(Lang.settings_storage_cache_location_internal)
     val tasks = mutableListOf<TvBackgroundTask>()
@@ -184,34 +173,8 @@ internal fun rememberTvBackgroundTasks(closePlayer: (() -> Unit)?): List<TvBackg
             progress = if (p.bytesTotal > 0) (p.bytesDone.toFloat() / p.bytesTotal).coerceIn(0f, 1f) else null,
         )
     }
-    (import as? ProfileImportSession.State.Running)?.let { s ->
-        tasks += TvBackgroundTask(
-            key = "profile-import",
-            title = stringResource(Lang.tv_background_task_profile_import, s.sourceName),
-            detail = if (s.waitingForRateLimit) {
-                stringResource(Lang.tv_background_task_profile_import_waiting)
-            } else {
-                "${s.done}/${s.total}"
-            },
-            progress = if (s.total > 0) s.done.toFloat() / s.total else null,
-        )
-    }
-    migration?.let { m ->
-        val stoppedText = stringResource(Lang.tv_background_task_device_migration_stopped)
-        tasks += TvBackgroundTask(
-            key = "device-migration",
-            title = stringResource(Lang.tv_background_task_device_migration),
-            detail = if (m.total > 0) "${m.text} ${m.done.bytes} / ${m.total.bytes}" else m.text,
-            progress = if (m.total > 0) (m.done.toFloat() / m.total).coerceIn(0f, 1f) else null,
-            // 开始写入之后停不了 (停在中间会留下一半), 那时不给 ✕. 手机上的进度页自己会看到「已停止」
-            stop = if (m.cancellable) {
-                { if (RemoteDeviceMigration.stop()) toaster.toast(stoppedText) }
-            } else {
-                null
-            },
-            stopLabel = stringResource(Lang.tv_background_task_device_migration_stop),
-        )
-    }
+    // 导入收藏、换电视: 只有安卓上有 (见 rememberPlatformBackgroundTasks)
+    tasks += rememberPlatformBackgroundTasks()
     return tasks
 }
 

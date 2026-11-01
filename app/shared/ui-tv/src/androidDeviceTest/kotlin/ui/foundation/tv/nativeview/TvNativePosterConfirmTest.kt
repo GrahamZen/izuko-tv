@@ -21,6 +21,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import androidx.compose.ui.geometry.Rect as ComposeRect
 
 /**
  * 「海报上按确定」不是先看简介时 (页面给 heroEnabled = false): 探索页与网格页的卡片上按确定直接交给页面, 不进 hero 态; 停在 hero 态时关掉就当场回卡片墙;
@@ -55,7 +56,7 @@ class TvNativePosterConfirmTest {
             cardClicks += rowKey to index
         }
 
-        override fun onCardLongPress(rowKey: String, index: Int, anchor: Rect) = Unit
+        override fun onCardLongPress(rowKey: String, index: Int, anchor: ComposeRect) = Unit
         override fun onBindCard(rowKey: String, index: Int) = Unit
         override fun onHeroButtonFocused(button: Int) = Unit
         override fun onHeroButtonClick(button: Int) = Unit
