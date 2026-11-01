@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
@@ -40,6 +41,8 @@ import me.him188.ani.app.domain.episode.GetAnimeScheduleFlowUseCase
 import me.him188.ani.app.domain.foundation.LoadError
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.ui.foundation.AbstractViewModel
+import me.him188.ani.app.ui.foundation.launchInBackground
+import me.him188.ani.utils.coroutines.flows.FailedReadRetry
 import me.him188.ani.utils.coroutines.flows.FlowRestarter
 import me.him188.ani.utils.coroutines.flows.catching
 import me.him188.ani.utils.coroutines.flows.restartable
@@ -120,6 +123,10 @@ open class ScheduleViewModel(
         }
         .restartable(airingSchedulesFlowRestarter)
         .shareInBackground(started = SharingStarted.Lazily) // always cached
+
+    init {
+        launchInBackground { FailedReadRetry.onRequest { if (airingSchedulesFlow.first().result?.isFailure == true) refresh() } }
+    }
 
     /**
      * 重新读取今天并重新请求服务端. 在新的响应到达之前, [presentationFlow] 先发出占位状态.

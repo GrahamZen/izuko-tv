@@ -28,6 +28,7 @@ import me.him188.ani.app.domain.foundation.LoadError
 import me.him188.ani.app.data.models.subject.SubjectInfo
 import me.him188.ani.app.data.models.subject.TestSubjectInfo
 import me.him188.ani.app.ui.subject.details.SubjectDetailsLoadState
+import me.him188.ani.utils.coroutines.flows.FailedReadRetry
 import me.him188.ani.utils.platform.annotations.TestOnly
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
@@ -190,6 +191,33 @@ class SubjectDetailsStateLoaderTest {
      * 曾经的行为: 取数失败不抛异常, 条目流一个值都不发, 于是只能等首屏超时兜底 (5 秒 x 5 次) —— 页面
      * 转 25 秒圈再报一句"加载超时". 这条用例锁住"立刻失败", 并且错误要如实说明原因.
      */
+    @Test
+    fun `a failed load is loaded again on a retry request`() = runTest(UnconfinedTestDispatcher()) {
+        val factory = RecordingFactory()
+        val loader = SubjectDetailsStateLoader(factory, backgroundScope)
+        factory.failNextWith = IllegalStateException("network")
+        loader.load(subjectId)
+        assertIs<SubjectDetailsLoadState.Err>(loader.state.value)
+
+        FailedReadRetry.request()
+
+        assertEquals(2, factory.createCount)
+        assertIs<SubjectDetailsLoadState.Ok>(loader.state.value)
+    }
+
+    @Test
+    fun `a loaded page is not touched by a retry request`() = runTest(UnconfinedTestDispatcher()) {
+        val factory = RecordingFactory()
+        val loader = SubjectDetailsStateLoader(factory, backgroundScope)
+        loader.load(subjectId)
+        val loaded = assertIs<SubjectDetailsLoadState.Ok>(loader.state.value)
+
+        FailedReadRetry.request()
+
+        assertEquals(1, factory.createCount)
+        assertSame(loaded, loader.state.value)
+    }
+
     @Test
     fun `subject not accessible fails immediately`() = runTest(UnconfinedTestDispatcher()) {
         val factory = RecordingFactory()
