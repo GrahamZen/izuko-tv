@@ -411,6 +411,8 @@ data class ThemeSettings(
      * @since 1.0.4
      */
     val tvPosterWallScale: Float = 1f,
+    /** 首页简介下方海报行的纵向偏移 (dp), 正值向下; 0 保持默认布局. */
+    val tvExplorationWallOffsetDp: Int = 0,
     /**
      * TV: 选集里特别篇 (SP / OP / ED 等) 怎么放, 见 [TvEpisodeSpecialsPlacement].
      *

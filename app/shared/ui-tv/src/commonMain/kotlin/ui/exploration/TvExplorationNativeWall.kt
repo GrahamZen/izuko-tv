@@ -506,7 +506,7 @@ internal fun TvExplorationNativeWall(
             },
             modifier = Modifier.focusRequester(state.focusRequester),
             // 海报墙大小、钉死锚点一变整块重建: 卡片视图的尺寸与横滑行的滚法建好就定了. 停位与各行停在哪张存在 state 里, 新视图照返回本页那样恢复 (见 factory)
-            rebuildKey = LocalTvPosterWallScale.current to fixedAnchor,
+            rebuildKey = Triple(LocalTvPosterWallScale.current, fixedAnchor, metrics.heroHeaderTopPx),
         )
         // 长按卡片的收藏菜单: 锚在那张卡的封面上 (原生视图报上来的封面框, 窗口坐标)
         // 收起时照样组合着上一次的目标, 菜单淡完才撤 (见 rememberTvMenuTarget)

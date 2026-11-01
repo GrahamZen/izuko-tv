@@ -1171,4 +1171,7 @@
     <string name="all_episodes_hint_remote">按確定播放 · 長按確定查看詳情</string>
     <string name="all_episodes_view_stills">劇照卡</string>
     <string name="all_episodes_view_numbers">只顯示集數</string>
+    <string name="tv_wall_position_title">海報牆上下位置</string>
+    <string name="tv_wall_position_hint">上 / 下：移動海報\n左：恢復預設\n右 / 確認：進入預覽\n返回：儲存並離開</string>
+    <string name="tv_wall_position_preview">調整首頁簡介下方的海報列，保留卡片大小。位置會限制在螢幕可見範圍內。</string>
 </resources>

@@ -1219,4 +1219,7 @@
     <string name="all_episodes_hint_remote">OK to play · Hold OK for details</string>
     <string name="all_episodes_view_stills">Thumbnails</string>
     <string name="all_episodes_view_numbers">Episode numbers only</string>
+    <string name="tv_wall_position_title">Poster wall vertical position</string>
+    <string name="tv_wall_position_hint">Up / Down: move posters\nLeft: restore default\nRight / OK: try preview\nBack: save and return</string>
+    <string name="tv_wall_position_preview">Adjusts the home poster rows below the synopsis. Card size stays the same. Position is limited to the visible screen area.</string>
 </resources>

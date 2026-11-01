@@ -72,6 +72,9 @@ class TvAdjustWindows {
 
 /** 能开的几种编辑页, 连同关掉之后要告诉谁. 各 `onClosed` 在编辑页离开时调 (Web 控制台跳页撤掉的那种不调). */
 sealed interface TvAdjustWindow {
+    /** 首页海报行纵向位置; 关闭时返回提交的偏移, 没有修改则为 null. */
+    class WallPosition(val onClosed: (offsetDp: Int?) -> Unit = {}) : TvAdjustWindow
+
     /** 「海报墙大小」: [page] 那一页的假页面. [onClosed] 带着改没改 (改了的话新值马上写进设置, 页面随之按新尺寸重建). */
     class WallScale(
         val page: TvPosterWallPreviewPage,
@@ -121,6 +124,14 @@ fun TvAdjustWindowHost(windows: TvAdjustWindows) {
                     // 编辑页在写入之前报出要写的值, 离开时连同改没改一起交给打开它的那一页
                     var committed by remember { mutableStateOf<Any?>(null) }
                     when (window) {
+                        is TvAdjustWindow.WallPosition -> TvPosterWallPositionPage(
+                            onNavigateBack = {
+                                windows.dismiss()
+                                window.onClosed(committed as? Int)
+                            },
+                            onCommit = { committed = it },
+                        )
+
                         is TvAdjustWindow.WallScale -> TvPosterWallScalePage(
                             page = window.page,
                             onNavigateBack = {
@@ -197,5 +208,6 @@ internal fun TvWallScaleEntry(
             )
         },
     )
+    TvWallPositionEntry(page, beforeOpen, refocus)
     return refocusAfterRebuild
 }

@@ -1646,7 +1646,7 @@ internal fun tvExplorationWallLayout(): TvExplorationWallLayout {
             dotInactiveAlpha = TV_CAROUSEL_DOT_INACTIVE_ALPHA,
         )
     }
-    return TvExplorationWallLayout(wallColumns, wallCardWidth, metrics)
+    return TvExplorationWallLayout(wallColumns, wallCardWidth, tvExplorationPositionMetrics(metrics))
 }
 
 /**
