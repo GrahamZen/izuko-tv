@@ -187,6 +187,7 @@ import me.him188.ani.app.domain.torrent.engines.PikPakEngine
 import me.him188.ani.app.domain.update.UpdateManager
 import me.him188.ani.app.domain.usecase.useCaseModules
 import me.him188.ani.app.platform.AppRestarter
+import me.him188.ani.app.platform.recoveries
 import me.him188.ani.app.ui.subject.details.state.DefaultSubjectDetailsStateFactory
 import me.him188.ani.app.ui.subject.details.state.SubjectDetailsStateFactory
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
@@ -198,6 +199,7 @@ import me.him188.ani.torrent.pikpak.PikPakSessionStoreAdapter
 import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.coroutines.childScope
 import me.him188.ani.utils.coroutines.childScopeContext
+import me.him188.ani.utils.coroutines.flows.FailedReadRetry
 import me.him188.ani.utils.httpdownloader.HttpDownloader
 import me.him188.ani.utils.io.delete
 import me.him188.ani.utils.io.inSystem
@@ -320,7 +322,9 @@ private fun KoinApplication.otherModules(
     single<FeedbackRecordRepository> { FeedbackRecordRepository(get<SettingsRepository>().feedbackRecords) }
     single<FeedbackDevice> { FeedbackDevice(getContext().feedbackDeviceId(), getContext().feedbackEnvironment()) }
     single<LowRamDevice> { LowRamDevice(getContext().isLowRamDevice()) }
-    single<NetworkStatus> { getContext().createNetworkStatus() }
+    single<NetworkStatus>(createdAtStart = true) {
+        getContext().createNetworkStatus().also { network -> coroutineScope.launch { network.recoveries.collect { FailedReadRetry.request() } } }
+    }
     single<SubjectFeedbackService> {
         SubjectFeedbackService(
             listCache = get<SettingsRepository>().feedbackEndpointCache,

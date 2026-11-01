@@ -16,14 +16,14 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import me.him188.ani.app.platform.NetworkStatus
-import me.him188.ani.app.platform.onEachRecovery
+import me.him188.ani.app.platform.recoveries
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeMark
 
-/** 断网恢复后把没取到的再取一次, 什么时候算恢复 (见 [onEachRecovery]). */
+/** 什么时候算断网恢复 (见 [recoveries]). */
 class NetworkRecoveryTest {
     private class FakeNetwork(initial: Boolean) : NetworkStatus {
         val available = MutableStateFlow(initial)
@@ -35,7 +35,7 @@ class NetworkRecoveryTest {
     fun `a network that stays up does nothing`() = runTest {
         val network = FakeNetwork(true)
         var recoveries = 0
-        val job = launch { network.onEachRecovery { recoveries++ } }
+        val job = launch { network.recoveries.collect { recoveries++ } }
         advanceTimeBy(1000.seconds)
         runCurrent()
         assertEquals(0, recoveries)
@@ -46,7 +46,7 @@ class NetworkRecoveryTest {
     fun `every recovery runs once after settling`() = runTest {
         val network = FakeNetwork(true)
         var recoveries = 0
-        val job = launch { network.onEachRecovery { recoveries++ } }
+        val job = launch { network.recoveries.collect { recoveries++ } }
         runCurrent()
 
         network.available.value = false
@@ -79,7 +79,7 @@ class NetworkRecoveryTest {
     fun `a drop while settling waits for the next recovery`() = runTest {
         val network = FakeNetwork(false)
         var recoveries = 0
-        val job = launch { network.onEachRecovery { recoveries++ } }
+        val job = launch { network.recoveries.collect { recoveries++ } }
         runCurrent()
 
         network.available.value = true

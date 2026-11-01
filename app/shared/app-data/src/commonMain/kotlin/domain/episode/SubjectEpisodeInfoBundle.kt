@@ -11,6 +11,7 @@ package me.him188.ani.app.domain.episode
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -26,8 +27,11 @@ import me.him188.ani.app.domain.foundation.LoadError
 import me.him188.ani.app.domain.foundation.catchLoadError
 import me.him188.ani.utils.coroutines.flows.FlowRestarter
 import me.him188.ani.utils.coroutines.flows.restartable
+import me.him188.ani.utils.logging.logger
+import me.him188.ani.utils.logging.warn
 import me.him188.ani.utils.platform.annotations.TestOnly
 import org.koin.core.Koin
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * A simple data bundle combining subject and episode collection info.
@@ -110,6 +114,7 @@ class SubjectEpisodeInfoBundleLoader(
      */
     private val getSubjectEpisodeInfoBundleFlowUseCase: GetSubjectEpisodeInfoBundleFlowUseCase by koin.inject()
 
+    private val logger = logger<SubjectEpisodeInfoBundleLoader>()
     private val restarter = FlowRestarter()
     private val flowLoadErrorObserver = FlowLoadErrorObserver()
 
@@ -139,7 +144,12 @@ class SubjectEpisodeInfoBundleLoader(
                 // Now fetch the new data, tracking errors
                 emitAll(
                     getSubjectEpisodeInfoBundleFlowUseCase(flowOf(request))
-                        .catchLoadError(flowLoadErrorObserver),
+                        .catchLoadError(flowLoadErrorObserver)
+                        // 错误已经记下了. 再往外抛, 外面的 shareIn 就结束了, restart 没人接
+                        .catch { e ->
+                            if (e is CancellationException) throw e
+                            logger.warn(e) { "Failed to load episode info: $request" }
+                        },
                 )
             }
             .restartable(restarter)

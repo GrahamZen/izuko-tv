@@ -19,11 +19,13 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.transformLatest
+import kotlinx.coroutines.launch
 import me.him188.ani.app.domain.foundation.LoadError
 import me.him188.ani.app.domain.media.fetch.MediaFetchSession
 import me.him188.ani.app.domain.media.fetch.MediaFetcher
 import me.him188.ani.app.domain.media.selector.MediaSelector
 import me.him188.ani.utils.coroutines.childScope
+import me.him188.ani.utils.coroutines.flows.FailedReadRetry
 import org.koin.core.Koin
 import kotlin.coroutines.CoroutineContext
 
@@ -106,6 +108,7 @@ class EpisodeSession(
 
     init {
         startSearchEarly()
+        sessionScope.launch { FailedReadRetry.onRequest { if (infoLoader.infoLoadErrorState.value != null) infoLoader.restart() } }
     }
     // TODO: 2025/1/4 test fetchSelectFlow changes only when infoBundleFlow's value equality changes
 

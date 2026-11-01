@@ -113,11 +113,6 @@ class EpisodeDanmakuLoader(
 
     val danmakuEventFlow: Flow<DanmakuEvent> = danmakuSessionFlow.flatMapLatest { it.events }
 
-    /** @see DanmakuLoaderImpl.retryFailedFetch */
-    fun retryFailedFetch() {
-        danmakuLoader.retryFailedFetch()
-    }
-
     suspend fun requestRepopulate() {
         danmakuSessionFlow.first().requestRepopulate()
     }

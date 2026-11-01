@@ -14,6 +14,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -38,6 +39,7 @@ import me.him188.ani.app.domain.episode.GetAnimeScheduleFlowUseCase
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.PackedDate
 import me.him188.ani.datasources.api.UTC9
+import me.him188.ani.utils.coroutines.flows.FailedReadRetry
 import org.koin.core.Koin
 import org.koin.dsl.koinApplication
 import org.koin.dsl.module
@@ -445,6 +447,55 @@ class ScheduleViewModelTest {
         assertEquals(15, loaded.airingSchedules.size)
         assertColumnsMatchDays(loaded)
 
+        subscription.cancel()
+    }
+
+    @Test
+    fun `a failed load is requested again on a retry request`() = runTest {
+        val today = LocalDate(2026, 9, 4)
+        val useCase = FakeGetAnimeScheduleFlowUseCase { day, callIndex ->
+            flow {
+                if (callIndex == 0) throw IllegalStateException("network down")
+                emit(scheduleFor(day))
+            }
+        }
+        val clock = OffsetClock(LocalDateTime(2026, 9, 4, 12, 0).toInstant(timeZone))
+        val vm = newViewModel(useCase, clock)
+        val subscription = fixtureScope.launch { vm.presentationFlow.collect {} }
+        assertNotNull(awaitReal { vm.presentationFlow.first { !it.isPlaceholder } }.error)
+
+        // 收信号的协程跑在真实线程上, 这时可能还没订阅, 一直发到取到为止; 取到后再发不会再请求
+        val requests = fixtureScope.launch {
+            while (true) {
+                FailedReadRetry.request()
+                delay(20.milliseconds)
+            }
+        }
+        val loaded = awaitReal { vm.presentationFlow.first { !it.isPlaceholder && it.error == null } }
+        requests.cancel()
+
+        assertEquals(listOf(today, today), useCase.calls.value)
+        assertEquals(15, loaded.airingSchedules.size)
+        subscription.cancel()
+    }
+
+    @Test
+    fun `a loaded schedule is not requested again on a retry request`() = runTest {
+        val today = LocalDate(2026, 9, 4)
+        val useCase = FakeGetAnimeScheduleFlowUseCase { day, _ -> flow { emit(scheduleFor(day)) } }
+        val clock = OffsetClock(LocalDateTime(2026, 9, 4, 12, 0).toInstant(timeZone))
+        val vm = newViewModel(useCase, clock)
+        val subscription = fixtureScope.launch { vm.presentationFlow.collect {} }
+        awaitReal { vm.presentationFlow.first { !it.isPlaceholder } }
+
+        awaitReal {
+            repeat(5) {
+                FailedReadRetry.request()
+                delay(20.milliseconds)
+            }
+        }
+
+        assertEquals(listOf(today), useCase.calls.value)
         subscription.cancel()
     }
 

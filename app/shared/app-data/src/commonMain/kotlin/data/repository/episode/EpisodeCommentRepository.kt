@@ -24,16 +24,13 @@ import me.him188.ani.app.data.repository.runWrappingExceptionAsLoadResult
 class EpisodeCommentRepository(
     private val aniCommentService: AniEpisodeCommentService,
 ) : Repository() {
-    /** @param onLoaded 每次加载完调, 参数是这次失败了没有 */
     fun subjectEpisodeCommentsPager(
         episodeId: Long,
-        onLoaded: (failed: Boolean) -> Unit = {},
     ): Flow<PagingData<EpisodeComment>> {
         return Pager(defaultPagingConfig) {
             EpisodeCommentPagingSource(
                 episodeId = episodeId,
                 aniCommentService = aniCommentService,
-                onLoaded = onLoaded,
             )
         }.flow
     }
@@ -59,7 +56,6 @@ class EpisodeCommentRepository(
 internal class EpisodeCommentPagingSource(
     private val episodeId: Long,
     private val aniCommentService: AniEpisodeCommentService,
-    private val onLoaded: (failed: Boolean) -> Unit = {},
 ) : PagingSource<String, EpisodeComment>() {
     override fun getRefreshKey(state: PagingState<String, EpisodeComment>): String? = null
 
@@ -76,7 +72,7 @@ internal class EpisodeCommentPagingSource(
                 prevKey = null,
                 nextKey = response.nextCursor,
             )
-        }.also { onLoaded(it is LoadResult.Error) }
+        }
     }
 
     private companion object {

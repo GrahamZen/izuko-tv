@@ -18,6 +18,7 @@ kotlin {
     sourceSets.commonMain.dependencies {
         implementation(libs.paging.common)
         implementation(libs.compose.lifecycle.runtime.compose)
+        implementation(projects.utils.coroutines)
     }
     sourceSets.commonTest.dependencies {
         implementation(projects.utils.uiTesting)

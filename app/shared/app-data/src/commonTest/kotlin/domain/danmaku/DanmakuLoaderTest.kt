@@ -36,6 +36,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.fail
+import me.him188.ani.utils.coroutines.flows.FailedReadRetry
 
 class DanmakuLoaderTest {
     @Test
@@ -167,7 +168,7 @@ class DanmakuLoaderTest {
             assertEquals(1, remoteFetches)
 
             // 断网恢复
-            loader.retryFailedFetch()
+            FailedReadRetry.request()
             runCurrent()
             assertEquals(2, remoteFetches)
 
@@ -189,7 +190,7 @@ class DanmakuLoaderTest {
             remoteResults.emit(listOf(remoteResult()))
             awaitResultIds(listOf("remote"))
 
-            loader.retryFailedFetch()
+            FailedReadRetry.request()
             runCurrent()
             assertEquals(1, remoteFetches)
             expectNoEvents()

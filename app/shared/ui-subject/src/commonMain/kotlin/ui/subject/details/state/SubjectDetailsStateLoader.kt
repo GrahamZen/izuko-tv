@@ -36,6 +36,7 @@ import me.him188.ani.app.data.models.subject.SubjectInfo
 import me.him188.ani.app.domain.foundation.LoadError
 import me.him188.ani.app.ui.subject.details.SubjectDetailsLoadAttempt
 import me.him188.ani.app.ui.subject.details.SubjectDetailsLoadState
+import me.him188.ani.utils.coroutines.flows.FailedReadRetry
 import me.him188.ani.utils.platform.annotations.TestOnly
 
 /**
@@ -110,6 +111,10 @@ class SubjectDetailsStateLoader(
     fun retry() {
         val err = state.value as? SubjectDetailsLoadState.Err ?: return
         load(err.subjectId, err.placeholder, force = true)
+    }
+
+    init {
+        backgroundScope.launch { FailedReadRetry.onRequest { retry() } }
     }
 
     /** 取消加载并回到未加载占位状态. */
