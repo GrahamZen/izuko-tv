@@ -146,6 +146,7 @@ import me.him188.ani.app.ui.lang.settings_tab_media_selector
 import me.him188.ani.app.ui.lang.settings_tab_media_source
 import me.him188.ani.app.ui.lang.settings_tab_player
 import me.him188.ani.app.ui.lang.settings_tab_proxy
+import me.him188.ani.app.ui.lang.settings_tab_settings_backup
 import me.him188.ani.app.ui.lang.settings_tab_storage
 import me.him188.ani.app.ui.lang.settings_tab_theme
 import me.him188.ani.app.ui.lang.settings_tab_update
@@ -281,11 +282,16 @@ data class TvConsoleUrl(val url: String?)
  * 说明栏里打开 Web 控制台的二维码, 带上 [fragment] 让网页直接停在相关的那一页 (如 `#settings/network`、`#sources`).
  * 控制台没在运行 (没连局域网) 时只写一句不可用. [legacy] 见 [TvQr.legacy].
  */
-internal fun consoleQr(values: TvSettingsValues, fragment: String, legacy: Boolean = false): TvQr {
+internal fun consoleQr(values: TvSettingsValues, fragment: String, legacy: Boolean = false): TvQr? {
+    // 没有 Web 控制台的端 (iOS): 换成别的入口的 ([legacy], 触屏版是「打开这一类的设置」) 照建, 别的不画
+    if (!legacy && !hasConsole(values)) return null
     val url = values[TvSettingKeys.consoleUrl]?.url
         ?: return TvQr(null, status = tvText(Lang.search_tv_remote_unavailable), console = fragment, legacy = legacy)
     return TvQr("$url$fragment", caption = tvText(Lang.tv_settings_qr_console), console = fragment, legacy = legacy)
 }
+
+/** 这一端有没有 Web 控制台 (见 [TvSettingsPlatform.hasConsole]); 没读平台的页面 (电视版设置页) 当有. */
+internal fun hasConsole(values: TvSettingsValues): Boolean = values[TvSettingKeys.platform]?.hasConsole != false
 
 /** 一个显示模式: [id] = 0 表示「自动」(不指定). */
 data class TvDisplayMode(val id: Int, val refreshRate: Int)
@@ -295,7 +301,7 @@ private val FOLLOW_CONTENT_MODE = TvDisplayMode(DISPLAY_MODE_FOLLOW_CONTENT, 0)
 
 /**
  * 电视设置页的全部设置. 加一项就在对应分类里加一行. 分类与先后同原来的设置页 (左栏分组一样); 要打字才能设的 (地址、账号密码、规则文本)
- * 不放这里, 在手机 Web 控制台里改. 设置备份 (剪贴板复制 / 导入) 在电视上用不了, 不列 (控制台里能导出导入文件).
+ * 不放这里, 在手机 Web 控制台里改. 设置备份 (剪贴板复制 / 导入) 在电视上用不了, 只在触屏版列 (电视在控制台里导出导入文件).
  */
 val TvSettingsCatalogEntries: List<TvSettingsCategory> = tvSettingsCatalog {
     category(SettingsTab.PROFILE, Lang.settings_tab_account) { accountItems() }
@@ -319,6 +325,8 @@ val TvSettingsCatalogEntries: List<TvSettingsCategory> = tvSettingsCatalog {
     category(SettingsTab.LOG, Lang.settings_tab_log) { logItems() }
     category(SettingsTab.ABOUT, Lang.settings_tab_about) { aboutItems() }
     category(SettingsTab.DEBUG, Lang.settings_tab_debug, visible = { it[TvSettingKeys.debug]?.enabled == true }) { debugItems() }
+    // 设置备份走剪贴板, 电视上用不了 (控制台里导出导入文件); 触屏版的右栏是原来设置页的那一块 (见 TouchSettingsPage)
+    category(SettingsTab.SETTINGS_BACKUP, Lang.settings_tab_settings_backup, visible = { it[TvSettingKeys.touchPage] == true }) {}
 }
 
 private fun TvSettingsItemsBuilder.appearanceItems() {
@@ -399,10 +407,13 @@ private fun TvSettingsItemsBuilder.appearanceItems() {
         read = { it.tvPlayLongPress },
         write = { copy(tvPlayLongPress = it) },
     )
-    toggle(
-        theme, Lang.settings_theme_tv_remote_show_on_launch, Lang.settings_theme_tv_remote_show_on_launch_description,
-        read = { it.tvRemoteShowOnLaunch },
-        write = { copy(tvRemoteShowOnLaunch = it) },
+    toggleOf(
+        listOf(theme), Lang.settings_theme_tv_remote_show_on_launch,
+        description = { tvText(Lang.settings_theme_tv_remote_show_on_launch_description) },
+        // 没有 Web 控制台的端不列
+        visible = ::hasConsole,
+        read = { it[theme]?.tvRemoteShowOnLaunch ?: false },
+        write = { on -> listOf(TvSettingsEdit.Update(theme) { it.copy(tvRemoteShowOnLaunch = on) }) },
     )
     run(
         Lang.settings_theme_tv_remote_reset, Lang.settings_theme_tv_remote_reset_description,

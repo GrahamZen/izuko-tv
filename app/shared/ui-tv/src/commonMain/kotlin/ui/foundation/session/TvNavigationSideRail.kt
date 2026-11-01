@@ -34,7 +34,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -382,8 +381,9 @@ fun TvNavigationSideRail(
      */
     scrimPainter: (DrawScope.() -> Unit)? = null,
 ) {
-    // hasFocus (含子节点): 任一条目聚焦即展开
+    // hasFocus (含子节点): 任一条目聚焦即展开. 触屏上不展开: 条目点一下就是跳转 (按下不拿焦点), 焦点被兜底送进来也不出文字
     var expanded by remember { mutableStateOf(false) }
+    val touchInput = LocalTvTouchInputEnabled.current
     // 头像那簇浮出按钮需要的高度: 它们不占布局 (见 TvRailAvatar), 整列纯居中时会被屏幕上边界
     // 切掉 —— 条目越多整列越高, 居中后头像越靠上, 上方那簇就露不全.
     //
@@ -450,7 +450,7 @@ fun TvNavigationSideRail(
                     val y = if (maxY < top) top else centered.coerceIn(top, maxY)
                     layout(placeable.width, placeable.height) { placeable.place(0, y) }
                 }
-                .onFocusChanged { expanded = it.hasFocus }
+                .onFocusChanged { expanded = it.hasFocus && !touchInput }
                 // 上下键在栏里自己走, 走到头也吞掉: 竖向离栏在下面的 onExit 里取消了, 但取消后这一下没人消费, 会交还给 Android 的
                 // 焦点查找, 照样按几何挑到出血到栏底下的原生视图
                 .onKeyEvent { event ->
@@ -614,7 +614,6 @@ private fun TvRailAvatar(
                     Modifier.size(TV_RAIL_ITEM_SIZE)
                         .onFocusChanged { avatarFocused = it.isFocused }
                         .railExitKeys(onExitFocus)
-                        .tvTouchFocusOnTap()
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
@@ -638,7 +637,6 @@ private fun TvRailAvatar(
                     modifier = Modifier
                         .onFocusChanged { avatarFocused = it.isFocused }
                         .railExitKeys(onExitFocus)
-                        .tvTouchFocusOnTap()
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
@@ -681,7 +679,6 @@ private fun TvRailFloatingActionButton(
         Modifier
             .onFocusChanged { focused = it.isFocused }
             .railExitKeys(onExitFocus)
-            .tvTouchFocusOnTap()
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -752,7 +749,6 @@ private fun TvRailIconItem(
                 .railExitKeys(onExitFocus)
                 // 自绘聚焦指示 (图标方块反色), 关掉默认 indication 避免整行水波.
                 // 只保留焦点高亮: 不标记"当前页", 否则聚焦项与当前页两处高亮会误导用户.
-                .tvTouchFocusOnTap()
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,

@@ -47,7 +47,6 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
@@ -94,6 +93,7 @@ import me.him188.ani.app.ui.foundation.tv.tvPosterWallSubtitleStyle
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallTitleStyle
 import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
 import me.him188.ani.app.ui.foundation.tvLongPressKey
+import me.him188.ani.app.ui.foundation.tv.TvModulateAlphaCompositing
 
 /*
  * Compose 版海报墙 (安卓电视上是原生视图, 见 nativeview 包; 别的端画这一套) 的卡片: 竖版海报 + 下方定高两行番名, 外观与原生卡片
@@ -194,13 +194,17 @@ internal fun rememberTvWallCardStyle(
 /**
  * 海报墙的一张卡 ([card] 为 null = 分页还没到的占位): 海报承载焦点 / 点击 / 长按, 下方定高两行番名; 给了副标题时番名只占第一行
  * (聚焦时放不下跑马灯), 第二行是副标题. 聚焦时海报放大 ([TvWallCardStyle.focusScale]) 并抬起一大片软影, 番名全亮、往下让开放大多伸出的那截.
- * 触屏上点即聚焦再点击 (见 tvTouchFocusOnTap). 焦点请求器挂在 [modifier] 上 (卡片本身就是焦点目标).
+ * 触屏上点即聚焦再点击 (见 tvTouchFocusOnTap; [touchFocusOnPress] 为 false 时点一下只是点击). 焦点与点击只在封面上 (四周的聚焦框空隙、下面的番名都点不到, 同原生卡片);
+ * 焦点请求器挂在 [modifier] 上 (请求委托给封面那个焦点目标).
  *
  * @param onLongPress 长按 (遥控器确定键长按 / 触屏长按), 参数 = 封面在窗口里的框 (菜单的锚点); null = 不认长按.
  * @param dimAlpha 卡片整体的淡化 (0..1, 绘制阶段读): 越过顶线 / hero 态越线的卡. 乘进放大层与番名层, 不在外面另包图层 (投影不吃外层透明度).
  * @param labelAlpha 番名的显隐 (0..1, 绘制阶段读): hero 态里淡出.
  * @param holdFocusLook 不论有没有焦点都画成聚焦的样子 (返回本页时进页落点那张, 焦点到了不再放大一遍).
  * @param touchTwoStep 触屏上没聚焦的卡第一下只聚焦, 已聚焦再点才是点击 (hero 态里换卡只换焦点).
+ * @param showFocusLook 聚焦时画不画放大与抬起的投影: 触屏上卡片墙不画 (没有遥控器, 焦点对用户没意义), hero 态里聚焦那张照画.
+ * @param touchFocusOnPress 触屏上按下即把焦点拿过来 (见 tvTouchFocusOnTap). 海报墙按触屏的规矩走时为 false: 按下不动焦点 (拖动不会先把焦点
+ *   和画面带走), 点一下交给 [onClick], 要不要聚焦由调用方定.
  */
 @Composable
 internal fun TvWallCard(
@@ -214,11 +218,13 @@ internal fun TvWallCard(
     labelAlpha: () -> Float = { 1f },
     holdFocusLook: Boolean = false,
     touchTwoStep: Boolean = false,
+    showFocusLook: Boolean = true,
+    touchFocusOnPress: Boolean = true,
 ) {
     val density = LocalDensity.current
     var focused by remember { mutableStateOf(false) }
     val focusWeight by animateFloatAsState(
-        if (focused || holdFocusLook) 1f else 0f,
+        if (showFocusLook && (focused || holdFocusLook)) 1f else 0f,
         if (style.animated) tween(TV_CARD_FOCUS_TRANSITION_MILLIS) else snap(),
     )
     val coverBounds = remember { CoverBounds() }
@@ -236,16 +242,7 @@ internal fun TvWallCard(
                     focused = it.isFocused
                     onFocusChanged(it.isFocused)
                 }
-            }
-            .then(if (longPress != null) Modifier.tvLongPressKey(onLongPress = longPress, onShortPress = onClick) else Modifier)
-            .tvTouchFocusOnTap(twoStep = touchTwoStep)
-            .combinedClickable(
-                interactionSource = interactionSource,
-                // 聚焦态只由放大与投影表达, 不叠涟漪
-                indication = null,
-                onClick = onClick,
-                onLongClick = longPress,
-            ),
+            },
     ) {
         Box(
             Modifier
@@ -256,7 +253,7 @@ internal fun TvWallCard(
                     val s = 1f + (style.focusScale - 1f) * w
                     scaleX = s
                     scaleY = s
-                    compositingStrategy = CompositingStrategy.ModulateAlpha
+                    compositingStrategy = TvModulateAlphaCompositing
                     val d = dimAlpha()
                     alpha = d
                     // 系统阴影按封面那一块投 (卡片四周留着聚焦框空隙)
@@ -273,6 +270,15 @@ internal fun TvWallCard(
             Box(
                 Modifier.fillMaxSize()
                     .padding(with(density) { style.gapPx.toDp() })
+                    .then(if (longPress != null) Modifier.tvLongPressKey(onLongPress = longPress, onShortPress = onClick) else Modifier)
+                    .then(if (touchFocusOnPress) Modifier.tvTouchFocusOnTap(twoStep = touchTwoStep) else Modifier)
+                    .combinedClickable(
+                        interactionSource = interactionSource,
+                        // 聚焦态只由放大与投影表达, 不叠涟漪
+                        indication = null,
+                        onClick = onClick,
+                        onLongClick = longPress,
+                    )
                     .clip(shape)
                     .background(style.placeholderColor),
             ) {
@@ -296,7 +302,7 @@ internal fun TvWallCard(
                         val w = focusWeight
                         // 放大后海报下缘多伸出 (倍数 − 1) × 卡高 / 2: 番名往下让开, 只挪绘制, 行高不变
                         translationY = (style.focusScale - 1f) * w * style.cardHeightPx / 2f
-                        compositingStrategy = CompositingStrategy.ModulateAlpha
+                        compositingStrategy = TvModulateAlphaCompositing
                         alpha = (style.labelIdleAlpha + (1f - style.labelIdleAlpha) * w) * labelAlpha() * dimAlpha()
                     },
             )

@@ -62,6 +62,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.outlined.Feedback
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -214,12 +215,14 @@ import me.him188.ani.app.ui.foundation.navigation.LocalNavEntryContentKey
 import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
 import me.him188.ani.app.ui.foundation.navigation.OnReturnToForeground
 import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
+import me.him188.ani.app.ui.foundation.session.TvNavRailItem
 import me.him188.ani.app.ui.foundation.session.TvNavigationSideRail
 import me.him188.ani.app.ui.foundation.session.buildTvRailItems
 import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
 import me.him188.ani.app.ui.foundation.theme.GLASS_CONTAINER_ALPHA
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.theme.glassContainerColor
+import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.FillTvTmdbTextsFromCache
 import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.SyncTvTmdbSubjectText
@@ -286,6 +289,7 @@ import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.ProvideScrollFadeFocusMargin
 import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFade
 import me.him188.ani.app.ui.foundation.widgets.showLoadError
+import me.him188.ani.app.ui.foundation.tv.TvModulateAlphaCompositing
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.subject_details_air_date_format
 import me.him188.ani.app.ui.lang.subject_details_aliases
@@ -303,6 +307,7 @@ import me.him188.ani.app.ui.lang.subject_details_stat_wish
 import me.him188.ani.app.ui.lang.subject_details_total_episodes
 import me.him188.ani.app.ui.lang.subject_details_tv_feedback
 import me.him188.ani.app.ui.lang.subject_details_tv_open_details_page
+import me.him188.ani.app.ui.lang.tv_rail_back
 import me.him188.ani.app.ui.rating.isEditingFrom
 import me.him188.ani.app.ui.subject.AiringLabel
 import me.him188.ani.app.ui.subject.SubjectProgressState
@@ -492,7 +497,13 @@ fun SubjectDetailsTvLoadingPlaceholder(
                     .focusGroup()
                     .focusProperties { onEnter = { cancelFocusChange() } },
             ) {
-                TvDetailsSideRail(onExitToHero = {}, scrimColor = tvDetailsRailScrimColor())
+                // 触屏上同真页一样栏顶有返回 (条目位置对齐); 加载中点它直接出栈
+                val navigator = LocalNavigator.current
+                TvDetailsSideRail(
+                    onExitToHero = {},
+                    onBack = if (LocalTvTouchInputEnabled.current) ({ navigator.popBackStack() }) else null,
+                    scrimColor = tvDetailsRailScrimColor(),
+                )
             }
         }
     }
@@ -1265,6 +1276,8 @@ fun SubjectDetailsTvPage(
             )
             TvDetailsSideRail(
                 onExitToHero = { anchors.request(TvDetailsFocusAnchor.HERO_PLAY) },
+                // 触屏 (平板 / iPad) 没有返回键: 栏顶多一个返回 (走本页的退出, 同首屏按返回键)
+                onBack = if (LocalTvTouchInputEnabled.current) exitPage else null,
                 // **本栏才是本页"按遍历顺序最先拿到焦点"的那个节点**: 全局兜底打的是无方向
                 // requestFocus, Compose 把 Enter 转成 Right 从**最左**做二维搜索, 最左正是本栏 ——
                 // Hero 播放按钮上那处上报根本轮不到. 于是在途的落点请求 (如从标签跳搜索页返回要
@@ -1976,6 +1989,8 @@ fun SubjectDetailsTvPage(
 @Composable
 private fun TvDetailsSideRail(
     onExitToHero: () -> Unit,
+    /** 非 null 时栏顶多一个「返回」(触屏上用). */
+    onBack: (() -> Unit)?,
     modifier: Modifier = Modifier,
     scrimColor: Color? = null,
     /** 本栏 (含条目) 拿到焦点时上报, 见调用处 —— 它是本页系统兜底的实际落点. */
@@ -1989,11 +2004,16 @@ private fun TvDetailsSideRail(
         onExitFocus = onExitToHero,
         scrimColor = scrimColor,
         // 与主页同一份条目, 只差点击行为: 切 tab 前先弹掉整个嵌套栈回主页
-        items = buildTvRailItems(
-            onSearch = { navigator.navigateSubjectSearch() },
-            onNavigateToPage = { navigator.popBackOrNavigateToMain(it) },
-            onSettings = { navigator.navigateSettings() },
-        ),
+        items = buildList {
+            if (onBack != null) add(TvNavRailItem(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(Lang.tv_rail_back), onClick = onBack))
+            addAll(
+                buildTvRailItems(
+                    onSearch = { navigator.navigateSubjectSearch() },
+                    onNavigateToPage = { navigator.popBackOrNavigateToMain(it) },
+                    onSettings = { navigator.navigateSettings() },
+                ),
+            )
+        },
         // hasFocus 而不是 isFocused: 兜底落到的是栏里的某个**条目**, 栏容器本身不持焦
         modifier = modifier.onFocusChanged { if (it.hasFocus) onFallbackFocused() },
     )
@@ -2243,7 +2263,7 @@ private fun TvHeroTransitionTitle(
             text,
             Modifier.graphicsLayer {
                 alpha = 1f - detailsLook()
-                compositingStrategy = CompositingStrategy.ModulateAlpha
+                compositingStrategy = TvModulateAlphaCompositing
             },
             style = style,
             color = listColor,
@@ -2254,7 +2274,7 @@ private fun TvHeroTransitionTitle(
             text,
             Modifier.graphicsLayer {
                 alpha = detailsLook()
-                compositingStrategy = CompositingStrategy.ModulateAlpha
+                compositingStrategy = TvModulateAlphaCompositing
             },
             style = style.copy(shadow = shadow),
             color = color,
@@ -4270,7 +4290,7 @@ private fun Modifier.tvDetailsPrewarm(active: () -> Boolean, topInRoot: MutableF
             if (active() && !top.isNaN()) {
                 translationY = -top
                 alpha = 0.01f
-                compositingStrategy = CompositingStrategy.ModulateAlpha
+                compositingStrategy = TvModulateAlphaCompositing
             }
         }
 
@@ -4643,7 +4663,7 @@ private class TvDetailsPager(
         val shown = if (TvPolishFlags.pagerSkipOffscreen) shownFraction(index, outgoing, slide, rise, size.height) else 1f
         if (shown <= 0f) return@with
         // 只露出一截的页 (目标页底下露着标题的下一页): 逐条绘制乘透明度, 不为这一截建整页的离屏层
-        if (shown < TV_HERO_SWAP_LAYER_MIN_SHOWN) compositingStrategy = CompositingStrategy.ModulateAlpha
+        if (shown < TV_HERO_SWAP_LAYER_MIN_SHOWN) compositingStrategy = TvModulateAlphaCompositing
         // 本轮曲线给出的透明度 (离开方早早淡出 / 进入方稍晚淡入); 有续接值时按单调方向取,
         // 离开方只准更淡、进入方只准更浓, 连按时不会闪回 (见 alphaFrom)
         //

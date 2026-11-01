@@ -10,10 +10,12 @@
 package me.him188.ani.app.ui.foundation.tv
 
 import android.content.Context
+import android.content.pm.PackageManager
 
 /**
- * 有触摸屏的设备用平板模式还是电视模式 (设置「界面」里选, 切换时重启应用). 默认平板模式: 触屏适配、播放时藏系统栏、触屏版设置页
+ * 有触摸屏的设备用平板模式还是电视模式 (设置「界面」里选, 切换时重启应用). 平板模式: 触屏适配、播放时藏系统栏、触屏版设置页
  * ([LocalTvTouchInputEnabled] 为 true); 电视模式同没有触摸屏的电视, 给接遥控器用、系统却声明了触摸屏的盒子 / 投影仪.
+ * 没选过时, 系统声明为电视 (leanback) 的设备默认电视模式, 其余默认平板模式.
  *
  * 存本机 SharedPreferences 而不是设置仓库: 启动时同步读, 第一帧就按它组合. 没有触摸屏的设备不读它.
  */
@@ -22,7 +24,8 @@ actual object TvInterfaceModeGate {
     private const val KEY_TV_MODE = "tv_mode"
 
     actual fun isTvMode(context: Context): Boolean =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_TV_MODE, false)
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_TV_MODE, context.packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK))
 
     /** 紧接着要重启进程, 所以同步写盘. */
     actual fun setTvMode(context: Context, tvMode: Boolean) {
