@@ -184,6 +184,7 @@ internal class TvPerfRecorder(
             thermalStatus = thermalStatus(),
             windowSize = windowSize,
             timeline = timeline.snapshot(timelineFromNs ?: startNs, endNs),
+            videoEnhancementOn = TvPerfDiagnostics.videoEnhancementOn(),
         ).also { TvPlaybackSentinel.recorderStopped() }
     }
 

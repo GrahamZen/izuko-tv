@@ -15,10 +15,11 @@ import kotlinx.coroutines.flow.SharedFlow
 /**
  * 画质增强开着、设备算不过来时 (电视的显卡多半如此, 画面每秒只出几帧而声音照常) 判出来.
  *
- * 每个采样窗口 (增强开着时每 2 秒一次, 见 Android 的增强控制器) 报一次实际出了几帧 ([onSample]).
+ * 每个采样窗口 (增强开着时每 2 秒一次, 见 Android 的增强控制器) 报一次实际出了几帧、丢了几帧 ([onSample]).
  * 只看「正常在播」的窗口: 窗口结束时在播, 且播放位置这段时间照常往前走 (播放速度的 [MIN_ADVANCE] ~ [MAX_ADVANCE] 倍) ——
  * 开播攒缓冲、卡住、暂停、跳转的窗口位置不走或跳一大截, 不算数也不清零. 正常在播的窗口里出的帧不到片源帧率的 [SLOW_FRACTION],
- * 连续 [SLOW_WINDOWS] 个就算性能不够; 中间有一个够数的就从头数.
+ * 或解码出来的帧有 [DROPPED_FRACTION] 以上来不及显示就丢了 (片源没报帧率、或帧率比 24 高时, 只看出帧数判不出), 就算慢.
+ * 连续 [SLOW_WINDOWS] 个慢窗口算性能不够; 中间有一个正常的就从头数.
  *
  * 判不出两类: 一帧都出不来 (播放器一直停在缓冲, 位置不走) 和解码直接报错 —— 那种靠设置页选档时的警告.
  */
@@ -27,6 +28,7 @@ internal class VideoEnhancementPerformanceJudge {
 
     /**
      * @param renderedFrames 这个窗口里实际出的帧数
+     * @param droppedFrames 这个窗口里解码出来却丢掉的帧数
      * @param windowMillis 窗口长度
      * @param positionAdvanceMillis 这段时间播放位置走了多少
      * @param playing 窗口结束时是不是在播 (就绪且没暂停)
@@ -36,6 +38,7 @@ internal class VideoEnhancementPerformanceJudge {
      */
     fun onSample(
         renderedFrames: Int,
+        droppedFrames: Int,
         windowMillis: Long,
         positionAdvanceMillis: Long,
         playing: Boolean,
@@ -49,7 +52,9 @@ internal class VideoEnhancementPerformanceJudge {
         if (!playingNormally) return false
         val frameRate = if (contentFrameRate > 0f) contentFrameRate.coerceAtMost(MAX_FRAME_RATE) else FALLBACK_FRAME_RATE
         val expectedFrames = frameRate * positionAdvanceMillis / 1000f
-        if (renderedFrames >= expectedFrames * SLOW_FRACTION) {
+        val dropped = droppedFrames.coerceAtLeast(0)
+        val droppingTooMany = dropped > 0 && dropped >= (renderedFrames + dropped) * DROPPED_FRACTION
+        if (renderedFrames >= expectedFrames * SLOW_FRACTION && !droppingTooMany) {
             slowWindows = 0
             return false
         }
@@ -64,6 +69,9 @@ internal class VideoEnhancementPerformanceJudge {
     companion object {
         /** 出的帧不到片源帧率的这么多算慢. */
         const val SLOW_FRACTION = 0.5f
+
+        /** 解码出来的帧丢了这么多算慢. */
+        const val DROPPED_FRACTION = 0.25f
 
         /** 连续这么多个慢窗口 (每个 2 秒) 算性能不够. */
         const val SLOW_WINDOWS = 3

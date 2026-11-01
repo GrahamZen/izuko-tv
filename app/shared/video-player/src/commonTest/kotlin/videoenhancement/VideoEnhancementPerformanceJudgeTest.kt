@@ -23,7 +23,8 @@ class VideoEnhancementPerformanceJudgeTest {
         playing: Boolean = true,
         frameRate: Float = 24f,
         speed: Float = 1f,
-    ): Boolean = judge.onSample(rendered, 2000, advance, playing, frameRate, speed)
+        dropped: Int = 0,
+    ): Boolean = judge.onSample(rendered, dropped, 2000, advance, playing, frameRate, speed)
 
     @Test
     fun `three slow windows in a row trigger`() {
@@ -103,6 +104,44 @@ class VideoEnhancementPerformanceJudgeTest {
         assertFalse(sample(40, advance = 4000, speed = 2f))
         assertFalse(sample(40, advance = 4000, speed = 2f))
         assertTrue(sample(40, advance = 4000, speed = 2f))
+    }
+
+    @Test
+    fun `many dropped frames trigger even when enough frames come out`() {
+        // 工单 42 的样子: 片源没报帧率, 每 2 秒出 44 帧 (够 24 帧的一半), 同时丢 30 帧
+        assertFalse(sample(44, frameRate = 0f, dropped = 30))
+        assertFalse(sample(40, frameRate = 0f, dropped = 28))
+        assertTrue(sample(46, frameRate = 0f, dropped = 34))
+    }
+
+    @Test
+    fun `occasional dropped frames do not trigger`() {
+        repeat(10) { assertFalse(sample(44, dropped = 4)) }
+    }
+
+    @Test
+    fun `a single burst of dropped frames does not trigger`() {
+        // 跳转、切应用回来之后追一下, 只有一个窗口
+        assertFalse(sample(30, dropped = 60))
+        assertFalse(sample(48))
+        assertFalse(sample(48))
+        assertFalse(sample(30, dropped = 60))
+        assertFalse(sample(48))
+    }
+
+    @Test
+    fun `slow and dropping windows count together`() {
+        // 工单 42 的 1080p: 大多只出 20 帧, 隔一阵一批丢帧
+        assertFalse(sample(20))
+        assertFalse(sample(24, dropped = 60))
+        assertTrue(sample(20))
+    }
+
+    @Test
+    fun `negative dropped delta after decoder reset does not count as dropping`() {
+        assertFalse(sample(48, dropped = -100))
+        assertFalse(sample(48, dropped = -100))
+        assertFalse(sample(48, dropped = -100))
     }
 
     @Test

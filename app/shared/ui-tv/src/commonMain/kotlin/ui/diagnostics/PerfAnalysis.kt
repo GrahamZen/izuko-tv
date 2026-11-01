@@ -123,6 +123,8 @@ internal class PerfRecording(
     val windowSize: String,
     /** 各处报进来的事件与按秒的累计 (开播、数据源、选源器、视频出帧, 见 [PerfTimelineCollector]). */
     val timeline: PerfTimelineData = PerfTimelineData.EMPTY,
+    /** 「默认画质增强模式」不是关闭. */
+    val videoEnhancementOn: Boolean = false,
 )
 
 /** 解析 `logcat -v monotonic` 里 ART 的 GC 日志. */
@@ -497,6 +499,9 @@ internal object PerfAnalysis {
         findings += playback.findings
         if (rec.thermalStatus >= 2) {
             findings += PerfFinding(PerfFinding.Level.WARN, tr("电视正在因为发热降频（温控等级 {0}）。", rec.thermalStatus))
+        }
+        if (rec.videoEnhancementOn && playback.hasPlayback) {
+            findings += PerfFinding(PerfFinding.Level.WARN, tr("画质增强开着：视频每一帧都要经显卡处理，显卡算不过来时就只有播放才卡。先把「默认画质增强模式」改成关闭，退出播放页重进再看。"))
         }
         if (findings.none { it.level == PerfFinding.Level.BAD || it.level == PerfFinding.Level.WARN }) {
             findings += PerfFinding(PerfFinding.Level.OK, tr("没有发现明显的瓶颈。"))

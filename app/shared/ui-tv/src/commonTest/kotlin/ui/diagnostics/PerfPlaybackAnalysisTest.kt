@@ -73,12 +73,23 @@ class PerfPlaybackAnalysisTest {
         timeline.recordInterval(index * second, (index + 1) * second, cpu, 1_000_000)
     }
 
-    private fun recording() = PerfRecording(
+    private fun recording(videoEnhancementOn: Boolean = false) = PerfRecording(
         startNs = 0, endNs = 10 * second, refreshHz = 60f, cores = 4, mainTid = 1,
         frames = emptyList(), gcEvents = emptyList(), gcLogAvailable = true, counters = emptyList(), memory = emptyList(),
         trims = emptyList(), stalls = emptyList(), stallDurations = emptyList(), threadCpuMs = mapOf("main" to 500L),
-        totalMemKb = 3_000_000, apiLevel = 30, thermalStatus = 0, windowSize = "1920x1080", timeline = timeline.snapshot(),
+        totalMemKb = 3_000_000, apiLevel = 30, thermalStatus = 0, windowSize = "1920x1080", timeline = timeline.snapshot(), videoEnhancementOn = videoEnhancementOn,
     )
+
+    @Test
+    fun `playback with video enhancement on says so`() {
+        startup(searchEndSec = 3.2)
+        for (i in 3..9) playSecond(i, rendered = 24)
+
+        val on = PerfAnalysis.analyze(recording(videoEnhancementOn = true)).findings
+        assertTrue(on.any { it.level == PerfFinding.Level.WARN && it.text.startsWith("画质增强开着") }, on.joinToString("\n") { it.text })
+        val off = PerfAnalysis.analyze(recording()).findings
+        assertTrue(off.none { it.text.startsWith("画质增强开着") })
+    }
 
     @Test
     fun `smooth playback reports startup steps and no stutter`() {
