@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.foundation.tv.nativeview
 
+import me.him188.ani.app.ui.exploration.withExplorationWallPosition
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -78,6 +79,36 @@ class TvNativeExploreListTest {
     fun `first row is centered too`() {
         // 316 + 107 − 258 = 165: 比 hero 占位 (280) 少, 轮播还露着一截
         assertEquals(165, metrics.centeredScroll(items, 2))
+    }
+
+    @Test
+    fun `wall position preserves card geometry and focused row scroll`() {
+        val base = metrics.copy(rowPx = 160, heroBlockPx = 240, heroBlockExpandedPx = 300)
+        val shifted = base.withExplorationWallPosition(32, 1f)
+        assertEquals(base.rowPx, shifted.rowPx)
+        assertEquals(base.rowGapPx, shifted.rowGapPx)
+        assertEquals(base.columns, shifted.columns)
+        assertEquals(base.rowStartPx, shifted.rowStartPx)
+        assertEquals(base.heroTopPx, shifted.heroTopPx)
+        assertEquals(base.heroBlockPx, shifted.heroBlockPx)
+        assertEquals(base.heroBlockExpandedPx, shifted.heroBlockExpandedPx)
+        assertEquals(base.heroHeaderTopPx + 32, shifted.heroHeaderTopPx)
+        for (index in listOf(2, 3, 5, 7)) {
+            assertEquals(base.heroScroll(items, index), shifted.heroScroll(items, index))
+            assertEquals(base.itemTop(items, index) + 32, shifted.itemTop(items, index))
+        }
+        assertEquals(base, base.withExplorationWallPosition(0, 1f))
+    }
+
+    @Test
+    fun `wall position limits keep text blocks fixed and bottom cards visible`() {
+        val base = metrics.copy(rowPx = 160, heroBlockPx = 150, heroBlockExpandedPx = 300)
+        val upward = base.withExplorationWallPosition(-1000, 1f)
+        assertEquals(base.heroBlockPx, upward.heroBlockPx)
+        assertEquals(base.heroHeaderTopPx - 64, upward.heroHeaderTopPx)
+        val downward = base.withExplorationWallPosition(1000, 1f)
+        val cardBottom = downward.listTopPx + downward.headerPx + downward.heroHeaderTopPx + downward.rowPx - downward.rowGapPx
+        assertEquals(base.pageHeightPx - 16, cardBottom)
     }
 
     @Test

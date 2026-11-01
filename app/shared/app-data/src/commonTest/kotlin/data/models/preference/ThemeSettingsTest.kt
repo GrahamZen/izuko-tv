@@ -9,12 +9,23 @@
 
 package me.him188.ani.app.data.models.preference
 
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class ThemeSettingsTest {
+    @Test
+    fun `home wall position survives serialization and old settings default to zero`() {
+        assertEquals(0, Json.decodeFromString<ThemeSettings>("{}").tvExplorationWallOffsetDp)
+        val saved = ThemeSettings(tvExplorationWallOffsetDp = 32, tvPosterWallScale = 0.85f)
+        val restored = Json.decodeFromString<ThemeSettings>(Json.encodeToString(saved))
+        assertEquals(32, restored.tvExplorationWallOffsetDp)
+        assertEquals(0.85f, restored.tvPosterWallScale)
+    }
+
     /**
      * 回归: [ThemeSettings.effectiveUiScale] 曾用 companion 里的 `val UI_SCALE_RANGE` 做 clamp,
      * 而 `Default` 在同一个 companion 里排在它前面 —— 类初始化时 range 还是 null, 构造 `Default`

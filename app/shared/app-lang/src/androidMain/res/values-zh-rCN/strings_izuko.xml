@@ -1219,4 +1219,7 @@
     <string name="all_episodes_hint_remote">按确定播放 · 长按确定查看详情</string>
     <string name="all_episodes_view_stills">剧照卡</string>
     <string name="all_episodes_view_numbers">只显示集号</string>
+    <string name="tv_wall_position_title">海报墙上下位置</string>
+    <string name="tv_wall_position_hint">上 / 下：移动海报\n左：恢复默认\n右 / 确认：进入预览\n返回：保存并退出</string>
+    <string name="tv_wall_position_preview">调整首页简介下方的海报行，保留卡片大小。位置会限制在屏幕可见范围内。</string>
 </resources>
