@@ -47,6 +47,73 @@ index c37a5e9..95fa0c7 100644
  			write_reject_request(r);
  			i = m_requests.erase(i);
  
+diff --git a/src/posix_disk_io.cpp b/src/posix_disk_io.cpp
+index c597f82..8fe362e 100644
+--- a/src/posix_disk_io.cpp
++++ b/src/posix_disk_io.cpp
+@@ -186,7 +186,39 @@ namespace {
+ 
+ 			int offset = 0;
+ 			int const blocks_to_read = std::max(blocks_in_piece, blocks_in_piece2);
+-			for (int i = 0; i < blocks_to_read; ++i)
++			int read_ops = blocks_to_read;
++			int const piece_bytes = std::max(piece_size, piece_size2);
++			if ((flags & disk_interface::sequential_access) && piece_bytes > default_block_size)
++			{
++				// full check (torrent::start_checking): read up to check_read_size at a time and hash the
++				// blocks in memory. posix_storage opens the file for every read, so reading block by block
++				// opens a large file tens of thousands of times, which is slow on FUSE-mounted drives.
++				// reads end on block boundaries (check_read_size is a multiple of the block size), and a
++				// short read or an error stops the piece, like the block-by-block loop below
++				if (m_check_buffer.size() < check_read_size) m_check_buffer.resize(check_read_size);
++				read_ops = 0;
++				while (offset < piece_bytes)
++				{
++					int const want = std::min(check_read_size, piece_bytes - offset);
++					span<char> const b = {m_check_buffer.data(), want};
++					int const ret = st->read(m_settings, b, piece, offset, error);
++					++read_ops;
++					if (ret <= 0) break;
++					for (int pos = 0; pos < ret; pos += default_block_size)
++					{
++						int const block_offset = offset + pos;
++						int const block = block_offset / default_block_size;
++						int const n = std::min(default_block_size, ret - pos);
++						if (v1 && block_offset < piece_size)
++							ph.update(b.subspan(pos, std::min(n, piece_size - block_offset)));
++						if (block < blocks_in_piece2)
++							block_hashes[block] = hasher256(b.subspan(pos, std::min(n, piece_size2 - block_offset))).final();
++					}
++					offset += ret;
++					if (ret < want || error.ec) break;
++				}
++			}
++			else for (int i = 0; i < blocks_to_read; ++i)
+ 			{
+ 				bool const v2_block = i < blocks_in_piece2;
+ 
+@@ -211,7 +243,7 @@ namespace {
+ 
+ 				m_stats_counters.inc_stats_counter(counters::num_read_back, blocks_to_read);
+ 				m_stats_counters.inc_stats_counter(counters::num_blocks_read, blocks_to_read);
+-				m_stats_counters.inc_stats_counter(counters::num_read_ops, blocks_to_read);
++				m_stats_counters.inc_stats_counter(counters::num_read_ops, read_ops);
+ 				m_stats_counters.inc_stats_counter(counters::disk_hash_time, read_time);
+ 				m_stats_counters.inc_stats_counter(counters::disk_job_time, read_time);
+ 			}
+@@ -388,6 +420,12 @@ namespace {
+ 		// disk cache
+ 		aux::disk_buffer_pool m_buffer_pool;
+ 
++		// how much a full check reads at a time, see async_hash. a multiple of default_block_size
++		static constexpr int check_read_size = 64 * default_block_size;
++
++		// the buffer of those reads. all jobs run on the network thread, one at a time
++		std::vector<char> m_check_buffer;
++
+ 		counters& m_stats_counters;
+ 
+ 		// callbacks are posted on this
 diff --git a/src/torrent.cpp b/src/torrent.cpp
 index 5bf07c2..bfd154c 100644
 --- a/src/torrent.cpp

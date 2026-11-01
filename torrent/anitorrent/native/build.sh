@@ -15,7 +15,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 WORK="${WORK:-$HERE/../../../build/anitorrent-native}"
 ABIS="${ABIS:-arm64-v8a armeabi-v7a x86_64 x86}"
 JDK_BIN="${JDK_BIN:-$(dirname "$(command -v javac)")}"
-VERSION=0.2.0-izuko6
+VERSION=0.2.0-izuko7
 UPSTREAM_COMMIT=05756d034b6e72b2dc327c00182dccdd3bdf22ce # open-ani/anitorrent v0.2.0
 BASE_AAR_URL=https://repo1.maven.org/maven2/org/openani/anitorrent/anitorrent-native-android/0.2.0/anitorrent-native-android-0.2.0.aar
 

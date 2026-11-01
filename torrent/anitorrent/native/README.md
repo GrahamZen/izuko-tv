@@ -1,7 +1,7 @@
 # anitorrent 原生库 (重编版)
 
 安卓用的 anitorrent 原生库与 Java 绑定不用 Maven Central 上的 `org.openani.anitorrent:*:0.2.0`, 而用 `repo/` 里重编的
-`0.2.0-izuko6`。替换规则在 `build-logic/src/main/kotlin/anitorrentNative.kt`, 本地仓库在 `settings.gradle.kts` 里登记。
+`0.2.0-izuko7`。替换规则在 `build-logic/src/main/kotlin/anitorrentNative.kt`, 本地仓库在 `settings.gradle.kts` 里登记。
 桌面端的原生库仍是上游 0.2.0。
 
 ## 改了什么
@@ -22,6 +22,10 @@ libtorrent v2.0.10 + `libtorrent.patch`, 许可证同上游 (anitorrent GPL-3.0,
   整个种子会报错停下。忘掉分块时要拒掉对方排着的请求, libtorrent 补丁顺带修了 `peer_connection::reject_piece`:
   v2.0.10 删掉一条请求后还会多跳一格, 末尾位置也只在开头取一次, 对方排着这一块的请求时越界崩溃。
 - **`session_t::apply_settings` 生效**: 上游只填了设置没交给 libtorrent, 运行中改限速等设置要等 BT 服务重启。
+- **全量校验大块读** (libtorrent 补丁, `posix_disk_io::async_hash`): 没有可用的续传数据时 (被系统杀掉、覆盖安装)
+  libtorrent 把盘上已有的数据整个校验一遍。posix 后端每读一次都重新打开文件, 原来按 16 KB 一块读, 一个 1 GB 的文件要开关六万多次;
+  应用的目录在外接盘上要经 FUSE, 每次开文件几毫秒, 校验只有 1~2 MB/s。全量校验 (`sequential_access` 标记) 改成每次读 1 MB、在内存里按块算哈希;
+  下载中验单个分块的那条路不变。读短或出错时照旧停下并带上错误, 校验照旧跳过这个文件剩下的部分。
 
 libtorrent 仍是 v2.0.10、与上游同样的编译选项 (导出的 libtorrent 符号与上游包一致), 和胶水库一起重编;
 C++ 运行库改为 `c++_shared`, 用应用里已有的 `libc++_shared.so`。按 API 24 编: 低于 24 时 libtorrent 用 netlink 枚举网卡,
