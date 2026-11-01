@@ -135,7 +135,7 @@ internal class ExoPlayerVideoEnhancementController(
                 val droppedDelta = dropped - lastDropped
                 lastRendered = rendered
                 lastDropped = dropped
-                val tooSlow = performance.isTooSlow(renderedDelta)
+                val tooSlow = performance.isTooSlow(renderedDelta, droppedDelta)
                 // 按实际隔了多久折算: 显卡吃满时这条线程也慢, 名义 2 秒的间隔会拖到三四秒
                 val fps = renderedDelta * 1000.0 / performance.lastWindowMillis.coerceAtLeast(1)
                 // 计数器只能在播放线程读 (上面几行), 但写日志不能留在这条线程上: [scope] 绑的是
