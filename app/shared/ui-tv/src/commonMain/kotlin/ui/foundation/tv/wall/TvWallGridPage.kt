@@ -66,9 +66,11 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import kotlin.math.abs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import me.him188.ani.app.data.models.preference.TvBackdropBlurLevel
 import me.him188.ani.app.data.models.preference.TvPosterConfirmAction
@@ -77,7 +79,6 @@ import me.him188.ani.app.ui.foundation.focus.TvNoBringIntoViewSpec
 import me.him188.ani.app.ui.foundation.focus.TvScrollAnimator
 import me.him188.ani.app.ui.foundation.focus.TvScrollSpring
 import me.him188.ani.app.ui.foundation.focus.tvGridFocusItem
-import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
 import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
@@ -86,15 +87,16 @@ import me.him188.ani.app.ui.foundation.tv.TV_FULLSCREEN_BACKDROP_DIM_ALPHA
 import me.him188.ani.app.ui.foundation.tv.TV_TAB_CONTENT_SLIDE_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TvBackdropTreatment
 import me.him188.ani.app.ui.foundation.tv.TvWallConfirm
-import me.him188.ani.app.ui.foundation.tv.TvWallTouchTap
 import me.him188.ani.app.ui.foundation.tv.TvWallDirection
 import me.him188.ani.app.ui.foundation.tv.TvWallGridKey
+import me.him188.ani.app.ui.foundation.tv.TvWallTouchTap
 import me.him188.ani.app.ui.foundation.tv.nativeview.TV_HERO_BLUR_DIM_ALPHA
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvGridPageSurface
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeCard
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeCardBadgeStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGridPageCallbacks
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGridPageMetrics
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGridPageRows
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGridPageState
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeHeroSource
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeWallBackdropSpec
@@ -107,6 +109,8 @@ import me.him188.ani.app.ui.foundation.tv.tvWallConfirm
 import me.him188.ani.app.ui.foundation.tv.tvWallGridKey
 import me.him188.ani.app.ui.foundation.tv.tvWallTapConfirmsWhileFocusing
 import me.him188.ani.app.ui.foundation.tv.tvWallTouchTap
+import me.him188.ani.utils.logging.info
+import me.him188.ani.utils.logging.logger
 
 /*
  * 网格页 (追番 / 搜索 / 新番时间表) 海报墙的 Compose 版 (安卓电视上是原生的 TvNativeGridPageView, 参数与行为见 TvNativeGridPageHost):
@@ -141,6 +145,7 @@ internal fun <T : Any> TvWallGridPage(
     topBarScrollAwayPx: Int,
     columnSpacing: Dp,
     cardHeight: Dp?,
+    rows: TvNativeGridPageRows?,
     emptyContent: @Composable BoxScope.() -> Unit,
 ) {
     val density = LocalDensity.current
@@ -175,11 +180,23 @@ internal fun <T : Any> TvWallGridPage(
     val timeline = rememberTvWallHeroTimeline(initial = state.heroActive && heroEnabled, darkens = dark && !heroBlur)
     val surface = remember(state) { TvWallGridSurface(state, timeline, scope) }
     surface.touchInput = touchInput
-    surface.backdropFollowsFocus = wallBackdrop != null
     surface.heroEnabled = heroEnabled
     surface.columnsValue = columns
     surface.shownKey = gridKey
     surface.bindItemCount { currentItemCount() }
+    // 一组一行的内容 (追番页「追更」, 见 TvWallGridRows.kt): 建出来交给页面接数据与事件
+    val rowsGuest = if (rows != null) remember(surface) { TvWallRowsGuest(surface, scope) } else null
+    if (rows != null && rowsGuest != null) {
+        rowsGuest.metrics = rows.metrics
+        rowsGuest.touchInput = touchInput
+        rowsGuest.animatedScroll = visualEffects.animatedScroll
+    }
+    surface.rowsKey = rows?.key
+    surface.rowsGuest = rowsGuest
+    DisposableEffect(rowsGuest) {
+        state.rows = rowsGuest
+        onDispose { if (state.rows === rowsGuest) state.rows = null }
+    }
     DisposableEffect(surface) {
         state.surface = surface
         onDispose {
@@ -230,14 +247,14 @@ internal fun <T : Any> TvWallGridPage(
             proceed()
         }
     }
-    // 触屏上点卡当场进 (见 TvWallGridSurface.onCardClick): 照点开过记账, 回来时倒放成这张的模糊底
-    val pageForeground = LocalPageIsForeground.current
-    wallOpen.pageHidden = { !pageForeground.value }
-    val openBehind: (Int) -> Unit = { index ->
-        shownCards.getOrNull(index)?.subjectId?.let { subjectId ->
+    // 一组一行的内容里 hero 态按确定: 模糊背景此刻是那一部的就先对焦再进 (同网格)
+    rowsGuest?.openWall = { subjectId, index, proceed ->
+        val target = currentWallTarget
+        val matches = heroBlur && target != null && target.subjectId == subjectId && heroSource?.dimming != true
+        matches && wallOpen.open(target) {
             state.wallOpenIndex = index
             state.wallOpenLeft = false
-            wallOpen.openBehind(subjectId)
+            proceed()
         }
     }
     LaunchedEffect(wallOpen) { snapshotFlow { wallOpen.opening }.collect { state.wallOpening = it } }
@@ -270,10 +287,12 @@ internal fun <T : Any> TvWallGridPage(
             // 触屏, hero 态里: 点 hero 区 (聚焦行行顶以上: 背景图、文字) 进聚焦那张 (同点它); 点别处 (空白) 退回卡片墙, 卡片留在原地
             .tvWallBlankTap(touchInput) { p ->
                 if (!timeline.active) return@tvWallBlankTap
-                if (p.y < metrics.gridTopPx + g.heroLinePx) {
-                    surface.onCardClick(surface.focusedIndex, posterConfirm, currentCallbacks, currentItemAt, openWall, openBehind)
-                } else {
-                    surface.exitHeroInPlace()
+                // 一组一行的内容在屏上时交给它 (聚焦行的卡顶同样落在 hero 线上)
+                val guest = rowsGuest?.takeIf { surface.rowsShown }
+                when {
+                    p.y >= metrics.gridTopPx + g.heroLinePx -> if (guest != null) guest.exitHeroInPlace() else surface.exitHeroInPlace()
+                    guest != null -> guest.openFocusedCard()
+                    else -> surface.onCardClick(surface.focusedIndex, posterConfirm, currentCallbacks, currentItemAt, openWall)
                 }
             },
     ) {
@@ -334,10 +353,13 @@ internal fun <T : Any> TvWallGridPage(
             targetState = gridKey,
             modifier = Modifier
                 .tvWallPlace(x = 0, y = gridTop, width = -1, height = gridHeight)
+                .onGloballyPositioned { surface.gridLineInWindow = it.positionInWindow().y + g.topBleedPx }
                 .onFocusChanged {
-                    if (surface.gridHasFocus != it.hasFocus) {
-                        surface.gridHasFocus = it.hasFocus
-                        currentCallbacks.onGridFocusChanged(it.hasFocus)
+                    // 一组一行的内容里的焦点不算网格的
+                    val has = it.hasFocus && !surface.rowsShown
+                    if (surface.gridHasFocus != has) {
+                        surface.gridHasFocus = has
+                        currentCallbacks.onGridFocusChanged(has)
                     }
                 }
                 .onPreviewKeyEvent { event ->
@@ -362,10 +384,14 @@ internal fun <T : Any> TvWallGridPage(
                         TvWallGridKey.Swallow -> true
                     }
                 }
-                // 触屏: 左右滑一下换一份网格 (追番页换标签); 横向先过就整个手势归它, 网格不跟着上下滚
+                // 触屏: 左右滑一下换一份网格 (追番页换标签); 横向先过就整个手势归它, 网格不跟着上下滚.
+                // 一组一行的内容里按在能左右滚的那一行上不认 (横向拖是拖那一行)
                 .tvWallHorizontalSwipe(
                     enabled = touchInput && callbacks.onSwipe != null,
-                    area = { true },
+                    area = { p ->
+                        val guest = rowsGuest?.takeIf { surface.rowsShown }
+                        guest == null || !guest.rowScrollsAt(surface.gridLineInWindow - g.topBleedPx + p.y)
+                    },
                     onSwipe = { delta -> currentCallbacks.onSwipe?.invoke(delta) },
                 ),
             transitionSpec = {
@@ -380,8 +406,15 @@ internal fun <T : Any> TvWallGridPage(
             label = "tvWallGrid",
         ) { key ->
             val isCurrent = key == gridKey
+            if (rows != null && rowsGuest != null && key == rows.key) {
+                TvWallGridRowsContent(rowsGuest, rows, slotTopPx = gridTop, extraFade = { 1f - wallOpen.fade.value })
+                // 这一格没有网格: 网格的那几样操作空着
+                if (isCurrent) surface.clearGridActions()
+                return@AnimatedContent
+            }
             val list = if (isCurrent) shownCards else lastCards[key].orEmpty()
             val gridState = surface.gridStateFor(key)
+            if (isCurrent) LaunchedEffect(gridState) { surface.restoreWhenLoaded(key, gridState) { currentItemCount() } }
             val shift = remember(gridState) { Animatable(0f) }
             val animator = remember(gridState, visualEffects.animatedScroll) { TvScrollAnimator(animated = visualEffects.animatedScroll) }
             val count = if (isCurrent) currentItemCount() else 0
@@ -408,10 +441,17 @@ internal fun <T : Any> TvWallGridPage(
                         TvWallCard(
                             card = list.getOrNull(index),
                             style = style,
-                            onClick = { if (isCurrent) surface.onCardClick(index, posterConfirm, currentCallbacks, currentItemAt, openWall, openBehind) },
+                            onClick = { if (isCurrent) surface.onCardClick(index, posterConfirm, currentCallbacks, currentItemAt, openWall) },
                             modifier = if (isCurrent) Modifier.tvGridFocusItem(gridFocus, index, count) else Modifier,
                             onFocusChanged = { focused ->
-                                if (focused && isCurrent) {
+                                val target = gridFocus.pendingIndex
+                                // 按触屏的规矩走时只认送过来的那张 (在途目标、手指点的 (先记成聚焦那张再送)、返回本页的落点); 别的来路 (离开 / 回到本页时
+                                // 焦点跌落到的卡、页面进组的默认落点、焦点兜底) 不算数: 不报不滚 —— 认了它 hero 就换成它, 页面也把它记成上次那张, 返回时落错.
+                                // 送焦还在路上就再送一次那张 (同 TvWallRowsSurface.onCardFocused)
+                                val counts = !surface.touchMode || index == target || index == surface.focusedIndex || index == landingHeld
+                                if (focused && isCurrent && !counts) {
+                                    if (target != null) gridFocus.focusItem(target, reason = "touch-refocus")
+                                } else if (focused && isCurrent) {
                                     landingHeld = -1
                                     if (currentFarJump()) currentOnFarJumpConsumed()
                                     surface.setFocused(key, index)
@@ -425,7 +465,7 @@ internal fun <T : Any> TvWallGridPage(
                             dimAlpha = {
                                 tvWallGridItemAlpha(
                                     gridState, index, timeline, g.heroLinePx, columns, fadeDistancePx,
-                                    surface.focusedIndexOf(key), shift.value,
+                                    surface.stopIndexOf(key), shift.value,
                                 ) * (1f - wallOpen.fade.value)
                             },
                             labelAlpha = { 1f - timeline.above },
@@ -462,7 +502,9 @@ internal fun <T : Any> TvWallGridPage(
                 // 页面的网格送焦请求 (进页恢复 / 顶栏下键 / 换标签落点 / 返回键回首卡): 目标不在视口里时滚到它的停位 (返回键回首卡一路滚上去)
                 gridFocus.SendFocusEffect(
                     gridState,
-                    bringIntoView = { index ->
+                    bringIntoView = bring@{ index ->
+                        // 按触屏的规矩走时卡片墙上送焦不滚网格 (返回本页的恢复: 进详情页前停在哪, 回来就停在哪; 送不到那张就算了)
+                        if (surface.touchMode && !timeline.active) return@bring
                         val far = currentFarJump()
                         if (far) currentOnFarJumpConsumed()
                         val n = currentItemCount()
@@ -495,6 +537,11 @@ internal fun <T : Any> TvWallGridPage(
                 }
                 surface.firstBelowTopLine = { gridState.layoutInfo.visibleItemsInfo.firstOrNull { it.offset.y >= 0 }?.index }
                 surface.focusAt = { index -> gridFocus.focusItem(index, reason = "surface") }
+                surface.cardCentersY = {
+                    gridState.layoutInfo.visibleItemsInfo.map { info ->
+                        info.index to (surface.gridLineInWindow + shift.value + info.offset.y + info.size.height / 2f).toInt()
+                    }
+                }
             }
         }
         emptyContent()
@@ -537,7 +584,7 @@ private fun TvWallGridScrollEffect(
     LaunchedEffect(gridState, columns, geometry, heroLinePx, animatedScroll) {
         var lastFocused = -1
         var lastHero = false
-        snapshotFlow { Triple(surface.focusedIndexOf(key), surface.itemCountForScroll(), surface.timeline.active) }
+        snapshotFlow { Triple(surface.stopIndexOf(key), surface.itemCountForScroll(), surface.timeline.active) }
             .collectLatest { (focused, count, heroActive) ->
                 if (focused < 0 || count <= 0) return@collectLatest
                 val heroToggled = focused == lastFocused && heroActive != lastHero
@@ -614,9 +661,6 @@ internal class TvWallGridSurface(
     val touchMode: Boolean get() = touchInput && lastInputTouch
 
     var heroEnabled: Boolean = true
-
-    /** 整屏模糊背景跟着聚焦那张换 (新番时间表的卡片墙). */
-    var backdropFollowsFocus: Boolean = false
     var columnsValue: Int = 1
     /** hero 内容 (页面给的聚焦那张). */
     var heroSource: TvNativeHeroSource? by mutableStateOf(null)
@@ -627,13 +671,22 @@ internal class TvWallGridSurface(
 
     override val currentKey: Any? get() = shownKey
 
-    /** 各份网格上次聚焦的那张 (按网格的 key; 没有 = -1): 换标签回来时那份网格照它停. */
-    private val focusedIndexes = mutableStateMapOf<Int, Int>()
+    /**
+     * 各份网格上次聚焦的那张 (按网格的 key; 没有 = -1): 换标签回来时那份网格照它停. 页面重建时从存着的接上 —— 不然 hero 态的第一拍按第一张停
+     * (滚回顶), 焦点落回来又滚回那张, 返回本页时整片先跳走再滚回来.
+     */
+    private val focusedIndexes = mutableStateMapOf<Int, Int>().apply { putAll(state.savedFocused) }
 
     /** 此刻那份网格里聚焦的那张 (-1 = 没有). */
     val focusedIndex: Int get() = focusedIndexOf(shownKey)
 
     fun focusedIndexOf(key: Int): Int = focusedIndexes[key] ?: -1
+
+    /**
+     * [key] 那份网格按哪一张停 (停位与越线淡化): 聚焦过的那张; 没聚焦过而在 hero 态 (在标签行上换过来的) 时按第一张 —— 同原生,
+     * 不然这份网格不挪, 顶上几行卡全在 hero 线以上被淡没, 屏上一张卡都没有.
+     */
+    fun stopIndexOf(key: Int): Int = focusedIndexOf(key).let { if (it < 0 && timeline.active) 0 else it }
 
     fun setFocused(key: Int, index: Int) {
         focusedIndexes[key] = index
@@ -645,21 +698,55 @@ internal class TvWallGridSurface(
     var landFarJumpAction: () -> Boolean = { false }
     var firstBelowTopLine: () -> Int? = { null }
     var focusAt: (Int) -> Unit = {}
+
+    /** 此刻那份网格排出来的卡: 下标 → 卡的纵向中心 (窗口坐标). */
+    var cardCentersY: () -> List<Pair<Int, Int>> = { emptyList() }
+
+    /** 网格顶线 (第一行不滚时的顶) 在窗口里的纵坐标. */
+    internal var gridLineInWindow = 0f
+
+    /** 换到一组一行的内容: 网格的那几样操作空着. */
+    fun clearGridActions() {
+        landFarJumpAction = { false }
+        firstBelowTopLine = { null }
+        focusAt = {}
+        cardCentersY = { emptyList() }
+    }
+
+    /** 一组一行的内容 (追番页「追更」, 见 TvWallGridRows.kt) 占的 key 与它的画面; 没有时 null. */
+    var rowsKey: Int? = null
+    var rowsGuest: TvWallRowsGuest? = null
+
+    /** 此刻显示的是一组一行的内容. */
+    val rowsShown: Boolean get() = rowsKey != null && shownKey == rowsKey
     private var itemCountProvider: () -> Int = { 0 }
 
     private val gridStates = HashMap<Any, LazyGridState>()
 
     /** [key] 那份网格的滚动状态: 第一次显示时从页面存着的位置排起. */
     fun gridStateFor(key: Int): LazyGridState =
-        gridStates.getOrPut(key) { LazyGridState(firstVisibleItemIndex = state.savedPositions[key] ?: 0) }
+        gridStates.getOrPut(key) {
+            LazyGridState(firstVisibleItemIndex = state.savedPositions[key] ?: 0, firstVisibleItemScrollOffset = state.savedOffsets[key] ?: 0)
+        }
+
+    /**
+     * 页面重建时网格先排出来、条目后到 (分页数据晚一拍): 空着排的那一下把滚动位置清回了顶上, 条目到了照存着的位置原样摆回去 (进详情页前停在哪,
+     * 回来就停在哪). 网格自己已经不在顶上 (没被清掉, 或已经滚过) 时不动.
+     */
+    suspend fun restoreWhenLoaded(key: Int, gridState: LazyGridState, itemCount: () -> Int) {
+        val index = state.savedPositions[key] ?: return
+        val offset = state.savedOffsets[key] ?: 0
+        if (index == 0 && offset == 0) return
+        snapshotFlow { itemCount() }.first { it > 0 }
+        if (gridState.firstVisibleItemIndex == 0 && gridState.firstVisibleItemScrollOffset == 0) gridState.scrollToItem(index, offset)
+    }
 
     fun itemCountForScroll(): Int = itemCountProvider()
 
     /**
      * 点第 [index] 张: 卡片墙上先切到 hero 态, hero 态里 (或没有 hero 态) 才进详情页 / 播放. 进详情页前先试 [openWall]
      * (铺着整屏模糊底时先对焦再进, 见 TvWallOpen; 它接手了返回 true); 直接播放不对焦. 按触屏的规矩走时 (按下不动焦点): 卡片墙上点一下就聚焦它
-     * 并进 hero 态 (没有 hero 态就直接进), hero 态里点没聚焦的那张只换焦点. 整屏背景跟着聚焦卡的页面上 ([backdropFollowsFocus]) 点一下当场进:
-     * 焦点同时送到这张 (背景在后面换成它的), [openBehind] 照点开过记账, 回来时这张的清晰图淡回它的模糊底.
+     * 并进 hero 态 (没有 hero 态就直接进, 焦点同时送到这张, 回来时落在它上面), hero 态里点没聚焦的那张只换焦点.
      */
     fun <T : Any> onCardClick(
         index: Int,
@@ -667,7 +754,6 @@ internal class TvWallGridSurface(
         callbacks: TvNativeGridPageCallbacks<T>,
         itemAt: (Int) -> T?,
         openWall: (index: Int, proceed: () -> Unit) -> Boolean,
-        openBehind: (index: Int) -> Unit,
     ) {
         val cols = columnsValue.coerceAtLeast(1)
         val touchTap = if (touchMode) {
@@ -677,14 +763,17 @@ internal class TvWallGridSurface(
             null
         }
         if (touchTap == TvWallTouchTap.OpenFocused) {
-            onCardClick(focusedIndex, posterConfirm, callbacks, itemAt, openWall, openBehind)
+            onCardClick(focusedIndex, posterConfirm, callbacks, itemAt, openWall)
             return
         }
         val item = itemAt(index) ?: return
-        if (touchTap == TvWallTouchTap.FocusOnly || touchTap == TvWallTouchTap.FocusAndConfirm) {
+        if (touchTap != null) {
             if (index != focusedIndex) {
                 setFocused(shownKey, index)
                 focusAt(index)
+                // 手指点的当场报给页面 (hero 内容、页面记的「上次那张」), 不等焦点落到卡上: 点完马上进详情页时焦点还没到,
+                // 页面记的还是前一张, 返回时就落回前一张
+                callbacks.onCardFocused(index, item)
             }
             if (touchTap == TvWallTouchTap.FocusOnly) return
         }
@@ -693,19 +782,6 @@ internal class TvWallGridSurface(
             return
         }
         val play = callbacks.onCardPlay.takeIf { posterConfirm == TvPosterConfirmAction.Play }
-        if (touchMode && backdropFollowsFocus && !timeline.active) {
-            if (index != focusedIndex) {
-                setFocused(shownKey, index)
-                focusAt(index)
-            }
-            if (play != null) {
-                play(index, item)
-                return
-            }
-            openBehind(index)
-            callbacks.onCardClick(index, item)
-            return
-        }
         if (play != null) {
             play(index, item)
             return
@@ -737,12 +813,17 @@ internal class TvWallGridSurface(
     /** 触屏上退出 hero 态 (点卡片以外的地方、拖网格、按返回): hero 背景与文字照常淡出, 网格停在原地 (不滚回正中). */
     fun exitHeroInPlace(animated: Boolean = true) {
         if (!timeline.active) return
-        stayInPlace = true
+        // 一组一行的内容在屏上时它自己停在原地 (见 TvWallRowsSurface.onHeroToggled), 网格不记
+        stayInPlace = !rowsShown
         timeline.setActive(false, animated)
         state.heroActive = false
     }
 
     override fun savedPositions(): Map<Any, Int> = gridStates.mapValues { it.value.firstVisibleItemIndex }
+
+    override fun savedOffsets(): Map<Any, Int> = gridStates.mapValues { it.value.firstVisibleItemScrollOffset }
+
+    override fun savedFocused(): Map<Any, Int> = HashMap<Any, Int>(focusedIndexes)
 
     override fun forgetPosition(key: Any) {
         gridStates.remove(key)
@@ -759,10 +840,21 @@ internal class TvWallGridSurface(
 
     override val columns: Int get() = columnsValue
 
-    // 下面两样只在网格与一组一行的内容 (追番页「追更」) 之间换焦点时用; Compose 版没有那份内容
-    override fun focusedCardCenterYInWindow(): Int? = null
+    // 下面两样在网格与一组一行的内容 (追番页「追更」) 之间换焦点时用: 按屏上的高度对行
+    override fun focusedCardCenterYInWindow(): Int? {
+        rowsGuest?.takeIf { rowsShown }?.let { return it.focusedCardCenterYInWindow() }
+        val index = focusedIndex
+        return cardCentersY().firstOrNull { it.first == index }?.second
+    }
 
-    override fun rowNearestWindowY(windowY: Int): Int? = null
+    override fun rowNearestWindowY(windowY: Int): Int? {
+        if (rowsShown) return null
+        val cols = columnsValue.coerceAtLeast(1)
+        val row = cardCentersY().minByOrNull { abs(it.second - windowY) }?.let { it.first / cols }
+        // 页面逐帧问到网格排出来为止, 找到了才记
+        if (row != null) gridLogger.info { "[ProgressRows] 网格 $shownKey 按高度 $windowY 找行 → $row" }
+        return row
+    }
 
     override fun setSource(source: TvNativeHeroSource) {
         heroSource = source
@@ -781,3 +873,5 @@ private class HeroHolder {
 internal class MenuHolder<T : Any> {
     var value: T? = null
 }
+
+private val gridLogger = logger("TvWallGridPage")

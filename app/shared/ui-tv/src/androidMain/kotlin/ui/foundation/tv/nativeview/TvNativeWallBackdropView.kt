@@ -227,12 +227,15 @@ class TvNativeWallBackdropView(
             super.dispatchDraw(canvas)
         }
         if (floorBandPx > 0f) {
+            // 渐变那块一直画到底 (渐变 CLAMP, 过了渐变带就是满色), 不另拼一块纯色: 两块在小数坐标上接不严, 底边没满时 (从整屏铺满淡入、
+            // 回轮播的缩放途中) 接缝那一行会漏出下面的模糊图, 亮一下
             canvas.save()
             canvas.translate(0f, top)
-            canvas.drawRect(0f, 0f, w, floorBandPx, floorBandPaint)
+            canvas.drawRect(0f, 0f, w, height - top, floorBandPaint)
             canvas.restore()
+        } else if (bottom < height) {
+            canvas.drawRect(0f, bottom, w, height.toFloat(), floorPaint)
         }
-        if (bottom < height) canvas.drawRect(0f, bottom, w, height.toFloat(), floorPaint)
     }
 
     /** 清晰层的透明度 (0..1, 对焦程度). 清晰图解好之前不显示. */

@@ -22,6 +22,7 @@ import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallTone
 import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.rememberTvPosterWallTone
 import me.him188.ani.app.ui.foundation.tv.tvNoFontPadding
+import me.him188.ani.app.ui.foundation.tv.tvWebConsoleAvailable
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallHeroBackground
 import me.him188.ani.app.ui.foundation.tv.tvTmdbSubjectTitleFilled
 import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
@@ -647,15 +648,17 @@ private fun TvActionPanelDialog(
                 },
             )
         }
-        // 退出恒在最后一颗: 下面按 lastIndex 定位默认焦点, 且危险动作不该夹在中间
-        add(
-            TvActionPanelAction(
-                Icons.Rounded.PowerSettingsNew,
-                stringResource(Lang.exit_app_title),
-                danger = true,
-                onClick = onExitApp,
-            ),
-        )
+        // 退出恒在最后一颗: 下面按 lastIndex 定位默认焦点, 且危险动作不该夹在中间. 触屏 (iPad) 上没有: 应用不能自己退出
+        if (!LocalTvTouchInputEnabled.current) {
+            add(
+                TvActionPanelAction(
+                    Icons.Rounded.PowerSettingsNew,
+                    stringResource(Lang.exit_app_title),
+                    danger = true,
+                    onClick = onExitApp,
+                ),
+            )
+        }
     }
     // 落点按入口的意图分 (见 TvActionPanelDefaultFocus): 主动打开面板时落最上面那个能按的东西,
     // 探索页 hero 上按返回时落「退出应用」——那一刻用户的意图就是走人.
@@ -737,7 +740,7 @@ private fun TvActionPanelDialog(
     // 为了能把卡放到屏幕角上, 弹窗窗口铺满全屏 (usePlatformDefaultWidth = false), 面板在里面居中 —— 位置、尺寸、内容、
     // 焦点都与原来一样. 代价: 「点弹窗外面关掉」(触屏) 系统不管了 (窗口就是整个屏幕), 自己判: 点在面板与码卡之外才关.
     // 不用 Popup 挂码卡: 它挂在应用窗口上, 在弹窗窗口里的定位与层级都靠不住
-    val showRemoteQr = defaultFocus != TvActionPanelDefaultFocus.EXIT
+    val showRemoteQr = defaultFocus != TvActionPanelDefaultFocus.EXIT && tvWebConsoleAvailable
     Dialog(onDismissRequest = onDismissRequest, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         // 窗外压暗与其他弹窗同一档 (系统默认 0.6 会把背后的页面压成一片黑)
         DialogWindowDimAmount(CENTERED_PANEL_WINDOW_DIM)

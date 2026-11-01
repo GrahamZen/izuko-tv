@@ -11,6 +11,7 @@ package me.him188.ani.android.tv
 
 import android.content.pm.PackageManager
 import me.him188.ani.app.ui.diagnostics.TraceSection
+import me.him188.ani.app.ui.feedback.TouchFeedbackHost
 import me.him188.ani.app.ui.foundation.tv.LocalTvOpenActionPanel
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
@@ -94,6 +95,7 @@ import me.him188.ani.app.ui.exploration.LocalExplorationPageVariant
 import me.him188.ani.app.ui.exploration.TvExplorationPage
 import me.him188.ani.app.ui.exploration.schedule.LocalSchedulePageVariant
 import me.him188.ani.app.ui.exploration.schedule.SchedulePageVariant
+import me.him188.ani.app.ui.exploration.schedule.TvScheduleSlot
 import me.him188.ani.app.ui.exploration.search.LocalSearchPageVariant
 import me.him188.ani.app.ui.exploration.search.SearchPageVariant
 import me.him188.ani.app.ui.exploration.search.TvSearchPage
@@ -133,7 +135,6 @@ import me.him188.ani.app.ui.remote.TvRemoteControlDialogHost
 import me.him188.ani.app.ui.whatsnew.TvWhatsNew
 import me.him188.ani.app.ui.whatsnew.TvWhatsNewHost
 import me.him188.ani.app.ui.remote.TvRemoteLoginCard
-import me.him188.ani.app.ui.exploration.schedule.grid.TvScheduleGridPage
 import org.jetbrains.compose.resources.stringResource
 import org.koin.mp.KoinPlatform
 import androidx.compose.ui.input.key.onPreviewKeyEvent
@@ -290,10 +291,8 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
             }
         },
         LocalSchedulePageVariant provides SchedulePageVariant { presentation, onRetry, modifier ->
-            // 海报墙: 同追番页的卡片墙, 换上海报墙那套灰阶底色
-            ProvideTvScrollActivity {
-                TvPosterWallTheme { TvScheduleGridPage(presentation, onRetry, modifier) }
-            }
+            // 海报墙版式与触屏上的返回见 TvScheduleSlot
+            TvScheduleSlot(presentation, onRetry, onBack = { aniNavigator.popBackStack() }, modifier)
         },
         LocalSearchPageVariant provides SearchPageVariant { state, onIntent, suggestionsPager, modifier ->
             ProvideTvScrollActivity {
@@ -530,6 +529,7 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
                     val actionToasts = rememberActionToastState(plain = LocalToaster.current)
                     CompositionLocalProvider(LocalTvOpenActionPanel provides openActionPanel, LocalToaster provides actionToasts) { content() }
                     ActionToastHost(actionToasts)
+                    TouchFeedbackHost()
                 } else {
                     content()
                 }

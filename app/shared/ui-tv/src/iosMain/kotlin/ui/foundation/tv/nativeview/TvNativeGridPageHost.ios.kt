@@ -47,13 +47,12 @@ internal actual fun <T : Any> TvNativeGridPageHostContent(
     columnSpacing: Dp,
     cardHeight: Dp?,
     labelVibrancy: Boolean,
-    // Compose 版没有一组一行的内容 (追番页「追更」, 这一端不显示)
     rows: TvNativeGridPageRows?,
     emptyContent: @Composable BoxScope.() -> Unit,
 ) {
     TvWallGridPage(
         state, metrics, cardWidth, gridKey, slideDirection, cards, itemAt, itemCount, onBind, heroEnabled, badge, source, fadeColor,
         treatment, gridFocus, farJump, onFarJumpConsumed, callbacks, menuFor, wallBackdrop, modifier, landingIndex, topBarScrollAwayPx,
-        columnSpacing, cardHeight, emptyContent,
+        columnSpacing, cardHeight, rows, emptyContent,
     )
 }

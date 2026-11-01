@@ -1,17 +1,13 @@
-/*
- * Copyright (C) 2024-2026 OpenAni and contributors.
- *
- * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
- * Use of this source code is governed by the GNU AGPLv3 license, which can be found at the following link.
- *
- * https://github.com/open-ani/ani/blob/main/LICENSE
- */
-
 package me.him188.ani.app.ui.subject.collection
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGridPageRows
+import me.him188.ani.app.ui.foundation.tv.wall.TvWallGridRowsSpec
 
-/** 这一端没有「追更」(见 tvCollectionProgressAvailable). */
+/** 「追更」那份内容画 Compose 版的行式海报墙 (网格页的宾客, 见 TvWallGridRows.kt): 只要几何与卡宽. */
 @Composable
-internal actual fun rememberTvCollectionProgressRows(key: Int): TvNativeGridPageRows? = null
+internal actual fun rememberTvCollectionProgressRows(key: Int): TvNativeGridPageRows {
+    val layout = tvCollectionProgressLayout()
+    return remember(key, layout.metrics, layout.cardWidth) { TvWallGridRowsSpec(key, layout.metrics, layout.cardWidth) }
+}

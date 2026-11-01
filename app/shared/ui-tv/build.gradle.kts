@@ -105,6 +105,7 @@ kotlin {
         api(projects.danmaku.danmakuUi)
         implementation(libs.koin.core)
         implementation(libs.atomicfu)
+        implementation(libs.filekit.dialogs.compose) // 触屏端反馈从相册选照片 (ui/feedback)
     }
     sourceSets.androidMain.dependencies {
         // 进度条缩略图取帧 (见 TvFramePreviewSource): media3 的 ExperimentalFrameExtractor,

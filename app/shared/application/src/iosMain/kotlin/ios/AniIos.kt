@@ -254,6 +254,7 @@ fun MainViewController(app: AniIosApplication): UIViewController {
                 LocalOnBackPressedDispatcherOwner provides app.onBackPressedDispatcherOwner,
                 LocalContext provides app.context,
             ) {
+                DisableEdgeSwipeBack()
                 // 电视界面 (同电视包装在平板上的样子, 见 InstallTvTouchPageVariants)
                 AniApp(uiBehavior = TvTouchAniUiBehavior) {
                     val platformWindow = rememberPlatformWindow()
@@ -291,13 +292,8 @@ fun MainViewController(app: AniIosApplication): UIViewController {
         addChildViewController(contentViewController)
         view.addSubview(contentViewController.view)
         fillMaxSize(this, contentViewController)
-        // 左边缘右滑 = 返回键
-        edgeBackGesture = IosEdgeBackGesture { app.onBackPressedDispatcherOwner.onBackPressedDispatcher.onBackPressed() }.also { it.install(view) }
     }
 }
-
-/** 左边缘右滑返回的手势目标 (手势识别器不持有它). */
-private var edgeBackGesture: IosEdgeBackGesture? = null
 
 private fun fillMaxSize(container: AniHostingUIViewController, contentViewController: UIViewController) {
     contentViewController.didMoveToParentViewController(container)

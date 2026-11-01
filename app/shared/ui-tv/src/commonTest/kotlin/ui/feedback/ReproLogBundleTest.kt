@@ -11,8 +11,11 @@ package me.him188.ani.app.ui.feedback
 
 import java.io.File
 import java.nio.file.Files
-import java.time.LocalDateTime
 import java.util.zip.GZIPInputStream
+import kotlinx.datetime.LocalDateTime
+import kotlinx.io.files.Path
+import me.him188.ani.utils.io.SystemPath
+import me.him188.ani.utils.io.inSystem
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -22,6 +25,7 @@ import kotlin.test.assertTrue
 /** 复现日志: 按时间段截 (跨天的滚动文件也算), 续行跟着上一行, 太长留后面的. */
 class ReproLogBundleTest {
     private val dir: File = Files.createTempDirectory("repro-logs").toFile()
+    private val logs: SystemPath get() = Path(dir.path).inSystem
 
     @AfterTest
     fun cleanup() {
@@ -50,7 +54,7 @@ class ReproLogBundleTest {
             "2026-10-15 00:00:09 WARN  d 晚于时间段",
             "\tat 不要的续行",
         )
-        val bundle = ReproLogBundle.build(dir, at("2026-10-14 23:59:30"), at("2026-10-15 00:00:05"), listOf("app" to "1.0.7"))
+        val bundle = ReproLogBundle.build(logs, at("2026-10-14 23:59:30"), at("2026-10-15 00:00:05"), listOf("app" to "1.0.7"))
         val lines = bundle.text().lines().filter { it.isNotEmpty() }
         assertEquals(
             listOf(
@@ -70,7 +74,7 @@ class ReproLogBundleTest {
     @Test
     fun `太长留后面的`() {
         write("app.log", *Array(100) { "2026-10-15 10:00:%02d INFO  line $it".format(it % 60) })
-        val bundle = ReproLogBundle.build(dir, at("2026-10-15 10:00:00"), at("2026-10-15 10:01:00"), emptyList(), maxBytes = 200)
+        val bundle = ReproLogBundle.build(logs, at("2026-10-15 10:00:00"), at("2026-10-15 10:01:00"), emptyList(), maxBytes = 200)
         val body = bundle.text().lines().filter { it.isNotEmpty() && !it.startsWith("#") }
         assertTrue(bundle.truncated)
         assertTrue(body.last().endsWith("line 99"))
@@ -89,7 +93,7 @@ class ReproLogBundleTest {
             "2026-10-15 10:30:00 INFO  e 第三段",
         )
         val bundle = ReproLogBundle.build(
-            dir,
+            logs,
             listOf(
                 at("2026-10-15 10:29:00") to at("2026-10-15 10:31:00"),
                 at("2026-10-15 10:04:00") to at("2026-10-15 10:06:00"),
@@ -115,7 +119,7 @@ class ReproLogBundleTest {
 
     @Test
     fun `没有日志目录 — 只有表头`() {
-        val bundle = ReproLogBundle.build(File(dir, "missing"), at("2026-10-15 10:00:00"), at("2026-10-15 10:01:00"), listOf("描述" to "两行\n合成一行"))
+        val bundle = ReproLogBundle.build(Path(File(dir, "missing").path).inSystem, at("2026-10-15 10:00:00"), at("2026-10-15 10:01:00"), listOf("描述" to "两行\n合成一行"))
         assertEquals(0, bundle.lines)
         assertEquals("# 描述: 两行 合成一行", bundle.text().lines().first())
     }

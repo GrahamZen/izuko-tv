@@ -31,6 +31,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
+import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.aniCombinedClickable
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Shape
@@ -69,7 +70,13 @@ fun SubjectDownloadGroupCard(
 ) {
     val containerColor by animateColorAsState(
         when {
-            selected -> MaterialTheme.colorScheme.secondaryContainer
+            // 触屏上选中用中性灰而不是 secondaryContainer: 那是种子色 (偏紫) 调出来的, 浅色主题下是一块浅紫; 界面上彩色只留给语义
+            // 电视上是加深过的 secondaryContainer: 远距离看得出, 也与右栏持焦行同色
+            selected -> if (LocalTvTouchInputEnabled.current) {
+                MaterialTheme.colorScheme.surfaceContainerHighest
+            } else {
+                MaterialTheme.colorScheme.secondaryContainer
+            }
             selectionMode && allEntriesSelected -> MaterialTheme.colorScheme.surfaceContainer
             else -> MaterialTheme.colorScheme.surfaceContainerLowest
         },

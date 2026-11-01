@@ -9,9 +9,7 @@
 
 package me.him188.ani.app.ui.remote
 
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
@@ -23,27 +21,26 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import me.him188.ani.app.data.models.feedback.FeedbackDevice
 import me.him188.ani.app.data.models.feedback.FeedbackKind
-import me.him188.ani.app.data.models.feedback.FeedbackLogSpec
 import me.him188.ani.app.data.models.feedback.FeedbackRecords
 import me.him188.ani.app.data.network.FeedbackTicketService.CreateResult
 import me.him188.ani.app.data.network.FeedbackTicketService.Outcome
 import me.him188.ani.app.data.repository.feedback.FeedbackRecordRepository
 import me.him188.ani.app.domain.feedback.FeedbackTickets
 import me.him188.ani.app.domain.feedback.FeedbackTickets.SubmitResult
-import me.him188.ani.app.ui.diagnostics.TvPerfDiagnostics
 import me.him188.ani.app.ui.feedback.FeedbackPerfReport
 import me.him188.ani.app.ui.feedback.FeedbackPhotoStore
-import me.him188.ani.app.ui.feedback.ReproLogBundle
+import me.him188.ani.app.ui.feedback.FeedbackPlatform
+import me.him188.ani.app.ui.feedback.FeedbackSources
+import me.him188.ani.app.ui.feedback.FeedbackTextLimits
+import me.him188.ani.app.ui.feedback.FeedbackTextLimits.MAX_DESCRIPTION
+import me.him188.ani.app.ui.feedback.FeedbackTextLimits.MAX_SUMMARY
+import me.him188.ani.app.ui.feedback.FeedbackTextLimits.MIN_DESCRIPTION
+import me.him188.ani.app.ui.feedback.FeedbackTextLimits.MIN_SUMMARY
 import me.him188.ani.app.ui.foundation.lan.LanHttpRequest
 import me.him188.ani.app.ui.foundation.lan.LanHttpResponse
-import me.him188.ani.utils.logging.info
-import me.him188.ani.utils.logging.logger
 import org.koin.mp.KoinPlatform
 import java.io.File
 import java.net.URLDecoder
-import java.time.Instant
-import java.time.LocalDateTime
-import java.time.ZoneId
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
@@ -66,48 +63,20 @@ import kotlin.time.Duration.Companion.seconds
  *   授权、下载、安装都在那里. 只认那张单回复里列出的链接.
  */
 internal object RemoteFeedback {
-    private val logger = logger<RemoteFeedback>()
     private val records: FeedbackRecordRepository get() = KoinPlatform.getKoin().get()
     private val device: FeedbackDevice get() = KoinPlatform.getKoin().get()
     private val tickets: FeedbackTickets get() = KoinPlatform.getKoin().get()
-
-    /** 同工单服务的下限 (tools/ticket-worker), 提交前先在这里挡一道, 提示得具体些. */
-    private const val MIN_SUMMARY = 4
-    private const val MAX_SUMMARY = 80
-    private const val MIN_DESCRIPTION = 5
-    private const val MAX_DESCRIPTION = 4000
 
     private const val PHOTO_PATH = "api/feedback/photo"
 
     /** 网页上「＋」里列出的性能报告最多几份 (新的在前). */
     private const val LISTED_REPORTS = 12
 
-    @Volatile
-    private var swept = false
-
     /** 照片那个接口收一整张照片 (再留点余量); 其余不放宽. */
     fun maxBodyBytes(path: String): Long? = if (path == PHOTO_PATH) FeedbackPhotoStore.MAX_BYTES + 64L * 1024 else null
 
-    /** 附件的来源: 性能报告 ([FeedbackPerfReport]), 日志 (日志目录见 [TvRemoteControl.logsDir], 里面是本地时间), 照片 ([FeedbackPhotoStore]). */
-    private val sources = object : FeedbackTickets.Sources {
-        override fun perfRow(id: String) = FeedbackPerfReport.read(id)?.row
-
-        override suspend fun buildLog(spec: FeedbackLogSpec, header: List<Pair<String, String>>): ByteArray? = withContext(Dispatchers.IO) {
-            val reports = spec.perfReports.mapNotNull(FeedbackPerfReport::read)
-            val dir = TvRemoteControl.logsDir()
-            if (dir == null && reports.isEmpty()) return@withContext null
-            val preface = reports.takeIf { it.isNotEmpty() }
-                ?.joinToString("\n", postfix = "\n# ---- 应用日志 ----") { "# ---- 性能诊断报告 ${it.id} ----\n${it.text}" }
-            val windows = listOfNotNull(spec.recorded).map { w -> localTime(w.from - spec.leadMinutes * 60_000L) to localTime(w.to) }
-            val bundle = ReproLogBundle.build(dir ?: File("missing"), windows, header, preface = preface)
-            logger.info { "ticket log: ${reports.size} reports, ${bundle.lines} log lines, ${bundle.gzip.size} bytes gzipped, truncated=${bundle.truncated}" }
-            bundle.gzip
-        }
-
-        override suspend fun photo(id: String): ByteArray? = withContext(Dispatchers.IO) { FeedbackPhotoStore.read(id) }
-
-        override fun deletePhoto(id: String) = FeedbackPhotoStore.delete(id)
-    }
+    /** 附件的来源 (同应用内的反馈弹窗, 见 [FeedbackSources]). */
+    private val sources: FeedbackTickets.Sources get() = FeedbackSources
 
     /** 收发文件的那几个接口 (照片的上传与原图); 别的回 `null`, 交给 [handle]. */
     fun handleFile(request: LanHttpRequest): LanHttpResponse? {
@@ -119,7 +88,7 @@ internal object RemoteFeedback {
                 "webp" -> "image/webp"
                 else -> "image/jpeg"
             }
-            return LanHttpResponse.fileSnapshot(file, type)
+            return LanHttpResponse.fileSnapshot(File(file.path.toString()), type)
         }
         if (request.method == "POST" && request.path == PHOTO_PATH) {
             return LanHttpResponse.bytes(addPhoto(request).toString().toByteArray(), "application/json; charset=utf-8")
@@ -168,7 +137,7 @@ internal object RemoteFeedback {
     }
 
     private fun attach(target: Int, reportId: String, on: Boolean): JsonObject {
-        if (on && FeedbackPerfReport.read(reportId) == null) return result(false, tr("这份报告已经不在了"))
+        if (on && FeedbackPlatform.perfReport(reportId) == null) return result(false, tr("这份报告已经不在了"))
         return ok { tickets.attachPerf(target, reportId, on) }
     }
 
@@ -192,7 +161,7 @@ internal object RemoteFeedback {
         if (!tickets.available) return result(false, tr("故障反馈还没开放"))
         if (summary.length < MIN_SUMMARY) return result(false, tr("问题至少写 {0} 个字", MIN_SUMMARY))
         if (summary.length > MAX_SUMMARY) return result(false, tr("问题最多 {0} 个字，细节写到描述里", MAX_SUMMARY))
-        if (description.codePointCount(0, description.length) < MIN_DESCRIPTION) {
+        if (FeedbackTextLimits.length(description) < MIN_DESCRIPTION) {
             return result(false, tr("描述至少写 {0} 个字：怎么操作会出问题、出问题时看到了什么", MIN_DESCRIPTION))
         }
         if (description.length > MAX_DESCRIPTION) return result(false, tr("描述最多 {0} 个字", MAX_DESCRIPTION))
@@ -275,23 +244,9 @@ internal object RemoteFeedback {
 
     private fun state(): JsonObject {
         blocking(3.seconds) { tickets.expireRecording() }
-        // 草稿里引用的东西不在了 (报告删了、照片没了、那段日志滚动删掉了) 就去掉
-        val earliestLogDay = TvRemoteControl.logsDir()?.let(ReproLogBundle::earliestRolledDay)
-        blocking(3.seconds) {
-            tickets.pruneDrafts(
-                reportExists = { TvPerfDiagnostics.reportFile(it) != null },
-                photoExists = { FeedbackPhotoStore.file(it) != null },
-                recordingGone = { w -> earliestLogDay != null && localTime(w.to).toLocalDate().isBefore(earliestLogDay) },
-            )
-        }
+        // 草稿里引用的东西不在了 (报告删了、照片没了、那段日志滚动删掉了) 就去掉, 没人用的照片清一次
+        blocking(3.seconds) { FeedbackSources.tidy(tickets) { records.current() } }
         val all = blocking(3.seconds) { records.current() } ?: FeedbackRecords.Empty
-        if (!swept) {
-            // 没人用的照片 (草稿去掉了、工单删了) 清一次
-            swept = true
-            FeedbackPhotoStore.sweep(
-                all.drafts.flatMap { d -> d.photos.map { it.id } }.toSet() + all.items.flatMap { r -> r.uploads.mapNotNull { it.photoId } },
-            )
-        }
         val uploading = tickets.uploading.value
         val now = System.currentTimeMillis()
         return buildJsonObject {
@@ -322,7 +277,7 @@ internal object RemoteFeedback {
                     }
                     put("lead", d.logLeadMinutes)
                     putJsonArray("reports") {
-                        for (r in d.perfReports.mapNotNull(FeedbackPerfReport::read)) addJsonObject { putReport(r) }
+                        for (r in d.perfReports.mapNotNull(FeedbackPlatform::perfReport)) addJsonObject { putReport(r) }
                     }
                     putJsonArray("photos") {
                         for (p in d.photos) addJsonObject {
@@ -334,7 +289,7 @@ internal object RemoteFeedback {
                 }
             }
             putJsonArray("reports") {
-                for (r in TvPerfDiagnostics.reports().take(LISTED_REPORTS).mapNotNull(FeedbackPerfReport::summary)) addJsonObject { putReport(r) }
+                for (r in FeedbackPlatform.perfReports(LISTED_REPORTS)) addJsonObject { putReport(r) }
             }
             put("checkedAt", all.ticketsCheckedAt)
             putJsonArray("items") {
@@ -392,8 +347,6 @@ internal object RemoteFeedback {
     }
 
     private fun <T> blocking(timeout: Duration, block: suspend () -> T): T? = runBlocking { withTimeoutOrNull(timeout) { block() } }
-
-    private fun localTime(millis: Long): LocalDateTime = LocalDateTime.ofInstant(Instant.ofEpochMilli(millis), ZoneId.systemDefault())
 }
 
 /** 设置标签分类列表里「反馈」那一行. */

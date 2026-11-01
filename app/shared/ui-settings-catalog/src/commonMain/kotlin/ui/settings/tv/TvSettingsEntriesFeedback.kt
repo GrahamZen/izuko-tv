@@ -48,6 +48,7 @@ import me.him188.ani.app.ui.lang.tv_settings_feedback_title_entry
 import me.him188.ani.app.ui.lang.tv_settings_feedback_title_entry_id
 import me.him188.ani.app.ui.lang.tv_settings_feedback_title_logo
 import me.him188.ani.app.ui.lang.tv_settings_feedback_title_logo_id
+import me.him188.ani.app.ui.lang.tv_settings_feedback_touch_description
 import me.him188.ani.app.ui.lang.tv_settings_feedback_unread_count
 import kotlin.time.Instant
 
@@ -72,10 +73,20 @@ internal fun feedbackKey(r: FeedbackRecord): String = "${r.kind.name}-${r.issue}
  */
 internal fun TvSettingsItemsBuilder.feedbackItems(showHeader: (TvSettingsValues) -> Boolean) {
     val records = TvFeedbackRecordsKey
+    val platform = TvSettingKeys.platform
     header(Lang.tv_settings_feedback_section, visible = showHeader)
+    // 应用里就能写反馈的端 (触屏): 点了直接开反馈弹窗 (列表、会话、写反馈都在里面), 不进下一层、不画控制台的码
+    run(
+        Lang.tv_settings_feedback, Lang.tv_settings_feedback_touch_description,
+        keys = listOf(records, platform),
+        value = { v -> v[records]?.records?.let(::feedbackGroupValue) },
+        chevron = true,
+        visible = { it[platform]?.openFeedback != null },
+    ) { env -> env.deps.platform.openFeedback?.invoke() }
     group(
         Lang.tv_settings_feedback, Lang.tv_settings_feedback_description,
         value = { v -> v[records]?.records?.let(::feedbackGroupValue) },
+        visible = { it[platform]?.openFeedback == null },
         qr = { consoleQr(it, "#settings/feedback") },
         onOpen = { markAllRead() },
     ) {
@@ -209,7 +220,7 @@ private val BLANK_LINES = Regex("""\n{3,}""")
  * 回复的 Markdown 换成电视上能看的字: 去掉图片、注释与网页标签, 链接只留文字, 去掉粗体 / 代码 / 标题 / 引用的记号;
  * [drop] 里的链接 (测试包) 整个去掉.
  */
-internal fun feedbackPlainText(markdown: String, drop: Collection<String> = emptyList()): String {
+fun feedbackPlainText(markdown: String, drop: Collection<String> = emptyList()): String {
     var s = markdown.replace("\r\n", "\n")
     s = HTML_COMMENT.replace(s, "")
     s = MD_IMAGE.replace(s, "")

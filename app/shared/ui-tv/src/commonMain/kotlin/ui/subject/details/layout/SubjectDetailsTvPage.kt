@@ -62,7 +62,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.outlined.Feedback
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -215,7 +214,6 @@ import me.him188.ani.app.ui.foundation.navigation.LocalNavEntryContentKey
 import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
 import me.him188.ani.app.ui.foundation.navigation.OnReturnToForeground
 import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
-import me.him188.ani.app.ui.foundation.session.TvNavRailItem
 import me.him188.ani.app.ui.foundation.session.TvNavigationSideRail
 import me.him188.ani.app.ui.foundation.session.buildTvRailItems
 import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
@@ -305,7 +303,6 @@ import me.him188.ani.app.ui.lang.subject_details_stat_wish
 import me.him188.ani.app.ui.lang.subject_details_total_episodes
 import me.him188.ani.app.ui.lang.subject_details_tv_feedback
 import me.him188.ani.app.ui.lang.subject_details_tv_open_details_page
-import me.him188.ani.app.ui.lang.tv_rail_back
 import me.him188.ani.app.ui.rating.isEditingFrom
 import me.him188.ani.app.ui.subject.AiringLabel
 import me.him188.ani.app.ui.subject.SubjectProgressState
@@ -1963,7 +1960,7 @@ fun SubjectDetailsTvPage(
 @Composable
 internal fun TvDetailsSideRail(
     onExitToHero: () -> Unit,
-    /** 非 null 时栏顶多一个「返回」(触屏上用). */
+    /** 非 null 时栏的左上角多一个「返回」(触屏上用). */
     onBack: (() -> Unit)?,
     modifier: Modifier = Modifier,
     scrimColor: Color? = null,
@@ -1978,16 +1975,13 @@ internal fun TvDetailsSideRail(
         onExitFocus = onExitToHero,
         scrimColor = scrimColor,
         // 与主页同一份条目, 只差点击行为: 切 tab 前先弹掉整个嵌套栈回主页
-        items = buildList {
-            if (onBack != null) add(TvNavRailItem(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(Lang.tv_rail_back), onClick = onBack))
-            addAll(
-                buildTvRailItems(
-                    onSearch = { navigator.navigateSubjectSearch() },
-                    onNavigateToPage = { navigator.popBackOrNavigateToMain(it) },
-                    onSettings = { navigator.navigateSettings() },
-                ),
-            )
-        },
+        items = buildTvRailItems(
+            onSearch = { navigator.navigateSubjectSearch() },
+            onNavigateToPage = { navigator.popBackOrNavigateToMain(it) },
+            onSettings = { navigator.navigateSettings() },
+        ),
+        // 触屏的返回钉在栏的左上角 (见 TvNavigationSideRail)
+        onBack = onBack,
         // hasFocus 而不是 isFocused: 兜底落到的是栏里的某个**条目**, 栏容器本身不持焦
         modifier = modifier.onFocusChanged { if (it.hasFocus) onFallbackFocused() },
     )

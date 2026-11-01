@@ -126,6 +126,12 @@ interface TvExploreSurface {
     val rowLeftIndex: Map<String, Int>
     val rowFocusedIndexMap: Map<String, Int>
 
+    /**
+     * 各行此刻停在哪 (第一张露出的卡, 它滑出去的像素): 触屏上行停在手指放开处, 可以滑进行尾留白 (露出「更多」), 按行首恢复对不上,
+     * 页面重建时照它原样恢复. 没有的端 (原生行按行首停) 给空.
+     */
+    val rowScrollPositions: Map<String, Pair<Int, Int>> get() = emptyMap()
+
     /** 两路 hero 内容 (热门轮播 / 聚焦卡). */
     fun setSources(carousel: TvNativeHeroSource, card: TvNativeHeroSource)
 

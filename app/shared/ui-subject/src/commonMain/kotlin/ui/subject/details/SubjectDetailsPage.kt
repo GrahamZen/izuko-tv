@@ -145,6 +145,7 @@ import me.him188.ani.app.ui.lang.subject_details_coming_soon
 import me.him188.ani.app.ui.lang.subject_details_login_to_collect
 import me.him188.ani.app.ui.lang.subject_details_tab_comments
 import me.him188.ani.app.ui.lang.subject_details_tab_details
+import me.him188.ani.app.ui.lang.settings_mediasource_retry
 import me.him188.ani.app.ui.lang.subject_details_tv_error_back_hint
 import me.him188.ani.app.ui.lang.subject_details_tab_discussions
 import me.him188.ani.app.ui.lang.subject_details_write_review
@@ -725,7 +726,7 @@ private fun ErrorSubjectDetailsPage(
     //
     // 判据用 immersiveShell (与本页算 tenFoot 布局参数的那个一致).
     if (LocalAniUiBehavior.current.immersiveShell) {
-        TvErrorSubjectDetails(subjectInfo, error, modifier, windowInsets)
+        TvErrorSubjectDetails(subjectInfo, error, onRetry, navigationIcon, modifier, windowInsets)
         return
     }
     SubjectDetailsSingleColumnPage(
@@ -757,23 +758,31 @@ private fun ErrorSubjectDetailsPage(
 /**
  * 遥控器形态的条目加载失败页: 整页居中, 一块说明.
  *
- * 不放重试按钮 —— 这里的失败要么重试也没用 ([LoadError.SubjectNotAccessible]), 要么退出去重新进来
+ * 遥控器上不放重试按钮 —— 这里的失败要么重试也没用 ([LoadError.SubjectNotAccessible]), 要么退出去重新进来
  * 就是一次重试, 而多一个可聚焦元素就要多担一份"焦点框看不见 / 落点被抢"的风险。
+ * 触屏 (平板 / iPad 跑电视界面, [AniUiBehavior.showBackNavigationButton]) 没有返回键: 左上角放调用方给的返回 / 主页按钮 ([navigationIcon]),
+ * 说明下面放重试, 不提「按返回键」。
  */
 @Composable
 private fun TvErrorSubjectDetails(
     subjectInfo: SubjectInfo?,
     error: LoadError,
+    onRetry: () -> Unit,
+    navigationIcon: @Composable () -> Unit,
     modifier: Modifier = Modifier,
     windowInsets: WindowInsets = TopAppBarDefaults.windowInsets,
 ) {
+    val touch = LocalAniUiBehavior.current.showBackNavigationButton
     Box(
         modifier.fillMaxSize()
-            .windowInsetsPadding(windowInsets)
-            .padding(horizontal = 96.dp),
+            .windowInsetsPadding(windowInsets),
         contentAlignment = Alignment.Center,
     ) {
+        if (touch) {
+            Box(Modifier.align(Alignment.TopStart).padding(8.dp)) { navigationIcon() }
+        }
         Column(
+            Modifier.padding(horizontal = 96.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
@@ -794,12 +803,16 @@ private fun TvErrorSubjectDetails(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
             )
-            Text(
-                stringResource(Lang.subject_details_tv_error_back_hint),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.outline,
-                textAlign = TextAlign.Center,
-            )
+            if (touch) {
+                OutlinedButton(onRetry) { Text(stringResource(Lang.settings_mediasource_retry)) }
+            } else {
+                Text(
+                    stringResource(Lang.subject_details_tv_error_back_hint),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.outline,
+                    textAlign = TextAlign.Center,
+                )
+            }
         }
     }
 }

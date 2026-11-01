@@ -10,6 +10,7 @@
 package me.him188.ani.app.ui.foundation.tv
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -34,6 +35,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
@@ -151,8 +153,10 @@ fun Modifier.tvImageZoomKeys(state: TvImageZoomState): Modifier = onPreviewKeyEv
 @Composable
 fun TvZoomedImageOverlay(state: TvImageZoomState, modifier: Modifier = Modifier) {
     val url = state.url ?: return
+    // 触屏没有返回键: 点一下就关
+    val tapToClose = if (LocalTvTouchInputEnabled.current) Modifier.pointerInput(state) { detectTapGestures { state.close() } } else Modifier
     Box(
-        modifier.fillMaxSize().background(TV_ZOOM_SCRIM_COLOR),
+        modifier.fillMaxSize().background(TV_ZOOM_SCRIM_COLOR).then(tapToClose),
         contentAlignment = Alignment.Center,
     ) {
         // 放大用的是另一个尺寸档的 URL (imageLarge), 卡片头像那份缓存帮不上忙 —— 电视上

@@ -82,7 +82,8 @@ internal val TvNativeGridPageState.view: TvNativeGridPageView? get() = surface a
 internal class TvNativeGridPageRowsSpec(
     override val key: Int,
     val style: TvNativeWallStyle,
-    val metrics: TvNativeExploreMetrics,
+    override val metrics: TvNativeExploreMetrics,
+    override val cardWidth: Dp,
     val headerStyle: TvNativeTextStyle,
 ) : TvNativeGridPageRows
 
@@ -122,7 +123,7 @@ internal actual fun <T : Any> TvNativeGridPageHostContent(
         TvWallGridPage(
             state, metrics, cardWidth, gridKey, slideDirection, cards, itemAt, itemCount, onBind, heroEnabled, badge, source, fadeColor,
             treatment, gridFocus, farJump, onFarJumpConsumed, callbacks, menuFor, wallBackdrop, modifier, landingIndex, topBarScrollAwayPx,
-            columnSpacing, cardHeight, emptyContent,
+            columnSpacing, cardHeight, rows, emptyContent,
         )
         return
     }

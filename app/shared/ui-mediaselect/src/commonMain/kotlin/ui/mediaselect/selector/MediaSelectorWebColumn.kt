@@ -63,6 +63,7 @@ import me.him188.ani.app.ui.lang.settings_mediasource_refresh
 import me.him188.ani.app.ui.media.webCaptchaRequiredMessage
 import me.him188.ani.app.ui.mediaselect.auto.AutoMatchPageTestTags
 import me.him188.ani.app.ui.mediaselect.common.SourceIcon
+import me.him188.ani.app.domain.media.selector.MediaExclusionReason
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.utils.platform.annotations.TestOnly
 import me.him188.ani.utils.platform.currentTimeMillis
@@ -92,6 +93,11 @@ data class WebSource(
     val rateLimitedUntilMillis: Long? = null,
     /** 当前平台是否支持交互解决验证码 (iOS 为 false, 显示降级提示). */
     val isCaptchaSupported: Boolean = true,
+    /** 自动匹配页补列的 (见 ui/mediafetch 的 AutoMatchExtras): 线路都没完全对上; 结果全被排除的原因; 没当芯片的结果数; 开播后暂停了还没结果. */
+    val inexact: WebSourceInexact? = null,
+    val excludedReasons: List<MediaExclusionReason> = emptyList(),
+    val hiddenCount: Int = 0,
+    val isPausedWithoutResults: Boolean = false,
 ) {
     val isCaptchaRequired: Boolean get() = captchaRequest != null
     val captchaKind: WebCaptchaKind? get() = captchaRequest?.kind
@@ -120,6 +126,10 @@ fun MediaSelectorWebSourcesColumn(
     preferredSourceContainerColor: Color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.33f),
     /** 点了源的名字 (进这个源的全部条目, 见 SourceResourcesPage); null 时名字不可点. */
     onOpenSource: ((WebSource) -> Unit)? = null,
+    /** 画在源列表最前面 (自动匹配页的「已缓存」一行, 见 AutoMatchCachedRow). */
+    header: @Composable () -> Unit = {},
+    /** 画在源列表最后 (自动匹配页的「没有结果的 N 个」, 见 EmptyWebSourcesNote). */
+    footer: @Composable () -> Unit = {},
 ) {
     val card = @Composable { source: WebSource ->
         WebSourceCard(
@@ -150,6 +160,7 @@ fun MediaSelectorWebSourcesColumn(
     val (failedSources, otherSources) = list.partition { it.isError }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         // not scrollable. 否则会跟 bottom sheet 的 scroll 冲突. 
+        header()
         otherSources.forEach { source ->
             card(source)
         }
@@ -166,6 +177,7 @@ fun MediaSelectorWebSourcesColumn(
         failedSources.forEach { source ->
             card(source)
         }
+        footer()
     }
 }
 
@@ -280,6 +292,7 @@ private fun WebSourceCard(
                     label = { Text(channel.name) },
                 )
             }
+            WebSourceNotes(source, onResume = onRefresh, onOpenSource = onClickName)
 
             if (source.isLoading) {
                 Box(

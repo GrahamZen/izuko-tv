@@ -189,12 +189,9 @@ private val TvCollectionProgressPaneStateSaver = Saver<TvCollectionProgressPaneS
     },
 )
 
-/**
- * 「追更」在网格页里那份内容的卡片、几何与组标题 (见 [TvNativeGridPageRows]), 占网格页的 [key];
- * 没有「追更」的端 (见 tvCollectionProgressAvailable) 给 null.
- */
+/** 「追更」在网格页里那份内容的卡片、几何与组标题 (见 [TvNativeGridPageRows]), 占网格页的 [key]. */
 @Composable
-internal expect fun rememberTvCollectionProgressRows(key: Int): TvNativeGridPageRows?
+internal expect fun rememberTvCollectionProgressRows(key: Int): TvNativeGridPageRows
 
 /**
  * 「追更」对网格页里那份内容 ([view], 见 TvNativeGridPageState.rows) 的接线: 数据、事件、焦点簿记、返回键回首卡, 外加空页与出错提示.

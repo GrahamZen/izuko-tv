@@ -232,14 +232,14 @@ class TvNativeGridPageTouchRulesTest {
     }
 
     @Test
-    fun `on a page whose backdrop follows the focus a tap opens at once and counts as opened`() {
+    fun `on a page whose backdrop follows the focus a tap opens at once without focusing the backdrop`() {
         host.onMain {
             page.heroEnabled = false
             page.enableWallBackdrop()
         }
         tapCard(3)
         assertEquals(listOf(3), clicks, "第一下就进")
-        assertEquals(listOf(3), wallOpened, "照点开过记账: 回到本页时清晰图淡回模糊底")
+        assertEquals(emptyList(), wallOpened, "不算点开: 平板的详情页没有清晰剧照, 回到本页不倒放")
         assertEquals(3, focusedIndex(), "焦点跟到点的那张, 背景随后换成它的")
     }
 
