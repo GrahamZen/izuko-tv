@@ -10,7 +10,7 @@
 import org.gradle.api.Project
 
 /** `torrent/anitorrent/native/repo` 里重编的 anitorrent 原生库版本, 见 `torrent/anitorrent/native/README.md`. */
-const val REBUILT_ANITORRENT_NATIVE_VERSION = "0.2.0-izuko6"
+const val REBUILT_ANITORRENT_NATIVE_VERSION = "0.2.0-izuko7"
 
 /**
  * 安卓的 anitorrent 原生库与 Java 绑定换成本仓库重编的版本 (上游 0.2.0 加了写盘回调与整季包里单独删一集).
