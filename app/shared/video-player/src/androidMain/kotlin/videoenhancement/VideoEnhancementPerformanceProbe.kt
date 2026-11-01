@@ -32,8 +32,8 @@ internal class VideoEnhancementPerformanceProbe(private val exoPlayer: ExoPlayer
     var lastWindowMillis = 0L
         private set
 
-    /** [renderedFrames]: 上次调用以来实际出的帧数. 返回 true = 判定为性能不够. */
-    fun isTooSlow(renderedFrames: Int): Boolean {
+    /** [renderedFrames] / [droppedFrames]: 上次调用以来实际出的帧数、丢的帧数. 返回 true = 判定为性能不够. */
+    fun isTooSlow(renderedFrames: Int, droppedFrames: Int): Boolean {
         val now = SystemClock.elapsedRealtime()
         val position = exoPlayer.currentPosition
         val window = now - lastSampleAt
@@ -44,6 +44,7 @@ internal class VideoEnhancementPerformanceProbe(private val exoPlayer: ExoPlayer
         contentFrameRate = exoPlayer.videoFormat?.frameRate?.takeIf { it > 0f } ?: 0f
         return judge.onSample(
             renderedFrames = renderedFrames,
+            droppedFrames = droppedFrames,
             windowMillis = window,
             positionAdvanceMillis = advance,
             playing = exoPlayer.isPlaying,

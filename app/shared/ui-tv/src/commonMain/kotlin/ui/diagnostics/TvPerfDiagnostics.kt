@@ -39,6 +39,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
+import me.him188.ani.app.data.models.preference.VideoEnhancementDefaultMode
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.platform.currentAniBuildConfig
 import me.him188.ani.app.ui.remote.tr
@@ -312,10 +313,21 @@ internal object TvPerfDiagnostics {
                     put("visualEffects", theme.visualEffects.name)
                     put("uiScale", theme.effectiveUiScale)
                     put("tmdbImagesOff", settings.tmdbImagesDisabled.flow.first())
+                    put("videoEnhancement", settings.videoScaffoldConfig.flow.first().videoEnhancementDefaultMode.name)
                 }
             }
         }
     }
+
+    /** 「默认画质增强模式」不是关闭; 读不到算关着. */
+    internal fun videoEnhancementOn(): Boolean = runCatching {
+        runBlocking {
+            withTimeoutOrNull(2_000) {
+                KoinPlatform.getKoin().get<SettingsRepository>().videoScaffoldConfig.flow.first()
+                    .videoEnhancementDefaultMode != VideoEnhancementDefaultMode.OFF
+            }
+        }
+    }.getOrNull() == true
 
     /** 报告列表 (新的在前): 网页的列表只要摘要. */
     fun reports(): List<JsonObject> {
