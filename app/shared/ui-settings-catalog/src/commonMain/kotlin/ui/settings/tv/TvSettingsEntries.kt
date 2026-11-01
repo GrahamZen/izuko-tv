@@ -327,7 +327,8 @@ val TvSettingsCatalogEntries: List<TvSettingsCategory> = tvSettingsCatalog {
 
     section(Lang.settings_category_network_storage)
     category(SettingsTab.PROXY, Lang.settings_tab_proxy) { networkItems() }
-    category(SettingsTab.BT, Lang.settings_tab_bt) { btItems() }
+    // iOS 上不查 BT 源 (见 MediaSourceManager): 本机 BT 引擎与 PikPak 都用不上, 整类不列
+    category(SettingsTab.BT, Lang.settings_tab_bt, visible = { !currentPlatform().isIos() }) { btItems() }
     category(SettingsTab.STORAGE, Lang.settings_tab_storage) { storageItems() }
 
     section(Lang.settings_category_others)

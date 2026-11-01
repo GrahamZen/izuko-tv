@@ -106,6 +106,7 @@ kotlin {
         implementation(libs.koin.core)
         implementation(libs.atomicfu)
         implementation(libs.filekit.dialogs.compose) // 触屏端反馈从相册选照片 (ui/feedback)
+        implementation(libs.ktor.network) // debug 包的调试接口 (ui/debugconsole, iOS 用)
     }
     sourceSets.androidMain.dependencies {
         // 进度条缩略图取帧 (见 TvFramePreviewSource): media3 的 ExperimentalFrameExtractor,

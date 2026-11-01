@@ -39,6 +39,7 @@ import me.him188.ani.app.domain.media.resolver.TorrentOpenProgress
 import me.him188.ani.app.domain.media.resolver.TorrentOpenProgressReporter
 import me.him188.ani.app.domain.media.resolver.UnsupportedMediaException
 import me.him188.ani.app.domain.media.selector.MediaSelector
+import me.him188.ani.app.domain.media.range.ParallelRangePlayback
 import me.him188.ani.app.domain.mediasource.MediaSourceTags
 import me.him188.ani.app.domain.mediasource.instance.GetMediaSourceInstancesUseCase
 import me.him188.ani.app.domain.player.VideoLoadingState
@@ -50,6 +51,8 @@ import me.him188.ani.utils.logging.error
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
+import me.him188.ani.utils.platform.currentPlatform
+import me.him188.ani.utils.platform.isIos
 import org.koin.core.Koin
 import org.openani.mediamp.MediampPlayer
 import org.openani.mediamp.PlaybackException
@@ -77,6 +80,8 @@ class PlayerSession(
 ) {
     val mediaResolver: MediaResolver by koin.inject()
     private val hlsPlaybackPreparer: HlsPlaybackPreparer by koin.inject()
+    // 只有 iOS 注册: 网盘原文件经本机代理多连接取 (见 ParallelRangePlayback)
+    private val parallelRangePlayback: ParallelRangePlayback? by lazy { koin.getOrNull() }
     private val getVideoScaffoldConfigUseCase: GetVideoScaffoldConfigUseCase by koin.inject()
     private val getMediaSourceInstancesUseCase: GetMediaSourceInstancesUseCase by koin.inject()
 
@@ -193,11 +198,11 @@ class PlayerSession(
             } finally {
                 _torrentOpenProgress.value = null
             }
-            val preparedData = prepareHlsPlaybackIfEnabled(
-                data,
+            val preparedData = (parallelRangePlayback?.prepare(data)?.let { PreparedMediaData(it.data, it.session) } ?: prepareHlsPlaybackIfEnabled(
+                data.forPlatformPlayer(),
                 media,
                 startPositionHintMillis = startPositionMillis.takeIf { it > 0L },
-            ).also {
+            )).also {
                 preparedHlsPlaybackProxySession = it.session
             }.data
 
@@ -309,6 +314,11 @@ class PlayerSession(
                 HlsAdFilteringMode.SMART -> MediaSourceTags.HLS_ADS in mediaSourceTags(media.mediaSourceId)
                 HlsAdFilteringMode.OFF -> false
             },
+            // AVPlayer 认不出伪装成图片的分片, ExoPlayer 与 mpv 能直接放
+            unwrapDisguisedSegments = currentPlatform().isIos(),
+            // AVPlayer 不照请求头去取 (User-Agent 换成它自己的, 源站据此回 403), 地址不以 .m3u8 结尾的播放列表也不认:
+            // 带请求头的 HLS 由应用自己去取, 经本地代理交给它
+            forwardRequestHeaders = currentPlatform().isIos() && data.headers.isNotEmpty(),
         )
         if (!options.isEnabled) {
             return PreparedMediaData(data)

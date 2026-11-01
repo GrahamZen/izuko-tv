@@ -350,7 +350,7 @@ class SeriesGraphTable private constructor(
     internal class Row(val node: SeriesNode, val prequels: List<Int>, val sequels: List<Int>, val names: List<String>)
 
     private fun rowOf(subjectId: Int): Row? {
-        val index = ids.binarySearch(subjectId)
+        val index = ids.asList().binarySearch(subjectId)
         if (index < 0) return null
         val start = lineStarts[index]
         var end = start

@@ -31,6 +31,8 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import me.him188.ani.app.data.network.setCookieHeadersJoined
+import me.him188.ani.app.data.network.splitSetCookieHeaders
 import me.him188.ani.app.domain.media.MediaAvFeatures
 import me.him188.ani.app.domain.media.MediaDynamicRange
 import me.him188.ani.app.domain.media.probe.MediaStreamProbe
@@ -513,8 +515,9 @@ internal class CloudDriveApi(
         fun parseSetCookies(response: HttpResponse): Map<String, String> =
             parseSetCookieHeaders(response.headers.getAll(HttpHeaders.SetCookie).orEmpty())
 
-        fun parseSetCookieHeaders(headers: List<String>): Map<String, String> = buildMap {
-            for (header in headers) {
+        /** [headers] 是 `Set-Cookie` 头的原文; 并成一行的 (iOS) 先拆回一条一项 (见 splitSetCookieHeaders). */
+        fun parseSetCookieHeaders(headers: List<String>, joined: Boolean = setCookieHeadersJoined): Map<String, String> = buildMap {
+            for (header in splitSetCookieHeaders(headers, joined)) {
                 val pair = header.substringBefore(';').trim()
                 val name = pair.substringBefore('=', missingDelimiterValue = "").trim()
                 if (name.isEmpty()) continue

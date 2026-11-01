@@ -13,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.staticCompositionLocalOf
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import me.him188.ani.app.data.models.preference.BackgroundBehavior
@@ -70,8 +71,15 @@ interface PictureInPictureController {
     fun exitPictureInPicture() {
     }
 
-    /** 用户点了系统小窗上的「还原」按钮回到应用 (小窗收回原位之后发一次). 只有 iOS 有, 应用内小窗收到后展开成播放页. */
+    /** 用户点了系统小窗上的「还原」按钮回到应用 (点下时发一次, 不等小窗收回). 只有 iOS 有, 应用内小窗收到后铺满全屏接住、底下展开成播放页. */
     val restoreRequests: Flow<Unit> get() = emptyFlow()
+
+    /**
+     * 还原收尾了几次 ([restoreRequests] 之后系统小窗收完、展开出来的播放页自己的视频画面也出来了, 加一). 只有 iOS 有, 别处恒为 0.
+     * 应用内小窗在开始铺满全屏接住时记下当时的值, 变大了就撤掉铺满的那一层. 用计数而不是一次性的事件: 收尾的那一刻应用内小窗的控制器
+     * 可能正在换 (播放页的新图层一登记, 它就跟着换), 晚订阅的也看得到.
+     */
+    val restoreFinishedCount: StateFlow<Int> get() = NO_RESTORE_FINISHED
 }
 
 /**
@@ -103,6 +111,9 @@ expect fun rememberPictureInPictureController(player: MediampPlayer): PictureInP
 /**
  * PiP 窗口宽高比的合法上下界 (Android 系统要求 2.39:1 .. 1:2.39).
  */
+/** [PictureInPictureController.restoreFinishedCount] 的默认值: 不会收尾的平台恒为 0. */
+private val NO_RESTORE_FINISHED: StateFlow<Int> = MutableStateFlow(0)
+
 private const val MAX_ASPECT_NUMERATOR = 239
 private const val MAX_ASPECT_DENOMINATOR = 100
 

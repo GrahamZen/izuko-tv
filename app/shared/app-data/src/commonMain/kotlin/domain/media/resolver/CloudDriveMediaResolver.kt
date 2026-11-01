@@ -12,6 +12,7 @@ package me.him188.ani.app.domain.media.resolver
 import kotlinx.coroutines.CancellationException
 import kotlinx.io.IOException
 import kotlinx.io.files.Path
+import me.him188.ani.app.domain.media.isContainerUnplayableOnThisPlatform
 import me.him188.ani.app.domain.media.player.data.MediaDataProvider
 import me.him188.ani.app.domain.media.player.data.SystemFileMediaDataProvider
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveAuthException
@@ -49,10 +50,12 @@ class CloudDriveMediaResolver(
         val shareRef = drive.placeholders.parseShareFile(uri)
         val fileId = if (shareRef == null) drive.placeholders.fileIdOf(uri) else null
         val target = fileId ?: shareRef?.key ?: throw UnsupportedMediaException(media)
+        // 这台设备放不了原文件的容器 (iOS 上的 mkv 等) 时先试转码流; 原名在标题末尾 (见 CloudDriveMediaSource)
+        val preferTranscoded = isContainerUnplayableOnThisPlatform(media.originalTitle)
         val playback = try {
             when {
-                fileId != null -> drive.resolvePlayback(fileId)
-                shareRef != null -> drive.resolveSharePlayback(shareRef)
+                fileId != null -> drive.resolvePlayback(fileId, preferTranscoded)
+                shareRef != null -> drive.resolveSharePlayback(shareRef, preferTranscoded)
                 else -> throw UnsupportedMediaException(media)
             }
         } catch (e: CancellationException) {

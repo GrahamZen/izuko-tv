@@ -23,6 +23,7 @@ kotlin {
         api(libs.mediamp.api)
         api(projects.utils.coroutines)
         api(projects.danmaku.danmakuApi)
+        implementation(libs.atomicfu)
     }
     sourceSets.commonTest.dependencies {
         implementation(projects.utils.uiTesting)

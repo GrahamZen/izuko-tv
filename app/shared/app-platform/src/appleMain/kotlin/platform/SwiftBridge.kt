@@ -20,6 +20,9 @@ interface ISwiftBridge {
         uiViewController: AniHostingUIViewController,
         fullscreen: Boolean
     )
+
+    /** 状态栏与主屏指示条藏不藏, 交给 SwiftUI 外壳 (见 `IosSystemBars`). */
+    fun setSystemBarsHidden(statusBar: Boolean, homeIndicator: Boolean)
 }
 
 lateinit var SwiftBridge: ISwiftBridge // set from Swift

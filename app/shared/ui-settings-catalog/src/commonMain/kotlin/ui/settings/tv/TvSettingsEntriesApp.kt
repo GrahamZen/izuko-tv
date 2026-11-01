@@ -104,6 +104,10 @@ import me.him188.ani.app.ui.lang.tv_settings_danmaku_rule_hint
 import me.him188.ani.app.ui.lang.tv_settings_danmaku_rules_add
 import me.him188.ani.app.ui.lang.tv_settings_danmaku_rules_add_description
 import me.him188.ani.app.ui.lang.tv_settings_danmaku_rules_delete
+import me.him188.ani.app.ui.lang.tv_settings_debug_console
+import me.him188.ani.app.ui.lang.tv_settings_debug_console_copied
+import me.him188.ani.app.ui.lang.tv_settings_debug_console_description
+import me.him188.ani.app.ui.lang.tv_settings_debug_console_off
 import me.him188.ani.app.ui.lang.tv_settings_debug_crash
 import me.him188.ani.app.ui.lang.tv_settings_debug_refresh_failed
 import me.him188.ani.app.ui.lang.tv_settings_debug_refresh_ok
@@ -169,6 +173,11 @@ internal object TvAppSettingKeys {
 
     /** 性能诊断此刻在做什么 (录制时每半秒更新剩余秒数). */
     val perfStatus = TvSettingKey.Live("perfStatus") { deps -> deps.platform.perfStatus?.map { TvOptionalText(it) } ?: emptyFlow() }
+
+    /** debug 包调试接口的地址; 没有调试接口的端一直没有值 (那一行不显示). */
+    val debugConsoleUrl = TvSettingKey.Live("debugConsoleUrl") { deps ->
+        deps.platform.debugConsole?.url?.map { TvConsoleUrl(it) } ?: emptyFlow()
+    }
 }
 
 /** 可能没有的一段字 (实时值不能是 null). */
@@ -591,6 +600,23 @@ private fun logShareQr(state: LogLanShareState?): TvQr = when (state) {
 internal fun TvSettingsItemsBuilder.debugItems() {
     val debug = TvSettingKeys.debug
     toggle(debug, Lang.settings_debug_mode, Lang.settings_debug_mode_description, read = { it.enabled }, write = { copy(enabled = it) })
+    val consoleUrl = TvAppSettingKeys.debugConsoleUrl
+    action(
+        Lang.tv_settings_debug_console,
+        keys = listOf(consoleUrl),
+        details = { values ->
+            values[consoleUrl]?.url?.let { tvText(Lang.tv_settings_debug_console_description, it) }
+                ?: tvText(Lang.tv_settings_debug_console_off)
+        },
+    ) { values ->
+        val url = values[consoleUrl]?.url ?: return@action emptyList()
+        listOf(
+            TvSettingsEdit.Run { env ->
+                env.deps.platform.debugConsole?.copy(url)
+                env.toast(getStringOffMain(Lang.tv_settings_debug_console_copied))
+            },
+        )
+    }
     toggle(
         debug, Lang.settings_debug_show_all_episodes, Lang.settings_debug_show_all_episodes_description,
         read = { it.showAllEpisodes },

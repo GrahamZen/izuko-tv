@@ -176,4 +176,4 @@ internal fun EpisodeSort.compact(): String {
 }
 
 /** 按位置填参数 (`%1$s` / `%2$d`), 同 Compose 资源的格式. */
-private fun String.fill(vararg args: Any): String = formatTvTemplate(this, args.map { it.toString() })
+internal fun String.fill(vararg args: Any): String = formatTvTemplate(this, args.map { it.toString() })

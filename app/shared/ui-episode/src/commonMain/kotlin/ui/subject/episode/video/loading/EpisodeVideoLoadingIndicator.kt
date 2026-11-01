@@ -45,6 +45,7 @@ import me.him188.ani.app.domain.player.downloadSpeedFlow
 import me.him188.ani.app.domain.player.httpErrorStatus
 import me.him188.ani.app.domain.player.isNetworkFailure
 import me.him188.ani.app.domain.player.isNotVideoResponse
+import me.him188.ani.app.domain.player.seekPendingFlow
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
 import me.him188.ani.app.ui.foundation.TextWithBorder
 import me.him188.ani.app.ui.lang.Lang
@@ -92,9 +93,12 @@ import me.him188.ani.app.ui.lang.subject_episode_video_loading_waiting_for_sourc
 import me.him188.ani.app.ui.subject.episode.SourceSearchProgress
 import me.him188.ani.app.ui.subject.episode.SourceSearchStuck
 import me.him188.ani.app.videoplayer.ui.VideoLoadingIndicator
+import me.him188.ani.app.videoplayer.ui.displayStateFlow
 import me.him188.ani.datasources.api.topic.FileSize
 import me.him188.ani.datasources.api.topic.FileSize.Companion.Unspecified
 import me.him188.ani.datasources.api.topic.FileSize.Companion.bytes
+import me.him188.ani.utils.platform.currentPlatform
+import me.him188.ani.utils.platform.isIos
 import org.jetbrains.compose.resources.stringResource
 import org.openani.mediamp.ExperimentalMediampApi
 import org.openani.mediamp.MediaStatus
@@ -135,13 +139,16 @@ fun EpisodeVideoLoadingIndicator(
     modifier: Modifier = Modifier,
     details: EpisodeLoadingDetails = EpisodeLoadingDetails.None,
 ) {
-    val state by playerState.state.collectAsStateWithLifecycle()
+    val state by remember(playerState) { playerState.displayStateFlow() }.collectAsStateWithLifecycle(playerState.state.value)
 
     val speed by remember(playerState) {
         playerState.downloadSpeedFlow()
     }.collectAsStateWithLifecycle(FileSize.Unspecified)
+    val seekPending by remember(playerState) {
+        if (currentPlatform().isIos()) playerState.seekPendingFlow() else flowOf(false)
+    }.collectAsStateWithLifecycle(false)
 
-    if (shouldShowVideoLoadingIndicator(videoLoadingState, state.isBuffering, state.mediaStatus is MediaStatus.Error)) {
+    if (shouldShowVideoLoadingIndicator(videoLoadingState, state.isBuffering || seekPending, state.mediaStatus is MediaStatus.Error)) {
         // 已缓冲了多少只在缓冲 (地址交给播放器之后) 时显示, 也只在这时订阅
         val bufferedAheadMillis = if (videoLoadingState is VideoLoadingState.Succeed) {
             val bufferedAheadFlow = remember(playerState) { playerState.bufferedAheadMillisFlow() }

@@ -27,8 +27,16 @@ data class HlsPlaybackOptions(
      * 通过本地代理转发媒体分片, 以支持提前缓存指定时间范围 ([HlsPlaybackProxySession.setPrefetchRange]).
      */
     val proxySegments: Boolean = false,
+    /**
+     * 伪装成图片的分片经本地代理转发, 去掉前面的图片 (见 HlsDisguisedSegments.kt). 播放器认不出这种分片时打开.
+     */
+    val unwrapDisguisedSegments: Boolean = false,
+    /**
+     * 播放列表与分片都经本地代理, 由应用带着媒体数据的请求头去取. 播放器不照这些请求头去请求时打开 (见 HlsDisguisedSegments.kt 里的 [proxiesSegmentsOf]).
+     */
+    val forwardRequestHeaders: Boolean = false,
 ) {
-    val isEnabled: Boolean get() = filterSegments || proxySegments
+    val isEnabled: Boolean get() = filterSegments || proxySegments || unwrapDisguisedSegments || forwardRequestHeaders
 
     companion object {
         val Disabled = HlsPlaybackOptions()

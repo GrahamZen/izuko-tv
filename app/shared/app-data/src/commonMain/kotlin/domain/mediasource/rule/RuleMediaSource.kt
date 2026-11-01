@@ -22,7 +22,6 @@ import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.client.statement.request
 import io.ktor.http.ContentType
-import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.content.TextContent
 import kotlinx.atomicfu.locks.SynchronizedObject
@@ -36,6 +35,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import me.him188.ani.app.data.repository.media.SelectorMediaSourceEpisodeCacheRepository
+import me.him188.ani.app.data.network.setCookieHeaders
 import me.him188.ani.app.domain.mediasource.KeywordSearchScope
 import me.him188.ani.app.domain.mediasource.codec.DefaultMediaSourceCodec
 import me.him188.ani.app.domain.mediasource.codec.DontForgetToRegisterCodec
@@ -656,7 +656,11 @@ class RuleMediaSource(
                     logger.warn(e) { "RuleMediaSource '$mediaSourceId': play failed for $pageUrl" }
                     RulePlayResult.Failed
                 }
-                logger.info { "RuleMediaSource '$mediaSourceId': play $pageUrl -> $result" }
+                // 请求头只记名字: 规则可以把会话 Cookie 写进播放头
+                logger.info {
+                    "RuleMediaSource '$mediaSourceId': play $pageUrl -> " +
+                        if (result is RulePlayResult.Direct) "Direct(${result.url}, headers=${result.headers.keys})" else "$result"
+                }
                 // 站点明确说要登录: 开 WebView 也嗅不到视频, 直接算这次开播失败 (画像记一次), 换下一个资源
                 if (result is RulePlayResult.LoginRequired) throw MediaResolutionException(ResolutionFailures.NO_MATCHING_RESOURCE)
                 SourceProfiles.noteWebView(mediaSourceId, webView = result !is RulePlayResult.Direct)
@@ -721,7 +725,7 @@ private suspend fun HttpResponse.toRuleResponse() = RuleHttpResponse(
     finalUrl = request.url.toString(),
     status = status.value,
     text = runCatching { bodyAsText() }.getOrDefault("").let(::unwrapJsonEncodedHtml),
-    cookies = headers.getAll(HttpHeaders.SetCookie).orEmpty()
+    cookies = setCookieHeaders()
         .map { it.substringBefore(';').trim() }
         .filter { it.substringBefore('=', "").isNotBlank() },
 )

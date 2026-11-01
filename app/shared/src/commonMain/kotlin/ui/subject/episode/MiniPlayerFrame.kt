@@ -40,6 +40,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -66,6 +67,11 @@ internal fun MiniPlayerFrame(
     widthFraction: MutableFloatState,
     onTap: () -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * 铺满整个区域 (系统小窗点「还原」时接住, 见 TouchMiniPlayer.takeover): 不圆角、不投影、不接手势. 视频还是同一个节点,
+     * 原生的视频视图不重建, 只是变大.
+     */
+    fullscreen: Boolean = false,
     video: @Composable BoxScope.() -> Unit,
     controls: @Composable BoxScope.() -> Unit,
 ) {
@@ -91,13 +97,17 @@ internal fun MiniPlayerFrame(
         val currentOnTap by rememberUpdatedState(onTap)
 
         val width = widthOf(fraction)
-        val position = dragged ?: cornerOffset(cornerIndex, width)
+        val position = if (fullscreen) Offset.Zero else dragged ?: cornerOffset(cornerIndex, width)
+        val shape = if (fullscreen) RectangleShape else MINI_PLAYER_SHAPE
         Box(
             Modifier
                 .offset { IntOffset(position.x.roundToInt(), position.y.roundToInt()) }
-                .size(with(density) { width.toDp() }, with(density) { (width * 9f / 16f).toDp() })
-                .shadow(MINI_PLAYER_ELEVATION, MINI_PLAYER_SHAPE)
-                .clip(MINI_PLAYER_SHAPE)
+                .size(
+                    with(density) { (if (fullscreen) areaWidth else width).toDp() },
+                    with(density) { (if (fullscreen) areaHeight else width * 9f / 16f).toDp() },
+                )
+                .shadow(if (fullscreen) 0.dp else MINI_PLAYER_ELEVATION, shape)
+                .clip(shape)
                 .background(Color.Black)
                 .testTag(TOUCH_MINI_PLAYER_TAG),
         ) {
@@ -105,7 +115,8 @@ internal fun MiniPlayerFrame(
             Box(
                 Modifier
                     .fillMaxSize()
-                    .pointerInput(areaWidth, areaHeight, minWidthPx, maxWidthPx) {
+                    .pointerInput(areaWidth, areaHeight, minWidthPx, maxWidthPx, fullscreen) {
+                        if (fullscreen) return@pointerInput
                         awaitEachGesture {
                             awaitFirstDown(requireUnconsumed = false)
                             var moving = false
@@ -154,7 +165,8 @@ internal fun MiniPlayerFrame(
                             }
                         }
                     }
-                    .pointerInput(Unit) {
+                    .pointerInput(fullscreen) {
+                        if (fullscreen) return@pointerInput
                         detectTapGestures(
                             onTap = { currentOnTap() },
                             onDoubleTap = {

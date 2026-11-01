@@ -360,7 +360,7 @@ internal class DriveShareSearchEngine(
                 DriveShareIndex(depth, now(), folders.map { DriveShareIndexedFolder(it.fid, listOf(title, it.fileName)) })
             for (name in names) {
                 val folders = searching.withPermit { shares.searchFolders(link.shareId, link.passcode, name) } ?: return null
-                folders.forEach { found.putIfAbsent(it.fid, it) }
+                folders.forEach { found.getOrPut(it.fid) { it } }
                 val accepted = hitsIn(indexOf(found.values), keywords, identity).mapTo(HashSet()) { it.fid }
                 if (accepted.isNotEmpty()) return indexOf(found.values.filterNot { it.parentFid in accepted && it.fid in accepted })
             }
@@ -668,7 +668,7 @@ internal class DriveShareSearchEngine(
         /** 过期的固定分享索引搜完多久才在后台重列: 不和开播抢网络. */
         private val INDEX_REFRESH_DELAY = 1.minutes
 
-        private val TITLE_TAG = Regex("""<title>(.*?)</title>""", RegexOption.DOT_MATCHES_ALL)
+        private val TITLE_TAG = Regex("""<title>([\s\S]*?)</title>""")
 
         /** 合集文件夹名前面的序号与画质标记 (`A 4k 番名`). */
         private val FOLDER_LEADING_TAGS = Regex("""^(?:\s*(?:[A-Za-z0-9]|[248]k|\d{3,4}p)\s+)+""", RegexOption.IGNORE_CASE)

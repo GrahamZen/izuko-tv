@@ -14,7 +14,10 @@ package me.him188.ani.app.videoplayer.ui
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import me.him188.ani.utils.logging.info
+import me.him188.ani.utils.logging.logger
 import org.openani.mediamp.MediampPlayer
+import org.openani.mediamp.avkit.AVKitMediampPlayer
 import platform.AVFoundation.AVPlayerLayer
 import kotlin.native.ref.WeakReference
 
@@ -41,14 +44,17 @@ object IosVideoLayerRegistry {
      * 新视图先建、旧视图后拆.
      */
     fun register(player: MediampPlayer, layer: AVPlayerLayer) {
+        logger.info { "[PiP] 播放器 ${player.hashCode()} 登记视频图层 ${layer.hashCode()}" }
         sweep()
         removeIf { it.key.get() === player }
         layers[WeakReference(player)] = WeakReference(layer)
         _version.value += 1
+        (player as? AVKitMediampPlayer)?.let { IosVideoLayerWake.watch(player, it.impl, layer) { find(player) == layer } }
     }
 
     /** 拆掉 [layer] 所在的视图时调用; 播放器已经登记到别的 layer 上 (交接时新视图先建) 就不动那一条. */
     fun unregister(player: MediampPlayer, layer: AVPlayerLayer) {
+        logger.info { "[PiP] 播放器 ${player.hashCode()} 撤下视频图层 ${layer.hashCode()}" }
         removeIf { it.key.get() === player && it.value.get() === layer }
         _version.value += 1
     }
@@ -76,3 +82,5 @@ object IosVideoLayerRegistry {
 }
 
 fun MediampPlayer.findIosVideoLayer(): AVPlayerLayer? = IosVideoLayerRegistry.find(this)
+
+private val logger = logger("PictureInPicture")

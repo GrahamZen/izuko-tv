@@ -139,6 +139,9 @@ room {
     schemaDirectory("$projectDir/schemas")
 }
 
+// iOS 加密直连用的 libcurl + BoringSSL (src/nativeInterop/cinterop/echhttp.def)
+configureEchHttpInterop()
+
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
 }

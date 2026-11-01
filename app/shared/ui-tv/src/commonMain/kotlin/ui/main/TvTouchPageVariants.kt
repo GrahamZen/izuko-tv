@@ -24,6 +24,8 @@ import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.navigation.AniNavigator
 import me.him188.ani.app.navigation.MainScreenPage
 import me.him188.ani.app.navigation.NavRoutes
+import me.him188.ani.app.ui.debugconsole.DebugConsoleTargets
+import me.him188.ani.app.ui.debugconsole.withDebugConsole
 import me.him188.ani.app.ui.exploration.ExplorationPageVariant
 import me.him188.ani.app.ui.exploration.LocalExplorationPageVariant
 import me.him188.ani.app.ui.exploration.TvExplorationPage
@@ -147,7 +149,7 @@ fun InstallTvTouchPageVariants(aniNavigator: AniNavigator, content: @Composable 
         LocalTvLoginSidePanel provides null,
         // 设置页: 触屏版 (分类与设置项同电视版); 电视独有的项 (控制台、首次引导等) 这里没有
         LocalSettingsScreenVariant provides SettingsScreenVariant { vm, initialTab, legacy, licenses, modifier ->
-            TouchSettingsPage(vm, initialTab, legacy, licenses, remember { TvSettingsPlatform.None.withTouchFeedback() }, modifier)
+            TouchSettingsPage(vm, initialTab, legacy, licenses, remember { TvSettingsPlatform.None.withTouchFeedback().withDebugConsole() }, modifier)
         },
     ) {
         // 动作面板顶上那张卡在没有会话时显示「接下来播放」, 它的目标由这条链算 (见 TvUpNextStore)
@@ -165,6 +167,7 @@ fun InstallTvTouchPageVariants(aniNavigator: AniNavigator, content: @Composable 
         // (顶上那张卡读会话、关会话、在后台准备), 同电视包的 TvPageVariants
         val retainSession = LocalAniUiBehavior.current.retainPlaybackSession && LocalThemeSettings.current.tvRetainPlaybackSession
         val sessionHolder = viewModel { RetainedPlaybackSessionHolder() }
+        DebugConsoleTargets(aniNavigator, sessionHolder)
         val playbackEntry: PlaybackSessionEntry = if (retainSession) sessionHolder else PlaybackSessionEntry.None
         if (showQuickMenu) {
             TvQuickActionMenu(
