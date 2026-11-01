@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,6 +46,7 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -52,10 +54,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.github.panpf.sketch.LocalPlatformContext
 import me.him188.ani.app.ui.foundation.AsyncImage
+import me.him188.ani.app.ui.foundation.LocalSketch
 import me.him188.ani.app.ui.foundation.tv.TV_OBSCURED_BACKDROP_LONG_EDGE_PX
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeHeroSource
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeHeroText
+import me.him188.ani.app.ui.foundation.tv.nativeview.tvDetailsBackdropBlurSpec
+import me.him188.ani.app.ui.foundation.tv.nativeview.tvPrefetchBlurredBackdrop
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tv.rememberTvTitleLogoBox
 import kotlin.math.roundToInt
@@ -89,6 +95,15 @@ internal fun TvPadHeroLayer(
 ) {
     val animated = LocalThemeSettings.current.visualEffects.transitions
     val slidePx = with(LocalDensity.current) { TV_PAD_HERO_TEXT_SLIDE.roundToPx() }
+    // 停在这一部上时把它详情页那一档的整屏模糊底解好 (见 tvPrefetchBlurredBackdrop), 进详情页第一帧就是它; 换一部时取消
+    val prefetchUrl = source?.wall?.url
+    val sketch = LocalSketch.current
+    val context = LocalPlatformContext.current
+    val windowSize = LocalWindowInfo.current.containerSize
+    val detailsSpec = tvDetailsBackdropBlurSpec()
+    LaunchedEffect(prefetchUrl, detailsSpec) {
+        if (prefetchUrl != null) tvPrefetchBlurredBackdrop(sketch, context, prefetchUrl, windowSize.width, windowSize.height, detailsSpec)
+    }
     Box(modifier) {
         AnimatedContent(
             source,

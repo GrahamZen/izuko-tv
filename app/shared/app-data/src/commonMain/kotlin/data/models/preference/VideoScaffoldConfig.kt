@@ -177,6 +177,11 @@ data class VideoScaffoldConfig @SerializationOnly constructor(
      */
     val hideSelectorOnSelect: Boolean = false,
     /**
+     * 触屏上 (平板模式、iPad 的共享版播放器) 选中数据源后关掉选源面板; 遥控器形态读 [hideSelectorOnSelect].
+     * 两边各存一份, 默认值不同: 触屏那边面板只有右上角关闭按钮一个出口, 默认选完即关; 电视上返回键就是固定出口, 默认留着接着换.
+     */
+    val touchHideSelectorOnSelect: Boolean = true,
+    /**
      * 横屏时自动全屏
      */
     val autoFullscreenOnLandscapeMode: Boolean = false,
@@ -453,6 +458,7 @@ data class VideoScaffoldConfig @SerializationOnly constructor(
             pauseVideoOnScrub = false,
             autoMarkDone = false,
             hideSelectorOnSelect = false,
+            touchHideSelectorOnSelect = false,
             autoFullscreenOnLandscapeMode = false,
             enableFoldableHoverMode = false,
             autoPlayNext = false,

@@ -106,6 +106,13 @@ object TvHeroZoomHandoff {
     var detailsUrlProvider: ((Int) -> String?)? = null
 
     /**
+     * 详情页首屏有没有那张整屏背景图, 由 TV 壳注册. 触屏 (平板 / iPad) 的详情页一直铺模糊底、没有首屏大图: 点卡片不放大 ([willZoom]),
+     * 海报墙的模糊底也不先对焦变清晰 (TvNativeWallFocus / TvWallOpen), 直接进.
+     */
+    @Volatile
+    var detailsHasHero: Boolean = true
+
+    /**
      * 一次放大转场. 进度 [t] 由 `TvHeroZoomLayer` 按帧写 (放大那一层与两页的大标题都读它, 绘制里读), 从图上屏那一帧
      * ([start]) 起按时间推: 占位页换成真页时进度不断、不重来.
      */
@@ -335,7 +342,7 @@ object TvHeroZoomHandoff {
         val s = source
         // 详情页背景: "" = 确认无 TMDB 图 (详情页回落竖版封面, 地址这里拿不到), null = 本进程没解析过; 两者都不放大
         val detailsUrl = detailsUrlProvider?.invoke(subjectId)?.takeIf { it.isNotEmpty() }
-        val yes = TvPolishFlags.heroZoom && s != null && s.subjectId == subjectId && detailsUrl != null
+        val yes = detailsHasHero && TvPolishFlags.heroZoom && s != null && s.subjectId == subjectId && detailsUrl != null
         session = if (yes && s != null && detailsUrl != null) {
             val ts = titleSource?.takeIf { it.subjectId == subjectId }
             Session(

@@ -12,7 +12,9 @@ package me.him188.ani.app.pip
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.staticCompositionLocalOf
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.emptyFlow
 import me.him188.ani.app.data.models.preference.BackgroundBehavior
 import org.openani.mediamp.MediampPlayer
 
@@ -67,6 +69,9 @@ interface PictureInPictureController {
      */
     fun exitPictureInPicture() {
     }
+
+    /** 用户点了系统小窗上的「还原」按钮回到应用 (小窗收回原位之后发一次). 只有 iOS 有, 应用内小窗收到后展开成播放页. */
+    val restoreRequests: Flow<Unit> get() = emptyFlow()
 }
 
 /**

@@ -16,7 +16,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.tooling.preview.PreviewLightDark
@@ -26,6 +29,7 @@ import kotlinx.coroutines.launch
 import me.him188.ani.app.ui.foundation.LocalPlatform
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
 import me.him188.ani.app.ui.foundation.ifThen
+import me.him188.ani.app.ui.foundation.navigation.BackHandler
 import me.him188.ani.app.ui.mediafetch.MediaSelectorState
 import me.him188.ani.app.ui.mediafetch.rememberTestMediaSelectorState
 import me.him188.ani.app.ui.mediaselect.selector.MediaSelectorWebSourcesColumn
@@ -40,6 +44,8 @@ import me.him188.ani.utils.platform.isMobile
  * @param onClickItem 用户点了线路 chip (channel.original); 宿主负责 select + 关闭容器.
  * @param onRequestManualSearch 点了「找不到想看的？手动查找」; null 时不显示按钮 (宿主没有手动查找).
  * @param scrollable 为 true 时整页 verticalScroll (列表本身是 Column, 不是 LazyColumn).
+ *
+ * 点源的名字进这个源的全部条目 ([SourceResourcesPage]), 返回 (左上角箭头或返回键) 回到源列表.
  */
 @Composable
 fun AutoMatchPage(
@@ -53,6 +59,21 @@ fun AutoMatchPage(
     val presentation by state.presentationFlow.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val bottomPadding = if (LocalPlatform.current.isMobile()) 0.dp else 8.dp
+
+    var openedSourceId by rememberSaveable { mutableStateOf<String?>(null) }
+    val openedSource = openedSourceId?.let { id -> presentation.webSources.find { it.instanceId == id } }
+    BackHandler(enabled = openedSource != null) { openedSourceId = null }
+    if (openedSource != null) {
+        SourceResourcesPage(
+            openedSource,
+            presentation.filteredCandidates,
+            presentation.selected,
+            onBack = { openedSourceId = null },
+            onClickItem = onClickItem,
+            modifier = modifier.padding(bottom = bottomPadding),
+        )
+        return
+    }
 
     MediaSelectorWebSourcesColumn(
         presentation.webSources,
@@ -70,7 +91,8 @@ fun AutoMatchPage(
             }
         },
         onRequestManualSearch = onRequestManualSearch,
-        modifier
+        onOpenSource = { openedSourceId = it.instanceId },
+        modifier = modifier
             .testTag(AutoMatchPageTestTags.ROOT)
             .padding(bottom = bottomPadding)
             .fillMaxWidth()
@@ -81,6 +103,11 @@ fun AutoMatchPage(
 object AutoMatchPageTestTags {
     const val ROOT = "auto_match_page"
     const val RESCUE_BUTTON = "auto_match_rescue_button"
+    const val SOURCE_PAGE = "auto_match_source_page"
+    const val SOURCE_BACK = "auto_match_source_back"
+
+    /** 源的名字 (点了进 [SourceResourcesPage]). */
+    fun sourceName(instanceId: String) = "auto_match_source_name_$instanceId"
 }
 
 @OptIn(TestOnly::class)

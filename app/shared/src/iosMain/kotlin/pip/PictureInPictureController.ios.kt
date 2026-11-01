@@ -21,6 +21,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -89,9 +90,13 @@ private class IosPictureInPictureController(
     private val _isPictureInPicturePossible = MutableStateFlow(false)
     override val isPictureInPicturePossible: StateFlow<Boolean> = _isPictureInPicturePossible.asStateFlow()
 
+    private val stop = IosPictureInPictureStop(player)
+    override val restoreRequests: Flow<Unit> get() = stop.requests
+
     // AVPictureInPictureController.delegate 是 weak 引用, 必须由本类强持有
     private val delegate = Delegate(
         onIsInChanged = { value -> _isInPictureInPicture.value = value },
+        stop = stop,
     )
 
     private val pipController = AVPictureInPictureController(playerLayer = layer).apply {
@@ -126,6 +131,7 @@ private class IosPictureInPictureController(
         null,
         usingBlock = {
             if (pipController.isPictureInPictureActive()) {
+                stop.onStopRequestedByApp()
                 pipController.stopPictureInPicture()
             }
         },
@@ -151,6 +157,7 @@ private class IosPictureInPictureController(
     override fun exitPictureInPicture() {
         // 系统动画把 AVPlayerLayer 从小窗收回原位, 同一 AVPlayer 不中断播放
         if (pipController.isPictureInPictureActive()) {
+            stop.onStopRequestedByApp()
             pipController.stopPictureInPicture()
         }
     }
@@ -168,11 +175,12 @@ private class IosPictureInPictureController(
 }
 
 /**
- * `AVPictureInPictureControllerDelegate` 的最小实现: 只跟踪小窗启停;
+ * `AVPictureInPictureControllerDelegate` 的最小实现: 跟踪小窗启停, 收起时交给 [stop] (还原按钮、回到应用后接着放);
  * 用户关闭小窗时系统会暂停播放, 播放器状态经 mediamp 状态机自动同步 UI, 无需额外处理.
  */
 private class Delegate(
     val onIsInChanged: (Boolean) -> Unit,
+    val stop: IosPictureInPictureStop,
 ) : NSObject(), AVPictureInPictureControllerDelegateProtocol {
     override fun pictureInPictureControllerDidStartPictureInPicture(
         pictureInPictureController: AVPictureInPictureController,
@@ -180,16 +188,24 @@ private class Delegate(
         onIsInChanged(true)
     }
 
+    override fun pictureInPictureControllerWillStopPictureInPicture(
+        pictureInPictureController: AVPictureInPictureController,
+    ) {
+        stop.onWillStop()
+    }
+
     override fun pictureInPictureControllerDidStopPictureInPicture(
         pictureInPictureController: AVPictureInPictureController,
     ) {
         onIsInChanged(false)
+        stop.onDidStop()
     }
 
     override fun pictureInPictureController(
         pictureInPictureController: AVPictureInPictureController,
         restoreUserInterfaceForPictureInPictureStopWithCompletionHandler: (Boolean) -> Unit,
     ) {
+        stop.onRestoreTapped()
         restoreUserInterfaceForPictureInPictureStopWithCompletionHandler(true)
     }
 }

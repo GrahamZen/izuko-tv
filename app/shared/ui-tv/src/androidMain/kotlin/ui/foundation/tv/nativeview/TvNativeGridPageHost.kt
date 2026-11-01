@@ -138,6 +138,8 @@ internal actual fun <T : Any> TvNativeGridPageHostContent(
     val heroBlur = heroEnabled && (padHero || LocalThemeSettings.current.tvWallBackdropBlur != TvBackdropBlurLevel.None)
     // 新番时间表的模糊背景恒铺, 海报墙选了不模糊时按中 (见 ThemeSettings.tvScheduleBlurLevel); 开着 hero 模糊时两者同一档
     val blurSpec = tvBackdropBlurSpec(LocalThemeSettings.current.tvScheduleBlurLevel)
+    // 平板版: 停在一部上时把详情页那一档也解好 (见 TvNativeWallBackdropView.detailsBlur)
+    val detailsBlurSpec = tvDetailsBackdropBlurSpec().takeIf { padHero }
     // 铺着模糊背景时卡片的字也照 vibrancy 画 (深色主题, 见 TvNativeWallStyle.labelVibrancy)
     val style = rememberTvNativeWallStyle(cardWidth, metrics.grid.columns, badge, columnSpacing, cardHeight, labelVibrancy || heroBlur)
     val textStyle = rememberTvNativeHeroTextStyle(titleMaxLines = 2, lineSpacing = 8.dp)
@@ -271,6 +273,7 @@ internal actual fun <T : Any> TvNativeGridPageHostContent(
                         wb.brightMaskAlpha = if (dark) TV_HERO_BLUR_BRIGHT_DIM_ALPHA else Float.NaN
                     }
                     wb.blur = blurSpec
+                    wb.detailsBlur = detailsBlurSpec
                     wb.coverWidthPx = style.coverWidthPx
                     wb.coverHeightPx = style.coverHeightPx
                     wb.crossfade = visualEffects.transitions

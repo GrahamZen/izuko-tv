@@ -15,15 +15,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.ComposeUIViewController
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -80,10 +76,9 @@ import me.him188.ani.app.ui.foundation.TestGlobalLifecycleOwner
 import me.him188.ani.app.ui.foundation.layout.LocalPlatformWindow
 import me.him188.ani.app.ui.foundation.navigation.LocalOnBackPressedDispatcherOwner
 import me.him188.ani.app.ui.foundation.navigation.SkikoOnBackPressedDispatcherOwner
+import me.him188.ani.app.ui.foundation.widgets.ActionToastHost
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
-import me.him188.ani.app.ui.foundation.widgets.Toast
-import me.him188.ani.app.ui.foundation.widgets.ToastViewModel
-import me.him188.ani.app.ui.foundation.widgets.Toaster
+import me.him188.ani.app.ui.foundation.widgets.rememberActionToastState
 import me.him188.ani.app.ui.main.AniApp
 import me.him188.ani.app.ui.main.AniAppContent
 import me.him188.ani.app.ui.main.InstallTvTouchPageVariants
@@ -272,24 +267,16 @@ fun MainViewController(app: AniIosApplication): UIViewController {
                             Box(Modifier.fillMaxSize()) {
                                 val paddingByWindowSize by animateDpAsState(0.dp)
 
-                                val vm = viewModel { ToastViewModel() }
-
-                                val showing by vm.showing.collectAsStateWithLifecycle()
-                                val content by vm.content.collectAsStateWithLifecycle()
+                                // 应用里画的 toast, 带点按动作的 (后台播放的提示) 点得到 (见 ActionToastState)
+                                val toasts = rememberActionToastState(plain = null)
 
                                 CompositionLocalProvider(
                                     LocalNavigator provides app.aniNavigator,
-                                    LocalToaster provides remember {
-                                        object : Toaster {
-                                            override fun toast(text: String) {
-                                                vm.show(text)
-                                            }
-                                        }
-                                    },
+                                    LocalToaster provides toasts,
                                 ) {
                                     Box(Modifier.padding(all = paddingByWindowSize)) {
                                         InstallTvTouchPageVariants(app.aniNavigator) { AniAppContent(app.aniNavigator) }
-                                        Toast({ showing }, { Text(content) })
+                                        ActionToastHost(toasts)
                                     }
                                 }
                             }

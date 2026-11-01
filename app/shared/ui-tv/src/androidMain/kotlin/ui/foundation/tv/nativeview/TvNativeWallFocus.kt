@@ -11,6 +11,7 @@ package me.him188.ani.app.ui.foundation.tv.nativeview
 
 import android.view.KeyEvent
 import android.view.View
+import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
 
 /**
  * 整屏背景 ([TvNativeWallBackdropView]) 的对焦: 新番时间表的卡片墙 ([TvNativeGridPageView]), 以及开了「hero 态用模糊背景」时探索页
@@ -90,7 +91,8 @@ internal class TvNativeWallFocus(private val view: View, private val host: Host)
      */
     fun open(index: Int, matches: Boolean): Boolean {
         val wall = host.wall ?: return false
-        if (state != State.None || !matches) return false
+        // 详情页没有首屏大图 (触屏的详情页一直铺模糊底): 不对焦, 直接进
+        if (state != State.None || !matches || !TvHeroZoomHandoff.detailsHasHero) return false
         state = State.Open
         keep = -1
         chrome = true

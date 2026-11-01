@@ -36,18 +36,28 @@ object IosVideoLayerRegistry {
     private val _version = MutableStateFlow(0)
     val version: StateFlow<Int> = _version.asStateFlow()
 
+    /**
+     * 一个播放器同一时刻只认一个 layer, 以后建的为准: 播放页与小窗交接时 (见 TouchMiniPlayer) 两个视图会短暂同时在,
+     * 新视图先建、旧视图后拆.
+     */
     fun register(player: MediampPlayer, layer: AVPlayerLayer) {
         sweep()
+        removeIf { it.key.get() === player }
         layers[WeakReference(player)] = WeakReference(layer)
         _version.value += 1
     }
 
-    fun unregister(player: MediampPlayer) {
+    /** 拆掉 [layer] 所在的视图时调用; 播放器已经登记到别的 layer 上 (交接时新视图先建) 就不动那一条. */
+    fun unregister(player: MediampPlayer, layer: AVPlayerLayer) {
+        removeIf { it.key.get() === player && it.value.get() === layer }
+        _version.value += 1
+    }
+
+    private inline fun removeIf(predicate: (Map.Entry<WeakReference<MediampPlayer>, WeakReference<AVPlayerLayer>>) -> Boolean) {
         val iterator = layers.entries.iterator()
         while (iterator.hasNext()) {
-            if (iterator.next().key.get() === player) iterator.remove()
+            if (predicate(iterator.next())) iterator.remove()
         }
-        _version.value += 1
     }
 
     fun find(player: MediampPlayer): AVPlayerLayer? {

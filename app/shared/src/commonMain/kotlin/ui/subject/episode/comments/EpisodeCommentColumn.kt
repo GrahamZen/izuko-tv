@@ -20,12 +20,7 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AddComment
-import androidx.compose.material3.ExtendedFloatingActionButton
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
@@ -48,10 +43,7 @@ import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
 import me.him188.ani.app.ui.foundation.layout.plus
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.showLoadError
-import me.him188.ani.app.ui.lang.Lang
-import me.him188.ani.app.ui.lang.comment_send_comment
 import me.him188.ani.utils.platform.annotations.TestOnly
-import org.jetbrains.compose.resources.stringResource
 
 @Composable
 fun EpisodeCommentColumn(
@@ -66,7 +58,6 @@ fun EpisodeCommentColumn(
 ) {
     val imageViewer = LocalImageViewerHandler.current
     val uriHandler = LocalUriHandler.current
-    val writeCommentText = stringResource(Lang.comment_send_comment)
     val toaster = LocalToaster.current
     LaunchedEffect(state) {
         state.actionSubmitFailures.collect { error ->
@@ -79,18 +70,9 @@ fun EpisodeCommentColumn(
         }
     }
 
+    // 没有写评论按钮: bangumi 发吐槽要过验证码, 直连 bangumi 不提供 (见 PostCommentUseCase)
     Scaffold(
         modifier,
-        floatingActionButton = {
-            ExtendedFloatingActionButton(
-                text = { Text(writeCommentText) },
-                icon = {
-                    Icon(Icons.Rounded.AddComment, null)
-                },
-                onClick = onNewCommentClick,
-                expanded = !gridState.canScrollBackward,
-            )
-        },
     ) { _ ->
         val items = state.list.collectAsLazyPagingItemsWithLifecycle()
         CommentOverlayCleanupEffect(state, items)

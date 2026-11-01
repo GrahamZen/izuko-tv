@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.ui.foundation.tv.TvBackdropImage
+import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeWallBackdropTarget
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeWallOpenable
 
@@ -74,7 +75,8 @@ internal class TvWallOpen(private val scope: CoroutineScope) : TvNativeWallOpena
      * 点开: [target] 是此刻铺着的模糊底 (要是这张卡的、有清晰图). 能点开就开始, 到位后调 [onOpened] 进详情页并返回 true; 否则 false, 调用方当场进.
      */
     fun open(target: TvNativeWallBackdropTarget?, onOpened: () -> Unit): Boolean {
-        if (opening || target == null || !target.sharp) return false
+        // 详情页没有首屏大图 (触屏的详情页一直铺模糊底): 不对焦, 直接进
+        if (opening || target == null || !target.sharp || !TvHeroZoomHandoff.detailsHasHero) return false
         this.target = target
         loaded = CompletableDeferred()
         opening = true

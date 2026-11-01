@@ -37,7 +37,6 @@ import me.him188.ani.app.navigation.NavRoutes
 import me.him188.ani.app.data.network.TmdbImageService
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.platform.AppTerminator
-import me.him188.ani.app.platform.DevSwitches
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.tv.TvActionPanelRequests
 import me.him188.ani.app.ui.subject.details.layout.TvViewAllCommentsList
@@ -71,7 +70,9 @@ import me.him188.ani.app.ui.foundation.playback.PlaybackSessionEntry
 import me.him188.ani.app.data.models.preference.TvLongPressAction
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tvKeyLongPressInterceptor
+import me.him188.ani.app.ui.foundation.widgets.ActionToastHost
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
+import me.him188.ani.app.ui.foundation.widgets.rememberActionToastState
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.playback_session_none
 import me.him188.ani.app.ui.main.LocalTvAdjustWindows
@@ -111,6 +112,7 @@ import me.him188.ani.app.ui.subject.collection.CollectionPageVariant
 import me.him188.ani.app.ui.subject.collection.LocalCollectionPageVariant
 import me.him188.ani.app.ui.subject.collection.TvCollectionPage
 import me.him188.ani.app.ui.subject.details.LocalSubjectDetailsPageVariant
+import me.him188.ani.app.ui.subject.details.layout.TvPadSubjectDetailsPageVariant
 import me.him188.ani.app.ui.subject.details.layout.TvSubjectDetailsPageVariant
 import me.him188.ani.app.ui.subject.episode.EpisodeScreenVariant
 import me.him188.ani.app.ui.subject.episode.LocalEpisodeScreenVariant
@@ -191,6 +193,8 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
     val touchInput = remember(appContext) {
         appContext.packageManager.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN) && !TvInterfaceModeGate.isTvMode(appContext)
     }
+    // 触屏的详情页没有首屏大图 (见 TvPadSubjectDetailsPageVariant): 不放大
+    LaunchedEffect(touchInput) { TvHeroZoomHandoff.detailsHasHero = !touchInput }
     // 引导还没做过就先进引导页 (网络检测 + 手机遥控 + 登录), 见 TvOnboardingGate
     val onboardingPending = remember(appContext) { TvOnboardingGate.isPending(appContext) }
     val onboarding = remember(onboardingPending) { TvOnboardingVariantImpl(onboardingPending) }
@@ -265,8 +269,8 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
                 modifier = modifier, pageContent = pageContent,
             )
         },
-        // 调试开关 upstreamPlayer: 不换, 播放页用上游的共享版 (iOS 上那一版), 在平板上对照
-        LocalEpisodeScreenVariant provides if (DevSwitches.upstreamPlayer.value) null else EpisodeScreenVariant {
+        // 触屏 (平板模式) 播放页用共享的那一版 (同 iPad, 见 ProvideTouchPlayerUiBehavior)
+        LocalEpisodeScreenVariant provides if (touchInput) null else EpisodeScreenVariant {
                 vm, page, danmakuHostState, danmakuEditorState,
                 setShowEditCommentSheet, pauseOnPlaying, modifier,
             ->
@@ -304,7 +308,7 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
             }
         },
         // 这个变体有两个方法 (页面 + 首屏占位), 不能用 SAM lambda 写法
-        LocalSubjectDetailsPageVariant provides TvSubjectDetailsPageVariant,
+        LocalSubjectDetailsPageVariant provides if (touchInput) TvPadSubjectDetailsPageVariant else TvSubjectDetailsPageVariant,
         LocalTvOnboardingVariant provides onboarding,
         // 登录页右侧的手机控制台码 (扫码在手机上登录); 平板模式不挂, 登录页自己给输入框 (见 BangumiDirectLoginForm)
         LocalTvLoginSidePanel provides (if (touchInput) null else ({ TvRemoteLoginCard() })),
@@ -522,7 +526,10 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
                     // 触屏设备上动作面板的入口 (侧边栏条目读它), 与两个长按走同一道"本页可认领"判据.
                     // 电视上不包这一层, content 原样组合
                     val openActionPanel = remember { { if (currentDestinationClaimable()) showQuickMenu = true } }
-                    CompositionLocalProvider(LocalTvOpenActionPanel provides openActionPanel) { content() }
+                    // 带点按动作的 toast (后台播放的提示) 画在应用里、点得到; 其余照旧系统 Toast (见 ActionToastState)
+                    val actionToasts = rememberActionToastState(plain = LocalToaster.current)
+                    CompositionLocalProvider(LocalTvOpenActionPanel provides openActionPanel, LocalToaster provides actionToasts) { content() }
+                    ActionToastHost(actionToasts)
                 } else {
                     content()
                 }

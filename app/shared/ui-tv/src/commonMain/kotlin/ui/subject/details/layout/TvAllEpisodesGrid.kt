@@ -120,13 +120,15 @@ internal fun TvAllEpisodesComposeGrid(
                     modifier = cell,
                 )
             } else {
-                TvEpisodeNumberComposeCell(
+                TvPadEpisodeCard(
                     item,
+                    stillUrl = stills[item.episodeId],
                     isCurrent = isCurrent,
                     progress = playProgress[item.episodeId],
+                    names = names,
                     onClick = { onClick(index) },
                     onLongClick = { onLongPress(index) },
-                    modifier = cell,
+                    modifier = cell.fillMaxWidth().aspectRatio(TV_ALL_EPISODES_COMPOSE_STILL_RATIO),
                 )
             }
         }
