@@ -77,11 +77,20 @@ class TorrentMediaCacheStorage(
      */
     private val lock = Mutex()
 
+    /** 同一时间只做一次恢复 (见 [refreshCache]): 不持 [lock] 的启动恢复与插拔盘、搬缓存触发的刷新同时跑, 后合并的会把先恢复出来的当成被换掉的去掉. 先拿它再拿 [lock] */
+    private val refreshLock = Mutex()
+
+    /** 不持锁的启动恢复与同一集的新建、删除怎么错开 */
+    private val claims = TorrentRestoreClaims()
+
     private fun launchStatsSubscription(cache: TorrentMediaCacheEngine.TorrentMediaCache) {
         val job = statSubscriptionScope.launch {
             cache.subscribeStats(shareRatioLimitFlow)
         }
+        // 复用已有记录时再订阅一次: 换下的那个要停掉, 否则它失去引用、删除时停不到, 一直占着 torrent 服务
+        val previous = statJobs.value[cache.mediaCacheKey]
         statJobs.update { put(cache.mediaCacheKey, job) }
+        previous?.cancel()
     }
 
     /**
@@ -119,12 +128,16 @@ class TorrentMediaCacheStorage(
                         // 重连也不再刷新缓存列表 (整个进程内缓存页都不会再更新). 也必须放行
                         // startupRestored —— 否则后续 refreshCache 会被永久挡住, 连重试的机会都没有.
                         try {
-                            lock.withLock {
-                                val allRecovered = refreshCacheLocked()
-                                // allRecovered 是恢复完成时的冻结快照. 清扫期间继续持 storage 锁,
-                                // 防止 cache() 在快照之后创建目录又被本次清扫当作垃圾删除.
-                                torrentEngine.deleteUnusedCaches(allRecovered)
-                                torrentEngine.discardFilesWithoutRecords(allRecovered)
+                            refreshLock.withLock {
+                                val allRecovered = refreshCacheUnlocked()
+                                lock.withLock {
+                                    // 清扫期间持 storage 锁, 防止 cache() 在快照之后创建目录又被本次清扫当作垃圾删除.
+                                    // 快照是恢复出来的加上恢复期间新建的; 恢复期间删掉的目录由删除自己回收, 清扫照旧不碰
+                                    val current = listFlow.value
+                                    val inUse = allRecovered + current.filter { cache -> allRecovered.none { it === cache } }
+                                    torrentEngine.deleteUnusedCaches(inUse)
+                                    torrentEngine.discardFilesWithoutRecords(allRecovered.filter { cache -> current.any { it === cache } })
+                                }
                             }
                         } catch (e: CancellationException) {
                             throw e
@@ -161,7 +174,29 @@ class TorrentMediaCacheStorage(
     }
 
     override suspend fun refreshCache(): List<MediaCache> {
-        return lock.withLock { refreshCacheLocked() }
+        return refreshLock.withLock { lock.withLock { refreshCacheLocked() } }
+    }
+
+    /**
+     * 同 [refreshCacheLocked], 只在开头与末尾持锁, 启动恢复用. 被系统杀掉、覆盖安装之后种子没有新的续传数据,
+     * 要把盘上已有的数据整个重新校验 (外接盘上 1 GB 十来分钟), 恢复要等它认完文件; 持锁等会挡住这段时间里的新建与删除.
+     * 恢复期间新建的与删掉的由 [refreshCache] 的合并规则留下与去掉, 同一集由 [claims] 错开.
+     */
+    private suspend fun refreshCacheUnlocked(): List<MediaCache> {
+        val previous = lock.withLock {
+            statSubscriptionScope.restart()
+            statJobs.value = persistentMapOf()
+            claims.beginRestore(metadataFlow.first().map { MediaCacheKey(it.origin.mediaId, it.metadata) })
+            listFlow.value.also { claims.unlockedRefreshBase = it }
+        }
+        try {
+            val recovered = super.refreshCache()
+            lock.withLock { closeReplacedTorrentCaches(previous, listFlow.value) }
+            return recovered
+        } finally {
+            claims.unlockedRefreshBase = null
+            claims.endRestore()
+        }
     }
 
     override suspend fun deleteFirst(predicate: (MediaCache) -> Boolean): Boolean {
@@ -169,8 +204,14 @@ class TorrentMediaCacheStorage(
         // 恢复完成后会把刚删除的条目重新发布回 listFlow, 表现为 "删除无效".
         // 物理清理 (阶段 2) 放在锁外的后台: 它需要 torrent 服务, 服务不可用时会挂起,
         // 在持锁状态下等待会卡住所有 refreshCache 和后续删除.
-        val (cache, statJob) = lock.withLock {
+        var restoring: MediaCacheKey? = null
+        val removed = lock.withLock {
             val cache = listFlow.value.firstOrNull(predicate) ?: return false
+            // 这一集正在恢复 (启动恢复不持锁, 见 init): 删掉现在这份, 恢复出来的那份又会放回列表. 等它恢复完再删
+            if (claims.isBusy(cache.mediaCacheKey)) {
+                restoring = cache.mediaCacheKey
+                return@withLock null
+            }
             // 阶段 1 (逻辑删除) 在返回前同步完成: 只动本地数据库, 立即完成, 不依赖 torrent 服务.
             // 不能交给后台 —— 后台要等服务冷启动 (数十秒), 期间进程退出或 storage 关闭会把
             // completed=true 的孤儿 DAO 行永久留下 (启动清扫只删磁盘不清 DAO, 重缓存不覆盖已有行),
@@ -194,6 +235,11 @@ class TorrentMediaCacheStorage(
                 cache to job
             }
         }
+        if (removed == null) {
+            claims.awaitFree(checkNotNull(restoring))
+            return deleteFirst(predicate)
+        }
+        val (cache, statJob) = removed
         // 阶段 2 (物理回收) 放进 storage 自己的 scope:
         // - 删除已完成 BT 缓存可能需要冷启动服务并等待会话关闭, 真机可耗时数十秒;
         // - 调用方通常是页面协程, 不能让删除按钮一直转圈, 也不能让页面取消中断清理;
@@ -222,8 +268,15 @@ class TorrentMediaCacheStorage(
         metadata: MediaCacheMetadata,
         reportRecovered: suspend (MediaCache) -> Unit,
     ): MediaCache? = withContext(Dispatchers.IO_) {
+        val key = MediaCacheKey(origin.mediaId, metadata)
         try {
-            val cache = super.restoreFile(origin, metadata, reportRecovered)
+            // 同一集正在新建, 或不持锁的启动恢复期间已经新建好了 (见 refreshCacheUnlocked): 用新建的那份, 不再恢复一份
+            if (claims.isCreating(key)) return@withContext null
+            val base = claims.unlockedRefreshBase
+            if (base != null && listFlow.value.any { it.mediaCacheKey == key && base.none { old -> old === it } }) return@withContext null
+            // 接着下载 (或保持暂停) 与统计订阅都做完才列出来: 列出来以后同一集的新建会直接复用它
+            var recovered: MediaCache? = null
+            val cache = super.restoreFile(origin, metadata) { recovered = it }
 
             when (cache) {
                 is TorrentMediaCacheEngine.TorrentMediaCache -> {
@@ -237,10 +290,13 @@ class TorrentMediaCacheStorage(
                 }
             }
 
+            recovered?.let { reportRecovered(it) }
             cache
         } catch (e: Exception) {
             logger.error(e) { "Failed to restore cache for ${origin.mediaId}" }
             null
+        } finally {
+            claims.restored(key)
         }
     }
 
@@ -251,18 +307,29 @@ class TorrentMediaCacheStorage(
         resume: Boolean
     ): TorrentMediaCacheEngine.TorrentMediaCache {
         var promoting = false
-        return lock.withLock {
+        val key = MediaCacheKey(media.mediaId, metadata)
+        return (lock.withLock {
+            // 这一集正在恢复 (启动恢复不持锁, 见 init; 排着还没轮到的也算): 等它恢复出来再复用, 不另开一份下载
+            if (claims.isRestoring(key)) return@withLock null
             // 已存在同一资源同一剧集的记录时直接复用; 统计订阅只对新建的记录进行, 避免同一记录被重复订阅.
             val existing = listFlow.value.firstOrNull { isSameMediaAndEpisode(it, media, metadata) }
+            if (existing == null && !claims.tryCreate(key)) return@withLock null
             promoting = existing != null && existing.metadata.autoCached && !metadata.autoCached
-            val cache = existing ?: super.cache(media, metadata, episodeMetadata, false)
+            val cache = try {
+                existing ?: super.cache(media, metadata, episodeMetadata, false)
+            } finally {
+                if (existing == null) claims.created(key)
+            }
             check(cache is TorrentMediaCacheEngine.TorrentMediaCache) { "Cache does not implement TorrentMediaCache." }
 
             if (existing == null) cache.onMetadataUpdated = { persistMetadata(cache, it) }
             launchStatsSubscription(cache)
 
             cache
-        }.also {
+        } ?: run {
+            claims.awaitFree(key)
+            return cache(media, metadata, episodeMetadata, resume)
+        }).also {
             when {
                 // 显式添加必须清掉 autoCached, 否则播放结束时这条记录会被当作自动记录一并删除,
                 // 用户看到添加成功而下载消失. 启动恢复一类的 resume 不走这条路.

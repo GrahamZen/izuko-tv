@@ -89,6 +89,7 @@ abstract class AbstractDataStoreMediaCacheStorage(
     }
 
     open suspend fun refreshCache(): List<MediaCache> {
+        val previous = listFlow.value
         val allRecovered = MutableStateFlow(persistentListOf<MediaCache>())
         val metadataFlowSnapshot = metadataFlow.first()
         logger.info { "Restoring media cache, cache count in datastore: ${metadataFlowSnapshot.size}" }
@@ -127,12 +128,14 @@ abstract class AbstractDataStoreMediaCacheStorage(
         // 只补**往轮**恢复、本轮被跳过的那些 —— 本轮恢复的已经在 allRecovered 里,
         // 再加一遍会让每个已完成缓存在 listFlow 里出现两份: 删除时 minus 只移除一份,
         // 剩下的副本 state 恒为 COMPLETED, 表现为"删了还显示有缓存/要按两次删除".
+        // 子类不持锁恢复时 (TorrentMediaCacheStorage 的启动恢复), 恢复期间删掉的不放回, 期间新建的 (不在 previous 里) 留着.
         listFlow.update {
             val recovered = allRecovered.value
             val recoveredKeys = recovered.mapTo(HashSet()) { it.mediaCacheKey }
-            recovered + listFlow.value.filter { cache ->
-                cache.mediaCacheKey in restoredLocalFileMediaCacheKeys.value &&
-                        cache.mediaCacheKey !in recoveredKeys
+            val current = listFlow.value
+            recovered.filter { cache -> current.any { it === cache } } + current.filter { cache ->
+                cache.mediaCacheKey !in recoveredKeys &&
+                        (cache.mediaCacheKey in restoredLocalFileMediaCacheKeys.value || previous.none { it === cache })
             }
         }
         return allRecovered.value
