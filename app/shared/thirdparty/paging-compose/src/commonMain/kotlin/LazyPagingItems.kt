@@ -31,6 +31,7 @@ import androidx.paging.PagingSource
 import androidx.paging.RemoteMediator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -39,6 +40,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
+import me.him188.ani.utils.coroutines.flows.FailedReadRetry
 
 /**
  * The class responsible for accessing the data from a [Flow] of [PagingData]. In order to obtain an
@@ -173,7 +175,10 @@ internal constructor(
     }
 
     internal suspend fun collectLoadState() {
-        pagingDataPresenter.loadStateFlow.filterNotNull().collect { loadState = it }
+        coroutineScope {
+            launch { FailedReadRetry.onRequest { retry() } } // Ani ADDED: retry() 只重试失败了的
+            pagingDataPresenter.loadStateFlow.filterNotNull().collect { loadState = it }
+        }
     }
 
     internal suspend fun collectPagingData() {

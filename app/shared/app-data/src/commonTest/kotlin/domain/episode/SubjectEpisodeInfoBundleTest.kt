@@ -29,9 +29,11 @@ import me.him188.ani.app.domain.foundation.LoadError
 import me.him188.ani.utils.coroutines.CancellationException
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 class SubjectEpisodeInfoBundleTest {
     private val subjectId = 1
@@ -86,7 +88,7 @@ class SubjectEpisodeInfoBundleTest {
     }
 
     @Test
-    fun `infoBundleFlow load failure is captured in the background amd exposed via infoLoadErrorState`() = runTest {
+    fun `infoBundleFlow load failure is exposed via infoLoadErrorState and does not end the flow`() = runTest {
         val episodeIdFlow = MutableStateFlow(2)
         val (scope, backgroundException) = createExceptionCapturingSupervisorScope()
         val suite = createSuite(scope)
@@ -100,9 +102,10 @@ class SubjectEpisodeInfoBundleTest {
         val state = suite.createState(episodeIdFlow)
         val job = state.infoBundleFlow.drop(1).launchIn(scope) // will hang forever
         assertEquals(LoadError.NetworkError, state.infoLoadErrorState.onEach { println(it) }.filterNotNull().first())
+        assertTrue(job.isActive, "restart has to reach a live flow")
+        assertFalse(backgroundException.isCompleted)
         job.cancel()
         scope.cancel()
-        assertIs<RepositoryNetworkException>(backgroundException.await(), "should be a network error")
     }
 
     @Test
