@@ -26,6 +26,7 @@ import me.him188.ani.datasources.api.topic.SubtitleLanguage
  * 规则源的规则: 站点的搜索、详情、播放三段, 每段是一串步骤 ([RuleStep]).
  *
  * 每段从一个输入开始: 搜索段是关键词 (`{keyword}`), 详情段是条目页地址 (`{subjectUrl}`), 播放段是剧集页地址 (`{episodeUrl}`).
+ * 播放段另有 `{episodeId}`: 剧集只有 id 没有地址时 (见 [RuleStep.JsonEpisodes.idTemplate]) 是这个 id, 播放段也从它开始; 否则同 `{episodeUrl}`.
  * 步骤依次改写「当前值」(`{value}`, 起初就是这段的输入) 或存取变量. 任何一步失败 (取不到东西), 这一段就失败;
  * [RuleStep.First] 依次尝试几个分支, 用第一个成功的.
  *
@@ -46,7 +47,8 @@ data class RuleConfig(
     /** 相对地址以它为基准 (已经请求过页面时以那个页面为基准). */
     val baseUrl: String = "",
     /**
-     * 每个请求都带上的请求头, 例如 `Referer`. 步骤里的同名请求头优先. 播放视频时也带上 ([RuleStep.MediaHeaders] 优先).
+     * 每个请求都带上的请求头, 例如 `Referer`. 步骤里的同名请求头优先. 播放视频时也带上 ([RuleStep.MediaHeaders] 优先;
+     * 视频在对象存储上时不带这里的 `Referer`, 见 `RuleEngine.mediaHeaders`).
      *
      * 一般不要写 `User-Agent`: 请求默认用与 WebView 一致的 UA, 过了站点验证得到的 Cookie 只认这个 UA.
      */
@@ -127,8 +129,12 @@ sealed interface RuleStep {
     /**
      * 把当前值当作 HTML, 取第 [index] 个匹配 [css] 的元素的内容.
      *
-     * @property attr `text` (文本; `<script>` / `<style>` 取其内容)、`html` (内部 HTML)、`outerHtml`, 或属性名.
-     * 属性名前加 `abs:` (如 `abs:href`) 按页面地址补全成绝对地址.
+     * [all] 为 `true` 时取全部匹配元素的内容 (空的不要, [unique] 时去掉重复的), 当前值变成它们组成的 JSON 字符串数组,
+     * 一个也没有时失败. 这时 [nextPage] 非空表示内容分页列出: 选出「下一页」链接 (取 `href`) 依次打开, 最多共 [maxPages] 页,
+     * 某一页打不开就用已经取到的 (同 [Episodes.nextPage]).
+     *
+     * @property attr `text` (文本; `<script>` / `<style>` 取其内容)、`ownText` (只取元素自己的文本, 不含子元素的)、
+     * `html` (内部 HTML)、`outerHtml`, 或属性名. 属性名前加 `abs:` (如 `abs:href`) 按页面地址补全成绝对地址.
      */
     @Serializable
     @SerialName("select")
@@ -136,6 +142,10 @@ sealed interface RuleStep {
         val css: String,
         val attr: String = "text",
         val index: Int = 0,
+        val all: Boolean = false,
+        val unique: Boolean = false,
+        val nextPage: String = "",
+        val maxPages: Int = 20,
     ) : RuleStep
 
     /**
@@ -270,7 +280,7 @@ sealed interface RuleStep {
      * 条目列表 (搜索段的最后一步). 把当前值当作 HTML, 用 [list] 里第一个能选出元素的选择器选出每个条目 (卡片).
      *
      * 每个条目的地址: [link] 选出的元素的 [linkAttr]; 不填 [link] 时取卡片本身 (若是链接) 或卡片里第一个链接.
-     * 名字: [name] 选出的元素的 [nameAttr] (为空取文本); 不填 [name] 时依次试链接的 `title`、图片的 `alt`、标题元素的文本、链接的文本.
+     * 名字: [name] 选出的元素的 [nameAttr] (取法同 [Select.attr], 为空取文本); 不填 [name] 时依次试链接的 `title`、图片的 `alt`、标题元素的文本、链接的文本.
      * [linkPattern] 非空时只保留地址里含有它的条目. 地址相同的条目只留第一个.
      * [filterByKeyword] 为 `true` 时只留名字含有搜索关键词的条目 (比较方法同 [JsonSubjects.filterByKeyword]).
      */
@@ -318,8 +328,8 @@ sealed interface RuleStep {
     /**
      * 线路与剧集列表 (详情段的最后一步). 把当前值当作 HTML, [lists] 里第一个能选出元素的选择器选出各线路的剧集容器,
      * 每个容器里用 [items] 选出剧集 (取文本当名字、`href` 当地址).
-     * [tabs] 里第一个能选出元素的选择器选出线路名, 与容器按顺序对应; 不填或对不上时线路没有名字.
-     * [tabPattern] 非空时线路名取它的命名分组 `ch` (与网页抓取数据源的 `matchChannelName` 相同, 例如去掉标签里的集数角标 `简中12`
+     * [tabs] 里第一个能选出元素的选择器选出线路名 (取标签的 [tabAttr], 取法同 [Select.attr], 为空取文本), 与容器按顺序对应;
+     * 不填或对不上时线路没有名字. [tabPattern] 非空时线路名取它的命名分组 `ch` (与网页抓取数据源的 `matchChannelName` 相同, 例如去掉标签里的集数角标 `简中12`
      * → `简中`); 匹配不上时用整个文字. 线路优先级 ([RuleMediaSourceArguments.channelTiers]) 按处理后的线路名对.
      * [reverse] 为 `true` 时把每条线路的剧集倒过来 (站点按新到旧排列时).
      *
@@ -331,6 +341,7 @@ sealed interface RuleStep {
     data class Episodes(
         val lists: List<String>,
         val tabs: List<String> = emptyList(),
+        val tabAttr: String = "",
         val tabPattern: String = "",
         val items: String = "a",
         val reverse: Boolean = false,
@@ -340,7 +351,17 @@ sealed interface RuleStep {
 
     /**
      * 剧集列表, 来自 JSON. [listPath] 是剧集列表的路径; 每一项按 [namePath] 取名字,
-     * 地址按 [urlPath] 取或用 [urlTemplate] 拼 (同 [JsonSubjects]). 只有一条线路, 名字是 [channelName] (可为空).
+     * 地址按 [urlPath] 取或用 [urlTemplate] 拼 (同 [JsonSubjects]). 每一项本身是字符串或数字时, `{id}` 就是它.
+     *
+     * 站点只给剧集 id、播放时拿 id 去请求接口时写 [idTemplate] (模板同 [urlTemplate]): 剧集记作条目页地址加 `#` 与 id,
+     * 播放段从这个 id 开始 (`{episodeId}`, 见 [RuleConfig]).
+     *
+     * [channelsPath] 为空时只有一条线路, 名字是 [channelName] (可为空); 不为空时它下面的每一项是一条线路,
+     * 名字按 [channelNamePath] 取, 剧集列表是这一项里的 [listPath].
+     *
+     * [reverse] 为 `true` 时把每条线路的剧集倒过来. 名字: [nameTemplate] 非空时按它拼 (可以用该项的字段、`{id}`,
+     * 以及剧集在线路里的位置 `{index}`, 从 1 起). 名字里认不出集号 (没有数字, 也对不上 [RuleConfig.matchEpisodeSortFromName]) 时
+     * 改叫「第 N 集」(N 是位置): 只给每集标题的站点也能对上集号; 标题不保留, 标题里的「话」「集」会让集号取错.
      */
     @Serializable
     @SerialName("jsonEpisodes")
@@ -351,6 +372,11 @@ sealed interface RuleStep {
         val urlPath: String = "",
         val urlTemplate: String = "",
         val channelName: String = "",
+        val idTemplate: String = "",
+        val channelsPath: String = "",
+        val channelNamePath: String = "name",
+        val nameTemplate: String = "",
+        val reverse: Boolean = false,
     ) : RuleStep
 
     /**

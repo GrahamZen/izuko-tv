@@ -18,8 +18,13 @@ import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
 import me.him188.ani.app.data.repository.RepositoryNetworkException
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceCodecManager
+import me.him188.ani.app.domain.mediasource.instance.MediaSourceSave
 import me.him188.ani.app.domain.mediasource.subscription.MediaSourceSubscription
 import me.him188.ani.app.domain.mediasource.subscription.MediaSourceSubscriptionRequesterImpl
+import me.him188.ani.app.domain.mediasource.subscription.MediaSourceSubscriptionUpdater.Companion.calculateDiff
+import me.him188.ani.app.domain.mediasource.subscription.MediaSourceSubscriptionUpdater.ExistingArgument
+import me.him188.ani.app.domain.mediasource.subscription.MediaSourceSubscriptionUpdater.RemoteEntry
+import me.him188.ani.datasources.api.source.MediaSourceConfig
 import me.him188.ani.utils.ktor.asScopedHttpClient
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -50,15 +55,43 @@ class AniBakaSubscriptionTest {
          "play": [{"op": "follow"}, {"op": "ecPlayer"}]}
     """.trimIndent()
 
+    private val files = mapOf("https://rules.example.com/repo/ok.json" to okRule, "https://rules.example.com/repo/special.json" to specialRule)
+
     @Test
     fun `hub becomes subscription data of rule sources`() = runTest {
-        val files = mapOf("https://rules.example.com/repo/ok.json" to okRule, "https://rules.example.com/repo/special.json" to specialRule)
         val data = checkNotNull(AniBakaSubscription.decodeOrNull(hub, hubUrl) { files.getValue(it) })
-        val sources = data.mediaSources
-        // 转换不了的规则跳过, 不算失败
-        assertEquals(listOf(RuleMediaSource.FactoryId), sources.map { it.factoryId })
-        val arguments = MediaSourceCodecManager.json.decodeFromJsonElement(RuleMediaSourceArguments.serializer(), sources.single().arguments)
-        assertEquals("示例站", arguments.name)
+        val codecs = MediaSourceCodecManager()
+        // 转换不了的规则不算失败, 记成要新版才认得的数据源, 顺序照规则库
+        val remotes = data.mediaSources.map { RemoteEntry(it, runCatching { codecs.decode(it) }.getOrNull()) }
+        assertEquals(listOf("示例站", "专用步骤站"), remotes.map { it.name })
+        assertEquals("示例站", remotes[0].arguments?.name)
+        assertNull(remotes[1].arguments)
+    }
+
+    @Test
+    fun `unsupported rule keeps the source imported before`() = runTest {
+        val data = checkNotNull(AniBakaSubscription.decodeOrNull(hub, hubUrl) { files.getValue(it) })
+        val codecs = MediaSourceCodecManager()
+        val remotes = data.mediaSources.map { RemoteEntry(it, runCatching { codecs.decode(it) }.getOrNull()) }
+        fun local(name: String) = ExistingArgument(
+            MediaSourceSave(
+                instanceId = "local-$name",
+                mediaSourceId = "local-$name",
+                factoryId = RuleMediaSource.FactoryId,
+                isEnabled = false,
+                config = MediaSourceConfig(subscriptionId = "s"),
+            ),
+            RuleMediaSourceArguments(name = name),
+        )
+        // 上次能转、这次规则改了写法转不了: 本地那个不删, 用户关掉它的设置也还在
+        val diff = calculateDiff(remotes, listOf(local("示例站"), local("专用步骤站")))
+        assertEquals(emptyList(), diff.removed)
+        assertEquals(
+            listOf("示例站" to "local-示例站", "专用步骤站" to "local-专用步骤站"),
+            diff.matched.map { (remote, existing) -> remote.name to existing?.save?.instanceId },
+        )
+        // 本地没有的不新建
+        assertEquals(listOf("示例站"), calculateDiff(remotes, emptyList()).matched.map { it.first.name })
     }
 
     @Test
@@ -97,6 +130,6 @@ class AniBakaSubscriptionTest {
         }
         val requester = MediaSourceSubscriptionRequesterImpl(HttpClient(engine).asScopedHttpClient())
         val data = requester.request(MediaSourceSubscription(subscriptionId = "s", url = hubUrl))
-        assertEquals(1, data.mediaSources.size)
+        assertEquals(2, data.mediaSources.size)
     }
 }

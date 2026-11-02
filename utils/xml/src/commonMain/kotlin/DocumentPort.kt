@@ -213,6 +213,9 @@ expect abstract class Element : Node {
      */
     open fun text(): String
 
+    /** 只取这个元素自己的文本, 不含子元素的 (同样规整空白). */
+    fun ownText(): String
+
     @Deprecated("This will throw if the cssQuery in invalid. Use the overload that uses a evaluator instead.")
     fun select(cssQuery: String): Elements
     fun select(evaluator: Evaluator): Elements
