@@ -472,6 +472,7 @@ class JsonApiMediaSource(
             scope?.beforeOnlineSearch()
             searchSubjectsOnline(keyword)
         }.orEmpty()
+        if (found.isNotEmpty()) plan.awaitIdentity()
         val subjects = plan.pagesToOpen(found.map { it.withJudgedName(plan) }, searchConfig.autoMatch.preferShorterName) { it.name }
         var allSubjectsLoaded = true
         val media = buildList {
@@ -531,6 +532,7 @@ class JsonApiMediaSource(
         }
         if (caches.any { !it.roundComplete }) return null
         val episodeUrlTemplate = searchConfig.subject.episodes.episodeUrlTemplate
+        if (caches.isNotEmpty()) plan.awaitIdentity()
         return buildList {
             for (cache in caches) {
                 // 写缓存时名字表可能还没读进来, 那时认不出的别的作品的页也开了: 按现在的认部再判一次, 在线搜也不会开它

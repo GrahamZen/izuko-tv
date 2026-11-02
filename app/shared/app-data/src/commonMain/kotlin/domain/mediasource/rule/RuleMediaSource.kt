@@ -389,6 +389,7 @@ class RuleMediaSource(
             return null
         }
         val probe = query.freshnessProbe ?: SelectorEpisodeProbe(query.episodeSort, query.episodeEp, query.episodeName)
+        if (caches.isNotEmpty()) plan.awaitIdentity()
         val media = buildList {
             for (cache in caches) {
                 // 写缓存时名字表可能还没读进来, 那时认不出的别的作品的页也开了: 按现在的认部再判一次, 在线搜也不会开它
@@ -465,6 +466,7 @@ class RuleMediaSource(
             PlayTimeline.mark("t_http", info.displayName)
             engine.search(keyword).also { PlayTimeline.mark("t_http_done", info.displayName) }
         }.orEmpty()
+        if (found.isNotEmpty()) plan.awaitIdentity()
         val subjects = withSiteAliasesIfNeeded(found, keyword, plan, ttl).map { it.toSubjectInfo(plan) }
         logger.info { "RuleMediaSource '$mediaSourceId': search '$keyword' -> ${subjects.size} subjects" }
         PlayTimeline.mark("search_results", "${info.displayName} '$keyword' ${subjects.size}")
