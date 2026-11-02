@@ -63,6 +63,14 @@ import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.coroutines.update
 import me.him188.ani.utils.io.SystemPath
 import me.him188.ani.utils.io.absolutePath
+import me.him188.ani.utils.io.exists
+import me.him188.ani.utils.io.inSystem
+import me.him188.ani.utils.io.list
+import me.him188.ani.utils.io.moveTo
+import me.him188.ani.utils.io.name
+import me.him188.ani.utils.io.resolve
+import me.him188.ani.utils.io.resolveSibling
+import me.him188.ani.utils.io.syncFileContents
 import me.him188.ani.utils.logging.debug
 import me.him188.ani.utils.logging.error
 import me.him188.ani.utils.logging.info
@@ -111,6 +119,13 @@ class AnitorrentDownloadSession(
      */
     private val shouldTryLoadFiles = CompletableDeferred<Boolean>()
 
+    // 要放在 init 前面, 因为 init 会用到它
+    private val resumeSaver = TorrentResumeSaver(
+        progress = { sessionStats.replayCache.lastOrNull()?.let { it.downloadedBytes to it.uploadedBytes } },
+        syncFiles = ::syncWrittenFiles,
+        postSave = { handle.postSaveResume() },
+    )
+
     init {
         scope.launch {
             while (isActive) {
@@ -123,22 +138,7 @@ class AnitorrentDownloadSession(
         }
 
         scope.launch {
-            var lastUploaded = 0L
-            while (isActive) {
-                if (!handle.isValid) {
-                    return@launch
-                }
-                val uploaded = sessionStats.first()
-                if (uploaded != null && uploaded.uploadedBytes != lastUploaded) {
-                    lastUploaded = uploaded.uploadedBytes
-                    try {
-                        handle.postSaveResume()
-                    } catch (e: Throwable) {
-                        logger.error(e) { "Failed to save resume data" }
-                    }
-                }
-                delay(60.seconds)
-            }
+            resumeSaver.run { handle.isValid }
         }
 
         scope.launch {
@@ -266,6 +266,8 @@ class AnitorrentDownloadSession(
         override fun updatePriority() {
             logger.info { "[$handleId] Set file priority to $requestingPriority: $relativePath" }
             downloadOrder.request(this, requestingPriority)
+            // 停下了 (暂停、关掉): 之后可能很久不再写续传数据, 现在就记下下到哪了
+            if (requestingPriority == null) resumeSaver.saveSoon()
         }
 
         val downloadedBytes: MutableStateFlow<Long> = MutableStateFlow(initialDownloadedBytes)
@@ -567,15 +569,36 @@ class AnitorrentDownloadSession(
 
     fun onSaveResumeData(data: TorrentResumeData) {
         logger.info { "[$handleId] saving resume data to: ${fastResumeFile.absolutePath}" }
-        data.saveToPath(fastResumeFile.path)
+        // 先写到旁边再换过去: 写到一半被杀时留下的是上一份完整的续传数据. 在原生层的回调里同步做完 (那里持着续传数据的锁, 见 TorrentFileDiscard)
+        val pending = fastResumeFile.resolveSibling(fastResumeFile.name + ".tmp")
+        try {
+            data.saveToPath(pending.path)
+            pending.moveTo(fastResumeFile)
+        } catch (e: Exception) {
+            logger.error(e) { "[$handleId] Failed to write resume data" }
+        }
         resumeDataSaved.tryEmit(Unit)
+    }
+
+    /** 上次落盘时各文件下了多少 (见 [syncWrittenFiles]); 只在写续传数据的那个协程里读写 */
+    private val syncedBytes = HashMap<String, Long>()
+
+    /** 这个种子上次落盘之后写过的文件 (下载量变了的, 有的话连同没选中的集所在的 .parts) 落盘, 见 [TorrentResumeSaver] */
+    private suspend fun syncWrittenFiles() = withContext(Dispatchers.IO_) {
+        val entries = actualTorrentInfo.takeIf { it.isCompleted }?.getCompleted()?.entries.orEmpty()
+        val downloaded = entries.associate { it.relativePath to it.downloadedBytes.value }
+        val changed = filesToSync(downloaded, syncedBytes)
+        if (changed.isEmpty()) return@withContext
+        val files = changed.map { saveDirectory.resolve(it) } +
+                saveDirectory.list().filter { it.name.endsWith(".parts") }.map { it.inSystem }
+        for (file in files) if (file.exists()) syncFileContents(file)
+        for (path in changed) syncedBytes[path] = downloaded.getValue(path)
     }
 
     /**
      * 立刻把续传数据 (哪些 piece 已经下完) 写进 [fastResumeFile], 写完才返回.
      *
-     * 平时只在种子下完、或上传量有变化时才写 (见 init). 只下不传的会话, 进度一直只在内存里 ——
-     * 关掉之前不先写一次, 上次写入之后下完的 piece 下次打开都要重下.
+     * 平时每隔几分钟有变化才写 (见 [TorrentResumeSaver]); 关掉之前不先写一次, 上次写入之后下完的 piece 下次打开都要重下.
      *
      * libtorrent 不一定回应 (句柄已失效、种子出错), 调用方要自己限时.
      *
