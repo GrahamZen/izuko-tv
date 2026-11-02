@@ -24,6 +24,8 @@ import kotlinx.coroutines.withContext
 import me.him188.ani.app.data.persistent.database.dao.TorrentCacheEpisodeEntity
 import me.him188.ani.app.data.persistent.database.dao.TorrentCacheInfoEntity
 import me.him188.ani.app.domain.media.cache.engine.TorrentMediaCacheEngine
+import me.him188.ani.app.domain.media.cache.engine.TorrentPlaybackSaveDir
+import me.him188.ani.app.domain.media.cache.engine.startPlaybackDownload
 import me.him188.ani.app.domain.media.cache.location.MOVING_SUFFIX
 import me.him188.ani.app.domain.media.cache.location.MediaCacheLocationRefresher
 import me.him188.ani.app.domain.media.cache.location.MediaCacheMoveAbortedException
@@ -94,6 +96,63 @@ class TorrentMediaCacheLocationTest : AbstractTorrentMediaCacheEngineTest() {
             File(handle.saveDir.toString()).absolutePath.startsWith(usbRoot.absolutePath),
             "the torrent was opened in ${handle.saveDir}",
         )
+    }
+
+    @Test
+    fun `the cache made while playing shares the directory of the playback`() = runTest {
+        locations.connect("usb", usbRoot.toKtPath().inSystem)
+        locations.forNewCache = "usb"
+        val storage = createStorage()
+        val downloader = downloader()
+        val data = downloader.fetchTorrent(testMedia.download.uri)
+
+        // 开播自动建缓存时, 下载器按种子直接用正在播的会话
+        downloader.startPlaybackDownload(data, TorrentPlaybackSaveDir { d, torrent -> cacheEngine.playbackSaveDirOf(d, torrent) })
+        val cache = storage.cache(metadata("1"))
+        advanceUntilIdle()
+
+        assertEquals("usb", cache.locationId)
+        val row = assertNotNull(torrentInfoDatabase.get(testMedia.mediaId))
+        val sessionDir = File(downloader.native.handles.single().saveDir.toString())
+        assertEquals(File(usbRoot, row.relativeDir).canonicalPath, sessionDir.canonicalPath)
+    }
+
+    @Test
+    fun `a cache made after the drive was plugged in during playback stays with the playback`() = runTest {
+        // 开播时选的盘还没接上, 播放下在内部存储; 建自动缓存之前插上了
+        locations.forNewCache = "usb"
+        val storage = createStorage()
+        val downloader = downloader()
+        val data = downloader.fetchTorrent(testMedia.download.uri)
+        downloader.startPlaybackDownload(data, TorrentPlaybackSaveDir { d, torrent -> cacheEngine.playbackSaveDirOf(d, torrent) })
+        locations.connect("usb", usbRoot.toKtPath().inSystem)
+
+        val cache = storage.cache(metadata("1"))
+        advanceUntilIdle()
+
+        assertNull(cache.locationId)
+        val sessionDir = File(downloader.native.handles.single().saveDir.toString())
+        assertFalse(sessionDir.absolutePath.startsWith(usbRoot.absolutePath), "the playback moved to $sessionDir")
+    }
+
+    @Test
+    fun `playback of a torrent cached on the internal storage stays there`() = runTest {
+        val storage = createStorage()
+        storage.cache(metadata("1"))
+        locations.connect("usb", usbRoot.toKtPath().inSystem)
+        locations.forNewCache = "usb"
+        val downloader = downloader()
+
+        assertNull(cacheEngine.playbackSaveDirOf(downloader, downloader.fetchTorrent(testMedia.download.uri)))
+    }
+
+    @Test
+    fun `playback goes to the internal storage while the chosen drive is not connected`() = runTest {
+        locations.forNewCache = "usb"
+        createEngine(createTestAnitorrentEngine(backgroundScope.coroutineContext), locations = locations)
+        val downloader = downloader()
+
+        assertNull(cacheEngine.playbackSaveDirOf(downloader, downloader.fetchTorrent(testMedia.download.uri)))
     }
 
     @Test
