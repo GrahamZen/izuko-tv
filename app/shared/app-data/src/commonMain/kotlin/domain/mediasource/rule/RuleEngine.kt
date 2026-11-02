@@ -11,6 +11,7 @@ package me.him188.ani.app.domain.mediasource.rule
 
 import io.ktor.http.Url
 import io.ktor.http.decodeURLQueryComponent
+import io.ktor.http.encodeURLParameter
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -33,6 +34,7 @@ import me.him188.ani.app.domain.mediasource.search.SubjectSearchPlan
 import me.him188.ani.app.domain.mediasource.toSimplifiedChinese
 import me.him188.ani.app.domain.mediasource.web.BlockedException
 import me.him188.ani.datasources.api.util.namedGroup
+import me.him188.ani.utils.xml.Document
 import me.him188.ani.utils.xml.Element
 import me.him188.ani.utils.xml.Html
 import kotlin.coroutines.cancellation.CancellationException
@@ -213,15 +215,16 @@ class RuleEngine(
         return state.channels.orEmpty()
     }
 
-    /** 从剧集页取视频地址. */
+    /** 从剧集页取视频地址. 只有 id 的剧集 ([episodeIdUrl]) 从 id 开始. */
     suspend fun play(episodeUrl: String): RulePlayResult {
         val stage = StageErrors()
+        val episodeId = episodeIdOf(episodeUrl) ?: episodeUrl
         val state = runStage(
             "play",
             config.play,
             RuleState(
-                value = episodeUrl,
-                variables = mapOf(VAR_EPISODE_URL to episodeUrl),
+                value = episodeId,
+                variables = mapOf(VAR_EPISODE_URL to episodeUrl, VAR_EPISODE_ID to episodeId),
                 inputUrl = episodeUrl,
                 pageUrl = episodeUrl,
             ),
@@ -238,7 +241,7 @@ class RuleEngine(
             trace?.onStep("play", false, "最后的值不是地址: ${RuleText.preview(value)}")
             return playFailed(stage)
         }
-        return RulePlayResult.Direct(RuleText.normalizeUrl(url), mediaHeaders(state))
+        return RulePlayResult.Direct(RuleText.normalizeUrl(url), mediaHeaders(state, url))
     }
 
     /** 播放段没取到地址: 最后一次请求回来的内容里站点说了要登录时为 [RulePlayResult.LoginRequired] */
@@ -246,10 +249,13 @@ class RuleEngine(
         stage.lastResponse?.let(RuleLoginRequired::messageOf)?.let { RulePlayResult.LoginRequired(it) } ?: RulePlayResult.Failed
 
     /**
-     * 播放时的请求头: 规则的 [RuleConfig.headers] (视频地址常常要求与页面相同的 Referer), 缺的再用 [RuleConfig.matchVideo] 的补上,
+     * 播放 [videoUrl] 时的请求头: 规则的 [RuleConfig.headers] (视频地址常常要求与页面相同的 Referer), 缺的再用 [RuleConfig.matchVideo] 的补上,
      * 最后是播放段里 [RuleStep.MediaHeaders] 写的.
+     *
+     * 视频在对象存储 ([OBJECT_STORAGE_HOST_SUFFIXES]) 上时前两样里的 `Referer` 不带: 存储桶按 Referer 白名单防盗链, 默认放行不带 Referer 的请求,
+     * 站点的播放器也不带; 带上规则里站点的 Referer 反而可能被拒. [RuleStep.MediaHeaders] 写明的照带.
      */
-    private fun mediaHeaders(state: RuleState): Map<String, String> {
+    private fun mediaHeaders(state: RuleState, videoUrl: String): Map<String, String> {
         val headers = linkedMapOf<String, String>()
         fun putIfAbsent(name: String, value: String) {
             if (value.isNotBlank() && headers.keys.none { it.equals(name, ignoreCase = true) }) headers[name] = value
@@ -258,6 +264,10 @@ class RuleEngine(
         val defaults = config.matchVideo.addHeadersToVideo
         putIfAbsent("User-Agent", defaults.userAgent)
         putIfAbsent("Referer", defaults.referer)
+        val host = runCatching { Url(videoUrl).host.lowercase() }.getOrDefault("")
+        if (OBJECT_STORAGE_HOST_SUFFIXES.any { host.endsWith(it) }) {
+            headers.keys.filter { it.equals("Referer", ignoreCase = true) }.forEach { headers.remove(it) }
+        }
         for ((name, value) in state.mediaHeaders) {
             headers.keys.firstOrNull { it.equals(name, ignoreCase = true) }?.let { headers.remove(it) }
             headers[name] = value
@@ -505,21 +515,75 @@ class RuleEngine(
 
     // region 取值
 
-    private fun select(state: RuleState, label: String, step: RuleStep.Select): RuleState? {
-        val document = Html.parse(state.value, state.pageUrl)
+    private suspend fun select(state: RuleState, label: String, step: RuleStep.Select): RuleState? {
+        var document = Html.parse(state.value, state.pageUrl)
+        if (step.all) {
+            val values = document.select(step.css).mapTo(mutableListOf()) { valueOf(it, step.attr).trim() }
+            if (step.nextPage.isNotBlank()) {
+                var pageUrl = state.pageUrl
+                val visited = mutableSetOf(pageUrl)
+                var pages = 1
+                while (pages < step.maxPages) {
+                    val (next, nextUrl) = openNextPage(state, label, document, pageUrl, step.nextPage, visited, pages + 1) ?: break
+                    document = next
+                    pageUrl = nextUrl
+                    document.select(step.css).mapTo(values) { valueOf(it, step.attr).trim() }
+                    pages++
+                }
+            }
+            val kept = values.filter { it.isNotEmpty() }.let { if (step.unique) it.distinct() else it }
+            if (kept.isEmpty()) return fail(label, "没有选中 ${step.css}")
+            return ok(label, state.copy(value = JsonArray(kept.map(::JsonPrimitive)).toString()), "${kept.size} 项")
+        }
         val element = document.select(step.css).getOrNull(step.index) ?: return fail(label, "没有选中 ${step.css}")
-        val value = when {
-            step.attr == "text" -> textOf(element)
-            step.attr == "html" -> RuleText.innerHtml(element)
-            step.attr == "outerHtml" -> element.toString()
-            step.attr.startsWith("abs:") -> element.absUrl(step.attr.removePrefix("abs:"))
-            else -> element.attr(step.attr)
-        }.trim()
+        val value = valueOf(element, step.attr).trim()
         return if (value.isEmpty()) fail(label, "${step.css} 的 ${step.attr} 为空") else ok(label, state.copy(value = value))
+    }
+
+    /** 元素的内容, 取法见 [RuleStep.Select.attr]; [attr] 为空时取文本. */
+    private fun valueOf(element: Element, attr: String): String = when {
+        attr.isEmpty() || attr == "text" -> textOf(element)
+        attr == "ownText" -> element.ownText()
+        attr == "html" -> RuleText.innerHtml(element)
+        attr == "outerHtml" -> element.toString()
+        attr.startsWith("abs:") -> element.absUrl(attr.removePrefix("abs:"))
+        else -> element.attr(attr)
     }
 
     private fun textOf(element: Element): String =
         if (element.tagName().lowercase() in RAW_TEXT_TAGS) RuleText.innerHtml(element) else element.text()
+
+    /**
+     * 打开分页列表里 [document] 的下一页: [nextPage] 选出的链接 (取 `href`), 打开过的 ([visited]) 不再打开.
+     * 没有下一页、打不开时为 `null` (后面的页打不开不连累已经取到的). [pageNumber] 是这一页的页码, 只用于日志.
+     */
+    private suspend fun openNextPage(
+        state: RuleState,
+        label: String,
+        document: Document,
+        pageUrl: String,
+        nextPage: String,
+        visited: MutableSet<String>,
+        pageNumber: Int,
+    ): Pair<Document, String>? {
+        val next = document.select(nextPage).firstOrNull()
+            ?.let { RuleText.resolveUrl(pageUrl, it.attr("href")) }
+            ?.takeIf { visited.add(it) }
+            ?: return null
+        val response = try {
+            http.request(RuleHttpRequest("GET", RuleText.normalizeUrl(next), requestHeaders(state, emptyMap()), null, null))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            trace?.onStep(label, false, "第 $pageNumber 页 $next: $e")
+            return null
+        }
+        if (response.status >= 400) {
+            trace?.onStep(label, false, "第 $pageNumber 页 HTTP ${response.status} $next")
+            return null
+        }
+        return Html.parse(response.text, response.finalUrl) to response.finalUrl
+    }
 
     private fun groupValue(match: MatchResult, regex: Regex, group: String): String? {
         group.trim().toIntOrNull()?.let { return match.groups[it]?.value }
@@ -609,7 +673,7 @@ class RuleEngine(
     private fun subjectName(card: Element, link: Element, step: RuleStep.Subjects): String {
         if (step.name.isNotBlank()) {
             val element = card.select(step.name).firstOrNull() ?: return ""
-            return (if (step.nameAttr.isNotBlank()) element.attr(step.nameAttr) else element.text()).trim()
+            return valueOf(element, step.nameAttr).trim()
         }
         return sequence {
             yield(link.attr("title"))
@@ -669,7 +733,7 @@ class RuleEngine(
         }
         val tabNames = step.tabs.asSequence().map { document.select(it) }.firstOrNull { it.isNotEmpty() }
             ?.map { tab ->
-                val text = tab.text().trim()
+                val text = valueOf(tab, step.tabAttr).trim()
                 tabRegex?.find(text)?.let { optionalGroup(it, tabRegex, "ch")?.trim() }?.takeIf { it.isNotEmpty() } ?: text
             }
             .orEmpty()
@@ -685,25 +749,9 @@ class RuleEngine(
         if (step.nextPage.isNotBlank()) {
             val visited = mutableSetOf(pageUrl)
             while (pages < step.maxPages) {
-                val next = document.select(step.nextPage).firstOrNull()
-                    ?.let { RuleText.resolveUrl(pageUrl, it.attr("href")) }
-                    ?.takeIf { visited.add(it) }
-                    ?: break
-                val response = try {
-                    http.request(RuleHttpRequest("GET", RuleText.normalizeUrl(next), requestHeaders(state, emptyMap()), null, null))
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    // 后面的页打不开不连累已经取到的
-                    trace?.onStep(label, false, "第 ${pages + 1} 页 $next: $e")
-                    break
-                }
-                if (response.status >= 400) {
-                    trace?.onStep(label, false, "第 ${pages + 1} 页 HTTP ${response.status} $next")
-                    break
-                }
-                pageUrl = response.finalUrl
-                document = Html.parse(response.text, pageUrl)
+                val (next, nextUrl) = openNextPage(state, label, document, pageUrl, step.nextPage, visited, pages + 1) ?: break
+                pageUrl = nextUrl
+                document = next
                 val pageLists = step.lists.asSequence().map { document.select(it) }.firstOrNull { it.isNotEmpty() } ?: break
                 pageLists.forEachIndexed { index, list ->
                     val collected = perList.getOrNull(index) ?: return@forEachIndexed
@@ -723,15 +771,49 @@ class RuleEngine(
 
     private fun jsonEpisodes(state: RuleState, label: String, step: RuleStep.JsonEpisodes): RuleState? {
         val base = config.baseUrl.ifBlank { state.pageUrl }
-        val episodes = jsonItems(state.value, step.listPath).mapNotNull { item ->
-            val url = jsonItemUrl(item, state, step.idPath, step.urlPath, step.urlTemplate, base) ?: return@mapNotNull null
-            RuleEpisode(item.stringByPath(step.namePath)?.trim().orEmpty(), url)
+        val subjectUrl = state.variables[VAR_SUBJECT_URL] ?: state.pageUrl
+        val root = JsonNode(JSON.parseToJsonElement(state.value))
+        val groups = if (step.channelsPath.isBlank()) {
+            listOf(step.channelName.ifBlank { null } to jsonItems(root, step.listPath))
+        } else {
+            jsonItems(root, step.channelsPath).map { channel ->
+                channel.stringByPath(step.channelNamePath)?.trim()?.takeIf { it.isNotEmpty() } to jsonItems(channel, step.listPath)
+            }
         }
-        val named = episodes.mapIndexed { index, episode ->
-            if (episode.name.isEmpty()) episode.copy(name = "第${index + 1}集") else episode
+        val channels = groups.map { (name, items) ->
+            val episodes = items.mapNotNull { item ->
+                val url = if (step.idTemplate.isNotBlank()) {
+                    val id = RuleText.substitute(step.idTemplate, itemVariables(item, state, step.idPath)).takeIf { it.isNotBlank() }
+                        ?: return@mapNotNull null
+                    episodeIdUrl(subjectUrl, id)
+                } else {
+                    jsonItemUrl(item, state, step.idPath, step.urlPath, step.urlTemplate, base) ?: return@mapNotNull null
+                }
+                item to RuleEpisode(item.stringByPath(step.namePath)?.trim().orEmpty(), url)
+            }
+            val ordered = if (step.reverse) episodes.reversed() else episodes
+            RuleChannel(
+                name,
+                ordered.mapIndexed { index, (item, episode) ->
+                    val episodeName = if (step.nameTemplate.isNotBlank()) {
+                        RuleText.substitute(step.nameTemplate, itemVariables(item, state, step.idPath) + ("index" to "${index + 1}")).trim()
+                    } else {
+                        episode.name
+                    }
+                    if (hasEpisodeNumber(episodeName)) episode.copy(name = episodeName) else episode.copy(name = "第${index + 1}集")
+                },
+            )
         }
-        return finishChannels(state, label, listOf(RuleChannel(step.channelName.ifBlank { null }, named)))
+        return finishChannels(state, label, channels)
     }
+
+    private val episodeSortRegex: Regex? by lazy {
+        config.matchEpisodeSortFromName.takeIf { it.isNotBlank() }?.let { runCatching { Regex(it) }.getOrNull() }
+    }
+
+    /** 剧集名里认得出集号: 有数字, 或对得上 [RuleConfig.matchEpisodeSortFromName] (如「第一集」) */
+    private fun hasEpisodeNumber(name: String): Boolean =
+        name.any { it in '0'..'9' } || episodeSortRegex?.containsMatchIn(name) == true
 
     private fun regexEpisodes(state: RuleState, label: String, step: RuleStep.RegexEpisodes): RuleState? {
         val regex = RuleText.regex(substitute(step.pattern, state), step.ignoreCase)
@@ -781,8 +863,9 @@ class RuleEngine(
         return ok(label, state.copy(channels = named), "${named.size} 条线路, ${named.sumOf { it.episodes.size }} 集$pagesText")
     }
 
-    private fun jsonItems(text: String, listPath: String): List<JsonNode> {
-        val root = JsonNode(JSON.parseToJsonElement(text))
+    private fun jsonItems(text: String, listPath: String): List<JsonNode> = jsonItems(JsonNode(JSON.parseToJsonElement(text)), listPath)
+
+    private fun jsonItems(root: JsonNode, listPath: String): List<JsonNode> {
         return root.selectByPath(listPath).flatMap { node ->
             val element = (node as JsonNode).element
             if (element is JsonArray) element.map(::JsonNode) else listOf(node)
@@ -799,13 +882,19 @@ class RuleEngine(
     ): String? {
         val fromPath = urlPath.takeIf { it.isNotBlank() }?.let { item.stringByPath(it) }?.takeIf { it.isNotBlank() }
         val raw = fromPath ?: urlTemplate.takeIf { it.isNotBlank() }?.let { template ->
-            val fields = (item.element as? JsonObject).orEmpty().mapNotNull { (key, value) ->
-                (value as? JsonPrimitive)?.contentOrNull?.let { key to it }
-            }.toMap()
-            val id = item.stringByPath(idPath)
-            RuleText.substitute(template, variablesOf(state) + fields + listOfNotNull(id?.let { "id" to it }))
+            RuleText.substitute(template, itemVariables(item, state, idPath))
         } ?: return null
         return RuleText.resolveUrl(base, raw)
+    }
+
+    /** 列表每一项的模板能用的变量: 这一段的变量、该项的字段, 以及 `id` ([idPath] 取到的; 该项本身是字符串或数字时就是它). */
+    private fun itemVariables(item: JsonNode, state: RuleState, idPath: String): Map<String, String> {
+        val element = item.element
+        val fields = (element as? JsonObject).orEmpty().mapNotNull { (key, value) ->
+            (value as? JsonPrimitive)?.contentOrNull?.let { key to it }
+        }.toMap()
+        val id = if (element is JsonPrimitive) element.contentOrNull else item.stringByPath(idPath)
+        return variablesOf(state) + fields + listOfNotNull(id?.let { "id" to it })
     }
 
     // endregion
@@ -838,6 +927,7 @@ class RuleEngine(
         const val VAR_KEYWORD = "keyword"
         const val VAR_SUBJECT_URL = "subjectUrl"
         const val VAR_EPISODE_URL = "episodeUrl"
+        const val VAR_EPISODE_ID = "episodeId"
         const val VAR_BASE_URL = "baseUrl"
         const val VAR_PAGE_URL = "pageUrl"
         const val VAR_VALUE = "value"
@@ -854,6 +944,23 @@ class RuleEngine(
 
         /** 每个条目一个请求地另取别名时, 最多同时几个 (一次搜索十来个条目, 两轮取完) */
         private const val ALIAS_CONCURRENCY = 8
+
+        /** 对象存储的域名: 阿里云 OSS、腾讯云 COS (见 [mediaHeaders]) */
+        private val OBJECT_STORAGE_HOST_SUFFIXES = listOf(".aliyuncs.com", ".myqcloud.com")
+
+        private const val EPISODE_ID_MARK = "episode-id="
+
+        /**
+         * 只有 id 的剧集 ([RuleStep.JsonEpisodes.idTemplate]) 记成的地址: 条目页地址加 `#episode-id=` 与编码过的 id.
+         * 资源要有地址, 片段不会发给站点; 播放段从 [episodeIdOf] 取回的 id 开始.
+         */
+        fun episodeIdUrl(subjectUrl: String, id: String): String =
+            subjectUrl.substringBefore('#') + "#" + EPISODE_ID_MARK + id.encodeURLParameter()
+
+        /** [episodeIdUrl] 记下的 id; 剧集有自己的地址时为 `null` */
+        fun episodeIdOf(episodeUrl: String): String? =
+            episodeUrl.substringAfter("#$EPISODE_ID_MARK", "").takeIf { it.isNotEmpty() }
+                ?.let { runCatching { it.decodeURLQueryComponent() }.getOrNull() }
 
         /** 这些步骤里 (含 `first` 的各分支) 的条目列表步骤 */
         private fun List<RuleStep>.jsonSubjectSteps(): List<RuleStep.JsonSubjects> = flatMap { step ->

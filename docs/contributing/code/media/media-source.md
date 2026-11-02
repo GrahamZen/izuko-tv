@@ -123,7 +123,7 @@ RSS 源配置的 `titleToLink`（`RssTitleToLink`）在解析出条目之后、�
 固定的「搜索页 → 条目页 → 播放页」形状表达不了的站点：剧集表写在脚本或一段文本里、播放地址要再请求一个接口、
 要在几种取法之间回落。规则分搜索、详情、播放三段，每段是一串步骤（`RuleStep`），由 `RuleEngine` 依次执行：
 
-- 每段从输入开始（关键词、条目页地址、剧集页地址），步骤改写「当前值」或存取变量：请求（`fetch`）、CSS 取值（`select`）、
+- 每段从输入开始（关键词、条目页地址、剧集页地址；剧集只有 id 时是 id），步骤改写「当前值」或存取变量：请求（`fetch`）、CSS 取值（`select`）、
   正则（`regex`）、JSON 取值（`json`，路径语法同直链 API 数据源）、模板与变量（`template`、`set`、`query`）、
   字符串变换（`transform`）、解密与摘要（`crypto`：AES-CBC 解密、MD5）、苹果 CMS 播放页（`maccmsPlayer`）、播放请求头（`mediaHeaders`）；
   `first` 依次尝试几个分支。
@@ -148,8 +148,17 @@ RSS 源配置的 `titleToLink`（`RssTitleToLink`）在解析出条目之后、�
 GET 请求被站点验证挡住时改由 `WebSessionManager` 加载，与 `SelectorMediaSource` 共用验证码会话。
 
 `fetch` 可以把响应设的 Cookie 存进变量（`cookies`），交给 `mediaHeaders` 让播放器带上：有的站点取视频地址的接口同时发下载视频要的 Cookie，
-不带就 403。剧集分页列出时，`episodes` 的 `nextPage` 依次打开后面的页，合成一份列表。站点只给「全部条目」的列表、没有搜索接口时，
-`jsonSubjects` / `subjects` 的 `filterByKeyword` 按关键词筛（两边去掉空白与标点、繁转简后比较）；列表的每一项本身是数组时，路径用 `[0]`、`[1]` 按下标取。
+不带就 403。播放时默认带规则的请求头（视频地址常要与页面相同的 Referer），但视频在对象存储（阿里云 OSS、腾讯云 COS）上时不带其中的 Referer：
+存储桶按 Referer 白名单防盗链、默认放行不带 Referer 的请求，带上站点的 Referer 反而被拒；`mediaHeaders` 写明的照带。剧集分页列出时，`episodes` 的 `nextPage` 依次打开后面的页，合成一份列表；`select` 写 `all` 时取全部匹配元素的内容
+（当前值是 JSON 字符串数组，同样可以 `nextPage` 翻页），交给 `jsonEpisodes` 当剧集表。站点只给「全部条目」的列表、没有搜索接口时，
+`jsonSubjects` / `subjects` 的 `filterByKeyword` 按关键词筛（两边去掉空白与标点、繁转简后比较）；列表的每一项本身是数组时，路径用 `[0]`、`[1]` 按下标取，
+本身是字符串或数字时 `{id}` 就是它。取元素内容的写法（`select` 的 `attr`、`subjects` 的 `nameAttr`、`episodes` 的 `tabAttr`）都认
+`text`、`ownText`（只取元素自己的文字，线路标签里的集数角标不算）、`html`、属性名。
+
+`jsonEpisodes` 的 `channelsPath` 下每一项是一条线路（名字按 `channelNamePath`），剧集在它的 `listPath` 下。站点只给剧集 id、播放时拿 id
+请求接口的写 `idTemplate`：资源要有地址，剧集记作条目页地址加 `#episode-id=` 与 id（`RuleEngine.episodeIdUrl`，片段不发给站点），
+播放段从这个 id 开始，模板里是 `{episodeId}`（有地址的剧集 `{episodeId}` 就是地址）。剧集名可以用 `nameTemplate` 按位置 `{index}` 拼；
+名字里认不出集号（没有数字，也对不上 `matchEpisodeSortFromName`，例如接口只给每集标题）时改叫「第 N 集」，否则对不上要放的那一集。
 
 播放段的 `sniff`（`goal = video`）可以写 `timeoutMillis`：站点要很久才发出视频请求时，这个源的 WebView 嗅探至少等这么久。
 匹配器实现 `WebVideoSniffTimeout` 报出它，安卓的解析器取全局设置与它中较大的（它最多算 30 秒，与设置里能选的最长时长相同）。
@@ -159,14 +168,26 @@ GET 请求被站点验证挡住时改由 `WebSessionManager` 加载，与 `Selec
 XPath（`listXPath` / `roadsXPath` 等）由 `XPathToCss` 换成 CSS 选择器，只认按节点名与属性、文字挑元素的写法，换不了的照样报原因。
 `fetch` 的请求体写成对象时，按 `contentType` 拼成表单字段或 JSON（变量用模板的 `{x:json}` 按 JSON 字符串转义）。
 `jsonSeries` 只给条目 id（AniBaka 由详情段自己拼请求地址）时，条目地址取详情段开头那个用到 `{seriesId}` 的请求的地址，详情段的那个请求改为直接打开条目地址。
-站点专用步骤里能用通用步骤表达的照样翻译：anime1 的三步翻成「番剧表按关键词筛 → 分类页翻页取文章 → 文章里的 token 换视频地址并带上接口发的 Cookie」。
-`keywordMatch` 对到 `filterByKeyword`。
+`jsonEpisodes` 的 `episodeIdTemplate` 拼出的是剧集 id，对到 `idTemplate`；看得出是地址的（`http` 或 `/` 开头）照地址处理，WebView 嗅探时能打开。
+多线路的 `sourcesPath` / `episodesKey` / `sourceNameKey` 对到 `channelsPath` / `listPath` / `channelNamePath`。
+`searchList` 的 `titleSelector` / `titleAttr` / `linkSelector` 对到 `subjects` 的 `name` / `nameAttr` / `link`，封面（`imageSelector`）不用；
+`episodes` 的 `tabAttr` 照录；`urlDecode` 换成 URL 解码的 `transform`。`fetch` 的 `cookieSession` 把站点发的 Cookie 记进变量，
+同一段里 `setMediaHeaders` 写了 `cookieNames` / `cookiePrefixes` 时播放带上记下的全部 Cookie。只为 AniBaka 自己的播放器服务的选项
+（`videoUrl` 的 `proxyMedia`：视频经应用内代理转发；`validateWithCookies`）忽略。
+站点专用步骤里能用通用步骤表达的照样翻译：anime1 的三步翻成「番剧表按关键词筛（去掉分类 id 为 0 的外链行）→ 分类页翻页取文章 →
+文章里的 token 换视频地址并带上接口发的 Cookie」。anime1 的规则现在用通用步骤写（分类页取全部 token，每个 token 一集、按位置叫「第 N 集」，
+播放时提交存下的 token），导入器认出它（规则 id 为 `anime1` 且三段对得上，`anime1SiteSteps`）就换回这三步再翻译：
+集号按标题里站点标的（缺集、夹着特别篇时按位置会错位），token 播放时从文章页现取（token 带签发时间），
+外链行的条目地址 `?cat=0` 是全站最新一页、会把别的番的剧集当成这部的。对不上时照通用写法转换。
+`keywordMatch` 对到 `filterByKeyword`，规则源不分大小写，`caseSensitive` 忽略。
 嗅探的选项照录进 `sniff`：等待时长生效；页面加载好 / 被挡的标志文字（`readyContains` / `rejectContains`）、加载好后再等多久、
 视频地址要跟随跳转（`resolveMediaRedirects`）目前只记录，不起作用。
 Web 控制台的导入接受 AniBaka 规则 JSON，或规则 / 规则库索引的地址（由电视下载）。
 订阅地址也可以直接填 AniBaka 规则库索引（`AniBakaSubscription`，挂在 `MediaSourceSubscriptionRequesterImpl` 下载之后）：
 每次更新订阅都重新下载并转换，之后与普通订阅一样按名字增删改；有规则文件没下载下来时这次更新算失败、原有的源不动，
-否则缺了的源会被删掉再新建，用户对它的启停设置随之丢失。
+否则缺了的源会被删掉再新建，用户对它的启停设置随之丢失。转换不了的规则（规则库改了写法、用到这个版本还不认得的步骤或选项）
+记成版本高一档、只有名字的数据源（`AniBakaSubscription.unsupportedEntry`），订阅更新对这种「要新版才认得」的数据源保留本地已有的那个，
+所以已经导入过的源照旧可用，等导入器跟上；本地没有的不建。
 
 订阅更新（`MediaSourceSubscriptionUpdater`）按名字对应新旧：新的加、没了的删、同名的原地换配置（实例与启停不变）。
 订阅里改了名的源由 `SubscriptionRenames` 认出（同类型、同站点的一删一增配成一对，站点不看图标地址），同样原地更新。

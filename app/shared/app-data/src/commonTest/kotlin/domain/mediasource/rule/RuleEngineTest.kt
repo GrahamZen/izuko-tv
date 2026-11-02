@@ -244,6 +244,22 @@ class RuleEngineTest {
     }
 
     @Test
+    fun `videos on object storage go without the rule referer`() = runTest {
+        val site = FakeSite(mapOf("https://www.example.com/api/play/1" to """{"url":"https://bucket.oss-cn-shanghai.aliyuncs.com/u/1.mp4"}"""))
+        val play = listOf(RuleStep.Fetch(url = "/api/play/1"), RuleStep.Json(path = "url"))
+        val config = RuleConfig(baseUrl = "https://www.example.com", headers = mapOf("Referer" to "https://www.example.com/"), play = play)
+        // 存储桶按 Referer 白名单防盗链, 带上站点的 Referer 会被拒
+        val result = engine(config, site).play("https://www.example.com/play/1")
+        assertIs<RulePlayResult.Direct>(result)
+        assertEquals(null, result.headers["Referer"])
+        // 播放段写明的照带
+        val explicit = config.copy(play = play + RuleStep.MediaHeaders(headers = mapOf("Referer" to "https://www.example.com/")))
+        val withReferer = engine(explicit, site).play("https://www.example.com/play/1")
+        assertIs<RulePlayResult.Direct>(withReferer)
+        assertEquals("https://www.example.com/", withReferer.headers["Referer"])
+    }
+
+    @Test
     fun `video url is found in player page`() = runTest {
         val site = FakeSite(
             mapOf(

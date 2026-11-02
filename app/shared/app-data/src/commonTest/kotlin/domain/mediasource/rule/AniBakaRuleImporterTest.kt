@@ -96,7 +96,7 @@ class AniBakaRuleImporterTest {
             listOf(
                 RuleStep.Fetch(url = "{value}", headers = mapOf("Referer" to "https://www.example.com/")),
                 RuleStep.SetVar(name = "page", value = "{value}"),
-                RuleStep.Template(value = "{episodeUrl}"),
+                RuleStep.Template(value = "{episodeId}"),
                 RuleStep.Regex(pattern = "/vodplay/(\\d+)-", group = "1"),
                 RuleStep.SetVar(name = "vodId", value = "{value}"),
                 RuleStep.Template(value = "{page}"),
@@ -492,5 +492,189 @@ class AniBakaRuleImporterTest {
             """{"search_term":"示\"例","limit":10}""",
             RuleText.substitute(fetch.body, mapOf("keyword" to "示\"例")),
         )
+    }
+
+    @Test
+    fun `title link and tab options are converted`() = runTest {
+        val converted = AniBakaRuleImporter.convert(
+            rule(
+                """
+                {"format": "anx-rule/2", "name": "卡片站", "baseUrl": "https://www.example.com",
+                 "search": [{"op": "fetch", "url": "/s?wd={keyword}"},
+                            {"op": "searchList", "selectors": ["a.video-wrapper"], "linkSelector": "",
+                             "titleSelector": "img.cover", "titleAttr": "alt", "imageSelector": "img.cover", "imageAttr": "src"}],
+                 "detail": [{"op": "follow"},
+                            {"op": "episodes", "listSelectors": [".play-list"], "tabSelectors": [".tab"], "tabAttr": "ownText"}],
+                 "play": [{"op": "follow"}, {"op": "videoUrl", "proxyMedia": true}]}
+                """.trimIndent(),
+            ),
+        )
+        assertIs<AniBakaRuleImporter.Converted.Ok>(converted)
+        val config = converted.arguments.rule
+        assertEquals(RuleStep.Subjects(list = listOf("a.video-wrapper"), name = "img.cover", nameAttr = "alt"), config.search[1])
+        assertEquals(RuleStep.Episodes(lists = listOf(".play-list"), tabs = listOf(".tab"), tabAttr = "ownText"), config.detail[1])
+
+        val pages = mapOf(
+            "https://www.example.com/s?wd=%E7%A4%BA%E4%BE%8B" to
+                    """<a class="video-wrapper" href="/voddetail/1.html"><img class="cover" alt="示例动画" src="/1.jpg"><span>HD</span></a>""",
+            "https://www.example.com/voddetail/1.html" to
+                    """<div class="tab">线路一<small>2</small></div><div class="tab">线路二<small>1</small></div>""" +
+                    """<ul class="play-list"><li><a href="/play/1-1.html">第01集</a></li><li><a href="/play/1-2.html">第02集</a></li></ul>""" +
+                    """<ul class="play-list"><li><a href="/play/2-1.html">第01集</a></li></ul>""",
+        )
+        val engine = RuleEngine(config, RuleHttp { request -> RuleHttpResponse(request.url, if (request.url in pages) 200 else 404, pages[request.url].orEmpty()) })
+        val subject = engine.search("示例").single()
+        assertEquals("示例动画", subject.name)
+        assertEquals("https://www.example.com/voddetail/1.html", subject.url)
+        // 线路名只取标签自己的文字, 不带集数角标
+        assertEquals(listOf("线路一", "线路二"), engine.detail(subject.url).map { it.name })
+    }
+
+    @Test
+    fun `json episodes listed by line with ids play from the id`() = runTest {
+        val converted = AniBakaRuleImporter.convert(
+            rule(
+                """
+                {"format": "anx-rule/2", "name": "接口站", "baseUrl": "https://www.example.com",
+                 "search": [{"op": "fetch", "url": "/api/anime?keyword={keyword}"},
+                            {"op": "jsonSeries", "listPath": "data.items", "idKey": "slug", "nameKey": "name", "detailUrlTemplate": "/anime/{id}"}],
+                 "detail": [{"op": "regex", "pattern": "/anime/([^/?#]+)", "group": 1},
+                            {"op": "fetch", "url": "/api/anime/{url:raw}"},
+                            {"op": "jsonEpisodes", "sourcesPath": "data.seasons", "episodesKey": "episodes", "sourceNameKey": "name",
+                             "episodeNameKey": "title", "episodeIdTemplate": "{id:raw}"}],
+                 "play": [{"op": "fetch", "url": "/api/episodes/{episodeId:raw}/playback"}, {"op": "json", "path": "data.url"}]}
+                """.trimIndent(),
+            ),
+        )
+        assertIs<AniBakaRuleImporter.Converted.Ok>(converted)
+        val pages = mapOf(
+            "https://www.example.com/api/anime?keyword=%E7%A4%BA%E4%BE%8B" to """{"data":{"items":[{"slug":"515759","name":"示例动画"}]}}""",
+            "https://www.example.com/api/anime/515759" to
+                    """{"data":{"seasons":[{"name":"第一季","episodes":[{"id":"ep-a","title":"出发吧"},{"id":"ep-b","title":"南方的勇者"}]}]}}""",
+            "https://www.example.com/api/episodes/ep-b/playback" to """{"data":{"url":"https://cdn.example.com/b.m3u8"}}""",
+        )
+        val engine = RuleEngine(
+            converted.arguments.rule,
+            RuleHttp { request -> RuleHttpResponse(request.url, if (request.url in pages) 200 else 404, pages[request.url].orEmpty()) },
+        )
+        val subject = engine.search("示例").single()
+        val channel = engine.detail(subject.url).single()
+        assertEquals("第一季", channel.name)
+        // 只给标题的剧集按位置起名, 才对得上集号
+        assertEquals(listOf("第1集", "第2集"), channel.episodes.map { it.name })
+        assertEquals("https://www.example.com/anime/515759#episode-id=ep-b", channel.episodes[1].url)
+        val play = engine.play(channel.episodes[1].url)
+        assertIs<RulePlayResult.Direct>(play)
+        assertEquals("https://cdn.example.com/b.m3u8", play.url)
+    }
+
+    /** anime1 的规则改用通用步骤之后的写法 (站点是虚构的): 每集只有分类页上的 token, 播放时拿 token 换视频地址与 Cookie. */
+    private val anime1Generic = """
+        {"format": "anx-rule/2", "id": "anime1", "name": "Anime1", "baseUrl": "https://anime.example.com",
+         "headers": {"User-Agent": "Mozilla/5.0", "Referer": "https://anime.example.com/"},
+         "search": [{"op": "fetch", "url": "https://anime.example.com/animelist.json"},
+                    {"op": "jsonSeries", "idKey": "[0]", "nameKey": "[1]", "keywordMatch": true, "caseSensitive": true}],
+         "detail": [{"op": "fetch", "url": "https://anime.example.com/?cat={seriesId:raw}"},
+                    {"op": "select", "css": "video[data-apireq]", "attr": "data-apireq", "all": true, "unique": true,
+                     "nextSelector": ".nav-previous a", "maxPages": 32},
+                    {"op": "jsonEpisodes", "episodesPath": "", "episodeIdTemplate": "{id:raw}", "reverse": true,
+                     "sourceName": "Anime1", "episodeNameTemplate": "第{index}集"}],
+         "play": [{"op": "urlDecode"},
+                  {"op": "setVar", "name": "token", "value": "{url:raw}"},
+                  {"op": "fetch", "url": "https://v.anime.example.com/api", "method": "POST", "contentType": "form",
+                   "body": {"d": "{token:raw}"}, "headers": {"Origin": "https://anime.example.com"}, "cookieSession": true},
+                  {"op": "json", "path": "s[0].src"},
+                  {"op": "setMediaHeaders", "headers": {"Referer": "https://anime.example.com/"},
+                   "cookieNames": ["e", "p", "h"], "cookiePrefixes": ["_ga"], "validateWithCookies": true}]}
+    """.trimIndent()
+
+    @Test
+    fun `token list rule pages through tokens and plays with the cookies`() = runTest {
+        // 不是 anime1 的规则照通用步骤转换
+        val converted = AniBakaRuleImporter.convert(rule(anime1Generic.replace(""""id": "anime1"""", """"id": "tokens"""")))
+        assertIs<AniBakaRuleImporter.Converted.Ok>(converted)
+
+        fun video(token: String) = """<article><video data-apireq="$token"></video></article>"""
+        val pages = mapOf(
+            "https://anime.example.com/animelist.json" to """[[1833,"葬送的芙莉蓮 第二季","29-30","2026","冬",""]]""",
+            "https://anime.example.com/?cat=1833" to
+                    """<main>${video("%7B%22e%22%3A%2230%22%7D")}</main>""" +
+                    """<div class="nav-previous"><a href="https://anime.example.com/cat/1833/page/2">上一頁</a></div>""",
+            "https://anime.example.com/cat/1833/page/2" to """<main>${video("%7B%22e%22%3A%2229%22%7D")}</main>""",
+            "https://v.anime.example.com/api" to """{"s":[{"src":"//cdn.anime.example.com/1833/29.mp4","type":"video/mp4"}]}""",
+        )
+        val requests = mutableListOf<RuleHttpRequest>()
+        val engine = RuleEngine(
+            converted.arguments.rule,
+            RuleHttp { request ->
+                requests += request
+                val page = pages[request.url] ?: return@RuleHttp RuleHttpResponse(request.url, 404, "")
+                val cookies = if (request.url == "https://v.anime.example.com/api") listOf("e=1", "p=2", "h=3") else emptyList()
+                RuleHttpResponse(request.url, 200, page, cookies)
+            },
+        )
+
+        val subject = engine.search("葬送的芙莉蓮").single()
+        assertEquals("https://anime.example.com/?cat=1833", subject.url)
+        // 两页的 token 合起来, 从旧到新
+        val episodes = engine.detail(subject.url).single().episodes
+        assertEquals(listOf("第1集", "第2集"), episodes.map { it.name })
+
+        val play = engine.play(episodes.first().url)
+        assertIs<RulePlayResult.Direct>(play)
+        assertEquals("https://cdn.anime.example.com/1833/29.mp4", play.url)
+        assertEquals("e=1; p=2; h=3", play.headers["Cookie"])
+        assertEquals("https://anime.example.com/", play.headers["Referer"])
+        // token 解码后作为表单字段提交
+        assertEquals("d=%7B%22e%22%3A%2229%22%7D", requests.last { it.method == "POST" }.body)
+    }
+
+    @Test
+    fun `anime1 rule in generic steps keeps taking episodes from articles`() = runTest {
+        val converted = AniBakaRuleImporter.convert(rule(anime1Generic))
+        assertIs<AniBakaRuleImporter.Converted.Ok>(converted)
+        val config = converted.arguments.rule
+
+        fun article(id: Int, title: String, token: String) =
+            """<article><h2 class="entry-title"><a href="https://anime.example.com/$id" rel="bookmark">$title</a></h2>""" +
+                    """<video data-apireq="$token"></video></article>"""
+        val pages = mapOf(
+            // 分类 id 为 0 的是外链, 条目地址 ?cat=0 是全站最新一页, 不要
+            "https://anime.example.com/animelist.json" to
+                    """[[0,"<a href=\"https://other.example.com/?cat=1\">葬送的芙莉蓮外傳</a>","1-2","2026","春",""],""" +
+                    """[1833,"葬送的芙莉蓮 第二季","29-31","2026","冬",""]]""",
+            // 站点缺了第 30 集: 集号按标题里标的
+            "https://anime.example.com/?cat=1833" to
+                    """<main>${article(31, "葬送的芙莉蓮 第二季 [31]", "%7B%22e%22%3A%2231%22%7D")}</main>""" +
+                    """<div class="nav-previous"><a href="https://anime.example.com/cat/1833/page/2">上一頁</a></div>""",
+            "https://anime.example.com/cat/1833/page/2" to
+                    """<main>${article(29, "葬送的芙莉蓮 第二季 [29]", "%7B%22e%22%3A%2229%22%7D")}</main>""",
+            // 播放时从文章页现取 token
+            "https://anime.example.com/31" to "<main>${article(31, "葬送的芙莉蓮 第二季 [31]", "%7B%22e%22%3A%2231%22%2C%22t%22%3A2%7D")}</main>",
+            "https://v.anime.example.com/api" to """{"s":[{"src":"//cdn.anime.example.com/1833/31.mp4","type":"video/mp4"}]}""",
+        )
+        val requests = mutableListOf<RuleHttpRequest>()
+        val engine = RuleEngine(
+            config,
+            RuleHttp { request ->
+                requests += request
+                val page = pages[request.url] ?: return@RuleHttp RuleHttpResponse(request.url, 404, "")
+                val cookies = if (request.url == "https://v.anime.example.com/api") listOf("e=1", "p=2", "h=3") else emptyList()
+                RuleHttpResponse(request.url, 200, page, cookies)
+            },
+        )
+
+        val subject = engine.search("葬送的芙莉蓮").single()
+        assertEquals("https://anime.example.com/?cat=1833", subject.url)
+        val episodes = engine.detail(subject.url).single().episodes
+        assertEquals(listOf("葬送的芙莉蓮 第二季 [29]", "葬送的芙莉蓮 第二季 [31]"), episodes.map { it.name })
+        assertEquals("https://anime.example.com/31", episodes.last().url)
+        assertEquals("""\[(?<ep>[^\[\]]+)\]\s*$""", config.matchEpisodeSortFromName)
+
+        val play = engine.play(episodes.last().url)
+        assertIs<RulePlayResult.Direct>(play)
+        assertEquals("https://cdn.anime.example.com/1833/31.mp4", play.url)
+        assertEquals("e=1; p=2; h=3", play.headers["Cookie"])
+        assertEquals("d=%7B%22e%22%3A%2231%22%2C%22t%22%3A2%7D", requests.last { it.method == "POST" }.body)
     }
 }
