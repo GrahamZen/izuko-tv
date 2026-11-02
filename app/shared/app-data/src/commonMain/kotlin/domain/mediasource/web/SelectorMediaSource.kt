@@ -369,6 +369,7 @@ class SelectorMediaSource(
         } else {
             null
         }
+        if (caches.isNotEmpty()) plan.awaitIdentity()
         val media = buildList {
             for (cache in caches) {
                 // 写缓存时名字表可能还没读进来, 那时认不出的别的作品的页也开了: 按现在的认部再判一次, 在线搜也不会开它
@@ -430,6 +431,7 @@ class SelectorMediaSource(
             fetchPageOrThrow(searchUrl, PageExpectation.SearchResults(searchConfig))
         } ?: return@withContext emptyList()
 
+        if (originalSubjects.isNotEmpty()) plan.awaitIdentity()
         val subjects = plan.pagesToOpen(originalSubjects, searchConfig.autoMatch.preferShorterName) { it.name }
         val probe = query.freshnessProbe ?: SelectorEpisodeProbe(query.episodeSort, query.episodeEp, query.episodeName)
 

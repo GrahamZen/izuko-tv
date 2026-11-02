@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.domain.mediasource.search
 
+import kotlinx.coroutines.CancellationException
 import me.him188.ani.app.domain.media.selector.filter.ExactSubjectNames
 import me.him188.ani.app.domain.media.selector.filter.SeasonNumberConflict
 import me.him188.ani.app.domain.mediasource.MediaListFilter
@@ -27,6 +28,7 @@ import me.him188.ani.datasources.api.source.MediaFetchRequest
 import me.him188.ani.datasources.api.topic.EpisodeRange
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
+import me.him188.ani.utils.logging.warn
 
 /**
  * 一次查询里非 BT 数据源 (网页、规则、JSON API、直连 API、网盘) 共用的搜索计划:
@@ -180,6 +182,21 @@ class SubjectSearchPlan private constructor(private val request: MediaFetchReque
 
     /** 按全部动画的名字表认部 ([AnimeNames]); 每次现取, 表在搜索中途读进来时后面的页就用上 */
     private val names: TitleIdentity get() = AnimeNames.identityOf(request)
+
+    /**
+     * 等这一部的认部算好, 判页名 ([identify]) 之前调. 开播时十几个源同时读到搜索缓存、搜到结果, [identify] 不能挂起,
+     * 正巧有人在算时会自己再算一份 (每份都要扫一遍整张名字表, 电视上约一秒), 占满 `Dispatchers.Default`, 别的协程全排在后面.
+     * 这里出错只记一下: [identify] 那里还会再算, 照原样报错.
+     */
+    suspend fun awaitIdentity() {
+        try {
+            AnimeNames.awaitIdentityOf(request)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to build the identity of ${ownNames.firstOrNull()}" }
+        }
+    }
 
     /**
      * 站点上叫 [name] 的条目 (页名、分享标题) 与这一部的关系, 见 [SubjectMatch].

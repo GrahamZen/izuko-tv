@@ -48,8 +48,8 @@ object AnimeNames {
     /**
      * 按 [table] 给 [request] 认部. 网页与网盘 ([TitleIdentities.of])、一次查询的各个数据源、几次切集共用, 记最近几个条目, 换了表就清掉.
      *
-     * 开播时十几个源同时来认部 (每份都要扫一遍整张表, 电视上一两百毫秒): 能挂起的调用方用 [awaitIdentityOf] 等先来的那份;
-     * 这里是给不能挂起的调用方的 (都在搜到结果之后, 那时多半已经算好), 正巧有人在算时自己再算一份, 不占着线程干等.
+     * 开播时十几个源同时来认部 (每份都要扫一遍整张表, 电视上约一秒): 能挂起的调用方用 [awaitIdentityOf] 等先来的那份,
+     * 数据源判页名之前都先等 ([SubjectSearchPlan.awaitIdentity]). 这里是给不能挂起的调用方的, 正巧有人在算时自己再算一份, 不占着线程干等.
      */
     internal fun identityOf(request: MediaFetchRequest, table: SeriesGraphTable?): TitleIdentity {
         val key = keyOf(request)
