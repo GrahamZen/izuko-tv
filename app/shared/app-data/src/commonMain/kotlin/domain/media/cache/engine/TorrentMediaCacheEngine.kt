@@ -59,6 +59,7 @@ import me.him188.ani.app.domain.media.resolver.EpisodeMetadata
 import me.him188.ani.app.domain.media.resolver.TorrentMediaResolver
 import me.him188.ani.app.domain.torrent.TorrentEngine
 import me.him188.ani.app.tools.toProgress
+import me.him188.ani.app.torrent.api.TorrentDownloader
 import me.him188.ani.app.torrent.api.TorrentSession
 import me.him188.ani.app.torrent.api.files.EncodedTorrentInfo
 import me.him188.ani.app.torrent.api.files.FilePriority
@@ -932,13 +933,38 @@ class TorrentMediaCacheEngine(
         if (torrent.location == null) null else torrentDirOf(torrent)
 
     /**
-     * 新种子放在哪个位置. 一个种子只放一个地方 (一个下载会话): 别的数据源已经缓存过同一个种子时跟着它, 否则用现在选的默认位置.
-     * 网盘引擎的文件只放内部存储.
+     * 本进程里 BT 播放给各个种子目录定下的位置 (值为 null = 内部存储), 见 [playbackSaveDirOf].
+     * 下载器按种子复用正在播的会话, 之后建的缓存要跟着它: 开播之后才插上盘、改了默认位置时, 按当时的默认位置算会和播放分家.
+     */
+    private val playbackLocations = MutableStateFlow(emptyMap<String, String?>())
+
+    /**
+     * 新种子放在哪个位置. 一个种子只放一个地方 (一个下载会话): 别的数据源已经缓存过同一个种子时跟着它,
+     * 播放已经给它定过位置 (那块盘还接着) 时跟着播放, 否则用现在选的默认位置. 网盘引擎的文件只放内部存储.
      */
     private suspend fun locationOfNewTorrent(relativeDir: String): String? {
-        dao.getAll().first().firstOrNull { it.relativeDir == relativeDir }?.let { return it.location }
+        dao.locationsOfDir(relativeDir).let { if (it.isNotEmpty()) return it.first() }
         if (engineKey.isCloud) return null
+        playbackLocations.value.let { played ->
+            if (relativeDir in played) {
+                val location = played[relativeDir]
+                if (location == null || locations.rootOf(location) != null) return location
+            }
+        }
         return locations.locationForNewCache()
+    }
+
+    /**
+     * BT 播放 (还没建缓存时) 的种子目录, 见 [TorrentPlaybackSaveDir]: 与建缓存时算出的相同 ([locationOfNewTorrent]).
+     * `null` = 内部存储 (由引擎决定), 那块盘没接上时也是.
+     */
+    suspend fun playbackSaveDirOf(downloader: TorrentDownloader, data: EncodedTorrentInfo): SystemPath? {
+        val path = downloader.getSaveDirForTorrent(data).absolutePath
+        val relativeDir = path.substringAfter(baseSaveDirProvider.saveDir).takeIf { it != path } ?: return null
+        val location = locationOfNewTorrent(relativeDir)
+        val dir = location?.let { locations.rootOf(it) }?.let { Path(it.absolutePath, relativeDir).inSystem }
+        playbackLocations.update { it + (relativeDir to location?.takeIf { dir != null }) }
+        return dir
     }
 
     /** 启动恢复之后丢掉打开的种子里没有记录用着的文件, 见 [TorrentCacheInfoDao.discardFilesWithoutRecords]. */

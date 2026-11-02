@@ -163,6 +163,10 @@ interface TorrentCacheInfoDao {
     @Query("""DELETE FROM torrent_cache WHERE mediaId = :mediaId""")
     suspend fun deleteByMediaId(mediaId: String)
 
+    /** 用着 [relativeDir] 这个种子目录的记录放在哪些位置 (null = 内部存储); 空 = 没有这个目录的记录. 不读种子数据 */
+    @Query("""SELECT location FROM torrent_cache WHERE relativeDir = :relativeDir""")
+    suspend fun locationsOfDir(relativeDir: String): List<String?>
+
     @Query("""SELECT * FROM torrent_cache_episode""")
     fun getAllEpisodes(): Flow<List<TorrentCacheEpisodeEntity>>
 
@@ -213,6 +217,9 @@ fun createMemoryTorrentCacheInfoDao(): TorrentCacheInfoDao {
                 it.filter { e -> e.mediaId != mediaId }
             }
         }
+
+        override suspend fun locationsOfDir(relativeDir: String): List<String?> =
+            store.data.firstOrNull().orEmpty().filter { it.relativeDir == relativeDir }.map { it.location }
 
         override fun getAllEpisodes(): Flow<List<TorrentCacheEpisodeEntity>> = episodes.data
 

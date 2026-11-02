@@ -11,6 +11,7 @@ package me.him188.ani.app.platform
 
 import me.him188.ani.app.domain.media.cache.engine.AlwaysUseTorrentEngineAccess
 import me.him188.ani.app.domain.media.cache.engine.TorrentEngineAccess
+import me.him188.ani.app.domain.media.cache.engine.TorrentPlaybackSaveDir
 import me.him188.ani.app.domain.media.resolver.MediaResolver
 import me.him188.ani.app.domain.media.resolver.TorrentMediaResolver
 import me.him188.ani.app.domain.torrent.TorrentEngine
@@ -27,9 +28,10 @@ import me.him188.ani.app.domain.torrent.TorrentEngineType
 fun torrentMediaResolvers(
     engines: List<TorrentEngine>,
     localEngineAccess: TorrentEngineAccess,
+    playbackSaveDir: (TorrentEngine) -> TorrentPlaybackSaveDir? = { null },
 ): List<MediaResolver> {
     val localTorrentResolvers = engines.filter { it.type != TorrentEngineType.PikPak }
-        .map { TorrentMediaResolver(it, localEngineAccess) }
+        .map { TorrentMediaResolver(it, localEngineAccess, playbackSaveDir = playbackSaveDir(it)) }
 
     val pikpakResolvers = engines.filter { it.type == TorrentEngineType.PikPak }
         .map {

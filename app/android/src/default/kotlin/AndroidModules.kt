@@ -32,6 +32,7 @@ import me.him188.ani.app.domain.media.cache.engine.AlwaysUseTorrentEngineAccess
 import me.him188.ani.app.domain.media.cache.engine.HttpMediaCacheEngine
 import me.him188.ani.app.domain.media.cache.engine.TorrentEngineAccess
 import me.him188.ani.app.domain.media.cache.engine.TorrentMediaCacheEngine
+import me.him188.ani.app.domain.media.cache.engine.torrentPlaybackSaveDirs
 import me.him188.ani.app.domain.media.cache.library.AndroidMediaLibraryAccess
 import me.him188.ani.app.domain.media.cache.library.MediaLibraryAccess
 import me.him188.ani.app.domain.media.cache.location.AndroidMediaCacheLocations
@@ -210,7 +211,7 @@ fun getAndroidModules(
     factory<MediaResolver> {
         MediaResolver.from(
             listOf<MediaResolver>(CloudDriveMediaResolver(get()))
-                .plus(torrentMediaResolvers(get<TorrentManager>().engines, get()))
+                .plus(torrentMediaResolvers(get<TorrentManager>().engines, get(), torrentPlaybackSaveDirs { get<MediaDownloadManager>() }))
                 .plus(LocalFileMediaResolver())
                 .plus(HttpStreamingMediaResolver())
                 .plus(ApiVideoMediaResolver(get<MediaSourceManager>().apiVideoResolverLoader))
