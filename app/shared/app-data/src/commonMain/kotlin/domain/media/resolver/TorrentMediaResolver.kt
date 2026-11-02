@@ -23,7 +23,9 @@ import kotlinx.io.IOException
 import me.him188.ani.app.domain.media.cache.engine.EnsureTorrentEngineIsAccessible
 import me.him188.ani.app.domain.media.cache.engine.MediaCacheEngineKey
 import me.him188.ani.app.domain.media.cache.engine.TorrentEngineAccess
+import me.him188.ani.app.domain.media.cache.engine.TorrentPlaybackSaveDir
 import me.him188.ani.app.domain.media.cache.engine.UnsafeTorrentEngineAccessApi
+import me.him188.ani.app.domain.media.cache.engine.startPlaybackDownload
 import me.him188.ani.app.domain.media.cache.engine.withServiceRequest
 import me.him188.ani.app.domain.media.player.data.MediaDataProvider
 import me.him188.ani.app.domain.media.player.data.TorrentMediaData
@@ -63,6 +65,7 @@ class TorrentMediaResolver(
     // Injected so a test can keep the open and its timeout on one virtual clock. With a real IO
     // dispatcher the timeout races the fake open, and a slow runner loses that race.
     private val ioDispatcher: CoroutineContext = Dispatchers.IO_,
+    private val playbackSaveDir: TorrentPlaybackSaveDir? = null,
 ) : MediaResolver {
     override fun supports(media: Media): Boolean {
         if (!engine.isSupported) return false
@@ -98,6 +101,7 @@ class TorrentMediaResolver(
                             },
                             cloudOpenTimeout = cloudOpenTimeout,
                             ioDispatcher = ioDispatcher,
+                            playbackSaveDir = playbackSaveDir,
                         )
                     } catch (e: CancellationException) {
                         throw e
@@ -273,6 +277,7 @@ class TorrentMediaDataProvider(
     private val fallback: (suspend () -> MediaDataProvider<*>)? = null,
     private val cloudOpenTimeout: Duration = CLOUD_OPEN_TIMEOUT,
     private val ioDispatcher: CoroutineContext = Dispatchers.IO_,
+    private val playbackSaveDir: TorrentPlaybackSaveDir? = null,
 ) : MediaDataProvider<MediaData>, TorrentBackedMediaDataProvider {
     override val engineKey: MediaCacheEngineKey get() = MediaCacheEngineKey(engine.type.id)
 
@@ -308,7 +313,7 @@ class TorrentMediaDataProvider(
                     logger.info {
                         "TorrentVideoSource '${episodeMetadata.title}' waiting for files"
                     }
-                    val session = downloader.startDownload(encodedTorrentInfo)
+                    val session = downloader.startPlaybackDownload(encodedTorrentInfo, playbackSaveDir)
                     torrentSession = session
                     // 等种子信息这段报连上了几个节点 (见 getFilesReportingPeers), 播放器的加载提示要用
                     val files = session.getFilesReportingPeers()
