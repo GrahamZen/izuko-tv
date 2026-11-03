@@ -10,6 +10,7 @@
 package me.him188.ani.app.domain.mediasource.clouddrive
 
 import me.him188.ani.app.domain.player.tracks.LanguageTags
+import me.him188.ani.datasources.api.SubtitleKind
 
 /**
  * 网盘里放在视频旁边的外挂字幕 (`.ass` / `.ssa` / `.srt` / `.vtt`): 认文件、配给视频、起显示名.
@@ -103,6 +104,13 @@ internal object DriveSidecarSubtitles {
             if (count == 1) match else Match(match.file, match.mimeType, "${match.label} $count", match.language)
         }
     }
+
+    /**
+     * 网盘资源的字幕种类. 标题写着「外挂」([SubtitleKind.EXTERNAL_DISCOVER]) 的, 播放与缓存时都会在视频旁边找字幕挂上,
+     * 对选源与播放器来说就是数据源提供的外挂字幕 ([SubtitleKind.EXTERNAL_PROVIDED]).
+     */
+    fun subtitleKindOf(parsed: SubtitleKind?): SubtitleKind? =
+        if (parsed == SubtitleKind.EXTERNAL_DISCOVER) SubtitleKind.EXTERNAL_PROVIDED else parsed
 
     private fun <T> sameEpisode(
         videoName: String,
