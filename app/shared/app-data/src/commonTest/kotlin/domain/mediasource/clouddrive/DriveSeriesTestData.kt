@@ -15,7 +15,7 @@ import me.him188.ani.datasources.api.source.MediaFetchRequest
 
 /**
  * 网盘认部的测试用的系列关系图与查询请求, 取自真实数据 (2026-10): 死神千年血战篇各部与 2004 年的 TV 版、辉夜、鬼灭、我独自升级、Re:Zero、
- * 浪客剑心、间谍过家家、进击的巨人最终季各段、石纪元科学与未来各段.
+ * 浪客剑心、间谍过家家、进击的巨人最终季各段、石纪元科学与未来各段、物语系列.
  */
 internal object DriveSeriesTestData {
     val table = SeriesGraphTable.parse(
@@ -56,6 +56,17 @@ internal object DriveSeriesTestData {
             "471578\tDr.STONE SCIENCE FUTURE\t石纪元 科学与未来\t2025-01-09\t12\tTV\t\t424372\t508003\t\t",
             "508003\tDr.STONE SCIENCE FUTURE 第2クール\t石纪元 科学与未来 第2部分\t2025-07-10\t12\tTV\t\t471578\t508004\t13\t",
             "508004\tDr.STONE SCIENCE FUTURE 第3クール\t石纪元 科学与未来 第3部分\t2026-04-02\t13\tTV\t\t508003\t\t25\t",
+            "1671\t化物語\t化物语\t2009-07-03\t15\tTV\t\t\t23161\t\t1",
+            "23161\t偽物語\t伪物语\t2012-01-07\t11\tTV\t\t1671\t56117\t\t",
+            "56117\t猫物語（黒）\t猫物语（黑）\t2012-12-31\t4\tTV\t\t23161\t68812\t\t",
+            "68812\t〈物語〉シリーズ セカンドシーズン\t物语系列 第二季\t2013-07-06\t26\tTV\t\t56117\t82322\t\t",
+            "82322\t花物語\t花物语\t2014-08-16\t5\tTV\t\t68812\t115932\t\t",
+            "115932\t憑物語\t凭物语\t2014-12-31\t4\tTV\t\t82322\t138829\t\t",
+            "138829\t終物語\t终物语\t2015-10-03\t13\tTV\t\t115932\t146104\t\t",
+            "146104\t暦物語\t历物语\t2016-01-09\t12\tWEB\t\t138829\t175596\t\t",
+            "175596\t終物語(下)\t终物语（下）\t2017-08-12\t7\tTV\t\t146104\t233926\t\t",
+            "233926\t続・終物語\t续·终物语\t2018-11-10\t6\t剧场版\t\t175596\t475354\t\t",
+            "475354\t〈物語〉シリーズ オフ&モンスターシーズン\t物语系列 外传季&怪物季\t2024-07-06\t15\tWEB\t\t233926\t\t\t",
         ).joinToString("\n").encodeToByteArray(),
     )!!
 
@@ -80,4 +91,8 @@ internal object DriveSeriesTestData {
     val counterattack = request(510728, listOf("Re：从零开始的异世界生活 第三季 反击篇", "Re:ゼロから始める異世界生活 3rd season 反擊編"), 59, 8)
     val finalSeason = request(285666, listOf("进击的巨人 最终季", "進撃の巨人 The Final Season"), 60, 16)
     val scienceFuture2 = request(508003, listOf("石纪元 科学与未来 第2部分", "Dr.STONE SCIENCE FUTURE 第2クール"), 13, 12)
+
+    /** 伪物语第 5 集; 对应表把它记成 TMDB「物语系列」的第 2 季 (S2E1 起), 见 [nisemonogatariTmdb] */
+    val nisemonogatari = request(23161, listOf("伪物语", "偽物語", "ニセモノガタリ", "Nisemonogatari"), 1, 11, ep = 5)
+    val nisemonogatariTmdb = (1..11).associate { (2 to it) to EpisodeSort(it) }
 }
