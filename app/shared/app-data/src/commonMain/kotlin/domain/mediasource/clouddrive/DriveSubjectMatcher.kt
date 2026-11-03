@@ -384,6 +384,8 @@ internal class DriveSubjectMatcher(
          * @param tmdbEpisodes TMDB (季, 集) → 条目的集 (见 [TmdbEpisodeNumbering]); null = 表里没有, 只按条目名认季
          * @param trustFolders 候选来自用户指定的文件夹: 不按路径认部、不查作品类别, 也不按条目的季认 (对应表照样用)
          * @param identity 按路径认部 ([DrivePathAttribution]); 自动按名字找时才给. 也带着系列关系图推出的季 (认季用)
+         * @param addedShare 候选来自用户添加的分享: [identity] 只用来去掉路径点名了别的作品的 (整个系列的合集里别的部),
+         *   说不清的照收, 认季认集与没有 [identity] 时一样 (分享是用户指定给这个条目的)
          */
         fun matchEpisodes(
             request: MediaFetchRequest,
@@ -391,11 +393,15 @@ internal class DriveSubjectMatcher(
             tmdbEpisodes: Map<Pair<Int, Int>, EpisodeSort>? = null,
             trustFolders: Boolean = false,
             identity: TitleIdentity? = null,
+            addedShare: Boolean = false,
         ): List<MatchedFile> {
-            val season = DriveSubjectSeason.of(request, tmdbEpisodes, identity)
-            val attribution = identity?.let { DrivePathAttribution(it, season, request) }
-            val resolver = DriveEpisodeResolver(request, season, tmdbEpisodes, identity, trustFolders)
-            val kinds = KindCheck(request, trustFolders, identity?.ownCategoryKinds.orEmpty())
+            val seriesIdentity = identity.takeUnless { addedShare }
+            val season = DriveSubjectSeason.of(request, tmdbEpisodes, seriesIdentity)
+            val attribution = identity?.let {
+                DrivePathAttribution(it, if (addedShare) DriveSubjectSeason.of(request, tmdbEpisodes, it) else season, request)
+            }
+            val resolver = DriveEpisodeResolver(request, season, tmdbEpisodes, seriesIdentity, trustFolders)
+            val kinds = KindCheck(request, trustFolders, seriesIdentity?.ownCategoryKinds.orEmpty())
             val durations = request.episodes.takeUnless { trustFolders }.orEmpty().associate { it.sort to it.durationSeconds }
             val onlyEpisode = request.episodes.singleOrNull()?.sort
 
@@ -424,7 +430,7 @@ internal class DriveSubjectMatcher(
                 val episode = parsed.episode?.takeUnless { onlyEpisode != null && !parsed.anchored && videosIn[candidate.folders] == 1 }
                     ?: onlyEpisode ?: return@mapNotNull drop("no episode number", candidate)
                 if (candidate.file.size in 1 until MIN_VIDEO_SIZE) return@mapNotNull drop("too small", candidate)
-                when (val resolved = resolver.resolve(candidate, parsed, episode, named, candidate.folders in continuousFolders)) {
+                when (val resolved = resolver.resolve(candidate, parsed, episode, named.takeUnless { addedShare }, candidate.folders in continuousFolders)) {
                     is DriveEpisodeResolver.Resolved.Episode -> {
                         val expected = durations[resolved.sort]
                         if (EpisodeDurations.isMismatch(candidate.file.durationSeconds.toLong(), expected)) {

@@ -156,6 +156,8 @@ class DriveNameParserTest {
         assertNull(DriveNameParser.parseFolderSeason("Vol.III"))
         assertNull(DriveNameParser.parseFolderSeason("[VCB-Studio] DanMachi [Ma10p_1080p]"))
         assertNull(DriveNameParser.parseFolderSeason("Fate Zero [V2]"))
+        // 整个系列的合集写着季的范围
+        assertNull(DriveNameParser.parseFolderSeason("物语.S01-S13+外传季&怪物季"))
     }
 
     @Test

@@ -29,7 +29,8 @@ import kotlin.math.abs
 /**
  * 一段名字 (分享站的标题、合集与分享里的文件夹名、文件名、网页上的条目名) 点名的是不是这一部. 自动认出来的地方都按它:
  * 分享站的标题 ([rejectsTitle])、固定合集与播放线索里的文件夹 ([namesOtherWork])、分享与自己网盘里的视频 ([DrivePathAttribution])、
- * 网页类站点上的条目名 ([rejectsPageTitle], 只用与系列无关的几条); 用户添加的分享、手挑的文件夹是用户指定给这个条目的, 不查.
+ * 网页类站点上的条目名 ([rejectsPageTitle], 只用与系列无关的几条); 用户添加的分享只去掉点名了别的作品的视频,
+ * 手挑的文件夹是用户指定给这个条目的, 不查.
  * 整套步骤见 `docs/contributing/code/media/media-search.md`.
  *
  * 名字取自搜索计划 ([SubjectSearchPlan]), 与网页类数据源认部是同一组: [SubjectSearchPlan.ownNames] 是这一部的;
