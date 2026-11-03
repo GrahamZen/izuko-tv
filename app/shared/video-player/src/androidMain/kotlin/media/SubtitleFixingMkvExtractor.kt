@@ -17,6 +17,8 @@ import androidx.media3.extractor.DefaultExtractorInput
 import androidx.media3.extractor.ExtractorInput
 import androidx.media3.extractor.ExtractorsFactory
 import androidx.media3.extractor.mkv.MatroskaExtractor
+import androidx.media3.extractor.mp4.FragmentedMp4Extractor
+import androidx.media3.extractor.mp4.Mp4Extractor
 import androidx.media3.extractor.text.SubtitleParser
 import io.github.peerless2012.ass.media.AssHandler
 import io.github.peerless2012.ass.media.extractor.AssMatroskaExtractor
@@ -182,14 +184,20 @@ internal open class SubtitleFixingMkvExtractor(
 }
 
 /**
- * 与 libass 的 `withAssMkvSupport` 相同 (mkv 换成能把 ASS 字幕与字体交给 libass 的提取器), 但用 [SubtitleFixingMkvExtractor],
- * 字幕解析器工厂也可以是任意的 (那个只收 libass 自己的工厂, 套不上 [CharsetFixingSubtitleParserFactory]).
+ * 播放器的提取器换成理顺字幕的那几个:
+ * - mkv: 同 libass 的 `withAssMkvSupport` (换成能把 ASS 字幕与字体交给 libass 的提取器), 但用 [SubtitleFixingMkvExtractor],
+ *   字幕解析器工厂也可以是任意的 (那个只收 libass 自己的工厂, 套不上 [CharsetFixingSubtitleParserFactory]);
+ * - mp4: 内嵌文字字幕里同一时刻的几段合成一段显示 ([Mp4TextCueMergingExtractor]).
  */
 @AndroidxOptIn(UnstableApi::class)
-internal fun ExtractorsFactory.withAssMkv(subtitleParserFactory: SubtitleParser.Factory, assHandler: AssHandler): ExtractorsFactory =
+internal fun ExtractorsFactory.withSubtitleFixes(subtitleParserFactory: SubtitleParser.Factory, assHandler: AssHandler): ExtractorsFactory =
     ExtractorsFactory {
         createExtractors().map { extractor ->
-            if (extractor is MatroskaExtractor) SubtitleFixingMkvExtractor(subtitleParserFactory, assHandler) else extractor
+            when (extractor) {
+                is MatroskaExtractor -> SubtitleFixingMkvExtractor(subtitleParserFactory, assHandler)
+                is Mp4Extractor, is FragmentedMp4Extractor -> Mp4TextCueMergingExtractor(extractor)
+                else -> extractor
+            }
         }.toTypedArray()
     }
 
