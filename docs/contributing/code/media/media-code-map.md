@@ -189,7 +189,8 @@
     有的文件在最后一个元素后面跟着填充或残缺的尾巴，播放器预读到文件末尾时报错会让还没播到那里的整集失败、换源；文件中间出错照常报。
     字幕的字节在交给解析器与 libass 之前就理顺，下游（`SubtitleView`、libass 画的 `LiftableAssSubtitleView`、
     手机控制中心的截图、控件出现时上移字幕）都只读理顺后的数据，不各自处理压缩与编码：mkv 内封的轨在
-    `SubtitleFixingMkvExtractor` 里（zlib 压缩的轨先解压，文字字幕与 ASS 文件头转成 UTF-8），外挂字幕文件在
+    `SubtitleFixingMkvExtractor` 里（zlib 压缩的轨先解压，文字字幕与 ASS 文件头转成 UTF-8），mp4 内嵌文字字幕在
+    `Mp4TextCueMergingExtractor` 里（同一时刻开始的几段合成一段：从 ASS 转来时正文与注释成了前后紧挨的几块，只剩最后一块），外挂字幕文件在
     `CharsetFixingSubtitleParserFactory` 里（SRT / ASS / SSA / WebVTT 转成 UTF-8）。编码按整条轨认（`SubtitleCharsetGuesser`）。
 
 ### 播放拖入的本地文件（桌面端）

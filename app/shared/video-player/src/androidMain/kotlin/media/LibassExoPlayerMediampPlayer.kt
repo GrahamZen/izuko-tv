@@ -740,7 +740,7 @@ private class LibassMediaSourcePipeline(
     )
     private val subtitleParserFactory = CharsetFixingSubtitleParserFactory(AssSubtitleParserFactory(assHandler))
     private val extractorsFactory = DefaultExtractorsFactory()
-        .withAssMkv(subtitleParserFactory, assHandler)
+        .withSubtitleFixes(subtitleParserFactory, assHandler)
 
     /** 被限速的网盘直链换一套缓冲策略 (见 [ThrottledSourceLoadControl]); 每准备一个媒体按它的提示头切换. */
     val loadControl = ThrottledSourceLoadControl(diskCacheOn = diskCacheEnabled())

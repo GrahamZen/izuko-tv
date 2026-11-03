@@ -54,6 +54,33 @@ class TrackChoicePolicyTest {
     }
 
     @Test
+    fun `an external ass beats an embedded mp4 text track`() {
+        // 工单 #43: mp4 里内嵌的中文字幕是网盘转码时从 ASS 转来的, 正文与注释同时出现时只剩注释; 外挂的文件名没写语言
+        val mp4Zh = TrackCandidate("0:2-0", null, TrackLanguage.of(null, "zh"), subtitleKind = SubtitleKind.MP4_TEXT)
+        val mp4Und = TrackCandidate("0:2-0", null, null, subtitleKind = SubtitleKind.MP4_TEXT)
+        val ass = TrackCandidate("1:0-0", "外挂字幕", null, subtitleKind = SubtitleKind.EXTERNAL_ASS)
+        assertEquals(TrackPick.Select("1:0-0"), subtitle(mp4Zh, ass))
+        // 两条都认不出语言时播放器原本放第一条 (内嵌的)
+        assertEquals(TrackPick.Select("1:0-0"), subtitle(mp4Und, ass))
+        // 外挂的是同一语言或更合适的也换
+        val assSc = TrackCandidate("1:0-0", "简体中文", TrackLanguage.of("简体中文", null), subtitleKind = SubtitleKind.EXTERNAL_ASS)
+        assertEquals(TrackPick.Select("1:0-0"), subtitle(mp4Zh, assSc))
+    }
+
+    @Test
+    fun `an external ass of another language does not replace the embedded mp4 text track`() {
+        val mp4Sc = TrackCandidate("0:2-0", "简体中文", TrackLanguage.of("简体中文", null), subtitleKind = SubtitleKind.MP4_TEXT)
+        val assJa = TrackCandidate("1:0-0", "日本語", TrackLanguage.of("日本語", "jpn"), subtitleKind = SubtitleKind.EXTERNAL_ASS)
+        val assTc = TrackCandidate("2:0-0", "繁體中文", TrackLanguage.of("繁體中文", null), subtitleKind = SubtitleKind.EXTERNAL_ASS)
+        assertEquals(TrackPick.Select("0:2-0"), subtitle(mp4Sc, assJa))
+        assertEquals(TrackPick.Select("0:2-0"), subtitle(mp4Sc, assTc))
+        // 别的内嵌字幕 (mkv 里的 ASS / SRT) 照语言规则, 不受影响
+        assertEquals(TrackPick.Select("sc"), subtitle(sc, assJa))
+        // 用户这部番手动选过内嵌那条的照旧
+        assertEquals(TrackPick.Select("0:2-0"), subtitle(mp4Sc, assTc, remembered = "zh-Hans#简体中文"))
+    }
+
+    @Test
     fun `remembered choice goes by language not position`() {
         assertEquals(TrackPick.Select("tc"), subtitle(sc, tc, remembered = "zh-Hant"))
         assertEquals(TrackPick.Off, subtitle(sc, tc, remembered = TrackChoicePolicy.OFF))
