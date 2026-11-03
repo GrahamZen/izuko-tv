@@ -158,7 +158,7 @@ class CloudDriveAddedShareService internal constructor(
             throw e
         }
         setReadStatus(link.shareId, DriveShareReadStatus(contents.videos.size, null, 0))
-        val matches = reader.match(request, FoundShare(link.shareId, link.passcode, contents.title), contents.videos)
+        val matches = match(request, FoundShare(link.shareId, link.passcode, contents.title), contents.videos)
         val episodeOf = matches.associate { it.file.fid to it.episode }
         fun info(entry: DriveShareReader.Entry) = DriveShareFileInfo(
             fid = entry.file.fid,
@@ -292,7 +292,7 @@ class CloudDriveAddedShareService internal constructor(
             DriveShareMatch(found, entry.file, entry.folders, EpisodeSort(episode))
         }
         val pickedFids = picked.mapTo(HashSet()) { it.file.fid }
-        val matches = reader.match(request, found, entries).filterNot { it.file.fid in pickedFids } + picked
+        val matches = match(request, found, entries).filterNot { it.file.fid in pickedFids } + picked
         // 只列了一个文件夹: 记下的剧集并进去, 不冲掉别的文件夹里的 (分享清空后靠它们找转存副本)
         remember(subjectId, share, matches, merge = true)
         return matches
@@ -322,10 +322,17 @@ class CloudDriveAddedShareService internal constructor(
             DriveShareMatch(found, entry.file, entry.folders, EpisodeSort(episode))
         }
         val pickedFids = picked.mapTo(HashSet()) { it.file.fid }
-        val matches = reader.match(request, found, videos).filterNot { it.file.fid in pickedFids } + picked
+        val matches = match(request, found, videos).filterNot { it.file.fid in pickedFids } + picked
         remember(subjectId, share, matches)
         return matches
     }
+
+    /**
+     * [videos] 里 [request] 这个条目的剧集. 路径点名了别的作品的不要: 用户常把整个系列的合集加给其中一部
+     * (「物语.S01-S13 / 14.终物语.[S2].2017 / … S2 [05].mkv」不是伪物语的 S2E05). 其余照用户的指定收.
+     */
+    private suspend fun match(request: MediaFetchRequest, share: FoundShare, videos: List<DriveShareReader.Entry>): List<DriveShareMatch> =
+        reader.match(request, share, videos, drive.identities.of(request), addedShare = true)
 
     /** 记下对上的剧集 (有变化才写). 一集都没对上时保留原来记的; [merge] = 并进原来记的 (只列了分享的一部分时). */
     private suspend fun remember(subjectId: Int, share: DriveAddedShare, matches: List<DriveShareMatch>, merge: Boolean = false) {

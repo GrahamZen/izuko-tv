@@ -21,6 +21,8 @@ import me.him188.ani.app.domain.media.continuation.DriveShareLineage
 import me.him188.ani.app.domain.media.continuation.LineageResolution
 import me.him188.ani.app.domain.media.continuation.PlaybackLineage
 import me.him188.ani.app.domain.mediasource.instance.createTestMediaSourceInstance
+import me.him188.ani.app.domain.mediasource.search.TitleIdentities
+import me.him188.ani.app.domain.mediasource.search.TitleIdentity
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.source.MatchKind
 import me.him188.ani.datasources.api.source.MediaFetchRequest
@@ -150,6 +152,45 @@ class CloudDriveAddedShareTest {
         // 不止一集的条目照旧认不出
         val series = request().copy(episodes = listOf(1, 2).map { MediaFetchRequest.Episode("ep$it", EpisodeSort(it)) })
         assertEquals(emptyList(), service(FakeShares(mutableMapOf("s1" to movie))).inspect(series, DriveShareLink("s1", "")).episodes)
+    }
+
+    @Test
+    fun `a collection of the whole series added to one part keeps only that part`() = runTest {
+        // 真实分享 (2026-11) 的结构: 每部一个文件夹; 伪物语按对应表是第 2 季, 终物语下的文件名也写着 S2
+        val title = "物语.S01-S13+外传季&怪物季"
+        val collection = mapOf(
+            TestDrive.SHARE_ROOT to listOf(dir("all", title)),
+            "all" to listOf(
+                dir("bake", "1.化物语.2009"),
+                dir("nise", "2.伪物语.2012"),
+                dir("owari2", "14.终物语.[S2].2017"),
+                dir("monster", "16.外传季&怪物季 愚物语＆抚物语.2024"),
+            ),
+            "bake" to listOf(video("b5", "[MAI&Ygm] Bakemonogatari [05][Ma10p_2160p][x265_flac_ass].mkv")),
+            "nise" to listOf(
+                video("n4", "[MAI&Ygm] Nisemonogatari [04][Ma10p_2160p][x265_flac_ass].mkv"),
+                video("n5", "[MAI&Ygm] Nisemonogatari [05][Ma10p_2160p][x265_flac_ass].mkv"),
+            ),
+            "owari2" to listOf(video("o5", "[CZ&MAI] Owarimonogatari S2 [05][Ma10p_2160p][x265_2flac_2ass].mkv")),
+            "monster" to listOf(video("m5", "物语系列 - S05E05 - 抚物语 抚子·绘画 其四.mkv")),
+        )
+        val drive = CloudDriveService(
+            TestDrive.protocol,
+            accountsOf(CloudDriveAccount.Default),
+            mockClient { error("unexpected request ${it.url}") },
+            identities = TitleIdentities { TitleIdentity.of(it, DriveSeriesTestData.table) },
+        )
+        val service = CloudDriveAddedShareService(
+            MemorySettings(CloudDriveAddedShares.Default),
+            drive,
+            browser = FakeShares(mutableMapOf("s1" to collection), titles = mapOf("s1" to title)),
+            numbering = { DriveSeriesTestData.nisemonogatariTmdb },
+            savedCopies = { emptyList() },
+        )
+        val inspection = service.inspect(DriveSeriesTestData.nisemonogatari, DriveShareLink("s1", ""))
+
+        assertEquals(listOf(EpisodeSort(4), EpisodeSort(5)), inspection.episodes)
+        assertEquals(listOf("n5"), inspection.currentFiles.map { it.fid })
     }
 
     @Test

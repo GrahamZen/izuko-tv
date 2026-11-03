@@ -25,7 +25,8 @@ import me.him188.ani.datasources.api.source.MediaFetchRequest
  *   系列的第一部: 没点名哪一部、写的年份是同系列别的作品的文件夹是那一部 ([TitleIdentity.datesOtherSeriesWork]);
  *   点名这一部而没写年份的, 外层第一个点名这一部又写了年份的写的是别的年份时是别的作品 ([TitleIdentity.datesOtherYearOutside]: 「怪物 / G 怪物 2024 / 怪物.E01.mp4」);
  * - 季与段 ([DriveSubjectSeason]): 只写了本季的是这一部, 外层第一个点名了某一部的名字点名的是系列以外认得的作品时除外
- *   (季号只在这个系列里算数: 「B 第二季 / S02E01.mkv」之于 A 的第二季); 本条目是拆分季的一段时, 写着几段共有的季或拆分季的季名、又写了第几段的
+ *   (季号只在这个系列里算数: 「B 第二季 / S02E01.mkv」之于 A 的第二季), 点名同系列别的部又写着同一季的也除外
+ *   (那一部的季: 「14.终物语.[S2].2017 / Owarimonogatari S2 [05].mkv」之于伪物语); 本条目是拆分季的一段时, 写着几段共有的季或拆分季的季名、又写了第几段的
  *   (「S04 Part2」「进击的巨人 S04 最终季 part1」), 本段是这一部, 别的段是别的部. 文件名里的段不认: 常是集名的一部分 (「The Final Chapters (Part 1)」).
  *
  * 点名这一部的那一层与文件之间隔着另一套编号的文件夹时那个名字不算 (说不清): 写了别的季、拆分季共有的季 (「第3季」里袭击篇与反击篇都在)、
@@ -63,19 +64,13 @@ internal class DrivePathAttribution(
         val segments = listOf(fileName) + folders.asReversed()
         var separated = false
         for ((index, segment) in segments.withIndex()) {
-            val numbering = numberingOf(segment, isFile = index == 0)
             val byName = identity.namingOf(segment)
-            val naming = when (byName) {
-                Naming.NONE -> numbering
-                Naming.OTHER, Naming.SEVERAL ->
-                    if (numbering == Naming.OWN && seasonOverridesName && identity.seasonCanOverride(segment)) Naming.OWN else byName
-                Naming.OWN -> Naming.OWN
-            }
-            when (naming) {
+            when (namingOf(segment, isFile = index == 0, byName)) {
                 Naming.OWN -> return when {
                     separated -> Attribution.UNCLEAR
-                    // 只写了季与段: 季号只在这个系列里算数, 外层点名的是系列以外认得的作品时是那一部 (「B 第二季 / S02E01.mkv」)
-                    byName == Naming.NONE && namesWorkOutsideSeriesAbove(segments, index) -> Attribution.OTHER
+                    // 只写了季与段: 季号只在这个系列里算数, 外层点名的是系列以外认得的作品时是那一部 (「B 第二季 / S02E01.mkv」);
+                    // 外层点名同系列别的部又写着同一季时是那一部的季 (「14.终物语.[S2].2017 / Owarimonogatari S2 [05].mkv」之于伪物语)
+                    byName == Naming.NONE && numberedByWorkAbove(segments, index) -> Attribution.OTHER
                     identity.datesOtherVersion(segments.drop(index)) -> Attribution.OTHER
                     byName == Naming.OWN && identity.datesOtherYearOutside(segments.drop(index)) -> Attribution.OTHER
                     else -> Attribution.OWN
@@ -91,9 +86,30 @@ internal class DrivePathAttribution(
         return Attribution.UNCLEAR
     }
 
-    /** [index] 那一层之外第一个点名了某一部的名字点名的是系列以外认得的作品 */
-    private fun namesWorkOutsideSeriesAbove(segments: List<String>, index: Int): Boolean =
-        segments.drop(index + 1).firstOrNull { identity.namingOf(it) != Naming.NONE }?.let(identity::namesWorkOutsideSeries) == true
+    /**
+     * 一层 [segment] 名字 ([byName]) 与写的季合起来点名了哪一部: 名字没点名的按季与段 ([numberingOf]);
+     * 名字点名别的部、写着本季又能翻过来的 ([TitleIdentity.seasonCanOverride]) 算这一部.
+     */
+    private fun namingOf(segment: String, isFile: Boolean, byName: Naming = identity.namingOf(segment)): Naming {
+        val numbering = numberingOf(segment, isFile)
+        return when (byName) {
+            Naming.NONE -> numbering
+            Naming.OTHER, Naming.SEVERAL ->
+                if (numbering == Naming.OWN && seasonOverridesName && identity.seasonCanOverride(segment)) Naming.OWN else byName
+            Naming.OWN -> Naming.OWN
+        }
+    }
+
+    /**
+     * 只写了季与段的第 [index] 层的季是外层的作品的: 外层第一个点名了某一部的名字点名的是系列以外认得的作品,
+     * 或点名同系列别的部 (连同写的季也不算这一部) 又写着同样的季.
+     */
+    private fun numberedByWorkAbove(segments: List<String>, index: Int): Boolean {
+        val above = segments.drop(index + 1).firstOrNull { identity.namingOf(it) != Naming.NONE } ?: return false
+        if (identity.namesWorkOutsideSeries(above)) return true
+        val declared = declaredSeasonsOf(segments[index], isFile = index == 0)
+        return declared.isNotEmpty() && declaredSeasonsOf(above, isFile = false) == declared && namingOf(above, isFile = false) == Naming.OTHER
+    }
 
     /** 名字没点名哪一部时, 按写的季与段: 只写了本季、本段的算这一部, 写了别的段的算别的部. */
     private fun numberingOf(segment: String, isFile: Boolean): Naming {
