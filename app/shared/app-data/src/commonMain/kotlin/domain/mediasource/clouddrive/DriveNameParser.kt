@@ -90,12 +90,12 @@ internal object DriveNameParser {
 
     /**
      * 文件夹名里写的季: `S02`, `Season 2`, `第二季`, `2nd Season`, 罗马数字 (`XX IV`, `XX Ⅱ`, 见 [folderRomanSeasons]),
-     * 以及紧跟在中文标题后的单个数字 (`葬送的芙莉莲2`).
+     * 以及紧跟在中文标题后的单个数字 (`葬送的芙莉莲2`). 写了几个不同的 `SNN` 的 (整个系列的合集「物语.S01-S13+外传季」) 不是哪一季.
      */
     fun parseFolderSeason(folderName: String): Int? {
         parseExplicitSeason(folderName, roman = false)?.let { return it }
         folderRomanSeasons(folderName).singleOrNull()?.let { return it }
-        FOLDER_SEASON_CODE.find(folderName)?.let { return it.groupValues[1].toInt() }
+        FOLDER_SEASON_CODE.findAll(folderName).mapTo(HashSet()) { it.groupValues[1].toInt() }.singleOrNull()?.let { return it }
         TRAILING_DIGIT_AFTER_CJK.find(folderName.trim())?.let { return it.groupValues[1].toInt() }
         return null
     }
