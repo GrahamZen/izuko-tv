@@ -48,6 +48,10 @@ class TrackLanguageTest {
         assertEquals("zh-Hant", key(null, "zh-hant-hk"))
         assertEquals("en", key(null, "eng"))
         assertEquals("ko", key(null, "ko"))
+        // 网盘转码的 mp4 里字幕轨的语言码写成字幕组的简繁标记
+        assertEquals("zh-Hans", key(null, "sc"))
+        assertEquals("zh-Hant", key(null, "tc"))
+        assertEquals("zh-Hans", key(null, "chs"))
         assertNull(key(null, "und"))
         assertNull(key(null, null))
     }

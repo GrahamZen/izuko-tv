@@ -18,6 +18,7 @@ package me.him188.ani.app.domain.player.tracks
  * @param isDefault 容器里标了「默认」
  * @param isForced 容器里标了「强制」(多为只翻招牌、歌词的特效字幕)
  * @param isPlayable 设备能解码或直通这条轨道的格式 (如盒子没有 TrueHD 解码器、也接不出直通时为 false)
+ * @param subtitleKind 字幕轨的来源与格式 (见 [SubtitleKind]); 音轨为 [SubtitleKind.OTHER]
  */
 class TrackCandidate(
     val id: String,
@@ -26,9 +27,26 @@ class TrackCandidate(
     val isDefault: Boolean = false,
     val isForced: Boolean = false,
     val isPlayable: Boolean = true,
+    val subtitleKind: SubtitleKind = SubtitleKind.OTHER,
 ) {
     override fun toString(): String =
-        "TrackCandidate($id, $label, ${language?.key}, default=$isDefault, forced=$isForced${if (isPlayable) "" else ", unplayable"})"
+        "TrackCandidate($id, $label, ${language?.key}, default=$isDefault, forced=$isForced" +
+            (if (isPlayable) "" else ", unplayable") +
+            (if (subtitleKind == SubtitleKind.OTHER) "" else ", ${subtitleKind.name.lowercase()}") + ")"
+}
+
+/** 选字幕时要区分的两种字幕轨; 其余都是 [OTHER]. */
+enum class SubtitleKind {
+    /** 外挂的 ASS / SSA 文件: 多是字幕组的原版, 带样式, 同一时刻能放好几行 (正文与注释). */
+    EXTERNAL_ASS,
+
+    /**
+     * mp4 内嵌的文字字幕 (tx3g / mov_text): 同一时刻只能放一段. 多由 ASS 转来, 同时出现的正文与注释转完只留得下后一条,
+     * 前一条成了零长度 (ffmpeg 转出来就是这样).
+     */
+    MP4_TEXT,
+
+    OTHER,
 }
 
 /** 选哪条轨道. */
@@ -46,6 +64,7 @@ sealed interface TrackPick {
  * 打开一个媒体时选哪条字幕与音轨:
  * - 这部番用户手动换过的, 按语言 (不按轨道序号) 沿用; 同一语言有好几条 (多是不同字幕组) 时先认同名的那条 (见 [rememberValue]);
  * - 字幕选界面语言的: 简体界面 简体 > 简日双语 > 没分简繁的中文 > 繁体, 繁体界面反过来, 英文界面选英文;
+ * - 要放的是 mp4 内嵌文字字幕而旁边有外挂的 ASS 时放外挂的 (内嵌那条多半是它的有损转换, 见 [SubtitleKind.MP4_TEXT]);
  * - 音轨选日语原声, 没有日语的选容器里标了默认的; 设备放不了的音轨不选 (选了就是播放出错), 全都放不了时照常选;
  * - 都认不出时不动 (播放器原来的选择).
  *
@@ -79,8 +98,34 @@ object TrackChoicePolicy {
         if (remembered == OFF) return TrackPick.Off
         remembered?.let { matchRemembered(candidates, it) }?.let { return TrackPick.Select(it.id) }
         val order = subtitleOrder(uiLanguage)
-        best(candidates) { c -> c.language?.key?.let { order.indexOf(it) }?.takeIf { it >= 0 } }?.let { return TrackPick.Select(it.id) }
-        return fallback(candidates)
+        val pick = best(candidates) { rankOf(it, order) }?.let { TrackPick.Select(it.id) } ?: fallback(candidates)
+        return preferExternalAss(pick, candidates, order)
+    }
+
+    /** 在界面语言先后里的档次; 认不出语言或不在表里为 null. */
+    private fun rankOf(candidate: TrackCandidate, order: List<String>): Int? =
+        candidate.language?.key?.let { order.indexOf(it) }?.takeIf { it >= 0 }
+
+    /**
+     * 要放的是 mp4 内嵌文字字幕 ([SubtitleKind.MP4_TEXT]) 时, 改放旁边外挂的 ASS: 内嵌那条多半是从它转来的, 正文与注释同时出现时丢行.
+     * 外挂的认出了别的语言 (不在界面语言的先后里, 或排在内嵌那条后面) 时不换, 那是另一份字幕. [TrackPick.Keep] 时播放器放第一条, 按第一条算.
+     */
+    private fun preferExternalAss(pick: TrackPick, candidates: List<TrackCandidate>, order: List<String>): TrackPick {
+        val playing = when (pick) {
+            is TrackPick.Select -> candidates.firstOrNull { it.id == pick.id }
+            TrackPick.Keep -> candidates.firstOrNull()
+            TrackPick.Off -> null
+        }
+        if (playing?.subtitleKind != SubtitleKind.MP4_TEXT) return pick
+        val playingRank = rankOf(playing, order) ?: order.size
+        val ass = best(candidates) { c ->
+            when {
+                c.subtitleKind != SubtitleKind.EXTERNAL_ASS -> null
+                c.language == null -> order.size
+                else -> rankOf(c, order)?.takeIf { it <= playingRank }
+            }
+        }
+        return ass?.let { TrackPick.Select(it.id) } ?: pick
     }
 
     /** @param remembered 这部番记下的选择 (见 [rememberValue]) */

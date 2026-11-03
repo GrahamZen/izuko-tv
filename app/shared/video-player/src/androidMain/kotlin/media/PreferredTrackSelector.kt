@@ -11,6 +11,8 @@ package me.him188.ani.app.videoplayer.media
 
 import androidx.annotation.OptIn
 import androidx.media3.common.C
+import androidx.media3.common.Format
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
@@ -24,6 +26,7 @@ import kotlinx.coroutines.launch
 import me.him188.ani.app.domain.player.MediaFormatNames
 import me.him188.ani.app.domain.player.tracks.AudioTrackSupport
 import me.him188.ani.app.domain.player.tracks.PlayerTrackChooser
+import me.him188.ani.app.domain.player.tracks.SubtitleKind
 import me.him188.ani.app.domain.player.tracks.TrackCandidate
 import me.him188.ani.app.domain.player.tracks.TrackLanguage
 import me.him188.ani.app.domain.player.tracks.TrackPick
@@ -239,7 +242,22 @@ internal class PreferredTrackSelector(
             isDefault = format.selectionFlags and C.SELECTION_FLAG_DEFAULT != 0,
             isForced = format.selectionFlags and C.SELECTION_FLAG_FORCED != 0,
             isPlayable = group.isPlayable(index),
+            subtitleKind = if (type == C.TRACK_TYPE_TEXT) subtitleKindOf(group.mediaTrackGroup.id, format) else SubtitleKind.OTHER,
         )
+    }
+
+    /**
+     * 外挂字幕挂成合并后的第 1、2… 个子源, 轨道组 id 以 `<子源序号>:` 开头 (视频本身是子源 0; 没有外挂字幕时不带这个前缀).
+     * 边解析边出的字幕轨 sampleMimeType 是 media3 的字幕块格式, 原来的格式在 codecs 里.
+     */
+    private fun subtitleKindOf(groupId: String, format: Format): SubtitleKind {
+        val external = (groupId.substringBefore(':', "").toIntOrNull() ?: 0) > 0
+        val mimeTypes = listOf(format.sampleMimeType, format.codecs)
+        return when {
+            external && MimeTypes.TEXT_SSA in mimeTypes -> SubtitleKind.EXTERNAL_ASS
+            !external && MimeTypes.APPLICATION_TX3G in mimeTypes -> SubtitleKind.MP4_TEXT
+            else -> SubtitleKind.OTHER
+        }
     }
 
     /** mediamp 的一条轨道在 ExoPlayer 里对应的轨道组与组内序号. */
