@@ -87,6 +87,9 @@ data class TrackLanguage(
                     },
                 )
 
+                // 网盘转码出来的 mp4 把字幕组的简繁标记当语言码写 (`sc` / `tc`), 不当撒丁语 / 其他语言
+                "sc", "chs", "zhs" -> TrackLanguage("zh", HANS)
+                "tc", "cht", "zht" -> TrackLanguage("zh", HANT)
                 "ja", "jpn" -> TrackLanguage("ja")
                 "en", "eng" -> TrackLanguage("en")
                 "und", "mis", "mul", "zxx" -> null
