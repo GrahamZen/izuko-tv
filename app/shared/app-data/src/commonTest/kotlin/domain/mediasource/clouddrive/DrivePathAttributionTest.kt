@@ -181,6 +181,20 @@ class DrivePathAttributionTest {
     }
 
     @Test
+    fun `a season written under another part of the series is the season of that part`() {
+        // 整个物语系列的合集: 伪物语按对应表是第 2 季, 终物语下 (「终物语 [S2]」) 的文件名也写着 S2
+        val title = "物语.S01-S13+外传季&怪物季"
+        val tmdb = DriveSeriesTestData.nisemonogatariTmdb
+        val request = DriveSeriesTestData.nisemonogatari
+        assertNull(
+            episodeOf(request, title, listOf(title, "14.终物语.[S2].2017"), "[CZ&MAI] Owarimonogatari S2 [05][Ma10p_2160p][x265_2flac_2ass].mkv", tmdb),
+        )
+        assertEquals(5, episodeOf(request, title, listOf(title, "2.伪物语.2012"), "[MAI&Ygm] Nisemonogatari [05][Ma10p_2160p][x265_flac_ass].mkv", tmdb))
+        // 系列的第一部的名字加本季照旧是这一部
+        assertEquals(5, episodeOf(request, title, listOf(title, "化物语 S2"), "Bakemonogatari S2 [05].mkv", tmdb))
+    }
+
+    @Test
     fun `a folder written with the whole name of a work outside the series is that work`() {
         // 按这一部起名的合集分享里附着同品牌别的作品: 名字本身带着季或几种文字, 拆开后对不上名字表
         val table = SeriesGraphTable.parse(
