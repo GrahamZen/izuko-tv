@@ -278,7 +278,7 @@ class CloudDriveMediaSource(
                     resolution = resolution.toString(),
                     alliance = protocol.name,
                     size = if (file.size > 0) file.size.bytes else FileSize.Unspecified,
-                    subtitleKind = details.subtitleKind,
+                    subtitleKind = DriveSidecarSubtitles.subtitleKindOf(details.subtitleKind),
                 ),
                 episodeRange = EpisodeRange.single(episode),
                 location = protocol.mediaLocation,

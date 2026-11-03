@@ -24,6 +24,7 @@ import me.him188.ani.datasources.api.CachedMedia
 import me.him188.ani.datasources.api.MediaCacheProperties
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.MediaCacheMetadata
+import me.him188.ani.datasources.api.MediaExtraFiles
 import me.him188.ani.datasources.api.topic.FileSize
 import me.him188.ani.datasources.api.topic.FileSize.Companion.bytes
 import me.him188.ani.datasources.api.topic.ResourceLocation
@@ -57,6 +58,8 @@ class LocalFileMediaCache(
      * 之前恰好执行一次.
      */
     private val onDeletePersistedRows: (suspend () -> Unit)? = null,
+    /** 播这份缓存时挂的外挂字幕等: (文件, [origin] 的) → 挂上的; 种子缓存挂视频旁边下好的字幕 */
+    private val extraFilesOf: (SystemPath, MediaExtraFiles) -> MediaExtraFiles = { _, extraFiles -> extraFiles },
     private val onCloseAndDeleteFiles: suspend LocalFileMediaCache.(SystemPath) -> Unit = { file.deleteRecursively() },
 ) : MediaCache {
     override val state: Flow<MediaCacheState> = MutableStateFlow(MediaCacheState.COMPLETED)
@@ -87,6 +90,7 @@ class LocalFileMediaCache(
         return CachedMedia(
             origin, backedMediaSourceId, ResourceLocation.LocalFile(file.absolutePath),
             cacheProperties = MediaCacheProperties(cacheId = cacheId),
+            extraFiles = extraFilesOf(file, origin.extraFiles),
         )
     }
 

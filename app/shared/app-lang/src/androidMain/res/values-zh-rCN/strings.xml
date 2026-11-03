@@ -1281,7 +1281,7 @@
     <string name="media_subtitle_kind_embedded">内嵌</string>
     <string name="media_subtitle_kind_closed">内封</string>
     <string name="media_subtitle_kind_external_provided">外挂</string>
-    <string name="media_subtitle_kind_external_discovered">未知</string>
+    <string name="media_subtitle_kind_external_discovered">外挂</string>
     <string name="media_subtitle_kind_closed_or_external_discovered">内封或未知</string>
     <string name="media_subtitle_language_chinese_cantonese">粤语</string>
     <string name="media_subtitle_language_chinese_simplified">简中</string>

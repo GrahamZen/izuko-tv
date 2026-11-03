@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.domain.mediasource.clouddrive
 
+import me.him188.ani.datasources.api.SubtitleKind
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -138,5 +139,12 @@ class DriveSidecarSubtitlesTest {
         val video = "01.mkv"
         val files = listOf(video) + (1..12).map { "01.part$it.ass" }
         assertEquals(DriveSidecarSubtitles.MAX_PER_VIDEO, match(video, files).size)
+    }
+
+    @Test
+    fun `titles saying external subtitles count as subtitles provided by the source`() {
+        assertEquals(SubtitleKind.EXTERNAL_PROVIDED, DriveSidecarSubtitles.subtitleKindOf(SubtitleKind.EXTERNAL_DISCOVER))
+        assertEquals(SubtitleKind.CLOSED, DriveSidecarSubtitles.subtitleKindOf(SubtitleKind.CLOSED))
+        assertEquals(null, DriveSidecarSubtitles.subtitleKindOf(null))
     }
 }

@@ -344,7 +344,7 @@ class MediaSelectorFilterSortAlgorithm {
 
         val subtitleKind = media.properties.subtitleKind
         if (context.subtitlePreferences != null && subtitleKind != null) {
-            if (context.subtitlePreferences[subtitleKind] == SubtitleKindPreference.HIDE) {
+            if (SidecarSubtitleSources.preferenceOf(media, subtitleKind, context.subtitlePreferences) == SubtitleKindPreference.HIDE) {
                 return exclude(MediaExclusionReason.UnsupportedByPlatformPlayer)
             }
         }
@@ -520,7 +520,7 @@ class MediaSelectorFilterSortAlgorithm {
                 .thenBy { maybe ->
                     val subtitleKind = maybe.original.properties.subtitleKind
                     if (context.subtitlePreferences != null && subtitleKind != null) {
-                        if (context.subtitlePreferences[subtitleKind] != SubtitleKindPreference.NORMAL) {
+                        if (SidecarSubtitleSources.preferenceOf(maybe.original, subtitleKind, context.subtitlePreferences) != SubtitleKindPreference.NORMAL) {
                             return@thenBy 1
                         }
                     }

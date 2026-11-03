@@ -302,6 +302,7 @@ class TorrentMediaDataProvider(
 
         var torrentSession: TorrentSession? = null
         var fileHandle: TorrentFileHandle? = null
+        var sidecars: TorrentSidecarSubtitles.Download? = null
         val handle = try {
             // 云端打开的三步共用一个预算: 建 session (首播要登录并解析磁力), 列文件选文件, 等云端就绪.
             // 任何一步卡住都要在预算内回退到本地 BT 引擎, 单独给最后一步计时的话前两步卡住就永远等不到回退.
@@ -334,6 +335,7 @@ class TorrentMediaDataProvider(
                     }?.createHandle()?.also { handle ->
                         fileHandle = handle
                         handle.resume(FilePriority.HIGH)
+                        sidecars = TorrentSidecarSubtitles.start(handle.entry, files)
                         // 云端这条路在 SDK 内部重试, 网络断了也不会在这里抛错, 只会一直等下去.
                         (selected as? CloudReadiness)?.ensureCloudReady()
                     } ?: run {
@@ -369,6 +371,7 @@ class TorrentMediaDataProvider(
                 } catch (e: Throwable) {
                     logger.warn(e) { "Failed to release the ${engine.type} file handle" }
                 }
+                sidecars?.close()
             }
             // 如果上面发生了异常或被取消, 下面的 onClose 就永远不会被调用, 需要手动释放.
             @OptIn(UnsafeTorrentEngineAccessApi::class)
@@ -398,9 +401,11 @@ class TorrentMediaDataProvider(
             return fallback().open(scopeForCleanup)
         }
 
+        val sidecarDownload = sidecars
         return TorrentMediaData(
             handle,
             engineKey = engineKey,
+            extraFiles = sidecarDownload?.attachTo(extraFiles) ?: extraFiles,
             session = torrentSession,
             onClose = {
                 logger.info {
@@ -408,6 +413,7 @@ class TorrentMediaDataProvider(
                 }
                 scopeForCleanup.launch(NonCancellable + CoroutineName("TorrentMediaDataProvider.close")) {
                     try {
+                        sidecarDownload?.close()
                         handle.close()
                     } finally {
                         // 对应了上面的 requestUseEngine(true)

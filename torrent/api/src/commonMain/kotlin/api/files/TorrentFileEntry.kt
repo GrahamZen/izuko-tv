@@ -19,10 +19,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.withContext
 import kotlinx.io.IOException
 import me.him188.ani.app.torrent.api.TorrentSession
@@ -137,17 +135,6 @@ interface TorrentFileEntry { // 实现提示, 无 test mock
      * @param awaitCoroutineContext 当 [SeekableInput] 需要等待 piece 完成时, 会[切换][withContext]到的 [CoroutineContext].
      */
     suspend fun createInput(awaitCoroutineContext: CoroutineContext = EmptyCoroutineContext): SeekableInput
-}
-
-/**
- * 挂起协程, 直到 [TorrentFileEntry] 下载完成, 即 [TorrentFileEntry.Stats.isDownloadFinished] 为 `true`.
- *
- * 注意, 如果 [TorrentFileEntry] 未开始下载, 或所属 [TorrentSession] 已经被关闭, 则此函数会一直挂起.
- *
- * 支持 cancellation.
- */
-suspend inline fun TorrentFileEntry.awaitFinished() {
-    fileStats.takeWhile { it.isDownloadFinished }.collect()
 }
 
 /**
