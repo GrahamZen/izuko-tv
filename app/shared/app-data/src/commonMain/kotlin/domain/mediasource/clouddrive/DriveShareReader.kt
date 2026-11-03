@@ -167,7 +167,7 @@ internal fun DriveShareMatch.toShareMedia(
             resolution = (details.resolution ?: Resolution.R1080P).toString(),
             alliance = alliance,
             size = if (file.size > 0) file.size.bytes else FileSize.Unspecified,
-            subtitleKind = details.subtitleKind,
+            subtitleKind = DriveSidecarSubtitles.subtitleKindOf(details.subtitleKind),
         ),
         episodeRange = EpisodeRange.single(episode),
         location = MediaSourceLocation.Online,

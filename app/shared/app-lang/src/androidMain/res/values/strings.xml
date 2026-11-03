@@ -1241,7 +1241,7 @@
     <string name="media_subtitle_kind_embedded">Embedded</string>
     <string name="media_subtitle_kind_closed">Closed</string>
     <string name="media_subtitle_kind_external_provided">External</string>
-    <string name="media_subtitle_kind_external_discovered">Unknown</string>
+    <string name="media_subtitle_kind_external_discovered">External</string>
     <string name="media_subtitle_kind_closed_or_external_discovered">Closed or Unknown</string>
     <string name="media_subtitle_language_chinese_cantonese">Cantonese</string>
     <string name="media_subtitle_language_chinese_simplified">Simplified Chinese</string>
