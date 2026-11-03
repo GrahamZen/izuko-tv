@@ -12,6 +12,7 @@ package me.him188.ani.app.domain.media.cache.engine
 import kotlinx.atomicfu.locks.SynchronizedObject
 import kotlinx.atomicfu.locks.synchronized
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
@@ -57,6 +58,7 @@ import me.him188.ani.app.domain.media.cache.location.isConnected
 import me.him188.ani.app.domain.media.cache.storage.MediaSaveDirProvider
 import me.him188.ani.app.domain.media.resolver.EpisodeMetadata
 import me.him188.ani.app.domain.media.resolver.TorrentMediaResolver
+import me.him188.ani.app.domain.media.resolver.TorrentSidecarSubtitles
 import me.him188.ani.app.domain.torrent.TorrentEngine
 import me.him188.ani.app.tools.toProgress
 import me.him188.ani.app.torrent.api.TorrentDownloader
@@ -157,6 +159,7 @@ class TorrentMediaCacheEngine(
         val session = state.map { it?.session }
 
         suspend fun close() {
+            state.first()?.sidecars?.close()
             handle.first()?.close()
         }
 
@@ -164,6 +167,7 @@ class TorrentMediaCacheEngine(
             val session: TorrentSession,
             val entry: TorrentFileEntry?,
             val handle: TorrentFileHandle?,
+            val sidecars: TorrentSidecarSubtitles.Prefetch? = null,
         )
     }
 
@@ -221,6 +225,7 @@ class TorrentMediaCacheEngine(
                         mediaSourceId,
                         download = ResourceLocation.LocalFile(filePath.toString()),
                         cacheProperties = MediaCacheProperties(cacheId = cacheId),
+                        extraFiles = TorrentSidecarSubtitles.onDisk(filePath, origin.extraFiles),
                     )
                 } else {
                     logger.info { "getCachedMedia: Torrent has not yet finished, returning torrent" }
@@ -638,7 +643,7 @@ class TorrentMediaCacheEngine(
         val record = getOrMigrateEpisodeRecord(origin, metadata, torrent)
         val localFile = record?.let { resolveCompletedFile(torrent, it) }
         if (localFile != null) {
-            return LocalFileMediaCache(origin, metadata, localFile, locationId = torrent.location) { file ->
+            return LocalFileMediaCache(origin, metadata, localFile, locationId = torrent.location, extraFilesOf = TorrentSidecarSubtitles::onDisk) { file ->
                 @OptIn(DelicateCoroutinesApi::class)
                 GlobalScope.launch {
                     try {
@@ -814,7 +819,8 @@ class TorrentMediaCacheEngine(
             if (handle == null) {
                 session.closeIfNotInUse()
             }
-            FileHandle.State(session, selectedFile, handle)
+            val sidecars = handle?.let { TorrentSidecarSubtitles.prefetch(CoroutineScope(parentContext), it.entry, files) }
+            FileHandle.State(session, selectedFile, handle, sidecars)
         }
 
         if (res == null) {

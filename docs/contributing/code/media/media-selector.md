@@ -227,6 +227,13 @@ WEB 的条目名检查还额外要求条目名去掉季号后与资源的条目�
 `SubjectSeriesInfo.sortsSpanSeries` 判断本条目正片第一集的 `sort` 是否接在系列主线上前面各条目的正片之后（集数取系列关系图），
 判为否时不以系列内序号认领。播放页的选源上下文 (`PlaybackSeriesInfo`) 与 `SubjectRelationsRepository.subjectSeriesInfoFlow` 都带上这一项。
 
+**字幕类型**：资源的字幕类型（`Media.properties.subtitleKind`）在当前平台被设为隐藏（`MediaSelectorSubtitlePreferences.forPlatform`）时，
+以 `MediaExclusionReason.UnsupportedByPlatformPlayer` 排除。标题写着「外挂」的资源（`SubtitleKind.EXTERNAL_DISCOVER`，
+字幕是视频旁边的单独文件）在安卓与桌面上隐藏，但应用自己找得到字幕的不藏（`SidecarSubtitleSources`）：
+BT 播放时在种子里找视频旁边的字幕一起下载，这类改为低优先级，照常列出、排到后面；
+网盘资源建的时候就标成数据源提供的外挂字幕（`SubtitleKind.EXTERNAL_PROVIDED`），播放与缓存都会挂上视频旁边的字幕，按正常资源处理。
+在线直链只有一个视频地址，仍然隐藏。
+
 `MediaSelector.subjectCandidates` 跳过第 0 条规则、保留其余规则与排序，
 提供整个条目的候选，供[批量下载](media-downloads.md#添加下载)按线路规划各集的资源，
 以及 BT 资源页取消按集筛选时展示。
@@ -237,7 +244,7 @@ WEB 的条目名检查还额外要求条目名去掉季号后与资源的条目�
 排序是**稳定**的，按以下优先级逐级比较，前一级相等才比较下一级：
 
 1. **是否被排除**：`Included` 在前，`Excluded` 全部排在最后；
-2. **播放器兼容性**：当前平台播放器不能正常播放的字幕类型靠后；
+2. **播放器兼容性**：当前平台播放器不能正常播放的字幕类型靠后，上面低优先级的 BT「外挂」资源也在这里排后；
 3. **资源类型**：本地缓存永远最前；其余按用户偏好的类型（`preferKind`，WEB 或 BT）排序；
 4. **下载代价**：`Local` < `Lan` < `Online`；
 5. **阶级（tier）**：按资源的*有效阶级*升序。有效阶级优先取该资源所属 channel 的阶级
