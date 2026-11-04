@@ -660,7 +660,7 @@ class TvSourcePanelView(
             panel.requestLayout()
             updateBranchCollapse(regionOf(findFocus()))
         }
-        if (!sourceCommitPending) columnAdapter.activeId = content.sourceKey.takeUnless { branchCollapsed }
+        if (!sourceCommitPending) columnAdapter.activeId = columnActiveId(content.sourceKey)
         fitColumnWidth(key, content.sources)
         columnAdapter.submitList(content.sources) {
             val index = content.sources.indexOfFirst { it.id == selectedSourceKey() }
@@ -959,7 +959,7 @@ class TvSourcePanelView(
         if (!sourceCommitPending) return
         sourceCommitPending = false
         val key = focusedSourceKey ?: return
-        columnAdapter.activeId = key
+        columnAdapter.activeId = columnActiveId(key)
         if (!requestSource(key)) columnKey?.let { listener?.onSelectionHeld(it, key) }
     }
 
@@ -981,6 +981,12 @@ class TvSourcePanelView(
 
     /** 源那一栏选中的源: 还没换过去的那个, 否则是内容里的. */
     private fun selectedSourceKey(): String? = if (sourceCommitPending) focusedSourceKey else content?.sourceKey
+
+    /**
+     * 源那一栏给 [key] 描「右边是它的」那圈边吗: 只在焦点出了这一栏 (在右边的条目、小胶囊里) 时描. 焦点在这一栏里时焦点框就说明了在哪个源上,
+     * 再描一圈像焦点框留在了原地 (上下单按时松手前、按住时一直停在出发的那个源上); 下面收着时 (胶囊、表头上) 也不描.
+     */
+    private fun columnActiveId(key: String?): String? = key.takeUnless { branchCollapsed || regionOf(findFocus()) == Region.COLUMN }
 
     /** 右边那一屏属于谁: 在线源的组里是那个源, 其余是胶囊那一项. */
     private fun paneKeyOf(content: TvSourcePanelContent): String? = content.sourceKey ?: content.railKey
@@ -1693,7 +1699,7 @@ class TvSourcePanelView(
             // 同一组: 只换源
             focusedSourceKey = sourceKey
             sourceCommitPending = false
-            columnAdapter.activeId = sourceKey
+            columnAdapter.activeId = columnActiveId(sourceKey)
             if (column.selectedPosition != sourceIndex) column.setSelectedPositionSmooth(sourceIndex)
             return requestSource(sourceKey)
         }
@@ -1924,15 +1930,10 @@ class TvSourcePanelView(
         }
         val onEmptySources = region == Region.COLUMN && (findFocus() as? TvSourceRowView)?.row?.id == TvSourceRailKeys.EMPTY_SOURCES
         val collapse = region == Region.HEADER || (columnShown && region == Region.RAIL) || onEmptySources
+        columnAdapter.activeId = if (collapse || region == Region.COLUMN) null else selectedSourceKey()
         if (collapse == branchCollapsed) return
         branchCollapsed = collapse
         branchAwaitingSource = false
-        // 从「没有结果的 N 个」回到某个源上: 直接描焦点下的这个 (它马上就是选中的), 不先描一下原来选中的那个
-        columnAdapter.activeId = when {
-            collapse -> null
-            region == Region.COLUMN -> focusedSourceKey ?: selectedSourceKey()
-            else -> selectedSourceKey()
-        }
         branchAnimator?.cancel()
         if (collapse) {
             for (view in branchViews) view.alpha = 0f
