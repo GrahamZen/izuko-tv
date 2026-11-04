@@ -79,6 +79,7 @@ fun TvDownloadSourcePanel(args: TvDownloadMediaPickerArgs) {
     val excludedToast = stringResource(Lang.tv_source_excluded_toast)
     val manualPickFailed = stringResource(Lang.tv_source_manual_pick_failed)
 
+    val strings = rememberTvSourceStrings()
     val state = remember(args.selectorState, args.fetchSession) {
         val host = object : TvSourcePanelHost {
             override fun pick(media: Media) = currentArgs.onSelect(media)
@@ -125,6 +126,7 @@ fun TvDownloadSourcePanel(args: TvDownloadMediaPickerArgs) {
             scope = scope,
             canOpenSettings = true,
             sourceTypes = tvSourceTypesFlow(),
+            initialStrings = strings,
         )
     }
 
@@ -181,6 +183,7 @@ fun TvDownloadSourcePanel(args: TvDownloadMediaPickerArgs) {
                     leaving = false,
                     onClose = args.onDismiss,
                     modifier = Modifier.fillMaxSize(),
+                    strings = strings,
                 )
             }
         }

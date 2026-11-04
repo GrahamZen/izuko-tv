@@ -412,6 +412,43 @@ class TvSourcePanelViewTest {
     }
 
     @Test
+    fun `source column widths measured from text match the row views`() {
+        val style = testPanelStyle()
+        fun row(id: String, title: String, trailing: String = "", loading: Boolean = false, trailingIcon: TvSourceRowIcon? = null, badges: List<TvSourceBadge> = emptyList()) =
+            TvSourceRow(
+                id = id,
+                style = TvSourceRowStyle.Rail,
+                title = title,
+                icon = TvSourceRowIcon.Source,
+                trailing = trailing,
+                loading = loading,
+                trailingIcon = trailingIcon,
+                badges = badges,
+            )
+        val rows = listOf(
+            row("web:a", "樱花动漫", trailing = "12"),
+            row("web:b", "hanime1_1080p", trailing = "2 · 1080P"),
+            row("web:c", "正在查的源", loading = true),
+            row("web:d", "暂停的源", trailingIcon = TvSourceRowIcon.Pause),
+            row("web:e", "带标签的源", trailing = "3 · 4K", badges = listOf(TvSourceBadge.DolbyVision)),
+            TvSourceRow(id = TvSourceRailKeys.EMPTY_SOURCES, style = TvSourceRowStyle.Rail, title = "没有结果的 3 个", dimmed = true),
+        )
+        host.onMain {
+            for (r in rows) {
+                val view = TvSourceRowView(host.activity, host.sketch, style)
+                view.bind(r, style)
+                view.measure(
+                    View.MeasureSpec.makeMeasureSpec(2000, View.MeasureSpec.AT_MOST),
+                    View.MeasureSpec.makeMeasureSpec(style.columnRowHeightPx, View.MeasureSpec.EXACTLY),
+                )
+                val estimate = measureRailRowsWidth(listOf(r), style)
+                // 只量字的与行视图排版的差不过舍入 (源那一栏另留了这点余量)
+                assertTrue(estimate >= view.measuredWidth - 1 && estimate <= view.measuredWidth + 2, "${r.title}: 量字 $estimate, 行视图 ${view.measuredWidth}")
+            }
+        }
+    }
+
+    @Test
     fun `rail pills are as wide as their names`() {
         val rows = listOf(rail(GROUP_A), rail("group:long").copy(title = "一个名字很长很长的数据源类型"))
         show(TvSourcePanelContent(status = "已查询 2 个数据源", rail = rows, railKey = GROUP_A, right = TvSourceRight(key = GROUP_A, rows = listOf(loadingRow()))))

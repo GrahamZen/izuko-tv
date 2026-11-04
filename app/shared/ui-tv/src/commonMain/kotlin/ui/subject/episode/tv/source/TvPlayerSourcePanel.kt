@@ -98,6 +98,7 @@ internal fun TvPlayerSourcePanel(
         if (wasLeaving && !leaving) controller.reopen(controller.takeResume(vm.episodeSelectorState.current?.episodeId)?.point)
         wasLeaving = leaving
     }
+    val strings = rememberTvSourceStrings()
     val state = remember(vm, selector) {
         val host = object : TvSourcePanelHost {
             override fun pick(media: Media) {
@@ -168,6 +169,7 @@ internal fun TvPlayerSourcePanel(
             sourceTypes = tvSourceTypesFlow(),
             playback = tvSourcePlaybackFlow(vm),
             playbackDiskCache = vm.videoScaffoldConfig.enablePlaybackDiskCache,
+            initialStrings = strings,
         )
     }
 
@@ -178,6 +180,7 @@ internal fun TvPlayerSourcePanel(
         onClose = onClose,
         modifier = modifier,
         resume = resume?.point,
+        strings = strings,
     )
 
     if (editingKeywords) {

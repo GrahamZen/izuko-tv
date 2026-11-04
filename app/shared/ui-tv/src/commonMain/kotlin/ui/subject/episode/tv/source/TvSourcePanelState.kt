@@ -108,9 +108,11 @@ class TvSourcePanelState(
     sourceTypes: Flow<Map<String, TvSourceType>> = flowOf(emptyMap()),
     /** 在播的那一条眼下的状态, 见 [TvSourcePanelInput.playback]. */
     playback: Flow<TvSourcePlayback> = flowOf(TvSourcePlayback.Normal),
+    /** 文案 (见 [setStrings]); 建状态时就给, 第一份内容不用等面板界面建好. */
+    initialStrings: TvSourceStrings? = null,
 ) {
     private val nav = MutableStateFlow(TvSourceNav(railKey = initialRailKey, sourceKey = initialSourceKey))
-    private val strings = MutableStateFlow<TvSourceStrings?>(null)
+    private val strings = MutableStateFlow(initialStrings)
 
     /** 开着的详情弹窗是哪一行的 (见 TvSourceDetailsDialog); null = 没开. 弹窗里左右键换行就是改它. */
     val detailsTarget: MutableStateFlow<TvSourceAction.ShowDetails?> = MutableStateFlow(null)
