@@ -284,8 +284,8 @@ class TvSourcePanelViewTest {
         host.press(KeyEvent.KEYCODE_DPAD_DOWN)
         waitFocus("web:a3")
         assertEquals(0f, host.onMain { listAlpha() }, "还是 web:a2 的条目: 不出")
-        // 描边直接在焦点下的 web:a3 上, 原来选中的 web:a2 不闪一下
-        assertTrue(host.onMain { rowView("web:a3")!!.active })
+        // 焦点在这一栏里: 只有焦点框, 原来选中的 web:a2 不描边
+        assertFalse(host.onMain { rowView("web:a3")!!.active })
         assertFalse(host.onMain { rowView("web:a2")!!.active })
         show(groupContent(sources = sources, sourceKey = "web:a3", enterable = setOf("web:a1", "web:a2")), entry = false)
         host.waitUntil("web:a3 那一屏到了才出 (透明度 ${listAlpha()})") { listAlpha() == 1f }
@@ -430,6 +430,28 @@ class TvSourcePanelViewTest {
             rowLeft("web:a1") == 96 && rowLeft("line:0") == 96 + COLUMN_WIDTH + COLUMN_GAP &&
                 rowView("web:a1")?.width == COLUMN_WIDTH
         }
+    }
+
+    @Test
+    fun `moving in the source column shows only the focus frame and the shown source is outlined from the entries`() {
+        showOnColumn(groupContent())
+        host.waitUntil("焦点在这一栏里: 不描边") { rowView("web:a1")?.outlined == false }
+        // 单按: 松手前右边还是 web:a1 的, 也不在它上面留一圈边
+        host.keyDown(KeyEvent.KEYCODE_DPAD_DOWN)
+        waitFocus("web:a2")
+        assertFalse(host.onMain { rowView("web:a1")!!.outlined })
+        // 按住连走: 一直不在出发的那个源上留边
+        host.keyDown(KeyEvent.KEYCODE_DPAD_DOWN, repeatCount = 1)
+        waitFocus("web:a3")
+        assertFalse(host.onMain { rowView("web:a1")!!.outlined || rowView("web:a2")!!.outlined })
+        host.keyUp(KeyEvent.KEYCODE_DPAD_DOWN)
+        assertEquals(listOf(GROUP_A to "web:a3"), listener.sourceFocused)
+        assertFalse(host.onMain { rowView("web:a3")!!.outlined })
+        // 进了右边的条目: 描出右边是哪个源的
+        show(groupContent(sourceKey = "web:a3"), entry = false)
+        host.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+        waitFocus("line:1")
+        host.waitUntil("条目里: 描出 web:a3") { rowView("web:a3")?.outlined == true }
     }
 
     @Test
