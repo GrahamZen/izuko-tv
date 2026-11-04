@@ -264,6 +264,7 @@ data class TvSourceResume(val point: TvSourceResumePoint, val episodeId: Int?)
  * @param leaving 面板正在退场 (见 [TvSourcePanelView.leaving]).
  * @param onClose 要关面板: 触屏点了面板下面的画面.
  * @param resume 打开时回到上次按返回关时停的地方, 见 [TvSourcePanelView.resumeAt].
+ * @param strings 面板文案; 建 [state] 时已经取过的传进来 (同一份, 不再逐条取一遍).
  */
 @Composable
 fun TvSourcePanel(
@@ -273,11 +274,11 @@ fun TvSourcePanel(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
     resume: TvSourceResumePoint? = null,
+    strings: TvSourceStrings = rememberTvSourceStrings(),
 ) {
     val sketch = LocalSketch.current
     val currentOnClose by rememberUpdatedState(onClose)
     val style = rememberTvSourcePanelStyle()
-    val strings = rememberTvSourceStrings()
     val currentState by rememberUpdatedState(state)
     LaunchedEffect(state, strings) { state.setStrings(strings) }
     TvNativeHost(

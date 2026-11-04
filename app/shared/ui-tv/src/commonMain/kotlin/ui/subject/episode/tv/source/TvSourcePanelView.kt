@@ -409,6 +409,8 @@ class TvSourcePanelView(
         descendantFocusability = FOCUS_AFTER_DESCENDANTS
 
         statusView.maxLines = 1
+        // 第一份内容到之前没有字: 不出 (不然只剩一个半透明的小圆底挂在左上角)
+        statusView.visibility = INVISIBLE
         drillTitleView.maxLines = 2
         drillTitleView.visibility = GONE
         column.visibility = GONE
@@ -529,6 +531,7 @@ class TvSourcePanelView(
         if (requestedRailKey == content.railKey || content.rail.none { it.id == requestedRailKey }) requestedRailKey = null
         requestedSourceKey?.let { if (it == content.sourceKey || it !in content.sourceGroups) requestedSourceKey = null }
         statusView.text = content.status
+        statusView.visibility = if (content.status.isEmpty()) INVISIBLE else VISIBLE
 
         val (commands, sources) = content.rail.partition { isCommandKey(it.id) }
         // 带字的在前, 只画图标的 (见 isCompactCommand) 一起排在最后
@@ -612,28 +615,18 @@ class TvSourcePanelView(
     /** [columnFitWidthPx] 是按哪一组量的. */
     private var columnWidthKey: String? = null
 
-    /** 量源那一栏的行要多宽用的 (不挂在界面上). */
-    private var columnProbe: TvSourceRowView? = null
-
     private fun columnWidth(): Int = columnFitWidthPx.takeIf { it > 0 } ?: style.columnWidthPx
 
     /**
      * 源那一栏的宽度: 这一组各个源的行 (名字、画面特性标签、条数) 都排得下要多宽, 在 [TvSourcePanelStyle.columnMinWidthPx] 与上限
      * [TvSourcePanelStyle.columnWidthPx] 之间 (平板上字大, 固定宽度会把名字截掉). 同一组里只放宽 (查询途中条数、标签陆续到, 不来回伸缩),
-     * 换一组重新量.
+     * 换一组重新量. 只量字 ([measureRailRowsWidth]), 不拿行视图逐行绑定再量: 每次提交都要算, 列表排版时还要把同样的行再量一遍.
      */
     private fun fitColumnWidth(key: String?, rows: List<TvSourceRow>) {
         if (key == null) return
         val s = style
         val max = max(s.columnMinWidthPx, s.columnWidthPx)
-        val probe = columnProbe ?: TvSourceRowView(context, sketch, s).also { columnProbe = it }
-        val atMost = MeasureSpec.makeMeasureSpec(max, MeasureSpec.AT_MOST)
-        val height = MeasureSpec.makeMeasureSpec(s.columnRowHeightPx, MeasureSpec.EXACTLY)
-        val needed = rows.maxOfOrNull { row ->
-            probe.bind(row, s)
-            probe.measure(atMost, height)
-            probe.measuredWidth + TEXT_ROUNDING_SLACK_PX
-        } ?: 0
+        val needed = if (rows.isEmpty()) 0 else measureRailRowsWidth(rows, s) + TEXT_ROUNDING_SLACK_PX
         val fit = needed.coerceIn(s.columnMinWidthPx, max)
         val width = if (key == columnWidthKey) max(columnFitWidthPx, fit) else fit
         columnWidthKey = key
@@ -2260,7 +2253,26 @@ internal class TvSourceRowView(context: Context, private val sketch: Sketch, var
     private val meta = TvNativeTextView(context)
     private val badges = TvSourceBadgeView(context)
     private val trailing = TvNativeTextView(context)
-    private val spinner = ProgressBar(context, null, android.R.attr.progressBarStyleSmall)
+
+    /** 右端的转圈: 只有在查的行要, 第一次要时才建 (建一个比整行其余部分加起来还慢, 而一屏里同时在转的最多一两行). */
+    private var spinner: ProgressBar? = null
+    private val spinnerShown: Boolean get() = spinner?.visibility == VISIBLE
+
+    private fun showSpinner(show: Boolean) {
+        if (!show) {
+            spinner?.visibility = GONE
+            return
+        }
+        val view = spinner ?: ProgressBar(context, null, android.R.attr.progressBarStyleSmall).also {
+            it.indeterminateTintList = ColorStateList.valueOf(spinnerTint)
+            addView(it)
+            spinner = it
+        }
+        view.visibility = VISIBLE
+    }
+
+    /** 转圈的颜色 (同右端的字, 见 applyColors): 转圈后建时照着上. */
+    private var spinnerTint = 0
 
     /** 右端的图标 ([TvSourceRow.trailingIcon]): 与转圈同一个位置、同样大小, 颜色同右端的字. */
     private val trailingIcon = ImageView(context)
@@ -2291,7 +2303,6 @@ internal class TvSourceRowView(context: Context, private val sketch: Sketch, var
         addView(meta)
         addView(badges)
         addView(trailing)
-        addView(spinner)
         addView(trailingIcon)
     }
 
@@ -2333,7 +2344,7 @@ internal class TvSourceRowView(context: Context, private val sketch: Sketch, var
         meta.visibility = if (showsMeta(row)) VISIBLE else GONE
         trailing.text = row.trailing
         trailing.visibility = if (row.trailing.isEmpty() || row.loading) GONE else VISIBLE
-        spinner.visibility = if (row.loading) VISIBLE else GONE
+        showSpinner(row.loading)
         val trailingBitmap = row.trailingIcon?.takeIf { row.trailing.isEmpty() && !row.loading }?.let { style.icons[it] }
         trailingIcon.setImageBitmap(trailingBitmap)
         trailingIcon.visibility = if (trailingBitmap != null) VISIBLE else GONE
@@ -2446,7 +2457,10 @@ internal class TvSourceRowView(context: Context, private val sketch: Sketch, var
         badges.outlineColor = tvNativeLerpColor(s.textSecondary, s.focusedTextSecondary, p)
         badges.warningColor = tvNativeLerpColor(s.error, s.focusedError, p)
         badges.alpha = dim
-        spinner.indeterminateTintList = ColorStateList.valueOf(secondary)
+        if (spinnerTint != secondary) {
+            spinnerTint = secondary
+            spinner?.indeterminateTintList = ColorStateList.valueOf(secondary)
+        }
         trailingIcon.colorFilter = PorterDuffColorFilter(secondary, PorterDuff.Mode.SRC_IN)
         // 描边只标「下面 / 右边显示的是它」与筛选的当前值; 正在播放的靠图标与右端的字 (见 TvSourceRow.playing)
         val chosen = (row.selected && !row.playing) || active
@@ -2479,7 +2493,7 @@ internal class TvSourceRowView(context: Context, private val sketch: Sketch, var
         val iconSpec = MeasureSpec.makeMeasureSpec(s.iconSizePx, MeasureSpec.EXACTLY)
         icon.measure(iconSpec, iconSpec)
         val spinnerSpec = MeasureSpec.makeMeasureSpec(s.spinnerSizePx, MeasureSpec.EXACTLY)
-        spinner.measure(spinnerSpec, spinnerSpec)
+        spinner?.measure(spinnerSpec, spinnerSpec)
         trailingIcon.measure(spinnerSpec, spinnerSpec)
         val widthMode = MeasureSpec.getMode(widthMeasureSpec)
         val width = if (row?.style == TvSourceRowStyle.Rail && widthMode != MeasureSpec.EXACTLY) {
@@ -2493,7 +2507,7 @@ internal class TvSourceRowView(context: Context, private val sketch: Sketch, var
             if (trailing.visibility != GONE) {
                 trailing.measure(unspecified, unspecified)
                 natural += trailing.measuredWidth + s.trailingGapPx
-            } else if (spinner.visibility != GONE || trailingIcon.visibility != GONE) {
+            } else if (spinnerShown || trailingIcon.visibility != GONE) {
                 natural += s.spinnerSizePx + s.trailingGapPx
             }
             if (widthMode == MeasureSpec.AT_MOST) min(natural, MeasureSpec.getSize(widthMeasureSpec)) else natural
@@ -2504,7 +2518,7 @@ internal class TvSourceRowView(context: Context, private val sketch: Sketch, var
         if (trailing.visibility != GONE) {
             trailing.measure(MeasureSpec.makeMeasureSpec(width / 2, MeasureSpec.AT_MOST), unspecified)
             trailingWidth = trailing.measuredWidth + s.trailingGapPx
-        } else if (spinner.visibility != GONE || trailingIcon.visibility != GONE) {
+        } else if (spinnerShown || trailingIcon.visibility != GONE) {
             trailingWidth = s.spinnerSizePx + s.trailingGapPx
         }
         var textWidth = (width - s.rowPaddingHPx * 2 - iconSlot - trailingWidth).coerceAtLeast(0)
@@ -2565,9 +2579,9 @@ internal class TvSourceRowView(context: Context, private val sketch: Sketch, var
             val ty = (h - trailing.measuredHeight) / 2
             trailing.layout(right - trailing.measuredWidth, ty, right, ty + trailing.measuredHeight)
             right -= trailing.measuredWidth + s.trailingGapPx
-        } else if (spinner.visibility != GONE) {
+        } else if (spinnerShown) {
             val sy = (h - s.spinnerSizePx) / 2
-            spinner.layout(right - s.spinnerSizePx, sy, right, sy + s.spinnerSizePx)
+            spinner?.layout(right - s.spinnerSizePx, sy, right, sy + s.spinnerSizePx)
             right -= s.spinnerSizePx + s.trailingGapPx
         } else if (trailingIcon.visibility != GONE) {
             val iy = (h - s.spinnerSizePx) / 2
@@ -2878,6 +2892,35 @@ private fun measureBranchContentWidth(right: TvSourceRight, style: TvSourcePanel
     right.title?.let { result = max(result, width(style.drillTitle, it) + style.chipPaddingHPx * 2) }
     // 量出来的与 TextView 排版的宽度可能差一两个像素的舍入, 差了就会省略 / 跑马灯
     return result + TEXT_ROUNDING_SLACK_PX
+}
+
+/**
+ * [TvSourceRowStyle.Rail] 行按内容要多宽 (取最宽的一行; 同 TvSourceRowView 量这种行「按内容」的那一支, 行视图留着图标位): 图标位、名字、
+ * 画面特性标签、右端的字 (在查时是转圈, 没字有右端图标时是图标). 只量字, 不经过行视图.
+ */
+@VisibleForTesting
+internal fun measureRailRowsWidth(rows: List<TvSourceRow>, style: TvSourcePanelStyle): Int {
+    val titlePaint = textPaint(style.railTitle)
+    val trailingPaint = textPaint(style.trailing)
+    val badgePaint = tvSourceBadgePaint(style.badge)
+    fun width(paint: Paint, text: String): Int = if (text.isEmpty()) 0 else ceil(paint.measureText(text)).toInt()
+    return rows.maxOfOrNull { row ->
+        val compact = isCompactCommand(row.id)
+        val iconSlot = when {
+            !showsIcon(row) && !reservesIconSlot(row) -> 0
+            compact -> style.iconSizePx
+            else -> style.iconSizePx + style.iconGapPx
+        }
+        val title = if (compact) 0 else width(titlePaint, row.title)
+        val badges = if (showsBadges(row)) tvSourceBadgeStripWidth(row.badges, style.badge, badgePaint) + style.trailingGapPx else 0
+        val trailingIcon = row.trailingIcon?.takeIf { row.trailing.isEmpty() && !row.loading }?.let { style.icons[it] } != null
+        val trailing = when {
+            row.trailing.isNotEmpty() && !row.loading -> width(trailingPaint, row.trailing) + style.trailingGapPx
+            row.loading || trailingIcon -> style.spinnerSizePx + style.trailingGapPx
+            else -> 0
+        }
+        style.rowPaddingHPx * 2 + iconSlot + title + badges + trailing
+    } ?: 0
 }
 
 private const val TEXT_ROUNDING_SLACK_PX = 2
