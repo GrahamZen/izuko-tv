@@ -181,13 +181,11 @@ val VIEW_ALL_GALLERY_ROW_SPACING = 24.dp
 val VIEW_ALL_GALLERY_SIDE_INSET = 12.dp
 
 /**
- * 网格顶上让出多少: 往下滚了以后内容在这一截里渐隐 (标题行下面那条, 见 [ANI_SCROLL_FADE_UNDER_TITLE]), 不滚时首行的放大也画在这里面;
- * 原生版还往标题行下面那段间距里伸, 首行的投影画得开 (见 TvViewAllGalleries).
+ * 网格上下让出多少: 只给首行、末行聚焦时的放大与投影 (圆 1.115 倍、海报 1.12 倍, 放大的是图, 字在图下面不放大), 不给渐隐留空 ——
+ * 渐隐盖在内容上 (见 [viewAllGalleryTopFade] / [viewAllGalleryBottomFade]). 原生版顶上不让出: 往标题行下面那段间距里伸 (见 TvViewAllGalleries 的 topBleed),
+ * 首行的放大画在那一截里.
  */
-val VIEW_ALL_GALLERY_TOP_INSET = ANI_SCROLL_FADE_UNDER_TITLE
-
-/** 网格底下让出多少: 滚不完时内容在这一截里渐隐 (同 aniVerticalScrollFade), 不滚时末行的放大与投影也画在这里面. */
-val VIEW_ALL_GALLERY_BOTTOM_INSET = ANI_SCROLL_FADE
+val VIEW_ALL_GALLERY_FOCUS_ROOM = 12.dp
 
 /** 圆下缘到名字: 比详情页的行宽一点, 给压在圆下缘的标签让出位置. */
 val VIEW_ALL_GALLERY_TEXT_GAP = 8.dp
@@ -201,18 +199,26 @@ val VIEW_ALL_GALLERY_BADGE_OVERHANG = 3.dp
 val VIEW_ALL_GALLERY_COMPACT_COLUMN_SPACING = 20.dp
 
 /**
- * 紧凑档 (播放器胶囊上方) 网格上下各让出多少 / 滚不完时渐隐多长: 比 [VIEW_ALL_GALLERY_BOTTOM_INSET] 短, 最后一排露得更全 ——
+ * 紧凑档 (播放器胶囊上方) 网格上下各让出多少 / 滚不完时渐隐多长: 比弹窗里的渐隐 ([ANI_SCROLL_FADE]) 短, 最后一排露得更全 ——
  * 那里的底是一层很淡的烟灰, 渐隐太长整排都是半透明的.
  */
 val VIEW_ALL_GALLERY_COMPACT_VERTICAL_INSET = 20.dp
 
-/** 网格顶上让出多少 (见 [VIEW_ALL_GALLERY_TOP_INSET] / [VIEW_ALL_GALLERY_COMPACT_VERTICAL_INSET]). */
+/** 网格顶上让出多少 (见 [VIEW_ALL_GALLERY_FOCUS_ROOM] / [VIEW_ALL_GALLERY_COMPACT_VERTICAL_INSET]). */
 fun viewAllGalleryTopInset(compact: Boolean): Dp =
-    if (compact) VIEW_ALL_GALLERY_COMPACT_VERTICAL_INSET else VIEW_ALL_GALLERY_TOP_INSET
+    if (compact) VIEW_ALL_GALLERY_COMPACT_VERTICAL_INSET else VIEW_ALL_GALLERY_FOCUS_ROOM
 
-/** 网格底下让出多少 (见 [VIEW_ALL_GALLERY_BOTTOM_INSET] / [VIEW_ALL_GALLERY_COMPACT_VERTICAL_INSET]). */
+/** 网格底下让出多少 (见 [VIEW_ALL_GALLERY_FOCUS_ROOM] / [VIEW_ALL_GALLERY_COMPACT_VERTICAL_INSET]). */
 fun viewAllGalleryBottomInset(compact: Boolean): Dp =
-    if (compact) VIEW_ALL_GALLERY_COMPACT_VERTICAL_INSET else VIEW_ALL_GALLERY_BOTTOM_INSET
+    if (compact) VIEW_ALL_GALLERY_COMPACT_VERTICAL_INSET else VIEW_ALL_GALLERY_FOCUS_ROOM
+
+/** 往下滚了以后顶上渐隐多长: 弹窗里同标题行下面那条 ([ANI_SCROLL_FADE_UNDER_TITLE]), 盖在内容上. */
+fun viewAllGalleryTopFade(compact: Boolean): Dp =
+    if (compact) VIEW_ALL_GALLERY_COMPACT_VERTICAL_INSET else ANI_SCROLL_FADE_UNDER_TITLE
+
+/** 滚不完时底下渐隐多长 ([ANI_SCROLL_FADE]), 盖在内容上. */
+fun viewAllGalleryBottomFade(compact: Boolean): Dp =
+    if (compact) VIEW_ALL_GALLERY_COMPACT_VERTICAL_INSET else ANI_SCROLL_FADE
 
 /**
  * 紧凑档 (播放器胶囊上方) 网格左右各让出多少: 比 [VIEW_ALL_GALLERY_SIDE_INSET] 宽, 网格一直伸到叠层的边上 (叠层的左右内边距),
@@ -325,7 +331,7 @@ private fun GalleryGrid(
         ProvideScrollFadeFocusMargin {
             LazyVerticalGrid(
                 GridCells.Fixed(columns),
-                Modifier.aniVerticalScrollFade(state, fade = viewAllGalleryBottomInset(compact), topFade = viewAllGalleryTopInset(compact)),
+                Modifier.aniVerticalScrollFade(state, fade = viewAllGalleryBottomFade(compact), topFade = viewAllGalleryTopFade(compact)),
                 state = state,
                 contentPadding = PaddingValues(
                     start = viewAllGallerySideInset(compact),

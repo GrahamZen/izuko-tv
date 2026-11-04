@@ -101,6 +101,7 @@ internal fun TvStickerPicker(
     val packs = BangumiStickers.packs
     val pack = packs.getOrElse(selectedPackIndex) { packs.first() }
     val gridState = rememberLazyGridState()
+    val packScroll = rememberScrollState()
     val focus = rememberTvFocusScope()
     val packFocusRequesters = remember(packs.size) { List(packs.size) { FocusRequester() } }
     var focusedPackIndex by remember { mutableIntStateOf(0) }
@@ -127,48 +128,52 @@ internal fun TvStickerPicker(
                     // 交给默认的空间搜索的话, 首项按上、末项按下会跳出选择器 —— 而选择器盖在
                     // 评论弹窗与评论面板之上, 焦点落到底下那些看不见的卡片上就等于卡死.
                     // 列表可滚 + 逐项显式落点, 顺带也解决了"包多到一屏放不下"时的滚动
-                    Column(
-                        Modifier
-                            .width(TV_STICKER_PACK_COLUMN_WIDTH)
-                            .fillMaxHeight()
-                            .onPreviewKeyEvent { event ->
-                                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                                val index = focusedPackIndex
-                                when (event.key) {
-                                    Key.DirectionUp -> {
-                                        // 到顶消费掉不动 (聚焦项会被 focusable 自己滚进视口)
-                                        if (index > 0) {
-                                            runCatching { packFocusRequesters[index - 1].requestFocus() }
+                    // 包多到放不下时同样上下渐隐, 聚焦那项滚进来时避开渐隐那一截
+                    ProvideScrollFadeFocusMargin {
+                        Column(
+                            Modifier
+                                .width(TV_STICKER_PACK_COLUMN_WIDTH)
+                                .fillMaxHeight()
+                                .onPreviewKeyEvent { event ->
+                                    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                                    val index = focusedPackIndex
+                                    when (event.key) {
+                                        Key.DirectionUp -> {
+                                            // 到顶消费掉不动 (聚焦项会被 focusable 自己滚进视口)
+                                            if (index > 0) {
+                                                runCatching { packFocusRequesters[index - 1].requestFocus() }
+                                            }
+                                            true
                                         }
-                                        true
-                                    }
 
-                                    Key.DirectionDown -> {
-                                        if (index < packs.lastIndex) {
-                                            runCatching { packFocusRequesters[index + 1].requestFocus() }
+                                        Key.DirectionDown -> {
+                                            if (index < packs.lastIndex) {
+                                                runCatching { packFocusRequesters[index + 1].requestFocus() }
+                                            }
+                                            true
                                         }
-                                        true
+
+                                        // 左边没有东西, 也消费掉: 交回空间搜索会跑出选择器
+                                        Key.DirectionLeft -> true
+
+                                        // 右键交给空间搜索进网格 (由 focusRestorer 落回上次那一格)
+                                        else -> false
                                     }
-
-                                    // 左边没有东西, 也消费掉: 交回空间搜索会跑出选择器
-                                    Key.DirectionLeft -> true
-
-                                    // 右键交给空间搜索进网格 (由 focusRestorer 落回上次那一格)
-                                    else -> false
                                 }
+                                .aniVerticalScrollFade(packScroll)
+                                .verticalScroll(packScroll),
+                        ) {
+                            packs.forEachIndexed { index, item ->
+                                TvStickerPackItem(
+                                    name = item.name,
+                                    selected = index == selectedPackIndex,
+                                    onFocused = {
+                                        focusedPackIndex = index
+                                        onSelectPack(index)
+                                    },
+                                    modifier = Modifier.focusRequester(packFocusRequesters[index]),
+                                )
                             }
-                            .verticalScroll(rememberScrollState()),
-                    ) {
-                        packs.forEachIndexed { index, item ->
-                            TvStickerPackItem(
-                                name = item.name,
-                                selected = index == selectedPackIndex,
-                                onFocused = {
-                                    focusedPackIndex = index
-                                    onSelectPack(index)
-                                },
-                                modifier = Modifier.focusRequester(packFocusRequesters[index]),
-                            )
                         }
                     }
                     Spacer(Modifier.width(12.dp))

@@ -233,6 +233,7 @@ import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_SHAPE
 import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_TITLE_GAP
 import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_WINDOW_DIM
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
+import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFade
 import me.him188.ani.app.ui.foundation.widgets.centeredPanelColor
 import me.him188.ani.app.ui.foundation.widgets.rememberTvBesideAnchorPositionProvider
 import me.him188.ani.app.ui.foundation.widgets.showLoadError
@@ -2248,6 +2249,8 @@ private fun TvSearchFilterDialog(
                         Modifier.weight(1f).padding(top = CENTERED_PANEL_TITLE_GAP)
                             .tvFocusMoveRateLimit()
                             .tvFlowFocusViewport(flowFocus)
+                            // 滚不完的那边渐隐, 不在面板边上一刀切掉 (聚焦那行由 flowFocus 滚到视口中间, 落不进渐隐)
+                            .aniVerticalScrollFade(scrollState)
                             .verticalScroll(scrollState)
                             .tvFlowFocusContent(flowFocus),
                         verticalArrangement = Arrangement.spacedBy(16.dp),

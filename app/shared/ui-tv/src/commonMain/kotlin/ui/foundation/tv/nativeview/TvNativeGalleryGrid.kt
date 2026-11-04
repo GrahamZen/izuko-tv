@@ -22,7 +22,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -42,7 +42,7 @@ import me.him188.ani.app.ui.foundation.LocalSketch
 import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tv.tvGridBleed
-import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFade
+import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFadeByHidden
 import kotlin.math.abs
 
 /**
@@ -191,20 +191,21 @@ class TvNativeGalleryGridView(
     }
 
     /**
-     * 上面还有没露出来的 (首格没排出来, 或顶边越过了上让出线). 不用 canScrollVertically: leanback 的布局管理器不报滚动范围, 那个恒为 false.
+     * 上面藏着多少 (px, 渐隐按它滑进来多少): 首格的顶边越过上让出线多少; 首格没排出来就是很多. 不用 computeVerticalScrollOffset 这类:
+     * leanback 的布局管理器不报滚动范围.
      */
-    fun hasMoreAbove(): Boolean {
-        if (childCount == 0) return false
-        val first = findViewHolderForAdapterPosition(0)?.itemView ?: return true
-        return first.top < paddingTop - 1
+    fun hiddenAbove(): Float {
+        if (childCount == 0) return 0f
+        val first = findViewHolderForAdapterPosition(0)?.itemView ?: return Float.POSITIVE_INFINITY
+        return (paddingTop - first.top).coerceAtLeast(0).toFloat()
     }
 
-    /** 下面还有没露出来的 (末格没排出来, 或底边越过了下让出线); 见 [hasMoreAbove]. */
-    fun hasMoreBelow(): Boolean {
+    /** 下面藏着多少: 末格的底边越过下让出线多少; 末格没排出来就是很多. 见 [hiddenAbove]. */
+    fun hiddenBelow(): Float {
         val count = adapter?.itemCount ?: 0
-        if (childCount == 0 || count == 0) return false
-        val last = findViewHolderForAdapterPosition(count - 1)?.itemView ?: return true
-        return last.bottom > height - paddingBottom + 1
+        if (childCount == 0 || count == 0) return 0f
+        val last = findViewHolderForAdapterPosition(count - 1)?.itemView ?: return Float.POSITIVE_INFINITY
+        return (last.bottom - (height - paddingBottom)).coerceAtLeast(0).toFloat()
     }
 
     /**
@@ -437,8 +438,10 @@ private val TV_GALLERY_DIRECTION_KEYS = setOf(
  * @param onExitDown 见 [TvNativeGalleryGridView.onExitDown].
  * @param edgeBleed 原生视图左右各往外伸多少 (网格内侧的留白跟着加, 格子位置不变): 首末列聚焦时的放大与投影画进这一截,
  *   不被装它的 AndroidView 按自己的边界裁掉. 外面要真有这么宽的空地 (如弹窗内容区的内边距).
- * @param topBleed 原生视图往上伸多少 (顶上的留白跟着加, 格子位置不变): 首行聚焦的投影画进这一截; 往下滚了以后这一截整个擦掉,
- *   内容只在 [topInset] 里渐隐. 外面要真有这么高的空地 (如弹窗标题行与内容之间的间距).
+ * @param topBleed 原生视图往上伸多少 (顶上的留白跟着加, 格子位置不变): 首行聚焦的放大与投影画进这一截; 往下滚了以后这一截整个擦掉,
+ *   往下 [topFade] 里渐隐. 外面要真有这么高的空地 (如弹窗标题行与内容之间的间距).
+ * @param topInset 顶上 / [bottomInset] 底下的留白: 只给首末行聚焦的放大与投影, 不给渐隐留空 (渐隐盖在内容上, 见 aniVerticalScrollFadeByHidden).
+ * @param topFade 往下滚了以后顶上渐隐多长; [bottomFade] 滚不完时底下渐隐多长.
  * @param modifier 打开时的落点挂在这上面 (焦点送进网格时落在选中的那格).
  */
 @Composable
@@ -453,6 +456,8 @@ fun TvNativeMonogramGallery(
     touchTaps: Boolean,
     edgeBleed: Dp = 0.dp,
     topBleed: Dp = 0.dp,
+    topFade: Dp = topInset,
+    bottomFade: Dp = bottomInset,
     onClick: (index: Int) -> Unit,
     onLongPress: ((index: Int) -> Unit)?,
     onBind: (index: Int) -> Unit,
@@ -475,6 +480,8 @@ fun TvNativeMonogramGallery(
         sideInset = sideInset,
         topInset = topInset,
         bottomInset = bottomInset,
+        topFade = topFade,
+        bottomFade = bottomFade,
         edgeBleed = edgeBleed,
         topBleed = topBleed,
         adapter = { TvNativeMonogramAdapter(style, sketch) },
@@ -521,6 +528,8 @@ fun TvNativePosterGallery(
     touchTaps: Boolean,
     edgeBleed: Dp = 0.dp,
     topBleed: Dp = 0.dp,
+    topFade: Dp = topInset,
+    bottomFade: Dp = bottomInset,
     onClick: (index: Int) -> Unit,
     onBind: (index: Int) -> Unit,
     modifier: Modifier = Modifier,
@@ -558,6 +567,8 @@ fun TvNativePosterGallery(
         sideInset = sideInset,
         topInset = topInset,
         bottomInset = bottomInset,
+        topFade = topFade,
+        bottomFade = bottomFade,
         edgeBleed = edgeBleed,
         topBleed = topBleed,
         adapter = { TvNativeCardAdapter(style, sketch) },
@@ -625,7 +636,7 @@ internal const val TV_OVER_VIDEO_LABEL_IDLE_ALPHA = 0.92f
 
 /**
  * 装 [TvNativeGalleryGridView] 的 AndroidView: 宽铺满, 高 = 内容高 (行数 × 格高 + 行距 + 上下让出), 父布局给的上限之内; 超出就在网格里滚,
- * 滚不完的那边渐隐 (同 Compose 的 aniVerticalScrollFade; 能不能滚由网格的滚动回调写进状态, 绘制阶段读). 往外伸的那几截见 [TvNativeMonogramGallery].
+ * 滚不完的那边渐隐 (aniVerticalScrollFadeByHidden, 盖在内容上; 两头各藏着多少由网格的滚动回调写进状态, 绘制阶段读). 往外伸的那几截见 [TvNativeMonogramGallery].
  */
 @Composable
 private fun TvNativeGalleryHost(
@@ -637,6 +648,8 @@ private fun TvNativeGalleryHost(
     sideInset: Dp,
     topInset: Dp,
     bottomInset: Dp,
+    topFade: Dp,
+    bottomFade: Dp,
     edgeBleed: Dp,
     topBleed: Dp,
     adapter: () -> RecyclerView.Adapter<*>,
@@ -645,8 +658,8 @@ private fun TvNativeGalleryHost(
     modifier: Modifier,
     rebuildKey: Any? = null,
 ) {
-    var canScrollUp by remember { mutableStateOf(false) }
-    var canScrollDown by remember { mutableStateOf(false) }
+    var hiddenAbove by remember { mutableFloatStateOf(0f) }
+    var hiddenBelow by remember { mutableFloatStateOf(0f) }
     val density = LocalDensity.current
     val rowSpacingPx = with(density) { rowSpacing.roundToPx() }
     val sidePx = with(density) { (sideInset + edgeBleed).roundToPx() }
@@ -679,8 +692,8 @@ private fun TvNativeGalleryHost(
                     grid.guardHurriedSideExit = handle == null
                 }
                 grid.onScrollChanged = {
-                    canScrollUp = grid.hasMoreAbove()
-                    canScrollDown = grid.hasMoreBelow()
+                    hiddenAbove = grid.hiddenAbove()
+                    hiddenBelow = grid.hiddenBelow()
                 }
             }
         },
@@ -692,8 +705,9 @@ private fun TvNativeGalleryHost(
             .tvGridBleed(start = edgeBleed, end = edgeBleed)
             .tvNativeBleedTop(topBleed)
             .height(with(density) { contentHeightPx.toDp() })
-            // 顶上: 伸出去的那截滚动时整个擦掉, 渐隐在 topInset 那一截里; 底下: bottomInset 那一截里渐隐
-            .aniVerticalScrollFade({ canScrollUp }, { canScrollDown }, fade = bottomInset, topFade = topInset, topClear = topBleed),
+            // 顶上: 伸出去的那截滚动时整个擦掉, 往下 topFade 里渐隐; 底下 bottomFade 里渐隐. 都盖在内容上, 不另外留空,
+            // 跟着滚进去多少滑进来 (开始滚、快到头时一点点滑进 / 滑出)
+            .aniVerticalScrollFadeByHidden({ hiddenAbove }, { hiddenBelow }, fade = bottomFade, topFade = topFade, topClear = topBleed),
         rebuildKey = rebuildKey,
     )
 }
