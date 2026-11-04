@@ -36,7 +36,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -54,7 +54,7 @@ import me.him188.ani.app.ui.foundation.widgets.ANI_SCROLL_FADE_UNDER_TITLE
 import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_TITLE_GAP
 import me.him188.ani.app.ui.foundation.widgets.aniFocusContainerColor
 import me.him188.ani.app.ui.foundation.widgets.aniFocusContentColor
-import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFade
+import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFadeByHidden
 import me.him188.ani.app.ui.subject.details.sections.focusEpisodeCardColors
 
 /**
@@ -65,7 +65,7 @@ import me.him188.ani.app.ui.subject.details.sections.focusEpisodeCardColors
  * - 只显示集号 ([numbers] = true): [TvNativeEpisodeNumberView], 聚焦铺实底 (小控件的示焦).
  *
  * 列数按给的宽排: 每格不窄于 [TV_NATIVE_EPISODE_GRID_STILL_MIN_WIDTH] / [TV_NATIVE_EPISODE_GRID_NUMBER_MIN_WIDTH], 格宽把一行铺满;
- * 剧照卡 16:9. 高 = 内容高 (父布局给的上限之内), 超出就在网格里滚, 滚不完的那边在上下让出的一截里渐隐.
+ * 剧照卡 16:9. 高 = 内容高 (父布局给的上限之内), 超出就在网格里滚, 滚不完的那边渐隐 (盖在内容上, 不另外留空).
  *
  * @param cards 要排的集 (剧照卡与集号格用同一份数据).
  * @param selectedIndex 焦点在网格外时选中第几格: 网格把它滚进来, 焦点送进网格时落在它上面. 焦点在网格里时不动.
@@ -93,9 +93,9 @@ fun TvNativeEpisodeGrid(
         val gap = if (numbers) TV_NATIVE_EPISODE_GRID_NUMBER_GAP else TV_NATIVE_EPISODE_GRID_STILL_GAP
         val minWidth = if (numbers) TV_NATIVE_EPISODE_GRID_NUMBER_MIN_WIDTH else TV_NATIVE_EPISODE_GRID_STILL_MIN_WIDTH
         val sidePx = with(density) { TV_NATIVE_EPISODE_GRID_SIDE_INSET.roundToPx() }
-        // 顶上留标题行下面那条渐隐 (加上往上伸的那截), 底下留一截渐隐; 首末行的聚焦框画在这两截里
-        val topPx = with(density) { (ANI_SCROLL_FADE_UNDER_TITLE + topBleed).roundToPx() }
-        val bottomPx = with(density) { ANI_SCROLL_FADE.roundToPx() }
+        // 上下只留首末行聚焦框要的余量: 顶上是往上伸进标题间距的那截, 底下一小截; 渐隐盖在内容上 (见下面的 aniVerticalScrollFadeByHidden)
+        val topPx = with(density) { topBleed.roundToPx() }
+        val bottomPx = with(density) { TV_NATIVE_EPISODE_GRID_FOCUS_ROOM.roundToPx() }
         val gapPx = with(density) { gap.roundToPx() }
         val widthPx = constraints.maxWidth
         val columns = tvNativeGridColumns(widthPx - sidePx * 2, with(density) { minWidth.roundToPx() }, gapPx)
@@ -108,8 +108,8 @@ fun TvNativeEpisodeGrid(
         }
         val cardStyle = rememberTvNativeEpisodeStyle(cellWidth, with(density) { cellHeightPx.toDp() }, gap, monochrome = false, glass = true)
         val numberStyle = rememberTvNativeEpisodeNumberStyle(cellWidthPx, cellHeightPx)
-        var canScrollUp by remember { mutableStateOf(false) }
-        var canScrollDown by remember { mutableStateOf(false) }
+        var hiddenAbove by remember { mutableFloatStateOf(0f) }
+        var hiddenBelow by remember { mutableFloatStateOf(0f) }
         val currentOnFocused by rememberUpdatedState(onFocused)
         val currentOnClick by rememberUpdatedState(onClick)
         val currentOnLongPress by rememberUpdatedState(onLongPress)
@@ -158,8 +158,8 @@ fun TvNativeEpisodeGrid(
                     }
                     grid.onTouchLongPress = { currentOnLongPress(it) }
                     grid.onScrollChanged = {
-                        canScrollUp = grid.hasMoreAbove()
-                        canScrollDown = grid.hasMoreBelow()
+                        hiddenAbove = grid.hiddenAbove()
+                        hiddenBelow = grid.hiddenBelow()
                     }
                 }
             },
@@ -178,8 +178,9 @@ fun TvNativeEpisodeGrid(
             modifier = Modifier
                 .tvNativeBleedTop(topBleed)
                 .height(with(density) { contentHeightPx.toDp() })
-                .aniVerticalScrollFade(
-                    { canScrollUp }, { canScrollDown },
+                // 跟着滚进去多少滑进来: 开始滚、快到头时一点点滑进 / 滑出, 不在某一下整条盖到内容上
+                .aniVerticalScrollFadeByHidden(
+                    { hiddenAbove }, { hiddenBelow },
                     fade = ANI_SCROLL_FADE, topFade = ANI_SCROLL_FADE_UNDER_TITLE, topClear = topBleed,
                 ),
             // 列数、格子尺寸与配色、格子种类在建网格时定死: 变了就整个重建
@@ -187,6 +188,9 @@ fun TvNativeEpisodeGrid(
         )
     }
 }
+
+/** 全部选集网格底下留多少: 末行聚焦框 (比卡大一圈) 与按住时的缩放画得下, 不给渐隐留空 */
+private val TV_NATIVE_EPISODE_GRID_FOCUS_ROOM = 12.dp
 
 /** 宽 [availablePx] 里放得下几列不窄于 [minCellPx]、列距 [gapPx] 的格子 (至少 1 列). */
 internal fun tvNativeGridColumns(availablePx: Int, minCellPx: Int, gapPx: Int): Int =

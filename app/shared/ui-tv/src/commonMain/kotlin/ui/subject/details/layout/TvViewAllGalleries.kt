@@ -33,11 +33,13 @@ import me.him188.ani.app.ui.subject.details.sections.VIEW_ALL_GALLERY_ROW_SPACIN
 import me.him188.ani.app.ui.subject.details.sections.VIEW_ALL_GALLERY_TEXT_GAP
 import me.him188.ani.app.ui.subject.details.sections.ViewAllGalleries
 import me.him188.ani.app.ui.subject.details.sections.monogramInitials
+import me.him188.ani.app.ui.subject.details.sections.viewAllGalleryBottomFade
 import me.him188.ani.app.ui.subject.details.sections.viewAllGalleryBottomInset
 import me.him188.ani.app.ui.subject.details.sections.viewAllGalleryCellWidth
 import me.him188.ani.app.ui.subject.details.sections.viewAllGalleryCircleSize
 import me.him188.ani.app.ui.subject.details.sections.viewAllGalleryColumnSpacing
 import me.him188.ani.app.ui.subject.details.sections.viewAllGallerySideInset
+import me.him188.ani.app.ui.subject.details.sections.viewAllGalleryTopFade
 import me.him188.ani.app.ui.subject.details.sections.viewAllGalleryTopInset
 import me.him188.ani.app.ui.subject.person.PeopleRowItem
 import me.him188.ani.app.ui.subject.person.PosterRowItem
@@ -95,8 +97,11 @@ object TvViewAllGalleries : ViewAllGalleries {
                 columns = columns,
                 rowSpacing = VIEW_ALL_GALLERY_ROW_SPACING,
                 sideInset = viewAllGallerySideInset(compact),
-                topInset = viewAllGalleryTopInset(compact),
+                // 弹窗里顶上不让出: 首行的放大画在往上伸进标题间距的那截 (topBleed); 渐隐盖在内容上, 不给它留空
+                topInset = if (compact) viewAllGalleryTopInset(true) else 0.dp,
                 bottomInset = viewAllGalleryBottomInset(compact),
+                topFade = viewAllGalleryTopFade(compact),
+                bottomFade = viewAllGalleryBottomFade(compact),
                 touchTaps = touch,
                 // 紧凑档 (播放器胶囊上方的叠层) 外面没有弹窗的内边距与标题间距可伸, 首末列的投影画在网格自己的让出里
                 edgeBleed = if (compact) 0.dp else galleryEdgeBleed,
@@ -135,8 +140,11 @@ object TvViewAllGalleries : ViewAllGalleries {
                 columnSpacing = viewAllGalleryColumnSpacing(compact),
                 rowSpacing = VIEW_ALL_GALLERY_ROW_SPACING,
                 sideInset = viewAllGallerySideInset(compact),
-                topInset = viewAllGalleryTopInset(compact),
+                // 弹窗里顶上不让出: 首行的放大画在往上伸进标题间距的那截 (topBleed); 渐隐盖在内容上, 不给它留空
+                topInset = if (compact) viewAllGalleryTopInset(true) else 0.dp,
                 bottomInset = viewAllGalleryBottomInset(compact),
+                topFade = viewAllGalleryTopFade(compact),
+                bottomFade = viewAllGalleryBottomFade(compact),
                 touchTaps = touch,
                 // 紧凑档 (播放器胶囊上方的叠层) 外面没有弹窗的内边距与标题间距可伸, 首末列的投影画在网格自己的让出里
                 edgeBleed = if (compact) 0.dp else galleryEdgeBleed,
