@@ -260,6 +260,26 @@ class RuleEngineTest {
     }
 
     @Test
+    fun `qq group videos go without any referer`() = runTest {
+        val video = "https://groupvideo.photo.qq.com/1071_abc.f0.mp4?dis_k=1&dis_t=2"
+        val site = FakeSite(mapOf("https://www.example.com/api/play/1" to """{"url":"$video"}"""))
+        val play = listOf(RuleStep.Fetch(url = "/api/play/1"), RuleStep.Json(path = "url"))
+        val config = RuleConfig(baseUrl = "https://www.example.com", headers = mapOf("Referer" to "https://www.example.com/"), play = play)
+        val result = engine(config, site).play("https://www.example.com/play/1")
+        assertIs<RulePlayResult.Direct>(result)
+        assertEquals(video, result.url)
+        assertEquals(null, result.headers["Referer"])
+        // 带任何外站的 Referer 都回 404: 播放段写明的也去掉, 别的请求头照带
+        val explicit = config.copy(
+            play = play + RuleStep.MediaHeaders(headers = mapOf("referer" to "https://www.example.com/", "User-Agent" to "UA")),
+        )
+        val withExplicit = engine(explicit, site).play("https://www.example.com/play/1")
+        assertIs<RulePlayResult.Direct>(withExplicit)
+        assertEquals(null, withExplicit.headers.keys.firstOrNull { it.equals("Referer", ignoreCase = true) })
+        assertEquals("UA", withExplicit.headers["User-Agent"])
+    }
+
+    @Test
     fun `video url is found in player page`() = runTest {
         val site = FakeSite(
             mapOf(

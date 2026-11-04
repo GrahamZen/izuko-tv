@@ -254,6 +254,7 @@ class RuleEngine(
      *
      * 视频在对象存储 ([OBJECT_STORAGE_HOST_SUFFIXES]) 上时前两样里的 `Referer` 不带: 存储桶按 Referer 白名单防盗链, 默认放行不带 Referer 的请求,
      * 站点的播放器也不带; 带上规则里站点的 Referer 反而可能被拒. [RuleStep.MediaHeaders] 写明的照带.
+     * 视频在 [NO_REFERER_HOSTS] 上时一律不带 `Referer`, [RuleStep.MediaHeaders] 写明的也去掉: 这些地址带任何外站的 Referer 都回 404.
      */
     private fun mediaHeaders(state: RuleState, videoUrl: String): Map<String, String> {
         val headers = linkedMapOf<String, String>()
@@ -274,6 +275,9 @@ class RuleEngine(
         }
         for (removed in state.removedMediaHeaders) {
             headers.keys.filter { it.equals(removed, ignoreCase = true) }.forEach { headers.remove(it) }
+        }
+        if (host in NO_REFERER_HOSTS) {
+            headers.keys.filter { it.equals("Referer", ignoreCase = true) }.forEach { headers.remove(it) }
         }
         return headers
     }
@@ -947,6 +951,12 @@ class RuleEngine(
 
         /** 对象存储的域名: 阿里云 OSS、腾讯云 COS (见 [mediaHeaders]) */
         private val OBJECT_STORAGE_HOST_SUFFIXES = listOf(".aliyuncs.com", ".myqcloud.com")
+
+        /**
+         * 播放时一律不带 `Referer` 的视频域名 (见 [mediaHeaders]): QQ 群视频的直链带任何外站的 Referer 都回 404, 不带才 206
+         * (七色番、DM84 的部分线路解析出这种地址, 规则里写着站点的 Referer).
+         */
+        private val NO_REFERER_HOSTS = setOf("groupvideo.photo.qq.com")
 
         private const val EPISODE_ID_MARK = "episode-id="
 

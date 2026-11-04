@@ -149,7 +149,8 @@ GET 请求被站点验证挡住时改由 `WebSessionManager` 加载，与 `Selec
 
 `fetch` 可以把响应设的 Cookie 存进变量（`cookies`），交给 `mediaHeaders` 让播放器带上：有的站点取视频地址的接口同时发下载视频要的 Cookie，
 不带就 403。播放时默认带规则的请求头（视频地址常要与页面相同的 Referer），但视频在对象存储（阿里云 OSS、腾讯云 COS）上时不带其中的 Referer：
-存储桶按 Referer 白名单防盗链、默认放行不带 Referer 的请求，带上站点的 Referer 反而被拒；`mediaHeaders` 写明的照带。剧集分页列出时，`episodes` 的 `nextPage` 依次打开后面的页，合成一份列表；`select` 写 `all` 时取全部匹配元素的内容
+存储桶按 Referer 白名单防盗链、默认放行不带 Referer 的请求，带上站点的 Referer 反而被拒；`mediaHeaders` 写明的照带。
+QQ 群视频的直链（`groupvideo.photo.qq.com`）带任何外站的 Referer 都回 404，播放时一律不带，`mediaHeaders` 写明的也去掉（`RuleEngine.NO_REFERER_HOSTS`）。剧集分页列出时，`episodes` 的 `nextPage` 依次打开后面的页，合成一份列表；`select` 写 `all` 时取全部匹配元素的内容
 （当前值是 JSON 字符串数组，同样可以 `nextPage` 翻页），交给 `jsonEpisodes` 当剧集表。站点只给「全部条目」的列表、没有搜索接口时，
 `jsonSubjects` / `subjects` 的 `filterByKeyword` 按关键词筛（两边去掉空白与标点、繁转简后比较）；列表的每一项本身是数组时，路径用 `[0]`、`[1]` 按下标取，
 本身是字符串或数字时 `{id}` 就是它。取元素内容的写法（`select` 的 `attr`、`subjects` 的 `nameAttr`、`episodes` 的 `tabAttr`）都认
