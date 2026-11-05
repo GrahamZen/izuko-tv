@@ -20,6 +20,7 @@ import io.ktor.client.request.HttpResponseData
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.awaitCancellation
@@ -128,6 +129,52 @@ class RangeProbeTest {
         val state = assertNotNull(downloader.getState(id))
         assertEquals(1, state.segments.size)
         assertNull(state.segments[0].rangeStart)
+    }
+
+    @Test
+    fun `a probe that times out once is tried again before giving up on ranges`() = runTest(dispatcher) {
+        var probes = 0
+        val downloader = downloader { request ->
+            // 网盘 CDN 首包偶尔慢过探测超时: 第一次卡住, 再探就回了
+            if (request.headers[HttpHeaders.Range] == "bytes=0-0" && probes++ == 0) awaitCancellation()
+            driveFile(request)
+        }
+        val id = DownloadId("slow-first-probe")
+        downloader.downloadWithId(
+            url = "https://dl.drive.test/file.mkv?auth_key=3",
+            downloadId = id,
+            options = DownloadOptions(headers = mapOf(HttpHeaders.Cookie to cookie)),
+        )
+        val state = assertNotNull(downloader.getState(id))
+        // 照样按范围分段 (整条下只开一条连接, 网盘按连接限速时慢上百倍、也不能续传)
+        assertEquals(2, state.segments.size)
+        assertEquals(2, probes)
+    }
+
+    @Test
+    fun `a whole download cut short is retried instead of being taken as finished`() = runTest(dispatcher) {
+        var gets = 0
+        val downloader = downloader { request ->
+            // 不支持范围: 探测回 200; 整条下的第一次连接中途断开 (说好多长却只给了一半), 第二次给全
+            if (request.headers[HttpHeaders.Range] != null) {
+                return@downloader respond(ByteArray(FILE_SIZE.toInt()), HttpStatusCode.OK, headersOf(HttpHeaders.ContentLength, "$FILE_SIZE"))
+            }
+            val size = if (gets++ == 0) FILE_SIZE / 2 else FILE_SIZE
+            respond(ByteReadChannel(ByteArray(size.toInt())), HttpStatusCode.OK, headersOf(HttpHeaders.ContentLength, "$FILE_SIZE"))
+        }
+        val id = DownloadId("cut-short")
+        downloader.downloadWithId(
+            url = "https://dl.drive.test/file.mkv?auth_key=4",
+            downloadId = id,
+            options = DownloadOptions(maxRetriesPerSegment = 3, baseRetryDelayMillis = 1),
+        )
+        downloader.joinDownload(id)
+        val state = assertNotNull(downloader.getState(id))
+        assertEquals(DownloadStatus.COMPLETED, state.status)
+        assertEquals(FILE_SIZE, state.downloadedBytes)
+        // 整条下的那一段从响应里知道了总大小
+        assertEquals(FILE_SIZE, state.segments.single().byteSize)
+        assertEquals(2, gets)
     }
 
     private companion object {
