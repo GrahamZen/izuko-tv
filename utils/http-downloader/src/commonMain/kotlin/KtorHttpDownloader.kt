@@ -9,6 +9,7 @@
 
 package me.him188.ani.utils.httpdownloader
 
+import io.ktor.client.plugins.HttpTimeoutConfig
 import io.ktor.client.plugins.timeout
 import io.ktor.http.HttpHeaders
 import io.ktor.http.Url
@@ -16,6 +17,7 @@ import io.ktor.client.request.header
 import io.ktor.client.request.prepareGet
 import io.ktor.client.statement.HttpStatement
 import io.ktor.client.statement.bodyAsChannel
+import io.ktor.http.contentLength
 import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.readAvailable
 import kotlinx.collections.immutable.mutate
@@ -32,6 +34,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
@@ -43,12 +46,14 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.io.IOException
 import kotlinx.io.RawSink
 import kotlinx.io.buffered
 import kotlinx.io.files.FileSystem
@@ -956,17 +961,34 @@ open class KtorHttpDownloader(
      * Attempt a small GET with Range=0-0 to detect whether partial content is supported
      * and to parse the total file size from 'Content-Range: bytes 0-0/<size>'.
      *
-     * 一次最多等 [RANGE_PROBE_TIMEOUT_MILLIS] (client 的重试再给一次): 建缓存在等它 (删这条缓存又在等建缓存),
-     * 探不出来照样能整条下 (单段)。请求头同分段下载 (经 [httpGet], 网盘的 Cookie 原样发出)。
+     * 一次最多等 [RANGE_PROBE_TIMEOUT_MILLIS], 超时或出错再探, 共 [RANGE_PROBE_ATTEMPTS] 次: 建缓存在等它 (删这条缓存又在等建缓存),
+     * 探不出来照样能整条下 (单段)。但单段只开一条连接: 网盘 CDN 按连接限速时整条下比分段慢上百倍, 也不能断点续传, 所以首包慢一次
+     * 不能就当它不支持 Range。服务器明确回了 (200 / 别的状态) 的不再探。请求头同分段下载 (经 [httpGet], 网盘的 Cookie 原样发出)。
      */
     private suspend fun probeRangeSupport(
         url: String,
         options: DownloadOptions,
     ): Pair<Long, Boolean>? {
+        repeat(RANGE_PROBE_ATTEMPTS) { attempt ->
+            try {
+                return probeRangeOnce(url, options)
+            } catch (e: CancellationException) {
+                // 探测超时也是取消异常的一种 (HttpRequestTimeoutException 不是), 只有调用方取消时才往上抛
+                if (!currentCoroutineContext().isActive) throw e
+                logger.info { "Range probe ${attempt + 1}/$RANGE_PROBE_ATTEMPTS failed for $url: ${e.message}" }
+            } catch (e: Throwable) {
+                logger.info { "Range probe ${attempt + 1}/$RANGE_PROBE_ATTEMPTS failed for $url: ${e.message}" }
+            }
+        }
+        return null
+    }
+
+    /** 探一次 (见 [probeRangeSupport]); 超时、连不上抛出, 服务器不给范围时回 null 或 (大小, false). */
+    private suspend fun probeRangeOnce(url: String, options: DownloadOptions): Pair<Long, Boolean>? {
         val rangeOptions = options.copy(
             headers = options.headers + ("Range" to "bytes=0-0"),
         )
-        return try {
+        return run {
             httpGet(url, rangeOptions, requestTimeoutMillis = RANGE_PROBE_TIMEOUT_MILLIS) { statement ->
                 statement.execute { response ->
                     when (response.status.value) {
@@ -986,18 +1008,24 @@ open class KtorHttpDownloader(
                     }
                 }
             }
-        } catch (_: Throwable) {
-            null
         }
     }
 
-    /** @param onReceived 收到数据就报 (攒够 [PROGRESS_REPORT_BYTES] 报一次, 结束时报剩下的), 进度与速度用 */
+    /**
+     * 下一段. 不带范围的那一段 (整条下) 是整个文件, 不受 client 整个请求的总时长限制 (默认 5 分钟: 网盘 CDN 按连接限速时
+     * 一条连接每秒几十 KB, 到点就从头重来, 永远下不完), 卡住交给读超时. 收到的比这一段该有的短 (响应的 Content-Length, 分段时
+     * 就是这一段的长度) 抛出、交给重试: 连接中途断开有时读起来就像正常读完, 不查会把半截文件当成下完.
+     *
+     * @param onReceived 收到数据就报 (攒够 [PROGRESS_REPORT_BYTES] 报一次, 结束时报剩下的), 进度与速度用
+     * @param onContentLength 响应给了长度时报 (整条下的那一段原来不知道多大, 记下来进度才有总大小)
+     */
     @OptIn(ExperimentalAtomicApi::class)
     protected suspend fun downloadSingleSegment(
         segmentInfo: SegmentInfo,
         options: DownloadOptions,
         rateLimiter: ByteRateLimiter? = null,
         root: Path = baseSaveDir,
+        onContentLength: suspend (Long) -> Unit = {},
         onReceived: (bytes: Long) -> Unit = {},
     ): Long {
         // If we have a range, add it to the request headers.
@@ -1008,7 +1036,8 @@ open class KtorHttpDownloader(
         } else {
             options
         }
-        return httpGet(segmentInfo.url, finalOptions) { statement ->
+        val whole = segmentInfo.rangeStart == null
+        return httpGet(segmentInfo.url, finalOptions, requestTimeoutMillis = if (whole) HttpTimeoutConfig.INFINITE_TIMEOUT_MS else null) { statement ->
             // 必须使用流式的 execute { }: 无参数的 execute() 会把整个 response body 读进一个
             // ByteArray. 当服务器不支持 range 请求时 segment 没有大小上限, 一个几百 MB 的视频
             // 会直接撑爆堆内存.
@@ -1023,7 +1052,13 @@ open class KtorHttpDownloader(
                 // 上游 #3407 已把这里改成流式 execute { } (与 fork 原来那条修复同一做法);
                 // fork 这边只保留自己的限速器参数 (见 rateLimiter: 缓存下载会拖垮整机)
                 val channel = response.bodyAsChannel()
+                val expected = response.contentLength()
+                    ?: segmentInfo.rangeEnd?.let { end -> segmentInfo.rangeStart?.let { start -> end - start + 1 } }
+                if (expected != null) onContentLength(expected)
                 val byteSize = copyChannelToFile(channel, segmentPath, rateLimiter, onReceived)
+                if (expected != null && byteSize < expected) {
+                    throw IOException("Segment index=${segmentInfo.index} cut short: $byteSize of $expected bytes")
+                }
                 byteSize.also {
                     logger.info { "Segment index=${segmentInfo.index} downloaded, size=$it" }
                 }
@@ -1122,7 +1157,10 @@ open class KtorHttpDownloader(
                             // 重试、单次封顶 30 秒, 一条彻底失效的分段能占着名额四十多分钟 ——
                             // 六条这样的分段 (名额总数) 就让全应用的缓存下载一起停摆.
                             globalSegmentLimit.withPermit {
-                                downloadSingleSegment(seg, requestOptions, rateLimiter, root) { bytes ->
+                                downloadSingleSegment(
+                                    seg, requestOptions, rateLimiter, root,
+                                    onContentLength = { length -> if (seg.byteSize < 0) setSegmentSize(downloadId, seg.index, length) },
+                                ) { bytes ->
                                     received += bytes
                                     addInFlightBytes(downloadId, bytes)
                                 }
@@ -1145,6 +1183,14 @@ open class KtorHttpDownloader(
             "All segments downloaded for $downloadId: ${bytes / 1024} KiB in ${millis}ms with concurrency=${options.maxConcurrentSegments}, " +
                     "${if (millis > 0) bytes * 1000 / millis / 1024 else 0} KiB/s"
         }
+    }
+
+    /** 不知道多大的那一段 (整条下) 从响应里知道了长度: 记下来, 进度才有总大小 */
+    private suspend fun setSegmentSize(downloadId: DownloadId, segmentIndex: Int, byteSize: Long) {
+        updateState(downloadId) { old ->
+            old.copy(segments = old.segments.map { if (it.index == segmentIndex && it.byteSize < 0) it.copy(byteSize = byteSize) else it })
+        }
+        emitProgress(downloadId)
     }
 
     /** @param tookMillis 这一段从开始下到下完用了多久 (含重试) */
@@ -1566,6 +1612,7 @@ open class KtorHttpDownloader(
 
         /** 建任务时探测 Range 一次最多等多久, 见 [probeRangeSupport] */
         private const val RANGE_PROBE_TIMEOUT_MILLIS = 5_000L
+        private const val RANGE_PROBE_ATTEMPTS = 2
     }
 }
 
