@@ -106,8 +106,8 @@ import me.him188.ani.app.ui.foundation.LocalSketch
 import me.him188.ani.app.ui.subject.details.sections.episodeStillImageUrl
 import me.him188.ani.app.ui.subject.details.SubjectDetailsLoadState
 import me.him188.ani.app.data.models.preference.DarkMode
-import me.him188.ani.app.data.models.preference.SeekPreviewDisplay
 import me.him188.ani.app.data.models.preference.TvPlayerChromeItem
+import me.him188.ani.app.data.models.preference.seekPreviewOnFullScreen
 import me.him188.ani.app.domain.player.VideoLoadingState
 import me.him188.ani.app.ui.danmaku.DanmakuEditorState
 import me.him188.ani.app.ui.foundation.LocalImageViewerHandler
@@ -367,7 +367,7 @@ fun TvEpisodeScreenContent(
     }
 
     // 拖拽预览浮窗的画面位 (小圆点上方): 画面停着时由主播放器把预览位置的画面画进来, 不另开解码器取缩略图 (见 PlayerSeekPreviewState);
-    // 设置成画在全屏上 (SeekPreviewDisplay) 时预览画面直接出在全屏上, 浮窗只显示时间. 边播边选时主播放器腾不出来, 浮窗只显示时间.
+    // 设置成画在全屏上或开着隧道播放 (seekPreviewOnFullScreen) 时预览画面直接出在全屏上, 浮窗只显示时间. 边播边选时主播放器腾不出来, 浮窗只显示时间.
     // 尊重"显示视频帧预览"设置项 (与手机端同一个开关): 关掉后浮窗只剩时间文本.
     val seekPreview = if (vm.videoScaffoldConfig.enableFramePreview) {
         rememberPlayerSeekPreviewState(vm.player, vm.cacheProgressInfoFlow)
@@ -441,7 +441,7 @@ fun TvEpisodeScreenContent(
         if (progressSliderState.isPreviewing) return
         val playing = scrubPlayback.onEnter()
         if (playing && !vm.videoScaffoldConfig.pauseVideoOnScrub) return
-        seekPreview?.begin(onFullScreen = vm.videoScaffoldConfig.seekPreviewDisplay == SeekPreviewDisplay.FULL_SCREEN)
+        seekPreview?.begin(onFullScreen = vm.videoScaffoldConfig.seekPreviewOnFullScreen)
     }
 
     /** 纯视频态长按或连按第二次: 升级成拖拽预览态. */
