@@ -38,7 +38,9 @@ fun ProgressSliderPreviewBubble(
     val text by remember(state) {
         derivedStateOf { renderPreviewTime(state, (state.totalDurationMillis * state.displayPositionRatio).toLong()) }
     }
-    val showFrame = framePreview?.framesAvailable == true
+    // 画面位只给播放器画进来的预览画面 (liveFrame, 见 PlayerSeekPreviewState): 画在全屏上、边播边拖时没有, 浮窗只显示时间.
+    // 不看 framesAvailable: 那是取缩略图那一路的结论, 电视不取缩略图, 它一直停在初值 true, 看它会留一块黑框
+    val showFrame = framePreview?.liveFrame != null
     val frameOnly = showFrame && previewStyle == ProgressSliderPreviewStyle.FrameOnly
     Box(
         modifier
