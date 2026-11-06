@@ -75,6 +75,7 @@ fun getCommonAndroidModules(coroutineScope: CoroutineScope) = module {
                 proxyConfig = { playbackProxy.value },
                 diskCacheEnabled = { playbackDiskCacheEnabled.value },
                 audioPassthrough = { audioPassthrough.value },
+                tunneledPlayback = videoScaffoldConfig.flow.map { it.tunneledPlayback },
             ),
         )
         MediampPlayerSurfaceProviderLoader.register(ExoPlayerMediampPlayerSurfaceProvider())

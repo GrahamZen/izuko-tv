@@ -192,6 +192,9 @@
     `SubtitleFixingMkvExtractor` 里（zlib 压缩的轨先解压，文字字幕与 ASS 文件头转成 UTF-8），mp4 内嵌文字字幕在
     `Mp4TextCueMergingExtractor` 里（同一时刻开始的几段合成一段：从 ASS 转来时正文与注释成了前后紧挨的几块，只剩最后一块），外挂字幕文件在
     `CharsetFixingSubtitleParserFactory` 里（SRT / ASS / SSA / WebVTT 转成 UTF-8）。编码按整条轨认（`SubtitleCharsetGuesser`）。
+    画面平时交给系统合成（SurfaceView）；设置「隧道播放」开着时 `TunneledPlayback` 让 media3 走隧道，解码器把画面直接送硬件视频层。
+    有的电视的硬件合成只接隧道送来的视频，普通播放的视频被 GPU 合成进界面图形层，暗部发灰、黑色里露出色块；应用里认不出这类电视，所以是设置、默认关。
+    倍速不是 1 时暂时不走隧道（隧道里的音频不跟倍速，看的是应用要求的倍速，不是播放器报出的）；开着时拖动预览一律画在全屏上（`seekPreviewOnFullScreen`）。
 
 ### 播放拖入的本地文件（桌面端）
 

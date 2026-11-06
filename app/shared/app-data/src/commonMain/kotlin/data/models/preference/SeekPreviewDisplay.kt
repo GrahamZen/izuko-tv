@@ -25,3 +25,10 @@ enum class SeekPreviewDisplay {
     /** 直接画在全屏上, 浮窗只显示时间. 视频输出不换. */
     FULL_SCREEN,
 }
+
+/**
+ * 这次拖动预览画在全屏上: 设置选了 [SeekPreviewDisplay.FULL_SCREEN], 或开着隧道播放 ([VideoScaffoldConfig.tunneledPlayback]:
+ * 画面由解码器直接送硬件视频层, 换不到小画面上). 不改设置本身.
+ */
+val VideoScaffoldConfig.seekPreviewOnFullScreen: Boolean
+    get() = seekPreviewDisplay == SeekPreviewDisplay.FULL_SCREEN || tunneledPlayback

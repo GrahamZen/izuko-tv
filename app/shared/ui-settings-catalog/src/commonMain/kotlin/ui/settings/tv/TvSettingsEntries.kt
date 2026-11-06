@@ -127,6 +127,8 @@ import me.him188.ani.app.ui.lang.settings_player_skip_op_ed_off
 import me.him188.ani.app.ui.lang.settings_player_start_playback_speed
 import me.him188.ani.app.ui.lang.settings_player_start_playback_speed_description
 import me.him188.ani.app.ui.lang.settings_player_start_playback_speed_remember
+import me.him188.ani.app.ui.lang.settings_player_tunneled_playback
+import me.him188.ani.app.ui.lang.settings_player_tunneled_playback_description
 import me.him188.ani.app.ui.lang.settings_player_up_next_tip
 import me.him188.ani.app.ui.lang.settings_player_up_next_tip_description
 import me.him188.ani.app.ui.lang.settings_player_up_next_tip_off
@@ -760,6 +762,11 @@ private fun TvSettingsItemsBuilder.playerItems() {
         },
         read = { it.audioPassthrough },
         write = { copy(audioPassthrough = it) },
+    )
+    toggle(
+        player, Lang.settings_player_tunneled_playback, Lang.settings_player_tunneled_playback_description,
+        read = { it.tunneledPlayback },
+        write = { copy(tunneledPlayback = it) },
     )
     choice(
         player, Lang.settings_player_hls_ad_filter,

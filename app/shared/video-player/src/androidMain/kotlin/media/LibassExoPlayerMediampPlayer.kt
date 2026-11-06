@@ -53,6 +53,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
@@ -78,6 +79,7 @@ import org.openani.mediamp.PlaybackException
 import org.openani.mediamp.PlaybackState
 import org.openani.mediamp.exoplayer.ExoPlayerAudioTimeStretch
 import org.openani.mediamp.exoplayer.ExoPlayerMediampPlayer
+import org.openani.mediamp.features.PlaybackSpeed
 import org.openani.mediamp.features.audioTracks
 import org.openani.mediamp.features.subtitleTracks
 import org.openani.mediamp.io.SeekableInput
@@ -336,6 +338,10 @@ class LibassExoPlayerMediampPlayer private constructor(
 
     /** [registerAndroidVideoSurface] 侧残留回调用来自我注销, 见那边注释。 */
     internal val isClosed: Boolean get() = closed
+
+    /** 跟着设置「隧道播放」走, 见 [TunneledPlayback]. */
+    internal fun followTunneledPlayback(enabled: Flow<Boolean>) =
+        TunneledPlayback.follow(exoPlayer, backgroundScope, enabled, exoMediampPlayer.features[PlaybackSpeed]?.valueFlow ?: flowOf(1f))
 
     /**
      * 最近一次从视频轨解出的 SDR dataspace (见 [toSdrDataSpaceOrNull]); 0 表示当前轨不该覆盖。
@@ -1065,6 +1071,8 @@ class LibassExoPlayerMediampPlayerFactory(
     private val diskCacheEnabled: () -> Boolean = { false },
     /** 见 [LibassExoPlayerMediampPlayer] 构造参数里的同名参数. */
     private val audioPassthrough: () -> AudioPassthroughMode = { AudioPassthroughMode.ALWAYS },
+    /** 设置「隧道播放」, 见 [TunneledPlayback]. */
+    private val tunneledPlayback: Flow<Boolean> = flowOf(false),
 ) : MediampPlayerFactory<LibassExoPlayerMediampPlayer> {
     override val forClass: KClass<LibassExoPlayerMediampPlayer>
         get() = LibassExoPlayerMediampPlayer::class
@@ -1089,7 +1097,7 @@ class LibassExoPlayerMediampPlayerFactory(
                 proxyConfig = proxyConfig,
                 diskCacheEnabled = diskCacheEnabled,
                 audioPassthrough = audioPassthrough,
-            )
+            ).also { it.followTunneledPlayback(tunneledPlayback) }
         } finally {
             Trace.endSection()
         }
