@@ -258,6 +258,11 @@ data class VideoScaffoldConfig @SerializationOnly constructor(
     /** 杜比、DTS 这类音轨要不要直通, 见 [AudioPassthroughMode]. 每次选音轨时读. */
     val audioPassthrough: AudioPassthroughMode = AudioPassthroughMode.AUTO,
     /**
+     * 隧道播放: Android 上视频解码器把画面直接送硬件视频层, 不经系统合成 (见 video-player 的 `TunneledPlayback`).
+     * 开着时拖动预览一律画在全屏上 (见 [seekPreviewOnFullScreen]). 播放中改了当场生效.
+     */
+    val tunneledPlayback: Boolean = false,
+    /**
      * 6.2 的 HLS 插播广告过滤开关, 由 [hlsAdFilteringMode] 取代, 只在迁移时读取 (见 [effectiveHlsAdFilteringMode]).
      *
      * 5.7 至 6.1 的同类开关是默认关闭的 `enableExperimentalHlsSegmentFiltering`, 不读取.
