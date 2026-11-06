@@ -76,6 +76,8 @@
     <string name="settings_player_audio_passthrough_auto">自动</string>
     <string name="settings_player_audio_passthrough_always">总是直通</string>
     <string name="settings_player_audio_passthrough_off">关闭</string>
+    <string name="settings_player_tunneled_playback">隧道播放</string>
+    <string name="settings_player_tunneled_playback_description">画面由解码器直接送到电视的硬件视频层，不经过系统合成。有的电视（如部分联发科芯片的电视）只有这样才能正确显示画面，不开启时暗部发灰、黑色里出现色块。开启后，拖动预览只能显示在全屏上，截图中没有视频画面；倍速播放时暂时不使用隧道播放。</string>
     <string name="player_disk_cache_hint">在设置里打开「边下边播」，往回拖不用再等</string>
     <string name="player_video_enhancement_auto_off">这台设备性能不足以开画质增强，已自动关闭</string>
     <string name="player_buffer_wait_start">网盘视频先缓冲 %1$d 秒再开始播放，免得刚播就卡</string>

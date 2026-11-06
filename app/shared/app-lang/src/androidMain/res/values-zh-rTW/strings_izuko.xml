@@ -124,6 +124,8 @@
     <string name="settings_player_audio_passthrough_auto">自動</string>
     <string name="settings_player_audio_passthrough_always">總是直通</string>
     <string name="settings_player_audio_passthrough_off">關閉</string>
+    <string name="settings_player_tunneled_playback">隧道播放</string>
+    <string name="settings_player_tunneled_playback_description">畫面由解碼器直接送到電視的硬體視訊層，不經過系統合成。有的電視（如部分聯發科晶片的電視）只有這樣才能正確顯示畫面，不開啟時暗部發灰、黑色裡出現色塊。開啟後，拖動預覽只能顯示在全螢幕上，截圖中沒有影片畫面；倍速播放時暫時不使用隧道播放。</string>
     <string name="player_disk_cache_hint">在設定裡打開「邊下邊播」，往回拖不用再等</string>
     <string name="player_video_enhancement_auto_off">這台裝置效能不足以開啟畫質增強，已自動關閉</string>
     <string name="player_buffer_wait_start">網盤影片先緩衝 %1$d 秒再開始播放，免得剛播就卡</string>
