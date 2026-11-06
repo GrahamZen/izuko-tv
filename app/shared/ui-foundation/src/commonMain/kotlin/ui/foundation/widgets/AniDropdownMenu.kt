@@ -198,7 +198,7 @@ private class TvOriginReportingPositionProvider(
 /**
  * 菜单从离锚点最近的那一边长出来 (同 M3 菜单的算法): 在锚点右边就从左缘、左边就从右缘; 与锚点重叠的方向取重叠段的中点.
  */
-internal fun tvMenuTransformOrigin(anchor: IntRect, menu: IntRect): TransformOrigin {
+fun tvMenuTransformOrigin(anchor: IntRect, menu: IntRect): TransformOrigin {
     val pivotX = when {
         menu.left >= anchor.right -> 0f
         menu.right <= anchor.left -> 1f
@@ -345,7 +345,7 @@ private val MENU_ITEM_CHECK_SIZE = 18.dp
 private const val DISABLED_CONTENT_ALPHA = 0.38f
 
 /** 菜单底色的不透明度, 见 [AniDropdownMenu]. */
-private const val MENU_CONTAINER_ALPHA = 0.95f
+internal const val MENU_CONTAINER_ALPHA = 0.95f
 
 /** 菜单滚动时上下渐隐的那一条 (菜单项矮, 比弹窗里的 [ANI_SCROLL_FADE] 窄). */
 private val MENU_SCROLL_FADE = 20.dp

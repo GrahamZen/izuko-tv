@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import me.him188.ani.app.ui.foundation.AbstractViewModel
 import me.him188.ani.app.ui.foundation.dialogs.PlatformPopupProperties
+import me.him188.ani.app.ui.foundation.widgets.TvMenuOption
 import me.him188.ani.app.ui.lang.*
 import org.openani.mediamp.metadata.AudioTrack
 import org.openani.mediamp.metadata.TrackGroup
@@ -130,6 +131,13 @@ fun PlayerControllerDefaults.AudioSwitcher(
             focusable = true, // Critical for TV focus (especially Android TV); applied on all platforms
         ),
         onExpandedChanged = onExpandedChanged,
+        optionLabel = {
+            if (it == null) {
+                TvMenuOption(stringResource(Lang.video_player_auto))
+            } else {
+                unplayableAwareAudioOption(it.shownName(options.indexOf(it) + 1), unplayableFormatOf(it.audioTrack))
+            }
+        },
     )
 }
 

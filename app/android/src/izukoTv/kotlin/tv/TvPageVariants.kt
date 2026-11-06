@@ -65,6 +65,10 @@ import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.ProvideTvScrollActivity
 import me.him188.ani.app.ui.foundation.tv.TvInterfaceModeGate
 import me.him188.ani.app.ui.foundation.tv.TvSecondaryWindowLayerRefresh
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeMenuLayer
+import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativeMenuHost
+import me.him188.ani.app.ui.foundation.tv.nativeview.tvNativeMenuKeys
+import me.him188.ani.app.ui.foundation.widgets.LocalTvNativeMenuPresenter
 import me.him188.ani.app.ui.foundation.tv.TvPosterWallTheme
 import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
 import me.him188.ani.app.ui.foundation.tv.rememberTvNavKeyTracker
@@ -187,6 +191,8 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
     // 小米电视上独立窗口每画一帧重录图层 (第一帧之后的更新不上屏, 见 TvSecondaryWindowLayerRefresh); 要在第一个弹窗建出来之前装
     val installContext = LocalContext.current
     remember { TvSecondaryWindowLayerRefresh.installIfNeeded(installContext.applicationContext) }
+    // 下拉菜单画成主窗口里的原生视图 (见 TvNativeMenuHost): 挂在下方根 Box 上截按键, 那一层由 TvNativeMenuLayer 挂上
+    val nativeMenus = rememberTvNativeMenuHost()
     // 方向键按住的真信号 (hero 文字 / 背景图 / 集信息行按住期间不换), 见 TvNavKeyTracker
     val navKeys = rememberTvNavKeyTracker()
     // 放大转场的导航规则要在详情页组合之前知道目标背景 URL: 注册进程内热表的取法 (见 TvHeroZoomHandoff.willZoom)
@@ -258,6 +264,7 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
     TrackTvRemoteForeground()
     CompositionLocalProvider(
         LocalTvBackLongPressHost provides backLongPress,
+        LocalTvNativeMenuPresenter provides nativeMenus,
         // 下发播放键宿主只为让独立窗口的桥接够得着 (处理器仍只有下面那一个)
         LocalTvPlayLongPressHost provides playLongPress,
         LocalTvPageRefreshHost provides pageRefresh,
@@ -518,6 +525,7 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         // 页面里的调整入口打开的编辑窗口 (海报墙大小 / 标签顺序 / 播放器按钮). 装在这一层: 用应用的主题,
         // 不带上某一页自己的配色与局部状态
         TvAdjustWindowHost(adjustWindows)
+        TvNativeMenuLayer(nativeMenus)
         Box(
             Modifier
                 // 首次启动引导的后两步盖在主页上 (独立窗口): 那个窗口刚出现的零点几秒还没接管按键, 这时按的键会落到
@@ -526,6 +534,7 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
                     TvOnboardingLogin.request.value != null || TvUserProfilePicker.visible.value || startupLogo?.visible == true ||
                             TvWhatsNew.launchContent.value != null
                 }
+                .tvNativeMenuKeys(nativeMenus, backLongPress)
                 .tvKeyLongPressInterceptor(backLongPress)
                 .tvKeyLongPressInterceptor(playLongPress)
                 .tvNavKeyInterceptor(navKeys)
