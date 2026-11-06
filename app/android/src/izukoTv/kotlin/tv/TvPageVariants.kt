@@ -64,6 +64,7 @@ import me.him188.ani.app.ui.foundation.tv.LocalTvNavKeyTracker
 import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.ProvideTvScrollActivity
 import me.him188.ani.app.ui.foundation.tv.TvInterfaceModeGate
+import me.him188.ani.app.ui.foundation.tv.TvSecondaryWindowLayerRefresh
 import me.him188.ani.app.ui.foundation.tv.TvPosterWallTheme
 import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
 import me.him188.ani.app.ui.foundation.tv.rememberTvNavKeyTracker
@@ -183,6 +184,9 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
     // 按连发计数天然免疫这一类误判; 代价是首发连发要 ~400ms, 面板慢一点.
     val backLongPress = remember { TvBackLongPressHost() }
     val playLongPress = remember { TvKeyLongPressHost(TV_PLAY_KEYS) }
+    // 小米电视上独立窗口每画一帧重录图层 (第一帧之后的更新不上屏, 见 TvSecondaryWindowLayerRefresh); 要在第一个弹窗建出来之前装
+    val installContext = LocalContext.current
+    remember { TvSecondaryWindowLayerRefresh.installIfNeeded(installContext.applicationContext) }
     // 方向键按住的真信号 (hero 文字 / 背景图 / 集信息行按住期间不换), 见 TvNavKeyTracker
     val navKeys = rememberTvNavKeyTracker()
     // 放大转场的导航规则要在详情页组合之前知道目标背景 URL: 注册进程内热表的取法 (见 TvHeroZoomHandoff.willZoom)
