@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import me.him188.ani.app.ui.foundation.AbstractViewModel
 import me.him188.ani.app.ui.foundation.dialogs.PlatformPopupProperties
+import me.him188.ani.app.ui.foundation.widgets.TvMenuOption
 import me.him188.ani.app.ui.lang.*
 import org.openani.mediamp.metadata.SubtitleTrack
 import org.openani.mediamp.metadata.TrackGroup
@@ -166,6 +167,9 @@ fun PlayerControllerDefaults.SubtitleSwitcher(
             focusable = true, // Critical for TV focus (especially Android TV); applied on all platforms
         ),
         onExpandedChanged = onExpandedChanged,
+        optionLabel = {
+            TvMenuOption(if (it == null) stringResource(Lang.video_player_off) else it.shownName(options.indexOf(it) + 1))
+        },
     )
 }
 

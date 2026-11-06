@@ -115,6 +115,7 @@ import me.him188.ani.app.ui.foundation.effects.onKey
 import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenu
 import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenuItem
+import me.him188.ani.app.ui.foundation.widgets.TvMenuOption
 import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_SHAPE
 import me.him188.ani.app.ui.foundation.widgets.centeredPanelColor
 import me.him188.ani.app.ui.lang.*
@@ -754,6 +755,7 @@ object PlayerControllerDefaults {
             textButtonTestTag = TAG_VIDEO_ASPECT_RATIO_SELECTOR_TEXT_BUTTON,
             dropdownMenuTestTag = TAG_VIDEO_ASPECT_RATIO_SELECTOR_DROPDOWN_MENU,
             onExpandedChanged = onExpandedChanged,
+            optionLabel = { TvMenuOption(renderAspectRatioMode(it)) },
         )
     }
 
@@ -773,6 +775,8 @@ object PlayerControllerDefaults {
         textButtonTestTag: String = "textButton",
         dropdownMenuTestTag: String = "dropDownMenu",
         onExpandedChanged: (expanded: Boolean) -> Unit = {},
+        /** 选项的文字 (TV 上画原生菜单用, 见 [OptionsSwitcherNativeMenu]); null = 只画下拉. */
+        optionLabel: (@Composable (T) -> TvMenuOption)? = null,
     ) {
         Box(modifier, contentAlignment = Alignment.Center) {
             var expanded by rememberSaveable { mutableStateOf(false) }
@@ -792,8 +796,13 @@ object PlayerControllerDefaults {
                 renderValueExposed(value)
             }
 
+            val onSelectNative: (T) -> Unit = {
+                expanded = false
+                onValueChange(it)
+            }
+            val native = OptionsSwitcherNativeMenu(expanded, { expanded = false }, value, optionsProvider, optionLabel, onSelectNative)
             AniDropdownMenu(
-                expanded = expanded,
+                expanded = expanded && !native,
                 onDismissRequest = { expanded = false },
                 properties = properties,
                 modifier = Modifier

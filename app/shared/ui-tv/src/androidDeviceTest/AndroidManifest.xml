@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
-        <!-- 原生页面导航测试的宿主 (见 TvNativeTestHost) -->
-        <activity android:name="androidx.activity.ComponentActivity" />
+        <!-- 原生页面导航测试的宿主 (见 TvNativeTestHost); 返回键同应用 (app/android 的清单) 以按键送进界面, 不走系统的返回手势回调 -->
+        <activity
+            android:name="androidx.activity.ComponentActivity"
+            android:enableOnBackInvokedCallback="false" />
     </application>
 </manifest>
