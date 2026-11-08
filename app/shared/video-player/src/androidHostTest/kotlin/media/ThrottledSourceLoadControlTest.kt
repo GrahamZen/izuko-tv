@@ -64,6 +64,28 @@ class ThrottledSourceLoadControlTest {
     }
 
     @Test
+    fun `kept content filling the byte limit does not stop loading below 5 seconds ahead`() {
+        // 字节上限按选中的轨道算, 本地文件约 33 MB; host 测试里建不出媒体与轨道 (要 android.net.Uri / TextUtils),
+        // 没选轨道时的上限是 media3 的最小值 (约 13 MB), 道理一样
+        val control = loadControl(throttled = false)
+        // 码率高的段落: 往回保留的 30 秒把字节上限占满了
+        val allocator = control.getAllocator(PlayerId.UNSET)
+        var segments = 0
+        while (control.shouldContinueLoading(parameters(10.0)) && segments < 10_000) {
+            allocator.allocate()
+            segments++
+        }
+        assertTrue(allocator.totalBytesAllocated in 10_000_000..20_000_000, "byte limit: ${allocator.totalBytesAllocated}")
+
+        // 往前还有 10 秒: 按字节上限停
+        assertFalse(control.shouldContinueLoading(parameters(10.0)))
+        // 往前不到 5 秒: 照读, 卡住时也读得进来 (卡住时播放位置不动, 往回保留的释放不掉)
+        assertTrue(control.shouldContinueLoading(parameters(0.7)))
+        assertTrue(control.shouldContinueLoading(parameters(4.9, rebuffering = true)))
+        assertFalse(control.shouldContinueLoading(parameters(5.0)))
+    }
+
+    @Test
     fun `throttled sources keep loading up to the larger limit`() {
         val control = loadControl(throttled = true)
         assertTrue(control.shouldContinueLoading(parameters(60.0)))

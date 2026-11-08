@@ -50,6 +50,10 @@ import androidx.annotation.OptIn as AndroidxOptIn
  * 播过的部分本机都有一份, 往回拖从盘上读 (约 1~2 秒接着播), 不必在内存里再存一份 —— 它和往前的缓冲共用字节上限, 4K 时能占掉一大半.
  * media3 只在建播放器时读一次这个值, 所以按建播放器那一刻的设置定, 不按媒体切换.
  *
+ * 往前的缓冲不足 [MIN_FORWARD_BUFFER_US] 时不管字节上限照读: 字节上限按轨道算, 本地文件 (`file://` 等) 的视频轨只给约 20 MB
+ * (`DefaultLoadControl.DEFAULT_VIDEO_BUFFER_SIZE_FOR_LOCAL_PLAYBACK`, 连音轨约 33 MB), 码率持续 9 Mbps 以上的段落光往回保留的就占满了.
+ * 那时往前读不进来, 播完手里的就卡住; 卡住时播放位置不动, 往回保留的也释放不掉, 不跳转就一直卡着. 多读的只是这几秒的量.
+ *
  * 只转发 media3 1.9 实际调用的那组方法 (带 [PlayerId] / [LoadControl.Parameters] 的).
  */
 @AndroidxOptIn(UnstableApi::class)
@@ -113,7 +117,8 @@ internal class ThrottledSourceLoadControl(
         if (previewing && !previewParked && parameters.bufferedDurationUs >= PREVIEW_MAX_BUFFER_US) return false
         if (!throttled && parameters.bufferedDurationUs >= DEFAULT_MAX_BUFFER_US) return false
         if (throttled && !parameters.playWhenReady && parameters.bufferedDurationUs >= PAUSED_MAX_BUFFER_US) return false
-        return delegate.shouldContinueLoading(parameters)
+        val withinByteLimit = delegate.shouldContinueLoading(parameters)
+        return withinByteLimit || parameters.bufferedDurationUs < MIN_FORWARD_BUFFER_US
     }
 
     override fun shouldStartPlayback(parameters: LoadControl.Parameters): Boolean {
@@ -241,6 +246,12 @@ internal class ThrottledSourceLoadControl(
 
         /** 拖动预览时的缓冲上限: 读到圆点之后一点就够出画面. */
         const val PREVIEW_MAX_BUFFER_US = 1_000_000L
+
+        /**
+         * 往前的缓冲不足这些时不管字节上限照读. 留出隧道播放时解码器先收下的那段 (约 0.7 秒) 和读盘偶尔的停顿;
+         * 超出字节上限的只有这几秒, 4K 也就几十 MB.
+         */
+        const val MIN_FORWARD_BUFFER_US = 5_000_000L
 
         /** 开着「边下边播」时已播内容只留这么久: 按一下「后退」不用等, 再往回从本机读. */
         const val DISK_CACHE_BACK_BUFFER_MS = 5_000
