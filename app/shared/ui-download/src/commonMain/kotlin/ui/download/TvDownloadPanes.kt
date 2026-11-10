@@ -18,6 +18,9 @@ import androidx.compose.foundation.interaction.FocusInteraction
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.lazy.LazyListItemInfo
+import androidx.compose.foundation.lazy.LazyListLayoutInfo
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.LazyGridItemScope
 import androidx.compose.foundation.lazy.grid.LazyGridScope
 import androidx.compose.foundation.lazy.grid.LazyGridState
@@ -45,6 +48,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
@@ -54,12 +58,17 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.node.ModifierNodeElement
+import androidx.compose.ui.relocation.BringIntoViewModifierNode
 import androidx.compose.ui.unit.IntSize
+import kotlin.math.abs
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.ui.download.components.SubjectDownloadGroup
@@ -67,8 +76,11 @@ import me.him188.ani.app.ui.download.subject.SubjectDownloadListItem
 import me.him188.ani.app.ui.download.subject.SubjectDownloadsUiState
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.TV_CONFIRM_KEYS
+import me.him188.ani.app.ui.foundation.focus.TvScrollAnimator
+import me.him188.ani.app.ui.foundation.focus.tvOnDemandBringIntoViewSpec
 import me.him188.ani.app.ui.foundation.isAutoRepeat
 import me.him188.ani.app.ui.foundation.tv.ProvideRingOnlyFocus
+import me.him188.ani.app.ui.foundation.tv.tvAnimatedScroll
 
 /**
  * 左栏焦点在一部上停这么久, 右栏才换成它. 按住上下时系统约 50ms 连发一下, 扫过的那些部都到不了这个数.
@@ -89,6 +101,11 @@ internal val TV_DOWNLOAD_ENTRY_WAIT = 1.seconds
  *   没有条目才默认进组.
  * - **右栏跟着左栏焦点**: 焦点在一部上停 [TV_DOWNLOAD_FOLLOW_DELAY] 右栏才换. 右栏每换一部要新建 presenter、查一次库,
  *   条目信息过期还会请求一次 Bangumi, 按住上下扫过的那些部不该一部一部建; 等待期间右栏保持原样.
+ * - **左栏的选中底色跟着焦点走** ([highlightedGroupKey]): 同右栏的行, 焦点到哪张卡底色就到哪张, 不等右栏换好;
+ *   焦点不在左栏时留在右栏正在看的那一部上.
+ * - **左栏按持焦的卡滚** ([scrollListToCard]): 卡片获焦时的 bring-into-view 请求拦在卡上 ([tvDownloadGroupCard]), 不交给列表.
+ *   卡整张落在顶上的统计与筛选栏下面、列表下沿上面, 且上下各留得出半张卡时不滚; 越过哪边只滚到刚好留出半张卡; 第一部滚回顶, 露出总体统计.
+ *   框架在电视上默认把焦点项滚到视口 30% 处, 在这个带吸顶筛选栏的列表里收不住, 每帧来回滚, 焦点框跟着上下抖.
  * - **左栏按右或确定**落到右栏里这一部上次停的那一集, 没有就是第一条有缓存的, 跳过顶上的「全部暂停 / 继续」(往上按能到).
  *   右栏还没换成这一部 (没停稳就按) 或还在加载时先换过去, 等分集出来再送焦; 期间焦点离开这张卡就作罢.
  * - **右栏按左**回到左栏正在看的那一部. 交给二维搜索会落到同一高度的别的卡上, 停稳后右栏就被换成那一部.
@@ -129,6 +146,9 @@ internal class TvDownloadPanes(
     private var listEntryWaitExpired = false
 
     internal var onSelect: (String) -> Unit = {}
+
+    /** 左栏各部的 key, 按列表里的顺序. */
+    internal var groupKeys: List<String> = emptyList()
 
     /** 左栏持焦的那张卡. */
     var focusedGroupKey: String? by mutableStateOf(null)
@@ -273,9 +293,17 @@ internal class TvDownloadPanes(
 internal val LocalTvDownloadPanes = staticCompositionLocalOf<TvDownloadPanes?> { null }
 
 /**
+ * 左栏铺选中底色的那一部: 电视上焦点在左栏时是持焦的卡, 否则是右栏正在看的那一部 [viewingGroupKey].
+ * [viewingGroupKey] 为 null (单栏, 不铺选中色) 时仍为 null.
+ */
+internal fun TvDownloadPanes?.highlightedGroupKey(viewingGroupKey: String?): String? =
+    viewingGroupKey?.let { this?.focusedGroupKey ?: it }
+
+/**
  * 只在焦点导航 (电视) 上建, 其余平台返回 null, 各钩子随之不起作用.
  *
  * @param currentGroupKey 右栏正在看的那一部
+ * @param listState 左栏的列表, 由这里按持焦的卡滚
  * @param onSelect 右栏换成这一部
  */
 @Composable
@@ -284,11 +312,13 @@ internal fun rememberTvDownloadPanes(
     loading: Boolean,
     currentGroupKey: String?,
     currentGroup: SubjectDownloadGroup?,
+    listState: LazyListState,
     onSelect: (String) -> Unit,
 ): TvDownloadPanes? {
     if (!LocalAniUiBehavior.current.focusDrivenNavigation) return null
     val lastRows = rememberSaveable(saver = LastRowsSaver) { mutableStateMapOf() }
     val panes = remember { TvDownloadPanes(lastRows) }
+    panes.groupKeys = remember(groups) { groups.map { it.key } }
     panes.entryGroupKey = groups.firstOrNull { it.key == currentGroupKey }?.key ?: groups.firstOrNull()?.key
     panes.loading = loading
     panes.currentGroup = currentGroup
@@ -305,7 +335,55 @@ internal fun rememberTvDownloadPanes(
             panes.onSelect(key)
         }
     }
+    val animatedScroll = tvAnimatedScroll()
+    LaunchedEffect(panes, listState, animatedScroll) {
+        val animator = TvScrollAnimator(animatedScroll)
+        snapshotFlow { panes.focusedGroupKey }.filterNotNull().collectLatest { key ->
+            panes.scrollListToCard(key, listState, animator)
+        }
+    }
     return panes
+}
+
+/**
+ * 左栏滚到持焦的卡 [key] (规则见 [TvDownloadPanes]). 卡还不在可视范围里 (按住方向键时焦点跑在滚动前面) 时按离它最近的一张可见卡推算位置,
+ * 滚完再按实际位置对一次.
+ */
+private suspend fun TvDownloadPanes.scrollListToCard(key: String, listState: LazyListState, animator: TvScrollAnimator) {
+    val groupIndex = groupKeys.indexOf(key)
+    if (groupIndex < 0) return
+    if (groupIndex == 0) {
+        animator.animateScrollToItem(listState, 0)
+        return
+    }
+    repeat(2) {
+        val distance = listState.layoutInfo.cardScrollDistance(groupKeys, groupIndex) ?: return
+        if (abs(distance) < 1f) return
+        animator.animateScrollBy(listState, distance)
+    }
+}
+
+/** 左栏第 [groupIndex] 部的卡要滚多远; 一张卡都不可见时 null. */
+private fun LazyListLayoutInfo.cardScrollDistance(groupKeys: List<String>, groupIndex: Int): Float? {
+    // 卡片以外的项 (总体统计、吸顶的筛选栏) 的下沿: 卡要在它下面才不被盖住
+    var bandStart = 0
+    var reference: LazyListItemInfo? = null
+    var referenceIndex = 0
+    for (item in visibleItemsInfo) {
+        val index = (item.key as? String)?.let(groupKeys::indexOf) ?: -1
+        when {
+            index < 0 -> bandStart = maxOf(bandStart, item.offset + item.size)
+            reference == null || abs(index - groupIndex) < abs(referenceIndex - groupIndex) -> {
+                reference = item
+                referenceIndex = index
+            }
+        }
+    }
+    val card = reference ?: return null
+    val top = card.offset + (groupIndex - referenceIndex) * (card.size + mainAxisItemSpacing)
+    val margin = card.size / 2
+    return tvOnDemandBringIntoViewSpec(startPx = (bandStart + margin).toFloat(), endPx = margin.toFloat())
+        .calculateScrollDistance(top.toFloat(), card.size.toFloat(), (viewportEndOffset - afterContentPadding).toFloat())
 }
 
 private val LastRowsSaver = listSaver<SnapshotStateMap<Int, String>, Any>(
@@ -333,7 +411,7 @@ internal fun Modifier.tvDownloadPage(panes: TvDownloadPanes?): Modifier =
     }
 
 /**
- * 左栏的分组卡片: 焦点停稳右栏跟着换, 按右进右栏.
+ * 左栏的分组卡片: 焦点停稳右栏跟着换, 按右进右栏; 获焦不让列表自己滚 (由 [rememberTvDownloadPanes] 滚).
  */
 internal fun Modifier.tvDownloadGroupCard(panes: TvDownloadPanes?, group: SubjectDownloadGroup): Modifier =
     if (panes == null) {
@@ -345,6 +423,7 @@ internal fun Modifier.tvDownloadGroupCard(panes: TvDownloadPanes?, group: Subjec
                 onDispose { panes.detachCard(group.key) }
             }
             Modifier
+                .then(NoBringIntoViewElement)
                 .then(if (group.key == panes.entryGroupKey) Modifier.focusRequester(panes.listEntry) else Modifier)
                 .onFocusChanged { panes.onCardFocusChanged(group, it.isFocused) }
                 .onPreviewKeyEvent { event ->
@@ -352,6 +431,21 @@ internal fun Modifier.tvDownloadGroupCard(panes: TvDownloadPanes?, group: Subjec
                 }
         }
     }
+
+/** 里面 (卡片与卡里的勾选框) 获焦时的 bring-into-view 请求到此为止, 不往上交给滚动容器. */
+private object NoBringIntoViewElement : ModifierNodeElement<NoBringIntoViewNode>() {
+    override fun create() = NoBringIntoViewNode()
+
+    override fun update(node: NoBringIntoViewNode) {}
+
+    override fun equals(other: Any?) = other === this
+
+    override fun hashCode() = "NoBringIntoView".hashCode()
+}
+
+private class NoBringIntoViewNode : Modifier.Node(), BringIntoViewModifierNode {
+    override suspend fun bringIntoView(childCoordinates: LayoutCoordinates, boundsProvider: () -> Rect?) {}
+}
 
 /**
  * 右栏整栏: 按左回左栏正在看的那一部; 右栏没有可落的分集行时由它做默认进组.

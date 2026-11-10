@@ -10,6 +10,8 @@
 package me.him188.ani.app.ui.download
 
 import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.gestures.BringIntoViewSpec
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -26,12 +28,16 @@ import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.isFocused
 import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.onLast
@@ -39,9 +45,13 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performKeyPress
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import me.him188.ani.app.domain.media.cache.engine.MediaStats
@@ -114,12 +124,19 @@ class TvDownloadPanesTest {
         waitForIdle()
     }
 
-    private fun AniComposeUiTest.setPageContent() {
+    /**
+     * @param bringIntoViewSpec 页面所在处框架的 bring-into-view 规则; null = 桌面默认
+     * @param pageSize 整页 (含代替侧边栏的方块) 的大小; null = 铺满测试窗口
+     */
+    private fun AniComposeUiTest.setPageContent(bringIntoViewSpec: BringIntoViewSpec? = null, pageSize: DpSize? = null) {
         setContent {
             focusManager = LocalFocusManager.current
             ProvideCompositionLocalsForPreview {
-                CompositionLocalProvider(LocalAniUiBehavior provides AniUiBehavior(focusDrivenNavigation = true)) {
-                    Row(Modifier.fillMaxSize()) {
+                CompositionLocalProvider(
+                    LocalAniUiBehavior provides AniUiBehavior(focusDrivenNavigation = true),
+                    LocalBringIntoViewSpec provides (bringIntoViewSpec ?: LocalBringIntoViewSpec.current),
+                ) {
+                    Row(if (pageSize != null) Modifier.size(pageSize) else Modifier.fillMaxSize()) {
                         Box(Modifier.size(48.dp).focusable())
                         Box(Modifier.weight(1f).focusRequester(content).focusGroup()) {
                             DownloadManagementScreen(
@@ -131,7 +148,7 @@ class TvDownloadPanesTest {
                                     if (group != null) {
                                         SubjectDownloadsContent(
                                             state = SubjectDownloadsUiState(
-                                                items = buildSubjectDownloadItems(episodes.getValue(group.subjectId), group.entries),
+                                                items = buildSubjectDownloadItems(episodes[group.subjectId].orEmpty(), group.entries),
                                                 downloads = group.entries,
                                                 episodesLoading = false,
                                                 downloadsLoading = false,
@@ -173,6 +190,17 @@ class TvDownloadPanesTest {
 
     private fun text(resource: StringResource) = runBlocking { getString(resource) }
 
+    /** 卡片左边空白处的颜色: 卡的底色, 持焦时叠着焦点态层. */
+    private fun AniComposeUiTest.cardColor(title: String): Color {
+        val image = onNodeWithText(title).captureToImage()
+        return image.toPixelMap()[8, image.height / 2]
+    }
+
+    private fun assertSameColor(expected: Color, actual: Color, message: String) {
+        val diff = maxOf(abs(expected.red - actual.red), abs(expected.green - actual.green), abs(expected.blue - actual.blue))
+        assertTrue(diff < 3f / 255, "$message: $expected vs $actual")
+    }
+
     @Test
     fun `entering the page focuses the viewed group card`() = runAniComposeUiTest {
         setPage()
@@ -203,6 +231,60 @@ class TvDownloadPanesTest {
         assertEquals(1, shownSubject)
         mainClock.advanceTimeBy(TV_DOWNLOAD_FOLLOW_DELAY.inWholeMilliseconds)
         assertEquals(2, shownSubject)
+    }
+
+    @Test
+    fun `the selected color moves with list focus before the detail pane follows`() = runAniComposeUiTest {
+        setPage()
+        mainClock.autoAdvance = false
+        press(Key.DirectionDown)
+        mainClock.advanceTimeBy(TV_DOWNLOAD_FOLLOW_DELAY.inWholeMilliseconds * 9 / 10)
+        assertEquals(1, shownSubject)
+        val focusedBefore = cardColor("Group B")
+        val previousBefore = cardColor("Group A")
+        mainClock.advanceTimeBy(1_000)
+        assertEquals(2, shownSubject)
+        assertSameColor(cardColor("Group B"), focusedBefore, "the focused card turns selected only after the detail pane follows")
+        assertSameColor(cardColor("Group A"), previousBefore, "the previous card stays selected until the detail pane follows")
+        // 焦点进了右栏, 底色留在右栏正在看的那一部
+        press(Key.DirectionRight)
+        mainClock.advanceTimeBy(1_000)
+        assertNotEquals(cardColor("Group A"), cardColor("Group B"))
+    }
+
+    @Test
+    fun `moving down a long list comes to rest with the focused card in view`() = runAniComposeUiTest {
+        val groups = (1..12).map { i ->
+            val item = createTestDownloadItem(
+                1000 + i, subjectName = "Long $i", subjectId = 100 + i, episodeId = 1000 + i, progress = 1f.toProgress(),
+            )
+            SubjectDownloadGroup(100 + i, "Long $i", listOf(item), UnifiedCollectionType.DOING)
+        }
+        pageState = DownloadManagementUiState(MediaStats.Unspecified, groups)
+        setPageContent(AndroidTvPivotSpec, TV_SCREEN)
+        runOnIdle { content.requestFocus() }
+        waitForIdle()
+        val firstAtTop = onNodeWithText("Long 1").getBoundsInRoot()
+        mainClock.autoAdvance = false
+        fun assertRestsInView(i: Int) {
+            val card = onNodeWithText("Long $i")
+            card.assertIsFocused()
+            mainClock.advanceTimeBy(1_500)
+            val rested = card.getBoundsInRoot()
+            mainClock.advanceTimeBy(300)
+            assertEquals(rested, card.getBoundsInRoot(), "the list keeps scrolling with card $i focused")
+            assertTrue(rested.top >= 0.dp && rested.bottom <= TV_SCREEN.height, "focused card $i at $rested is off screen")
+        }
+        for (i in 2..groups.size) {
+            press(Key.DirectionDown)
+            assertRestsInView(i)
+        }
+        for (i in groups.size - 1 downTo 1) {
+            press(Key.DirectionUp)
+            assertRestsInView(i)
+        }
+        // 回到第一部时列表回顶, 总体统计露出来
+        assertEquals(firstAtTop, onNodeWithText("Long 1").getBoundsInRoot())
     }
 
     @Test
@@ -284,5 +366,19 @@ class TvDownloadPanesTest {
         onNodeWithText(text(Lang.cache_management_play)).assertExists()
         // 长按那一次的余波不会点中菜单项, 也不会再触发一次主操作
         runOnIdle { assertEquals(listOf(pausedA.id), resumed) }
+    }
+
+    private companion object {
+        /** 1080p 电视 (密度 2) 的屏幕. */
+        val TV_SCREEN = DpSize(960.dp, 540.dp)
+
+        /** 安卓电视上框架默认的 bring-into-view (androidx 的 PivotBringIntoViewSpec): 焦点项的上沿滚到视口 30% 处. */
+        val AndroidTvPivotSpec = object : BringIntoViewSpec {
+            override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
+                val target = 0.3f * containerSize
+                val leading = if (size <= containerSize && containerSize - target < size) containerSize - size else target
+                return offset - leading
+            }
+        }
     }
 }
