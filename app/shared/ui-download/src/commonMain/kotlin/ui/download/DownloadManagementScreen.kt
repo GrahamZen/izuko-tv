@@ -324,8 +324,8 @@ fun DownloadManagementScreen(
     val currentViewingGroup = remember(state.groups, currentViewingGroupKey) {
         state.groups.firstOrNull { it.key == currentViewingGroupKey }
     }
-    // TV (fork): 进页落点、右栏跟着左栏焦点换、按右直达分集, 见 TvDownloadPanes
-    val tvPanes = rememberTvDownloadPanes(filteredGroups, state.isLoading, currentViewingGroupKey, currentViewingGroup) { currentViewingGroupKey = it }
+    // TV (fork): 进页落点、左栏按持焦的卡滚、右栏跟着左栏焦点换、按右直达分集, 见 TvDownloadPanes
+    val tvPanes = rememberTvDownloadPanes(filteredGroups, state.isLoading, currentViewingGroupKey, currentViewingGroup, listState) { currentViewingGroupKey = it }
 
     // 全选的作用范围: 单栏详情下仅为当前条目的缓存, 否则为全部可见缓存.
     val selectAllScopeEntries = if (isSinglePaneDetailVisible) {
@@ -592,7 +592,7 @@ private fun PaneScope.DownloadGroupCardsList(
         items(filteredGroups, key = { it.key }) { group ->
             SubjectDownloadGroupCard(
                 group = group,
-                selected = group.key == highlightSelectedGroupKey,
+                selected = group.key == tvPanes.highlightedGroupKey(highlightSelectedGroupKey), // TV (fork): 选中底色跟着左栏焦点走
                 selectionMode = selectionState.inSelection,
                 allEntriesSelected = group.entries.all { it.id in selectionState.selectedIds },
                 onToggleGroupSelection = { onToggleGroupSelection(group) },
