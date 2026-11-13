@@ -567,6 +567,12 @@ class TvSourcePanelModelTest {
         assertTrue(failed.failed)
         val buffering = assertNotNull(buildTvSourcePanel(input(selected = webA2).copy(playback = TvSourcePlayback.Buffering), TvSourceNav(), strings).nowPlaying)
         assertEquals("playbackBuffering", buffering.row.trailing)
+        // 缓冲中打开、还说不准: 标题照写, 右端空着, 打开照常落在它上面
+        val pending = assertNotNull(buildTvSourcePanel(input(selected = webA2).copy(playback = TvSourcePlayback.Pending), TvSourceNav(), strings).nowPlaying)
+        assertEquals("name-web-a · 线路2", pending.row.title)
+        assertEquals("", pending.row.trailing)
+        assertEquals(TvSourceAccent.None, pending.row.accent)
+        assertFalse(pending.failed)
         // 长按只开详情, 背后的焦点不跳过去
         assertEquals(TvSourceAction.ShowDetails("line:1:线路2", inRail = false, railKey = "web:web-a", followFocus = false), web.row.longAction)
 
