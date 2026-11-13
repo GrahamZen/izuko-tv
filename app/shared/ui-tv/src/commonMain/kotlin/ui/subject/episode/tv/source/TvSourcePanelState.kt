@@ -106,7 +106,7 @@ class TvSourcePanelState(
     private val playbackDiskCache: Boolean = false,
     /** 各数据源的类型与顺序, 见 [TvSourcePanelInput.sourceTypes] 与 [tvSourceTypesFlow]. */
     sourceTypes: Flow<Map<String, TvSourceType>> = flowOf(emptyMap()),
-    /** 在播的那一条眼下的状态, 见 [TvSourcePanelInput.playback]. */
+    /** 在播的那一条眼下的状态, 见 [TvSourcePanelInput.playback]. 要当场给出第一个值: 面板内容等每一项都到过一次才拼. */
     playback: Flow<TvSourcePlayback> = flowOf(TvSourcePlayback.Normal),
     /** 文案 (见 [setStrings]); 建状态时就给, 第一份内容不用等面板界面建好. */
     initialStrings: TvSourceStrings? = null,
