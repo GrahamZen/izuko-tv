@@ -374,8 +374,11 @@ data class TvSourcePanelInput(
     val playback: TvSourcePlayback = TvSourcePlayback.Normal,
 )
 
-/** 在播的那一条眼下怎么样 (表头「正在播放」的右端): 出错了 / 卡着缓冲 (挂了一阵) 时写出来, 让人知道为什么要换. */
-enum class TvSourcePlayback { Normal, Buffering, Failed }
+/**
+ * 在播的那一条眼下怎么样 (表头「正在播放」的右端): 出错了 / 卡着缓冲 (挂了一阵) 时写出来, 让人知道为什么要换.
+ * [Pending] = 还说不准: 面板打开时正在缓冲, 缓冲要挂满一阵才算数, 这之前右端空着 (标题照写、照常能按).
+ */
+enum class TvSourcePlayback { Pending, Normal, Buffering, Failed }
 
 /**
  * 一个数据源实例的类型 ([factoryId], 类型名 [factoryName]) 与它在数据源设置里排第几 ([order]).
@@ -918,11 +921,12 @@ fun buildTvSourcePanel(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvS
                     TvSourcePlayback.Failed -> strings.playbackFailed
                     TvSourcePlayback.Buffering -> strings.playbackBuffering
                     TvSourcePlayback.Normal -> media.properties.resolution.let { resolutionOf(it)?.displayName ?: it }
+                    TvSourcePlayback.Pending -> ""
                 },
                 accent = when (input.playback) {
                     TvSourcePlayback.Failed -> TvSourceAccent.Error
                     TvSourcePlayback.Buffering -> TvSourceAccent.Attention
-                    TvSourcePlayback.Normal -> TvSourceAccent.None
+                    TvSourcePlayback.Normal, TvSourcePlayback.Pending -> TvSourceAccent.None
                 },
                 icon = TvSourceRowIcon.Playing,
                 // 长按: 那一条的详情 (同在它那一屏里长按), 只开弹窗, 焦点不跳过去

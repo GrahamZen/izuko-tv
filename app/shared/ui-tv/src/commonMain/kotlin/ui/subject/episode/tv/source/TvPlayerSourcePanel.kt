@@ -52,8 +52,10 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.transformLatest
+import kotlinx.coroutines.flow.withIndex
 import me.him188.ani.app.domain.player.VideoLoadingState
 import org.openani.mediamp.MediaStatus
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import me.him188.ani.app.domain.media.download.MediaDownloadManager
 import me.him188.ani.app.tools.getOrZero
@@ -265,9 +267,8 @@ internal fun alliancePattern(alliance: String): String = buildString {
 
 /**
  * 在播的那一条眼下怎么样 (表头「正在播放」的右端, 见 [TvSourcePlayback]): 播放器报错 / 加载失败 = 播不了了; 缓冲挂了 [PLAYBACK_BUFFERING_DELAY]
- * 还没好 = 缓冲中 (一闪而过的缓冲不写, 免得那一格跟着跳).
+ * 还没好 = 缓冲中 (一闪而过的缓冲不写, 免得那一格跟着跳; 见 [withSettledBuffering]).
  */
-@OptIn(ExperimentalCoroutinesApi::class)
 private fun tvSourcePlaybackFlow(vm: EpisodeViewModel): Flow<TvSourcePlayback> =
     combine(vm.videoStatisticsFlow.map { it.videoLoadingState }, vm.player.state) { loading, state ->
         when {
@@ -275,12 +276,26 @@ private fun tvSourcePlaybackFlow(vm: EpisodeViewModel): Flow<TvSourcePlayback> =
             state.isBuffering -> TvSourcePlayback.Buffering
             else -> TvSourcePlayback.Normal
         }
-    }
-        .distinctUntilChanged()
-        .transformLatest { status ->
-            if (status == TvSourcePlayback.Buffering) delay(PLAYBACK_BUFFERING_DELAY)
+    }.withSettledBuffering()
+
+/**
+ * 缓冲挂满 [settle] 才报 [TvSourcePlayback.Buffering], 这之前照旧是上一个状态; 别的状态当场报.
+ * 一开始就在缓冲 (面板在缓冲中打开) 时没有上一个状态, 当场先报 [TvSourcePlayback.Pending]: 面板内容要等每一项都到过一次才拼
+ * (见 TvSourcePanelState), 这一项扣着不发, 面板就整块空着等满 [settle].
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+internal fun Flow<TvSourcePlayback>.withSettledBuffering(settle: Duration = PLAYBACK_BUFFERING_DELAY): Flow<TvSourcePlayback> =
+    distinctUntilChanged()
+        .withIndex()
+        .transformLatest { (index, status) ->
+            if (status == TvSourcePlayback.Buffering) {
+                if (index == 0) emit(TvSourcePlayback.Pending)
+                delay(settle)
+            }
             emit(status)
         }
+        // 一闪而过的缓冲之后报回原来的状态
+        .distinctUntilChanged()
 
 private val PLAYBACK_BUFFERING_DELAY = 3.seconds
 
