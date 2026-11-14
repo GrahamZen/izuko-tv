@@ -119,9 +119,24 @@ open class KtorHttpDownloader(
     private val throughputGate: DownloadThroughputGate? = null,
     /** 位置 ([DownloadState.location]) 的根目录; 那个位置现在没接上时为 `null`. 没有位置的任务用 [baseSaveDir] */
     private val locationRoot: (location: String) -> Path? = { null },
-) : HttpDownloader {
+) : HttpDownloader, RefreshableHttpDownloader {
 
     protected val scope = parentScope.childScope()
+
+    // 分段的地址被拒 (签名过期) 时换新地址接着下, 见 ExpiredSourceRecovery
+    override var sourceRefresher: DownloadSourceRefresher? = null
+    private val sourceRecovery = ExpiredSourceRecovery(
+        { sourceRefresher }, clock, ::getState, ::updateState,
+        probeTotalSize = { url, options -> probeRangeSupport(url, options)?.takeIf { it.second }?.first },
+        hls = HlsPlaylistReload(
+            resolve = { url, options -> resolveM3u8MediaPlaylist(url, options) },
+            segmentsOf = { state, resolved -> resolved.playlist.toSegments { Path(state.relativeSegmentCacheDir).resolve(it).toString() } },
+            persist = { state, resolved -> persistResolvedMediaPlaylist(rootOf(state.location).resolve(state.relativeSegmentCacheDir), resolved) },
+            downloadKeys = ::downloadHlsEncryptionKeys,
+            keyFilesOf = { state -> state.buildHlsKeyRelativePaths().values.map { Path(state.relativeSegmentCacheDir).resolve(it).toString() } },
+            deleteFile = { state, path -> deleteIfExists(rootOf(state.location).resolve(path)) },
+        ),
+    )
 
     /** [location] 位置现在的根目录, 没接上时为 `null` */
     protected fun rootOfOrNull(location: String?): Path? = if (location == null) baseSaveDir else locationRoot(location)
@@ -300,7 +315,7 @@ open class KtorHttpDownloader(
         val job = scope.launch(start = CoroutineStart.UNDISPATCHED) {
             try {
                 logger.info { "Downloading segments for $downloadId" }
-                downloadSegments(downloadId, effective)
+                sourceRecovery.restarting(downloadId) { downloadSegments(downloadId, effective) }
 
                 clearSegmentFailure(downloadId)
                 updateState(downloadId) {
@@ -400,7 +415,7 @@ open class KtorHttpDownloader(
         val job = scope.launch(start = CoroutineStart.UNDISPATCHED) {
             try {
                 logger.info { "Resumed: downloading segments for $downloadId" }
-                downloadSegments(downloadId, options)
+                sourceRecovery.restarting(downloadId) { downloadSegments(downloadId, options) }
 
                 updateState(downloadId) {
                     it.copy(status = MERGING)
@@ -1123,6 +1138,7 @@ open class KtorHttpDownloader(
         }
         // 落库的请求头里可能带着给本下载器看的提示 (见 optionsFor), 合进来之后再过一遍
         val requestOptions = optionsFor(options.copy(headers = snapshot.requestHeaders + options.headers))
+        val sources = sourceRecovery.forRun(snapshot, requestOptions) { optionsFor(options.copy(headers = it.requestHeaders)) }
         logger.info { "Downloading ${snapshot.segments.size} segments for $downloadId with concurrency=${options.maxConcurrentSegments}, maxBytesPerSecond=${options.maxBytesPerSecond}" }
         val semaphore = Semaphore(options.maxConcurrentSegments)
         // 整个下载共用一个: 限的是本次下载的总吞吐, 而不是每条分段各自的
@@ -1156,15 +1172,15 @@ open class KtorHttpDownloader(
                             // 圈住整个 withRetry 是错的: 退避 delay 也在里面, 而默认 100 次
                             // 重试、单次封顶 30 秒, 一条彻底失效的分段能占着名额四十多分钟 ——
                             // 六条这样的分段 (名额总数) 就让全应用的缓存下载一起停摆.
-                            globalSegmentLimit.withPermit {
+                            sources.attempt(seg) { segment, segmentOptions -> globalSegmentLimit.withPermit {
                                 downloadSingleSegment(
-                                    seg, requestOptions, rateLimiter, root,
+                                    segment, segmentOptions, rateLimiter, root,
                                     onContentLength = { length -> if (seg.byteSize < 0) setSegmentSize(downloadId, seg.index, length) },
                                 ) { bytes ->
                                     received += bytes
                                     addInFlightBytes(downloadId, bytes)
                                 }
-                            }
+                            } }
                         }
                         addInFlightBytes(downloadId, -received)
                         received = 0L
@@ -1538,7 +1554,7 @@ open class KtorHttpDownloader(
                 throw ce
             } catch (ex: Throwable) {
                 onFailure(attempt, ex)
-                if (attempt >= maxRetries) {
+                if (attempt >= maxRetries || ex is DownloadSourceReplacedException) {
                     logger.info {
                         "Segment download failed after $attempt/$maxRetries attempts; no more retries. " +
                                 "Error: ${ex.message}"

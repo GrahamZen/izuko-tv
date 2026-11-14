@@ -25,6 +25,7 @@ import me.him188.ani.app.domain.player.isNotVideoResponse
 import me.him188.ani.app.platform.NETWORK_SETTLE
 import me.him188.ani.app.platform.NetworkStatus
 import me.him188.ani.datasources.api.Media
+import me.him188.ani.utils.coroutines.REJECTED_LINK_STATUSES
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
@@ -105,9 +106,6 @@ private val SEEK_PREVIEW_RELOAD_DELAY = 3.seconds
  * 不限的话放到坏掉的那一段 (分片没了) 会被拒绝、重取、放到同一处又被拒绝, 没完没了.
  */
 private val LINK_REFRESH_INTERVAL = 30.minutes
-
-/** 地址本身被拒绝的状态码; 取新地址可能有用. 服务器出错 (5xx) 与限流不算. */
-private val REJECTED_LINK_STATUSES = setOf(401, 403, 404, 410, 412)
 
 /** 地址被服务器拒绝, 或回的不是视频 (站点把过期的地址转到了网页). */
 private fun Throwable.isLinkRejected(): Boolean = httpErrorStatus() in REJECTED_LINK_STATUSES || isNotVideoResponse()
