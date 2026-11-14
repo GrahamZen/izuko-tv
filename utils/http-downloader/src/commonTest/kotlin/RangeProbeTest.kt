@@ -14,6 +14,7 @@ import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.MockRequestHandleScope
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.HttpTimeoutCapability
 import io.ktor.client.plugins.cookies.HttpCookies
 import io.ktor.client.request.HttpRequestData
 import io.ktor.client.request.HttpResponseData
@@ -149,6 +150,32 @@ class RangeProbeTest {
         // 照样按范围分段 (整条下只开一条连接, 网盘按连接限速时慢上百倍、也不能续传)
         assertEquals(2, state.segments.size)
         assertEquals(2, probes)
+    }
+
+    @Test
+    fun `a ranged segment gets a time limit by its size`() = runTest(dispatcher) {
+        val timeouts = mutableListOf<Pair<String?, Long?>>()
+        val downloader = downloader { request ->
+            // 记下每个请求的总时长上限 (null = 用 client 的默认, 正式 client 是 5 分钟)
+            synchronized(timeouts) {
+                timeouts += request.headers[HttpHeaders.Range] to request.getCapabilityOrNull(HttpTimeoutCapability)?.requestTimeoutMillis
+            }
+            driveFile(request)
+        }
+        val id = DownloadId("slow-segments")
+        downloader.downloadWithId(
+            url = "https://dl.drive.test/file.mkv?auth_key=5",
+            downloadId = id,
+            options = DownloadOptions(headers = mapOf(HttpHeaders.Cookie to cookie)),
+        )
+        downloader.joinDownload(id)
+
+        assertEquals(DownloadStatus.COMPLETED, assertNotNull(downloader.getState(id)).status)
+        // 网盘按连接限速时一段 5 MB 也要四五分钟: 5 MB 的那一段按每秒 5 KB 算给 1024 秒, 剩下 1 KB 的那一段不少于 5 分钟;
+        // 探测照旧 5 秒
+        val segments = timeouts.filter { it.first != "bytes=0-0" }.toMap()
+        assertEquals(mapOf<String?, Long?>("bytes=0-5242879" to 1_024_000L, "bytes=5242880-5243903" to 300_000L), segments)
+        assertEquals(5_000L, timeouts.first { it.first == "bytes=0-0" }.second)
     }
 
     @Test
