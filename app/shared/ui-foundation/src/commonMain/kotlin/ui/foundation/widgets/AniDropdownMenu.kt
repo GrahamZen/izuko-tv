@@ -65,6 +65,7 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
+import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
 
 /**
  * 下拉菜单. 焦点导航 (TV) 上与弹窗同一套外观: 面板色、[CENTERED_PANEL_SHAPE] 圆角、不画阴影 (弹窗都是平的,
@@ -106,7 +107,8 @@ fun AniDropdownMenu(
     DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
-        modifier = modifier,
+        // 菜单是独立窗口: 遥控器的播放/暂停与全局长按接回主窗口 (见 tvOverlayWindowKeys)
+        modifier = modifier.tvOverlayWindowKeys(onDismissRequest),
         offset = offset,
         properties = properties,
         shape = CENTERED_PANEL_SHAPE,
@@ -150,7 +152,8 @@ private fun TvPositionedMenu(
             label = "alpha",
         ) { if (it) 1f else 0f }
         Surface(
-            Modifier.graphicsLayer {
+            // 菜单是独立窗口: 遥控器的播放/暂停与全局长按接回主窗口 (见 tvOverlayWindowKeys)
+            Modifier.tvOverlayWindowKeys(onDismissRequest).graphicsLayer {
                 scaleX = scale
                 scaleY = scale
                 this.alpha = alpha

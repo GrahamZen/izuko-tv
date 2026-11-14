@@ -34,7 +34,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.ifThen
-import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
 import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
 import me.him188.ani.app.ui.foundation.widgets.AniOutlinedButton
 import me.him188.ani.app.ui.foundation.widgets.AniTextButton
@@ -80,9 +79,7 @@ fun DanmakuTimeShiftDialog(
     val restoreText = stringResource(Lang.subject_episode_danmaku_time_shift_restore)
 
     AniAlertDialog(
-        // 对话框是独立窗口, 按键到不了 TV 播放页的根按键路由 —— 它从播放器的弹幕面板开出来,
-        // 画面就在后面放着, 遥控器播放暂停键仍该管用. 播放页之外为空操作
-        modifier = Modifier.testTag("danmaku-time-shift-dialog").tvOverlayWindowKeys(onDismissRequest),
+        modifier = Modifier.testTag("danmaku-time-shift-dialog"),
         onDismissRequest = onDismissRequest,
         confirmButton = {
             AniTextButton(
