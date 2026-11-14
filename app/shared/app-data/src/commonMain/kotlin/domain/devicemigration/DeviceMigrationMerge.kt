@@ -24,9 +24,10 @@ import me.him188.ani.app.domain.torrent.peer.PeerFilterSubscription
  */
 internal object DeviceMigrationMerge {
     /**
-     * 跟着设备走的设置, 留新电视自己的: 缓存目录 (`MediaCacheSettings`, 路径是这台设备上的).
+     * 跟着设备走的设置, 留新电视自己的: 缓存目录 (`MediaCacheSettings`, 路径是这台设备上的);
+     * 一起看 (`TogetherSettings`: 设备号即自己的房间号、成员编号, 两台电视用同一份会打开同一个房间、互相把对方的消息当成自己的).
      */
-    val DEVICE_PREFERENCE_KEYS = setOf("cachePreferences")
+    val DEVICE_PREFERENCE_KEYS = setOf("cachePreferences", "togetherSettings")
 
     /** 设置: 旧电视的整份, 只有 [keep] 里的键留新电视自己的. */
     fun preferences(

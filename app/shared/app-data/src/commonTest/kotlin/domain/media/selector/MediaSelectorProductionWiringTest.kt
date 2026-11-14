@@ -238,6 +238,7 @@ class MediaSelectorProductionWiringTest {
             override val anitorrentConfig get() = error("not used")
             override val pikpakConfig get() = error("not used")
             override val cloudDriveAccounts get() = error("not used")
+            override val togetherSettings get() = error("not used")
             override val cloudDriveAddedShares get() = error("not used")
             override val torrentPeerConfig get() = error("not used")
             override val oneshotActionConfig get() = error("not used")

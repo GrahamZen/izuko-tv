@@ -55,6 +55,21 @@ class DeviceMigrationMergeTest {
     private fun entry(key: String, value: String) = PreferenceEntry(key, PreferenceEntry.Type.STRING, value)
 
     @Test
+    fun `一起看的设备号与成员编号不随设置搬 新电视用自己的或第一次用时重新生成`() {
+        val old = listOf(entry("uiSettings", "旧"), entry("togetherSettings", "旧电视的设备号"))
+        // 新电视用过一起看: 留它自己的
+        assertEquals(
+            mapOf("uiSettings" to "旧", "togetherSettings" to "新电视的设备号"),
+            DeviceMigrationMerge.preferences(old, listOf(entry("togetherSettings", "新电视的设备号"))).associate { it.key to it.value },
+        )
+        // 新电视没用过: 不带旧电视的, 第一次用时生成新的 (两台同一个设备号会打开同一个房间, 互相把对方当成自己)
+        assertEquals(
+            mapOf("uiSettings" to "旧"),
+            DeviceMigrationMerge.preferences(old, emptyList()).associate { it.key to it.value },
+        )
+    }
+
+    @Test
     fun `每部番的偏好按键合并 两边都有的取旧电视的`() {
         val merged = DeviceMigrationMerge.keyed(
             incoming = listOf(entry("search_keywords:1", "旧"), entry("track_choice:2", "旧")),

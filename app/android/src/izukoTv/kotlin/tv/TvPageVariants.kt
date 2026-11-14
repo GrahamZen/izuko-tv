@@ -147,6 +147,7 @@ import me.him188.ani.app.ui.remote.RegisterTvRemoteBackgroundPlayer
 import me.him188.ani.app.ui.remote.TrackTvRemoteForeground
 import me.him188.ani.app.ui.remote.TvRemoteControl
 import me.him188.ani.app.ui.remote.TvRemoteControlDialogHost
+import me.him188.ani.app.ui.together.TvTogetherHost
 import me.him188.ani.app.ui.whatsnew.TvWhatsNew
 import me.him188.ani.app.ui.whatsnew.TvWhatsNewHost
 import me.him188.ani.app.ui.remote.TvRemoteLoginCard
@@ -463,6 +464,8 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         )
         // 选人页 (启动时或侧边栏头像的「切换用户」打开)
         TvUserProfilePickerHost(aniNavigator)
+        // 一起看: 跟随房主时被带到房主那一集
+        TvTogetherHost(aniNavigator, playbackEntry)
         // 「Web 控制台」二维码弹窗: 侧边栏 (主页 / 搜索页 / 详情页) 与头像菜单都只调 TvRemoteControl.showDialog
         TvRemoteControlDialogHost()
         // 更新后第一次打开时的「本版新功能」页 / 发版后补的通知 (见 TvWhatsNew)

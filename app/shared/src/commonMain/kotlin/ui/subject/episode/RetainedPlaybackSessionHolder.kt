@@ -396,6 +396,15 @@ class RetainedPlaybackSessionHolder : ViewModel(), PlaybackSessionEntry, KoinCom
         appForeground.value = foreground
     }
 
+    /**
+     * 设置里关掉了保留: 结束保留着的会话。此后退出播放页会话就结束, 不存在「会话还在而页面不在眼前」,
+     * [PlaybackActivity.onScreen] 回到恒为真 (这之后也没有人再报它)。
+     */
+    fun endRetention() {
+        close()
+        playbackActivity.setOnScreen(true)
+    }
+
     override fun close() {
         pendingNotice = null
         sessions.toList().forEach { destroy(it) }

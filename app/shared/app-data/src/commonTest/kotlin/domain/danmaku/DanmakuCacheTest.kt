@@ -278,6 +278,7 @@ class DanmakuCacheTest {
         override val anitorrentConfig: Settings<AnitorrentConfig> by lazy { error("no implemented") }
         override val pikpakConfig: Settings<PikPakConfig> by lazy { error("no implemented") }
         override val cloudDriveAccounts: Settings<CloudDriveAccounts> by lazy { error("no implemented") }
+        override val togetherSettings get() = error("not used")
         override val cloudDriveAddedShares: Settings<CloudDriveAddedShares> by lazy { error("no implemented") }
         override val torrentPeerConfig: Settings<TorrentPeerConfig> by lazy { error("no implemented") }
         override val oneshotActionConfig: Settings<OneshotActionConfig> by lazy { error("no implemented") }

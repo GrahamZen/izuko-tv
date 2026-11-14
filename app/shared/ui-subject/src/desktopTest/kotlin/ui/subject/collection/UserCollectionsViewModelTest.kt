@@ -217,6 +217,7 @@ class UserCollectionsViewModelTest {
         override val anitorrentConfig: Settings<AnitorrentConfig> by lazy { error("not implemented") }
         override val pikpakConfig: Settings<PikPakConfig> by lazy { error("not implemented") }
         override val cloudDriveAccounts: Settings<CloudDriveAccounts> by lazy { error("not implemented") }
+        override val togetherSettings get() = error("not used")
         override val cloudDriveAddedShares: Settings<CloudDriveAddedShares> by lazy { error("not implemented") }
         override val torrentPeerConfig: Settings<TorrentPeerConfig> by lazy { error("not implemented") }
         override val oneshotActionConfig: Settings<OneshotActionConfig> by lazy { error("not implemented") }
