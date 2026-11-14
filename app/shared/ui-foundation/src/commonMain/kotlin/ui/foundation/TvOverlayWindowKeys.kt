@@ -10,6 +10,7 @@
 package me.him188.ani.app.ui.foundation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -36,6 +37,39 @@ val TV_PLAY_PAUSE_KEYS = setOf(Key.MediaPlayPause, Key.MediaPlay, Key.MediaPause
 val LocalTvPlayPauseHandler = staticCompositionLocalOf<(() -> Unit)?> { null }
 
 /**
+ * 正在显示的播放页的播放/暂停处理器, 播放页在组合里时登记 ([RegisterTvPlayPauseHandler]).
+ *
+ * 给不在播放页组合里的弹层用: 挂在应用根部的弹层 (一起看、网盘空间不足这类随时可能弹出的) 拿不到
+ * [LocalTvPlayPauseHandler], 却同样会盖在正在放的画面上. [tvOverlayWindowKeys] 在本地拿不到时读这里.
+ * 只在主线程读写.
+ */
+object TvVisiblePlayerPlayPause {
+    private class Entry(val handler: () -> Unit)
+
+    private val entries = ArrayList<Entry>()
+
+    /** 后登记的算数 (换集时新旧两个播放页短暂并存) */
+    val current: (() -> Unit)? get() = entries.lastOrNull()?.handler
+
+    /** @return 注销函数 */
+    fun register(handler: () -> Unit): () -> Unit {
+        val entry = Entry(handler)
+        entries.add(entry)
+        return { entries.remove(entry) }
+    }
+}
+
+/** 播放页登记自己的播放/暂停处理器 (见 [TvVisiblePlayerPlayPause]), 离开组合自动注销 */
+@Composable
+fun RegisterTvPlayPauseHandler(handler: () -> Unit) {
+    val current by rememberUpdatedState(handler)
+    DisposableEffect(Unit) {
+        val unregister = TvVisiblePlayerPlayPause.register { current() }
+        onDispose { unregister() }
+    }
+}
+
+/**
  * **独立窗口 (Dialog / Popup / DropdownMenu) 的遥控器全局键桥**: 挂在弹层内容根上, 把本窗口
  * 收到的全局键接回主窗口的处理者.
  *
@@ -48,26 +82,30 @@ val LocalTvPlayPauseHandler = staticCompositionLocalOf<(() -> Unit)?> { null }
  *
  * ## 三件事
  *
- * 1. **播放/暂停键**: 就地切换播放状态 (读 [LocalTvPlayPauseHandler]). 不碰焦点也不碰控制层 ——
- *    弹层各有各的焦点归属与关闭后的落点, 抢了就乱.
+ * 1. **播放/暂停键**: 就地切换播放状态 (读 [LocalTvPlayPauseHandler], 弹层不在播放页的组合里时读
+ *    [TvVisiblePlayerPlayPause]). 不碰焦点也不碰控制层 —— 弹层各有各的焦点归属与关闭后的落点, 抢了就乱.
  * 2. **全局长按 (返回 / 播放)**: 转发给根部跟踪器. **短按一律不消费**, 弹层自己的返回照旧只关
  *    一层; 只有长按被跟踪器认领时才消费.
  * 3. **认领的那一刻顺手关掉本窗口** ([onDismissRequest]): 长按的语义是"一步到位", 留着这层弹窗
  *    会挡在刚收干净的画面 (或刚弹出的快捷菜单) 前面. 一次手势只关一次 —— 认领之后剩下的连发与
  *    抬起还会进来 (窗口关掉之前), 不设标志会重复调用.
  *
- * 播放页之外 / 非 TV 形态下三个 local 都为 null, 整个修饰符退化成空操作, 同一个弹层组件在别的
- * 页面零副作用.
+ * 没有播放页在显示时播放/暂停键不管 (交给弹层自己); 没有长按宿主 (非 TV 形态, 或弹层挂在宿主之外的应用最根部) 时不转发长按.
+ * 两样都没有就什么都不做. 通用的弹层组件 ([AniCenteredPanelDialog][me.him188.ani.app.ui.foundation.widgets.AniCenteredPanelDialog]、
+ * [AniAlertDialog][me.him188.ani.app.ui.foundation.widgets.AniAlertDialog]、
+ * [AniDropdownMenu][me.him188.ani.app.ui.foundation.widgets.AniDropdownMenu]) 自己挂了这一层, 用它们的不用再挂;
+ * 自己开 Dialog / Popup 的要挂.
  *
  * @param onDismissRequest 关掉本弹层; 传 null 则长按只做全局动作、本窗口留着 (仅用于本身
  *   就是全局菜单的弹层)
  */
 @Composable
 fun Modifier.tvOverlayWindowKeys(onDismissRequest: (() -> Unit)? = null): Modifier {
-    val playPause = LocalTvPlayPauseHandler.current
+    val localPlayPause = LocalTvPlayPauseHandler.current
     val backHost = LocalTvBackLongPressHost.current
     val playHost = LocalTvPlayLongPressHost.current
-    if (playPause == null && backHost == null && playHost == null) return this
+    // 这里不因为几个 local 都为空就不装: 挂在应用最根部的弹层 (打不开链接时的二维码这类) 拿不到它们,
+    // 但播放页可能就在后面放着 (播放/暂停键在按键时从 TvVisiblePlayerPlayPause 现取)
     val dismiss by rememberUpdatedState(onDismissRequest)
     // 普通 var 而不是 snapshot 状态: 按键回调里写 snapshot 会让每一发连发都触发一轮失效
     val gesture = remember { TvOverlayGestureState() }
@@ -81,6 +119,8 @@ fun Modifier.tvOverlayWindowKeys(onDismissRequest: (() -> Unit)? = null): Modifi
                 dismiss?.invoke()
             }
         }
+        // 按键时现取: 弹层开着的时候播放页也可能刚进来或刚退出
+        val playPause = localPlayPause ?: TvVisiblePlayerPlayPause.current
         if (!claimed && playPause != null && event.key in TV_PLAY_PAUSE_KEYS) {
             if (event.type == KeyEventType.KeyDown) playPause()
             return@onPreviewKeyEvent true

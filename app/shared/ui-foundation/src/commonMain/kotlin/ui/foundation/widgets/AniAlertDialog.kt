@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.window.DialogProperties
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
+import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
 import me.him188.ani.app.ui.foundation.dialogs.DialogWindowDimAmount
 
 /**
@@ -80,8 +81,10 @@ fun AniAlertDialog(
                 DialogWindowDimAmount(CENTERED_PANEL_WINDOW_DIM)
                 confirmButton()
             },
-            // modifier 落在包住对话框面板、与它一样大的那层上: 底色画在面板后面, 描边叠在上面
+            // modifier 落在包住对话框面板、与它一样大的那层上: 底色画在面板后面, 描边叠在上面.
+            // 对话框是独立窗口: 遥控器的播放/暂停与全局长按接回主窗口 (见 tvOverlayWindowKeys)
             modifier = modifier
+                .tvOverlayWindowKeys(onDismissRequest)
                 .drawBehind {
                     drawOutline(ANI_GLASS_PANEL_SHAPE.createOutline(size, layoutDirection, this), panelColor)
                 }
