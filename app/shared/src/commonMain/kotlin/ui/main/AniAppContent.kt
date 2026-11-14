@@ -175,10 +175,11 @@ fun AniAppContent(aniNavigator: AniNavigator) {
     // 一起死; 它同时是入口把手 (PlaybackSessionEntry), 经 CompositionLocal 给到 NavHost 内的入口.
     val retainPlaybackSession = LocalAniUiBehavior.current.retainPlaybackSession &&
             LocalThemeSettings.current.tvRetainPlaybackSession
+    ReportAppForegroundToPlaybackActivity()
     val sessionHolder = viewModel { RetainedPlaybackSessionHolder() }
     // 设置里关掉时把已经保留着的会话结束掉, 否则它会一直活到应用退出
     LaunchedEffect(sessionHolder, retainPlaybackSession) {
-        if (!retainPlaybackSession) sessionHolder.close()
+        if (!retainPlaybackSession) sessionHolder.endRetention()
     }
     val playbackSessionHolder = sessionHolder.takeIf { retainPlaybackSession }
     if (playbackSessionHolder != null) {

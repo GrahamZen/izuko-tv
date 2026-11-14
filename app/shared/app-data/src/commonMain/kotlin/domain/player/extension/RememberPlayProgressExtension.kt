@@ -31,6 +31,7 @@ import me.him188.ani.app.domain.episode.SubjectEpisodeInfoBundle
 import me.him188.ani.app.domain.episode.UnsafeEpisodeSessionApi
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
+import me.him188.ani.app.domain.together.playbackAutomationSuppressed
 import org.koin.core.Koin
 import org.openani.mediamp.MediaStatus
 import org.openani.mediamp.source.MediaData
@@ -60,6 +61,7 @@ class RememberPlayProgressExtension(
     private val initialReportDelay: Duration = 5.seconds,
 ) : PlayerExtension(name = "SaveProgressExtension") {
     private val playProgressRepository: EpisodePlayHistoryRepository by koin.inject()
+    private val automationSuppressed = koin.playbackAutomationSuppressed()
     private val latestInfoBundleMutex = Mutex()
     private val latestInfoBundles = mutableMapOf<Int, SubjectEpisodeInfoBundle>()
 
@@ -172,6 +174,12 @@ class RememberPlayProgressExtension(
                     haveResumedOnce = true
                 }
                 if (haveResumedOnce) return false
+                // 一起看跟随中从房主的位置开始, 不回到自己存下的进度
+                if (automationSuppressed.value) {
+                    haveResumedOnce = true
+                    resumedMediaData = mediaData
+                    return false
+                }
                 val reload = reloadPosition.value?.takeIf { it.first == episodeSession.episodeId }
                 val positionMillis = reload?.second
                     ?: playProgressRepository.getResumePositionMillisByEpisodeId(episodeSession.episodeId)

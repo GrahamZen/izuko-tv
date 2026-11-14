@@ -104,6 +104,7 @@ internal object RemoteDebugActions {
                     )
                 }
                 request.path.startsWith("api/debug/settings/") -> RemoteDebugSettingsPage.handle(request, navigator)
+                request.path.startsWith("api/debug/together/") -> RemoteDebugTogether.handle(request, scope)
                 else -> null
             }
         }.getOrElse {
