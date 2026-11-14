@@ -302,6 +302,26 @@ BT 播放时在种子里找视频旁边的字幕一起下载，这类改为低�
 这集还没资源才兜底选的，同「记忆源」的规则；自动选上的、不在线索上的（线索这一集暂时找不到而兜底选的、别的版本的缓存）不换。
 顺着线索播起来的只更新线索记下的位置（`EpisodeContinuation.updated`：在线源补上 / 换成这一集所在的条目页），不换线索。
 
+一起看时还会顺着房间里别人正在播的线索找（`PlaybackLineageSelection.selectAlong`，见 together.md「片源共享」）：步骤与本机线索相同，
+和本机的选源同时进行，谁先选上算谁的；那条线索失效时不忘掉本机记的线索与记住的源。
+
+### 别处交来的播放地址
+
+`ExternalLinkMedia`（公共组件）把一个能直接播的地址（`ExternalLink`：地址、请求头、标题）做成一条临时资源：不来自本机任何数据源，
+不进候选列表，由交来的一方直接选上，播它不需要本机有那个数据源、也不用解析。与拖入的本地文件（`DroppedFileMedia`）同类。
+交来的一方给一个来源（`Origin`：标记 + 出错时怎么办）；现在的使用方是一起看（房间里别人正在播的地址，见 together.md「片源共享」）。
+
+- 播放：`HttpStreamingMediaResolver` 取 `ExternalLinkMedia.headersOf` 带上请求头。
+- 不记成偏好源与播放线索（`ObserveWebMediaSourcePreferenceExtension`、`PlaybackLineageExtension`）。
+- 播放出错（`PlayerLoadErrorHandler` 先问 `ExternalLinkMedia.recoverFromError`）：`KEEP` 留着报错；`FALL_BACK` 换回它顶掉的那条资源，
+  没顶掉谁的清掉选择、照常自动选源。出错的站点（主机名）记 30 分钟：想自动换上交来的地址的一方先问 `ExternalLinkMedia.failedHereRecently`，
+  是就不试（同一个站点的下一个地址多半也播不了：本机的网络连不上它，或地址绑了交来那一方的 IP）。
+- 界面上的数据源名按来源给（ui-mediaselect `externalLinkSourceName`，控制台 `RemotePlayerHandle.sourceName`）。
+- 反过来，本机正在播的地址能不能交给别的设备由 `ExternalLinkMedia.shareableOf` 判断：只交网页类数据源解析出来的公网 http(s) 地址，
+  不带 Cookie / Authorization；网盘、媒体服务器、BT、本机与局域网的都不交。
+- 收别处交来的地址之前先问 `ExternalLinkMedia.accepts`（同一套：公网 http(s)、不带登录信息、大小在限度内）：不替别人去取本机、局域网里的东西。
+- 「播放失败自动换源」关着时出错处理整个不运行，交来的地址播不了也同别的资源一样留着报错。
+
 播放出错换源时也先在线索上换（`PlaybackLineageSelection.switchOnError`，经 `PlayerLoadErrorHandler` 的 `switchOnLineage`）：
 手上的候选里还有线索上别的资源（没拉黑的，例如同一个种子被另一个站搜到）就换它，不直接去取、不等数据源；没有才走下文的换源。
 

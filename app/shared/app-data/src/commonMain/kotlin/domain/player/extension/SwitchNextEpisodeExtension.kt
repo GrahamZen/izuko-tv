@@ -22,6 +22,7 @@ import me.him188.ani.app.domain.episode.EpisodeSession
 import me.him188.ani.app.domain.settings.GetVideoScaffoldConfigUseCase
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
+import me.him188.ani.app.domain.together.playbackAutomationSuppressed
 import org.koin.core.Koin
 import org.openani.mediamp.MediaStatus
 import org.openani.mediamp.MediampPlayer
@@ -40,6 +41,7 @@ class SwitchNextEpisodeExtension(
     private val getNextEpisode: suspend (currentEpisodeId: Int) -> Int?,
 ) : PlayerExtension("SwitchNextEpisode") {
     private val getVideoScaffoldConfigUseCase: GetVideoScaffoldConfigUseCase by koin.inject()
+    private val automationSuppressed = koin.playbackAutomationSuppressed()
 
     override fun onStart(episodeSession: EpisodeSession, backgroundTaskScope: ExtensionBackgroundTaskScope) {
         val mediaLoaded = CompletableDeferred<Unit>()
@@ -77,6 +79,8 @@ class SwitchNextEpisodeExtension(
         player.events.collect { event ->
             if (event !is PlaybackEvent.MediaEnded) return@collect
             val playedBeforeEnd = played.getAndUpdate { false }
+            // 一起看跟随中换不换集听房主的
+            if (automationSuppressed.value) return@collect
             val durationMillis = event.durationMillis
             val closeToEnd = durationMillis != null && durationMillis - event.finalPositionMillis < 5000
 

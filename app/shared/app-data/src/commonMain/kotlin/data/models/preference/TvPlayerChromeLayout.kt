@@ -80,8 +80,7 @@ enum class TvPlayerChromeItem(
     DIVIDER_2(TvPlayerChromeRow.BOTTOM, isSeparator = true),
     DANMAKU_TOGGLE(TvPlayerChromeRow.BOTTOM),
     DANMAKU_SETTINGS(TvPlayerChromeRow.BOTTOM),
-    // 「一起看」要 Ani 服务器牵线, 直连版没有这条路
-    WATCH_TOGETHER(TvPlayerChromeRow.BOTTOM, isConditional = true, isRetired = true),
+    WATCH_TOGETHER(TvPlayerChromeRow.BOTTOM),
     SPACER(TvPlayerChromeRow.BOTTOM, isSeparator = true),
     SUBTITLE_TRACK(TvPlayerChromeRow.BOTTOM, isConditional = true),
     /** 片源有两条以上音轨时才出现 (国日双语之类). */

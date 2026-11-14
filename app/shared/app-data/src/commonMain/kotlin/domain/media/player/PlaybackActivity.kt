@@ -41,6 +41,18 @@ class PlaybackActivity {
         _onScreen.value = visible
     }
 
+    private val _appForeground = MutableStateFlow(true)
+
+    /**
+     * 应用整体在不在前台. 按 HOME 走开、电视把信号源切去别处时为 `false`: 这时播放页可能还在导航栈顶 ([onScreen] 为 `true`),
+     * 但用户看不到它. 由根部的生命周期事件上报 (退到后台就把播放器按停的界面才报, 别的平台后台照常播, 恒为 `true`).
+     */
+    val appForeground: StateFlow<Boolean> = _appForeground.asStateFlow()
+
+    fun setAppForeground(foreground: Boolean) {
+        _appForeground.value = foreground
+    }
+
     /** [current] 此刻的值. */
     val currentValue: ActivePlayback? get() = state.value?.playback
 

@@ -32,6 +32,7 @@ import kotlinx.coroutines.withContext
 import me.him188.ani.app.domain.episode.EpisodeSession
 import me.him188.ani.app.domain.episode.MediaFetchSelectBundle
 import me.him188.ani.app.domain.media.DroppedFileMedia
+import me.him188.ani.app.domain.media.ExternalLinkMedia
 import me.him188.ani.app.domain.media.continuation.PlaybackLineageSelection
 import me.him188.ani.app.domain.media.download.MediaDownloadManager
 import me.him188.ani.app.domain.media.fetch.MediaFetchSession
@@ -40,6 +41,7 @@ import me.him188.ani.app.domain.media.fetch.isPaused
 import me.him188.ani.app.domain.media.resolver.WebViewDeferral
 import me.him188.ani.app.domain.media.selector.MediaAutoSelector
 import me.him188.ani.app.domain.media.selector.MediaSelector
+import me.him188.ani.app.domain.media.selector.MediaSelectorAutoSelectUseCase
 import me.him188.ani.app.domain.media.selector.MediaSelectorSourceTiers
 import me.him188.ani.app.domain.mediasource.GetMediaSelectorSourceTiersUseCase
 import me.him188.ani.app.domain.player.VideoLoadingState
@@ -69,6 +71,7 @@ class SwitchMediaOnPlayerErrorExtension(
     private val getVideoScaffoldConfigUseCase: GetVideoScaffoldConfigUseCase by koin.inject()
     private val getMediaSelectorSettingsFlowUseCase: GetMediaSelectorSettingsFlowUseCase by koin.inject()
     private val lineageSelection: PlaybackLineageSelection by koin.inject()
+    private val autoSelect: MediaSelectorAutoSelectUseCase by koin.inject()
     private val getSourceTiersUseCase: GetMediaSelectorSourceTiersUseCase by koin.inject()
     private val mediaCacheManager: MediaDownloadManager by koin.inject()
     private val network: NetworkStatus = koin.getOrNull<NetworkStatus>() ?: NetworkStatus.AlwaysAvailable
@@ -108,6 +111,7 @@ class SwitchMediaOnPlayerErrorExtension(
             switchOnLineage = { session, selector, blacklist, failed ->
                 lineageSelection.switchOnError(context.subjectId, session, selector, blacklist, failed)
             },
+            selectAsUsual = { session, selector -> autoSelect(session, selector) },
         )
 
         coroutineScope {
@@ -339,6 +343,8 @@ internal class PlayerLoadErrorHandler(
     private val getSourceTiers: suspend () -> MediaSelectorSourceTiers,
     /** 先在播放线索上换 (见 [PlaybackLineageSelection.switchOnError]), 换了返回 true */
     private val switchOnLineage: suspend (MediaFetchSession, MediaSelector, Set<String>, Media?) -> Boolean = { _, _, _, _ -> false },
+    /** 照常选源 (别处交来的地址播不了、它又没顶掉别的资源时, 见 [ExternalLinkMedia.recoverFromError]) */
+    private val selectAsUsual: suspend (MediaFetchSession, MediaSelector) -> Unit = { _, _ -> },
 ) {
     /**
      * 不可变集合本身可以安全共享, 但 `x = x.add(...)` 是读-改-写三步, 而拉黑来自三条并发的路
@@ -382,6 +388,9 @@ internal class PlayerLoadErrorHandler(
             // 用户拖入的本地文件: 用户明确要播放这个文件, 保留报错, 不替换为其他资源
             logger.info { "Player errored on a dropped file, skip automatic switch" }
             return
+        }
+        if (failedMedia != null && ExternalLinkMedia.isExternalLink(failedMedia)) {
+            return ExternalLinkMedia.recoverFromError(failedMedia, mediaSelector) { selectAsUsual(session, mediaSelector) }
         }
 
         // 播放出错了

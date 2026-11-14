@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import me.him188.ani.app.domain.episode.EpisodeSession
 import me.him188.ani.app.domain.media.DroppedFileMedia
+import me.him188.ani.app.domain.media.ExternalLinkMedia
 import me.him188.ani.app.domain.media.fetch.MediaSourceFetchResult
 import me.him188.ani.app.domain.media.fetch.MediaSourceFetchState
 import me.him188.ani.app.domain.media.selector.eventHandling
@@ -77,6 +78,7 @@ class ObserveWebMediaSourcePreferenceExtension(
                         context.player.playbackStarts().collect {
                             val media = bundle.mediaSelector.selected.value ?: return@collect
                             if (media.kind != MediaSourceKind.WEB || DroppedFileMedia.isDroppedFile(media)) return@collect
+                            if (ExternalLinkMedia.isExternalLink(media)) return@collect
                             if (getMediaSelectorSettings().first().preferKind == MediaSourceKind.BitTorrent) return@collect
                             if (getPreferredWebMediaSource(context.subjectId).first() == media.mediaSourceId) return@collect
                             logger.info { "Playing web source ${media.mediaSourceId}, remembering it for subject ${context.subjectId}" }
