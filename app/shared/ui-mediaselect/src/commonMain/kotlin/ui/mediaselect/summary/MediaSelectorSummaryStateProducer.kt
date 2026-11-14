@@ -99,7 +99,7 @@ class MediaSelectorSummaryStateProducer(
                                     sourceName = if (DroppedFileMedia.isDroppedFile(selected.original)) {
                                         droppedFileSourceName()
                                     } else {
-                                        selected.original.mediaSourceId
+                                        externalLinkSourceName(selected.original) ?: selected.original.mediaSourceId
                                     },
                                     sourceIconUrl = "",
                                 ),

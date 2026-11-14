@@ -18,6 +18,7 @@ import kotlinx.coroutines.launch
 import me.him188.ani.app.data.repository.media.PlaybackLineageRepository
 import me.him188.ani.app.domain.episode.EpisodeSession
 import me.him188.ani.app.domain.media.DroppedFileMedia
+import me.him188.ani.app.domain.media.ExternalLinkMedia
 import me.him188.ani.app.domain.media.continuation.EpisodeContinuation
 import me.him188.ani.app.domain.media.continuation.PlaybackLineage
 import me.him188.ani.app.domain.media.continuation.continuationTarget
@@ -61,7 +62,7 @@ class PlaybackLineageExtension(
                     }
                     context.player.playbackStarts().collect {
                         val media = bundle.mediaSelector.selected.value ?: return@collect
-                        if (DroppedFileMedia.isDroppedFile(media)) return@collect
+                        if (DroppedFileMedia.isDroppedFile(media) || ExternalLinkMedia.isExternalLink(media)) return@collect
                         val manual = lastSelection.value?.takeIf { it.first == media }?.second == SelectOrigin.MANUAL
                         record(media, manual)
                     }

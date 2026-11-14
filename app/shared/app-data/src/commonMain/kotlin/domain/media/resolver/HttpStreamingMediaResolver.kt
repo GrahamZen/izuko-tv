@@ -11,6 +11,7 @@ package me.him188.ani.app.domain.media.resolver
 
 import kotlinx.coroutines.CoroutineScope
 import me.him188.ani.app.domain.media.player.data.MediaDataProvider
+import me.him188.ani.app.domain.media.ExternalLinkMedia
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.topic.ResourceLocation
 import org.openani.mediamp.source.MediaExtraFiles
@@ -26,7 +27,7 @@ class HttpStreamingMediaResolver : MediaResolver {
         return HttpStreamingMediaDataProvider(
             media.download.uri,
             media.originalTitle,
-            emptyMap(),
+            ExternalLinkMedia.headersOf(media), // 别处交来的地址带着它要的请求头, 其余为空
             media.extraFiles.toMediampMediaExtraFiles(),
         )
     }

@@ -165,6 +165,7 @@ import me.him188.ani.app.ui.lang.tv_quick_menu_refresh
 import me.him188.ani.app.ui.lang.tv_quick_menu_shuffle
 import me.him188.ani.app.ui.lang.tv_service_check_hint
 import me.him188.ani.app.ui.lang.watch_together_title
+import me.him188.ani.app.ui.together.TvTogetherEntry
 import me.him188.ani.app.ui.subject.episode.PlaybackSessionStatusSeverity
 import me.him188.ani.app.ui.subject.episode.PlaybackSessionStatusText
 import me.him188.ani.app.ui.subject.episode.playbackSessionStatusText
@@ -614,6 +615,13 @@ private fun TvActionPanelDialog(
                 },
             )
         }
+        // 「一起看」: 打开弹窗 (挂在应用根部, 见 TvTogetherHost)。不放第一颗: 默认焦点恒定落第一颗, 新条目不该把它挪走
+        add(
+            TvActionPanelAction(Icons.Rounded.SyncAlt, stringResource(Lang.watch_together_title)) {
+                onDismissRequest()
+                TvTogetherEntry.open()
+            },
+        )
         refreshHost?.current?.let { refresh ->
             val toast = LocalToaster.current
             val refreshingText = stringResource(Lang.tv_force_refresh_toast)

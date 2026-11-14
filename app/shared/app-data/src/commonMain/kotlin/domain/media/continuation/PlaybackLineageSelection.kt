@@ -56,6 +56,7 @@ import kotlin.time.Duration.Companion.seconds
  *    接着等这个源从头搜完 (固定分享的合集要重列十几个分享) 多半还是找不到, 交给自动选源照常选, 选上的再记成记住的源.
  *
  * 找到就自动选上 (不改选源偏好) 并返回 true; 找不到返回 false, 由调用方照常选 —— 选源设置只在这时才起作用.
+ * 也能顺着别处给的线索找 ([selectAlong], 一起看时房间里别人正在播的那条), 步骤相同, 只是线索失效时不动本机记的.
  * 自动选上别的版本的缓存不换线索 (见 PlaybackLineageExtension), 下一集没有缓存时照样顺着线索找.
  * 播放出错换源时也先在线索上换 ([switchOnError]).
  */
@@ -68,6 +69,27 @@ class PlaybackLineageSelection(
     suspend fun select(subjectId: Int, episode: EpisodeInfo, session: MediaFetchSession, selector: MediaSelector): Boolean {
         if (selector.selected.value != null) return false
         val lineage = repository.lineageOf(subjectId) ?: return false
+        return selectWith(lineage, subjectId, episode, session, selector, own = true)
+    }
+
+    /**
+     * 顺着别处给的线索 [lineage] 找这一集 (一起看时房间里别人正在播的那条), 步骤同 [select].
+     * 线索不是这部番自己的: 失效时不忘掉本机记的线索与记住的源.
+     */
+    suspend fun selectAlong(lineage: PlaybackLineage, subjectId: Int, episode: EpisodeInfo, session: MediaFetchSession, selector: MediaSelector): Boolean {
+        if (selector.selected.value != null) return false
+        return selectWith(lineage, subjectId, episode, session, selector, own = false)
+    }
+
+    /** @param own [lineage] 是这部番自己记的线索 (失效时忘掉它) */
+    private suspend fun selectWith(
+        lineage: PlaybackLineage,
+        subjectId: Int,
+        episode: EpisodeInfo,
+        session: MediaFetchSession,
+        selector: MediaSelector,
+        own: Boolean,
+    ): Boolean {
         val caches = playableCaches(subjectId, episode, session, selector) ?: return false
         if (caches.isNotEmpty()) {
             val onLineage = caches.firstOrNull { continuation.continues(lineage, it) } ?: run {
@@ -78,12 +100,12 @@ class PlaybackLineageSelection(
             logger.info { "Continued playback lineage of subject $subjectId with its cache: ${onLineage.mediaId}" }
             return true
         }
-        val media = findOnLineage(subjectId, lineage, episode, session, selector) ?: run {
-            logger.info { "Episode ${episode.sort} of subject $subjectId is not on its playback lineage, selecting as usual" }
+        val media = findOnLineage(subjectId, lineage, episode, session, selector, own) ?: run {
+            logger.info { "Episode ${episode.sort} of subject $subjectId is not on ${if (own) "its playback lineage" else "the handed-over lineage"}, selecting as usual" }
             return false
         }
         if (selector.selectAutomatically(media, expectedSelection = null) == null) return false
-        logger.info { "Continued playback lineage of subject $subjectId: ${media.mediaId}" }
+        logger.info { "${if (own) "Continued playback lineage" else "Followed a handed-over lineage"} of subject $subjectId: ${media.mediaId}" }
         return true
     }
 
@@ -94,12 +116,13 @@ class PlaybackLineageSelection(
         episode: EpisodeInfo,
         session: MediaFetchSession,
         selector: MediaSelector,
+        own: Boolean,
     ): Media? {
         pick(lineage, candidatesOf(session, selector) ?: return null)?.let { return it }
         // 查询会话按条目复用, 记的是进播放页那一集的请求: 换成这一集
         val request = session.latestRequest.first().forEpisode(episode)
         val source = session.mediaSourceResults.firstOrNull { it.mediaSourceId == lineage.mediaSourceId }
-        if (continuation.isQuickToResolve(lineage)) return quickOrFromSession(subjectId, lineage, request, source, session, selector)
+        if (continuation.isQuickToResolve(lineage)) return quickOrFromSession(subjectId, lineage, request, source, session, selector, own)
         if (source != null && !source.state.value.isFinal) awaitOnSource(lineage, source, session, selector)?.let { return it }
         if (source?.state?.value is MediaSourceFetchState.Succeed) return null
         // 还在会话里查: 直接去取是把同一套请求再发一遍 (开播时两边一起抢 CPU), 交给自动选源接着等它
@@ -107,7 +130,7 @@ class PlaybackLineageSelection(
             logger.info { "Lineage source ${lineage.mediaSourceId} of subject $subjectId is still searching after $SOURCE_TIMEOUT, leaving it to auto select" }
             return null
         }
-        return accepted(subjectId, lineage, withTimeoutOrNull(RESOLVE_TIMEOUT) { continuation.resolve(lineage, request) }, session, selector)
+        return accepted(subjectId, lineage, withTimeoutOrNull(RESOLVE_TIMEOUT) { continuation.resolve(lineage, request) }, session, selector, own)
     }
 
     /**
@@ -122,6 +145,7 @@ class PlaybackLineageSelection(
         source: MediaSourceFetchResult?,
         session: MediaFetchSession,
         selector: MediaSelector,
+        own: Boolean,
     ): Media? = coroutineScope {
         val quick = async { withTimeoutOrNull(RESOLVE_TIMEOUT) { continuation.resolve(lineage, request) } }
         val fromSession = async {
@@ -138,7 +162,7 @@ class PlaybackLineageSelection(
                             logger.info { "Quick lineage of subject $subjectId is unavailable this time, waiting for its source" }
                             QuickOutcome.Pending
                         } else {
-                            QuickOutcome.Settled(accepted(subjectId, lineage, resolution, session, selector))
+                            QuickOutcome.Settled(accepted(subjectId, lineage, resolution, session, selector, own))
                         }
                     }
                     if (sessionPending) fromSession.onAwait { media ->
@@ -182,13 +206,14 @@ class PlaybackLineageSelection(
         return pick(lineage, candidatesOf(session, selector) ?: return null)
     }
 
-    /** 直接取回的结果: 选源器排除的当没找到, 线索彻底失效时忘掉它. */
+    /** 直接取回的结果: 选源器排除的当没找到, 自己记的线索彻底失效时忘掉它 ([own] 为假时不动). */
     private suspend fun accepted(
         subjectId: Int,
         lineage: PlaybackLineage,
         resolution: LineageResolution?,
         session: MediaFetchSession,
         selector: MediaSelector,
+        own: Boolean,
     ): Media? =
         when (resolution) {
             is LineageResolution.Found -> resolution.media.takeIf { passesFilters(it, session, selector) } ?: run {
@@ -197,9 +222,13 @@ class PlaybackLineageSelection(
             }
 
             LineageResolution.Gone -> {
-                logger.info { "Playback lineage of subject $subjectId is gone, forgetting it: $lineage" }
-                repository.setLineage(subjectId, null)
-                rememberedSource.forgetIf(subjectId, lineage.mediaSourceId)
+                if (own) {
+                    logger.info { "Playback lineage of subject $subjectId is gone, forgetting it: $lineage" }
+                    repository.setLineage(subjectId, null)
+                    rememberedSource.forgetIf(subjectId, lineage.mediaSourceId)
+                } else {
+                    logger.info { "Handed-over lineage of subject $subjectId is gone: $lineage" }
+                }
                 null
             }
 

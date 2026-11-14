@@ -321,6 +321,8 @@ internal class FakeSettingsRepository : SettingsRepository {
     override val anitorrentConfig: Settings<AnitorrentConfig> get() = error("Not used")
     override val pikpakConfig: Settings<PikPakConfig> get() = error("Not used")
     override val cloudDriveAccounts: Settings<CloudDriveAccounts> get() = error("Not used")
+    override val togetherSettings get() = error("not used")
+    override val togetherBrokerCache: Settings<RepoHostedListCache> get() = error("Not used")
     override val cloudDriveAddedShares: Settings<CloudDriveAddedShares> get() = error("Not used")
     override val torrentPeerConfig: Settings<TorrentPeerConfig> get() = error("Not used")
     override val oneshotActionConfig: Settings<OneshotActionConfig> get() = error("Not used")

@@ -46,6 +46,8 @@ import me.him188.ani.app.ui.subject.episode.EpisodeViewModel
 import me.him188.ani.app.ui.subject.episode.tv.TV_PLAYBACK_SPEED_RANGE
 import me.him188.ani.app.videoplayer.ui.PlayerStatsSnapshot
 import me.him188.ani.app.videoplayer.ui.rememberPlayerStatsState
+import me.him188.ani.app.domain.media.ExternalLinkMedia
+import me.him188.ani.app.domain.together.TOGETHER_LINK_ORIGIN_ID
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
@@ -495,6 +497,8 @@ internal class RemotePlayerHandle(
     private fun sourceName(sourceId: String, sample: Media, sources: List<MediaSourceResultPresentation>): String =
         when {
             sample.kind == MediaSourceKind.LocalCache -> tr("本地缓存")
+            ExternalLinkMedia.originIdOf(sample) == TOGETHER_LINK_ORIGIN_ID -> tr("房间成员共享")
+            ExternalLinkMedia.isExternalLink(sample) -> tr("外部链接")
             else -> sources.firstOrNull { it.mediaSourceId == sourceId }?.info?.displayName ?: sourceId
         }
 
