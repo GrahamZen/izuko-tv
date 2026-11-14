@@ -55,17 +55,25 @@ class TorrentFileHandleProxy(
         runBlocking {
             delegate.close()
         }
+        TorrentServiceClientHandles.closed(this)
     }
 
     override fun closeAndDelete() {
         runBlocking {
             delegate.closeAndDelete()
         }
+        TorrentServiceClientHandles.closed(this)
     }
 
     override fun closeAndDiscard(filesInUse: Array<String>?) {
         runBlocking {
             delegate.closeAndDiscard(filesInUse.orEmpty().toSet())
         }
+        TorrentServiceClientHandles.closed(this)
+    }
+
+    /** 建它的应用进程已经不在了, 服务这边替它关掉 (见 [TorrentServiceClientHandles]) */
+    internal suspend fun closeLeftover() {
+        delegate.close()
     }
 }

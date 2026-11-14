@@ -80,6 +80,7 @@ class TorrentFileEntryProxy(
 
     override fun createHandle(): IRemoteTorrentFileHandle {
         return TorrentFileHandleProxy(delegate.createHandle(), connectivityAware, scope.coroutineContext)
+            .also { TorrentServiceClientHandles.opened(it, delegate) }
     }
 
     override fun resolveFile(cont: ContTorrentFileEntryResolveFile?): IDisposableHandle? {
