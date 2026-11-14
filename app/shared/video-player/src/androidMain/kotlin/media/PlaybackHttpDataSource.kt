@@ -97,6 +97,13 @@ internal fun createPlaybackHttpDataSourceFactory(
         .setDefaultRequestProperties(headers)
 }
 
+/**
+ * 关掉播放用的连接池里闲着的连接 (正在用的不动). 连接被服务器断过之后用: 被断的 HTTP/2 连接在池里看着还好, 新请求复用它会一直读不到数据.
+ */
+internal fun evictIdlePlaybackConnections() {
+    for (client in clients.values) client.connectionPool.evictAll()
+}
+
 /** 播放请求走 [config] 这个代理 (局域网地址不走), 代理要认证时带上 `Proxy-Authorization`. */
 internal fun OkHttpClient.Builder.playbackProxy(config: PlaybackProxyConfig): OkHttpClient.Builder = apply {
     // 局域网地址 (Jellyfin 等本地源) 不能走代理, 所以按地址分流而不是 .proxy()

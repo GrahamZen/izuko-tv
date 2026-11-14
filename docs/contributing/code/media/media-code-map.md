@@ -186,7 +186,7 @@
     应用在后台（如屏保）时解码器被收走而回前台接回画面才发现（MediaCodec 的「valid only at Executing states」），由 `isDecoderPreempted` 认出，
     `PlaybackFailureRecovery` 按出错前的进度原地重装同一资源一次、不拉黑；出错前暂停着就重装完照样停着。
     （播放器一进入出错状态就把进度清零、播放意图清成不播，所以进度与播放意图要在出错前记下。）
-    播放失败后怎么办的完整判断见[选源文档](media-selector.md#播放失败后怎么办)。
+    播放失败后怎么办的完整判断见[播放失败与重试](playback-recovery.md)。
     mkv 最后 1 MiB 内的解析错误当作文件读完（`MkvTailTolerantExtractor`，建 `DefaultMediaSourceFactory` 时包在 mkv 提取器外）：
     有的文件在最后一个元素后面跟着填充或残缺的尾巴，播放器预读到文件末尾时报错会让还没播到那里的整集失败、换源；文件中间出错照常报。
     字幕的字节在交给解析器与 libass 之前就理顺，下游（`SubtitleView`、libass 画的 `LiftableAssSubtitleView`、

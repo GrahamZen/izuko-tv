@@ -11,6 +11,9 @@ package me.him188.ani.app.ui.remote
 
 import kotlinx.io.files.Path
 import me.him188.ani.app.domain.media.player.data.AniSystemFileMediaData
+import me.him188.ani.app.videoplayer.link.PlaybackLink
+import me.him188.ani.app.videoplayer.link.PlaybackLinks
+import me.him188.ani.app.videoplayer.link.RefreshablePlaybackLink
 import org.openani.mediamp.ExperimentalMediampApi
 import org.openani.mediamp.source.MediaData
 import org.openani.mediamp.source.MediaExtraFiles
@@ -83,6 +86,32 @@ class RemoteMirrorTest {
         assertEquals("other", playable(UriMediaData("https://cdn.example.com/play?id=3")).kind)
         // 局域网里的服务器 (如 Jellyfin) 不是本机代理
         assertEquals("10.0.0.5", playable(UriMediaData("http://10.0.0.5:8096/Videos/1/stream.mp4?api_key=k")).host)
+    }
+
+    @Test
+    fun `a link the player refreshed reaches the phone as a new address under a new key`() {
+        val data = UriMediaData("https://api.example.com/v.mp4?sign=1")
+        val before = playable(data)
+        val link = RefreshablePlaybackLink(PlaybackLink(data.uri, emptyMap())) {
+            PlaybackLink("https://api.example.com/v.mp4?sign=2", emptyMap())
+        }
+        PlaybackLinks.register(data.uri, link)
+        try {
+            // 播放器先读成过, 之后原地址被拒 (过期), 换上了新的
+            var expired = false
+            val read = { link.requestBlocking({ 403 }) { lease -> check(!(expired && lease.generation == 0)) } }
+            read()
+            expired = true
+            read()
+
+            // 手机靠播放状态里的 mediaKey 变了才重新来要地址
+            val after = playable(data)
+            assertEquals("https://api.example.com/v.mp4?sign=2", after.url)
+            assertTrue(after.key != before.key)
+            assertEquals(after.key, mirrorKeyOf(data))
+        } finally {
+            PlaybackLinks.unregister(data.uri, link)
+        }
     }
 
     @Test

@@ -81,6 +81,9 @@ class PlayerSession(
     private val getVideoScaffoldConfigUseCase: GetVideoScaffoldConfigUseCase by koin.inject()
     private val getMediaSourceInstancesUseCase: GetMediaSourceInstancesUseCase by koin.inject()
 
+    /** 正在播的地址被拒时换新的 */
+    private val linkTracker = PlaybackLinkTracker { mediaResolver }
+
     private val hlsPlaybackProxySessionFlow = MutableStateFlow<HlsPlaybackProxySession?>(null)
     private var hlsPlaybackProxySession: HlsPlaybackProxySession?
         get() = hlsPlaybackProxySessionFlow.value
@@ -202,6 +205,7 @@ class PlayerSession(
                 preparedHlsPlaybackProxySession = it.session
             }.data
 
+            linkTracker.track(media, episodeInfo, data, preparedData)
             logger.info { "Set media data to player at ${startPositionMillis}ms: ${preparedData.toLogText()}" }
             PlayTimeline.mark("set_media", "at ${startPositionMillis}ms")
             // v2: setMediaData 挂起直到媒体真正打开, 播放意图和起播位置随打开一并生效.
@@ -265,6 +269,7 @@ class PlayerSession(
     }
 
     suspend fun stopPlayback() {
+        linkTracker.clear()
         _loadedMedia.value = null
         stopPlayer()
         PlayTimeline.mark("t_stop_player_done")
@@ -302,6 +307,7 @@ class PlayerSession(
     }
 
     fun close() {
+        linkTracker.clear()
         closeHlsPlaybackProxySession()
         player.close()
     }

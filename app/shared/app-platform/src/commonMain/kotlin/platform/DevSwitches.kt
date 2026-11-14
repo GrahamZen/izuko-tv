@@ -204,6 +204,9 @@ object DevSwitches {
     /** 播放器打开视频期间读取出错只重试一次, 关时按 Media3 默认重试 3 次 (见 OpeningLoadErrorPolicy) */
     val openFailFast = toggle("openFailFast", "开播: 打开视频出错少重试 (坏链接早换源)", default = true, persistent = true)
 
+    /** 在线视频的连接空久了或读到一半断了, 从断处重新请求接着读, 关时交给播放器的重试 (见 ResumingHttpDataSource) */
+    val resumeCutStreams = toggle("resumeCutStreams", "播放: 连接空久了或中途断了从断处接着读", default = true, persistent = true)
+
     /**
      * 开播诊断: 记开播时间线 (控制台 `api/debug/timeline`, 见 PlayTimeline)、自动选源每一步在等什么、共用客户端与播放请求的各段耗时、
      * 每个媒体出第一帧 (见 PlaybackPerfProbe);
