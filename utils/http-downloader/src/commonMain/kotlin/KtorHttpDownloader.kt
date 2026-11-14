@@ -9,7 +9,6 @@
 
 package me.him188.ani.utils.httpdownloader
 
-import io.ktor.client.plugins.HttpTimeoutConfig
 import io.ktor.client.plugins.timeout
 import io.ktor.http.HttpHeaders
 import io.ktor.http.Url
@@ -1027,9 +1026,9 @@ open class KtorHttpDownloader(
     }
 
     /**
-     * 下一段. 不带范围的那一段 (整条下) 是整个文件, 不受 client 整个请求的总时长限制 (默认 5 分钟: 网盘 CDN 按连接限速时
-     * 一条连接每秒几十 KB, 到点就从头重来, 永远下不完), 卡住交给读超时. 收到的比这一段该有的短 (响应的 Content-Length, 分段时
-     * 就是这一段的长度) 抛出、交给重试: 连接中途断开有时读起来就像正常读完, 不查会把半截文件当成下完.
+     * 下一段. 请求的总时长按这一段的大小给 (见 [segmentRequestTimeoutMillis]), 卡住交给读超时.
+     * 收到的比这一段该有的短 (响应的 Content-Length, 分段时就是这一段的长度) 抛出、交给重试: 连接中途断开有时读起来就像正常读完,
+     * 不查会把半截文件当成下完.
      *
      * @param onReceived 收到数据就报 (攒够 [PROGRESS_REPORT_BYTES] 报一次, 结束时报剩下的), 进度与速度用
      * @param onContentLength 响应给了长度时报 (整条下的那一段原来不知道多大, 记下来进度才有总大小)
@@ -1051,8 +1050,7 @@ open class KtorHttpDownloader(
         } else {
             options
         }
-        val whole = segmentInfo.rangeStart == null
-        return httpGet(segmentInfo.url, finalOptions, requestTimeoutMillis = if (whole) HttpTimeoutConfig.INFINITE_TIMEOUT_MS else null) { statement ->
+        return httpGet(segmentInfo.url, finalOptions, requestTimeoutMillis = segmentRequestTimeoutMillis(segmentInfo)) { statement ->
             // 必须使用流式的 execute { }: 无参数的 execute() 会把整个 response body 读进一个
             // ByteArray. 当服务器不支持 range 请求时 segment 没有大小上限, 一个几百 MB 的视频
             // 会直接撑爆堆内存.

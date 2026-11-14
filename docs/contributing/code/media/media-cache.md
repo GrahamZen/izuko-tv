@@ -64,6 +64,10 @@ BT 资源由 BT 引擎处理（Anitorrent），HTTP 和 HLS 资源由下载器 `
 （`MediaResolver.resolveFreshLink`，与播放共用）。网盘与接口源每次解析都现取地址；要开网页现抓的源缓存时也重新抓。
 搜索结果里直接带直链的资源解析出来还是原来那个，当成换不了。
 
+按字节范围下的分段，请求的总时长按大小给（`segmentRequestTimeoutMillis`）：不少于 5 分钟，再按每秒 5 KB 算。
+网盘按连接限速时一条连接每秒十几二十 KB，5 MB 的一段要四五分钟，固定 5 分钟会到点从头重来；也不能不限，
+挂在一条每秒只有几 KB 的连接上时，到点断开重连才有机会换到正常的节点。不带范围的分段不限，卡住由读超时管。
+
 ## 缓存位置
 
 缓存可以放在内部存储或外接盘上（`domain/media/cache/location/`）。`MediaCacheLocations` 列出此刻接着的位置
