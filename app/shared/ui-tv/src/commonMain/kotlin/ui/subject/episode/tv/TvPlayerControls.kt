@@ -150,7 +150,6 @@ import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
 import me.him188.ani.app.ui.foundation.focus.tvSwallowKeysWhenLeaving
 import me.him188.ani.app.ui.foundation.tvLongPressKeyOverClick
 import me.him188.ani.app.ui.foundation.icons.AniIcons
-import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
 import me.him188.ani.app.ui.foundation.icons.Forward80
 import me.him188.ani.app.ui.foundation.icons.Forward85
 import me.him188.ani.app.ui.foundation.icons.Forward90
@@ -2018,8 +2017,6 @@ private fun TvPlayerShareButton(
             shareData,
             showShareDropdown,
             onDismissRequest = { showShareDropdown = false },
-            // 下拉是独立窗口, 按键到不了根按键路由 —— 它盖在画面上, 播放暂停键仍该管用
-            modifier = Modifier.tvOverlayWindowKeys { showShareDropdown = false },
         )
     }
 }
