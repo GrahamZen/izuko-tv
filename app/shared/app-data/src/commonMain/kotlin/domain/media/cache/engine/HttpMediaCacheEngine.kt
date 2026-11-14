@@ -93,6 +93,9 @@ class HttpMediaCacheEngine(
     /** 网盘视频旁边的外挂字幕随缓存存到本地, 见 [CacheSidecarSubtitles] */
     private val sidecarSubtitles = CacheSidecarSubtitles(saveDir)
 
+    /** 下载地址过期时重新解析原资源 */
+    private val sourceRefresher = HttpCacheSourceRefresher(mediaResolver).also { it.attachTo(downloader) }
+
     /** 把缓存搬到别的位置 (见 MediaCacheMover) */
     internal val mover: MediaCacheEngineMover = HttpCacheMover(dao, downloader, saveDir, locations)
     override val engineKey: MediaCacheEngineKey = MediaCacheEngineKey.WebM3u
@@ -144,6 +147,7 @@ class HttpMediaCacheEngine(
 
         logger.info { "Restarting cache '${origin.mediaId}'" }
         val downloadId = restoredHttpDownloadId(origin, metadata)
+        sourceRefresher.register(downloadId, origin, metadata)
 
         // 文件所在的盘没接上: 占着位置, 不恢复下载 (不然会被记成失败)
         val known = downloader.getState(downloadId) ?: dao.getById(downloadId)
@@ -198,6 +202,7 @@ class HttpMediaCacheEngine(
 
             is UriMediaData -> {
                 val downloadId = httpDownloadId(origin, metadata)
+                sourceRefresher.register(downloadId, origin, metadata)
                 val location = locations.locationForNewCache()
                 logger.info { "New download $downloadId is on location ${location ?: "internal"}" }
                 val options = DownloadOptions(headers = mediaData.headers, location = location)

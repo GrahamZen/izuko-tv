@@ -21,6 +21,7 @@ import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.CacheEvictor
 import androidx.media3.datasource.cache.CacheSpan
 import androidx.media3.datasource.cache.ContentMetadata
+import androidx.media3.datasource.cache.ContentMetadataMutations
 import androidx.media3.datasource.cache.SimpleCache
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -132,6 +133,16 @@ object PlaybackDiskCache {
 
     /** [cache] 里记着的 [key] 的文件总长 (播放器第一次读到时记下), 没记时为 -1. 会等缓存初始化完, 别在主线程上调. */
     internal fun contentLength(cache: Cache, key: String): Long = ContentMetadata.getContentLength(cache.getContentMetadata(key))
+
+    /**
+     * 忘掉 [key] 记着的文件总长. 上游没到长度就说读完了 (服务器断流) 时, [CacheDataSource] 把那个位置当成文件总长记下,
+     * 之后这个地址读到那里就算文件完了: 播放器重试、原地重新加载都一样, 一读到那儿就报读不到数据.
+     * 在线视频 (按地址存的) 每次打开先忘掉, 总长由这次的响应重新给; 网盘直链的总长要拿来分块, 不用这个.
+     */
+    internal fun forgetContentLength(cache: Cache, key: String) {
+        runCatching { cache.applyContentMetadataMutations(key, ContentMetadataMutations().remove(ContentMetadata.KEY_CONTENT_LENGTH)) }
+            .onFailure { logger.warn(it) { "Failed to forget the stored length of a cached video" } }
+    }
 
     /**
      * 先读 [cache] 再读 [upstream] 的数据源, 从 [upstream] 读到的同时存进 [cache]. 按请求的内容标识 (`DataSpec.key`) 存取, 没有时按地址.
