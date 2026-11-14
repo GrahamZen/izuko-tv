@@ -41,6 +41,7 @@ import me.him188.ani.app.data.models.preference.BangumiEndpointSettings
 import me.him188.ani.app.data.models.preference.ProxySettings
 import me.him188.ani.app.data.models.preference.RepoHostedListCache
 import me.him188.ani.app.data.models.preference.ThemeSettings
+import me.him188.ani.app.data.models.preference.TogetherSettings
 import me.him188.ani.app.data.models.preference.TorrentPeerConfig
 import me.him188.ani.app.data.models.preference.UISettings
 import me.him188.ani.app.data.models.preference.UpdateSettings
@@ -126,6 +127,12 @@ interface SettingsRepository {
 
     /** 各网盘里给条目添加的分享. */
     val cloudDriveAddedShares: Settings<CloudDriveAddedShares>
+
+    /** 一起看: 跟不跟随房主、上次的房间、这台设备的成员编号 */
+    val togetherSettings: Settings<TogetherSettings>
+
+    /** 一起看连的公共代理清单的本地缓存, 见 `TogetherBrokerList`. */
+    val togetherBrokerCache: Settings<RepoHostedListCache>
     val torrentPeerConfig: Settings<TorrentPeerConfig>
 
     val oneshotActionConfig: Settings<OneshotActionConfig>
@@ -359,6 +366,17 @@ class PreferencesRepositoryImpl(
         "cloudDriveAddedShares",
         CloudDriveAddedShares.serializer(),
         default = { CloudDriveAddedShares.Default },
+    )
+
+    override val togetherSettings: Settings<TogetherSettings> = SerializablePreference(
+        "togetherSettings",
+        TogetherSettings.serializer(),
+        default = { TogetherSettings.Default },
+    )
+    override val togetherBrokerCache: Settings<RepoHostedListCache> = SerializablePreference(
+        "togetherBrokerCache",
+        RepoHostedListCache.serializer(),
+        default = { RepoHostedListCache.Default },
     )
 
     override suspend fun readLegacyPreference(key: String): String? =

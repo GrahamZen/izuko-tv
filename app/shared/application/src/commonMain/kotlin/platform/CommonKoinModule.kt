@@ -116,6 +116,7 @@ import me.him188.ani.app.domain.foundation.ScopedHttpClientUserAgent
 import me.him188.ani.app.domain.foundation.ServerListFeature
 import me.him188.ani.app.domain.foundation.ServerListFeatureConfig
 import me.him188.ani.app.domain.foundation.SseFeatureHandler
+import me.him188.ani.app.domain.together.TogetherWebSocketsFeatureHandler
 import me.him188.ani.app.domain.foundation.UseBangumiTokenFeatureHandler
 import me.him188.ani.app.domain.foundation.UserAgentFeature
 import me.him188.ani.app.domain.foundation.UserAgentFeatureHandler
@@ -430,6 +431,7 @@ private fun KoinApplication.otherModules(
                 ConvertSendCountExceedExceptionFeatureHandler,
                 VersionExpiryFeatureHandler, // handle 426 Upgrade Required -> show blocking dialog
                 SseFeatureHandler,
+                TogetherWebSocketsFeatureHandler, // 一起看连公共 MQTT 代理
                 CookieJarFeatureHandler, // web 数据源统一 cookie jar (构造时注入)
                 WebSourceIdentityFeatureHandler, // web 数据源 per-host UA 对齐
                 MaxRequestsPerHostFeatureHandler,
@@ -666,6 +668,7 @@ private fun KoinApplication.otherModules(
     }
     deviceMigration(getContext) { fileName -> buildAniDatabase(getContext(), fileName) }
     bangumiProfileConversion(getContext)
+    together(coroutineScope)
     // 换人之前给对方垫上首页轮播那几部 (热度榜手上那份; 没有就算了, 不为这个等网络)
     single<UserProfileSeeder> {
         UserProfileSeeder(

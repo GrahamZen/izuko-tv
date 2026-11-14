@@ -154,6 +154,8 @@ import me.him188.ani.app.domain.player.extension.SwitchMediaOnPlayerErrorExtensi
 import me.him188.ani.app.domain.player.extension.SwitchNextEpisodeExtension
 import me.him188.ani.app.domain.player.extension.UserResumedSources
 import me.him188.ani.app.domain.settings.GetDanmakuRegexFilterListFlowUseCase
+import me.him188.ani.app.domain.together.TogetherPlayerExtension
+import me.him188.ani.app.domain.together.playbackAutomationSuppressed
 import me.him188.ani.app.domain.settings.GetMediaSelectorSettingsUseCase
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.navigation.EpisodeNavigationGuardRegistry
@@ -454,6 +456,9 @@ open class EpisodeViewModel(
 
     private val lowRamDevice = koin.getOrNull<LowRamDevice>()?.value == true
 
+    /** 一起看跟随房主中: 自动下一集、自动跳过片头片尾这些本机的自动行为让路, 自己调的倍速也不生效 (见 [setPlaybackSpeed]) */
+    val playbackAutomationSuppressed = koin.playbackAutomationSuppressed()
+
     /** 设置里的「完整搜索」三档 (见 [FullSearchMode]; 没选过的按设备定). */
     private val fullSearchSetting = settingsRepository.mediaSelectorSettings.flow
         .map { it.effectiveFullSearchMode(lowRamDevice) }
@@ -479,6 +484,8 @@ open class EpisodeViewModel(
             PlaybackPerfTraceExtension,
             PlayTimelineExtension,
             PlaybackSpeedExtension.Factory(playbackSpeedFlow),
+            // 一起看: 跟随中从房主的位置打开, 所以排在记忆进度前面 (起播位置取第一个给出意见的扩展)
+            TogetherPlayerExtension,
             RememberPlayProgressExtension,
             MarkAsWatchedExtension,
             CacheOnBtPlayExtension,
@@ -688,8 +695,13 @@ open class EpisodeViewModel(
     val playbackSpeedRange: ClosedFloatingPointRange<Float>
         get() = videoScaffoldConfig.minPlaybackSpeed..videoScaffoldConfig.maxPlaybackSpeed
 
-    /** 总是对本次播放生效; 仅在开启「记住播放倍速」时才另外写回配置. */
+    /**
+     * 总是对本次播放生效; 仅在开启「记住播放倍速」时才另外写回配置.
+     * 一起看跟随房主时倍速听房主的 (一起看会把播放器改回房主的倍速): 这一下不生效也不记住,
+     * 否则播放器被改回去了, 记住的却是自己调的那一档, 换集或退出房间后就按它播.
+     */
     fun setPlaybackSpeed(speed: Float) {
+        if (playbackAutomationSuppressed.value) return
         playbackSpeedOverride.value = speed
         launchInBackground {
             if (settingsRepository.videoScaffoldConfig.flow.first().rememberPlaybackSpeed) {
@@ -1662,7 +1674,7 @@ open class EpisodeViewModel(
                         val firstEpisodeBlocked = mode != SkipOpEdMode.MANUAL &&
                                 collections.size > 1 && collections.getOrNull(0)?.episodeId == id
                         val skipAllowed = !firstEpisodeBlocked &&
-                                isAutoSkipOpEdAllowed
+                                isAutoSkipOpEdAllowed && !playbackAutomationSuppressed.value
                         if (skipAllowed) {
                             playerSkipOpEdState.update(pos)
                             // 即将自动跳过时, 提前缓存跳转目标处的数据, 跳过后可立即续播

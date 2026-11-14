@@ -72,6 +72,7 @@ kotlin {
         implementation(libs.koin.core)
         implementation(libs.atomicfu)
         implementation(libs.ktor.network) // HLS 本地代理 (iOS)
+        implementation(libs.ktor.client.websockets) // 一起看连公共 MQTT 代理 (domain/together)
     }
     sourceSets.commonTest.dependencies {
         implementation(projects.utils.uiTesting)

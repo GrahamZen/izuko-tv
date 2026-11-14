@@ -92,6 +92,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.SideEffect
@@ -175,6 +176,7 @@ import me.him188.ani.app.ui.lang.video_player_tv_collection
 import me.him188.ani.app.ui.lang.video_player_tv_restart
 import me.him188.ani.app.ui.lang.video_player_tv_skip_segment
 import me.him188.ani.app.ui.lang.watch_together_title
+import me.him188.ani.app.ui.together.TvTogetherEntry
 import me.him188.ani.app.ui.mediaselect.common.SourceIcon
 import me.him188.ani.app.domain.media.selector.MediaExclusionReason
 import me.him188.ani.app.domain.player.tracks.AudioTrackSupport
@@ -1141,8 +1143,34 @@ private fun Modifier.hangAboveBaseline() = layout { measurable, constraints ->
  *
  * 原先是胶囊行末尾那颗带文字的胶囊, 现已并入进度条下面的图标行, 与其余功能按钮同为圆钮.
  *
- * 显隐由 [TvPlayerBottomRow] 判断 —— 功能被关掉时本组合整个消失, 焦点善后只能由父级做.
+ * 用户可以在「自定义播放器按钮」里把它藏掉 (那时本组合整个不在, 焦点善后由父级做).
  */
+@Composable
+private fun TvWatchTogetherButton(
+    overlay: TvPlayerOverlayState,
+    modifier: Modifier = Modifier,
+) {
+    val dialogVisible by TvTogetherEntry.dialogVisible.collectAsState()
+    // 弹窗是独立窗口, 根部那个唯一按键路由收不到它的按键 -> 五秒后控制层连同本按钮一起被自动隐藏吃掉.
+    // 按下拉弹层同一套引用计数上报住
+    DisposableEffect(dialogVisible) {
+        if (dialogVisible) overlay.onPopupExpandedChanged(true)
+        onDispose { if (dialogVisible) overlay.onPopupExpandedChanged(false) }
+    }
+
+    TvBottomRowIcon(
+        icon = Icons.Rounded.SyncAlt,
+        contentDescription = stringResource(Lang.watch_together_title),
+        onClick = { TvTogetherEntry.open() },
+        // 关掉后焦点还给本按钮: 弹窗是独立窗口, 关闭时主窗口未必把焦点还到原处, 不还的话控制层还在但方向键全失效.
+        // 控制层已经收起时放弃: 那时焦点归属由根路由的解析器负责, 再抢就是打架
+        modifier = modifier.restoreFocusAfter(
+            dialogVisible,
+            abandon = { overlay.layer != TvPlayerLayer.CONTROLS },
+        ),
+    )
+}
+
 /** 单个胶囊按钮: 聚焦白底黑字 (Prime 样式), 同时浮出对应面板. */
 @Composable
 private fun TvPlayerPill(
@@ -1460,9 +1488,6 @@ private fun tvBottomRowItemsOf(
             TvPlayerChromeItem.TOUCH_EPISODE_STRIP, TvPlayerChromeItem.TOUCH_DETAILS, TvPlayerChromeItem.MEDIA_SOURCE,
             TvPlayerChromeItem.CACHE,
                 -> touchInput
-            // 「一起看」是 Ani 服务器的功能, 直连之后没有了. 枚举项保留是为了让已经存下来的
-            // 版式配置还能反序列化 —— 但它永远不出现, 编辑页那边也别列 (见 TvPlayerChromeCatalog)
-            TvPlayerChromeItem.WATCH_TOGETHER -> false
             TvPlayerChromeItem.SUBTITLE_TRACK -> hasSubtitleTracks
             TvPlayerChromeItem.AUDIO_TRACK -> hasAudioTracks
             TvPlayerChromeItem.PLAYBACK_SPEED -> hasSpeed
@@ -1649,8 +1674,7 @@ private fun TvPlayerBottomRow(
                         modifier = itemModifier,
                     )
 
-                    // 「一起看」已随 Ani 服务器一起删掉; 过滤那一步就把它挡住了, 这里只是穷尽分支
-                    TvPlayerChromeItem.WATCH_TOGETHER -> Unit
+                    TvPlayerChromeItem.WATCH_TOGETHER -> TvWatchTogetherButton(overlay, itemModifier)
 
                     // ---- 文字选项组 (字幕轨/音轨/倍速/画面比例, 自描述文字按钮, 标签槽位仅为行内对齐) ----
                     TvPlayerChromeItem.SUBTITLE_TRACK -> vm.player.subtitleTracks?.let {
