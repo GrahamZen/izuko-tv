@@ -30,7 +30,6 @@ import me.him188.ani.app.data.models.preference.EpisodeCommentSort
 import me.him188.ani.app.ui.comment.UIComment
 import me.him188.ani.app.ui.foundation.FOCUS_REQ_DELAY_MILLIS
 import me.him188.ani.app.ui.foundation.consumeHeldConfirmKey
-import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
 import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenu
 import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenuItem
 import me.him188.ani.app.ui.lang.Lang
@@ -78,8 +77,7 @@ internal fun TvCommentSortMenu(
     AniDropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
-        // 菜单是独立窗口, 按键到不了播放页的根按键路由 —— 播放暂停键仍该管用
-        modifier = Modifier.consumeHeldConfirmKey().tvOverlayWindowKeys(onDismissRequest),
+        modifier = Modifier.consumeHeldConfirmKey(),
     ) {
         // 打开时焦点直接落在当前排序上: 弹层一出来系统就把焦点给第一个能聚焦的项, 所以落定之前只有当前项能聚焦,
         // 不然会先亮第一项再跳过去. 落定后其余项放开; 万一初始焦点没给过来, 过一会儿自己请求一次, 同时放开

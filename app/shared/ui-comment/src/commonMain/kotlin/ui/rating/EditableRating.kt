@@ -19,7 +19,6 @@ import me.him188.ani.app.data.models.subject.SelfRatingInfo
 import me.him188.ani.app.data.models.subject.TestSelfRatingInfo
 import me.him188.ani.app.data.models.subject.TestSubjectInfo
 import me.him188.ani.app.domain.foundation.LoadError
-import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
 import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
 import me.him188.ani.app.ui.foundation.widgets.DismissDialogButton
 import me.him188.ani.app.ui.foundation.widgets.aniDialogContainerColor
@@ -128,8 +127,6 @@ fun EditableRatingDialogsHost(
     if (uiState.showRatingRequiresCollectionDialog) {
         AniAlertDialog(
             { actions.dismissRatingRequiresCollectionDialog() },
-            // 独立窗口: 遥控器全局键接回主窗口 (见 tvOverlayWindowKeys)
-            modifier = Modifier.tvOverlayWindowKeys { actions.dismissRatingRequiresCollectionDialog() },
             text = { Text(stringResource(Lang.rating_requires_collection)) },
             // 纯提示, 唯一的按钮就是"关闭"
             confirmButton = {

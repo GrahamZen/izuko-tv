@@ -46,7 +46,6 @@ import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
 import me.him188.ani.app.ui.foundation.widgets.AniTextButton
 import me.him188.ani.app.ui.lang.*
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
-import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.showLoadError
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
@@ -296,9 +295,7 @@ private fun SetAllEpisodeDoneDialog(
             }
         },
         dismissButton = { AniTextButton(onDismissRequest) { Text(stringResource(Lang.subject_collection_ignore)) } },
-        // 对话框是独立窗口, 按键到不了播放页的根按键路由 —— 从播放器内嵌详情页设"看过"时会弹出它,
-        // 画面还在后面放着, 遥控器播放暂停键仍该管用. 播放页之外为空操作
-        modifier = modifier.tvOverlayWindowKeys(onDismissRequest),
+        modifier = modifier,
     )
 }
 
