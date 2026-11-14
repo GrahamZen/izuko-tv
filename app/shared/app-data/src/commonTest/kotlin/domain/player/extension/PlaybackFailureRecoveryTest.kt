@@ -76,6 +76,23 @@ class PlaybackFailureRecoveryTest : AbstractPlayerExtensionTest() {
     /** 按类名认的网络异常 (见 isNetworkFailure), commonTest 里没有 java.net 的那个. */
     private class ConnectException(override val message: String) : Exception()
 
+    /** 按类名认的断流异常 (见 isStreamInterrupted), commonTest 里没有 java.io / java.net 的那些. */
+    private class EOFException(override val message: String?) : Exception()
+    private class SocketTimeoutException(override val message: String) : Exception()
+
+    /** 读到一半没数据了: 服务器把连接或 HTTP/2 的流断了 */
+    private fun cutStreamError() = PlaybackException(
+        PlaybackErrorCode.IO,
+        "ExoPlayer playback failed: ERROR_CODE_IO_UNSPECIFIED (2000): Source error",
+        FakeThrowable("Source error", EOFException(null)),
+    )
+
+    private fun readTimeoutError() = PlaybackException(
+        PlaybackErrorCode.IO,
+        "ExoPlayer playback failed: ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT (2002): Source error",
+        FakeThrowable("Source error", SocketTimeoutException("timeout")),
+    )
+
     private fun httpError(status: Int) = PlaybackException(
         PlaybackErrorCode.IO,
         "ExoPlayer playback failed: ERROR_CODE_IO_BAD_HTTP_STATUS (2004): Source error",
@@ -152,6 +169,24 @@ class PlaybackFailureRecoveryTest : AbstractPlayerExtensionTest() {
     @Test
     fun `a page instead of the video of a media that has played is resolved again`() {
         assertEquals(PlaybackFailureAction.REFRESH_LINK, decide(failure(parsingError()), canRefreshLink = true))
+    }
+
+    @Test
+    fun `a cut stream of a media that has played is resolved again`() {
+        for (error in listOf(cutStreamError(), readTimeoutError())) {
+            assertEquals(PlaybackFailureAction.REFRESH_LINK, decide(failure(error), canRefreshLink = true), error.message)
+        }
+    }
+
+    @Test
+    fun `a cut stream switches the source when it has not played or was just resolved again`() {
+        assertEquals(PlaybackFailureAction.SWITCH_SOURCE, decide(failure(cutStreamError()), canRefreshLink = false))
+    }
+
+    @Test
+    fun `a connection that cannot be made switches the source even after playing`() {
+        assertEquals(PlaybackFailureAction.SWITCH_SOURCE, decide(failure(connectError()), canRefreshLink = true))
+        assertEquals(PlaybackFailureAction.SWITCH_SOURCE, decide(failure(unreachableError()), canRefreshLink = true))
     }
 
     @Test
@@ -300,6 +335,27 @@ class PlaybackFailureRecoveryTest : AbstractPlayerExtensionTest() {
         assertEquals(opens + 1, case.player.openCallCount)
         assertEquals(315_000L, case.player.currentPositionMillis.value)
         assertTrue(case.player.state.value.playWhenReady)
+        assertEquals(case.media, case.state.mediaSelectorFlow.filterNotNull().first().selected.value)
+        case.scope.cancel()
+    }
+
+    @Test
+    fun `a cut stream is resolved again and a paused player stays paused at the same position`() = runTest {
+        val case = createCase()
+        loadAndPlay(case)
+        case.player.pause()
+        advanceUntilIdle()
+        val opens = case.player.openCallCount
+
+        val error = cutStreamError()
+        case.player.injectError(error)
+        runCurrent()
+        assertTrue(case.recovery.recover(failure(error), case.media))
+        advanceUntilIdle()
+
+        assertEquals(opens + 1, case.player.openCallCount)
+        assertEquals(315_000L, case.player.currentPositionMillis.value)
+        assertFalse(case.player.state.value.playWhenReady)
         assertEquals(case.media, case.state.mediaSelectorFlow.filterNotNull().first().selected.value)
         case.scope.cancel()
     }

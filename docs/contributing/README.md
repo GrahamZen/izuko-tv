@@ -34,6 +34,7 @@
     - [MediaSource](code/media/media-source.md)
     - [MediaSelector](code/media/media-selector.md)
     - [选源界面](code/media/media-selector-ui.md)
+    - [播放失败与重试](code/media/playback-recovery.md)
     - [缓存](code/media/media-cache.md)
     - [下载管理](code/media/media-downloads.md)
     - [Web 数据源验证码处理](code/media/web-captcha.md)

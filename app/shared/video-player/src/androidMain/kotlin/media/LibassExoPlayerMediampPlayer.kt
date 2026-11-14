@@ -177,6 +177,7 @@ class LibassExoPlayerMediampPlayer private constructor(
         exoPlayer.addAnalyticsListener(PlaybackPerfProbe(exoPlayer, backgroundScope))
         exoPlayer.addAnalyticsListener(PlaybackActivityReporter())
         exoPlayer.addAnalyticsListener(decoderRebuild)
+        exoPlayer.addAnalyticsListener(LoadErrorLog)
         decoderParking.start(context)
     }
 
@@ -833,7 +834,7 @@ private class LibassMediaSourcePipeline(
                 if (parallel != null) {
                     // 网盘直链: 分块并发下载, 连接走会换节点的客户端 (下载域名偶尔整组节点连不上, 见 RangeHttpClients);
                     // 播放跟不上时多开连接 (见 ThrottledSourceLoadControl.boosted)
-                    val upstream = RangeHttpClients.factory(proxyConfig(), userAgent, headers)
+                    val upstream = RefreshingHttpDataSource.wrap(RangeHttpClients.factory(proxyConfig(), userAgent, headers), data.uri)
                     // 设置里开了「边下边播」时, 下过的数据存在本机: 往回拖、拖动预览、再看同一个文件时从盘上读
                     val key = PlaybackDiskCache.keyOf(data)?.takeIf { diskCacheEnabled() }
                     val cache = key?.let { PlaybackDiskCache.get(context) }
@@ -885,7 +886,7 @@ private class LibassMediaSourcePipeline(
                             userAgent = userAgent,
                             headers = headers,
                             connectTimeoutMillis = CONNECT_TIMEOUT_MILLIS,
-                        ),
+                        ).let { ResumingHttpDataSource.Factory(RefreshingHttpDataSource.wrap(it, data.uri), ::evictIdlePlaybackConnections) },
                     )
                     // 设置里开了「边下边播」时下过的数据存在本机, 按地址认 (这类直链不像网盘那样另给内容标识).
                     // m3u8 播放列表不存: 列表随时可能更新, 去广告也要拿原样的列表
@@ -893,6 +894,7 @@ private class LibassMediaSourcePipeline(
                     if (cache == null) {
                         http
                     } else {
+                        PlaybackDiskCache.forgetContentLength(cache, data.playbackUri)
                         RoutingDataSourceFactory(
                             routesToPrimary = { Util.inferContentTypeForUriAndMimeType(it.uri, null) != C.CONTENT_TYPE_HLS },
                             primaryDataSourceFactory = PlaybackDiskCache.cacheDataSourceFactory(cache, http),

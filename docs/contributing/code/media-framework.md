@@ -95,6 +95,7 @@ APP 可能会有 50 个左右的 `MediaSource` 实例。
 > [!TIP]
 >
 > 更多 Media 相关文档：
+> - [播放失败与重试](media/playback-recovery.md)：数据源断了接着读、播放器重试、报错后换不换源
 > - [缓存](media/media-cache.md)
 > - [代码地图](media/media-code-map.md)：概念到具体类/函数/调用链的映射，改代码前建议阅读
 

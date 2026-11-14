@@ -19,6 +19,7 @@ import kotlinx.serialization.json.putJsonArray
 import me.him188.ani.app.domain.media.player.data.AniSystemFileMediaData
 import me.him188.ani.app.ui.foundation.lan.LanHttpRequest
 import me.him188.ani.app.ui.foundation.lan.LanHttpResponse
+import me.him188.ani.app.videoplayer.link.PlaybackLinks
 import org.openani.mediamp.ExperimentalMediampApi
 import org.openani.mediamp.source.MediaData
 import org.openani.mediamp.source.SystemFileMediaData
@@ -154,7 +155,8 @@ internal sealed interface MirrorVerdict {
  */
 internal fun mirrorKeyOf(data: MediaData?): String = when (data) {
     null -> ""
-    is UriMediaData -> Integer.toHexString(data.uri.hashCode())
+    // 播放器中途换过地址 (原来的过期了, 见 PlaybackLinks) 时算新地址的: 手机上那份也要跟着换
+    is UriMediaData -> Integer.toHexString(PlaybackLinks.currentUriOf(data.uri).hashCode())
     else -> "x" + Integer.toHexString(System.identityHashCode(data))
 }
 
@@ -183,7 +185,8 @@ internal fun judgeMirror(data: MediaData?): MirrorVerdict {
         )
     }
     if (data !is UriMediaData) return MirrorVerdict.Unavailable(MirrorVerdict.REASON_LOCAL, pending = false, key)
-    val uri = runCatching { URI(data.uri) }.getOrNull()
+    val current = PlaybackLinks.currentUriOf(data.uri)
+    val uri = runCatching { URI(current) }.getOrNull()
     val scheme = uri?.scheme?.lowercase()
     val host = uri?.host
     if (uri == null || (scheme != "http" && scheme != "https") || host.isNullOrEmpty()) {
@@ -194,7 +197,7 @@ internal fun judgeMirror(data: MediaData?): MirrorVerdict {
         return MirrorVerdict.Unavailable(MirrorVerdict.REASON_CREDENTIALS, pending = false, key)
     }
     return MirrorVerdict.Playable(
-        url = data.uri,
+        url = current,
         key = key,
         kind = mirrorKindOf(uri.path.orEmpty()),
         host = host,

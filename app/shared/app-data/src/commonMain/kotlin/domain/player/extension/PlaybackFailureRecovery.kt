@@ -22,9 +22,11 @@ import me.him188.ani.app.domain.player.httpErrorStatus
 import me.him188.ani.app.domain.player.isDecoderPreempted
 import me.him188.ani.app.domain.player.isNetworkFailure
 import me.him188.ani.app.domain.player.isNotVideoResponse
+import me.him188.ani.app.domain.player.isStreamInterrupted
 import me.him188.ani.app.platform.NETWORK_SETTLE
 import me.him188.ani.app.platform.NetworkStatus
 import me.him188.ani.datasources.api.Media
+import me.him188.ani.utils.coroutines.REJECTED_LINK_STATUSES
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
@@ -49,7 +51,10 @@ internal enum class PlaybackFailureAction {
     /** 系统没网: 换哪个在线源都一样连不上. 不拉黑、不换源、不限时长, 恢复后原地重新取一次地址; 等的时候也隔一会试一次, 防系统误报. */
     WAIT_FOR_NETWORK,
 
-    /** 播起来过的资源的地址被拒绝了, 多半是签名过期: 原地重新取一次地址, 不拉黑. */
+    /**
+     * 播起来过的资源中途读不下去了: 地址被拒绝 (多半是签名过期) 或连接断了 (数据源接着读也没接上).
+     * 原地重新取一次地址从原位置接着放, 不拉黑.
+     */
     REFRESH_LINK,
 
     /** 这条资源放不了: 拉黑并换下一个. 认不出的都走这里, 放不出来比换源更糟. */
@@ -79,7 +84,7 @@ internal fun decidePlaybackFailure(error: PlayerLoadError, facts: PlaybackFailur
     SeekPreviewDecoderFault.isFault(error.cause) -> PlaybackFailureAction.RELOAD_AFTER_SEEK_PREVIEW
     isDecoderPreempted(error.cause) && facts.canReloadDecoder -> PlaybackFailureAction.RELOAD_DECODER
     facts.networkDown -> PlaybackFailureAction.WAIT_FOR_NETWORK
-    facts.canRefreshLink && error.cause?.isLinkRejected() == true -> PlaybackFailureAction.REFRESH_LINK
+    facts.canRefreshLink && error.cause?.let { it.isLinkRejected() || it.isStreamInterrupted() } == true -> PlaybackFailureAction.REFRESH_LINK
     else -> PlaybackFailureAction.SWITCH_SOURCE
 }
 
@@ -101,13 +106,10 @@ private val NETWORK_RECHECK = 30.seconds
 private val SEEK_PREVIEW_RELOAD_DELAY = 3.seconds
 
 /**
- * 同一条资源至少隔这么久才再重新取一次地址. 签名地址的有效期以小时计, 刚取的就被拒绝说明不是过期;
- * 不限的话放到坏掉的那一段 (分片没了) 会被拒绝、重取、放到同一处又被拒绝, 没完没了.
+ * 同一条资源至少隔这么久才再重新取一次地址. 签名地址的有效期以小时计, 刚取的就被拒绝说明不是过期; 断流也一样, 刚重取过又断说明不是暂时的.
+ * 不限的话放到坏掉的那一段 (分片没了、文件残缺) 会出错、重取、放到同一处又出错, 没完没了.
  */
 private val LINK_REFRESH_INTERVAL = 30.minutes
-
-/** 地址本身被拒绝的状态码; 取新地址可能有用. 服务器出错 (5xx) 与限流不算. */
-private val REJECTED_LINK_STATUSES = setOf(401, 403, 404, 410, 412)
 
 /** 地址被服务器拒绝, 或回的不是视频 (站点把过期的地址转到了网页). */
 private fun Throwable.isLinkRejected(): Boolean = httpErrorStatus() in REJECTED_LINK_STATUSES || isNotVideoResponse()
@@ -264,7 +266,8 @@ internal class PlaybackFailureRecovery(
     private suspend fun refreshLink(media: Media, error: PlayerLoadError): Boolean {
         if (!reload(media)) return false
         lastLinkRefresh = LinkRefresh(media.mediaId, timeSource.markNow())
-        logger.warn(error.cause) { "Player errored (${error.description}), link rejected, resolving ${media.mediaId} again" }
+        val why = if (error.cause?.isStreamInterrupted() == true) "stream cut" else "link rejected"
+        logger.warn(error.cause) { "Player errored (${error.description}), $why, resolving ${media.mediaId} again" }
         return true
     }
 

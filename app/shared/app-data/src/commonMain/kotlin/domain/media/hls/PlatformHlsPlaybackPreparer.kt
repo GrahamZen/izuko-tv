@@ -438,7 +438,8 @@ private class LocalHlsProxySession private constructor(
             throw e
         } catch (e: Throwable) {
             logger.warn(e) { "Failed to prepare HLS playlist proxy response" }
-            null
+            output.write(upstreamErrorResponseHeader(e).encodeToByteArray())
+            return
         }
         if (content == null) {
             output.write(errorResponseHeader(502, "Bad Gateway").encodeToByteArray())
@@ -509,7 +510,7 @@ private class LocalHlsProxySession private constructor(
                 throw e
             } catch (e: Throwable) {
                 logger.warn(e) { "Failed to proxy HLS segment ${segment.remoteUri}" }
-                output.write(errorResponseHeader(502, "Bad Gateway").encodeToByteArray())
+                output.write(upstreamErrorResponseHeader(e).encodeToByteArray())
                 return
             }
             serveBytes(rewriteWhole(segment, original, shiftTicks), request.headers["range"], output)
