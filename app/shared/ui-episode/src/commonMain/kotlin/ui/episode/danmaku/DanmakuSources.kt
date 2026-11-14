@@ -57,7 +57,6 @@ import me.him188.ani.app.ui.foundation.consumeHeldConfirmKey
 import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tvLongPressKey
-import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
 import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenu
 import me.him188.ani.app.ui.foundation.widgets.AniDropdownMenuItem
 import me.him188.ani.app.ui.lang.Lang
@@ -194,8 +193,8 @@ private fun DanmakuSourceMenuAnchor(
             currentShiftMillis = sourceItem.shiftMillis,
             onClickAdjustShift = onAdjustShift,
             onClickChange = onManualMatch.takeUnless { isAnimeko },
-            // 长按开的菜单: 吞掉这次按住的余波 (第一项就是启停, 不能被点掉); 菜单是独立窗口, 播放键由它自己接
-            modifier = Modifier.consumeHeldConfirmKey(enabled = remoteOnly).tvOverlayWindowKeys { showDropdown = false },
+            // 长按开的菜单: 吞掉这次按住的余波 (第一项就是启停, 不能被点掉)
+            modifier = Modifier.consumeHeldConfirmKey(enabled = remoteOnly),
             serviceId = sourceItem.serviceId,
         )
     }

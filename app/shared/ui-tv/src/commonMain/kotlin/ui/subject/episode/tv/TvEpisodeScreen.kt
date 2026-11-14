@@ -112,6 +112,7 @@ import me.him188.ani.app.domain.player.VideoLoadingState
 import me.him188.ani.app.ui.danmaku.DanmakuEditorState
 import me.him188.ani.app.ui.foundation.LocalImageViewerHandler
 import me.him188.ani.app.ui.foundation.LocalTvPlayPauseHandler
+import me.him188.ani.app.ui.foundation.RegisterTvPlayPauseHandler
 import me.him188.ani.app.ui.foundation.TV_PLAY_PAUSE_KEYS
 import me.him188.ani.app.ui.foundation.TvBackLongPressHandler
 import me.him188.ani.app.ui.foundation.consumeHeldConfirmKey
@@ -281,6 +282,8 @@ fun TvEpisodeScreenContent(
     // 见 LocalTvPlayPauseHandler) —— 覆盖在画面上的东西没有一个该吃掉这个键, 视频就在它们后面放着.
     // 反馈由画面中央的暂停图标给 (TvPauseFlash 监听播放器状态流, 与触发来源无关)
     val togglePlayPause: () -> Unit = remember(vm) { { vm.player.togglePlayWhenReady() } }
+    // 挂在应用根部的弹层 (一起看等) 不在这棵组合里, 经它拿到
+    RegisterTvPlayPauseHandler(togglePlayPause)
 
     SideEffect { vm.onUIReady() }
 
@@ -899,8 +902,8 @@ fun TvEpisodeScreenContent(
         // 叠层各有各的焦点归属与关闭后的落点, 抢了就乱 (评论弹窗更是当场被面板的解析器接管).
         //
         // 拖拽预览态排除在外: 那里播放键与确认键同义 (跳到圆点并继续播), 见下面 CONTROLS 分支.
-        // 独立窗口的弹窗 (侧边 sheet 的居中弹窗 / 下拉菜单 / 一起看) 收不到本路由, 由
-        // LocalTvPlayPauseHandler + Modifier.tvPlayPauseKey() 各自挂
+        // 独立窗口的弹窗 (居中弹窗 / 下拉菜单 / 挂在应用根部的一起看等) 收不到本路由, 由
+        // Modifier.tvOverlayWindowKeys 接回 (见 LocalTvPlayPauseHandler / RegisterTvPlayPauseHandler)
         if (key in TV_PLAY_PAUSE_KEYS && !progressSliderState.isPreviewing &&
             (imageViewer.viewing.value || overlay.danmakuInputExpanded ||
                     overlay.hasDetailLayer || anySheetVisible || overlay.layer == TvPlayerLayer.SOURCES)
