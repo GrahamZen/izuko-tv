@@ -76,6 +76,7 @@ import me.him188.ani.app.ui.foundation.widgets.aniFocusContentColor
 import me.him188.ani.app.ui.foundation.widgets.aniGlassButtonColor
 import me.him188.ani.app.ui.foundation.widgets.aniGlassEdge
 import me.him188.ani.app.ui.foundation.widgets.aniPanelTitleStyle
+import me.him188.ani.app.ui.foundation.widgets.selectedSemantics
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.all_episodes_hint_remote
 import me.him188.ani.app.ui.lang.all_episodes_hint_touch
@@ -459,6 +460,7 @@ private fun TvAllEpisodesSegment(
             )
             .onFocusChanged { focused = it.isFocused }
             .tvAllEpisodesTouchNoFocus(touch)
+            .selectedSemantics(selected)
             .clickable(interactionSource = null, indication = if (touch) LocalIndication.current else null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
