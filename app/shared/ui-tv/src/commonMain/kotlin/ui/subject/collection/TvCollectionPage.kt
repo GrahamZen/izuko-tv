@@ -77,6 +77,7 @@ import me.him188.ani.app.domain.foundation.LoadError
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.navigation.LocalNavigator
 import me.him188.ani.app.ui.foundation.tv.prefetchTvTmdbSummary
+import me.him188.ani.app.ui.foundation.widgets.selectedSemantics
 import me.him188.ani.app.ui.main.TvPosterWallPreviewPage
 import me.him188.ani.app.ui.foundation.AniDisplayTier
 import me.him188.ani.app.ui.foundation.TvPageAdjustAction
@@ -1269,6 +1270,7 @@ internal fun TvCollectionGlassTab(
     )
     Row(
         modifier
+            .selectedSemantics(selected)
             .tvGlassFocusLift(focused, CircleShape, snap = landing)
             .drawBehind {
                 val outline = CircleShape.createOutline(size, layoutDirection, this)

@@ -71,6 +71,7 @@ import me.him188.ani.app.ui.foundation.layout.LocalPlatformWindow
 import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
 import me.him188.ani.app.ui.foundation.theme.SystemBarColorEffect
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
+import me.him188.ani.app.ui.foundation.widgets.ToastHistory
 import me.him188.ani.app.ui.foundation.widgets.Toaster
 import me.him188.ani.app.ui.foundation.widgets.showLoadError
 import me.him188.ani.app.ui.main.AniApp
@@ -88,6 +89,7 @@ class MainActivity : AniComponentActivity(), PictureInPictureHost {
     private var linkNavigationJob: Job? = null
     private val toaster = object : Toaster {
         override fun toast(text: String) {
+            ToastHistory.record(text)
             Toast.makeText(this@MainActivity, text, Toast.LENGTH_LONG).show()
         }
     }
