@@ -24,6 +24,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -39,6 +40,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import me.him188.ani.app.domain.episode.PlaybackStartGate
 import me.him188.ani.app.domain.media.fetch.MediaFetchSessionRefresh
 import me.him188.ani.app.domain.media.player.PlaybackActivity
 import me.him188.ani.app.domain.player.VideoLoadingState
@@ -478,6 +480,17 @@ class RetainedPlaybackSessionHolder : ViewModel(), PlaybackSessionEntry, KoinCom
      * 监视当前会话的五件事. 全部只读 [vm] 暴露的流, 不碰它的内部状态.
      */
     private suspend fun guard(vm: EpisodeViewModel) = coroutineScope {
+        // 0. 流水线自己要「装好就播」时先问本类 ([admitStart]): 不在眼前就停着装, 记在第 2 条的账上,
+        //    回到眼前时由第 2 条起播. 不看管这个会话了 (换了会话) 就撤掉
+        vm.playbackStartGate = PlaybackStartGate { admitStart(vm) }
+        launch {
+            try {
+                awaitCancellation()
+            } finally {
+                vm.playbackStartGate = PlaybackStartGate.Always
+            }
+        }
+
         // 1. 替界面当订阅者, 让流水线在没有界面的时候继续跑.
         //    pageState 是 WhileSubscribed(5s) 的, 而"保证数据源会一直查询"的那个 collector 就挂在
         //    它的 scope 里 (见 EpisodeViewModel.createPageStateFlow) —— 没人订阅时数据源搜索会在
@@ -485,8 +498,9 @@ class RetainedPlaybackSessionHolder : ViewModel(), PlaybackSessionEntry, KoinCom
         launch { vm.pageState.collect { } }
 
         // 2. 不在眼前就不出声, 回来照原样接着播. 只在离开那一刻暂停是不够的: 数据源解析完成后
-        //    流水线自己会 resume (loadMedia 末尾那句 `setMediaData(playWhenReady = true)`), 于是
-        //    必须持续按住 —— 这也正是常见的"退出去之后忽然从后台传出声音".
+        //    流水线自己会起播 (选好资源、出错换源、原地重载都走 loadMedia 的「装好就播」).
+        //    这几处在装片子前经第 0 条问过本类, 不在眼前就停着装、记账, 一点声音都不出;
+        //    别的起播不经过那里, 所以这里还要持续按住 —— 没人按住时就是"退出去之后忽然从后台传出声音".
         //
         //    "不在眼前"是**两个互不包含的维度**, 本条两个都按住:
         //
@@ -549,21 +563,9 @@ class RetainedPlaybackSessionHolder : ViewModel(), PlaybackSessionEntry, KoinCom
                     }
                     // 又走了 (或者应用退到了后台): 在途的恢复作废 (账留着, 下次回来重新等)
                     resumeJob?.cancel()
-                    // 这里必须是**严格** isPlaying (时钟真的在走), 不能图省事换成 playWhenReady ——
-                    // 换过, 三个症状一起来 (2026-08-11 真机复现):
-                    //
-                    // loadMedia 的 setMediaData(playWhenReady = true) 一落地, playWhenReady 就是 true,
-                    // 这条规则会在首帧之前就按下去, 于是播放器在后台**永远到不了** isPlaying:
-                    // 1. 播放器一次都不播, 于是"播过一次"才做的事全都不做了 —— 当时表现为第 3 条的
-                    //    就绪提示等不到 (那时它还在等 isPlaying). 第 3 条现已改成等
-                    //    `Ready && !isBuffering`, 不再受这条影响, 但下面两条仍然成立;
-                    // 2. 后台那段时间不再预热缓冲与解码器, 回页面要从头缓冲 (实测多等 3 秒),
-                    //    保留会话的意义就没了;
-                    // 3. 缩略图预热也等 isPlaying, 于是它恰好在主播放器做完整初始缓冲的峰值上开工,
-                    //    两路抢带宽/解码器 → prewarm 失败 → framesAvailable 被永久置 false
-                    //    (只有换媒体才重置) → 整集彻底没缩略图.
-                    //
-                    // 代价是时钟起走的那一瞬可能漏出一点声音, 这是原设计接受的取舍.
+                    // 判据是 isPlaying (时钟真的在走). 流水线自己的起播在装片子前就由第 0 条停着装,
+                    // 走到这里的只有别的起播; 按 isPlaying 按住, 时钟起走的那一瞬会漏出一点声音 (慢电视上近一秒).
+                    // 停着装的会话照样缓冲、建解码器, 回到播放页当场就能播, 所以第 0 条不用先播一下.
                     if (!state.isPlaying) return@collect
                     // 回到前台那一下是根部的 ON_START 先把 appForeground 置起来, 播放页
                     // `AutoPauseEffect` 的 ON_START 恢复播放随后才到 —— 本 collector 手上的那份值
@@ -789,14 +791,31 @@ class RetainedPlaybackSessionHolder : ViewModel(), PlaybackSessionEntry, KoinCom
      *   等下去就是永远黑屏 —— 超时照旧 `play()`, 退化成老行为;
      * - 等的期间用户可能又走了, 或者"一起看"接管了播放, 落地前重新确认一遍;
      * - **消账挪到真的 `play()` 那一刻**: 提前清掉的话, 等待期间用户又退出去, 这笔"回来要恢复"
-     *   的账就凭空消失了 (再进来播放器停着不动).
+     *   的账就凭空消失了 (再进来播放器停着不动);
+     * - **片子还没打开好就不等** (后台停着装, 没装好人就回来了): 打开完声画本来就一起起来, 等画面只会白白推迟开播.
      *
      * 拿不到 [VideoSurfaceFrameSignal] 的播放器 (桌面/iOS) 不等, 语义与从前一致.
      */
+    /**
+     * [guard] 第 0 条装上的 [PlaybackStartGate]: 播放页在眼前且应用在前台才装好就播; 否则停着装,
+     * 记在第 2 条的账上 ([EpisodeViewModel.autoPausedOffPage]), 回到眼前时由第 2 条照常起播 (先等画面出来).
+     *
+     * 在主线程上调, 同一轮里片子就交给播放器: 与第 2 条的收集者看到的是同一刻的状态, 回答之后画面回来时
+     * 播放器已经在打开中, 那一下起播不会落空.
+     */
+    private fun admitStart(vm: EpisodeViewModel): Boolean {
+        if (playerPageVisible.value && appForeground.value) return true
+        vm.autoPausedOffPage = true
+        logger.info { "Player not on screen, opening the media paused; it starts when the player page is back" }
+        return false
+    }
+
     private suspend fun resumeWhenVideoVisible(vm: EpisodeViewModel) {
         val signal = vm.player as? VideoSurfaceFrameSignal
         var timedOut = false
-        if (signal != null && !signal.hasFrameOnCurrentSurface.value) {
+        // 片子还没打开好 (后台停着装、还没装好就回来了) 时不等: 打开完声画本来就一起起来, 要的只是那时已经要求播放
+        val notOpenYet = vm.player.state.value.mediaStatus != MediaStatus.Ready
+        if (signal != null && !notOpenYet && !signal.hasFrameOnCurrentSurface.value) {
             timedOut = withTimeoutOrNull(RESUME_FRAME_WAIT) {
                 signal.hasFrameOnCurrentSurface.first { it }
             } == null
@@ -807,8 +826,11 @@ class RetainedPlaybackSessionHolder : ViewModel(), PlaybackSessionEntry, KoinCom
         if (!vm.autoPausedOffPage) return
         vm.autoPausedOffPage = false
         logger.info {
-            "Player page visible again, resuming auto-paused playback " +
-                if (timedOut) "(no video frame within $RESUME_FRAME_WAIT, resuming anyway)" else "(video frame is up)"
+            "Player page visible again, resuming auto-paused playback " + when {
+                notOpenYet -> "(media not open yet)"
+                timedOut -> "(no video frame within $RESUME_FRAME_WAIT, resuming anyway)"
+                else -> "(video frame is up)"
+            }
         }
         vm.player.play()
     }
