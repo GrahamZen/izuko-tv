@@ -81,6 +81,7 @@ import me.him188.ani.app.ui.foundation.tv.TV_PILL_ICON_SIZE
 import me.him188.ani.app.ui.foundation.tv.TvPillShell
 import me.him188.ani.app.ui.foundation.tvLongPressKey
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
+import me.him188.ani.app.ui.foundation.widgets.selectedSemantics
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.video_player_tv_chrome_delete
 import me.him188.ani.app.ui.lang.video_player_tv_chrome_duplicate
@@ -427,7 +428,7 @@ private fun TvChromePresetChip(
     val focused by interactionSource.collectIsFocusedAsState()
     Surface(
         onClick = onClick,
-        modifier = modifier,
+        modifier = modifier.selectedSemantics(selected),
         shape = CircleShape,
         color = when {
             focused -> Color.White

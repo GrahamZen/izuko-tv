@@ -114,6 +114,7 @@ import me.him188.ani.app.ui.foundation.tv.TvHeroButton
 import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
 import me.him188.ani.app.ui.foundation.widgets.AniCenteredPanelDialog
 import me.him188.ani.app.ui.foundation.widgets.AniFocusActionButton
+import me.him188.ani.app.ui.foundation.widgets.selectedSemantics
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.oauth_bangumi_stage_authorizing
 import me.him188.ani.app.ui.lang.oauth_bangumi_stage_exchanging
@@ -1232,6 +1233,7 @@ private fun ConfirmOption(
     Surface(
         onClick = onClick,
         modifier = modifier
+            .selectedSemantics(selected)
             .onFocusChanged { focused = it.isFocused }
             .tvTouchFocusOnTap(),
         shape = RoundedCornerShape(12.dp),
@@ -1432,6 +1434,7 @@ private fun ChoiceChip(text: String, selected: Boolean, enabled: Boolean, onClic
         onClick = onClick,
         enabled = enabled,
         modifier = Modifier
+            .selectedSemantics(selected)
             .onFocusChanged { focused = it.isFocused }
             .tvTouchFocusOnTap(),
         shape = CircleShape,

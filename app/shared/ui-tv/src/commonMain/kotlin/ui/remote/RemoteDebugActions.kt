@@ -64,6 +64,7 @@ import kotlin.time.Duration.Companion.seconds
  * - `GET api/debug/stacks`: 全部线程的栈 (查开播卡在哪一步), 在 `text` 里.
  * - `POST api/debug/search/clear` `[subject=<条目 id>] [memory=1]`: 清搜索记录, 量第一次搜的耗时用: 网页类数据源的搜索缓存与跨条目共用的
  *   站点回应记忆 (给了 subject 时只清这一部的缓存行); `memory=1` 时连这一部记住的数据源与播放线索一起清 (同第一次看).
+ * - `api/debug/ui...`: 读屏上的界面与焦点、按遥控器的键、按文字点、等文字出现, 哪一页都能用, 见 [RemoteDebugUi].
  */
 internal object RemoteDebugActions {
     private val logger = logger<RemoteDebugActions>()
@@ -103,6 +104,7 @@ internal object RemoteDebugActions {
                         },
                     )
                 }
+                request.path == "api/debug/ui" || request.path.startsWith("api/debug/ui/") -> RemoteDebugUi.handle(request)
                 request.path.startsWith("api/debug/settings/") -> RemoteDebugSettingsPage.handle(request, navigator)
                 request.path.startsWith("api/debug/together/") -> RemoteDebugTogether.handle(request, scope)
                 else -> null
