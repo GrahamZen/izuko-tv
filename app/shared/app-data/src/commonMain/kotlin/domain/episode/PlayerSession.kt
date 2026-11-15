@@ -57,6 +57,7 @@ import org.openani.mediamp.PlaybackException
 import org.openani.mediamp.errorOrNull
 import org.openani.mediamp.source.MediaData
 import org.openani.mediamp.source.UriMediaData
+import kotlin.concurrent.Volatile
 import kotlin.coroutines.CoroutineContext
 
 class MediaFetchSelectBundle(
@@ -83,6 +84,10 @@ class PlayerSession(
 
     /** 正在播的地址被拒时换新的 */
     private val linkTracker = PlaybackLinkTracker { mediaResolver }
+
+    /** 要「装好就播」时先问它 */
+    @Volatile
+    var startGate: PlaybackStartGate = PlaybackStartGate.Always
 
     private val hlsPlaybackProxySessionFlow = MutableStateFlow<HlsPlaybackProxySession?>(null)
     private var hlsPlaybackProxySession: HlsPlaybackProxySession?
@@ -209,7 +214,9 @@ class PlayerSession(
             logger.info { "Set media data to player at ${startPositionMillis}ms: ${preparedData.toLogText()}" }
             PlayTimeline.mark("set_media", "at ${startPositionMillis}ms")
             // v2: setMediaData 挂起直到媒体真正打开, 播放意图和起播位置随打开一并生效.
-            player.setMediaData(preparedData, playWhenReady = playWhenReady, startPositionMillis = startPositionMillis)
+            withContext(mainDispatcher) {
+                player.setMediaData(preparedData, playWhenReady = playWhenReady && startGate.admit(), startPositionMillis = startPositionMillis)
+            }
             PlayTimeline.mark("player_opened")
             hlsPlaybackProxySession = preparedHlsPlaybackProxySession
             preparedHlsPlaybackProxySession = null
