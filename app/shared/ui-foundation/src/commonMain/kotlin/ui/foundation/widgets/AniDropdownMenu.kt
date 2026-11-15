@@ -312,6 +312,7 @@ fun AniDropdownMenuItem(
             .background(container)
             .onFocusChanged { focused = it.isFocused }
             .clickable(enabled = enabled, onClick = onClick)
+            .then(if (selected) Modifier.selectedSemantics(true) else Modifier)
             .padding(horizontal = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,

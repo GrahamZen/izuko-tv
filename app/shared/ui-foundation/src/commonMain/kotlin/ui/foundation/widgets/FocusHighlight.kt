@@ -200,7 +200,7 @@ fun AniFocusSelectableSurface(
     val showFocus = focused && !LocalTvTouchInputEnabled.current
     Surface(
         onClick = onClick,
-        modifier = modifier.onFocusChanged { focused = it.isFocused },
+        modifier = modifier.selectedSemantics(selected).onFocusChanged { focused = it.isFocused },
         shape = shape,
         color = when {
             showFocus -> aniFocusContainerColor()
@@ -236,7 +236,7 @@ fun AniFocusRingSurface(
     ProvideRingOnlyFocus {
         Surface(
             onClick = onClick,
-            modifier = modifier.onFocusChanged { focused = it.isFocused },
+            modifier = modifier.selectedSemantics(selected).onFocusChanged { focused = it.isFocused },
             shape = shape,
             color = if (selected) colorScheme.secondaryContainer else unselectedColor,
             contentColor = if (selected) colorScheme.onSecondaryContainer else colorScheme.onSurface,

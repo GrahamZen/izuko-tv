@@ -65,6 +65,7 @@ import me.him188.ani.app.ui.foundation.widgets.AniFocusActionButton
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.aniFocusContainerColor
 import me.him188.ani.app.ui.foundation.widgets.aniFocusContentColor
+import me.him188.ani.app.ui.foundation.widgets.selectedSemantics
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_storage_cache_location_fat32
 import me.him188.ani.app.ui.lang.settings_storage_cache_location_internal
@@ -527,6 +528,7 @@ private fun GuideOption(
     Surface(
         onClick = { if (enabled) onClick() },
         modifier = modifier
+            .selectedSemantics(selected)
             .fillMaxWidth()
             .alpha(if (enabled) 1f else DISABLED_ALPHA)
             .onFocusChanged { focused = it.isFocused }
