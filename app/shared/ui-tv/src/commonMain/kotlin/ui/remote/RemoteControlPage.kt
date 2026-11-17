@@ -426,6 +426,8 @@ button { font: inherit; border: 0; cursor: pointer; }
 .chip.on { background: var(--p); color: var(--on-p); opacity: 1; }
 .chip.cur { background: var(--p-soft); color: var(--p); font-weight: 700; box-shadow: inset 0 0 0 2px var(--p); opacity: 1; }
 .chip.on.cur { background: var(--p); color: var(--on-p); box-shadow: none; }
+/* 「展开 / 收起 N 个暂无结果」: 不是数据源, 透明底细边框, 和数据源胶囊分开 */
+.chip.fold { background: transparent; color: var(--sub); box-shadow: inset 0 0 0 1px var(--outline); }
 .list { display: flex; flex-direction: column; gap: 8px; }
 .item { display: block; text-align: left; width: 100%; background: var(--card); color: var(--fg); border-radius: 12px; padding: 12px 14px; box-shadow: 0 1px 3px var(--shadow); position: relative; }
 .item .t { display: block; font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; }
@@ -2138,6 +2140,23 @@ private val SCRIPT = """
     return '<img class="src-ic" src="api/source-icon?id=' + encodeURIComponent(id) + '" alt="" data-id="' + esc(id) + '" data-ph="' + ph + '">';
   }
   window.srcIcon = srcIcon;
+  // 数据源胶囊里暂无结果的 (查完了 0 条, 或没开完整搜索时暂停着 0 条) 默认收起, 排末尾一颗「展开 N 个暂无结果」切换;
+  // 「暂无」: 暂停的源还没搜完, 不能说成没有. 播放器与缓存选资源两排共用一个开关, 只在这次打开的页面里有效.
+  // 正在播 / 正在筛选的那个源不收 (keep).
+  var emptySrcOpen = false;
+  window.emptySrcChips = function (sources, keep) {
+    var empty = sources.filter(function (x) {
+      return (x.state === 'done' || x.state === 'paused') && !x.count && keep.indexOf(x.id) < 0;
+    });
+    return {
+      hidden: function (x) { return !emptySrcOpen && empty.indexOf(x) >= 0; },
+      toggle: !empty.length ? '' : '<button type="button" class="chip fold" data-fold="1" aria-expanded="' + emptySrcOpen + '">' +
+        (emptySrcOpen ? T('收起 {0} 个暂无结果', empty.length) : T('展开 {0} 个暂无结果', empty.length)) + '</button>'
+    };
+  };
+  window.toggleEmptySrc = function () { emptySrcOpen = !emptySrcOpen; };
+  // 胶囊名字前的记号: 正在播的「▶」, 没开完整搜索时暂停着的「⏸」(数字是暂停前搜到的). ︎ 让 iOS 照文字画, 不画成彩色表情
+  window.srcChipMark = function (x, cur) { return cur ? '▶ ' : x.state === 'paused' ? '⏸︎ ' : ''; };
   document.addEventListener('error', function (e) {
     var t = e.target;
     if (!t || t.tagName !== 'IMG' || !t.classList || !t.classList.contains('src-ic')) return;
@@ -2928,14 +2947,16 @@ private val SCRIPT = """
     if (srcFilter && !s.sources.some(function (x) { return x.id === srcFilter; }) &&
         !s.groups.some(function (g) { return g.id === srcFilter; })) srcFilter = null;
     var h = '<div class="chips"><button class="chip' + (srcFilter ? '' : ' on') + '" data-src="">' + T('全部') + '</button>';
+    var fold = window.emptySrcChips(s.sources, [s.selectedSourceId, srcFilter]);
     s.sources.forEach(function (x) {
+      if (fold.hidden(x)) return;
       var n = x.state === 'loading' ? '…' : x.state === 'captcha' ? T('需验证') : x.state === 'login' ? T('未登录') : x.state === 'failed' ? T('失败') : x.state === 'limited' ? T('限流') : x.count;
       // cur = 正在播的就是这个源 (描边 + ▶), 与筛选选中的 on (实心) 是两回事, 可以同时成立
       var cur = x.id === s.selectedSourceId;
       h += '<button class="chip ' + x.state + (srcFilter === x.id ? ' on' : '') + (cur ? ' cur' : '') + '" data-src="' + esc(x.id) + '">' +
-        (cur ? '▶ ' : '') + esc(x.name) + ' ' + n + '</button>';
+        window.srcChipMark(x, cur) + esc(x.name) + ' ' + n + '</button>';
     });
-    return h + '</div>';
+    return h + fold.toggle + '</div>';
   }
 
   // 选集: 播放卡上「第几集」那一行的透明下拉框 (见 epLine). 选完先失焦 —— 有焦点时 paintNow 不重画卡片
@@ -3188,6 +3209,11 @@ private val SCRIPT = """
   document.getElementById('player-chips').addEventListener('click', function (e) {
     var c = e.target.closest('.chip');
     if (!c || !lastState) return;
+    if (c.hasAttribute('data-fold')) {
+      window.toggleEmptySrc();
+      this.innerHTML = renderChips(lastState);
+      return;
+    }
     // 点已选中的源或「全部」= 取消筛选; 数据源筛选纯在本地做, 就地重画
     var id = c.getAttribute('data-src');
     srcFilter = !id || id === srcFilter ? null : id;
@@ -7147,12 +7173,14 @@ private val CACHE_SCRIPT = """
   // 数据源胶囊 (同播放器标签): 点一个只看这个源, 再点一次或点「全部」取消; 纯本地筛选, 就地重画
   function ccChips(d) {
     var h = '<div class="chips"><button type="button" class="chip' + (ccSrc ? '' : ' on') + '" data-cc="">' + T('全部') + '</button>';
+    var fold = window.emptySrcChips(d.sources, [ccSrc]);
     d.sources.forEach(function (x) {
+      if (fold.hidden(x)) return;
       var n = x.state === 'loading' ? '…' : x.state === 'captcha' ? T('需验证') : x.state === 'login' ? T('未登录') : x.state === 'failed' ? T('失败') : x.state === 'limited' ? T('限流') : x.count;
       h += '<button type="button" class="chip ' + x.state + (ccSrc === x.id ? ' on' : '') + '" data-cc="' + esc(x.id) + '">' +
-        esc(x.name) + ' ' + n + '</button>';
+        window.srcChipMark(x, false) + esc(x.name) + ' ' + n + '</button>';
     });
-    return h + '</div>';
+    return h + fold.toggle + '</div>';
   }
   // 「搜索名」(见 RemoteCache.names): 数据源按这些名字搜, 改了按番记住 (同播放器的编辑查询请求). 动过表单就不再跟着轮询重画,
   // 免得打字时被冲掉; 保存 / 恢复成功后清掉标记重画
@@ -7282,6 +7310,11 @@ private val CACHE_SCRIPT = """
     pollCandidates();
   });
   sb.addEventListener('click', function (e) {
+    if (e.target.closest('[data-fold]')) {
+      window.toggleEmptySrc();
+      if (lastCands) setHtml(document.getElementById('cc-chips'), ccChips(lastCands));
+      return;
+    }
     var c = e.target.closest('[data-cc]');
     if (c) {
       var id = c.getAttribute('data-cc');
