@@ -510,6 +510,8 @@ private fun part3() = listOf(
     RemoteText("需验证", "Verify", "需驗證", "需驗證"),
     RemoteText("失败", "Failed", "失敗", "失敗"),
     RemoteText("限流", "Limited", "限流", "限流"),
+    RemoteText("展开 {0} 个暂无结果", "Show {0} with no results yet", "展開 {0} 個暫無結果", "展開 {0} 個暫無結果"),
+    RemoteText("收起 {0} 个暂无结果", "Hide {0} with no results yet", "收起 {0} 個暫無結果", "收起 {0} 個暫無結果"),
     RemoteText("（{0}）", " ({0})", "（{0}）", "（{0}）"),
     RemoteText("显示全部 {0} 条", "Show all {0}", "顯示全部 {0} 條", "顯示全部 {0} 條"),
     RemoteText("分辨率", "Resolution", "分辨率", "解析度"),
