@@ -45,6 +45,8 @@ import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.platform.AppTerminator
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.tv.TvActionPanelRequests
+import me.him188.ani.app.ui.notice.TvNoticeHost
+import me.him188.ani.app.ui.notice.TvNotices
 import me.him188.ani.app.ui.subject.details.layout.TvViewAllCommentsList
 import me.him188.ani.app.ui.subject.details.layout.TvViewAllGalleries
 import me.him188.ani.app.ui.subject.details.sections.LocalViewAllCommentsList
@@ -160,7 +162,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import me.him188.ani.app.domain.profile.UserProfileManager
 import me.him188.ani.app.domain.profile.UserProfiles
-import me.him188.ani.app.ui.profile.TvPendingCollectionsHost
 import me.him188.ani.app.ui.profile.TvProfileSwitchLandingHost
 import me.him188.ani.app.ui.profile.TvUserProfilePicker
 import me.him188.ani.app.ui.profile.TvUserProfilePickerHost
@@ -276,7 +277,7 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         LocalTvAdjustWindows provides adjustWindows,
         LocalMainScreenShellVariant provides MainScreenShellVariant {
                 page, selfInfo, navigator, onNavigateToPage, onNavigateToSettings,
-                onNavigateToSearch, onLogout, modifier, pageContent,
+                onNavigateToSearch, _, modifier, pageContent,
             ->
             // 退出确认弹窗的「确定」= 真退出: AppTerminator 会先收掉 torrent 服务再退进程
             // (Android 上光 finish Activity 的话 :torrent_service 进程还挂着); 开了「退出 Ani 后保留 Web 控制台」时留着进程, 见 exitTvApp
@@ -284,7 +285,7 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
             val appTerminator = remember { KoinPlatform.getKoin().get<AppTerminator>() }
             TvMainScreenLayout(
                 page, selfInfo, navigator, onNavigateToPage, onNavigateToSettings,
-                onNavigateToSearch, onLogout,
+                onNavigateToSearch,
                 onExitApp = { exitTvApp(context, appTerminator) },
                 modifier = modifier, pageContent = pageContent,
             )
@@ -462,7 +463,7 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
             onBack = { aniNavigator.navigate(NavRoutes.TvOnboarding) },
             onNewUserFinished = { rootScope.launch { profileManager.finishPendingLogin() } },
         )
-        // 选人页 (启动时或侧边栏头像的「切换用户」打开)
+        // 选人页 (启动时或设置账号页里的「切换用户」打开)
         TvUserProfilePickerHost(aniNavigator)
         // 一起看: 跟随房主时被带到房主那一集
         TvTogetherHost(aniNavigator, playbackEntry)
@@ -472,8 +473,8 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         TvWhatsNewHost()
         // 应用自己改用户设置时告知或询问 (见 SettingAdjustments)
         TvSettingAdjustmentHost()
-        // 本地用户改成 Bangumi 用户后登录了: 问留下的本地收藏合并到账号还是删掉 (只在首页上弹, 见 TvPendingCollectionsHost)
-        TvPendingCollectionsHost(onMainPage = {
+        // 应用内通知 (反馈回复、待处理的本地收藏、发版后的通知等): 进应用时有新的就在首页打开通知弹窗 (见 TvNoticeHost)
+        TvNoticeHost(aniNavigator, onMainPage = {
             startupLogo?.visible != true && runCatching { aniNavigator.backStack.lastOrNull() }.getOrNull() is NavRoutes.Main
         })
         // 「标记看过后删除缓存」删了缓存时弹提示 (标记可能在任何一页或 Web 控制台发生)
@@ -494,6 +495,8 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
             if (startupLogo != null) snapshotFlow { startupLogo.visible }.first { !it }
             // 「本版新功能」页盖了就不再弹二维码 (冷启动进首页时启动页撤之前已经决定过, 这里拿同一个结果; 先选人的这时才决定)
             if (TvWhatsNew.showOnLaunch(appContext, whatsNewAllowed)) return@LaunchedEffect
+            // 有新的通知时这一次打开通知弹窗, 不弹二维码 (每次进应用最多盖一层, 见 TvNotices.claimLaunch)
+            if (TvNotices.claimLaunch()) return@LaunchedEffect
             TvRemoteControl.showDialogOnLaunch {
                 !onboardingPending && !pickerOnLaunch && !newUserLoginPending && !profileRestart &&
                         runCatching { aniNavigator.backStack.lastOrNull() }.getOrNull() is NavRoutes.Main

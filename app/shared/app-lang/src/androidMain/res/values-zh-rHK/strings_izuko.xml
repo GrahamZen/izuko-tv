@@ -1254,4 +1254,13 @@
     <string name="all_episodes_hint_remote">按確定播放 · 長按確定查看詳情</string>
     <string name="all_episodes_view_stills">劇照卡</string>
     <string name="all_episodes_view_numbers">只顯示集數</string>
+    <string name="tv_notice_footer">之後可在頭像上的「通知」中查看</string>
+    <string name="tv_notice_feedback_reply">你的回報「%1$s」有新回覆</string>
+    <string name="tv_notice_feedback_done">你的回報「%1$s」已處理</string>
+    <string name="tv_notice_pending_collections">有 %1$d 部本地收藏待處理</string>
+    <string name="settings_theme_tv_notices_on_launch">開啟應用程式時顯示新通知</string>
+    <string name="settings_theme_tv_notices_on_launch_description">有沒看過的通知時，回到首頁自動開啟通知列表。關閉後只在頭像上顯示紅點。</string>
+    <string name="tv_notice_section_new">新通知</string>
+    <string name="tv_notice_section_earlier">之前的</string>
+    <string name="tv_notice_qr_hint">手機掃碼查看</string>
 </resources>

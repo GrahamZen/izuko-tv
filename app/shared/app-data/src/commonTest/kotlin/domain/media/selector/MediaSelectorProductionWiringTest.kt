@@ -220,6 +220,7 @@ class MediaSelectorProductionWiringTest {
             override val githubDownloadMirrorCache get() = error("not used")
             override val feedbackEndpointCache get() = error("not used")
             override val feedbackRecords get() = error("not used")
+            override val notices get() = error("not used")
             override val danmakuConfig get() = error("not used")
             override val danmakuFilterConfig get() = error("not used")
             override val profileSettings get() = error("not used")

@@ -150,7 +150,7 @@ data class TvNavRailItem(
 )
 
 /**
- * 头像的关联动作 (编辑资料/播放记录/退出登录): 焦点在头像簇上时浮现于头像上方.
+ * 头像的关联动作 (播放记录 / 通知): 焦点在头像簇上时浮现于头像上方.
  *
  * 曾经条目也能带一簇往**下**长的同款按钮 (给"正在播放"的关闭用), 2026-08-16 随那个条目一起
  * 删掉了 —— 后台会话的入口与状态都收进了长按返回的动作面板 (见 TvActionPanelDialog),
@@ -160,6 +160,8 @@ data class TvNavRailItem(
 data class TvRailAvatarAction(
     val icon: ImageVector,
     val label: String,
+    /** 图标右上角画红点 (如「通知」有新的, 同头像上的那个). */
+    val badge: Boolean = false,
     val onClick: () -> Unit,
 )
 
@@ -370,7 +372,7 @@ fun TvNavigationSideRail(
     enterRequester: FocusRequester? = null,
     /** 头像关联动作 (按登录态由调用方组装); 焦点在头像簇上时于其上方浮现这些图标+文字按钮. */
     avatarActions: List<TvRailAvatarAction> = emptyList(),
-    /** 头像右上角画红点 (如反馈有新回复, 见 rememberTvFeedbackUnread). */
+    /** 头像右上角画红点 (有新的通知, 见 TvNotices). */
     avatarBadge: Boolean = false,
     /** 展开遮罩面板底色覆盖 (如详情页按封面调色板取色, 使遮罩跟随背景/主题); null 用默认 surface. */
     scrimColor: Color? = null,
@@ -673,6 +675,7 @@ private fun TvRailFloatingActionButton(
     icon: ImageVector,
     label: String,
     showLabel: Boolean,
+    badge: Boolean,
     onClick: () -> Unit,
     onExitFocus: (() -> Unit)?,
 ) {
@@ -690,7 +693,7 @@ private fun TvRailFloatingActionButton(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        TvRailGlyphBox(focused, icon)
+        TvRailGlyphBox(focused, icon, Modifier.railBadge(badge, MaterialTheme.colorScheme.error))
         if (showLabel) {
             Text(
                 label,
@@ -819,7 +822,7 @@ private fun BoxScope.TvRailFloatingActionCluster(
             verticalArrangement = Arrangement.spacedBy(TV_RAIL_FLOATING_ACTION_SPACING),
         ) {
             for (action in actions) {
-                TvRailFloatingActionButton(action.icon, action.label, showLabels, action.onClick, onExitFocus)
+                TvRailFloatingActionButton(action.icon, action.label, showLabels, action.badge, action.onClick, onExitFocus)
             }
         }
     }

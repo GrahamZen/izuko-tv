@@ -23,6 +23,7 @@ import kotlinx.serialization.KSerializer
 import me.him188.ani.app.data.models.danmaku.DanmakuConfigSerializer
 import me.him188.ani.app.data.models.danmaku.DanmakuFilterConfig
 import me.him188.ani.app.data.models.feedback.FeedbackRecords
+import me.him188.ani.app.data.models.notice.NoticeLog
 import me.him188.ani.app.data.models.preference.AnalyticsSettings
 import me.him188.ani.app.data.models.preference.AnitorrentConfig
 import me.him188.ani.app.data.models.preference.CloudDriveAccounts
@@ -78,6 +79,9 @@ interface SettingsRepository {
 
     /** 这台电视提交过的反馈 (见 FeedbackRecordRepository). */
     val feedbackRecords: Settings<FeedbackRecords>
+
+    /** 这个用户档的通知: 消息与看过的记录 (见 me.him188.ani.app.domain.notice.Notices). */
+    val notices: Settings<NoticeLog>
 
     val mediaSelectorSettings: Settings<MediaSelectorSettings>
 
@@ -254,6 +258,11 @@ class PreferencesRepositoryImpl(
         "feedbackRecords",
         FeedbackRecords.serializer(),
         default = { FeedbackRecords.Empty },
+    )
+    override val notices: Settings<NoticeLog> = SerializablePreference(
+        "notices",
+        NoticeLog.serializer(),
+        default = { NoticeLog.Empty },
     )
     override val danmakuConfig: Settings<DanmakuConfig> =
         SerializablePreference("danmaku_config", DanmakuConfigSerializer, default = { DanmakuConfig.Default })

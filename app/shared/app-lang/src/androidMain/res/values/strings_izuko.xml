@@ -1302,4 +1302,13 @@
     <string name="all_episodes_hint_remote">OK to play · Hold OK for details</string>
     <string name="all_episodes_view_stills">Thumbnails</string>
     <string name="all_episodes_view_numbers">Episode numbers only</string>
+    <string name="tv_notice_footer">You can view them later from Notifications above your avatar.</string>
+    <string name="tv_notice_feedback_reply">Your feedback “%1$s” has a new reply</string>
+    <string name="tv_notice_feedback_done">Your feedback “%1$s” has been resolved</string>
+    <string name="tv_notice_pending_collections">%1$d local collections are waiting to be handled</string>
+    <string name="settings_theme_tv_notices_on_launch">Show new notifications when opening the app</string>
+    <string name="settings_theme_tv_notices_on_launch_description">When there are unseen notifications, the notification list opens on the home page. When off, only a red dot appears on your avatar.</string>
+    <string name="tv_notice_section_new">New</string>
+    <string name="tv_notice_section_earlier">Earlier</string>
+    <string name="tv_notice_qr_hint">Scan to view on your phone</string>
 </resources>

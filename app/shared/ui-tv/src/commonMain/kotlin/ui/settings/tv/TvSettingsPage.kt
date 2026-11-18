@@ -123,6 +123,8 @@ fun TvSettingsPage(
         state.attach(TvSettingsHost(playNoticeSound, toast = { RemoteDebugSettingsPage.onToast(it); toaster.toast(it) }, browser))
         // 说明栏里的控制台二维码用最新的地址 (换过网络、地址变了)
         TvRemoteControl.refreshAddress()
+        // 从别处要求直接进某一组 (如通知里的反馈回复 → 「我的反馈」, 见 TvSettingsEntryGroup)
+        TvSettingsEntryGroup.take()?.let { state.openGroup(it) }
     }
     // 控制台调试操作 (api/debug/settings/...) 读、按的就是这一页
     DisposableEffect(state) {

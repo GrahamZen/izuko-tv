@@ -65,10 +65,13 @@ internal val TvFeedbackRecordsKey = TvSettingKey.Live("feedbackRecords") {
 
 internal fun feedbackKey(r: FeedbackRecord): String = "${r.kind.name}-${r.issue}"
 
+/** 「我的反馈」那一组的锚点: 从通知里直接打开它 (见 TvSettingsState.openGroup). */
+const val TV_SETTINGS_FEEDBACK_GROUP = "feedback"
+
 /**
  * 「我的反馈」(账号页最前面; 没登录时排在登录的常见问题后面, [showHeader] 给它加一行组标题): 这台电视提交过的故障工单与
  * 标题 logo / 对应作品修正, 一条一行 (新的在前, 行尾写状态). 焦点所在那条在说明栏写状态, 下面是会话气泡 (新的在前; 放不下的旧气泡不画).
- * 写反馈、补充、装测试包都在手机控制台, 组那一行画控制台的二维码. 进这一组就算看过了 (主页头像上的红点消失, 见 rememberTvFeedbackUnread).
+ * 写反馈、补充、装测试包都在手机控制台, 组那一行画控制台的二维码. 进这一组就算看过了 (通知里那条反馈回复随之消失, 见 TvFeedbackNotice).
  */
 internal fun TvSettingsItemsBuilder.feedbackItems(showHeader: (TvSettingsValues) -> Boolean) {
     val records = TvFeedbackRecordsKey
@@ -78,6 +81,7 @@ internal fun TvSettingsItemsBuilder.feedbackItems(showHeader: (TvSettingsValues)
         value = { v -> v[records]?.records?.let(::feedbackGroupValue) },
         qr = { consoleQr(it, "#settings/feedback") },
         onOpen = { markAllRead() },
+        anchor = TV_SETTINGS_FEEDBACK_GROUP,
     ) {
         action(
             Lang.tv_settings_feedback_empty, Lang.tv_settings_feedback_empty_description, keys = listOf(records),

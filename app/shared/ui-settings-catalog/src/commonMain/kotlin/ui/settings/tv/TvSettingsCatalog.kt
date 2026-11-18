@@ -231,6 +231,7 @@ sealed class TvSettingItem(
     /**
      * 一组设置项 (如开发者名单、鸣谢): 行尾画 ›, 确定进一层列出 [items] (同分类里的项, 也可以再套一组), 返回退回这一行.
      * [onOpen] 是进去时做的事 (如开始读开源库列表), 不等它做完就进.
+     * [anchor] 是固定的名字, 从别处直接打开这一组时按它找 (见 [TvSettingsState.openGroup]); [id] 按位置编, 会随前面的项变.
      */
     class Group(
         id: String,
@@ -242,6 +243,7 @@ sealed class TvSettingItem(
         visible: (TvSettingsValues) -> Boolean,
         whileFocused: (suspend (TvSettingsEnv) -> Unit)? = null,
         qr: ((TvSettingsValues) -> TvQr?)? = null,
+        val anchor: String? = null,
     ) : TvSettingItem(id, emptyList(), visible, qr, whileFocused)
 
     /**
@@ -566,6 +568,7 @@ class TvSettingsItemsBuilder(private val prefix: String) {
         whileFocused: (suspend (TvSettingsEnv) -> Unit)? = null,
         qr: ((TvSettingsValues) -> TvQr?)? = null,
         onOpen: ((TvSettingsEnv) -> Unit)? = null,
+        anchor: String? = null,
         items: TvSettingsItemsBuilder.() -> Unit,
     ) {
         val id = nextId()
@@ -579,6 +582,7 @@ class TvSettingsItemsBuilder(private val prefix: String) {
             visible = visible,
             whileFocused = whileFocused,
             qr = qr,
+            anchor = anchor,
         )
     }
 

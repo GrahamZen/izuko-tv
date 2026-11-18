@@ -13,13 +13,13 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.graphicsLayer
-import me.him188.ani.app.ui.feedback.rememberTvFeedbackUnread
+import me.him188.ani.app.ui.notice.TvNotices
+import me.him188.ani.app.ui.notice.rememberTvNoticesFresh
 import me.him188.ani.app.ui.foundation.NSFW_OBSCURED_COVER_LONG_EDGE_PX
 import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
 import me.him188.ani.app.ui.foundation.dialogs.DialogWindowDimAmount
 import me.him188.ani.app.ui.foundation.layout.LocalShellContentStartInset
 import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallTone
-import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.rememberTvPosterWallTone
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallHeroBackground
 import me.him188.ani.app.ui.foundation.tv.tvTmdbSubjectTitleFilled
@@ -49,8 +49,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Home
@@ -156,7 +156,6 @@ import me.him188.ani.app.ui.lang.playback_nothing_to_play
 import me.him188.ani.app.ui.lang.playback_prepare_in_background
 import me.him188.ani.app.ui.lang.playback_up_next_continue
 import me.him188.ani.app.ui.lang.playback_up_next_start
-import me.him188.ani.app.ui.lang.settings_account_popup_logout
 import me.him188.ani.app.ui.lang.tv_exit_press_again
 import me.him188.ani.app.ui.lang.tv_force_refresh_toast
 import me.him188.ani.app.ui.lang.tv_shuffle_toast
@@ -174,11 +173,7 @@ import me.him188.ani.app.ui.remote.TvRemoteControl
 import me.him188.ani.app.ui.remote.TvRemoteQrCard
 import me.him188.ani.datasources.api.toLocalDateOrNull
 import org.jetbrains.compose.resources.stringResource
-import androidx.compose.material.icons.outlined.SwitchAccount
-import me.him188.ani.app.domain.profile.UserProfileManager
-import me.him188.ani.app.ui.lang.tv_profile_switch
-import me.him188.ani.app.ui.profile.TvUserProfilePicker
-import org.koin.mp.KoinPlatform
+import me.him188.ani.app.ui.lang.notification_title
 
 /**
  * TV 主页外壳: 可展开左侧边栏 (头像置顶 → 用户信息页, 搜索/探索/收藏/缓存/设置),
@@ -194,7 +189,6 @@ fun TvMainScreenLayout(
     onNavigateToPage: (MainScreenPage) -> Unit,
     onNavigateToSettings: (tab: SettingsTab?) -> Unit,
     onNavigateToSearch: () -> Unit,
-    onLogout: () -> Unit,
     /** 真正退出应用 (Android 侧 = AppTerminator: 收掉 torrent 服务再退进程), 由装配处注入. */
     onExitApp: () -> Unit,
     modifier: Modifier = Modifier,
@@ -315,51 +309,18 @@ fun TvMainScreenLayout(
                 pageContent()
             }
         }
-        // 头像关联动作 (焦点在头像上时于其上方浮现): 按登录态切换; 本地档没有 Bangumi 账号, 不给登录 / 退出
-        val localProfile = selfInfo.isLocalProfile
-        val loggedIn = selfInfo.selfInfo != null && selfInfo.isSessionValid != false
-        // 编辑资料就是点头像本身 (进设置的账号页), 不占浮出按钮
-        val canSwitchUser = remember { runCatching { KoinPlatform.getKoin().get<UserProfileManager>().isSupported }.getOrDefault(false) }
-        val switchUserText = stringResource(Lang.tv_profile_switch)
-        val avatarActions = buildList {
-            if (localProfile) {
-                add(
-                    TvRailAvatarAction(
-                        Icons.Outlined.History,
-                        stringResource(Lang.playback_history_title),
-                    ) { navigator.navigatePlaybackHistory() },
-                )
-            } else if (loggedIn) {
-                add(
-                    TvRailAvatarAction(
-                        Icons.Outlined.History,
-                        stringResource(Lang.playback_history_title),
-                    ) { navigator.navigatePlaybackHistory() },
-                )
-                add(
-                    TvRailAvatarAction(
-                        Icons.AutoMirrored.Outlined.Logout,
-                        stringResource(Lang.settings_account_popup_logout),
-                    ) { onLogout() },
-                )
-            } else {
-                // 没登录: 登录就是点头像 (设置的账号页即登录页), 不另给登录按钮
-                add(
-                    TvRailAvatarAction(
-                        Icons.Outlined.History,
-                        stringResource(Lang.playback_history_title),
-                    ) { navigator.navigatePlaybackHistory() },
-                )
-            }
-            // 多用户: 打开选人页 (只有一个用户时也在, 那里能添加用户); 平板模式不给
-            if (canSwitchUser && !LocalTvTouchInputEnabled.current) {
-                add(TvRailAvatarAction(Icons.Outlined.SwitchAccount, switchUserText) { TvUserProfilePicker.show() })
-            }
-        }
+        // 头像关联动作 (焦点在头像上时于其上方浮现): 只放常用的播放记录与通知. 登录 / 退出登录、编辑资料、切换用户都低频,
+        // 在点头像进的设置账号页里
+        val noticesFresh = rememberTvNoticesFresh()
+        val avatarActions = listOf(
+            TvRailAvatarAction(Icons.Outlined.History, stringResource(Lang.playback_history_title)) { navigator.navigatePlaybackHistory() },
+            // 通知 (见 TvNotices): 紧挨头像 (从头像按一下上就到), 有新的时同头像一起带红点
+            TvRailAvatarAction(Icons.Outlined.Notifications, stringResource(Lang.notification_title), badge = noticesFresh) { TvNotices.open() },
+        )
         TvNavigationSideRail(
             selfInfo = selfInfo,
             avatarActions = avatarActions,
-            avatarBadge = rememberTvFeedbackUnread(),
+            avatarBadge = noticesFresh,
             // 点头像一律进设置的账号页, 不管登没登录、是不是本地用户: 没登录时那里就是登录页; 切换用户在浮出按钮里
             onAvatarClick = { onNavigateToSettings(SettingsTab.PROFILE) },
             // 返回/右键: 还原回进入侧边栏之前内容区最后聚焦的元素 (经内容区 enter, 页面

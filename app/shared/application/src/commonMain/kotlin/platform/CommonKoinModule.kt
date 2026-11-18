@@ -116,6 +116,7 @@ import me.him188.ani.app.domain.foundation.ScopedHttpClientUserAgent
 import me.him188.ani.app.domain.foundation.ServerListFeature
 import me.him188.ani.app.domain.foundation.ServerListFeatureConfig
 import me.him188.ani.app.domain.foundation.SseFeatureHandler
+import me.him188.ani.app.domain.notice.Notices
 import me.him188.ani.app.domain.together.TogetherWebSocketsFeatureHandler
 import me.him188.ani.app.domain.foundation.UseBangumiTokenFeatureHandler
 import me.him188.ani.app.domain.foundation.UserAgentFeature
@@ -321,6 +322,7 @@ private fun KoinApplication.otherModules(
         )
     }
     single<FeedbackRecordRepository> { FeedbackRecordRepository(get<SettingsRepository>().feedbackRecords) }
+    single<Notices> { Notices(get<SettingsRepository>().notices, coroutineScope) }
     single<FeedbackDevice> { FeedbackDevice(getContext().feedbackDeviceId(), getContext().feedbackEnvironment()) }
     single<LowRamDevice> { LowRamDevice(getContext().isLowRamDevice()) }
     single<NetworkStatus>(createdAtStart = true) {

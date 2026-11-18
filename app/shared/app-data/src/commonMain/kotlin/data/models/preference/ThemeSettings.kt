@@ -390,6 +390,11 @@ data class ThemeSettings(
      */
     val tvRemoteShowOnLaunch: Boolean = true,
     /**
+     * TV: 进应用 (冷启动、从后台回来、切换用户) 时有没看过的通知, 就在首页自动打开通知列表 (见 docs/contributing/code/notices.md);
+     * 关着时只在头像上画红点.
+     */
+    val tvNoticesOnLaunch: Boolean = true,
+    /**
      * 装了 TV 包的平板 / 手机: 播放页以外的页面也藏起导航栏 (从屏幕边缘滑一下临时出来). 默认关: 这种形态界面内没有返回按钮,
      * 导航栏是返回的途径. 播放页不看它, 两条栏都藏. 没有触摸屏的设备 (电视) 不列这一项也不读它, 见 `ImmersiveShellSystemBars.kt`.
      */

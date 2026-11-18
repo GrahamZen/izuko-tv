@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -108,6 +109,11 @@ fun BoxScope.UpdateNotifier(
     val hasUpdatePrompt = state is AppUpdateState.HasUpdate && !UserProfiles.launchedBySwitch
     val showCard = !dismissed && (hasUpdatePrompt || presentation.isDownloading)
     val hasUpdateCard = showCard && state is AppUpdateState.HasUpdate
+    // 提示卡在场时 TV 的通知弹窗先等着 (见 UpdatePromptState)
+    DisposableEffect(hasUpdateCard) {
+        UpdatePromptState.setCardShown(hasUpdateCard)
+        onDispose { UpdatePromptState.setCardShown(false) }
+    }
 
     // TV: 气泡出现时把初始焦点送到"自动更新"按钮. 卡片动画尚未组合按钮时请求会悬挂,
     // 等锚点真正附着后由 Resolver 送达, 不再逐帧重发 requestFocus.

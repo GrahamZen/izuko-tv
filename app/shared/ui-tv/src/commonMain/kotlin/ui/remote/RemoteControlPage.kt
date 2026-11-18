@@ -66,7 +66,7 @@ internal fun renderRemoteControlPage(
     """.trimIndent() + "\n" + "window.pageVersion = '" + pageVersion + "';\n" + "window.profileId = " + profileId + ";\n" + i18nScript + "\n" + LANG_SCRIPT + "\n" + THEME_HEAD_SCRIPT + "\n" + """
     </script>
     <style>
-    """.trimIndent() + "\n" + STYLE + "\n" + SHOT_STYLE + "\n" + FAIL_STYLE + "\n" + PERF_STYLE + "\n" + SOURCE_PROFILE_STYLE + "\n" + FEEDBACK_STYLE + "\n" + SOURCES_TAB_STYLE + "\n" + SETTINGS_RECENT_STYLE + "\n" + TOGETHER_STYLE + "\n" + themeCss + """
+    """.trimIndent() + "\n" + STYLE + "\n" + SHOT_STYLE + "\n" + FAIL_STYLE + "\n" + PERF_STYLE + "\n" + SOURCE_PROFILE_STYLE + "\n" + FEEDBACK_STYLE + "\n" + NOTICE_STYLE + "\n" + SOURCES_TAB_STYLE + "\n" + SETTINGS_RECENT_STYLE + "\n" + TOGETHER_STYLE + "\n" + themeCss + """
     </style>
     </head>
     <body>
@@ -200,7 +200,7 @@ internal fun renderRemoteControlPage(
     </nav>
     <script>
     var INITIAL_TAB = '$initialTab';
-    """.trimIndent() + "\n" + SCRIPT + "\n" + REQUEST_SCRIPT + "\n" + CONTROL_SCRIPT + "\n" + DANMAKU_SCRIPT + "\n" + DANMAKU_EXTRAS_SCRIPT + "\n" + REVIEW_SCRIPT + "\n" + CACHE_SCRIPT + "\n" + CACHE_LIST_SCRIPT + "\n" + SOURCES_SCRIPT + "\n" + SOURCES_TAB_SCRIPT + "\n" + SOURCE_PROFILE_SCRIPT + "\n" + SUBS_SCRIPT + "\n" + CLOUD_DRIVE_SCRIPT + "\n" + SETTINGS_SCRIPT + "\n" + SETTINGS_EXTRAS_SCRIPT + "\n" + SETTINGS_RECENT_SCRIPT + "\n" + DEVICE_MIGRATION_SCRIPT + "\n" +LOOK_SCRIPT + "\n" + LOGS_SCRIPT + "\n" + PERF_SCRIPT + "\n" + PROFILES_SCRIPT + "\n" + ACCOUNT_SCRIPT + "\n" + HISTORY_SCRIPT + "\n" + HELP_SCRIPT + "\n" + PICK_SCRIPT + "\n" + UPDATE_SCRIPT + "\n" + SHARES_SCRIPT + "\n" + DRIVE_SCRIPT + "\n" + SHOT_SCRIPT + "\n" + MIRROR_SCRIPT + "\n" + FAIL_SCRIPT + "\n" + FEEDBACK_SCRIPT + "\n" + TOGETHER_SCRIPT + "\n" + """
+    """.trimIndent() + "\n" + SCRIPT + "\n" + REQUEST_SCRIPT + "\n" + CONTROL_SCRIPT + "\n" + DANMAKU_SCRIPT + "\n" + DANMAKU_EXTRAS_SCRIPT + "\n" + REVIEW_SCRIPT + "\n" + CACHE_SCRIPT + "\n" + CACHE_LIST_SCRIPT + "\n" + SOURCES_SCRIPT + "\n" + SOURCES_TAB_SCRIPT + "\n" + SOURCE_PROFILE_SCRIPT + "\n" + SUBS_SCRIPT + "\n" + CLOUD_DRIVE_SCRIPT + "\n" + SETTINGS_SCRIPT + "\n" + SETTINGS_EXTRAS_SCRIPT + "\n" + SETTINGS_RECENT_SCRIPT + "\n" + DEVICE_MIGRATION_SCRIPT + "\n" +LOOK_SCRIPT + "\n" + LOGS_SCRIPT + "\n" + PERF_SCRIPT + "\n" + PROFILES_SCRIPT + "\n" + ACCOUNT_SCRIPT + "\n" + HISTORY_SCRIPT + "\n" + HELP_SCRIPT + "\n" + NOTICE_SCRIPT + "\n" + PICK_SCRIPT + "\n" + UPDATE_SCRIPT + "\n" + SHARES_SCRIPT + "\n" + DRIVE_SCRIPT + "\n" + SHOT_SCRIPT + "\n" + MIRROR_SCRIPT + "\n" + FAIL_SCRIPT + "\n" + FEEDBACK_SCRIPT + "\n" + TOGETHER_SCRIPT + "\n" + """
     </script>
     </body>
     </html>
@@ -1654,6 +1654,8 @@ private val SCRIPT = """
         noticeFails = 0;
         if (n.text) toast(n.text, 6000);
         noticeSeq = n.seq;
+        // 新通知 (见 RemoteNotices 的 NOTICE_SCRIPT)
+        if (window.onNoticePoll) window.onNoticePoll(n);
         // BT 服务没在运行、又有没下完的缓存时补一句: 服务只在 Ani 前台时才起, 这会儿下载是停着的 (见 TvRemoteControl.noticeState);
         // 系统限制了 Ani 后台运行的话, 服务连着也只能再下 1 分钟左右, 把原因说出来
         var cacheHalted = !n.cachePending ? '' : n.bgRestricted
