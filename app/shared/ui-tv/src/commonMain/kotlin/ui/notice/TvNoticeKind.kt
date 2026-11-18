@@ -1,0 +1,111 @@
+/*
+ * Copyright (C) 2024-2026 OpenAni and contributors.
+ *
+ * 此源代码的使用受 GNU AFFERO GENERAL PUBLIC LICENSE version 3 许可证的约束, 可以在以下链接找到该许可证.
+ * Use of this source code is governed by the GNU AGPLv3 license, which can be found at the following link.
+ *
+ * https://github.com/open-ani/ani/blob/main/LICENSE
+ */
+
+package me.him188.ani.app.ui.notice
+
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
+import androidx.compose.ui.text.AnnotatedString
+import kotlinx.coroutines.flow.Flow
+import me.him188.ani.app.data.models.notice.Notice
+import me.him188.ani.app.navigation.AniNavigator
+import me.him188.ani.app.ui.foundation.widgets.Toaster
+
+/**
+ * 一种通知: 标题与摘要、右栏的说明与操作 (见 docs/contributing/code/notices.md). 一个种类一个文件, 在 [TvNotices] 的种类表里登记一行.
+ *
+ * 发通知的一方只碰数据层: 消息在事件发生处 `Notices.post`, 跟着状态的由这里的 [source] 给出.
+ */
+interface TvNoticeKind {
+    /** 种类 id, 同 [Notice.kind]. */
+    val id: String
+
+    /** 类别: 列表行左边的图标、右栏标题上面的签. */
+    val category: TvNoticeCategory
+
+    /** 跟着状态的来源 (启动时接到 `Notices` 上, 一个进程一次); 只发消息的种类为 null. */
+    fun source(): Flow<List<Notice>>? = null
+
+    /** 标题: 怎么了, 写得短、一行放得下 (列表、气泡、手机上的横幅都用它); 切换语言后照样对. null = 去处已经不在了, 这条不列. */
+    suspend fun title(notice: Notice): String?
+
+    /** 列表里标题下面那一行: 是哪一个 (作品、反馈…), 或说明的开头; null = 没有这一行. 切换语言后照样对. */
+    suspend fun summary(notice: Notice): String? = null
+
+    /** [title]、[summary] 与 [detail] 除了通知本身还看的状态: 它一变, 列出来的通知重算一遍 (该不列的不列); 只看通知本身的为 null. */
+    fun textChanges(): Flow<*>? = null
+
+    /** 电视上的去处; null = 没有 (只是告知). 给了 [detail] 的种类照它的操作走, 这里只在说明取不到时用. */
+    fun destination(notice: Notice): TvNoticeDestination?
+
+    /** 聚焦这一条时右栏写的说明与处理它的操作. null = 右栏写标题与摘要, 有 [destination] 时它是唯一的操作 (「查看」). */
+    suspend fun detail(notice: Notice): TvNoticeDetail? = null
+
+    /** 控制台上的去处 (控制台页面的地址, 如 `#settings/feedback`); null = 控制台上只能「在电视上打开」. */
+    fun consoleHref(notice: Notice): String? = null
+}
+
+/**
+ * 右栏 (标题是 [TvNoticeKind.title]): 标题下面一行是哪一个 [subject] (作品、反馈; 不关哪一个的为 null)、正文 [body] (一项一段),
+ * 与处理它的操作 [actions] (只有一个时不画按钮, 在列表里按确定键直接做; 几个时按确定键或右键进右栏挑一个; 没有的只是告知).
+ * [qr] 是说明里的外部链接 (见 [TvNoticeQr]), 画在正文后面、操作前面.
+ */
+@Immutable
+class TvNoticeDetail(
+    val body: List<TvNoticeParagraph>,
+    val actions: List<TvNoticeAction>,
+    val subject: String? = null,
+    val qr: TvNoticeQr? = null,
+)
+
+/**
+ * 正文里的一段.
+ *
+ * @param text 这一段的字 (可以带粗体)
+ * @param title 小标题, 写在这一段上面 (如新版本里一项改动的名字、「维护者的回复」); 没有就只是一段话
+ * @param bullet 前面画一个点 (列成一条条的要点)
+ * @param maxLines 至多几行 (电视、触屏都是): 摘要类的说明截掉的去操作里看全; 默认写全
+ * @param longName 资源名这类长串: 触屏上操作画成按钮, 右栏放不下, 截到三行; 电视上照常写全
+ */
+@Immutable
+class TvNoticeParagraph(
+    val text: AnnotatedString,
+    val title: String? = null,
+    val bullet: Boolean = false,
+    val maxLines: Int = Int.MAX_VALUE,
+    val longName: Boolean = false,
+) {
+    constructor(
+        text: String,
+        title: String? = null,
+        bullet: Boolean = false,
+        maxLines: Int = Int.MAX_VALUE,
+        longName: Boolean = false,
+    ) : this(AnnotatedString(text), title, bullet, maxLines, longName)
+}
+
+/** 说明里的一个外部链接: 电视上画 [url] 的二维码, 码下面写 [caption]; 触屏上是一颗打开链接的按钮; 控制台上是一个链接. */
+@Immutable
+class TvNoticeQr(val url: String, val caption: String)
+
+/** 一个操作: 按钮上的字 [label] (只写动作, 如「更换资源」) 与按了去哪. */
+@Immutable
+class TvNoticeAction(val label: String, val destination: TvNoticeDestination)
+
+/** 按确定后去哪. */
+sealed interface TvNoticeDestination {
+    /** 跳到一个页面; 在那页按返回回到首页时通知弹窗重新打开. */
+    class Page(val navigate: (AniNavigator) -> Unit) : TvNoticeDestination
+
+    /** 在通知弹窗上叠一个弹窗, 关掉回到列表. */
+    class Dialog(val content: @Composable (onDismiss: () -> Unit) -> Unit) : TvNoticeDestination
+
+    /** 当场做完的一件事 (如重新搜索): 做完弹一条提示, 留在列表. */
+    class Run(val run: suspend (Toaster) -> Unit) : TvNoticeDestination
+}

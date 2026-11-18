@@ -141,6 +141,11 @@ sealed class TvSettingItem(
      * [TvSettingsDeps] 里, 经实时值回到 [qr].
      */
     val whileFocused: (suspend (TvSettingsEnv) -> Unit)? = null,
+    /**
+     * 固定的名字, 从别处直接找到这一行时按它找 ([id] 按位置编, 会随前面的项变): 组的见 [TvSettingsState.openGroup],
+     * 分类最外一层的行见 [TvSettingsState.rowOf].
+     */
+    val anchor: String? = null,
 ) {
     /** 组标题 (不可聚焦). */
     class Header(id: String, val title: TvText, visible: (TvSettingsValues) -> Boolean) : TvSettingItem(id, emptyList(), visible)
@@ -226,11 +231,13 @@ sealed class TvSettingItem(
         whileFocused: (suspend (TvSettingsEnv) -> Unit)? = null,
         /** 焦点在这一行时说明栏画的图. */
         val image: TvImage? = null,
-    ) : TvSettingItem(id, keys, visible, qr, whileFocused)
+        anchor: String? = null,
+    ) : TvSettingItem(id, keys, visible, qr, whileFocused, anchor)
 
     /**
      * 一组设置项 (如开发者名单、鸣谢): 行尾画 ›, 确定进一层列出 [items] (同分类里的项, 也可以再套一组), 返回退回这一行.
      * [onOpen] 是进去时做的事 (如开始读开源库列表), 不等它做完就进.
+     * [anchor] 是固定的名字, 从别处直接打开这一组时按它找 (见 [TvSettingsState.openGroup]).
      */
     class Group(
         id: String,
@@ -242,7 +249,8 @@ sealed class TvSettingItem(
         visible: (TvSettingsValues) -> Boolean,
         whileFocused: (suspend (TvSettingsEnv) -> Unit)? = null,
         qr: ((TvSettingsValues) -> TvQr?)? = null,
-    ) : TvSettingItem(id, emptyList(), visible, qr, whileFocused)
+        anchor: String? = null,
+    ) : TvSettingItem(id, emptyList(), visible, qr, whileFocused, anchor)
 
     /**
      * 一组随数据变的行 (如数据源、订阅、弹幕过滤规则): [entries] 给出现在有哪些, 每一行按 [key] 认 (行 id 用它, 焦点跟着它走).
@@ -525,6 +533,7 @@ class TvSettingsItemsBuilder(private val prefix: String) {
         qr: ((TvSettingsValues) -> TvQr?)? = null,
         whileFocused: (suspend (TvSettingsEnv) -> Unit)? = null,
         image: TvImage? = null,
+        anchor: String? = null,
         edits: (TvSettingsValues) -> List<TvSettingsEdit>,
     ) {
         val static = staticText(description)
@@ -541,6 +550,7 @@ class TvSettingsItemsBuilder(private val prefix: String) {
             qr = qr,
             whileFocused = whileFocused,
             image = image,
+            anchor = anchor,
         )
     }
 
@@ -554,10 +564,11 @@ class TvSettingsItemsBuilder(private val prefix: String) {
         chevron: Boolean = false,
         visible: (TvSettingsValues) -> Boolean = { true },
         qr: ((TvSettingsValues) -> TvQr?)? = null,
+        anchor: String? = null,
         block: suspend (TvSettingsEnv) -> Unit,
-    ) = action(title, description, keys, value, null, confirm, chevron, visible, qr) { listOf(TvSettingsEdit.Run(block)) }
+    ) = action(title, description, keys, value, null, confirm, chevron, visible, qr, anchor = anchor) { listOf(TvSettingsEdit.Run(block)) }
 
-    /** 进一层的一组设置项 (见 [TvSettingItem.Group]), 里面的项照分类里的写法写. */
+    /** 进一层的一组设置项 (见 [TvSettingItem.Group]), 里面的项照分类里的写法写. [hideWhenEmpty]: 里面一行能显示的都没有时这一组不显示. */
     fun group(
         title: StringResource,
         description: StringResource? = null,
@@ -566,19 +577,27 @@ class TvSettingsItemsBuilder(private val prefix: String) {
         whileFocused: (suspend (TvSettingsEnv) -> Unit)? = null,
         qr: ((TvSettingsValues) -> TvQr?)? = null,
         onOpen: ((TvSettingsEnv) -> Unit)? = null,
+        anchor: String? = null,
+        hideWhenEmpty: Boolean = false,
         items: TvSettingsItemsBuilder.() -> Unit,
     ) {
         val id = nextId()
+        val children = TvSettingsItemsBuilder(id).apply(items).build()
         this.items += TvSettingItem.Group(
             id = id,
             title = tvText(title),
             description = staticText(description),
             value = value ?: { null },
-            items = TvSettingsItemsBuilder(id).apply(items).build(),
+            items = children,
             onOpen = onOpen,
-            visible = visible,
+            visible = if (hideWhenEmpty) {
+                { values -> visible(values) && children.any { it !is TvSettingItem.Header && it.shown(values) } }
+            } else {
+                visible
+            },
             whileFocused = whileFocused,
             qr = qr,
+            anchor = anchor,
         )
     }
 

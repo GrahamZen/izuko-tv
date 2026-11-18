@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -33,6 +34,7 @@ import me.him188.ani.app.domain.foundation.HttpClientProvider
 import me.him188.ani.app.domain.foundation.get
 import me.him188.ani.app.domain.update.UpdateManager
 import me.him188.ani.app.platform.currentAniBuildConfig
+import me.him188.ani.app.ui.notice.TvReleaseNotice
 import me.him188.ani.app.ui.profile.TvUserProfilePicker
 import me.him188.ani.app.ui.update.ReleaseHighlights
 import me.him188.ani.app.ui.update.ReleaseNoteItem
@@ -81,8 +83,9 @@ sealed interface WhatsNewLoad {
  *   首次引导要出现 (新装) 时不介绍, 直接记下.
  *   说明的来源: 先 GitHub (一次取到那几版, 也带着发版后补的通知); 首屏好了、且开始等了 [INTRODUCE_WAIT] 还没取到 (或 GitHub 连不上),
  *   就用存下的那几版 (下载安装包时存的、以前取到的); 连当前版本都没存就这次不出现, 下次打开再试 ([MAX_FAILED_LAUNCHES] 次后放弃).
- * - **通知**: 已经介绍过的版本, 每次冷启动去 GitHub 取一次这一版的说明, 「## 通知」一节有没显示过的内容 (改过也算) 就只显示通知.
- *   不为它多等: 首屏好了还没取到就看存下的那份 (上次取到的), 这次取到的留给下次.
+ * - **通知**: 已经介绍过的版本, 每次冷启动去 GitHub 取一次这一版的说明, 「## 通知」一节的几句交给应用内通知 ([releaseNotice],
+ *   见 TvReleaseNotice: 有新的就在进应用时的通知弹窗里, 不另盖一页). 不为它多等: 首屏好了还没取到就看存下的那份 (上次取到的).
+ *   介绍新功能那一页上的通知卡片照旧, 显示过的几句在通知里记成看过.
  *
  * 与首次引导一样不露出主页: 冷启动时说明一到就盖在启动页上 ([showOnLaunch]), 首屏在它与启动页背后接着加载;
  * 启动页等首屏好了才撤 (这一页先关掉的话露出来的是还在走进度条的启动页).
@@ -92,7 +95,6 @@ sealed interface WhatsNewLoad {
 object TvWhatsNew {
     private const val PREFS = "tv_whats_new"
     private const val KEY_SEEN_VERSION = "seen_version"
-    private const val KEY_SEEN_NOTICE = "seen_notice"
     private const val KEY_FAILED_VERSION = "failed_version"
     private const val KEY_FAILED_COUNT = "failed_count"
 
@@ -110,6 +112,11 @@ object TvWhatsNew {
 
     /** 启动时盖着的那一页; 非 null = 正显示. TV 根部的 [TvWhatsNewHost] 画它. */
     val launchContent = MutableStateFlow<WhatsNewContent?>(null)
+
+    /** 当前版本发版后补的通知 (「## 通知」那几句); 这次启动还没取到为 null. 应用内通知照它列 (见 TvReleaseNotice). */
+    val releaseNotice = MutableStateFlow<ReleaseNotice?>(null)
+
+    class ReleaseNotice(val version: String, val items: List<ReleaseNoteItem>)
 
     private var launchCheck: LaunchCheck? = null
     private val decisionLock = Mutex()
@@ -181,8 +188,11 @@ object TvWhatsNew {
         TvUserProfilePicker.visible.first { !it }
         val answer = awaitAnswer(check, firstScreenReady)
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val content = if (check.introduce) introduction(check, answer, prefs) else notice(check, answer, prefs)
-        if (content == null) return false
+        if (!check.introduce) {
+            releaseNotice.value = ReleaseNotice(check.version, notice(check, answer))
+            return false
+        }
+        val content = introduction(check, answer, prefs) ?: return false
         if (!onHomePage()) {
             logger.info { "Not on the home page, showing it next launch" }
             return false
@@ -191,8 +201,9 @@ object TvWhatsNew {
             .putString(KEY_SEEN_VERSION, check.version)
             .remove(KEY_FAILED_VERSION)
             .remove(KEY_FAILED_COUNT)
-        if (content.notice.isNotEmpty()) editor.putString(KEY_SEEN_NOTICE, noticeKey(check.version, content.notice))
         editor.apply()
+        releaseNotice.value = ReleaseNotice(check.version, content.notice)
+        scope.launch { TvReleaseNotice.markShownOnPage(check.version, content.notice) }
         logger.info { "Showing ${content.releases.map { it.version }}, notice=${content.notice.size}" }
         covered = CompletableDeferred()
         launchContent.value = content
@@ -244,16 +255,11 @@ object TvWhatsNew {
         return WhatsNewContent(check.version, releases, notice, full = false)
     }
 
-    private suspend fun notice(
-        check: LaunchCheck,
-        answer: ReleaseNotesAnswer?,
-        prefs: SharedPreferences,
-    ): WhatsNewContent? {
+    /** 当前版本的「## 通知」: 这次取到的, 没取到用存下的. */
+    private suspend fun notice(check: LaunchCheck, answer: ReleaseNotesAnswer?): List<ReleaseNoteItem> {
         val fetched = (answer as? ReleaseNotesAnswer.Found)?.notes?.firstOrNull { it.first == check.version }
             ?.let { (v, body) -> parseReleaseHighlights(v, body) }
-        val notice = (fetched ?: check.cached.await()?.firstOrNull { it.version == check.version })?.notice.orEmpty()
-        if (notice.isEmpty() || prefs.getString(KEY_SEEN_NOTICE, null) == noticeKey(check.version, notice)) return null
-        return WhatsNewContent(check.version, releases = emptyList(), notice = notice, full = false)
+        return (fetched ?: check.cached.await()?.firstOrNull { it.version == check.version })?.notice.orEmpty()
     }
 
     private fun recordFailure(version: String, prefs: SharedPreferences) {
@@ -276,9 +282,6 @@ object TvWhatsNew {
         answer.notes.forEach { (v, body) -> put(v, body) }
         retainFor(version)
     }
-
-    /** 记「这条通知看过了」的键: 内容改了 (发版人补了一句) 就是新的一条, 会再显示一次. */
-    private fun noticeKey(version: String, notice: List<ReleaseNoteItem>) = "$version:${notice.hashCode()}"
 
     /**
      * 设置「软件更新 - 本版新功能」: 与启动时同样的几版, 小改动与修复逐条列出. 存下的先显示, 再去 GitHub 取最新的

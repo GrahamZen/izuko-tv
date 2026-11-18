@@ -495,14 +495,17 @@ object TvRemoteControl {
      * - 读的是**存下来的**设置, 不是组合里的 LocalThemeSettings —— 启动那一刻后者可能还是默认值, 关过的人会被弹一次;
      * - 等服务起来、拿到地址再弹; 一直拿不到 (没连局域网) 就不弹, 否则一开应用就是一个「无法使用」的弹窗;
      * - 拿到地址后再稍等一下, 让首页先画出来, 弹窗不跟启动画面抢.
+     *
+     * 返回的 [Job] 在弹窗关掉 (或这一次不弹) 时完成: 进应用时排在它后面的通知弹窗、新版本提示卡等它 (见 TvPageVariants).
+     * 这一个进程已经问过的返回 null.
      */
     /**
      * @param onHomePage 真要弹的那一刻再问一次"现在还在首页吗"。传进来而不是自己读:
      * 本类在 ui-tv, 拿不到导航栈。
      */
-    fun showDialogOnLaunch(onHomePage: () -> Boolean = { true }) {
-        if (!launchPromptDone.compareAndSet(false, true)) return
-        scope.launch {
+    fun showDialogOnLaunch(onHomePage: () -> Boolean = { true }): Job? {
+        if (!launchPromptDone.compareAndSet(false, true)) return null
+        return scope.launch {
             val enabled = runCatching {
                 KoinPlatform.getKoin().get<SettingsRepository>().themeSettings.flow.first().tvRemoteShowOnLaunch
             }.getOrDefault(false)
@@ -529,6 +532,7 @@ object TvRemoteControl {
                 return@launch
             }
             _dialogVisible.value = true
+            _dialogVisible.first { !it }
         }
     }
 
@@ -899,6 +903,8 @@ object TvRemoteControl {
         if (post && path in UI_PATHS && !awaitUi()) return json(result(false, tr(UI_GONE_MESSAGE)))
         // 播放器上的按钮 (控制 / 换源 / 换集 / 音轨弹幕…): 电视休眠或切走时界面停着, 按了没反应 —— 先把 Ani 叫回前台
         if (post && (path in PLAYER_FRONT_PATHS || path.startsWith("api/player/danmaku/"))) awaitFront()
+        // 通知的「在电视上打开」: 同样先把 Izuko 叫回前台 (见 RemoteNotices)
+        if (post && path == RemoteNotices.PATH_OPEN) awaitFront()
         return when {
             path.isEmpty() && get -> LanHttpResponse.html(renderPage())
             path == PATH_SEARCH && post -> json(deliverSearch(request))
@@ -906,6 +912,8 @@ object TvRemoteControl {
             path == PATH_SEARCH_HISTORY_DELETE && post -> json(deleteHistory(request))
             path == PATH_NOTICE && get -> json(noticeState(request))
             path == PATH_LAUNCH_DIALOG_CLOSE && post -> json(closeLaunchDialog(request))
+            // 通知列表 / 标看过 / 在电视上打开, 见 RemoteNotices
+            path.startsWith(RemoteNotices.PATH) -> RemoteNotices.handle(request, navigator, scope)?.let(::json) ?: LanHttpResponse.status(405, "Method Not Allowed")
             path == PATH_TV_FRONT && post -> json(manualFront())
             path == PATH_SEARCH_RESULTS && get -> searchResultsState(request)
             path == PATH_SEARCH_RESULTS_MORE && post -> json(loadMoreResults())
@@ -1181,6 +1189,8 @@ object TvRemoteControl {
             }
             // 启动时的二维码弹窗还开着: 网页顶上给一条「还开着 [关闭]」, 遥控器关掉后下一轮就收起, 见 closeLaunchDialog
             put("launchDialog", _dialogVisible.value)
+            // 新通知: 网页亮红点、弹一条提示 (见 RemoteNotices)
+            RemoteNotices.putPoll(this)
             // 「不在前台」那一条里的入口按这两个分三态: 没开 → 「切到 Ani」(先确认开启) / 开了没授权 → 「怎么授权」/
             // 开了且授了权 → 「切到 Ani」直接切 (见 frontEnabled)
             put("frontOn", frontEnabled())
