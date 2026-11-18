@@ -30,6 +30,7 @@ import me.him188.ani.app.domain.mediasource.directapi.applyTransforms
 import me.him188.ani.app.domain.mediasource.directapi.decodeBase64Lenient
 import me.him188.ani.app.domain.mediasource.directapi.selectByPath
 import me.him188.ani.app.domain.mediasource.directapi.stringByPath
+import me.him188.ani.app.domain.mediasource.search.SiteBangumiIds
 import me.him188.ani.app.domain.mediasource.search.SubjectSearchPlan
 import me.him188.ani.app.domain.mediasource.toSimplifiedChinese
 import me.him188.ani.app.domain.mediasource.web.BlockedException
@@ -72,6 +73,8 @@ data class RuleSubject(
     val aliases: List<String> = emptyList(),
     /** 站点上的条目 id ([RuleStep.JsonSubjects.idPath]), 另取别名 ([RuleEngine.siteAliases]) 用; 只在配了 [RuleStep.JsonSubjects.aliasUrl] 时记下. */
     val id: String? = null,
+    /** 站点给的 Bangumi 条目编号 ([SiteBangumiIds], 不用配置), 认部用. */
+    val bangumiId: Int? = null,
 )
 
 /** 站点上的一集. */
@@ -655,7 +658,7 @@ class RuleEngine(
             if (step.linkPattern.isNotEmpty() && step.linkPattern !in url) return@mapNotNull null
             val name = subjectName(card, link, step).takeIf { it.isNotEmpty() } ?: return@mapNotNull null
             if (keyword != null && keyword !in normalizeForFilter(name)) return@mapNotNull null
-            RuleSubject(name, url)
+            RuleSubject(name, url, bangumiId = SiteBangumiIds.ofHtml(card))
         }.distinctBy { it.url }
         if (subjects.isEmpty()) {
             return fail(label, if (keyword != null) "${cards.size} 个元素里没有名字含有关键词的条目" else "${cards.size} 个元素里没有取到条目")
@@ -698,7 +701,7 @@ class RuleEngine(
             if (keyword != null && keyword !in normalizeForFilter(name)) return@mapNotNull null
             val url = jsonItemUrl(item, state, step.idPath, step.urlPath, step.urlTemplate, base) ?: return@mapNotNull null
             val id = item.stringByPath(step.idPath)?.trim()?.takeIf { it.isNotEmpty() && step.aliasUrl.isNotBlank() }
-            RuleSubject(name, url, jsonItemAliases(item, step.aliasPath, name), id)
+            RuleSubject(name, url, jsonItemAliases(item, step.aliasPath, name), id, SiteBangumiIds.ofJson(item.element))
         }.distinctBy { it.url }
         if (subjects.isEmpty()) return fail(label, if (keyword != null) "JSON 里没有名字含有关键词的条目" else "JSON 里没有取到条目")
         return ok(label, state.copy(subjects = subjects), "${subjects.size} 个条目")

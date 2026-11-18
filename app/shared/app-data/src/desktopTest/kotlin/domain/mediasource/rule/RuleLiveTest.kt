@@ -125,7 +125,9 @@ class RuleLiveTest {
             val channels = engine.detail(subject.url)
             if (channels.isEmpty()) return failed("搜索 ${subjects.size} 条 [${subject.name}] | 剧集 0")
             val episode = channels.first().episodes.first()
-            val summary = "搜索 ${subjects.size} 条 [${subject.name}] | 线路 ${channels.size} 剧集 ${channels.sumOf { it.episodes.size }} " +
+            // 站点给的 Bangumi 编号 (SiteBangumiIds): 认出了几条, 选中的那条是几
+            val siteIds = "编号 ${subjects.count { it.bangumiId != null }}/${subjects.size}" + (subject.bangumiId?.let { " [$it]" } ?: "")
+            val summary = "搜索 ${subjects.size} 条 [${subject.name}] $siteIds | 线路 ${channels.size} 剧集 ${channels.sumOf { it.episodes.size }} " +
                     "[${channels.first().name}/${episode.name}]"
             return when (val play = engine.play(episode.url)) {
                 RulePlayResult.Sniff -> "${source.name} | $summary | 播放: 要 WebView 嗅探 ${episode.url}"
