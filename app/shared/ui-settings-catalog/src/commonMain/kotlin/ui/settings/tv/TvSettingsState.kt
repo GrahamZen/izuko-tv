@@ -210,6 +210,25 @@ class TvSettingsState(
         return true
     }
 
+    /** 锚点为 [anchor] 的那一行 (只找各分类最外一层, 见 [TvSettingItem.anchor]): 分类 id 与行 id; 没有为 null. 打开时落在它上面用. */
+    fun rowOf(anchor: String): Pair<String, String>? = findTvSettingRow(catalog, anchor)
+
+    /**
+     * 直接进锚点为 [anchor] 的那一组 (见 [TvSettingItem.Group.anchor]), 同在它那一行上按了确定 (进去时做的事照做).
+     * 在当前分类里找, 找不到在全部分类里找 (并切过去). 找到了返回 true.
+     */
+    fun openGroup(anchor: String): Boolean {
+        val categories = catalog.sortedByDescending { it.tab.name == nav.value.categoryId }
+        for (category in categories) {
+            val group = category.items.orEmpty().asSequence().flatMap { it.flatten() }
+                .firstOrNull { it is TvSettingItem.Group && it.anchor == anchor } ?: continue
+            if (nav.value.categoryId != category.tab.name) nav.value = TvSettingsNav(categoryId = category.tab.name)
+            onRowClicked(group.id)
+            return true
+        }
+        return false
+    }
+
     /** 中栏 (或没有新样式的分类那一行) 按了确定. */
     fun onRowClicked(rowId: String) {
         TvSettingsRowIds.parseLegacy(rowId)?.let { id ->

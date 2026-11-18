@@ -77,6 +77,9 @@ internal object TvAboutSettingKeys {
 /** [list] 为 null = 还没读完. */
 internal data class TvOpenSourceLibraries(val list: List<OpenSourceLibraryInfo>?)
 
+/** 关于页交流群那一行 (QQ 群, 没有 QQ 群时 Telegram 群) 的锚点: 通知里的 `ani://settings/about/chat-groups` 落在它上面. */
+const val TV_SETTINGS_CHAT_GROUPS_ROW = "chat-groups"
+
 /** 关于: 版本 (连点进调试模式, 说明栏写构建信息)、重新走一遍首次引导、反馈、源代码、开发者与鸣谢 (各进一层)、交流群. */
 internal fun TvSettingsItemsBuilder.aboutItems() {
     action(
@@ -120,9 +123,12 @@ internal fun TvSettingsItemsBuilder.aboutItems() {
             Lang.settings_about_qq_group,
             value = { tvText(ChatGroups.qqGroupId) },
             details = tvText(Lang.tv_chat_group_qq_answer, ChatGroups.qqJoinAnswer),
+            anchor = TV_SETTINGS_CHAT_GROUPS_ROW,
         ) { ChatGroups.qqJoinLink }
     }
-    if (ChatGroups.hasTelegram) link(Lang.settings_help_telegram) { ChatGroups.telegramLink }
+    if (ChatGroups.hasTelegram) {
+        link(Lang.settings_help_telegram, anchor = TV_SETTINGS_CHAT_GROUPS_ROW.takeUnless { ChatGroups.hasQq }) { ChatGroups.telegramLink }
+    }
 }
 
 /** 开发者名单 (同原来设置页的开发者页): 每人一行, 行尾写分工, 说明栏画头像与 GitHub 主页的码. */
@@ -225,6 +231,7 @@ internal fun TvSettingsItemsBuilder.link(
     value: ((TvSettingsValues) -> TvText?)? = null,
     details: TvText? = null,
     image: TvImage? = null,
+    anchor: String? = null,
     url: () -> String,
 ) = action(
     title, Lang.tv_settings_link_description,
@@ -233,6 +240,7 @@ internal fun TvSettingsItemsBuilder.link(
     chevron = true,
     qr = { linkQr(url()) },
     image = image,
+    anchor = anchor,
 ) { listOf(openLink(url())) }
 
 /** 网址的码: 码下面印网址 (扫不了还能手敲). */

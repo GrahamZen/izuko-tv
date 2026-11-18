@@ -34,9 +34,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -86,13 +84,10 @@ import me.him188.ani.app.ui.lang.tv_chat_group_qq_details
 import me.him188.ani.app.ui.lang.tv_settings_update_whats_new
 import me.him188.ani.app.ui.lang.tv_whats_new_close
 import me.him188.ani.app.ui.lang.tv_whats_new_current_version
-import me.him188.ani.app.ui.lang.tv_whats_new_got_it
 import me.him188.ani.app.ui.lang.tv_whats_new_loading
 import me.him188.ani.app.ui.lang.tv_whats_new_minor_heading
 import me.him188.ani.app.ui.lang.tv_whats_new_missing
 import me.him188.ani.app.ui.lang.tv_whats_new_more
-import me.him188.ani.app.ui.lang.tv_whats_new_notice_heading
-import me.him188.ani.app.ui.lang.tv_whats_new_notice_title
 import me.him188.ani.app.ui.lang.tv_whats_new_prerelease_description
 import me.him188.ani.app.ui.lang.tv_whats_new_scroll_hint
 import me.him188.ani.app.ui.lang.tv_whats_new_start
@@ -166,23 +161,21 @@ private fun WhatsNewWindow(onDismiss: () -> Unit, content: @Composable () -> Uni
 
 /**
  * 左右两栏: 左边是版本、标题与「开始使用」(焦点一直在它上面), 右边是逐条的新功能, 太长时按上下键翻 (右栏不抢焦点).
- * 只有通知时右栏列通知; 介绍新功能时通知放在最上面的卡片里.
+ * 发版后补的通知不放这里, 在通知里 (见 TvReleaseNotice).
  */
 @Composable
 private fun WhatsNewPage(content: WhatsNewContent, onClose: () -> Unit) {
-    val noticeOnly = content.releases.isEmpty()
     // 启动时那页只列有新功能的版本 (只修了问题的版本算进「另有几项」); 设置里那页小改动也逐条列
     val shown = content.releases.filter { it.features.isNotEmpty() || (content.full && it.minor.isNotEmpty()) }
     // 几版一起列 = 测试版从 alpha01 起的各版 (见 releasesToShow)
     val merged = shown.size > 1
     val title = when {
-        noticeOnly -> stringResource(Lang.tv_whats_new_notice_title)
         content.full -> stringResource(Lang.tv_settings_update_whats_new)
         merged -> stringResource(Lang.tv_whats_new_title_prerelease, content.version.substringBefore('-'))
         else -> stringResource(Lang.tv_whats_new_title)
     }
     WhatsNewScaffold(
-        overline = if (noticeOnly || content.full) {
+        overline = if (content.full) {
             stringResource(Lang.tv_whats_new_current_version, content.version)
         } else {
             stringResource(Lang.tv_whats_new_updated_to, content.version)
@@ -196,17 +189,11 @@ private fun WhatsNewPage(content: WhatsNewContent, onClose: () -> Unit) {
         footnote = content.minorCount.takeIf { !content.full && it > 0 }?.let { stringResource(Lang.tv_whats_new_more, it) },
         buttonText = when {
             content.full -> stringResource(Lang.tv_whats_new_close)
-            noticeOnly -> stringResource(Lang.tv_whats_new_got_it)
             else -> stringResource(Lang.tv_whats_new_start)
         },
-        buttonIcon = if (content.full || noticeOnly) Icons.Rounded.Check else Icons.AutoMirrored.Rounded.ArrowForward,
+        buttonIcon = if (content.full) Icons.Rounded.Check else Icons.AutoMirrored.Rounded.ArrowForward,
         onClose = onClose,
     ) {
-        if (noticeOnly) {
-            content.notice.forEach { FeatureRow(it) }
-        } else if (content.notice.isNotEmpty()) {
-            NoticeCard(content.notice)
-        }
         for (release in shown) {
             if (merged) VersionHeader(release.version)
             release.features.forEach { FeatureRow(it) }
@@ -408,22 +395,6 @@ private fun ItemText(item: ReleaseNoteItem) {
         Text(item.title, style = titleStyle())
         item.detail?.let { detail ->
             Text(detail, Modifier.padding(top = 4.dp), style = detailStyle(), color = secondaryColor())
-        }
-    }
-}
-
-/** 介绍新功能时当前版本的通知: 放在最上面的卡片里, 与新功能分开. */
-@Composable
-private fun NoticeCard(notice: List<ReleaseNoteItem>) {
-    val scheme = MaterialTheme.colorScheme
-    Surface(shape = RoundedCornerShape(16.dp), color = scheme.surfaceContainerHigh, contentColor = scheme.onSurface) {
-        Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.Info, contentDescription = null, Modifier.size(20.dp), tint = scheme.primary)
-                Spacer(Modifier.width(8.dp))
-                Text(stringResource(Lang.tv_whats_new_notice_heading), style = MaterialTheme.typography.titleSmall, color = scheme.primary)
-            }
-            notice.forEach { ItemText(it) }
         }
     }
 }

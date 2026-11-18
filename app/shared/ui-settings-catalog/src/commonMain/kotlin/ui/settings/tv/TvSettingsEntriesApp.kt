@@ -98,6 +98,9 @@ import me.him188.ani.app.ui.lang.tv_perf_diag_none
 import me.him188.ani.app.ui.lang.tv_perf_diag_title
 import me.him188.ani.app.ui.lang.tv_profile_switch
 import me.him188.ani.app.ui.lang.tv_settings_account_bangumi
+import me.him188.ani.app.ui.lang.tv_settings_account_mine_header
+import me.him188.ani.app.ui.lang.tv_settings_account_settings
+import me.him188.ani.app.ui.lang.tv_settings_account_settings_description
 import me.him188.ani.app.ui.lang.tv_settings_bangumi_account_header
 import me.him188.ani.app.ui.lang.tv_settings_danmaku_rule_delete_confirm
 import me.him188.ani.app.ui.lang.tv_settings_danmaku_rule_hint
@@ -123,6 +126,9 @@ import me.him188.ani.app.ui.lang.tv_settings_login_qr_caption
 import me.him188.ani.app.ui.lang.tv_settings_login_qr_description
 import me.him188.ani.app.ui.lang.tv_settings_login_relay_unsupported
 import me.him188.ani.app.ui.lang.tv_settings_login_success
+import me.him188.ani.app.ui.lang.tv_settings_notices
+import me.him188.ani.app.ui.lang.tv_settings_notices_description
+import me.him188.ani.app.ui.lang.tv_settings_notices_fresh
 import me.him188.ani.app.ui.lang.tv_settings_on_phone
 import me.him188.ani.app.ui.lang.tv_settings_paragraphs
 import me.him188.ani.app.ui.lang.tv_settings_profile_header
@@ -169,6 +175,9 @@ internal object TvAppSettingKeys {
 
     /** 性能诊断此刻在做什么 (录制时每半秒更新剩余秒数). */
     val perfStatus = TvSettingKey.Live("perfStatus") { deps -> deps.platform.perfStatus?.map { TvOptionalText(it) } ?: emptyFlow() }
+
+    /** 没看过的通知有几条. 没有应用内通知的端上一直没有值 (账号页「通知」那一行不显示). */
+    val notices = TvSettingKey.Live("notices") { deps -> deps.platform.notices?.fresh ?: emptyFlow() }
 }
 
 /** 可能没有的一段字 (实时值不能是 null). */
@@ -179,10 +188,13 @@ internal data class TvLogShare(val state: LogLanShareState?)
 
 // ---- 账号 ----
 
+/** 账号页「通知」那一行的锚点: 有没看过的通知时从主页点头像进来落在它上面 (见 TvSettingsState.rowOf). */
+const val TV_SETTINGS_NOTICES_ROW = "notices"
+
 /**
- * 账号, 从上到下: 用户 (切换用户、改成本地 / Bangumi 用户这些, 放最前面免得被下面的长列表挤到看不到) →
- * Bangumi 登录 (没登录或登录失效时是登录入口: 扫码登录、在电视上登录; 登录着是你是谁、退出登录) → 我的反馈 (主页点头像就到这一页,
- * 见 feedbackItems) → 注册与登录的常见问题 (没登录时, 在最下面). 多用户的增删改在选人页与手机控制台里.
+ * 账号 (主页点头像就到这一页), 从上到下: Bangumi 登录 (没登录或登录失效时是登录入口: 扫码登录、在电视上登录; 头像这时写「登录」,
+ * 点进来就是它) → 通知 (开通知弹窗, 见 [noticesItem]) → 我的反馈 (见 feedbackItems) → 账号设置 (账号本身的设置收成一组: 用户、
+ * Bangumi 账号是谁与退出登录; 一行都没有时不显示) → 注册与登录的常见问题 (没登录时, 在最下面). 多用户的增删改在选人页与手机控制台里.
  */
 internal fun TvSettingsItemsBuilder.accountItems() {
     val account = TvAppSettingKeys.account
@@ -191,75 +203,97 @@ internal fun TvSettingsItemsBuilder.accountItems() {
     fun TvSettingsValues.nickname() = this[account]?.selfInfo?.selfInfo?.nickname?.takeIf { it.isNotBlank() }?.let { tvText(it) }
         ?: tvText(Lang.settings_account_profile_not_set)
 
-    // ---- 用户 ----
-    header(Lang.tv_settings_profile_header, visible = { it[account]?.canSwitchProfile == true })
-    // 打开选人页 (同主页头像浮出的「切换用户」); 平板模式不给
-    run(
-        Lang.tv_profile_switch, Lang.tv_settings_switch_profile_description, keys = keys + TvSettingKeys.platform + TvSettingKeys.touchPage,
-        visible = { it[account]?.canSwitchProfile == true && it[TvSettingKeys.platform]?.showProfilePicker != null && it[TvSettingKeys.touchPage] != true },
-    ) { env -> env.deps.platform.showProfilePicker?.invoke() }
-    // 本地用户的名字 (个人资料用名字当昵称)
-    action(Lang.settings_account_profile_nickname, keys = keys, visible = { it.isLocal() }, value = { it.nickname() }) { emptyList() }
-    action(
-        Lang.settings_account_local_title, Lang.settings_account_local_description, keys = keys,
-        visible = { it.isLocal() },
-    ) { emptyList() }
-    run(
-        Lang.settings_account_convert_bangumi, Lang.settings_account_convert_bangumi_description, keys = keys,
-        visible = { it.isLocal() && it[account]?.canConvertToBangumi == true },
-    ) { env -> env.show(TvSettingsOverlay.Dialog { dismiss -> TvConvertToBangumiDialog(env.deps.profile, dismiss) }) }
-    run(
-        Lang.settings_account_convert_local, Lang.settings_account_convert_local_description, keys = keys,
-        visible = { !it.isLocal() && it[account]?.canConvertToLocal == true },
-    ) { env -> env.show(TvSettingsOverlay.Dialog { dismiss -> TvConvertToLocalDialog(env.deps.profile, dismiss) }) }
-    // 本地用户改成 Bangumi 用户后还没登录: 之前的本地收藏还在, 登录后再选合并还是删除
-    action(
-        Lang.settings_account_pending_local, keys = keys,
-        value = { v -> tvText(Lang.settings_account_pending_local_value, v[account]?.pendingLocalCollections ?: 0) },
-        details = { v -> tvText(Lang.profile_pending_hint, v[account]?.pendingLocalCollections ?: 0) },
-        visible = { (it[account]?.pendingLocalCollections ?: 0) > 0 },
-    ) { emptyList() }
-    run(
-        Lang.settings_account_clear_records, Lang.settings_account_clear_records_description, keys = keys,
-        visible = { it.isLocal() },
-    ) { env -> env.show(TvSettingsOverlay.Dialog { dismiss -> TvClearRecordsDialog(env.deps.profile, dismiss) }) }
-    // 整台电视一份, 不跟着当前用户; 两个以上用户时才有. 触屏版不给多用户的设置
-    toggleOf(
-        keys + TvSettingKeys.touchPage, Lang.settings_account_choose_profile_on_launch,
-        description = { tvText(Lang.settings_account_choose_profile_on_launch_description) },
-        visible = { it[account]?.chooseProfileOnLaunch != null && it[TvSettingKeys.touchPage] != true },
-        read = { it[account]?.chooseProfileOnLaunch == true },
-        write = { on -> listOf(TvSettingsEdit.Run { env -> env.deps.profile.setChooseProfileOnLaunch(on) }) },
-    )
-
     // ---- Bangumi 登录 ----
     loginItems()
-    header(Lang.tv_settings_bangumi_account_header, visible = { !it.isLocal() && !it.needsLogin() })
-    action(
-        Lang.settings_account_profile_nickname, keys = keys,
-        visible = { !it.isLocal() && !it.needsLogin() },
-        value = { it.nickname() },
-    ) { emptyList() }
-    action(
-        Lang.tv_settings_account_bangumi, keys = keys,
-        value = { v ->
-            v[account]?.selfInfo?.selfInfo?.bangumiUsername?.let { tvText(it) } ?: tvText(Lang.settings_account_profile_not_set)
-        },
-        visible = { !it.isLocal() && !it.needsLogin() },
-    ) { emptyList() }
-    action(
-        Lang.settings_account_profile_user_id, keys = keys,
-        value = { v -> v[account]?.selfInfo?.selfInfo?.id?.let { tvText(it.toString()) } ?: tvText(Lang.settings_account_profile_not_set) },
-        visible = { !it.isLocal() && !it.needsLogin() },
-    ) { emptyList() }
-    run(
-        Lang.settings_account_logout, keys = keys,
-        visible = { !it.isLocal() && it[account]?.selfInfo?.isSessionValid == true },
-    ) { env -> env.show(TvSettingsOverlay.Dialog { dismiss -> TvLogoutDialog(env.deps.profile, dismiss) }) }
 
-    // ---- 反馈, 登录的常见问题 (最下面) ----
-    feedbackItems(showHeader = { true })
+    // ---- 通知、我的反馈 (登录那一节在上面时加一行组标题隔开) ----
+    header(Lang.tv_settings_account_mine_header, visible = { it.needsLogin() })
+    noticesItem()
+    feedbackItems()
+
+    // ---- 账号设置 ----
+    group(
+        Lang.tv_settings_account_settings, Lang.tv_settings_account_settings_description,
+        value = { v -> v[account]?.selfInfo?.selfInfo?.nickname?.takeIf { it.isNotBlank() }?.let { tvText(it) } },
+        hideWhenEmpty = true,
+    ) {
+        // ---- 用户 ----
+        header(Lang.tv_settings_profile_header, visible = { it[account]?.canSwitchProfile == true })
+        // 打开选人页 (同主页头像浮出的「切换用户」); 平板模式不给
+        run(
+            Lang.tv_profile_switch, Lang.tv_settings_switch_profile_description, keys = keys + TvSettingKeys.platform + TvSettingKeys.touchPage,
+            visible = { it[account]?.canSwitchProfile == true && it[TvSettingKeys.platform]?.showProfilePicker != null && it[TvSettingKeys.touchPage] != true },
+        ) { env -> env.deps.platform.showProfilePicker?.invoke() }
+        // 本地用户的名字 (个人资料用名字当昵称)
+        action(Lang.settings_account_profile_nickname, keys = keys, visible = { it.isLocal() }, value = { it.nickname() }) { emptyList() }
+        action(
+            Lang.settings_account_local_title, Lang.settings_account_local_description, keys = keys,
+            visible = { it.isLocal() },
+        ) { emptyList() }
+        run(
+            Lang.settings_account_convert_bangumi, Lang.settings_account_convert_bangumi_description, keys = keys,
+            visible = { it.isLocal() && it[account]?.canConvertToBangumi == true },
+        ) { env -> env.show(TvSettingsOverlay.Dialog { dismiss -> TvConvertToBangumiDialog(env.deps.profile, dismiss) }) }
+        run(
+            Lang.settings_account_convert_local, Lang.settings_account_convert_local_description, keys = keys,
+            visible = { !it.isLocal() && it[account]?.canConvertToLocal == true },
+        ) { env -> env.show(TvSettingsOverlay.Dialog { dismiss -> TvConvertToLocalDialog(env.deps.profile, dismiss) }) }
+        // 本地用户改成 Bangumi 用户后还没登录: 之前的本地收藏还在, 登录后再选合并还是删除
+        action(
+            Lang.settings_account_pending_local, keys = keys,
+            value = { v -> tvText(Lang.settings_account_pending_local_value, v[account]?.pendingLocalCollections ?: 0) },
+            details = { v -> tvText(Lang.profile_pending_hint, v[account]?.pendingLocalCollections ?: 0) },
+            visible = { (it[account]?.pendingLocalCollections ?: 0) > 0 },
+        ) { emptyList() }
+        run(
+            Lang.settings_account_clear_records, Lang.settings_account_clear_records_description, keys = keys,
+            visible = { it.isLocal() },
+        ) { env -> env.show(TvSettingsOverlay.Dialog { dismiss -> TvClearRecordsDialog(env.deps.profile, dismiss) }) }
+        // 整台电视一份, 不跟着当前用户; 两个以上用户时才有. 触屏版不给多用户的设置
+        toggleOf(
+            keys + TvSettingKeys.touchPage, Lang.settings_account_choose_profile_on_launch,
+            description = { tvText(Lang.settings_account_choose_profile_on_launch_description) },
+            visible = { it[account]?.chooseProfileOnLaunch != null && it[TvSettingKeys.touchPage] != true },
+            read = { it[account]?.chooseProfileOnLaunch == true },
+            write = { on -> listOf(TvSettingsEdit.Run { env -> env.deps.profile.setChooseProfileOnLaunch(on) }) },
+        )
+
+        header(Lang.tv_settings_bangumi_account_header, visible = { !it.isLocal() && !it.needsLogin() })
+        action(
+            Lang.settings_account_profile_nickname, keys = keys,
+            visible = { !it.isLocal() && !it.needsLogin() },
+            value = { it.nickname() },
+        ) { emptyList() }
+        action(
+            Lang.tv_settings_account_bangumi, keys = keys,
+            value = { v ->
+                v[account]?.selfInfo?.selfInfo?.bangumiUsername?.let { tvText(it) } ?: tvText(Lang.settings_account_profile_not_set)
+            },
+            visible = { !it.isLocal() && !it.needsLogin() },
+        ) { emptyList() }
+        action(
+            Lang.settings_account_profile_user_id, keys = keys,
+            value = { v -> v[account]?.selfInfo?.selfInfo?.id?.let { tvText(it.toString()) } ?: tvText(Lang.settings_account_profile_not_set) },
+            visible = { !it.isLocal() && !it.needsLogin() },
+        ) { emptyList() }
+        run(
+            Lang.settings_account_logout, keys = keys,
+            visible = { !it.isLocal() && it[account]?.selfInfo?.isSessionValid == true },
+        ) { env -> env.show(TvSettingsOverlay.Dialog { dismiss -> TvLogoutDialog(env.deps.profile, dismiss) }) }
+    }
+
+    // ---- 注册与登录的常见问题 (没登录时, 最下面) ----
     loginHelpItems()
+}
+
+/** 「通知」: 行尾写几条没看过的, 确定打开通知弹窗 (叠在设置页上, 关掉回到这一行). 没有应用内通知的端不显示. */
+private fun TvSettingsItemsBuilder.noticesItem() {
+    val notices = TvAppSettingKeys.notices
+    run(
+        Lang.tv_settings_notices, Lang.tv_settings_notices_description, keys = listOf(notices), chevron = true,
+        value = { v -> v[notices]?.takeIf { it > 0 }?.let { tvText(Lang.tv_settings_notices_fresh, it) } },
+        anchor = TV_SETTINGS_NOTICES_ROW,
+    ) { env -> env.deps.platform.notices?.open() }
 }
 
 /** 是 Bangumi 用户 (不是本地用户) 而且没登录 / 登录失效了. */
