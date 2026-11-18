@@ -138,6 +138,7 @@ RSS 源配置的 `titleToLink`（`RssTitleToLink`）在解析出条目之后、�
 `jsonSubjects` 还按 `aliasPath`（默认是苹果 CMS 接口的 `vod_sub`，写空不取）取站点给的别名：页名省掉副标题、写成站点自己的叫法时
 （「赛马娘 第二季」「鸦」「团子大家族Clannad」），别名里常有条目服务上的名字。条目名取页名与别名里认得出是这一部的
 （`SubjectSearchPlan.nameWithSiteAliases`，见[搜索与认部](media-search.md)），开页、资源与搜索缓存都用它。
+搜索结果（`jsonSubjects` 的条目 JSON、`subjects` 的条目卡片）里带着 Bangumi 条目编号时先按编号认，不用配置，见[站点给的 Bangumi 编号](media-search.md#站点给的-bangumi-编号)。
 搜索接口不给别名的站点（girigiri 的列表接口只有名字，详情接口才有 `vod_sub`）用 `aliasUrl` 另取：`{ids}` 一个请求取全部，`{id}` 每个条目一个请求
 （`aliasListPath` 是回应里条目的位置，按 `idPath` 对上）；只在搜到的页名没有一个是这一部的名字时才取，平常不多发请求；
 站点搜索结果的内存记忆（`SiteSearchMemory`）存原样的条目，同系列各季共用一份、各自按自己的名字认。资源的 `download` 是剧集页（`WebVideo`），
@@ -288,6 +289,7 @@ JSONPath 表达式；公共请求头（如 `apikey`）与地址前缀在三个�
 - **搜索结果先认部再取剧集**（[搜索计划](#搜索计划)）。不是这一部的条目选择器也会排除，不值得为它们各发一次剧集请求。
   站点给出别名时（`selectAliases`）条目名与别名里最像这一部的作资源与搜索缓存里的条目名：
   选择器下游用同一判据按资源的条目名再过滤一次，保留站点标题会让只有别名对上的条目在那里被排除。
+  条目 JSON 里带着 Bangumi 条目编号（字段或 Bangumi 式的封面路径）时先按编号认，不用配置，见[站点给的 Bangumi 编号](media-search.md#站点给的-bangumi-编号)。
 - **播放地址在播放时签发。** 签发的地址有效期短（通常几十分钟），不能写进 `Media`。
   资源的 `download` 是 `ResourceLocation.WebVideo(页面地址, apiParameters = 播放请求的变量)`；
   `apiParameters` 非空表示"由接口解析"，播放与缓存前 `ApiVideoMediaResolver` 从 `MediaSourceManager`

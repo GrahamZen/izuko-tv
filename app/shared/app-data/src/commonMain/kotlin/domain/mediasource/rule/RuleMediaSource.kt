@@ -64,6 +64,7 @@ import me.him188.ani.app.domain.mediasource.search.SiteSearchMemory
 import me.him188.ani.app.domain.mediasource.search.SubjectMatch
 import me.him188.ani.app.domain.mediasource.search.SubjectSearchPlan
 import me.him188.ani.app.domain.mediasource.search.keywordStyle
+import me.him188.ani.app.domain.mediasource.search.pagesToOpenBySiteBangumiId
 import me.him188.ani.app.domain.player.diagnostics.PlayTimeline
 import me.him188.ani.app.domain.mediasource.web.asEpisodesOf
 import me.him188.ani.app.domain.mediasource.web.captcha.WebSessionManager
@@ -470,8 +471,11 @@ class RuleMediaSource(
         val subjects = withSiteAliasesIfNeeded(found, keyword, plan, ttl).map { it.toSubjectInfo(plan) }
         logger.info { "RuleMediaSource '$mediaSourceId': search '$keyword' -> ${subjects.size} subjects" }
         PlayTimeline.mark("search_results", "${info.displayName} '$keyword' ${subjects.size}")
-        val ordered = plan.pagesToOpen(subjects, matchConfig.autoMatch.preferShorterName) { it.name }
-            .take(rule.maxSubjects.coerceAtLeast(1))
+        val siteBangumiIds = found.associate { it.url to it.bangumiId }
+        val ordered = plan.pagesToOpenBySiteBangumiId(
+            subjects, subjectId, matchConfig.autoMatch.preferShorterName,
+            siteBangumiIdOf = { siteBangumiIds[it.fullUrl] }, nameOf = { it.name }, withName = { subject, name -> subject.copy(name = name) },
+        ).take(rule.maxSubjects.coerceAtLeast(1))
         PlayTimeline.mark("pages_open", "${info.displayName} ${ordered.size}/${subjects.size}")
         val probe = query.freshnessProbe ?: SelectorEpisodeProbe(query.episodeSort, query.episodeEp, query.episodeName)
         // 几页同时取 (最多 PAGE_CONCURRENCY 页), 每取完一页就先交出这一页的资源 ([KeywordSearchScope.emitEarly]); 返回的仍按搜索计划排的顺序

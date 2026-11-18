@@ -17,6 +17,7 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import me.him188.ani.app.domain.mediasource.jsonapi.JsonApiTemplate.Escaping
+import me.him188.ani.app.domain.mediasource.search.SiteBangumiIds
 import me.him188.ani.app.domain.mediasource.web.format.parseOrNull
 import me.him188.ani.datasources.api.EpisodeSort
 import me.him188.ani.datasources.api.EpisodeType
@@ -178,6 +179,8 @@ data class JsonApiSubjectInfo(
      * 站点给出的别名, 由 [JsonApiSearchStage.selectAliases] 取得, 不含 [name] 本身. 只参与自动匹配的名字比较.
      */
     val aliases: List<String> = emptyList(),
+    /** 站点给的 Bangumi 条目编号 ([SiteBangumiIds], 不用配置), 认部用. */
+    val bangumiId: Int? = null,
 )
 
 /**
