@@ -37,7 +37,6 @@ import me.him188.ani.app.ui.lang.tv_settings_feedback_kind_logo
 import me.him188.ani.app.ui.lang.tv_settings_feedback_kind_ticket
 import me.him188.ani.app.ui.lang.tv_settings_feedback_new
 import me.him188.ani.app.ui.lang.tv_settings_feedback_open_count
-import me.him188.ani.app.ui.lang.tv_settings_feedback_section
 import me.him188.ani.app.ui.lang.tv_settings_feedback_state_accepted
 import me.him188.ani.app.ui.lang.tv_settings_feedback_state_closed
 import me.him188.ani.app.ui.lang.tv_settings_feedback_state_not_planned
@@ -49,6 +48,7 @@ import me.him188.ani.app.ui.lang.tv_settings_feedback_title_entry_id
 import me.him188.ani.app.ui.lang.tv_settings_feedback_title_logo
 import me.him188.ani.app.ui.lang.tv_settings_feedback_title_logo_id
 import me.him188.ani.app.ui.lang.tv_settings_feedback_unread_count
+import org.jetbrains.compose.resources.StringResource
 import kotlin.time.Instant
 
 /** 「我的反馈」的数据: 这台电视提交过的反馈 (新的在前), 与这一趟进来时还没看过的那几条 ([fresh], 行 key, 见 [feedbackItems]). */
@@ -65,19 +65,22 @@ internal val TvFeedbackRecordsKey = TvSettingKey.Live("feedbackRecords") {
 
 internal fun feedbackKey(r: FeedbackRecord): String = "${r.kind.name}-${r.issue}"
 
+/** 「我的反馈」那一组的锚点: 从通知里直接打开它 (见 TvSettingsState.openGroup). */
+const val TV_SETTINGS_FEEDBACK_GROUP = "feedback"
+
 /**
- * 「我的反馈」(账号页最前面; 没登录时排在登录的常见问题后面, [showHeader] 给它加一行组标题): 这台电视提交过的故障工单与
+ * 「我的反馈」(账号页「通知」下面): 这台电视提交过的故障工单与
  * 标题 logo / 对应作品修正, 一条一行 (新的在前, 行尾写状态). 焦点所在那条在说明栏写状态, 下面是会话气泡 (新的在前; 放不下的旧气泡不画).
- * 写反馈、补充、装测试包都在手机控制台, 组那一行画控制台的二维码. 进这一组就算看过了 (主页头像上的红点消失, 见 rememberTvFeedbackUnread).
+ * 写反馈、补充、装测试包都在手机控制台, 组那一行画控制台的二维码. 进这一组就算看过了 (通知里那条反馈回复随之消失, 见 TvFeedbackNotice).
  */
-internal fun TvSettingsItemsBuilder.feedbackItems(showHeader: (TvSettingsValues) -> Boolean) {
+internal fun TvSettingsItemsBuilder.feedbackItems() {
     val records = TvFeedbackRecordsKey
-    header(Lang.tv_settings_feedback_section, visible = showHeader)
     group(
         Lang.tv_settings_feedback, Lang.tv_settings_feedback_description,
         value = { v -> v[records]?.records?.let(::feedbackGroupValue) },
         qr = { consoleQr(it, "#settings/feedback") },
         onOpen = { markAllRead() },
+        anchor = TV_SETTINGS_FEEDBACK_GROUP,
     ) {
         action(
             Lang.tv_settings_feedback_empty, Lang.tv_settings_feedback_empty_description, keys = listOf(records),
@@ -126,15 +129,15 @@ internal fun feedbackRowValue(r: FeedbackRecord, fresh: Boolean): TvText {
     return if (fresh) tvText(Lang.tv_settings_feedback_new, state) else state
 }
 
+internal fun feedbackStateText(r: FeedbackRecord): TvText = tvText(feedbackStateLabel(r))
+
 /** 同控制台: 故障工单的采纳 / 没采纳叫「已解决 / 不处理」. */
-internal fun feedbackStateText(r: FeedbackRecord): TvText = tvText(
-    when (r.state) {
-        FeedbackState.OPEN -> Lang.tv_settings_feedback_state_open
-        FeedbackState.ACCEPTED -> if (r.kind == FeedbackKind.TICKET) Lang.tv_settings_feedback_state_resolved else Lang.tv_settings_feedback_state_accepted
-        FeedbackState.REJECTED -> if (r.kind == FeedbackKind.TICKET) Lang.tv_settings_feedback_state_not_planned else Lang.tv_settings_feedback_state_rejected
-        FeedbackState.CLOSED -> Lang.tv_settings_feedback_state_closed
-    },
-)
+fun feedbackStateLabel(r: FeedbackRecord): StringResource = when (r.state) {
+    FeedbackState.OPEN -> Lang.tv_settings_feedback_state_open
+    FeedbackState.ACCEPTED -> if (r.kind == FeedbackKind.TICKET) Lang.tv_settings_feedback_state_resolved else Lang.tv_settings_feedback_state_accepted
+    FeedbackState.REJECTED -> if (r.kind == FeedbackKind.TICKET) Lang.tv_settings_feedback_state_not_planned else Lang.tv_settings_feedback_state_rejected
+    FeedbackState.CLOSED -> Lang.tv_settings_feedback_state_closed
+}
 
 private fun feedbackKindText(kind: FeedbackKind): TvText = tvText(
     when (kind) {
@@ -209,7 +212,7 @@ private val BLANK_LINES = Regex("""\n{3,}""")
  * 回复的 Markdown 换成电视上能看的字: 去掉图片、注释与网页标签, 链接只留文字, 去掉粗体 / 代码 / 标题 / 引用的记号;
  * [drop] 里的链接 (测试包) 整个去掉.
  */
-internal fun feedbackPlainText(markdown: String, drop: Collection<String> = emptyList()): String {
+fun feedbackPlainText(markdown: String, drop: Collection<String> = emptyList()): String {
     var s = markdown.replace("\r\n", "\n")
     s = HTML_COMMENT.replace(s, "")
     s = MD_IMAGE.replace(s, "")

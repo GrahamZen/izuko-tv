@@ -123,6 +123,8 @@ fun TvSettingsPage(
         state.attach(TvSettingsHost(playNoticeSound, toast = { RemoteDebugSettingsPage.onToast(it); toaster.toast(it) }, browser))
         // 说明栏里的控制台二维码用最新的地址 (换过网络、地址变了)
         TvRemoteControl.refreshAddress()
+        // 从别处要求直接进某一组 (如通知里的反馈回复 → 「我的反馈」, 见 TvSettingsEntryGroup)
+        TvSettingsEntryGroup.take()?.let { state.openGroup(it) }
     }
     // 控制台调试操作 (api/debug/settings/...) 读、按的就是这一页
     DisposableEffect(state) {
@@ -176,6 +178,8 @@ fun TvSettingsPage(
                         // 从别处直接跳到某一类 (如「去登录」到账号): 焦点直接进中栏, 说明栏 (登录二维码) 当场就有
                         view.enterListOnOpen = true
                     }
+                    // 从别处要求落在某一行 (如有新通知时点头像 → 账号页「通知」, 见 TvSettingsEntryGroup.focusRow)
+                    TvSettingsEntryGroup.takeRow()?.let(state::rowOf)?.let { view.resumeRow = it }
                     view.requestEntryFocus()
                 }
             },

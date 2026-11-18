@@ -31,6 +31,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import me.him188.ani.app.ui.foundation.AniImageLoadSuccess
 import com.kmpalette.palette.graphics.Palette
 import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import me.him188.ani.app.data.models.subject.SubjectInfo
 import me.him188.ani.app.data.models.subject.Tag
@@ -45,6 +47,8 @@ import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.platform.AppTerminator
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.tv.TvActionPanelRequests
+import me.him188.ani.app.ui.notice.TvNoticeHost
+import me.him188.ani.app.ui.notice.TvNotices
 import me.him188.ani.app.ui.subject.details.layout.TvViewAllCommentsList
 import me.him188.ani.app.ui.subject.details.layout.TvViewAllGalleries
 import me.him188.ani.app.ui.subject.details.sections.LocalViewAllCommentsList
@@ -160,7 +164,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import me.him188.ani.app.domain.profile.UserProfileManager
 import me.him188.ani.app.domain.profile.UserProfiles
-import me.him188.ani.app.ui.profile.TvPendingCollectionsHost
 import me.him188.ani.app.ui.profile.TvProfileSwitchLandingHost
 import me.him188.ani.app.ui.profile.TvUserProfilePicker
 import me.him188.ani.app.ui.profile.TvUserProfilePickerHost
@@ -276,7 +279,7 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         LocalTvAdjustWindows provides adjustWindows,
         LocalMainScreenShellVariant provides MainScreenShellVariant {
                 page, selfInfo, navigator, onNavigateToPage, onNavigateToSettings,
-                onNavigateToSearch, onLogout, modifier, pageContent,
+                onNavigateToSearch, _, modifier, pageContent,
             ->
             // 退出确认弹窗的「确定」= 真退出: AppTerminator 会先收掉 torrent 服务再退进程
             // (Android 上光 finish Activity 的话 :torrent_service 进程还挂着); 开了「退出 Ani 后保留 Web 控制台」时留着进程, 见 exitTvApp
@@ -284,7 +287,7 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
             val appTerminator = remember { KoinPlatform.getKoin().get<AppTerminator>() }
             TvMainScreenLayout(
                 page, selfInfo, navigator, onNavigateToPage, onNavigateToSettings,
-                onNavigateToSearch, onLogout,
+                onNavigateToSearch,
                 onExitApp = { exitTvApp(context, appTerminator) },
                 modifier = modifier, pageContent = pageContent,
             )
@@ -462,7 +465,7 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
             onBack = { aniNavigator.navigate(NavRoutes.TvOnboarding) },
             onNewUserFinished = { rootScope.launch { profileManager.finishPendingLogin() } },
         )
-        // 选人页 (启动时或侧边栏头像的「切换用户」打开)
+        // 选人页 (启动时或设置账号页里的「切换用户」打开)
         TvUserProfilePickerHost(aniNavigator)
         // 一起看: 跟随房主时被带到房主那一集
         TvTogetherHost(aniNavigator, playbackEntry)
@@ -472,8 +475,8 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         TvWhatsNewHost()
         // 应用自己改用户设置时告知或询问 (见 SettingAdjustments)
         TvSettingAdjustmentHost()
-        // 本地用户改成 Bangumi 用户后登录了: 问留下的本地收藏合并到账号还是删掉 (只在首页上弹, 见 TvPendingCollectionsHost)
-        TvPendingCollectionsHost(onMainPage = {
+        // 应用内通知 (反馈回复、待处理的本地收藏、发版后的通知等): 进应用时有新的就在首页打开通知弹窗 (见 TvNoticeHost)
+        TvNoticeHost(aniNavigator, onMainPage = {
             startupLogo?.visible != true && runCatching { aniNavigator.backStack.lastOrNull() }.getOrNull() is NavRoutes.Main
         })
         // 「标记看过后删除缓存」删了缓存时弹提示 (标记可能在任何一页或 Web 控制台发生)
@@ -488,16 +491,25 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         // 等地址期间可能已经不在首页了 (休眠后进程重建会恢复到离开时那个页), 那就不弹;
         // 这次启动走了引导页也不弹 —— 引导的登录那一步刚给过同一个码; 先选人或新用户先登录时同理;
         // 应用为换人 / 改成本地用户自己重启进来的也不弹 —— 那不是用户打开应用
+        // 进应用时的几层一个关了下一个出 (docs/contributing/code/notices.md 规则 5): 本版新功能页 (更新后第一次打开) →
+        // 控制台二维码弹窗 → 有没看过的通知就在右下角弹通知气泡 (TvNotices.startBubbles, 由 TvNoticeHost 弹)
         LaunchedEffect(Unit) {
             TvWhatsNew.prepare(appContext, onboardingPending)
             // 启动页盖着的时候先不弹, 等它撤了再说
             if (startupLogo != null) snapshotFlow { startupLogo.visible }.first { !it }
-            // 「本版新功能」页盖了就不再弹二维码 (冷启动进首页时启动页撤之前已经决定过, 这里拿同一个结果; 先选人的这时才决定)
-            if (TvWhatsNew.showOnLaunch(appContext, whatsNewAllowed)) return@LaunchedEffect
+            // 冷启动进首页时启动页撤之前已经决定过, 这里拿同一个结果; 先选人的这时才决定. 盖了就等它关掉
+            if (TvWhatsNew.showOnLaunch(appContext, whatsNewAllowed)) TvWhatsNew.launchContent.first { it == null }
             TvRemoteControl.showDialogOnLaunch {
                 !onboardingPending && !pickerOnLaunch && !newUserLoginPending && !profileRestart &&
                         runCatching { aniNavigator.backStack.lastOrNull() }.getOrNull() is NavRoutes.Main
-            }
+            }?.join()
+            TvNotices.startBubbles()
+        }
+        // 从别的页退回首页 (如看完一集): 通知取过超过一会儿就取一次, 回到首页时新的那条正好提示 (见 TvWhatsNew.refreshNoticesOnReturnHome)
+        LaunchedEffect(Unit) {
+            aniNavigator.awaitBackStack()
+            snapshotFlow { aniNavigator.backStack.lastOrNull() is NavRoutes.Main }
+                .drop(1).filter { it }.collect { TvWhatsNew.refreshNoticesOnReturnHome() }
         }
         if (showQuickMenu) {
             val context = LocalContext.current

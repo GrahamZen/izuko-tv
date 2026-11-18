@@ -27,6 +27,7 @@ import me.him188.ani.app.data.models.danmaku.DanmakuFilterConfig
 import me.him188.ani.app.data.models.episode.EpisodeCollectionInfo
 import me.him188.ani.app.data.models.episode.EpisodeInfo
 import me.him188.ani.app.data.models.feedback.FeedbackRecords
+import me.him188.ani.app.data.models.notice.NoticeLog
 import me.him188.ani.app.data.models.player.EpisodeHistory
 import me.him188.ani.app.data.models.preference.AnalyticsSettings
 import me.him188.ani.app.data.models.preference.AnitorrentConfig
@@ -317,6 +318,7 @@ internal class FakeSettingsRepository : SettingsRepository {
     override val githubDownloadMirrorCache: Settings<RepoHostedListCache> get() = error("Not used")
     override val feedbackEndpointCache: Settings<RepoHostedListCache> get() = error("Not used")
     override val feedbackRecords: Settings<FeedbackRecords> get() = error("Not used")
+    override val notices: Settings<NoticeLog> get() = error("Not used")
     override val videoResolverSettings: Settings<VideoResolverSettings> get() = error("Not used")
     override val anitorrentConfig: Settings<AnitorrentConfig> get() = error("Not used")
     override val pikpakConfig: Settings<PikPakConfig> get() = error("Not used")
