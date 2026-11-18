@@ -151,6 +151,11 @@ fun selectedTvSettingsCategory(catalog: List<TvSettingsCategory>, values: TvSett
 fun findTvSettingItem(catalog: List<TvSettingsCategory>, id: String): TvSettingItem? =
     catalog.asSequence().flatMap { it.items.orEmpty() }.flatMap { it.flatten() }.firstOrNull { it.id == id }
 
+/** 锚点为 [anchor] 的那一行 (只找各分类最外一层, 见 [TvSettingItem.anchor]): 分类 id 与行 id; 没有为 null. */
+fun findTvSettingRow(catalog: List<TvSettingsCategory>, anchor: String): Pair<String, String>? = catalog.firstNotNullOfOrNull { category ->
+    category.items?.firstOrNull { it.anchor == anchor }?.let { category.id to it.id }
+}
+
 /** 设置项要的那几份值都读到了、且这时该显示. */
 fun TvSettingItem.shown(values: TvSettingsValues): Boolean = keys.all { values.has(it) } && visible(values)
 

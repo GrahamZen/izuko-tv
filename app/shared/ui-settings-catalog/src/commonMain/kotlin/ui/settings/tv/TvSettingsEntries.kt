@@ -199,6 +199,8 @@ import me.him188.ani.app.ui.lang.settings_theme_tv_poster_idle_dim_description
 import me.him188.ani.app.ui.lang.settings_theme_tv_remote_reset
 import me.him188.ani.app.ui.lang.settings_theme_tv_remote_reset_confirm
 import me.him188.ani.app.ui.lang.settings_theme_tv_remote_reset_description
+import me.him188.ani.app.ui.lang.settings_theme_tv_notices_on_launch
+import me.him188.ani.app.ui.lang.settings_theme_tv_notices_on_launch_description
 import me.him188.ani.app.ui.lang.settings_theme_tv_remote_show_on_launch
 import me.him188.ani.app.ui.lang.settings_theme_tv_remote_show_on_launch_description
 import me.him188.ani.app.ui.lang.settings_theme_tv_retain_playback_session
@@ -405,6 +407,11 @@ private fun TvSettingsItemsBuilder.appearanceItems() {
         theme, Lang.settings_theme_tv_remote_show_on_launch, Lang.settings_theme_tv_remote_show_on_launch_description,
         read = { it.tvRemoteShowOnLaunch },
         write = { copy(tvRemoteShowOnLaunch = it) },
+    )
+    toggle(
+        theme, Lang.settings_theme_tv_notices_on_launch, Lang.settings_theme_tv_notices_on_launch_description,
+        read = { it.tvNoticesOnLaunch },
+        write = { copy(tvNoticesOnLaunch = it) },
     )
     run(
         Lang.settings_theme_tv_remote_reset, Lang.settings_theme_tv_remote_reset_description,

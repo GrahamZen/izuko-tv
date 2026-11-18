@@ -298,6 +298,36 @@ class TvSettingsModelTest {
     }
 
     @Test
+    fun `a group that hides when empty shows only while one of its rows does`() {
+        val catalog = tvSettingsCatalog {
+            category(SettingsTab.ABOUT, Lang.settings_tab_about) {
+                group(Lang.settings_theme_title, hideWhenEmpty = true) {
+                    header(Lang.settings_theme_title)
+                    action(Lang.settings_theme_title, keys = listOf(fake), visible = { it[fake]?.enabled == true }) { emptyList() }
+                }
+            }
+        }
+        fun items(enabled: Boolean) = buildTvSettingsPage(catalog, values(Fake(enabled = enabled)), TvSettingsNav(), resolver)
+            .right.rows.filter { it.kind == TvSettingsRowKind.Item }
+        assertEquals(1, items(enabled = true).size)
+        assertTrue(items(enabled = false).isEmpty(), "只剩组标题时整组不显示")
+    }
+
+    @Test
+    fun `rows are found by their anchor`() {
+        val catalog = tvSettingsCatalog {
+            category(SettingsTab.ABOUT, Lang.settings_tab_about) {
+                action(Lang.settings_theme_title) { emptyList() }
+                run(Lang.settings_theme_title, anchor = "target") {}
+            }
+        }
+        assertEquals("ABOUT" to "ABOUT.1", findTvSettingRow(catalog, "target"))
+        assertNull(findTvSettingRow(catalog, "missing"))
+        // 账号页的「通知」那一行: 有新通知时点主页头像落在它上面
+        assertEquals("PROFILE", findTvSettingRow(TvSettingsCatalogEntries, TV_SETTINGS_NOTICES_ROW)?.first)
+    }
+
+    @Test
     fun `legacy category has one row that opens the old page`() {
         val content = build(TvSettingsNav(categoryId = "PROXY"))
         val row = content.right.rows.single()

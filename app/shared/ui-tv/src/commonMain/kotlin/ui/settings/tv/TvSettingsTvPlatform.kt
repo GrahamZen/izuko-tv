@@ -14,14 +14,17 @@ import androidx.compose.runtime.Composable
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import me.him188.ani.app.ui.diagnostics.TvPerfDiagnostics
 import me.him188.ani.app.ui.foundation.tv.TvInterfaceModeGate
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.tv_perf_diag_checking
 import me.him188.ani.app.ui.lang.tv_perf_diag_recording
+import me.him188.ani.app.ui.notice.TvNotices
 import me.him188.ani.app.ui.onboarding.TvOnboardingGate
 import me.him188.ani.app.ui.profile.TvUserProfilePicker
 import me.him188.ani.app.ui.remote.TvBangumiRelayLogin
@@ -67,6 +70,11 @@ internal object TvSettingsTvPlatform : TvSettingsPlatform {
         get() = { dismiss -> TvWhatsNewSettingsPage(onDismiss = dismiss) }
 
     override val showProfilePicker: () -> Unit get() = { TvUserProfilePicker.show() }
+
+    override val notices: TvSettingsNotices = object : TvSettingsNotices {
+        override val fresh: Flow<Int> = TvNotices.shown.map { list -> list.orEmpty().count { !it.entry.seen } }.distinctUntilChanged()
+        override fun open() = TvNotices.open()
+    }
 
     override val interfaceMode: TvInterfaceModeSwitch = object : TvInterfaceModeSwitch {
         override fun isTvMode(context: Context): Boolean = TvInterfaceModeGate.isTvMode(context)
