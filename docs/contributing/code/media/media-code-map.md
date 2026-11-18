@@ -88,7 +88,7 @@
 
 1. `JsonApiMediaSource.fetch(...)`：关键字链（搜索计划 + `keywordSearchChain`，与 Selector 源共用）
 2. `searchSubjectsOnline(...)`：搜索阶段请求，`JsonApiMediaSourceEngine.parseSubjects(...)`
-3. 只对可能是这一部的条目（`SubjectSearchPlan.pagesToOpen`）`loadChannels(...)`：剧集阶段请求，`parseChannels(...)` 按线路格式展开
+3. 只对可能是这一部的条目（站点给的 Bangumi 编号先认，再按名字：`pagesToOpenBySiteBangumiId`）`loadChannels(...)`：剧集阶段请求，`parseChannels(...)` 按线路格式展开
 4. `selectMedia(...)` 按集号筛选，`createMedia(...)` 产出 `download = ResourceLocation.WebVideo(..., apiParameters)`
 5. 播放时 `JsonApiMediaSource.resolveApiVideo(...)`：播放阶段请求，`parseVideo(...)` 按线路挑候选；剧集列表自带地址的站点改为重取列表读这一集的地址
 

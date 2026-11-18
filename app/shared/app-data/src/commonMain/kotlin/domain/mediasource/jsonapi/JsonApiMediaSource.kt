@@ -35,6 +35,7 @@ import me.him188.ani.app.domain.mediasource.search.SiteSearchMemory
 import me.him188.ani.app.domain.mediasource.search.SubjectMatch
 import me.him188.ani.app.domain.mediasource.search.SubjectSearchPlan
 import me.him188.ani.app.domain.mediasource.search.keywordStyle
+import me.him188.ani.app.domain.mediasource.search.pagesToOpenBySiteBangumiId
 import me.him188.ani.app.domain.mediasource.latestAiredEpisode
 import me.him188.ani.app.domain.mediasource.rememberedKeywords
 import me.him188.ani.app.domain.mediasource.web.SelectorSearchConfig
@@ -473,7 +474,10 @@ class JsonApiMediaSource(
             searchSubjectsOnline(keyword)
         }.orEmpty()
         if (found.isNotEmpty()) plan.awaitIdentity()
-        val subjects = plan.pagesToOpen(found.map { it.withJudgedName(plan) }, searchConfig.autoMatch.preferShorterName) { it.name }
+        val subjects = plan.pagesToOpenBySiteBangumiId(
+            found.map { it.withJudgedName(plan) }, subjectId, searchConfig.autoMatch.preferShorterName,
+            siteBangumiIdOf = { it.bangumiId }, nameOf = { it.name }, withName = { subject, name -> subject.copy(name = name) },
+        )
         var allSubjectsLoaded = true
         val media = buildList {
             for (subject in subjects) {
