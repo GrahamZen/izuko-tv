@@ -31,6 +31,7 @@ import me.him188.ani.app.data.repository.RepositoryException
 import me.him188.ani.app.data.repository.RepositoryRateLimitedException
 import me.him188.ani.app.domain.foundation.webSourceUserAgent
 import me.him188.ani.app.domain.mediasource.jsonapi.JsonApiTemplate.Escaping
+import me.him188.ani.app.domain.mediasource.search.SiteBangumiIds
 import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.jsonpath.JsonPath
 import me.him188.ani.utils.jsonpath.compileOrNull
@@ -229,6 +230,7 @@ open class JsonApiMediaSourceEngine(
                 name = name,
                 url = JsonApiTemplate.substitute(stage.subjectUrlTemplate, mapOf("id" to id), Escaping.NONE),
                 aliases = aliases,
+                bangumiId = SiteBangumiIds.ofJson(item),
             )
         }
     }
