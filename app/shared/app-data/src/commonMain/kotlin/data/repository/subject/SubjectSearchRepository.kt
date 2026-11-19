@@ -63,8 +63,8 @@ class SubjectSearchRepository(
         override suspend fun load(
             params: LoadParams<Int>
         ): LoadResult<Int, BatchSubjectDetails> = withContext(defaultDispatcher) {
-            val offset = params.key
-                ?: return@withContext LoadResult.Error(IllegalArgumentException("Key is null"))
+            // refresh (出错后的「重试」) 时 key 来自 getRefreshKey, 恒为 null: 从第一页重新搜
+            val offset = params.key ?: 0
             return@withContext try {
                 val subjects = aniSubjectSearchService.searchSubjects(
                     searchQuery.keywords,
