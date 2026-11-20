@@ -99,6 +99,7 @@ import me.him188.ani.app.domain.foundation.BangumiOriginProbe
 import me.him188.ani.app.domain.foundation.BangumiMirrorListRepository
 import me.him188.ani.app.domain.foundation.BangumiRoute
 import me.him188.ani.app.domain.foundation.BangumiRoutingFeature
+import me.him188.ani.app.domain.foundation.BangumiRouteStats
 import me.him188.ani.app.domain.foundation.BangumiRoutingFeatureHandler
 import me.him188.ani.app.domain.foundation.ConvertSendCountExceedExceptionFeature
 import me.him188.ani.app.domain.foundation.ConvertSendCountExceedExceptionFeatureHandler
@@ -352,6 +353,7 @@ private fun KoinApplication.otherModules(
     // 应用自己改用户设置都经它告知或询问 (见 SettingAdjustments)
     single<SettingAdjustments> { SettingAdjustments(coroutineScope) }
     single<BangumiOriginProbe> { BangumiOriginProbe { get<HttpClientProvider>().get() } }
+    single<BangumiRouteStats> { BangumiRouteStats() } // 各条线路的成败, 网络体检用
     single<VideoEnhancementFallbackSetting>(createdAtStart = true) {
         VideoEnhancementFallbackSetting(get(), get()).also { it.start(coroutineScope) }
     }
@@ -419,6 +421,7 @@ private fun KoinApplication.otherModules(
                     BangumiRoutingFeatureHandler(
                         it.routing, it::reportSettled, it::reportOriginUnreachable,
                         recover = { route, cause -> route == BangumiRoute.Ech && ech?.recover(cause) == true },
+                        stats = get(),
                     )
                 },
                 BangumiEchFeatureHandler(getOrNull<BangumiEchTransport>()),

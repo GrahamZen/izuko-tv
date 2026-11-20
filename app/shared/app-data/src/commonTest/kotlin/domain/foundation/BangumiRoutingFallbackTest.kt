@@ -21,6 +21,8 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.io.IOException
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 /**
  * 回落判据: **什么样的失败才算"这条线路不通"**.
@@ -170,5 +172,59 @@ class BangumiRoutingFallbackTest {
         val outcome = requestWithWebPageMirror(false, true, mirrorServesWebPage = { it == 1 })
         assertEquals(listOf("api.bgm.tv", "api.bangumi.pro", "api.bangumi.pro", "api.bgm.tv"), outcome.hosts)
         assertEquals(HttpStatusCode.OK, outcome.status)
+    }
+
+    @Test
+    fun `all routes unreachable - the thrown exception carries the last route failure as its cause`() = runTest {
+        val engine = MockEngine { req ->
+            throw IOException(if (req.url.host.endsWith("bgm.tv")) "origin connect timeout" else "mirror handshake failed")
+        }
+        val client = HttpClient(engine) { expectSuccess = false }
+        BangumiRoutingFeatureHandler(flowOf(routing)).applyToClient(client, true)
+        val e = assertFailsWith<IOException> { client.get("https://api.bgm.tv/v0/me") }
+        assertTrue(e.message!!.startsWith("All bangumi endpoints failed for api.bgm.tv"), e.message)
+        // 协程恢复堆栈时可能在外面再包一层同样的异常, 按整条原因链找
+        val messages = generateSequence<Throwable>(e) { it.cause }.map { it.message }.toList()
+        assertTrue("mirror handshake failed" in messages, messages.toString())
+    }
+
+    private fun statsClient(routing: BangumiRouting, stats: BangumiRouteStats, mirrorUp: Boolean = true): HttpClient {
+        val engine = MockEngine { req ->
+            if (req.url.host.endsWith("bgm.tv") || !mirrorUp) throw IOException("blocked")
+            respond("", HttpStatusCode.OK)
+        }
+        val client = HttpClient(engine) { expectSuccess = false }
+        BangumiRoutingFeatureHandler(flowOf(routing), stats = stats).applyToClient(client, true)
+        return client
+    }
+
+    @Test
+    fun `stats - each route attempt is recorded and the request is no longer in flight afterwards`() = runTest {
+        val stats = BangumiRouteStats()
+        statsClient(routing, stats).get("https://api.bgm.tv/v0/me")
+        val counts = stats.snapshot().routes.associateBy { it.route }
+        assertEquals(1, counts.getValue("origin").failed)
+        assertEquals(1, counts.getValue("bangumi.pro").ok)
+        assertEquals("origin", stats.snapshot().failures.single().route)
+        assertTrue(stats.snapshot().inFlight.isEmpty())
+        assertTrue(stats.snapshot().allFailed.isEmpty())
+    }
+
+    @Test
+    fun `stats - a request failing on every route is recorded as all failed`() = runTest {
+        val stats = BangumiRouteStats()
+        assertFailsWith<IOException> { statsClient(routing, stats, mirrorUp = false).get("https://api.bgm.tv/v0/me") }
+        val event = stats.snapshot().allFailed.single()
+        assertEquals("api.bgm.tv", event.host)
+        assertEquals(listOf("origin", "bangumi.pro"), event.tried)
+    }
+
+    @Test
+    fun `stats - requests on an origin-only routing are tracked too and keep their own exception`() = runTest {
+        val stats = BangumiRouteStats()
+        val e = assertFailsWith<IOException> { statsClient(BangumiRouting.Direct, stats).get("https://api.bgm.tv/v0/me") }
+        assertTrue(generateSequence<Throwable>(e) { it.cause }.any { it.message == "blocked" })
+        assertEquals(listOf("origin"), stats.snapshot().allFailed.single().tried)
+        assertTrue(stats.snapshot().inFlight.isEmpty())
     }
 }

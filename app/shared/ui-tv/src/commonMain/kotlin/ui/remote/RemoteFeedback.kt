@@ -523,8 +523,12 @@ internal val FEEDBACK_SCRIPT = """
     return x.name ? T('《{0}》对应的 TMDB 作品', x.name) : T('条目 {0} 对应的 TMDB 作品', x.subjectId);
   }
   function draftOf(d, target) { return (d.drafts || {})[target] || { lead: 0, reports: [], photos: [] }; }
+  /** 报告属于哪一类: health = 设备体检, network = 网络体检 (含自动的), record = 录制 */
+  function reportView(r) { return r.kind === 'health' ? 'health' : (r.kind === 'network' || r.kind === 'netauto') ? 'network' : 'record'; }
   function reportLabel(r) {
-    return (r.kind === 'health' ? T('设备体检') : T('录制 {0} 秒', r.seconds) + (r.page ? ' · ' + r.page : '')) + ' · ' + r.time;
+    var v = reportView(r);
+    return (v === 'health' ? T('设备体检') : v === 'network' ? (r.kind === 'netauto' ? T('自动网络体检') : T('网络体检'))
+      : T('录制 {0} 秒', r.seconds) + (r.page ? ' · ' + r.page : '')) + ' · ' + r.time;
   }
   // 附件名 → 给人看的: log.gz = 日志, photo-2.jpg = 照片 2 (补充里的带 r<k>- 前缀)
   function fileLabel(name) {
@@ -671,7 +675,7 @@ internal val FEEDBACK_SCRIPT = """
         '<span>' + text + '</span><button type="button" class="sheet-btn" data-act="menu-close" aria-label="' + T('关闭') + '">×</button></div>';
     };
     if (menu.view === 'root') {
-      var reports = d.reports || [], health = reports.filter(function (r) { return r.kind === 'health'; }).length;
+      var reports = d.reports || [], count = function (v) { return reports.filter(function (r) { return reportView(r) === v; }).length; };
       var item = function (act, text, sub, extra, disabled) {
         return '<button type="button" class="fb-menu-i" data-act="' + act + '"' + (disabled ? ' disabled' : '') + '><span>' + text +
           (sub ? '<small>' + sub + '</small>' : '') + '</span>' + (extra ? '<b>' + extra + '</b>' : '') + '</button>';
@@ -679,16 +683,17 @@ internal val FEEDBACK_SCRIPT = """
       return '<div class="fb-menu-card">' + head(T('附上')) +
         item('rec-start', T('现场录制'), T('最长 {0} 分钟：开始后在电视上把问题复现一遍，再点「结束」', Math.round((lim.recordMs || 300000) / 60000)),
           dr.recorded ? T('重新录') : '', !!d.recording) +
-        item('view-health', T('设备体检报告'), T('「维护 → 性能诊断」里做过的体检'), String(health)) +
-        item('view-record', T('性能录制报告'), T('「维护 → 性能诊断」里录过的'), String(reports.length - health)) +
+        item('view-health', T('设备体检报告'), T('「维护 → 性能诊断」里做过的体检'), String(count('health'))) +
+        item('view-network', T('网络体检报告'), T('「维护 → 性能诊断」里做过的网络体检，含自动做的'), String(count('network'))) +
+        item('view-record', T('性能录制报告'), T('「维护 → 性能诊断」里录过的'), String(count('record'))) +
         item('photo', T('照片'), T('最多 {0} 张，每张压缩后不超过 {1}', maxPhotos, size(lim.photoBytes || 5242880)),
           dr.photos.length ? dr.photos.length + '/' + maxPhotos : '', dr.photos.length >= maxPhotos) + '</div>';
     }
-    var healthView = menu.view === 'health';
-    var list = (d.reports || []).filter(function (r) { return (r.kind === 'health') === healthView; });
+    var list = (d.reports || []).filter(function (r) { return reportView(r) === menu.view; });
     var on = {};
     dr.reports.forEach(function (r) { on[r.id] = true; });
-    return '<div class="fb-menu-card">' + head(healthView ? T('设备体检报告') : T('性能录制报告'), true) +
+    var title = menu.view === 'health' ? T('设备体检报告') : menu.view === 'network' ? T('网络体检报告') : T('性能录制报告');
+    return '<div class="fb-menu-card">' + head(title, true) +
       (list.length ? list.map(function (r) {
         return '<button type="button" class="fb-menu-i" data-act="toggle-report" data-id="' + esc(r.id) + '" data-on="' + (on[r.id] ? '0' : '1') + '"><span>' +
           esc(reportLabel(r)) + (r.headline ? '<small>' + esc(r.headline) + '</small>' : '') + '</span>' +
@@ -840,7 +845,7 @@ internal val FEEDBACK_SCRIPT = """
     if (act === 'plus') { menu = { target: target, view: 'root' }; menuEl.innerHTML = menuHtml(last); menuEl.hidden = false; }
     else if (act === 'menu-close') closeMenu();
     else if (act === 'menu-back') { menu.view = 'root'; menuEl.innerHTML = menuHtml(last); }
-    else if (act === 'view-health' || act === 'view-record') { menu.view = act === 'view-health' ? 'health' : 'record'; menuEl.innerHTML = menuHtml(last); }
+    else if (act === 'view-health' || act === 'view-network' || act === 'view-record') { menu.view = act.substring(5); menuEl.innerHTML = menuHtml(last); }
     else if (act === 'toggle-report') call('api/feedback/attach', { target: menu.target, report: el.getAttribute('data-id'), on: el.getAttribute('data-on') });
     else if (act === 'rec-start') {
       var to = menu.target;

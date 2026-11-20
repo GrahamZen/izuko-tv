@@ -60,6 +60,7 @@ import kotlin.coroutines.suspendCoroutine
  * 「性能诊断」: 在 Web 控制台「设置 → 维护 → 性能诊断」里点, 电视上「设置 → 日志 → 性能诊断」是入口 (显示码与状态).
  *
  * - 设备体检 ([TvPerfHealth]): 一次性读状态, 几秒出结论.
+ * - 网络体检 ([TvNetworkDiagnostics]): 应用常用的网络请求按每条连法各发一遍, 一分钟左右; Bangumi 请求接连失败时自动做. 报告也存在这里.
  * - 录制 ([TvPerfRecorder] + [PerfAnalysis]): 用户在电视上照常操作 N 秒, 结束后把每个慢帧对到 GC / 主线程缺页 / 主线程卡住 /
  *   内存不足通知上, 再看主线程、RenderThread、GPU 各段耗时, 给出卡顿原因.
  *
@@ -75,6 +76,9 @@ internal object TvPerfDiagnostics {
     private const val MAX_REPORTS = 12
     private const val MAX_AUTO_REPORTS = 5
     private const val AUTO = "auto"
+
+    /** 自动生成的报告种类: 各自只留 [MAX_AUTO_REPORTS] 份. */
+    private val AUTO_KINDS = listOf(AUTO, TvNetworkDiagnostics.AUTO_KIND)
     private const val AUTO_SECONDS = 20
     private const val AUTO_BEFORE_NS = 60_000_000_000L
     private const val AUTO_MIN_INTERVAL_MS = 10 * 60_000L
@@ -118,6 +122,7 @@ internal object TvPerfDiagnostics {
         val activity = context.findActivity()
         appContext = context.applicationContext
         TvPlaybackSentinel.install(context)
+        TvNetworkDiagnostics.install(context)
         onMain { activityRef = activity?.let { WeakReference(it) } }
         scope.launch { refreshLatestHeadline() }
     }
@@ -264,6 +269,20 @@ internal object TvPerfDiagnostics {
 
     // ------------------------------------------------------------------ 报告
 
+    /** 别的诊断 (网络体检) 的报告存在这里, 同样列在控制台的报告里; 界面还没起来时不存, 返回 `null`. */
+    fun saveReport(kind: String, seconds: Int, body: JsonObject): JsonObject? {
+        if (appContext == null) return null
+        return save(kind, seconds, currentRoute() ?: "?", body)
+    }
+
+    /** Izuko 的界面现在在前台 (电视休眠或切到别的应用时为 `false`). */
+    fun inForeground(): Boolean = runCatching {
+        onMain {
+            val activity = activityRef?.get() ?: return@onMain false
+            (activity as? LifecycleOwner)?.lifecycle?.currentState?.isAtLeast(Lifecycle.State.RESUMED) ?: true
+        }
+    }.getOrDefault(false)
+
     private fun dir(): File? = appContext?.let { File(it.filesDir, "perf-diagnostics").apply { mkdirs() } }
 
     /** 诊断文件放哪 (报告、方法采样); 界面还没起来时为 null */
@@ -290,10 +309,10 @@ internal object TvPerfDiagnostics {
         runCatching {
             val d = dir() ?: return@runCatching
             File(d, "$id.json").writeText(prettyJson.encodeToString(JsonObject.serializer(), report))
-            // 自动的与手动的分开数, 自动的再多也挤不掉手动录的
-            val (auto, others) = d.listFiles { f -> f.name.endsWith(".json") }.orEmpty().sortedByDescending { it.name }
-                .partition { it.name.endsWith("-$AUTO.json") }
-            (auto.drop(MAX_AUTO_REPORTS) + others.drop(MAX_REPORTS)).forEach { it.delete() }
+            // 自动的与手动的分开数, 每种自动的各自数: 自动的再多也挤不掉手动做的
+            d.listFiles { f -> f.name.endsWith(".json") }.orEmpty().sortedByDescending { it.name }
+                .groupBy { f -> AUTO_KINDS.firstOrNull { f.name.endsWith("-$it.json") } }
+                .forEach { (autoKind, files) -> files.drop(if (autoKind != null) MAX_AUTO_REPORTS else MAX_REPORTS).forEach { it.delete() } }
         }.onFailure { logger.warn(it) { "Failed to save perf report" } }
         cachedReports = null
         _latestHeadline.value = headlineOf(report)
@@ -332,7 +351,9 @@ internal object TvPerfDiagnostics {
     /** 报告列表 (新的在前): 网页的列表只要摘要. */
     fun reports(): List<JsonObject> {
         cachedReports?.let { return it }
-        val files = dir()?.listFiles { f -> f.name.endsWith(".json") }?.sortedByDescending { it.name }.orEmpty()
+        // 界面还没装上 (还不知道目录) 时不缓存: 否则装上之后一直是这份空列表
+        val d = dir() ?: return emptyList()
+        val files = d.listFiles { f -> f.name.endsWith(".json") }.orEmpty().sortedByDescending { it.name }
         return files.mapNotNull { f -> runCatching { Json.parseToJsonElement(f.readText()).jsonObject }.getOrNull() }
             .also { cachedReports = it }
     }
