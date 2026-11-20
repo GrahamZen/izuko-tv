@@ -121,6 +121,26 @@ class BangumiEchConfig(
     /** 已经为它问过一遍各家 DoH 的被拒配置: 同一份只破例问一次, 之后照常受 [MIN_REFRESH_INTERVAL_MILLIS] 限制. */
     private var searchedPast: ByteArray? = null
 
+    /** 现在用的配置从哪来、多久前拉 / 换的 (网络体检看). */
+    class State(
+        /** 还是包里那一份. */
+        val bundled: Boolean,
+        val fetchedAgoMillis: Long?,
+        val changedAgoMillis: Long?,
+        /** 有一份握手被拒的配置还记着 (再拉时会跳过它). */
+        val rejectedRemembered: Boolean,
+    )
+
+    fun state(): State {
+        val t = now()
+        return State(
+            bundled = current.contentEquals(Base64.decode(BUNDLED)),
+            fetchedAgoMillis = fetchedAt?.let { t - it },
+            changedAgoMillis = changedAt?.let { t - it },
+            rejectedRemembered = rejected != null,
+        )
+    }
+
     /** 这个进程里第一次用到时在后台拉一次: 包里那份可能已经轮换掉了. */
     fun refreshInBackgroundOnce() {
         if (backgroundStarted.compareAndSet(expect = false, update = true)) {

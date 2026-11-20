@@ -110,6 +110,14 @@ class BangumiEndpointProvider(
             return if (active != null) active == BangumiRoute.Origin else routing.routes == listOf(BangumiRoute.Origin)
         }
 
+    /** 当前路由下请求最近落在的线路 (`null` = 还没有落点), 给网络体检看. */
+    val settledRoute: BangumiRoute?
+        get() {
+            val routing = routingState.value ?: return null
+            val s = settled.value
+            return s.route?.takeIf { s.routing === routing && it in routing.routes }
+        }
+
     /** 由 [BangumiRoutingFeatureHandler] 在请求落到哪条线路变了时调用; [routing] 是这个请求用的路由, 见 [activeRoute]. */
     fun reportSettled(routing: BangumiRouting, route: BangumiRoute) {
         settled.value = Settled(routing, route)
