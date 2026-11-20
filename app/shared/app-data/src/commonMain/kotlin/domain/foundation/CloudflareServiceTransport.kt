@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.update
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.time.TimeSource
 
 /**
  * 发往自家放在 Cloudflare 上的服务 (反馈中转、故障工单的 Worker) 的请求怎么连: 直连与加密直连 (见 [EchSites]) 两种, 一种不通换另一种.
@@ -60,14 +61,15 @@ class CloudflareServiceTransport(
     private suspend fun <T : Any> attempt(url: String, isEch: Boolean, probe: Boolean, send: suspend (url: String, probe: Boolean) -> T?): T? {
         var retried = false
         while (true) {
+            val started = TimeSource.Monotonic.markNow()
             try {
                 val result = send(url, probe)
-                if (result == null) logger.info { "$url timed out" }
+                if (result == null) logger.info { "$url timed out after ${started.elapsedNow().inWholeMilliseconds}ms" }
                 return result
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                logger.info { "$url unreachable (${e::class.simpleName})" }
+                logger.info { "$url unreachable after ${started.elapsedNow().inWholeMilliseconds}ms (${e.summarizeForLog()})" }
                 if (isEch && !retried && recoverEch(e)) {
                     retried = true
                     continue
