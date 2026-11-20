@@ -76,6 +76,8 @@ class ObserveWebMediaSourcePreferenceExtension(
                     // 挂上时已经在播 (如重新搜索换了会话) 不算播起来, 等新选的资源真正开始播
                     launch {
                         context.player.playbackStarts().collect {
+                            // 后台换源时播的还是旧的, 选中的新资源还没播起来 (见 PlaybackHandover)
+                            if (context.playbackHandover?.preparing?.value != null) return@collect
                             val media = bundle.mediaSelector.selected.value ?: return@collect
                             if (media.kind != MediaSourceKind.WEB || DroppedFileMedia.isDroppedFile(media)) return@collect
                             if (ExternalLinkMedia.isExternalLink(media)) return@collect

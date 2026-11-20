@@ -15,7 +15,9 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import okhttp3.Authenticator
+import okhttp3.Interceptor
 import okhttp3.OkHttpClient
+import okhttp3.Response
 import java.net.InetSocketAddress
 import java.net.Proxy
 import java.net.ProxySelector
@@ -88,6 +90,7 @@ internal fun createPlaybackHttpDataSourceFactory(
             .connectTimeout(connectTimeoutMillis.toLong(), TimeUnit.MILLISECONDS)
             .readTimeout(DefaultHttpDataSource.DEFAULT_READ_TIMEOUT_MILLIS.toLong(), TimeUnit.MILLISECONDS)
             .dns(FallbackDns.Default)
+            .addInterceptor(ReconnectTimeout)
             .eventListenerFactory(PlaybackRequestLog)
             .apply { proxyConfig?.let { playbackProxy(it) } }
             .build()
@@ -95,6 +98,23 @@ internal fun createPlaybackHttpDataSourceFactory(
     return OkHttpDataSource.Factory(client)
         .setUserAgent(userAgent)
         .setDefaultRequestProperties(headers)
+}
+
+/**
+ * 断了重新请求 ([ResumingHttpDataSource]) 时连接超时用短的 [CONNECT_TIMEOUT_MILLIS]: 那时缓冲还在放, 连着几次接不上才算这条资源接不上了,
+ * 加载方据此在缓冲放完前换源, 每次都等满长的连接超时就赶不上. 正常的服务器重连一两秒内就连上; 第一次打开照旧用长的, 网差时首连慢也要等.
+ * 重新请求的请求头里带 [HEADER] 标出来, 这里去掉, 不发给服务器.
+ */
+internal object ReconnectTimeout : Interceptor {
+    const val HEADER = "X-Izuko-Reconnect"
+    const val CONNECT_TIMEOUT_MILLIS = 5_000
+
+    override fun intercept(chain: Interceptor.Chain): Response {
+        val request = chain.request()
+        if (request.header(HEADER) == null) return chain.proceed(request)
+        return chain.withConnectTimeout(CONNECT_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
+            .proceed(request.newBuilder().removeHeader(HEADER).build())
+    }
 }
 
 /**

@@ -886,7 +886,7 @@ private class LibassMediaSourcePipeline(
                             userAgent = userAgent,
                             headers = headers,
                             connectTimeoutMillis = CONNECT_TIMEOUT_MILLIS,
-                        ).let { ResumingHttpDataSource.Factory(RefreshingHttpDataSource.wrap(it, data.uri), ::evictIdlePlaybackConnections) },
+                        ).let { ResumingHttpDataSource.Factory(RefreshingHttpDataSource.wrap(it, data.uri), ::evictIdlePlaybackConnections, data.uri) },
                     )
                     // 设置里开了「边下边播」时下过的数据存在本机, 按地址认 (这类直链不像网盘那样另给内容标识).
                     // m3u8 播放列表不存: 列表随时可能更新, 去广告也要拿原样的列表
