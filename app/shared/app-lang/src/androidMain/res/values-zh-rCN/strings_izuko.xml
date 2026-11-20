@@ -964,7 +964,7 @@
     <string name="tv_source_manual_pick_failed">这一集加载失败</string>
     <string name="tv_source_detail_pick">选择</string>
     <string name="tv_source_detail_open">打开</string>
-    <string name="tv_source_detail_nav_hint">左右键切换上一条 / 下一条</string>
+    <string name="tv_source_detail_nav_hint">上下键切换上一条 / 下一条</string>
     <string name="tv_source_detail_status">状态</string>
     <string name="tv_source_detail_lines">线路</string>
     <string name="tv_source_detail_source">数据源</string>
