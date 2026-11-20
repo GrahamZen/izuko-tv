@@ -98,15 +98,16 @@ class BangumiEndpointProvider(
     }
 
     /**
-     * 现在是不是在用官方直连: 按当前路由下请求最近落在哪条线路算, 还没有落点时看第一条线路是不是官方.
-     * 设置还没读出来时算是 (与以前一样先直连). 自家放在 Cloudflare 上的服务据此决定先直连还是先走加密直连 (见 [CloudflareServiceTransport]).
+     * 现在是不是在用官方直连: 当前路由下请求最近落在官方上 (官方真回应过), 或者只开着官方这一条.
+     * 官方后面还有别的线路、又还没有落点时不算: 官方被墙的人开着「官方 + 加密直连」时一个请求都还没成功过, 不能看排第一的是官方就当成在用它.
+     * 设置还没读出来时算是. 自家放在 Cloudflare 上的服务据此决定先直连还是先走加密直连 (见 [CloudflareServiceTransport]).
      */
     val usingOrigin: Boolean
         get() {
             val routing = routingState.value ?: return true
             val s = settled.value
             val active = s.route?.takeIf { s.routing === routing && it in routing.routes }
-            return (active ?: routing.routes.firstOrNull()) == BangumiRoute.Origin
+            return if (active != null) active == BangumiRoute.Origin else routing.routes == listOf(BangumiRoute.Origin)
         }
 
     /** 由 [BangumiRoutingFeatureHandler] 在请求落到哪条线路变了时调用; [routing] 是这个请求用的路由, 见 [activeRoute]. */
