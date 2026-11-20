@@ -21,6 +21,7 @@ import me.him188.ani.utils.logging.warn
 import okhttp3.Call
 import okhttp3.ConnectionPool
 import okhttp3.Dns
+import okhttp3.EventListener
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -102,6 +103,18 @@ class ConscryptEchTransport(
      * 带宽小时详情页的接口不用排在一屏封面后面.
      */
     private val imageClient: Result<OkHttpClient> by lazy { echClient.map { it.newBuilder().connectionPool(ConnectionPool()).build() } }
+
+    /**
+     * 网络体检用: 与加密直连同样的连法 (Cloudflare 地址、ECH 握手), 自己一个连接池, 挂着 [eventListener] 记各段耗时.
+     * 请求地址用真实域名 (`api.bgm.tv`). Conscrypt 加载不了时抛出原因.
+     */
+    fun diagnosticClient(eventListener: EventListener): OkHttpClient {
+        echConfig.refreshInBackgroundOnce()
+        return echClient.getOrThrow().newBuilder()
+            .connectionPool(ConnectionPool())
+            .eventListener(eventListener)
+            .build()
+    }
 
     /** 外层请求被取消时把转过去的那个也取消; 只有加密直连的请求在等时才有任务. */
     private val cancelWatcher by lazy {

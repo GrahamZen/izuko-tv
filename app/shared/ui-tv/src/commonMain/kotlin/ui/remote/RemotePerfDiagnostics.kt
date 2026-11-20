@@ -15,7 +15,9 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
+import me.him188.ani.app.domain.foundation.diagnosis.NetworkDiagnosis
 import me.him188.ani.app.ui.diagnostics.TvMethodTrace
+import me.him188.ani.app.ui.diagnostics.TvNetworkDiagnostics
 import me.him188.ani.app.ui.diagnostics.TvPerfDiagnostics
 import me.him188.ani.app.ui.foundation.lan.LanHttpRequest
 import me.him188.ani.app.ui.foundation.lan.LanHttpResponse
@@ -28,6 +30,7 @@ import java.util.Locale
  *
  * - `GET api/diag`: 当前状态 (空闲 / 录制中还剩几秒 / 体检中) + 报告列表 (每份带第一条结论).
  * - `POST api/diag/health`: 跑一次设备体检, 返回整份报告.
+ * - `POST api/diag/network`: 开始网络体检 (后台跑一分钟左右, 进度在 `api/diag` 的 `network` 里, 做完出现在报告列表).
  * - `POST api/diag/record` (seconds): 开始录制; 期间用户在电视上照常操作.
  * - `POST api/diag/stop`: 提前结束录制 (录到的照样分析).
  * - `GET api/diag/report/<id>`: 整份报告 (JSON, 网页展开详情与下载都用它).
@@ -53,6 +56,7 @@ internal object RemotePerfDiagnostics {
         return when {
             path == "api/diag" && get -> json(state())
             path == "api/diag/health" && post -> json(health())
+            path == "api/diag/network" && post -> json(network())
             path == "api/diag/record" && post -> json(record(request))
             path == "api/diag/stop" && post -> json(stop())
             path == "api/diag/delete" && post -> json(delete(request))
@@ -76,6 +80,18 @@ internal object RemotePerfDiagnostics {
 
                 TvPerfDiagnostics.Status.CheckingHealth -> put("state", "checking")
                 TvPerfDiagnostics.Status.Idle -> put("state", "idle")
+            }
+        }
+        putJsonObject("network") {
+            when (val n = TvNetworkDiagnostics.status.value) {
+                is TvNetworkDiagnostics.Status.Running -> {
+                    put("state", "running")
+                    put("auto", n.auto)
+                    put("elapsed", (System.currentTimeMillis() - n.startedAtMillis) / 1000)
+                    put("step", networkStepText(n.step))
+                }
+
+                TvNetworkDiagnostics.Status.Idle -> put("state", "idle")
             }
         }
         putJsonObject("trace") {
@@ -108,6 +124,18 @@ internal object RemotePerfDiagnostics {
             put("ok", true)
             put("report", report)
         }
+    }
+
+    private fun network(): JsonObject {
+        TvNetworkDiagnostics.start()?.let { return result(false, it) }
+        return result(true, tr("开始网络体检，大约要一分钟"))
+    }
+
+    private fun networkStepText(step: NetworkDiagnosis.Step?): String = when (step) {
+        null, NetworkDiagnosis.Step.ENVIRONMENT -> tr("读取网络环境")
+        NetworkDiagnosis.Step.DNS -> tr("解析域名")
+        NetworkDiagnosis.Step.ROUTES -> tr("测 Bangumi 各条线路")
+        NetworkDiagnosis.Step.SERVICES -> tr("测其他服务")
     }
 
     private fun record(request: LanHttpRequest): JsonObject {
