@@ -11,10 +11,9 @@ package me.him188.ani.app.data.repository.subject
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
@@ -58,6 +57,8 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
 
 sealed class SubjectRelationsRepository(
     defaultDispatcher: CoroutineContext = Dispatchers.Default
@@ -149,17 +150,13 @@ class DefaultSubjectRelationsRepository(
         return relationsFreshnessFlow(subjectId)
             .autoRefresh()
             .flatMapLatest { cachedCharactersUpdated ->
-                if (!relationsFresh(cachedCharactersUpdated, currentTimeMillis(), cacheExpiry)) {
-                    fetchRelationsIfStaleOrNull(subjectId)
-                }
-
                 subjectRelationsDao.subjectRelatedPersonsFlow(subjectId).map { list ->
                     list.mapTo(ArrayList(list.size)) {
                         it.toRelatedPersonInfo()
                     }.apply {
                         sortWith(RelatedPersonInfo.ImportanceOrder)
                     }
-                }
+                }.refreshingRelationsIfStale(subjectId, cachedCharactersUpdated)
             }.flowOn(defaultDispatcher)
     }
 
@@ -167,10 +164,6 @@ class DefaultSubjectRelationsRepository(
         return relationsFreshnessFlow(subjectId)
             .autoRefresh()
             .flatMapLatest { cachedCharactersUpdated ->
-                if (!relationsFresh(cachedCharactersUpdated, currentTimeMillis(), cacheExpiry)) {
-                    fetchRelationsIfStaleOrNull(subjectId)
-                }
-
                 subjectRelationsDao.subjectRelatedCharactersFlow(subjectId).flatMapLatest { list ->
                     subjectRelationsDao.characterActorsFlow(list.mapToIntArray { it.character.characterId })
                         .map { actors ->
@@ -187,14 +180,14 @@ class DefaultSubjectRelationsRepository(
                                 sortWith(RelatedCharacterInfo.ImportanceOrder)
                             }
                         }
-                }
+                }.refreshingRelationsIfStale(subjectId, cachedCharactersUpdated)
             }.flowOn(defaultDispatcher)
     }
 
     /**
      * 角色/制作人员这两条流**只跟着"关联数据什么时候取的"这一个字段走**, 不跟着整个条目走.
      *
-     * 它们都是 `flatMapLatest { 过期就取数; 再返回 DAO flow }`, 而上游
+     * 它们都是 `flatMapLatest { DAO flow, 过期就同时去取 }` (见 [refreshingRelationsIfStale]), 而上游
      * [SubjectCollectionRepository.subjectCollectionFlow] 底下是 Room 的 `findById` ——
      * **Room 的失效是表级的**: 网格页预取往 `subject_collection` 写**别的**条目, 这条流照样重发,
      * `flatMapLatest` 就把在途的取数掐掉重来.
@@ -214,6 +207,43 @@ class DefaultSubjectRelationsRepository(
     private val relationsFetcher = StaleKeyedFetcher<Int>(scope)
 
     /**
+     * 关联数据过期时, 角色 / 制作人员区块一边显示库里的, 一边在后台取, 取到为止 (页面开着就一直试, 见 [refreshRelationsUntilFresh]);
+     * 取到后盖章 (`cachedCharactersUpdated`) 变了, 上游重发, 这条流整个换成新鲜的那条.
+     *
+     * 库里有旧的就先显示旧的; 库里是空的时先显示加载骨架, 最多 [RELATIONS_SKELETON_MAX_WAIT] —— 空列表会被界面读成
+     * 「这部作品确实没有角色 / 制作人员」; 等满了还没取到就先显示空的, 取到再换上. 见 [refreshingInBackground].
+     */
+    private fun <T> Flow<List<T>>.refreshingRelationsIfStale(subjectId: Int, cachedCharactersUpdated: Long): Flow<List<T>> =
+        if (relationsFresh(cachedCharactersUpdated, currentTimeMillis(), cacheExpiry)) {
+            this
+        } else {
+            refreshingInBackground(RELATIONS_SKELETON_MAX_WAIT) { refreshRelationsUntilFresh(subjectId) }
+        }
+
+    /**
+     * 同 [fetchRelationsIfStale], 但**失败不抛, 隔一阵再试, 直到取到** —— 调用方在 flatMapLatest 里,
+     * 异常会把整条流杀死: 角色/制作人员区块从此定格, 直到重进页面.
+     *
+     * 跑在页面的流上, 页面走开就停 (正在取的那一次归 [relationsFetcher] 的 scope, 照样跑完落库).
+     * 网络时好时坏 (加密直连时常见) 时, 页面开着期间通了就能补上, 不必等一小时一次的 autoRefresh 或重进页面.
+     */
+    private suspend fun refreshRelationsUntilFresh(subjectId: Int) {
+        retryUntilDone(
+            initialDelay = RELATIONS_FETCH_RETRY_DELAY,
+            maxDelay = RELATIONS_FETCH_RETRY_MAX_DELAY,
+            onFailure = { e, failures ->
+                if (failures == 1) {
+                    logger.warn(e) { "Failed to fetch relations for subject $subjectId, retrying while the page is open" }
+                } else {
+                    logger.info { "Failed to fetch relations for subject $subjectId ($failures times): $e" }
+                }
+            },
+        ) {
+            fetchRelationsIfStale(subjectId)
+        }
+    }
+
+    /**
      * **同一条目的关联数据只取一次**: 角色区块与制作人员区块是两条独立的流, 各自判一遍"过期就取",
      * 于是同一份数据取两遍 —— 实测每次进详情页 `/characters` 与 `/staff` **各打两遍**, 落库也各跑
      * 一遍, 而落库本身要 1.5~3 秒且 `upsert 三张表 → 再 upsert relations` 之间没有事务
@@ -221,35 +251,6 @@ class DefaultSubjectRelationsRepository(
      *
      * 去重靠 [StaleKeyedFetcher]: 按 subjectId 串行, 等到锁再重查一次新鲜度, 已经取回来了就直接返回.
      */
-    /**
-     * 同 [fetchRelationsIfStale], 但**取数失败不抛** —— 这里的调用方在 flatMapLatest 里,
-     * 异常会把整条流杀死: 角色/制作人员区块从此定格, UI 侧的加载骨架永远收不掉 (count 停在
-     * null), 直到重进页面.
-     *
-     * 失败先**短退避重试** ([RELATIONS_FETCH_RETRIES] 次): 一次瞬时网络抖动如果直接放弃,
-     * DAO flow 发出的空列表会被 UI 读成"这部作品确实没有角色/制作人员", 而下一次自动重试
-     * 是 autoRefresh 的一小时后. 重试全败才放弃 —— 此时多半是持续断网, 显示空区块 (有旧
-     * 缓存则显示旧的) 比让骨架永远转下去诚实.
-     */
-    private suspend fun fetchRelationsIfStaleOrNull(subjectId: Int) {
-        var delayMillis = RELATIONS_FETCH_RETRY_DELAY_MILLIS
-        repeat(RELATIONS_FETCH_RETRIES + 1) { attempt ->
-            try {
-                fetchRelationsIfStale(subjectId)
-                return
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                if (attempt == RELATIONS_FETCH_RETRIES) {
-                    logger.warn(e) { "Failed to fetch relations for subject $subjectId after ${attempt + 1} attempts, showing cached data if any" }
-                    return
-                }
-                delay(delayMillis)
-                delayMillis *= 4
-            }
-        }
-    }
-
     private suspend fun fetchRelationsIfStale(subjectId: Int) {
         relationsFetcher.fetchIfStale(
             key = subjectId,
@@ -273,20 +274,15 @@ class DefaultSubjectRelationsRepository(
 
     private suspend fun fetchAndSaveSubjectRelations(subjectId: Int) {
         val t0 = currentTimeMillis()
-        // **必须有超时**: 实测单个 staff 请求会在连接上挂死 9 秒+ (2026-08-26, 高达00 subject
-        // 1010, characters 371ms 就回来了而并行的 staff 一直不响应) —— 并行等待要两个都完成,
-        // 整个取数跟着挂, UI 的加载骨架也跟着挂; 而退避重试要"失败"才触发, 挂死不算失败,
-        // 用户只能退出重进 (流取消) 手动帮它重试. 超时算失败, 交给重试: 这种挂死换个连接
-        // 第二发通常几百 ms 就成功. 正常耗时中位 ~500ms, 5 秒已远超长尾.
-        val batch = try {
-            withTimeout(RELATIONS_FETCH_TIMEOUT_MILLIS) {
+        // 单个请求会在连接上挂死 (2026-08-26, 高达00 subject 1010, characters 371ms 就回来了而并行的
+        // staff 9 秒+ 一直不响应), 另发一个通常几百 ms 就回来: [RELATIONS_HEDGE_AFTER] 没回来就补发一份, 谁先回来用谁.
+        // 第一份不掐断: 网慢或请求在排队 (加密直连时外层同一个域名只并发 5 个, 前面挂着的请求能排几分钟)
+        // 时掐掉重来永远轮不到. 正常耗时中位 ~500ms.
+        val batch = withTimeoutOrNull(RELATIONS_FETCH_TIMEOUT) {
+            hedged(RELATIONS_HEDGE_AFTER) {
                 subjectService.getSubjectRelations(subjectId, withCharacterActors = true)
             }
-        } catch (e: TimeoutCancellationException) {
-            // 转成普通异常: TimeoutCancellationException 是 CancellationException 子类, 原样
-            // 往外抛会被上层"取消照抛"的分支当成外部取消, 绕过重试直接杀流
-            throw RepositoryServiceUnavailableException("relations fetch for $subjectId timed out", e)
-        }
+        } ?: throw RepositoryServiceUnavailableException("relations fetch for $subjectId timed out")
         val tFetched = currentTimeMillis()
         // 落库是单个事务 (全有或全无 + 一轮 invalidation), 见 [SubjectRelationsDao.upsertBatch];
         // "盖章"留在事务外且放最后: 全部落库成功才算这份数据新鲜
@@ -309,14 +305,20 @@ class DefaultSubjectRelationsRepository(
     private companion object {
         private val logger = logger<SubjectRelationsRepository>()
 
-        /** 取数失败的追加重试次数 (总尝试 = 这个数 + 1). */
-        private const val RELATIONS_FETCH_RETRIES = 2
+        /** 取数失败后首次重试前的等待; 之后每次 ×4 (1s → 4s → 16s → 每分钟一次). */
+        private val RELATIONS_FETCH_RETRY_DELAY = 1.seconds
 
-        /** 首次重试前的等待; 之后每次 x4 (1s -> 4s). */
-        private const val RELATIONS_FETCH_RETRY_DELAY_MILLIS = 1000L
+        /** 页面开着时重试的最长间隔. */
+        private val RELATIONS_FETCH_RETRY_MAX_DELAY = 1.minutes
 
-        /** 单次取数 (两个并行请求 + 解析) 的超时; 见 [fetchAndSaveSubjectRelations] 里的挂死记录. */
-        private const val RELATIONS_FETCH_TIMEOUT_MILLIS = 5000L
+        /** 库里没有时加载骨架最多转多久, 之后先显示空区块、后台接着取. 见 [refreshingRelationsIfStale]. */
+        private val RELATIONS_SKELETON_MAX_WAIT = 20.seconds
+
+        /** 第一份请求这么久没回来就补发一份. 见 [fetchAndSaveSubjectRelations] 里的挂死记录. */
+        private val RELATIONS_HEDGE_AFTER = 5.seconds
+
+        /** 一次取数 (含补发的那份) 最长等多久, 超了算失败, 交给重试. */
+        private val RELATIONS_FETCH_TIMEOUT = 1.minutes
     }
 }
 
