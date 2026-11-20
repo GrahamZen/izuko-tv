@@ -70,10 +70,12 @@ class StorageGuideStateTest {
         state.nothingToMove()
         assertEquals(StorageGuideStep.Confirm, state.step)
 
+        assertTrue(state.canGoBack)
         assertTrue(state.back())
         assertEquals(StorageGuideStep.Mode, state.step)
         assertTrue(state.back())
         assertEquals(StorageGuideStep.Drive, state.step)
+        assertFalse(state.canGoBack, "no back button on the first step")
         assertFalse(state.back(), "back on the first step closes the guide")
     }
 

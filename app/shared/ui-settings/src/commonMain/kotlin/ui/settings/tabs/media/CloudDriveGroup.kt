@@ -363,6 +363,7 @@ private fun CloudDriveQrCode(content: String, appLinks: List<String>, appName: S
         // 深色码浅色底, 各种扫码器都认
         foreground = Color.Black,
         background = Color.White,
+        openOnTap = false,
     )
 }
 

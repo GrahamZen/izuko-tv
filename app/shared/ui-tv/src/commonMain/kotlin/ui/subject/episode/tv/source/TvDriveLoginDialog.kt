@@ -108,7 +108,8 @@ private fun QrLogin(service: CloudDriveService, name: String, onLoggedIn: () -> 
     }
     when (val s = state) {
         is CloudDriveQrLoginState.WaitingForScan -> {
-            RemoteQrCode(s.qrContent, size = QR_SIZE, quietZone = QR_QUIET_ZONE)
+            // 网盘 App 扫的码, 浏览器打开登不上
+            RemoteQrCode(s.qrContent, size = QR_SIZE, quietZone = QR_QUIET_ZONE, openOnTap = false)
             val app = service.protocol.login.qr?.appName?.takeIf { it.isNotBlank() } ?: name
             Message(stringResource(Lang.settings_media_cloud_drive_login_qr_description, app))
         }

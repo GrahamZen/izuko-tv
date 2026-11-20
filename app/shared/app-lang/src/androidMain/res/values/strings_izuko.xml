@@ -400,13 +400,17 @@
     <string name="tv_onboarding_welcome_description">Four quick steps before you start:</string>
     <string name="tv_onboarding_welcome_step_network">Check the network and choose how to connect to Bangumi and load TMDB images</string>
     <string name="tv_onboarding_welcome_step_remote">Scan a code to use your phone as a remote and keyboard</string>
+    <string name="tv_onboarding_welcome_step_remote_touch">Scan a code to search, pick sources and change settings from your phone</string>
     <string name="tv_onboarding_welcome_step_login">Sign in to your Bangumi account (optional — it works without signing in)</string>
     <string name="tv_onboarding_welcome_start">Start</string>
     <string name="tv_onboarding_step_network">Network</string>
     <string name="tv_onboarding_step_remote">Phone remote</string>
     <string name="tv_onboarding_remote_description">Scan the code on the right to open this TV’s Web console. Your phone must be on the same Wi-Fi as the TV. No app needed, the browser is enough:</string>
+    <string name="tv_onboarding_remote_description_touch">Scan the code on the right to open this device’s Web console. Your phone must be on the same Wi-Fi. No app needed, the browser is enough:</string>
     <string name="tv_onboarding_remote_feature_search">Type on your phone to search; results open on the TV</string>
+    <string name="tv_onboarding_remote_feature_search_touch">Type on your phone to search; results open on this device</string>
     <string name="tv_onboarding_remote_feature_player">Pick sources, pause, skip and change speed like a remote</string>
+    <string name="tv_onboarding_remote_feature_player_touch">Pick sources, pause, skip and change speed from your phone</string>
     <string name="tv_onboarding_remote_feature_manage">Manage caches, sources and settings</string>
     <string name="tv_onboarding_remote_feature_login">Sign in to Bangumi; typing is easier on a phone</string>
     <string name="tv_onboarding_next">Next</string>
@@ -462,11 +466,14 @@
     <string name="tv_onboarding_login_done_plain">Signed in</string>
     <string name="tv_onboarding_start">Get started</string>
     <string name="tv_onboarding_welcome_step_theme">Choose the look, and what OK does on a poster</string>
+    <string name="tv_onboarding_welcome_step_theme_touch">Choose the look, and what tapping a poster does</string>
     <string name="tv_onboarding_step_theme">Look</string>
     <string name="tv_onboarding_theme_title">Look and controls</string>
     <string name="tv_onboarding_theme_description">Changes apply right away. You can change all of them later under Settings - Theme</string>
     <string name="tv_onboarding_theme_confirm">Selecting a poster</string>
+    <string name="tv_onboarding_theme_confirm_touch">Tapping a poster</string>
     <string name="tv_onboarding_theme_confirm_hero_hint">See the backdrop and overview first; OK again opens the details</string>
+    <string name="tv_onboarding_theme_confirm_hero_hint_touch">See the backdrop and overview first; tap again to open the details</string>
     <string name="tv_onboarding_theme_confirm_play_hint">Continue where you left off, or start from episode 1</string>
     <string name="tv_onboarding_theme_confirm_details_hint">Open the details page right away</string>
     <string name="tv_onboarding_theme_colors">Colors</string>
@@ -950,6 +957,7 @@
     <string name="foundation_browser_open_failed_title">Unable to open the link</string>
     <string name="foundation_browser_open_failed_scan_hint">No browser is available on this device. Scan the code with your phone, or type the link below</string>
     <string name="foundation_browser_open_failed_close">Close</string>
+    <string name="foundation_qr_open_link">Open link</string>
     <string name="settings_watch_together_entry_hint_tv">. Long-press Back to open the action panel, where it lives</string>
     <!-- 一起看 (docs/contributing/code/together.md): 弹窗、提示; 句子里的功能名用 watch_together_title 填 -->
     <string name="tv_together_intro">Watch the same episode in sync with friends. The host controls playback.</string>
@@ -1335,4 +1343,13 @@
     <string name="tv_notice_update_queued">Downloading the new version when you return to the home screen</string>
     <string name="tv_notice_bubble_title">New notifications: %1$d</string>
     <string name="tv_notice_bubble_more">and %1$d more</string>
+    <string name="tv_rail_back">Back</string>
+    <string name="pad_subject_details_more_tags">More tags</string>
+    <string name="pad_subject_details_all_episodes">All episodes</string>
+    <string name="subject_details_tv_title_logo_submitting_touch">Submitting…</string>
+    <string name="collection_tv_tab_order_hint_touch">Tap a tab to pick it up</string>
+    <string name="collection_tv_tab_order_hint_grabbed_touch">Tap where it should go  ·  Tap it again to put it down</string>
+    <string name="tv_wall_scale_hint_drag">Tap or drag the slider to change the size</string>
+    <string name="tv_adjust_done">Done</string>
+    <string name="tv_remote_address_copied">Web console address copied</string>
 </resources>

@@ -76,6 +76,7 @@ import me.him188.ani.app.ui.foundation.session.TV_RAIL_ITEM_SIZE
 import me.him188.ani.app.ui.foundation.session.tvRailScrimFeather
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallTone
+import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.ProvideTvScrollActivity
 import me.him188.ani.app.ui.foundation.tv.TvPosterWallScaled
 import me.him188.ani.app.ui.foundation.tv.TvPosterWallTheme
@@ -210,6 +211,12 @@ fun TvPosterWallScalePage(
             onEnterPage = ::enterPage,
             focusRequester = sliderFocus,
             scrimPainter = { tone.drawBackground(this) },
+            stops = stops,
+            onSetPercent = { percent = it },
+            onDone = {
+                commit()
+                onNavigateBack()
+            },
         )
         // 进页焦点在滑块上
         LaunchedEffect(Unit) { runCatching { sliderFocus.requestFocus() } }
@@ -219,6 +226,7 @@ fun TvPosterWallScalePage(
 /**
  * 替代侧边栏的那一列: 竖着的滑块 (与侧边栏图标同一条中线, 收起时同样只占 48dp), 上面写着当前百分比. 聚焦时像侧边栏那样展开一块底板,
  * 写上标题与按键说明. 越往上越大; 100% 那一格画一道短刻度.
+ * 触屏上底板常开, 滑块点或拖到 [stops] 里最近的一档 ([onSetPercent]), 说明换成触屏的, 底下「完成」([onDone]) 离开 (见 TvPosterWallScaleTouch.kt).
  */
 @Composable
 private fun TvPosterWallScaleRail(
@@ -227,12 +235,17 @@ private fun TvPosterWallScaleRail(
     onEnterPage: () -> Unit,
     focusRequester: FocusRequester,
     scrimPainter: DrawScope.() -> Unit,
+    stops: List<Int>,
+    onSetPercent: (Int) -> Unit,
+    onDone: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var focused by remember { mutableStateOf(false) }
+    val touch = LocalTvTouchInputEnabled.current
+    val expanded = focused || touch
     Box(modifier.fillMaxHeight(), contentAlignment = Alignment.CenterStart) {
         // 展开底板: 同侧边栏 (整屏底色 + 右缘羽化), 盖住页面左边一截, 字才看得清
-        AnimatedVisibility(focused, Modifier.fillMaxHeight(), enter = fadeIn(), exit = fadeOut()) {
+        AnimatedVisibility(expanded, Modifier.fillMaxHeight(), enter = fadeIn(), exit = fadeOut()) {
             Box(
                 Modifier.fillMaxHeight().width(TV_WALL_SCALE_PANEL_WIDTH)
                     .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
@@ -296,10 +309,19 @@ private fun TvPosterWallScaleRail(
                                 else -> false
                             }
                         }
-                        .focusable(),
+                        .focusable()
+                        .then(
+                            if (touch) {
+                                Modifier.tvWallScaleTrackTouch(
+                                    stops, TV_WALL_SCALE_MIN_PERCENT, TV_WALL_SCALE_MAX_PERCENT, TV_WALL_SCALE_TRACK_PADDING, onSetPercent,
+                                )
+                            } else {
+                                Modifier
+                            },
+                        ),
                 )
             }
-            if (focused) {
+            if (expanded) {
                 Column(Modifier.widthIn(max = TV_WALL_SCALE_TEXT_MAX_WIDTH), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
                         stringResource(Lang.tv_wall_scale_title),
@@ -312,16 +334,20 @@ private fun TvPosterWallScaleRail(
                         style = MaterialTheme.typography.headlineMedium,
                     )
                     Spacer(Modifier.height(6.dp))
-                    val hintColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                    for (hint in listOf(Lang.tv_wall_scale_hint_adjust, Lang.tv_wall_scale_hint_try, Lang.tv_wall_scale_hint_back)) {
-                        Text(stringResource(hint), color = hintColor, style = MaterialTheme.typography.labelLarge)
+                    if (touch) {
+                        TvWallScaleTouchFooter(onDone)
+                    } else {
+                        val hintColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        for (hint in listOf(Lang.tv_wall_scale_hint_adjust, Lang.tv_wall_scale_hint_try, Lang.tv_wall_scale_hint_back)) {
+                            Text(stringResource(hint), color = hintColor, style = MaterialTheme.typography.labelLarge)
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            stringResource(Lang.tv_wall_scale_hint_preview),
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
                     }
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        stringResource(Lang.tv_wall_scale_hint_preview),
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
-                        style = MaterialTheme.typography.bodySmall,
-                    )
                 }
             }
         }
@@ -344,7 +370,7 @@ private fun TvPosterWallScaleTrack(
     Box(
         modifier.drawBehind {
             val x = size.width / 2
-            val pad = 9.dp.toPx()
+            val pad = TV_WALL_SCALE_TRACK_PADDING.toPx()
             val top = pad
             val bottom = size.height - pad
             fun yOf(p: Int): Float {
@@ -376,6 +402,9 @@ private val TV_WALL_SCALE_RAIL_START = 16.dp
 
 /** 滑块的高度 (不含上面的百分比). */
 private val TV_WALL_SCALE_TRACK_HEIGHT = 240.dp
+
+/** 滑块两端留给圆点的空白: 最小 / 最大那一档的圆点画在离两端这么远处 (触屏换算手指位置也按它). */
+private val TV_WALL_SCALE_TRACK_PADDING = 9.dp
 
 /** 展开底板的宽度 (含右缘羽化). */
 private val TV_WALL_SCALE_PANEL_WIDTH = 340.dp

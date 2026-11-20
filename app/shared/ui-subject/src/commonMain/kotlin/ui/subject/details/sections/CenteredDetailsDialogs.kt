@@ -40,6 +40,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -73,9 +74,12 @@ import me.him188.ani.app.ui.foundation.tv.tvImageZoomKeys
 import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
 import me.him188.ani.app.ui.foundation.focus.TvFocusKey
 import me.him188.ani.app.ui.foundation.focus.rememberTvFocusScope
+import me.him188.ani.app.ui.foundation.focus.TvFocusScope
 import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
 import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
 import me.him188.ani.app.ui.foundation.widgets.ANI_GLASS_PANEL_SHAPE
+import me.him188.ani.app.ui.foundation.widgets.AniPanelBackButton
+import me.him188.ani.app.ui.foundation.widgets.AniTouchDialogOutside
 import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_CONTENT_PADDING
 import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_TITLE_GAP
 import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_WINDOW_DIM
@@ -123,68 +127,102 @@ internal fun ViewAllPanelDialog(
     val currentOnDismissRequest by rememberUpdatedState(onDismissRequest)
     // 返回键先退里面那层 (评论列表点开的整楼), 退完了才关
     val backOrDismiss = { if (!back.back()) currentOnDismissRequest() }
+    // 触屏 (平板模式): 点外面关掉整个弹窗 (同常见触屏应用), 退一层用标题行的「返回」; 系统返回手势仍走 backOrDismiss 退一层
+    val touch = LocalTvTouchInputEnabled.current
     Dialog(
         onDismissRequest = backOrDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
+        properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = !touch),
     ) {
         // **scope 必须建在 Dialog 内容里**: 它的解析器按 LocalWindowInfo 判"窗口有焦点"来重试,
         // 建在外面读到的是主窗口 (弹窗开着必为 false), 按帧重试永不运行、窗口获焦事件也听错了窗口.
         // 首格随分页数据迟到时, 请求悬挂到锚点附着事件再送达, 不再逐帧轮询.
         val focus = rememberTvFocusScope()
-        val touch = LocalTvTouchInputEnabled.current
         if (!touch) focus.InitialFocus(ViewAllGridFirstItemFocus)
         // 玻璃面板与窗外压暗与 AniCenteredPanelDialog 同一套: 盖在播放器上时画面要透得出来
         DialogWindowDimAmount(CENTERED_PANEL_WINDOW_DIM)
-        Surface(
-            // 独立窗口收不到播放页的根按键路由, 播放器内嵌详情页开的弹窗要自己接播放/暂停键
-            Modifier.tvOverlayWindowKeys(onDismissRequest)
-                .tvFocusNavSignal(focus)
-                // 大图开着期间吞掉一切按键 (返回键只关大图, 不关本弹窗). 挂在这儿而不是每个
-                // 条目上: onPreviewKeyEvent 只在焦点路径上触发, 网格与卡片都在它的子树里
-                .ifThen(imageZoom != null) { tvImageZoomKeys(imageZoom!!) }
-                // 返回键自己接: 里面没人要的返回键 Compose 会当成「焦点退出一层」吃掉 (焦点在原生列表里时就是这样), 弹窗收不到, 要按好几下才关
-                .onKeyEvent { event ->
-                    if (event.key != Key.Back) return@onKeyEvent false
-                    if (event.type == KeyEventType.KeyUp) backOrDismiss()
-                    true
-                }
-                .fillMaxWidth(TV_DETAILS_DIALOG_WIDTH_FRACTION)
-                .fillMaxHeightAtMost(TV_DETAILS_DIALOG_HEIGHT_FRACTION),
-            shape = ANI_GLASS_PANEL_SHAPE,
-            color = aniGlassPanelColor(),
-            border = aniGlassEdge(),
-            // 半透明底色查不到 "on" 色, 不显式给会退回 LocalContentColor 的默认纯黑
-            contentColor = MaterialTheme.colorScheme.onSurface,
-        ) {
-            // 玻璃面板里的项目换成玻璃底 (卡片、胶囊); 按钮约定只给标题行 (见下)
-            ProvideAniGlassPanel {
-                Box {
-                    Column(
-                        Modifier.padding(CENTERED_PANEL_CONTENT_PADDING),
-                        verticalArrangement = Arrangement.spacedBy(CENTERED_PANEL_TITLE_GAP),
-                    ) {
-                        ViewAllPanelHeader(title, count, subtitle, onDismissRequest.takeIf { touch }, headerAction)
-                        CompositionLocalProvider(LocalViewAllBackHandlers provides back, LocalViewAllImageZoom provides imageZoom) {
-                            content(if (touch) Modifier else Modifier.tvFocusAnchor(focus, ViewAllGridFirstItemFocus))
-                        }
+        if (touch) {
+            AniTouchDialogOutside(onTap = { currentOnDismissRequest() }) {
+                ViewAllPanelSurface(title, onDismissRequest, count, subtitle, imageZoom, headerAction, back, backOrDismiss, focus, touch, content)
+            }
+        } else {
+            ViewAllPanelSurface(title, onDismissRequest, count, subtitle, imageZoom, headerAction, back, backOrDismiss, focus, touch, content)
+        }
+    }
+}
+
+/** [ViewAllPanelDialog] 的面板本身. */
+@Composable
+private fun ViewAllPanelSurface(
+    title: String,
+    onDismissRequest: () -> Unit,
+    count: Int?,
+    subtitle: String?,
+    imageZoom: TvImageZoomState?,
+    headerAction: @Composable () -> Unit,
+    back: ViewAllBackHandlers,
+    backOrDismiss: () -> Unit,
+    focus: TvFocusScope,
+    touch: Boolean,
+    content: @Composable ColumnScope.(initialFocus: Modifier) -> Unit,
+) {
+    Surface(
+        // 独立窗口收不到播放页的根按键路由, 播放器内嵌详情页开的弹窗要自己接播放/暂停键
+        Modifier.tvOverlayWindowKeys(onDismissRequest)
+            .tvFocusNavSignal(focus)
+            // 大图开着期间吞掉一切按键 (返回键只关大图, 不关本弹窗). 挂在这儿而不是每个
+            // 条目上: onPreviewKeyEvent 只在焦点路径上触发, 网格与卡片都在它的子树里
+            .ifThen(imageZoom != null) { tvImageZoomKeys(imageZoom!!) }
+            // 返回键自己接: 里面没人要的返回键 Compose 会当成「焦点退出一层」吃掉 (焦点在原生列表里时就是这样), 弹窗收不到, 要按好几下才关
+            .onKeyEvent { event ->
+                if (event.key != Key.Back) return@onKeyEvent false
+                if (event.type == KeyEventType.KeyUp) backOrDismiss()
+                true
+            }
+            .fillMaxWidth(TV_DETAILS_DIALOG_WIDTH_FRACTION)
+            .fillMaxHeightAtMost(TV_DETAILS_DIALOG_HEIGHT_FRACTION),
+        shape = ANI_GLASS_PANEL_SHAPE,
+        color = aniGlassPanelColor(),
+        border = aniGlassEdge(),
+        // 半透明底色查不到 "on" 色, 不显式给会退回 LocalContentColor 的默认纯黑
+        contentColor = MaterialTheme.colorScheme.onSurface,
+    ) {
+        // 玻璃面板里的项目换成玻璃底 (卡片、胶囊); 按钮约定只给标题行 (见下)
+        ProvideAniGlassPanel {
+            Box {
+                Column(
+                    Modifier.padding(CENTERED_PANEL_CONTENT_PADDING),
+                    verticalArrangement = Arrangement.spacedBy(CENTERED_PANEL_TITLE_GAP),
+                ) {
+                    ViewAllPanelHeader(
+                        title, count, subtitle,
+                        onBack = if (touch && back.canGoBack) ({ back.back() }) else null,
+                        onClose = onDismissRequest.takeIf { touch },
+                        headerAction = headerAction,
+                    )
+                    CompositionLocalProvider(LocalViewAllBackHandlers provides back, LocalViewAllImageZoom provides imageZoom) {
+                        content(if (touch) Modifier else Modifier.tvFocusAnchor(focus, ViewAllGridFirstItemFocus))
                     }
-                    imageZoom?.let { TvZoomedImageOverlay(it) }
                 }
+                imageZoom?.let { TvZoomedImageOverlay(it) }
             }
         }
     }
 }
 
-/** [ViewAllPanelDialog] 的标题行; [onClose] 非 null 时右上角画关闭钮 (触屏). */
+/**
+ * [ViewAllPanelDialog] 的标题行; [onClose] 非 null 时右上角画关闭钮 (触屏), [onBack] 非 null 时左边画「返回」(触屏上开着里层, 如评论的整楼).
+ */
 @Composable
 private fun ViewAllPanelHeader(
     title: String,
     count: Int?,
     subtitle: String?,
+    onBack: (() -> Unit)?,
     onClose: (() -> Unit)?,
     headerAction: @Composable () -> Unit,
 ) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        onBack?.let { AniPanelBackButton(it, Modifier.padding(end = 12.dp)) }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row {
                 Text(
@@ -385,7 +423,10 @@ internal fun CommentThreadDialog(
  */
 @Stable
 class ViewAllBackHandlers {
-    private val handlers = ArrayList<() -> Unit>()
+    private val handlers = mutableStateListOf<() -> Unit>()
+
+    /** 有里层可退 (触屏上标题行据此画「返回」). */
+    val canGoBack: Boolean get() = handlers.isNotEmpty()
 
     internal fun add(handler: () -> Unit) {
         handlers += handler

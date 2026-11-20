@@ -117,7 +117,6 @@ import me.him188.ani.app.ui.foundation.focus.tvRowEndKeys
 import me.him188.ani.app.ui.foundation.tv.ReportTvScrollActivity
 import me.him188.ani.app.ui.foundation.tv.TvFocusRing
 import me.him188.ani.app.ui.foundation.tv.rememberTvCardsScrollingProvider
-import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
 import me.him188.ani.app.ui.foundation.tv.tvTouchTap
 import me.him188.ani.app.ui.foundation.tv.rememberTvScrollSettled
 import me.him188.ani.app.ui.foundation.tv.tvScrollHiddenTextEnabled
@@ -699,6 +698,13 @@ fun FocusEpisodeCarousel(
         LaunchedEffect(focusedCardIndex) {
             if (focusedCardIndex >= 0) scrollAnimator.animateScrollToItem(listState, focusedCardIndex)
         }
+        // 触屏: 手指拖完行停下就近停到一张卡并交焦点给它; 拖着时聚焦框藏起来
+        val touchDrag = rememberFocusEpisodeRowTouchDrag(listState) { index ->
+            episodes.getOrNull(index)?.let { item ->
+                scope.launch { scrollAnimator.animateScrollToItem(listState, index) }
+                requestEpisodeFocus(item.episodeId)
+            }
+        }
         val bringIntoViewSpec = TvNoBringIntoViewSpec
         CompositionLocalProvider(LocalBringIntoViewSpec provides bringIntoViewSpec) {
             // 高度锁死在卡片高: 聚焦框是向外探出的 (offset 只挪位置不改上报尺寸, 见
@@ -712,6 +718,8 @@ fun FocusEpisodeCarousel(
                         .then(rowFocusModifier)
                         // 长按左右键的移动频率上限 (与探索页卡片区同一个限流器)
                         .tvFocusMoveRateLimit()
+                        // 触屏: 手指又按到行上就作废还没做的就近停 (见 rememberFocusEpisodeRowTouchDrag)
+                        .then(touchDrag.modifier)
                         // 末集按右 / 首集按左不交给 Android 找焦点 (会跳进下方原生的关联条目行, 见 tvRowEndKeys)
                         .tvRowEndKeys(
                             itemCount = { episodes.size },
@@ -811,7 +819,7 @@ fun FocusEpisodeCarousel(
                 // 卡片列表在框下滑动; 焦点离开整行 (含移到简介上) 时熄灭, 语义同原先画在
                 // 聚焦卡上的外圈. 热状态 (是否有聚焦卡) 经 provider lambda 传入, 只在子组件里读
                 FocusEpisodeAnchorRing(
-                    visible = { activeFocusEpisodeId != null },
+                    visible = { activeFocusEpisodeId != null && !touchDrag.dragging() },
                     pressed = { pressingCard },
                     cellWidth = cellWidth,
                     cellHeight = cellHeight,
@@ -1367,6 +1375,8 @@ fun FocusEpisodeCard(
         // scale 放链最外层: 按住缩小时整张卡 (含调用方 modifier 里的装饰) 一起缩;
         // 行层的固定锚位聚焦框按同一比例同步缩 —— 框不缩的话按住时卡与框脱开一圈, 像焦点掉了
         modifier = Modifier.scale(pressScale).then(modifier).height(height)
+            // 触屏: 按下即聚焦、长按开单集详情、没聚焦时点一下只选中 (见 focusEpisodeCardTouch); 电视上原样
+            .focusEpisodeCardTouch(onClick, onLongClick)
             // **indication = null**: Material3 可点击 Surface 自带的 ripple 会在聚焦时给整张卡盖一层
             // 发白的遮罩, 而它画在卡片上**跟着卡片滚**, 聚焦框却钉在锚位 —— 滚动期间两个焦点指示
             // 分处两地, 看着就是"高亮已经跳到下一张, 框还在原地等" (2026-09-20 录屏比对 Prime Video:
@@ -1376,7 +1386,7 @@ fun FocusEpisodeCard(
                 indication = null,
                 onClick = onClick,
             )
-            .then(longPressModifier).tvTouchFocusOnTap(),
+            .then(longPressModifier),
         shape = RoundedCornerShape(EPISODE_CARD_CORNER),
         color = containerColor,
     ) {

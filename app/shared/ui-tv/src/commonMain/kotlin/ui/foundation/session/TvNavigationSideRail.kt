@@ -34,7 +34,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -49,6 +48,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
+import me.him188.ani.app.ui.lang.tv_rail_back
 import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Search
@@ -383,19 +389,22 @@ fun TvNavigationSideRail(
      * TvPosterWallTone.drawBackground), 右缘照常羽化.
      */
     scrimPainter: (DrawScope.() -> Unit)? = null,
+    /** 非 null 时左上角钉一颗「返回」(触屏用: 没有返回键, 见 [TvTouchBackButton]); 不在居中的那一列里. */
+    onBack: (() -> Unit)? = null,
 ) {
-    // hasFocus (含子节点): 任一条目聚焦即展开
+    // hasFocus (含子节点): 任一条目聚焦即展开. 触屏上不展开: 条目点一下就是跳转 (按下不拿焦点), 焦点被兜底送进来也不出文字
     var expanded by remember { mutableStateOf(false) }
+    val touchInput = LocalTvTouchInputEnabled.current
     // 头像那簇浮出按钮需要的高度: 它们不占布局 (见 TvRailAvatar), 整列纯居中时会被屏幕上边界
     // 切掉 —— 条目越多整列越高, 居中后头像越靠上, 上方那簇就露不全.
     //
     // 下端曾经也要留 (带浮出动作的条目排在整列最后), 随"正在播放"条目一起删了; 再给条目加
     // 往下长的浮出按钮的话, 这里要把那份预留加回来.
-    val topReserve = if (selfInfo != null && avatarActions.isNotEmpty()) {
-        floatingActionsStackHeight(avatarActions.size)
-    } else {
-        0.dp
-    }
+    // 左上角有返回时, 整列至少让开它
+    val topReserve = maxOf(
+        if (selfInfo != null && avatarActions.isNotEmpty()) floatingActionsStackHeight(avatarActions.size) else 0.dp,
+        if (onBack != null) TV_RAIL_BACK_RESERVE else 0.dp,
+    )
     // 垂直居中 (纵向位置由下面的 layout 自己算, 因此这里对齐到顶)
     Box(modifier.fillMaxHeight(), contentAlignment = Alignment.TopStart) {
         AnimatedVisibility(expanded, enter = fadeIn(), exit = fadeOut()) {
@@ -452,7 +461,7 @@ fun TvNavigationSideRail(
                     val y = if (maxY < top) top else centered.coerceIn(top, maxY)
                     layout(placeable.width, placeable.height) { placeable.place(0, y) }
                 }
-                .onFocusChanged { expanded = it.hasFocus }
+                .onFocusChanged { expanded = it.hasFocus && !touchInput }
                 // 上下键在栏里自己走, 走到头也吞掉: 竖向离栏在下面的 onExit 里取消了, 但取消后这一下没人消费, 会交还给 Android 的
                 // 焦点查找, 照样按几何挑到出血到栏底下的原生视图
                 .onKeyEvent { event ->
@@ -519,8 +528,40 @@ fun TvNavigationSideRail(
                 )
             }
         }
+        if (onBack != null) TvTouchBackButton(onBack)
     }
 }
+
+/**
+ * 触屏上左上角的「返回」(没有返回键; 侧边栏的 onBack、没有侧边栏的页面自己摆): 与侧边栏条目同一个图标方块, 点了有涟漪, 不拿焦点.
+ * 钉在左上角 (安全区之下 [TV_RAIL_BACK_TOP], 左边与侧边栏图标同一条线), 不放进侧边栏居中的那一列: 返回在哪一页都在同一个地方,
+ * 放在铺满的 Box 里时按左上角对齐.
+ */
+@Composable
+internal fun TvTouchBackButton(onBack: () -> Unit, modifier: Modifier = Modifier) {
+    TvRailGlyphBox(
+        focused = false,
+        icon = Icons.AutoMirrored.Rounded.ArrowBack,
+        modifier = modifier
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
+            .padding(start = TV_TOUCH_BACK_START, top = TV_RAIL_BACK_TOP)
+            .focusProperties { canFocus = false }
+            .clip(RoundedCornerShape(TV_RAIL_ITEM_CORNER))
+            .clickable(onClickLabel = stringResource(Lang.tv_rail_back), onClick = onBack),
+    )
+}
+
+/** 左上角「返回」离屏幕左缘多远. */
+private val TV_TOUCH_BACK_START = 16.dp
+
+/** 左上角「返回」的右缘离屏幕左缘多远: 同一高度上的东西 (新番时间表的日期行) 从这里往右让开. */
+internal val TV_TOUCH_BACK_END: Dp get() = TV_TOUCH_BACK_START + TV_RAIL_ITEM_SIZE
+
+/** 左上角「返回」离屏幕上缘 (安全区之下) 多远. */
+private val TV_RAIL_BACK_TOP = 24.dp
+
+/** 有左上角「返回」时整列至少让开这么多 (返回本身 + 上下留白), 见 topReserve. */
+private val TV_RAIL_BACK_RESERVE: Dp get() = TV_RAIL_BACK_TOP + TV_RAIL_ITEM_SIZE + 24.dp
 
 /**
  * 侧边栏统一的图标方块: 32dp 容器 + 20dp 字形, 聚焦时主色底 + 反色图标 (带颜色过渡动画).
@@ -616,7 +657,6 @@ private fun TvRailAvatar(
                     Modifier.size(TV_RAIL_ITEM_SIZE)
                         .onFocusChanged { avatarFocused = it.isFocused }
                         .railExitKeys(onExitFocus)
-                        .tvTouchFocusOnTap()
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
@@ -640,7 +680,6 @@ private fun TvRailAvatar(
                     modifier = Modifier
                         .onFocusChanged { avatarFocused = it.isFocused }
                         .railExitKeys(onExitFocus)
-                        .tvTouchFocusOnTap()
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
@@ -684,7 +723,6 @@ private fun TvRailFloatingActionButton(
         Modifier
             .onFocusChanged { focused = it.isFocused }
             .railExitKeys(onExitFocus)
-            .tvTouchFocusOnTap()
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -755,7 +793,6 @@ private fun TvRailIconItem(
                 .railExitKeys(onExitFocus)
                 // 自绘聚焦指示 (图标方块反色), 关掉默认 indication 避免整行水波.
                 // 只保留焦点高亮: 不标记"当前页", 否则聚焦项与当前页两处高亮会误导用户.
-                .tvTouchFocusOnTap()
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,

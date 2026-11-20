@@ -19,14 +19,18 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -101,19 +105,25 @@ import me.him188.ani.app.navigation.LocalNavigator
 import me.him188.ani.app.navigation.SettingsTab
 import me.him188.ani.app.ui.foundation.Res
 import me.him188.ani.app.ui.foundation.app_icon
+import me.him188.ani.app.ui.foundation.dialogs.PlatformDialogProperties
 import me.him188.ani.app.ui.foundation.focus.TvFocusKey
 import me.him188.ani.app.ui.foundation.focus.TvFocusScope
 import me.him188.ani.app.ui.foundation.focus.rememberTvFocusScope
 import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
 import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
 import me.him188.ani.app.ui.foundation.focus.tvWindowInitialFocus
+import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.navigation.BackHandler
 import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
+import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.TvHeroButton
+import me.him188.ani.app.ui.foundation.tv.TvTouchDialogSystemBars
 import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
+import me.him188.ani.app.ui.foundation.widgets.ANI_PANEL_NAV_BUTTON_SIZE
 import me.him188.ani.app.ui.foundation.widgets.AniCenteredPanelDialog
 import me.him188.ani.app.ui.foundation.widgets.AniFocusActionButton
+import me.him188.ani.app.ui.foundation.widgets.AniPanelBackButton
 import me.him188.ani.app.ui.foundation.widgets.selectedSemantics
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.oauth_bangumi_stage_authorizing
@@ -188,10 +198,13 @@ import me.him188.ani.app.ui.lang.tv_onboarding_proxy_on_tv
 import me.him188.ani.app.ui.lang.tv_onboarding_recheck
 import me.him188.ani.app.ui.lang.tv_onboarding_recommended
 import me.him188.ani.app.ui.lang.tv_onboarding_remote_description
+import me.him188.ani.app.ui.lang.tv_onboarding_remote_description_touch
 import me.him188.ani.app.ui.lang.tv_onboarding_remote_feature_login
 import me.him188.ani.app.ui.lang.tv_onboarding_remote_feature_manage
 import me.him188.ani.app.ui.lang.tv_onboarding_remote_feature_player
+import me.him188.ani.app.ui.lang.tv_onboarding_remote_feature_player_touch
 import me.him188.ani.app.ui.lang.tv_onboarding_remote_feature_search
+import me.him188.ani.app.ui.lang.tv_onboarding_remote_feature_search_touch
 import me.him188.ani.app.ui.lang.tv_onboarding_start
 import me.him188.ani.app.ui.lang.tv_onboarding_step_login
 import me.him188.ani.app.ui.lang.tv_onboarding_step_network
@@ -204,7 +217,9 @@ import me.him188.ani.app.ui.lang.tv_onboarding_theme_colors
 import me.him188.ani.app.ui.lang.tv_onboarding_theme_confirm
 import me.him188.ani.app.ui.lang.tv_onboarding_theme_confirm_details_hint
 import me.him188.ani.app.ui.lang.tv_onboarding_theme_confirm_hero_hint
+import me.him188.ani.app.ui.lang.tv_onboarding_theme_confirm_hero_hint_touch
 import me.him188.ani.app.ui.lang.tv_onboarding_theme_confirm_play_hint
+import me.him188.ani.app.ui.lang.tv_onboarding_theme_confirm_touch
 import me.him188.ani.app.ui.lang.tv_onboarding_theme_description
 import me.him188.ani.app.ui.lang.tv_onboarding_theme_title
 import me.him188.ani.app.ui.lang.tv_onboarding_welcome_description
@@ -213,7 +228,9 @@ import me.him188.ani.app.ui.lang.tv_onboarding_welcome_start
 import me.him188.ani.app.ui.lang.tv_onboarding_welcome_step_login
 import me.him188.ani.app.ui.lang.tv_onboarding_welcome_step_network
 import me.him188.ani.app.ui.lang.tv_onboarding_welcome_step_remote
+import me.him188.ani.app.ui.lang.tv_onboarding_welcome_step_remote_touch
 import me.him188.ani.app.ui.lang.tv_onboarding_welcome_step_theme
+import me.him188.ani.app.ui.lang.tv_onboarding_welcome_step_theme_touch
 import me.him188.ani.app.ui.lang.tv_onboarding_welcome_title
 import me.him188.ani.app.ui.lang.tv_profile_default_name
 import me.him188.ani.app.ui.lang.tv_remote_control_close
@@ -224,6 +241,7 @@ import me.him188.ani.app.ui.lang.tv_settings_qr_preparing
 import me.him188.ani.app.ui.main.LocalTvStartupLogo
 import me.him188.ani.app.ui.remote.CONNECTED_GREEN_DARK
 import me.him188.ani.app.ui.remote.CONNECTED_GREEN_LIGHT
+import me.him188.ani.app.ui.remote.RemoteAddressText
 import me.him188.ani.app.ui.remote.RemoteConnectionStatus
 import me.him188.ani.app.ui.remote.RemoteQrCode
 import me.him188.ani.app.ui.remote.RemoteTroubleshootHint
@@ -311,7 +329,15 @@ fun TvOnboardingPage(
             }
     }
 
-    OnboardingSurface(focus, modifier) {
+    OnboardingSurface(
+        focus,
+        modifier,
+        onBack = when {
+            welcome -> null
+            page == NetworkPage.Images -> ({ page = NetworkPage.Bangumi })
+            else -> ({ welcome = true })
+        },
+    ) {
         if (welcome) {
             WelcomeStep(
                 focus,
@@ -427,25 +453,32 @@ fun TvOnboardingLoginHost(onFinished: () -> Unit, onBack: () -> Unit, onNewUserF
     var pendingLocal by rememberSaveable { mutableStateOf<Boolean?>(null) }
     // 首次引导里只有 1 号
     val defaultName = stringResource(Lang.tv_profile_default_name, UserProfile.PRIMARY_ID)
-    Dialog(
-        onDismissRequest = {
-            when {
-                loginOnly -> finishNewUser()
-                layerStep == LayerStep.Theme -> {
-                    pendingLocal = null
-                    layerStep = LayerStep.Login
-                }
-                layerStep == LayerStep.Login -> layerStep = LayerStep.Remote
-                // 登录层由回到的检测网络页画出来之后撤 (见 TvOnboardingPage), 这里只导航
-                else -> onBack()
+    fun stepBack() {
+        when {
+            layerStep == LayerStep.Theme -> {
+                pendingLocal = null
+                layerStep = LayerStep.Login
             }
+            layerStep == LayerStep.Login -> layerStep = LayerStep.Remote
+            // 登录层由回到的检测网络页画出来之后撤 (见 TvOnboardingPage), 这里只导航
+            else -> onBack()
+        }
+    }
+    Dialog(
+        onDismissRequest = { if (loginOnly) finishNewUser() else stepBack() },
+        // 平板模式 (触屏) 有导航条: 窗口铺到导航条下面 (不然底下漏出一条主页), 安全区由 OnboardingSurface 留
+        properties = if (LocalTvTouchInputEnabled.current) {
+            PlatformDialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false, decorFitsSystemWindows = false)
+        } else {
+            DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false)
         },
-        properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false),
     ) {
+        // 窗口铺满了, 系统栏照外壳的样子藏 (对话框窗口不继承 Activity 的设置)
+        if (LocalTvTouchInputEnabled.current) TvTouchDialogSystemBars()
         val vm = viewModel(key = "TvOnboardingLogin-$assumeViaMirror") { TvOnboardingLoginViewModel(assumeViaMirror) }
         val loginPath by vm.loginPath.collectAsStateWithLifecycle()
         val focus = rememberTvFocusScope()
-        OnboardingSurface(focus, Modifier) {
+        OnboardingSurface(focus, Modifier, onBack = if (loginOnly) null else ::stepBack) {
             when (layerStep) {
                 LayerStep.Remote -> RemoteStep(
                     focus,
@@ -496,10 +529,12 @@ private enum class LayerStep { Remote, Login, Theme }
 @Composable
 private fun RemoteStep(focus: TvFocusScope, loginViaConsole: Boolean, onNext: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
+    // 平板模式 (触屏): 说「这台设备」不说电视、不说遥控器; 没有播放键, 不提长按播放键找二维码
+    val touch = LocalTvTouchInputEnabled.current
     Column(Modifier.fillMaxSize()) {
         StepHeader(
             stringResource(Lang.tv_remote_control_title),
-            stringResource(Lang.tv_onboarding_remote_description),
+            stringResource(if (touch) Lang.tv_onboarding_remote_description_touch else Lang.tv_onboarding_remote_description),
             step = 1,
         )
         Spacer(Modifier.height(SECTION_GAP))
@@ -507,8 +542,8 @@ private fun RemoteStep(focus: TvFocusScope, loginViaConsole: Boolean, onNext: ()
             Column(Modifier.weight(1f)) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     for (feature in listOfNotNull(
-                        Lang.tv_onboarding_remote_feature_search,
-                        Lang.tv_onboarding_remote_feature_player,
+                        if (touch) Lang.tv_onboarding_remote_feature_search_touch else Lang.tv_onboarding_remote_feature_search,
+                        if (touch) Lang.tv_onboarding_remote_feature_player_touch else Lang.tv_onboarding_remote_feature_player,
                         Lang.tv_onboarding_remote_feature_manage,
                         // 登录那一步能直接扫码登录时, 不再说在手机控制台登录 (只有连不上官方 / 经镜像时才得用控制台的个人令牌)
                         Lang.tv_onboarding_remote_feature_login.takeIf { loginViaConsole },
@@ -520,12 +555,14 @@ private fun RemoteStep(focus: TvFocusScope, loginViaConsole: Boolean, onNext: ()
                         }
                     }
                 }
-                Spacer(Modifier.height(24.dp))
-                Text(
-                    stringResource(Lang.tv_remote_control_panel_hint),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = scheme.onSurfaceVariant,
-                )
+                if (!touch) {
+                    Spacer(Modifier.height(24.dp))
+                    Text(
+                        stringResource(Lang.tv_remote_control_panel_hint),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = scheme.onSurfaceVariant,
+                    )
+                }
                 Spacer(Modifier.height(24.dp))
                 TvHeroButton(
                     stringResource(Lang.tv_onboarding_next),
@@ -579,10 +616,18 @@ private fun WelcomeStep(focus: TvFocusScope, onStart: () -> Unit) {
         )
         Spacer(Modifier.height(8.dp))
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            // 平板模式 (触屏) 没有遥控器、海报是点的: 第 2、4 步换成触屏的说法
+            val touch = LocalTvTouchInputEnabled.current
             WelcomeStepLine(1, stringResource(Lang.tv_onboarding_welcome_step_network))
-            WelcomeStepLine(2, stringResource(Lang.tv_onboarding_welcome_step_remote))
+            WelcomeStepLine(
+                2,
+                stringResource(if (touch) Lang.tv_onboarding_welcome_step_remote_touch else Lang.tv_onboarding_welcome_step_remote),
+            )
             WelcomeStepLine(3, stringResource(Lang.tv_onboarding_welcome_step_login))
-            WelcomeStepLine(4, stringResource(Lang.tv_onboarding_welcome_step_theme))
+            WelcomeStepLine(
+                4,
+                stringResource(if (touch) Lang.tv_onboarding_welcome_step_theme_touch else Lang.tv_onboarding_welcome_step_theme),
+            )
         }
         Spacer(Modifier.height(24.dp))
         TvHeroButton(
@@ -605,21 +650,41 @@ private fun WelcomeStepLine(number: Int, text: String) {
     }
 }
 
-/** 两步共用的底: 不透明底色 + 安全边距; 根上挂焦点的用户交互信号. */
+/**
+ * 两步共用的底: 不透明底色 + 安全边距; 根上挂焦点的用户交互信号.
+ * 平板模式 (触屏) 没有返回键: 左边留一列, [onBack] 非 null (能退回上一步) 时放「返回」, 退法同返回键; 列一直留着, 换步时内容不左右跳.
+ * 平板模式底色铺到系统栏下面 (登录层的窗口不避让导航条), 内容另外让开系统栏与挖孔 (safeDrawing).
+ */
 @Composable
-internal fun OnboardingSurface(focus: TvFocusScope, modifier: Modifier, content: @Composable () -> Unit) {
+internal fun OnboardingSurface(
+    focus: TvFocusScope,
+    modifier: Modifier,
+    onBack: (() -> Unit)? = null,
+    content: @Composable () -> Unit,
+) {
     Surface(
         modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background,
         contentColor = MaterialTheme.colorScheme.onBackground,
     ) {
+        val touch = LocalTvTouchInputEnabled.current
         Box(
             Modifier
                 .fillMaxSize()
                 .tvFocusNavSignal(focus)
+                .ifThen(touch) { windowInsetsPadding(WindowInsets.safeDrawing) }
                 .padding(horizontal = PAGE_HORIZONTAL_PADDING, vertical = PAGE_VERTICAL_PADDING),
         ) {
-            content()
+            if (touch) {
+                Row(Modifier.fillMaxSize()) {
+                    Box(Modifier.width(ANI_PANEL_NAV_BUTTON_SIZE + 16.dp)) {
+                        onBack?.let { AniPanelBackButton(it) }
+                    }
+                    Box(Modifier.weight(1f).fillMaxHeight()) { content() }
+                }
+            } else {
+                content()
+            }
         }
     }
 }
@@ -1009,26 +1074,29 @@ private fun LoginStep(
                     }
                 }
             }
-            Spacer(Modifier.width(COLUMN_GAP))
-            if (useConsole) {
-                PhoneCard(Modifier.width(PHONE_CARD_WIDTH))
-            } else {
-                PhoneLoginCard(
-                    url = phoneUrl,
-                    status = when {
-                        lastStart == TvOnboardingLoginViewModel.LoginStart.Phone && oauth is BangumiOAuthManager.State.Exchanging ->
-                            stringResource(Lang.oauth_bangumi_stage_exchanging)
+            // 平板模式 (触屏) 已登录: 右边只剩控制台的码, 用不着, 不摆
+            if (!loggedIn || !LocalTvTouchInputEnabled.current) {
+                Spacer(Modifier.width(COLUMN_GAP))
+                if (useConsole) {
+                    PhoneCard(Modifier.width(PHONE_CARD_WIDTH))
+                } else {
+                    PhoneLoginCard(
+                        url = phoneUrl,
+                        status = when {
+                            lastStart == TvOnboardingLoginViewModel.LoginStart.Phone && oauth is BangumiOAuthManager.State.Exchanging ->
+                                stringResource(Lang.oauth_bangumi_stage_exchanging)
 
-                        phoneUrl == null -> stringResource(Lang.tv_settings_qr_preparing)
-                        // 连不上电视上的代理: 换几次码都一样, 直说是代理
-                        phoneFailedOnce && unreachableProxy != null ->
-                            stringResource(Lang.tv_onboarding_login_proxy_unreachable, unreachableProxy.orEmpty())
+                            phoneUrl == null -> stringResource(Lang.tv_settings_qr_preparing)
+                            // 连不上电视上的代理: 换几次码都一样, 直说是代理
+                            phoneFailedOnce && unreachableProxy != null ->
+                                stringResource(Lang.tv_onboarding_login_proxy_unreachable, unreachableProxy.orEmpty())
 
-                        phoneFailedOnce -> stringResource(Lang.tv_onboarding_login_qr_retry)
-                        else -> stringResource(Lang.tv_settings_login_qr_caption)
-                    },
-                    modifier = Modifier.width(PHONE_CARD_WIDTH),
-                )
+                            phoneFailedOnce -> stringResource(Lang.tv_onboarding_login_qr_retry)
+                            else -> stringResource(Lang.tv_settings_login_qr_caption)
+                        },
+                        modifier = Modifier.width(PHONE_CARD_WIDTH),
+                    )
+                }
             }
         }
     }
@@ -1135,7 +1203,10 @@ internal fun ThemeStep(
             step = 3,
         )
         Spacer(Modifier.height(SECTION_GAP))
-        Text(stringResource(Lang.tv_onboarding_theme_confirm), style = MaterialTheme.typography.titleMedium)
+        Text(
+            stringResource(if (LocalTvTouchInputEnabled.current) Lang.tv_onboarding_theme_confirm_touch else Lang.tv_onboarding_theme_confirm),
+            style = MaterialTheme.typography.titleMedium,
+        )
         Spacer(Modifier.height(12.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(CONFIRM_CARD_GAP)) {
             for (action in TvPosterConfirmAction.entries) {
@@ -1273,7 +1344,11 @@ private fun ConfirmOption(
             Text(
                 stringResource(
                     when (action) {
-                        TvPosterConfirmAction.Hero -> Lang.tv_onboarding_theme_confirm_hero_hint
+                        TvPosterConfirmAction.Hero -> if (LocalTvTouchInputEnabled.current) {
+                            Lang.tv_onboarding_theme_confirm_hero_hint_touch
+                        } else {
+                            Lang.tv_onboarding_theme_confirm_hero_hint
+                        }
                         TvPosterConfirmAction.Play -> Lang.tv_onboarding_theme_confirm_play_hint
                         TvPosterConfirmAction.Details -> Lang.tv_onboarding_theme_confirm_details_hint
                     },
@@ -1677,7 +1752,7 @@ private fun PhoneCard(modifier: Modifier = Modifier) {
         RemoteConnectionStatus(url, hostChanged, phoneConnected, MaterialTheme.typography.labelLarge)
         url?.let {
             Spacer(Modifier.height(4.dp))
-            Text(
+            RemoteAddressText(
                 it,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

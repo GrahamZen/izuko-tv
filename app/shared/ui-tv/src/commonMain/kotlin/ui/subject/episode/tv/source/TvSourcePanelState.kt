@@ -110,6 +110,8 @@ class TvSourcePanelState(
     playback: Flow<TvSourcePlayback> = flowOf(TvSourcePlayback.Normal),
     /** 文案 (见 [setStrings]); 建状态时就给, 第一份内容不用等面板界面建好. */
     initialStrings: TvSourceStrings? = null,
+    /** 见 [TvSourcePanelInput.drillBack]. */
+    private val drillBack: Boolean = false,
 ) {
     private val nav = MutableStateFlow(TvSourceNav(railKey = initialRailKey, sourceKey = initialSourceKey))
     private val strings = MutableStateFlow(initialStrings)
@@ -143,6 +145,7 @@ class TvSourcePanelState(
                 canOpenDownloads = canOpenDownloads,
                 canOpenSettings = canOpenSettings,
                 playbackDiskCache = playbackDiskCache,
+                drillBack = drillBack,
             )
         }
             .combine(downloads.distinctUntilChanged()) { input, items -> input.copy(downloads = items) }
@@ -319,6 +322,7 @@ class TvSourcePanelState(
             TvSourceAction.ManualRetry -> manual?.retry()
             is TvSourceAction.ManualOpenSubject -> manual?.openSubject(action.subject)
             TvSourceAction.ManualCloseSubject -> manual?.closeSubject()
+            TvSourceAction.CloseDrill -> closeDrill()
             is TvSourceAction.ManualSelectChannel -> {
                 manual?.selectChannel(action.index)
                 closeDrill()

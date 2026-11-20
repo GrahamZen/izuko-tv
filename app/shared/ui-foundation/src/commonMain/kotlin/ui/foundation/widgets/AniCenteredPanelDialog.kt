@@ -82,11 +82,13 @@ fun AniCenteredPanelDialog(
      * 遥控器上不画: 左右键已经由内容自己切 (如 AniScrollableTextDialog 的 onHorizontalNav), 箭头纯属占地方.
      */
     sideNav: AniPanelSideNav? = null,
+    /** 点面板外面算不算 [onDismissRequest]; false = 点外面不响应 (有输入或有设置要提交的流程, 平板上免得一碰外面就丢了进度). */
+    dismissOnClickOutside: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     Dialog(
         onDismissRequest = onDismissRequest,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
+        properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = dismissOnClickOutside),
     ) {
         // 面板占掉大半个屏幕, 窗口默认那档 0.6 的压暗会把四周压得几乎全黑 (电视上尤其明显).
         // 0.35 接近 M3 给模态遮罩的 32%, 面板边界照样分得清, 下层页面/视频还透得出来

@@ -442,6 +442,8 @@ private fun TouchSettingsQrBlock(qr: TvSettingsQr, selected: Boolean, onOpenLega
                     quietZone = 16.dp,
                     foreground = Color.Black,
                     background = Color.White,
+                    // 控制台的码点了在本机打开; 别的 (登录码) 要另一台设备扫
+                    openOnTap = qr.console != null,
                 )
             }
             if (qr.caption.isNotEmpty()) Text(qr.caption)
