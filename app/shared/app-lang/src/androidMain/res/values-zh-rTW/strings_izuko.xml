@@ -26,6 +26,7 @@
     <string name="subject_episode_video_loading_waiting_for_network">網路已斷開，恢復後自動繼續</string>
     <string name="subject_episode_video_loading_resolve_deadline">最多再等 %1$d 秒</string>
     <string name="subject_episode_video_loading_resolve_deadline_auto_switch">最多再等 %1$d 秒，逾時自動換源</string>
+    <string name="subject_episode_video_loading_handover">目前資源無法繼續載入，正在背景更換資源，已緩衝的內容會繼續播放</string>
     <string name="subject_episode_video_loading_unsupported_audio">這台電視放不了這個影片的音訊格式（%1$s），請更換資料來源</string>
     <string name="subject_episode_video_loading_unsupported_video">這台電視放不了這個影片的畫面格式（%1$s），請更換資料來源</string>
     <string name="subject_episode_video_loading_cause_http_rejected">伺服器拒絕了請求（HTTP %1$s）</string>

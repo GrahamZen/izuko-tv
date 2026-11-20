@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import me.him188.ani.app.domain.episode.EpisodeFetchSelectPlayState
 import me.him188.ani.app.domain.episode.EpisodeSession
+import me.him188.ani.app.domain.episode.PlaybackHandover
 import me.him188.ani.app.domain.episode.UnsafeEpisodeSessionApi
 import me.him188.ani.app.domain.episode.getCurrentEpisodeId
 import me.him188.ani.app.domain.episode.player
@@ -42,6 +43,8 @@ class PlayerExtensionManager(
             get() = state.playerSession.videoLoadingState
         override val sessionFlow: Flow<EpisodeSession>
             get() = state.episodeSessionFlow
+        override val playbackHandover: PlaybackHandover
+            get() = state.playerSession.handover
 
         override val broadcastEvent: MutableSharedFlow<PlayerExtensionEvent> =
             MutableSharedFlow(0, 1, BufferOverflow.DROP_OLDEST)

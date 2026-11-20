@@ -20,12 +20,17 @@ import java.io.ByteArrayOutputStream
 import java.io.EOFException
 import java.io.IOException
 import java.io.InterruptedIOException
+import kotlinx.coroutines.runBlocking
+import me.him188.ani.app.videoplayer.link.PlaybackLink
+import me.him188.ani.app.videoplayer.link.RefreshablePlaybackLink
 import kotlin.math.min
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 /**
  * [ResumingHttpDataSource]: 连接空久了、读到一半断了从断处重新请求; 一上来就坏的、被取消的、不知道该读到哪的照原样交出去.
@@ -47,6 +52,12 @@ class ResumingHttpDataSourceTest {
 
         /** 读到 [at] 抛 [error] (连接被重置) */
         data class FailsAt(val at: Long, val error: IOException = IOException("Connection reset")) : Ending
+
+        /** 连不上: 打开就抛错 */
+        data object OpenFails : Ending
+
+        /** 服务器回了 [status] (地址被拒) */
+        data class OpenRejects(val status: Int) : Ending
     }
 
     /** 按 [endings] 一次次断开的连接, 记下每次打开的请求 */
@@ -65,6 +76,10 @@ class ResumingHttpDataSourceTest {
         override fun open(dataSpec: DataSpec): Long {
             opened += dataSpec
             ending = endings.removeFirstOrNull() ?: Ending.Complete
+            if (ending == Ending.OpenFails) throw IOException("Connection refused")
+            (ending as? Ending.OpenRejects)?.let {
+                throw HttpDataSource.InvalidResponseCodeException(it.status, "Forbidden", null, emptyMap(), dataSpec, ByteArray(0))
+            }
             position = dataSpec.position
             limit = if (dataSpec.length == C.LENGTH_UNSET.toLong()) file.size.toLong() else dataSpec.position + dataSpec.length
             return if (reportsLength) limit - position else C.LENGTH_UNSET.toLong()
@@ -73,7 +88,7 @@ class ResumingHttpDataSourceTest {
         override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
             val current = ending
             val stop = when (current) {
-                Ending.Complete -> limit
+                Ending.Complete, Ending.OpenFails, is Ending.OpenRejects -> limit
                 is Ending.EndsAt -> min(current.at, limit)
                 is Ending.FailsAt -> min(current.at, limit)
             }
@@ -101,8 +116,14 @@ class ResumingHttpDataSourceTest {
         override fun addTransferListener(transferListener: TransferListener) {}
     }
 
+    /** 重新请求之间的等待 (拨时钟, 不真的睡) */
+    private val waits = mutableListOf<Long>()
+
     private fun resuming(connection: ScriptedConnection, enabled: Boolean = true) =
-        ResumingHttpDataSource(connection, onReconnect = { reconnects++ }, enabled = { enabled }, clock = { now })
+        ResumingHttpDataSource(
+            connection, onReconnect = { reconnects++ }, enabled = { enabled }, clock = { now },
+            unreachableAfterMillis = 0, sleep = { waits += it; now += it },
+        )
 
     /** 每次读 7 字节一直读到末尾; 读到 [pauseAfter] 字节时停 [pauseMillis] */
     private fun readAll(source: HttpDataSource, pauseAfter: Int = -1, pauseMillis: Long = 0): ByteArray {
@@ -220,6 +241,132 @@ class ResumingHttpDataSourceTest {
         val resumed = connection.opened[1]
         assertEquals(300L, resumed.position)
         assertEquals(300L, resumed.length)
+    }
+
+    /** 媒体登记的换地址办法: 请求成过 (第 0 代已确认), [fresh] 给出的是换来的地址 */
+    private fun playedLink(fresh: () -> PlaybackLink?) =
+        RefreshablePlaybackLink(PlaybackLink(uri.toString(), emptyMap()), nowMillis = { now }) { fresh() }
+            .also { runBlocking { it.confirm(0) } }
+
+    private fun resumingMedia(
+        connection: ScriptedConnection,
+        link: RefreshablePlaybackLink,
+        originalUri: String = uri.toString(),
+        unreachableAfterMillis: Long = 0,
+    ) = ResumingHttpDataSource(
+        connection, onReconnect = { reconnects++ }, originalUri = originalUri, link = link, enabled = { true }, clock = { now },
+        unreachableAfterMillis = unreachableAfterMillis, sleep = { waits += it; now += it },
+    )
+
+    @Test
+    fun `a server that stops answering marks the media unreachable`() {
+        val connection = ScriptedConnection(file, listOf(Ending.FailsAt(400)) + List(10) { Ending.OpenFails })
+        val link = playedLink { null }
+        val source = resumingMedia(connection, link)
+        source.open(DataSpec(uri))
+        assertFailsWith<IOException> { readAll(source) }
+        assertEquals(listOf(0L) + List(ResumingHttpDataSource.MAX_RESUMES) { 400L }, connection.openedPositions())
+        assertTrue(link.unreachable.value)
+    }
+
+    @Test
+    fun `a fresh link is tried once after the cuts and reading goes on`() {
+        val connection = ScriptedConnection(file, List(1 + ResumingHttpDataSource.MAX_RESUMES) { Ending.EndsAt(400) })
+        val link = playedLink { PlaybackLink("https://example.com/video.mp4?fresh", emptyMap()) }
+        val source = resumingMedia(connection, link)
+        source.open(DataSpec(uri))
+        assertContentEquals(file, readAll(source))
+        assertEquals(1, link.lease.generation)
+        assertFalse(link.unreachable.value)
+        assertEquals(listOf(0L) + List(ResumingHttpDataSource.MAX_RESUMES + 1) { 400L }, connection.openedPositions())
+    }
+
+    @Test
+    fun `a fresh link that does not help is given up after one more try`() {
+        val connection = ScriptedConnection(file, List(10) { Ending.EndsAt(400) })
+        val link = playedLink { PlaybackLink("https://example.com/video.mp4?fresh", emptyMap()) }
+        val source = resumingMedia(connection, link)
+        source.open(DataSpec(uri))
+        assertFailsWith<EOFException> { readAll(source) }
+        assertEquals(1, link.lease.generation)
+        assertTrue(link.unreachable.value)
+        assertEquals(listOf(0L) + List(ResumingHttpDataSource.MAX_RESUMES + 1) { 400L }, connection.openedPositions())
+    }
+
+    @Test
+    fun `only requests made again carry the short connect timeout mark`() {
+        val connection = ScriptedConnection(file, listOf(Ending.EndsAt(400)))
+        val source = resuming(connection)
+        source.open(DataSpec(uri))
+        readAll(source)
+        assertEquals(listOf(null, "1"), connection.opened.map { it.httpRequestHeaders[ReconnectTimeout.HEADER] })
+    }
+
+    @Test
+    fun `a link the server keeps rejecting is passed on without marking it unreachable`() {
+        val connection = ScriptedConnection(file, listOf(Ending.FailsAt(400)) + List(10) { Ending.OpenRejects(403) })
+        val link = playedLink { null }
+        val source = resumingMedia(connection, link)
+        source.open(DataSpec(uri))
+        // 服务器回了话: 是地址过期, 记成被拒 (加载方重新解析这条资源), 不当成接不上去换源
+        assertEquals(403, assertFailsWith<HttpDataSource.InvalidResponseCodeException> { readAll(source) }.responseCode)
+        assertFalse(link.unreachable.value)
+        assertTrue(link.rejected.value)
+    }
+
+    @Test
+    fun `a server error after the cut is passed on without marking the link`() {
+        val connection = ScriptedConnection(file, listOf(Ending.FailsAt(400)) + List(10) { Ending.OpenRejects(503) })
+        val link = playedLink { null }
+        val source = resumingMedia(connection, link)
+        source.open(DataSpec(uri))
+        assertEquals(503, assertFailsWith<HttpDataSource.InvalidResponseCodeException> { readAll(source) }.responseCode)
+        assertFalse(link.unreachable.value)
+        assertFalse(link.rejected.value)
+    }
+
+    @Test
+    fun `failures are retried with growing waits until they have lasted a while`() {
+        val connection = ScriptedConnection(file, listOf(Ending.FailsAt(400)) + List(20) { Ending.OpenFails })
+        val link = playedLink { null }
+        val source = resumingMedia(connection, link, unreachableAfterMillis = ResumingHttpDataSource.UNREACHABLE_AFTER_MILLIS)
+        source.open(DataSpec(uri))
+        assertFailsWith<IOException> { readAll(source) }
+        assertEquals(listOf(1000L, 2000L, 3000L, 3000L, 3000L), waits)
+        assertEquals(listOf(0L) + List(6) { 400L }, connection.openedPositions())
+        assertTrue(link.unreachable.value)
+    }
+
+    @Test
+    fun `a glitch of a few seconds is ridden out`() {
+        // 断了之后 6 秒连不上, 第 9 秒连上
+        val connection = ScriptedConnection(file, listOf(Ending.FailsAt(400)) + List(4) { Ending.OpenFails })
+        val link = playedLink { null }
+        val source = resumingMedia(connection, link, unreachableAfterMillis = ResumingHttpDataSource.UNREACHABLE_AFTER_MILLIS)
+        source.open(DataSpec(uri))
+        assertContentEquals(file, readAll(source))
+        assertFalse(link.unreachable.value)
+        assertEquals(9000L, now)
+    }
+
+    @Test
+    fun `reading again clears the unreachable mark`() {
+        val link = playedLink { null }.apply { markUnreachable() }
+        val source = resumingMedia(ScriptedConnection(file, emptyList()), link)
+        source.open(DataSpec(uri))
+        assertContentEquals(file, readAll(source))
+        assertFalse(link.unreachable.value)
+    }
+
+    @Test
+    fun `requests for other files never mark the media`() {
+        val connection = ScriptedConnection(file, List(10) { Ending.EndsAt(400) })
+        val link = playedLink { PlaybackLink("https://example.com/video.mp4?fresh", emptyMap()) }
+        val source = resumingMedia(connection, link, originalUri = "https://example.com/another.mp4")
+        source.open(DataSpec(uri))
+        assertFailsWith<EOFException> { readAll(source) }
+        assertEquals(0, link.lease.generation)
+        assertFalse(link.unreachable.value)
     }
 
     @Test
