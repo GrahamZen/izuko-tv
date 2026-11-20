@@ -19,10 +19,13 @@ import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-/** 是不是在用官方直连 (自家放在 Cloudflare 上的服务据此决定先直连还是先走加密直连): 看请求实际落在哪条线路, 还没落地时看第一条. */
+/**
+ * 是不是在用官方直连 (自家放在 Cloudflare 上的服务据此决定先直连还是先走加密直连):
+ * 看请求实际落在哪条线路; 还没落地时只有「只开着官方」才算.
+ */
 class BangumiUsingOriginTest {
     @Test
-    fun `按请求落在哪条线路算，没落地时看第一条，换了设置旧落点不算`() = runTest {
+    fun `follows the route requests settled on and ignores settles of an older routing`() = runTest {
         val settings = MutableStateFlow(BangumiEndpointSettings(mode = BangumiEndpointMode.AUTO))
         val provider = BangumiEndpointProvider(
             settings = settings,
@@ -30,7 +33,6 @@ class BangumiUsingOriginTest {
             scope = backgroundScope,
             echAvailable = true,
         ).also { runCurrent() }
-        assertTrue(provider.usingOrigin)
         provider.reportSettled(provider.currentRouting!!, BangumiRoute.Mirror("bangumi.vip"))
         assertFalse(provider.usingOrigin)
         provider.reportSettled(provider.currentRouting!!, BangumiRoute.Origin)
@@ -39,5 +41,28 @@ class BangumiUsingOriginTest {
         settings.value = BangumiEndpointSettings(mode = BangumiEndpointMode.MIRROR)
         runCurrent()
         assertFalse(provider.usingOrigin)
+    }
+
+    @Test
+    fun `origin listed first does not count before it has answered`() = runTest {
+        val provider = BangumiEndpointProvider(
+            settings = flowOf(BangumiEndpointSettings(mode = BangumiEndpointMode.AUTO)),
+            mirrors = flowOf(listOf("bangumi.vip")),
+            scope = backgroundScope,
+            echAvailable = true,
+        ).also { runCurrent() }
+        // 官方排第一, 后面还有加密直连与镜像: 一个请求都没落地时不当成在用官方
+        assertFalse(provider.usingOrigin)
+    }
+
+    @Test
+    fun `origin as the only route counts before any request settles`() = runTest {
+        val provider = BangumiEndpointProvider(
+            settings = flowOf(BangumiEndpointSettings(mode = BangumiEndpointMode.DIRECT)),
+            mirrors = flowOf(listOf("bangumi.vip")),
+            scope = backgroundScope,
+            echAvailable = true,
+        ).also { runCurrent() }
+        assertTrue(provider.usingOrigin)
     }
 }
