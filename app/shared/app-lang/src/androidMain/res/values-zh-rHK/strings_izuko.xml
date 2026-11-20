@@ -661,7 +661,7 @@
     <string name="tv_source_manual_pick_failed">這一集載入失敗</string>
     <string name="tv_source_detail_pick">選擇</string>
     <string name="tv_source_detail_open">打開</string>
-    <string name="tv_source_detail_nav_hint">左右鍵切換上一條 / 下一條</string>
+    <string name="tv_source_detail_nav_hint">上下鍵切換上一條 / 下一條</string>
     <string name="tv_source_detail_status">狀態</string>
     <string name="tv_source_detail_lines">線路</string>
     <string name="tv_source_detail_source">數據源</string>

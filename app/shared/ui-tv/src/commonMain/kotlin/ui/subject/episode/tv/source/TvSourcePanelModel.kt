@@ -207,8 +207,8 @@ data class TvSourceRow(
 }
 
 /**
- * 长按一行弹出的详情 (TvSourceDetailsDialog): 完整标题、能列的信息都列上, 右边一列按钮 —— [primary] 是「选择」那一个 (弹窗打开时焦点就在它上面,
- * 直接按确定 = 选), [secondary] 是其余操作 (缓存这一条、排除字幕组). 左右键切到同一栏的上一条 / 下一条.
+ * 长按一行弹出的详情 (TvSourceDetailsDialog): 完整标题、能列的信息都列上, 底下一排按钮 —— [primary] 是「选择」那一个 (在最右, 弹窗打开时焦点就在它上面,
+ * 直接按确定 = 选), [secondary] 是其余操作 (缓存这一条、排除字幕组; 依次往左排). 上下键切到同一栏的上一条 / 下一条.
  *
  * @property note 一句要强调的话 (排除原因), 红字.
  */
@@ -291,7 +291,7 @@ sealed interface TvSourceAction {
 
     /**
      * 打开 [rowId] 那一行的详情弹窗; [inRail] = 那一行在左栏. [railKey] = 右栏的行属于左栏哪一项 (不同在线源的线路 id 会重),
-     * 左栏的行为 null. 弹窗里左右键换行就是换成序列里的另一条 (见 [buildTvSourceDetailsSequence]). [followFocus] = 背后面板的焦点跟着弹窗里
+     * 左栏的行为 null. 弹窗里上下键换行就是换成序列里的另一条 (见 [buildTvSourceDetailsSequence]). [followFocus] = 背后面板的焦点跟着弹窗里
      * 看的那一条走 (关掉后落在最后看的那一条); 从表头「正在播放」长按开的不跟, 焦点留在「正在播放」上.
      */
     data class ShowDetails(
@@ -1069,7 +1069,7 @@ private fun groupRailRow(
 private fun countWithBest(count: Int, media: List<Media>): String =
     listOfNotNull(count.toString(), bestResolutionLabel(media)).joinToString(" · ")
 
-/** 详情弹窗里左右键能走到的一条: [railKey] 同 [TvSourceAction.ShowDetails.railKey]. */
+/** 详情弹窗里上下键能走到的一条: [railKey] 同 [TvSourceAction.ShowDetails.railKey]. */
 @Immutable
 data class TvSourceDetailsEntry(val railKey: String?, val rowId: String, val details: TvSourceDetails)
 
@@ -1082,7 +1082,7 @@ data class TvSourceDetailsSequence(val inRail: Boolean, val entries: List<TvSour
 }
 
 /**
- * 详情弹窗左右键走的那一串. 源那一栏开的 ([inRail]): 这一组的各个源. 右边开的: **跨数据源连成一串**, 按胶囊行的顺序、组里按源的顺序 ——
+ * 详情弹窗上下键走的那一串. 源那一栏开的 ([inRail]): 这一组的各个源. 右边开的: **跨数据源连成一串**, 按胶囊行的顺序、组里按源的顺序 ——
  * 这一集的缓存 → BT 与缓存 → 各组各个在线源的条目 → 查询失败的源, 每一屏里的顺序与显示的一致 (眼前这一屏直接取 [content] 的行,
  * 钉住的行序也算; 别的按刚切过去时的样子拼). 手动查找是另一条路 (查的是别的源的条目), 只在它自己那一屏里走.
  */
