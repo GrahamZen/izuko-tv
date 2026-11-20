@@ -90,6 +90,10 @@ import me.him188.ani.app.ui.lang.settings_update_type
 import me.him188.ani.app.ui.lang.settings_update_type_stable_short
 import me.him188.ani.app.ui.lang.settings_update_up_to_date
 import me.him188.ani.app.ui.lang.settings_update_view_changelog
+import me.him188.ani.app.ui.lang.touch_profile_export
+import me.him188.ani.app.ui.lang.touch_profile_export_description
+import me.him188.ani.app.ui.lang.touch_profile_import
+import me.him188.ani.app.ui.lang.touch_profile_import_description
 import me.him188.ani.app.ui.lang.touch_settings_login
 import me.him188.ani.app.ui.lang.touch_settings_login_description
 import me.him188.ani.app.ui.lang.tv_perf_diag_dialog_hint
@@ -143,6 +147,8 @@ import me.him188.ani.app.ui.lang.tv_settings_update_type_test
 import me.him188.ani.app.ui.lang.tv_settings_update_type_test_description
 import me.him188.ani.app.ui.lang.tv_settings_update_whats_new
 import me.him188.ani.app.ui.lang.tv_settings_update_whats_new_description
+import me.him188.ani.app.ui.settings.account.TouchProfileImportDialog
+import me.him188.ani.app.ui.settings.account.exportCurrentProfileToFile
 import me.him188.ani.app.ui.settings.tabs.AniHelperDestination
 import me.him188.ani.app.ui.settings.tabs.log.LogLanShareState
 import me.him188.ani.app.ui.update.AppUpdatePresentation
@@ -249,6 +255,15 @@ internal fun TvSettingsItemsBuilder.accountItems() {
             Lang.settings_account_clear_records, Lang.settings_account_clear_records_description, keys = keys,
             visible = { it.isLocal() },
         ) { env -> env.show(TvSettingsOverlay.Dialog { dismiss -> TvClearRecordsDialog(env.deps.profile, dismiss) }) }
+        // 本地用户导出成文件 / 从文件导入 (见 TouchProfileArchive): 电视上在 Web 控制台里做, 触屏版在这里
+        run(
+            Lang.touch_profile_export, Lang.touch_profile_export_description, keys = listOf(account, TvSettingKeys.touchPage),
+            visible = { it.isLocal() && it[TvSettingKeys.touchPage] == true },
+        ) { env -> exportCurrentProfileToFile(env.toast) }
+        run(
+            Lang.touch_profile_import, Lang.touch_profile_import_description, keys = listOf(account, TvSettingKeys.touchPage), chevron = true,
+            visible = { it.isLocal() && it[TvSettingKeys.touchPage] == true },
+        ) { env -> env.show(TvSettingsOverlay.Dialog { dismiss -> TouchProfileImportDialog(dismiss) }) }
         // 整台电视一份, 不跟着当前用户; 两个以上用户时才有. 触屏版不给多用户的设置
         toggleOf(
             keys + TvSettingKeys.touchPage, Lang.settings_account_choose_profile_on_launch,

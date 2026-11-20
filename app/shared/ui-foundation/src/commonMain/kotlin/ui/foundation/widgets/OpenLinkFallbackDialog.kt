@@ -50,7 +50,7 @@ fun OpenLinkFallbackDialog(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 // 该平台编不出码时 (iOS) 这一行什么都不画, 只剩下面的文字
-                QrCodeImage(url, Modifier.size(OPEN_LINK_QR_SIZE))
+                QrCodeImage(url, Modifier.size(OPEN_LINK_QR_SIZE), openOnTap = false)
                 Spacer(Modifier.height(16.dp))
                 Text(
                     stringResource(Lang.foundation_browser_open_failed_scan_hint),

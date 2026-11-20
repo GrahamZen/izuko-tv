@@ -64,6 +64,11 @@ import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.collection_tv_progress_tab
 import me.him188.ani.app.ui.lang.collection_tv_tab_order_hint
 import me.him188.ani.app.ui.lang.collection_tv_tab_order_hint_grabbed
+import me.him188.ani.app.ui.lang.collection_tv_tab_order_hint_grabbed_touch
+import me.him188.ani.app.ui.lang.collection_tv_tab_order_hint_touch
+import me.him188.ani.app.ui.lang.tv_adjust_done
+import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
+import me.him188.ani.app.ui.foundation.widgets.AniFocusActionButton
 import me.him188.ani.app.ui.lang.collection_tv_tab_order_reset
 import me.him188.ani.app.ui.lang.collection_tv_tab_order_subtitle
 import me.him188.ani.app.ui.lang.collection_tv_tab_order_title
@@ -79,6 +84,7 @@ import org.jetbrains.compose.resources.stringResource
  *
  * - **确认键 = 拿起 / 放下**; 拿起之后左右键把它挪到想要的位置, 再按确认放下, 按返回撤销这一次移动.
  * - 返回键 (手上没拿东西时) = 离开本页.
+ * - 触屏 (没有方向键与返回键): 点一个拿起, 再点要放的位置就挪过去放下 (点它自己是原地放下); 下面「完成」离开本页.
  *
  * 只排顺序, 不做隐藏: 五个分类都是收藏状态的一种, 藏掉任何一个都会带出"藏掉的正好是当前选中项"
  * 与"全藏光了进页落哪"这两种边界, 而收益只是少一个标签.
@@ -164,6 +170,19 @@ fun TvCollectionTabOrderPage(
         if (!keep && origin != null) draft = origin
     }
 
+    // 触屏没有左右键: 拿着一个时点哪个就挪到它的位置上放下 (点它自己就是原地放下), 见 onToggleGrab
+    val touch = LocalTvTouchInputEnabled.current
+    fun moveGrabbedTo(target: TabSlot) {
+        val item = grabbed ?: return
+        val current = draft
+        val to = current.indexOf(target)
+        if (to < 0 || item == target) return
+        draft = current.toMutableList().apply {
+            remove(item)
+            add(to, item)
+        }
+    }
+
     // 挪完焦点要跟着那个标签走 (行内重排节点时焦点未必跟得住)
     LaunchedEffect(draft, grabbed) {
         val item = grabbed ?: return@LaunchedEffect
@@ -214,6 +233,7 @@ fun TvCollectionTabOrderPage(
                         // 手上已经拿着东西时, **任何一个**的确认键都是"放下" —— 而不是换拿这一个:
                         // 移动之后焦点是靠请求器追回去的, 万一没追上, 那一下会落在邻居身上
                         if (grabbed != null) {
+                            if (touch) moveGrabbedTo(type)
                             drop(keep = true)
                         } else {
                             grabOrigin = order
@@ -237,8 +257,12 @@ fun TvCollectionTabOrderPage(
                 Spacer(Modifier.height(20.dp))
                 Text(
                     stringResource(
-                        if (grabbed != null) Lang.collection_tv_tab_order_hint_grabbed
-                        else Lang.collection_tv_tab_order_hint,
+                        when {
+                            touch && grabbed != null -> Lang.collection_tv_tab_order_hint_grabbed_touch
+                            touch -> Lang.collection_tv_tab_order_hint_touch
+                            grabbed != null -> Lang.collection_tv_tab_order_hint_grabbed
+                            else -> Lang.collection_tv_tab_order_hint
+                        },
                     ),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
@@ -252,6 +276,13 @@ fun TvCollectionTabOrderPage(
                         .focusRequester(resetFocus)
                         .focusProperties { up = requesters.getValue(focusedType ?: order.first()) },
                 )
+                // 触屏没有返回键: 「完成」离开本页 (这页是盖在追番页上的窗口)
+                if (touch) {
+                    Spacer(Modifier.height(12.dp))
+                    AniFocusActionButton(onClick = ::leave) {
+                        Text(stringResource(Lang.tv_adjust_done))
+                    }
+                }
             }
 
             // 进页把焦点送到长按的那个或第一个标签: 没有落点的页面会被全局兜底按几何乱挑一个

@@ -47,6 +47,7 @@ import me.him188.ani.app.ui.foundation.LocalSketch
 import me.him188.ani.app.ui.foundation.theme.AniTheme
 import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
+import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.TV_FULLSCREEN_BACKDROP_DIM_ALPHA
 import me.him188.ani.app.ui.foundation.tv.nativeview.tvBackdropBlurSpec
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
@@ -80,6 +81,7 @@ fun TvDownloadSourcePanel(args: TvDownloadMediaPickerArgs) {
     val manualPickFailed = stringResource(Lang.tv_source_manual_pick_failed)
 
     val strings = rememberTvSourceStrings()
+    val touchInput = LocalTvTouchInputEnabled.current
     val state = remember(args.selectorState, args.fetchSession) {
         val host = object : TvSourcePanelHost {
             override fun pick(media: Media) = currentArgs.onSelect(media)
@@ -127,6 +129,8 @@ fun TvDownloadSourcePanel(args: TvDownloadMediaPickerArgs) {
             canOpenSettings = true,
             sourceTypes = tvSourceTypesFlow(),
             initialStrings = strings,
+            // 平板模式没有返回键: 右栏进去的那一层顶上给一颗「返回」(播放器的选源面板不给)
+            drillBack = touchInput,
         )
     }
 

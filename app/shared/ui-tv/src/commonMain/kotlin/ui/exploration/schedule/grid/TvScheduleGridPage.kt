@@ -93,6 +93,7 @@ import me.him188.ani.app.ui.foundation.tv.tvPosterWallGrid
 import me.him188.ani.app.ui.foundation.tv.TvPosterWallScaled
 import me.him188.ani.app.ui.foundation.TvPageRefreshHandler
 import me.him188.ani.app.ui.foundation.consumeHeldConfirmKey
+import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.focus.TvFocusKey
 import me.him188.ani.app.ui.foundation.focus.TvFocusScope
 import me.him188.ani.app.ui.foundation.focus.rememberTvFocusRail
@@ -104,7 +105,9 @@ import me.him188.ani.app.ui.foundation.focus.tvFocusRailKeys
 import me.him188.ani.app.ui.foundation.navigation.BackHandler
 import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
 import me.him188.ani.app.ui.foundation.navigation.OnReturnToForeground
+import me.him188.ani.app.ui.foundation.session.TV_TOUCH_BACK_END
 import me.him188.ani.app.ui.foundation.tv.FillTvTmdbTextsFromCache
+import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.TV_CARD_FADE_DISTANCE
 import me.him188.ani.app.ui.foundation.tv.TV_CARD_HERO_BACKDROP_GEOMETRY
 import me.him188.ani.app.ui.foundation.tv.TV_FULLSCREEN_BACKDROP_DIM_ALPHA
@@ -820,6 +823,9 @@ fun TvScheduleGridPage(
  * 聚焦的那枚滚到居中 (两端夹住). **聚焦即选中**, 海报墙等方向键松开才换 (见 [TvRailWallSelection]). 左右键显式在胶囊间移动, 两端与上键
  * 都吃掉 (本行已是最上面一层, 左边没有侧边栏).
  *
+ * 平板模式左上角有「返回」(TvTouchBackButton, 与本行同一高度): 本行从它右边让开 [TV_SCHEDULE_TOUCH_BACK_GAP] 起, 左缘裁在那里,
+ * 滑过去的胶囊切在返回右边, 不钻到它下面; 电视上没有返回, 照旧出血到屏幕左缘.
+ *
  * 各胶囊自己判断选没选中 (见 TvCollectionGlassRailTab): 换天时只有选中态变了的两枚重组, 调用方与整行都不重组.
  */
 @Composable
@@ -844,11 +850,14 @@ private fun TvScheduleDateRail(
             }
         },
     )
+    val touchInput = LocalTvTouchInputEnabled.current
     CompositionLocalProvider(LocalBringIntoViewSpec provides TvScheduleCenterBringIntoView) {
         LazyRow(
             modifier
-                // 往左出血到屏幕左缘 (行首位置不变): 滑过去的胶囊切在屏幕边上, 不切在留白线上; 聚焦的那枚放大、投影伸出胶囊外也不被裁
-                .tvGridBleed(start = TV_SCHEDULE_SIDE_PAD)
+                // 平板模式: 行从左上角「返回」右边起, 左缘裁在那里 (本行左边距之外再让开的那一截)
+                .ifThen(touchInput) { padding(start = TV_TOUCH_BACK_END + TV_SCHEDULE_TOUCH_BACK_GAP - TV_SCHEDULE_SIDE_PAD) }
+                // 电视: 往左出血到屏幕左缘 (行首位置不变): 滑过去的胶囊切在屏幕边上, 不切在留白线上; 聚焦的那枚放大、投影伸出胶囊外也不被裁
+                .ifThen(!touchInput) { tvGridBleed(start = TV_SCHEDULE_SIDE_PAD) }
                 // 长按方向键的移动频率上限 (全局上限, 高于系统连发; 同追番页的标签行)
                 .tvFocusMoveRateLimit()
                 .tvFocusRailKeys(
@@ -858,7 +867,7 @@ private fun TvScheduleDateRail(
                     onNavigateUp = { true },
                 ),
             state = listState,
-            contentPadding = PaddingValues(start = TV_SCHEDULE_SIDE_PAD, end = TV_GLASS_FOCUS_BLEED),
+            contentPadding = PaddingValues(start = if (touchInput) 0.dp else TV_SCHEDULE_SIDE_PAD, end = TV_GLASS_FOCUS_BLEED),
             horizontalArrangement = Arrangement.spacedBy(TV_SCHEDULE_DATE_SPACING),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -1011,6 +1020,9 @@ private val TV_SCHEDULE_DATES_TO_GRID_GAP = 16.dp
 
 /** 日期胶囊之间的间距. */
 private val TV_SCHEDULE_DATE_SPACING = 8.dp
+
+/** 平板模式日期行离左上角「返回」右缘的距离. */
+private val TV_SCHEDULE_TOUCH_BACK_GAP = 12.dp
 
 /** 在追角标: 直径、离封面上缘与右缘、图标、底色不透明度 (压在海报上要托得住图标). */
 private val TV_SCHEDULE_BADGE_SIZE = 18.dp

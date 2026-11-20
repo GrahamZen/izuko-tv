@@ -223,6 +223,7 @@ import me.him188.ani.app.ui.foundation.tv.tvPlayKeyShortPress
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallBackground
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallEndMargin
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallHeroBackground
+import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.tvTouchTap
 import me.him188.ani.app.ui.foundation.tvLongPressKey
 import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
@@ -276,6 +277,7 @@ import me.him188.ani.app.ui.lang.search_tv_remote_unavailable
 import me.him188.ani.app.ui.lang.search_tv_remote_waiting
 import me.him188.ani.app.ui.lang.search_tv_results_all
 import me.him188.ani.app.ui.lang.search_tv_results_title
+import me.him188.ani.app.ui.remote.RemoteAddressText
 import me.him188.ani.app.ui.remote.RemoteSearchResultsSnapshot
 import me.him188.ani.app.ui.remote.RemoteSearchResultsSource
 import me.him188.ani.app.ui.remote.TvRemoteControl
@@ -673,6 +675,8 @@ fun TvSearchPage(
             modifier = Modifier.fillMaxHeight(),
             enterRequester = searchRailEnter,
             scrimColorProvider = railScrimColor,
+            // 触屏没有返回键: 左上角给一颗返回 (同详情页)
+            onBack = if (LocalTvTouchInputEnabled.current) ({ navigator.popBackStack() }) else null,
         )
     }
 }
@@ -1053,9 +1057,9 @@ private fun TvSearchRemotePanel(
             }
             if (url != null) {
                 // 地址印出来: 手机加书签 / 手敲用. IP 变了标红 —— 手机上存的是旧地址, 这个新地址它还不知道
-                Text(
+                RemoteAddressText(
                     url,
-                    Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth(),
                     color = if (hostChanged) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
                     style = MaterialTheme.typography.bodySmall,
                     textAlign = TextAlign.Center,

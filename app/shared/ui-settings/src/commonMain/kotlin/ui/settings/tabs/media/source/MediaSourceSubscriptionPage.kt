@@ -78,6 +78,7 @@ import me.him188.ani.app.ui.lang.settings_media_source_subscription_unsupported_
 import me.him188.ani.app.ui.lang.settings_media_source_subscription_update_now
 import me.him188.ani.app.ui.lang.settings_media_source_subscription_website
 import me.him188.ani.app.ui.lang.settings_media_source_view_config
+import me.him188.ani.app.ui.lang.source_deep_test
 import me.him188.ani.app.ui.settings.SettingsDetailPaneScope
 import me.him188.ani.app.ui.settings.SettingsTab
 import me.him188.ani.app.ui.settings.framework.ConnectionTesterRunner
@@ -176,6 +177,8 @@ internal fun SettingsScope.MediaSourceSubscriptionPage(
             mediaSources.forEach { item ->
                 val openConfiguration = { navigator.openMediaSourceConfiguration(item, editState) }
                 var showMoreDropdown by remember { mutableStateOf(false) }
+                var showDeepTest by remember { mutableStateOf(false) }
+                if (showDeepTest) SourceDeepTestDialog(item, onDismissRequest = { showDeepTest = false })
                 MediaSourceItem(
                     item,
                     Modifier
@@ -204,6 +207,13 @@ internal fun SettingsScope.MediaSourceSubscriptionPage(
                                 onClick = {
                                     showMoreDropdown = false
                                     openConfiguration()
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(Lang.source_deep_test)) },
+                                onClick = {
+                                    showMoreDropdown = false
+                                    showDeepTest = true
                                 },
                             )
                         }

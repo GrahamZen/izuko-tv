@@ -11,19 +11,28 @@ package me.him188.ani.app.ui.foundation.lan
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.isSpecified
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
+import me.him188.ani.app.ui.foundation.widgets.AniFocusActionButton
+import me.him188.ani.app.ui.lang.Lang
+import me.him188.ani.app.ui.lang.foundation_qr_open_link
+import org.jetbrains.compose.resources.stringResource
 import kotlin.math.floor
 
 /**
@@ -48,12 +57,16 @@ expect fun encodeQrCode(content: String): QrCodeMatrix?
  * 深色界面上太扎眼). 默认 [foreground] 是主题强调色 `primary`: 深色主题下它是浅色 —— 浅码压深底是
  * **反色码**, iOS 相机 / 微信 / 支付宝 / Google Lens 都认, 只有很老的扫码器不认; 浅色主题下 primary 是
  * 深色, 就是常规极性. 宿主要保证底色与 [foreground] 有足够明暗对比 (默认配色在 M3 的 surface 系上都够).
- * 该平台编不出码时什么都不画 (见 [encodeQrCode]).
+ * 该平台编不出码时不画码 (见 [encodeQrCode]).
+ *
+ * 触屏 ([LocalTvTouchInputEnabled]) 上码是网址时可以点, 用这台设备打开 (本机打不开时 `ProvideOpenLinkFallback` 弹兜底);
+ * 该平台编不出码时 (iOS) 换成一颗「打开链接」按钮. 电视上码只给手机扫.
  *
  * @param modifier 码本体的尺寸 (不含留白), 用 `size(...)` 给.
  * @param quietZone 四周留白 (透明, 只占位): 扫码器要靠它定位, 规范要求至少 4 个模块宽. 一个 36 字符的
  *   http 地址是 29 模块, 码 240dp 时一模块 ≈ 8dp, 默认 32dp 正好; 码画得更小时按比例给.
  * @param background 非 Unspecified 时在留白范围内铺这个底色 (圆角卡), 给宿主底色对比不够的场合用.
+ * @param openOnTap 触屏上点码打开网址. 码不是给浏览器的 (如网盘登录码要网盘 App 扫)、或者本来就是打不开时的兜底码, 传 false.
  */
 @Composable
 fun QrCodeImage(
@@ -62,11 +75,21 @@ fun QrCodeImage(
     quietZone: Dp = 32.dp,
     foreground: Color = MaterialTheme.colorScheme.primary,
     background: Color = Color.Unspecified,
+    openOnTap: Boolean = true,
 ) {
-    val matrix = remember(content) { encodeQrCode(content) } ?: return
+    val matrix = remember(content) { encodeQrCode(content) }
+    val uriHandler = LocalUriHandler.current
+    val openable = openOnTap && LocalTvTouchInputEnabled.current && isWebLink(content)
+    if (matrix == null) {
+        if (openable) {
+            AniFocusActionButton(onClick = { uriHandler.openUri(content) }) { Text(stringResource(Lang.foundation_qr_open_link)) }
+        }
+        return
+    }
     Box(
         Modifier
-            .then(if (background.isSpecified) Modifier.background(background, RoundedCornerShape(12.dp)) else Modifier)
+            .then(if (openable) Modifier.clip(QR_SHAPE).clickable { uriHandler.openUri(content) } else Modifier)
+            .then(if (background.isSpecified) Modifier.background(background, QR_SHAPE) else Modifier)
             .padding(quietZone),
     ) {
         Canvas(modifier) {
@@ -84,3 +107,8 @@ fun QrCodeImage(
         }
     }
 }
+
+private val QR_SHAPE = RoundedCornerShape(12.dp)
+
+private fun isWebLink(content: String): Boolean =
+    content.startsWith("https://", ignoreCase = true) || content.startsWith("http://", ignoreCase = true)

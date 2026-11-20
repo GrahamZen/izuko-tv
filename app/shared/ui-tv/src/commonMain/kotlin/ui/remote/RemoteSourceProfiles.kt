@@ -9,76 +9,26 @@
 
 package me.him188.ani.app.ui.remote
 
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.take
-import kotlinx.coroutines.flow.toList
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
-import me.him188.ani.app.domain.foundation.HttpClientProvider
-import me.him188.ani.app.domain.foundation.ScopedHttpClientUserAgent
-import me.him188.ani.app.domain.foundation.get
-import me.him188.ani.app.domain.media.fetch.MediaSourceManager
-import me.him188.ani.app.domain.media.probe.MediaStreamProbe
-import me.him188.ani.app.domain.media.resolver.EpisodeMetadata
-import me.him188.ani.app.domain.media.resolver.MediaResolver
-import me.him188.ani.app.domain.mediasource.instance.MediaSourceInstance
-import me.him188.ani.app.domain.mediasource.profile.SourceObservation
+import me.him188.ani.app.domain.mediasource.profile.SourceDeepTest
 import me.him188.ani.app.domain.mediasource.profile.SourceProfiles
 import me.him188.ani.app.ui.foundation.lan.LanHttpRequest
-import me.him188.ani.datasources.api.EpisodeSort
-import me.him188.ani.datasources.api.source.MatchKind
-import me.him188.ani.datasources.api.source.MediaFetchRequest
-import me.him188.ani.datasources.api.source.MediaSourceKind
-import me.him188.ani.utils.logging.info
-import me.him188.ani.utils.logging.logger
-import me.him188.ani.utils.platform.currentTimeMillis
-import org.koin.mp.KoinPlatform
 import java.net.URLDecoder
-import kotlin.coroutines.cancellation.CancellationException
-import kotlin.time.Duration.Companion.seconds
 
 /**
- * 数据源标签列表页的数据源画像 (见 [SourceProfiles]): 每个源下面一行实际表现与建议层级, 以及「深度测试」 ——
- * 拿一部各站都有的番 ([SAMPLE]) 搜一次、解析出第一集的视频地址、探测分辨率与码率, 结果也记进画像 (标为测试).
- *
- * 深度测试在后台跑 (控制台一次只处理一个请求, 搜索加解析可能要一两分钟): `POST api/sources/deeptest` 开始, `GET` 查进度.
- * 要 WebView 嗅探的源离开播放页解析不了 (WebView 挂在播放页上), 记下「要 WebView」, 码率等真正播放时再记.
- * BT 源只测搜索 (解析就会开始下载).
+ * 数据源标签列表页的数据源画像 (见 [SourceProfiles]): 每个源下面一行实际表现与建议层级, 以及「深度测试」(见 [SourceDeepTest]):
+ * `POST api/sources/deeptest` 开始, `GET` 查进度 (控制台一次只处理一个请求, 测试在后台跑).
  */
 internal object RemoteSourceProfiles {
     const val DEEP_TEST_PATH = "api/sources/deeptest"
-
-    private val logger = logger<RemoteSourceProfiles>()
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val jobs = MutableStateFlow<Map<String, JsonObject>>(emptyMap())
-
-    private val SEARCH_TIMEOUT = 60.seconds
-    private val RESOLVE_TIMEOUT = 40.seconds
-    private val PROBE_TIMEOUT = 30.seconds
-
-    /** 葬送的芙莉莲 第 1 集: 各站几乎都有. */
-    private val SAMPLE = MediaFetchRequest(
-        subjectId = "400602",
-        episodeId = "1227087",
-        subjectNameCN = "葬送的芙莉莲",
-        subjectNames = listOf("葬送的芙莉莲", "葬送のフリーレン", "Sousou no Frieren"),
-        episodeSort = EpisodeSort(1),
-        episodeName = "冒险结束",
-    )
 
     /** 数据源列表里每个源的 `profile` (没有记录时不写) 与 `webViewDemoted` (要 WebView, 选源时降了一级). */
     fun putProfile(builder: JsonObjectBuilder, mediaSourceId: String, demoted: Set<String>) = with(builder) {
@@ -107,12 +57,12 @@ internal object RemoteSourceProfiles {
 
     fun demotedIds(): Set<String> = runBlocking { SourceProfiles.webViewSources.first() }
 
-    /** `api/sources/deeptest`: POST `id` 开始, GET `?id=` 查进度 (没测过 `state: none`). */
+    /** `api/sources/deeptest`: POST `id` 开始, GET `?id=` 查进度 (没测过 `state: none`); 测试本身见 [SourceDeepTest]. */
     fun handle(request: LanHttpRequest): JsonObject? {
         val id = if (request.method == "POST") request.field("id") else request.queryParam("id").orEmpty()
-        if (request.method == "POST") start(id)
+        if (request.method == "POST") SourceDeepTest.start(id)
         else if (request.method != "GET") return null
-        return jobs.value[id] ?: buildJsonObject { put("state", "none") }
+        return SourceDeepTest.jobs.value[id]?.toJson() ?: buildJsonObject { put("state", "none") }
     }
 
     private fun LanHttpRequest.field(name: String): String =
@@ -123,140 +73,25 @@ internal object RemoteSourceProfiles {
             ?.substringAfter('=', "")
             ?.let { URLDecoder.decode(it, "UTF-8") }
 
-    private fun start(instanceId: String) {
-        if (jobs.value[instanceId]?.get("state")?.jsonPrimitive?.content == "running") return
-        update(instanceId) { put("state", "running"); put("stage", "search") }
-        scope.launch {
-            val result = try {
-                run(instanceId)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                logger.info { "Deep test of $instanceId failed: $e" }
-                Progress().apply { error = "failed"; detail = describe(e) }
-            }
-            update(instanceId) { result.writeTo(this); put("state", "done") }
+    /** 网页读的形状 (见 SOURCE_PROFILE_SCRIPT): `state` running / done, `stage` search / resolve / probe, `error` 小写的错误名. */
+    private fun SourceDeepTest.Progress.toJson(): JsonObject = buildJsonObject {
+        put("state", if (done) "done" else "running")
+        if (!done) put("stage", stage.name.lowercase())
+        searchMs?.let { put("searchMs", it) }
+        count?.let { put("count", it) }
+        title?.let { put("title", it) }
+        resolveMs?.let { put("resolveMs", it) }
+        webView?.let { put("webView", it) }
+        probeMs?.let { put("probeMs", it) }
+        probe?.let { p ->
+            put("container", p.container)
+            p.width?.let { put("width", it) }
+            p.height?.let { put("height", it) }
+            p.codec?.let { put("codec", it) }
+            p.kbps?.let { put("kbps", it) }
         }
-    }
-
-    private class Progress {
-        var searchMs: Long? = null
-        var count: Int? = null
-        var title: String? = null
-        var resolveMs: Long? = null
-        var webView: Boolean? = null
-        var probeMs: Long? = null
-        var probe: MediaStreamProbe.Result? = null
-        var error: String? = null
-        var detail: String? = null
-
-        fun writeTo(b: JsonObjectBuilder) = with(b) {
-            searchMs?.let { put("searchMs", it) }
-            count?.let { put("count", it) }
-            title?.let { put("title", it) }
-            resolveMs?.let { put("resolveMs", it) }
-            webView?.let { put("webView", it) }
-            probeMs?.let { put("probeMs", it) }
-            probe?.let { p ->
-                put("container", p.container)
-                p.width?.let { put("width", it) }
-                p.height?.let { put("height", it) }
-                p.codec?.let { put("codec", it) }
-                p.kbps?.let { put("kbps", it) }
-            }
-            error?.let { put("error", it) }
-            detail?.let { put("detail", it) }
-        }
-    }
-
-    /** 异常的说明: 消息为空时用类名 (仓库层的异常常不带消息). */
-    private fun describe(e: Throwable): String? = e.message?.takeIf { it.isNotBlank() } ?: e::class.simpleName
-
-    private fun update(instanceId: String, build: JsonObjectBuilder.() -> Unit) {
-        jobs.update { it + (instanceId to buildJsonObject(build)) }
-    }
-
-    private suspend fun run(instanceId: String): Progress {
-        val koin = KoinPlatform.getKoin()
-        val instance: MediaSourceInstance = koin.get<MediaSourceManager>().allInstances.first().find { it.instanceId == instanceId }
-            ?: return Progress().apply { error = "missing" }
-        val source = instance.source
-        val p = Progress()
-
-        // 1. 搜索
-        var t = currentTimeMillis()
-        val matches = try {
-            withTimeoutOrNull(SEARCH_TIMEOUT) { source.fetch(SAMPLE).results.take(50).toList() }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            // 站点拒绝 (如 403) 等: 只报搜索失败, 不记进画像 (源上可能只是没这部番)
-            return p.apply { searchMs = currentTimeMillis() - t; error = "search_failed"; detail = describe(e) }
-        }
-        p.searchMs = currentTimeMillis() - t
-        if (matches == null) return p.apply { error = "search_timeout" }
-        p.count = matches.size
-        val match = matches.firstOrNull { it.kind == MatchKind.EXACT } ?: matches.firstOrNull()
-            ?: return p.apply { error = "search_empty" }
-        p.title = match.media.originalTitle
-        update(instanceId) { put("state", "running"); put("stage", "resolve"); p.writeTo(this) }
-        if (match.media.kind != MediaSourceKind.WEB) return p.apply { error = "not_web" }
-
-        // 2. 解析出视频地址; 规则源走没走 WebView 由 RuleMediaSource 记下
-        t = currentTimeMillis()
-        val resolver = koin.get<MediaResolver>()
-        val resolveError = try {
-            val provider = withTimeoutOrNull(RESOLVE_TIMEOUT) { resolver.resolve(match.media, EpisodeMetadata("", EpisodeSort(1), EpisodeSort(1))) }
-            if (provider == null) "resolve_timeout" else null
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            // WebView 挂在播放页上, 离开播放页时嗅探不了
-            if (e.message?.contains("not attached") == true) "needs_webview" else (describe(e) ?: "resolve_failed")
-        }
-        p.resolveMs = currentTimeMillis() - t
-        // 只认规则源自己报的 (RuleMediaSource 记); 网页抓取源本来就靠 WebView, 不参与降级
-        val webView = SourceProfiles.takeWebView(source.mediaSourceId)
-        p.webView = webView
-        val resolved = SourceProfiles.resolvedOf(match.media.mediaId)
-        if (resolveError != null || resolved == null) {
-            val needsWebView = resolveError == "needs_webview"
-            p.error = if (needsWebView) "needs_webview" else "resolve_failed"
-            p.detail = resolveError?.takeIf { !needsWebView }
-            // 要 WebView 不算失败 (只是这里测不了); 别的解析失败算这个源的一次失败
-            SourceProfiles.record(
-                source.mediaSourceId,
-                SourceObservation(
-                    at = currentTimeMillis(), ok = needsWebView, webView = webView,
-                    reason = if (needsWebView) null else "RESOLVE_FAILED", test = true,
-                ),
-            )
-            return p
-        }
-        update(instanceId) { put("state", "running"); put("stage", "probe"); p.writeTo(this) }
-
-        // 3. 探测
-        t = currentTimeMillis()
-        val client = koin.get<HttpClientProvider>().get(ScopedHttpClientUserAgent.BROWSER)
-        val probe = withTimeoutOrNull(PROBE_TIMEOUT) { client.use { MediaStreamProbe.probe(this, resolved.uri, resolved.headers) } }
-        p.probeMs = currentTimeMillis() - t
-        p.probe = probe
-        if (probe == null) p.error = "probe_failed"
-        SourceProfiles.record(
-            source.mediaSourceId,
-            SourceObservation(
-                at = currentTimeMillis(),
-                ok = probe != null,
-                webView = webView,
-                width = probe?.width,
-                height = probe?.height,
-                codec = probe?.codec,
-                kbps = probe?.kbps,
-                reason = if (probe == null) "PROBE_FAILED" else null,
-                test = true,
-            ),
-        )
-        return p
+        error?.let { put("error", it.name.lowercase()) }
+        detail?.let { put("detail", it) }
     }
 }
 

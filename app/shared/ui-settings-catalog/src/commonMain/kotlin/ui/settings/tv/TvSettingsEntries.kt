@@ -62,6 +62,7 @@ import me.him188.ani.app.ui.lang.settings_app_nsfw_hide
 import me.him188.ani.app.ui.lang.settings_app_search
 import me.him188.ani.app.ui.lang.settings_app_subject_title
 import me.him188.ani.app.ui.lang.settings_app_use_original_title
+import me.him188.ani.app.ui.lang.settings_tab_settings_backup
 import me.him188.ani.app.ui.lang.settings_theme_tv_explore_layout
 import me.him188.ani.app.ui.lang.settings_theme_tv_explore_layout_description
 import me.him188.ani.app.ui.lang.settings_theme_tv_explore_layout_fixed_focus
@@ -222,6 +223,8 @@ import me.him188.ani.app.ui.lang.settings_theme_tv_visual_effects_balanced
 import me.him188.ani.app.ui.lang.settings_theme_tv_visual_effects_description
 import me.him188.ani.app.ui.lang.settings_theme_tv_visual_effects_full
 import me.him188.ani.app.ui.lang.settings_theme_tv_visual_effects_smooth
+import me.him188.ani.app.ui.lang.touch_danmaku_servers_description
+import me.him188.ani.app.ui.lang.touch_danmaku_servers_title
 import me.him188.ani.app.ui.lang.tv_settings_dark_mode
 import me.him188.ani.app.ui.lang.tv_settings_dark_mode_description
 import me.him188.ani.app.ui.lang.tv_settings_palette_color
@@ -323,6 +326,8 @@ val TvSettingsCatalogEntries: List<TvSettingsCategory> = tvSettingsCatalog {
     category(SettingsTab.LOG, Lang.settings_tab_log) { logItems() }
     category(SettingsTab.ABOUT, Lang.settings_tab_about) { aboutItems() }
     category(SettingsTab.DEBUG, Lang.settings_tab_debug, visible = { it[TvSettingKeys.debug]?.enabled == true }) { debugItems() }
+    // 设置备份 (剪贴板与文件) 在原来的设置页那一类里, 电视上在控制台里导出导入: 只有触屏版列, 一项都没有, 给打开原来设置页的入口
+    category(SettingsTab.SETTINGS_BACKUP, Lang.settings_tab_settings_backup, visible = { it[TvSettingKeys.touchPage] == true }) {}
 }
 
 private fun TvSettingsItemsBuilder.appearanceItems() {
@@ -889,6 +894,12 @@ private fun TvSettingsItemsBuilder.playerItems() {
         after = { kind -> TvSettingsEdit.Run { env -> env.playNoticeSound(kind) } },
     )
 
+    // 弹幕服务器 (添加 / 测试 / 启停 / 删除): 电视上在 Web 控制台里管, 触屏版开弹窗 (见 TouchDanmakuServersDialog)
+    run(
+        Lang.touch_danmaku_servers_title, Lang.touch_danmaku_servers_description,
+        keys = listOf(TvSettingKeys.touchPage), chevron = true,
+        visible = { it[TvSettingKeys.touchPage] == true },
+    ) { env -> env.show(TvSettingsOverlay.Dialog { dismiss -> TouchDanmakuServersDialog(dismiss) }) }
     danmakuRuleItems()
 }
 

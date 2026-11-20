@@ -46,6 +46,7 @@ import me.him188.ani.app.data.network.TmdbImageService
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.platform.AppTerminator
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
+import me.him188.ani.app.ui.tv.withTouchNavigation
 import me.him188.ani.app.ui.foundation.tv.TvActionPanelRequests
 import me.him188.ani.app.ui.notice.TvNoticeHost
 import me.him188.ani.app.ui.notice.TvNotices
@@ -102,6 +103,7 @@ import me.him188.ani.app.ui.main.TvStartupLogoHost
 import me.him188.ani.app.ui.main.tvStartupLogoColors
 import me.him188.ani.app.ui.main.TvUpNextStore
 import me.him188.ani.app.ui.subject.details.layout.TvDetailsTheme
+import me.him188.ani.app.ui.subject.details.layout.TvPadSubjectDetailsPageVariant
 import me.him188.ani.app.ui.subject.episode.RetainedPlaybackSessionHolder
 import me.him188.ani.app.ui.subject.episode.rememberRetainedPlaybackNoticeTexts
 import me.him188.ani.app.ui.exploration.ExplorationPageVariant
@@ -109,6 +111,7 @@ import me.him188.ani.app.ui.exploration.LocalExplorationPageVariant
 import me.him188.ani.app.ui.exploration.TvExplorationPage
 import me.him188.ani.app.ui.exploration.schedule.LocalSchedulePageVariant
 import me.him188.ani.app.ui.exploration.schedule.SchedulePageVariant
+import me.him188.ani.app.ui.exploration.schedule.TvScheduleSlot
 import me.him188.ani.app.ui.exploration.search.LocalSearchPageVariant
 import me.him188.ani.app.ui.exploration.search.SearchPageVariant
 import me.him188.ani.app.ui.exploration.search.TvSearchPage
@@ -156,7 +159,6 @@ import me.him188.ani.app.ui.together.TvTogetherHost
 import me.him188.ani.app.ui.whatsnew.TvWhatsNew
 import me.him188.ani.app.ui.whatsnew.TvWhatsNewHost
 import me.him188.ani.app.ui.remote.TvRemoteLoginCard
-import me.him188.ani.app.ui.exploration.schedule.grid.TvScheduleGridPage
 import org.jetbrains.compose.resources.stringResource
 import org.koin.mp.KoinPlatform
 import androidx.compose.ui.input.key.onPreviewKeyEvent
@@ -204,8 +206,6 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
     val tmdbForZoom = remember { GlobalKoin.get<TmdbImageService>() }
     LaunchedEffect(tmdbForZoom) { TvHeroZoomHandoff.detailsUrlProvider = { id -> tmdbForZoom.peekBackdropUrl(id) } }
     LaunchedEffect(Unit) { ensureTvInAppUpdateDownload() }
-    // 「去登录 Bangumi」都去设置页的账号那一类 (扫码登录、在电视上登录、须知都在那里), 不开单独的授权页
-    remember { BangumiAuthorizeRedirect.target = { it.navigateSettings(SettingsTab.PROFILE) } }
     // 各页把自己的强制刷新动作注册进来, 给快捷菜单的「刷新本页」用
     val pageRefresh = remember { TvPageActionHost() }
     // 「换一批」: 目前只有探索页的推荐区注册
@@ -219,6 +219,13 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
     val appContext = LocalContext.current
     val touchInput = remember(appContext) {
         appContext.packageManager.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN) && !TvInterfaceModeGate.isTvMode(appContext)
+    }
+    // 触屏的详情页没有首屏大图 (见 TvPadSubjectDetailsPageVariant): 不放大
+    LaunchedEffect(touchInput) { TvHeroZoomHandoff.detailsHasHero = !touchInput }
+    // 「去登录 Bangumi」在电视上都去设置页的账号那一类 (扫码登录、在电视上登录、须知都在那里), 不开单独的授权页;
+    // 平板模式进整页的登录页 (触屏设置页的「登录 Bangumi」也去那里), 不改道
+    remember(touchInput) {
+        BangumiAuthorizeRedirect.target = if (touchInput) null else { navigator -> navigator.navigateSettings(SettingsTab.PROFILE) }
     }
     // 引导还没做过就先进引导页 (网络检测 + 手机遥控 + 登录), 见 TvOnboardingGate
     val onboardingPending = remember(appContext) { TvOnboardingGate.isPending(appContext) }
@@ -275,6 +282,8 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         LocalTvPageRefreshHost provides pageRefresh,
         LocalTvNavKeyTracker provides navKeys,
         LocalTvTouchInputEnabled provides touchInput,
+        // 触屏: 二级页面有带返回按钮的顶栏 (见 withTouchNavigation)
+        LocalAniUiBehavior provides LocalAniUiBehavior.current.let { if (touchInput) it.withTouchNavigation() else it },
         LocalTvPageShuffleHost provides pageShuffle,
         LocalTvPageAdjustHost provides pageAdjust,
         LocalTvAdjustWindows provides adjustWindows,
@@ -313,10 +322,8 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
             }
         },
         LocalSchedulePageVariant provides SchedulePageVariant { presentation, onRetry, modifier ->
-            // 海报墙: 同追番页的卡片墙, 换上海报墙那套灰阶底色
-            ProvideTvScrollActivity {
-                TvPosterWallTheme { TvScheduleGridPage(presentation, onRetry, modifier) }
-            }
+            // 海报墙版式与触屏上的返回见 TvScheduleSlot
+            TvScheduleSlot(presentation, onRetry, onBack = { aniNavigator.popBackStack() }, modifier)
         },
         LocalSearchPageVariant provides SearchPageVariant { state, onIntent, suggestionsPager, modifier ->
             ProvideTvScrollActivity {
@@ -331,7 +338,7 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
             }
         },
         // 这个变体有两个方法 (页面 + 首屏占位), 不能用 SAM lambda 写法
-        LocalSubjectDetailsPageVariant provides TvSubjectDetailsPageVariant,
+        LocalSubjectDetailsPageVariant provides if (touchInput) TvTouchSubjectDetailsPageVariant else TvSubjectDetailsPageVariant,
         LocalTvOnboardingVariant provides onboarding,
         // 登录页右侧的手机控制台码 (扫码在手机上登录); 平板模式不挂, 登录页自己给输入框 (见 BangumiDirectLoginForm)
         LocalTvLoginSidePanel provides (if (touchInput) null else ({ TvRemoteLoginCard() })),
@@ -616,6 +623,9 @@ private class TvOnboardingVariantImpl(override val pendingOnLaunch: Boolean) : T
  * 页面本体、加载占位、放大与缩回那两层都在 [TvDetailsTheme] 里 (本体经 [Theme] 由调用方包): 浅色主题下底色换成电视的浅灰阶,
  * 几处必须同一个底色.
  */
+/** 平板模式 (触屏) 的详情页, 播放器内嵌的介绍页仍用 [TvSubjectDetailsPageVariant]. */
+private val TvTouchSubjectDetailsPageVariant = TvPadSubjectDetailsPageVariant(TvSubjectDetailsPageVariant)
+
 private object TvSubjectDetailsPageVariant : SubjectDetailsPageVariant {
     @Composable
     override fun Page(

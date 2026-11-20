@@ -103,6 +103,7 @@ import me.him188.ani.app.ui.lang.settings_media_source_selected_count
 import me.him188.ani.app.ui.lang.settings_media_source_sort
 import me.him188.ani.app.ui.lang.settings_media_source_stop_test
 import me.him188.ani.app.ui.lang.settings_media_source_test_connection
+import me.him188.ani.app.ui.lang.source_deep_test
 import me.him188.ani.app.ui.settings.framework.ConnectionTester
 import me.him188.ani.app.ui.settings.framework.ConnectionTesterResultIndicator
 import me.him188.ani.app.ui.settings.framework.ConnectionTesterRunner
@@ -316,6 +317,8 @@ internal fun SettingsScope.MediaSourceGroup(
 
                     var showMoreDropdown by remember { mutableStateOf(false) }
                     var showConfirmDeletionDialog by rememberSaveable { mutableStateOf(false) }
+                    var showDeepTest by remember { mutableStateOf(false) }
+                    if (showDeepTest) SourceDeepTestDialog(item, onDismissRequest = { showDeepTest = false })
                     if (showConfirmDeletionDialog) {
                         AlertDialog(
                             onDismissRequest = { showConfirmDeletionDialog = false },
@@ -387,6 +390,13 @@ internal fun SettingsScope.MediaSourceGroup(
                                     onClick = {
                                         showMoreDropdown = false
                                         openConfiguration()
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(Lang.source_deep_test)) },
+                                    onClick = {
+                                        showMoreDropdown = false
+                                        showDeepTest = true
                                     },
                                 )
                                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
@@ -572,12 +582,15 @@ internal fun SettingsScope.MediaSourceItem(
     Item(
         modifier = modifier,
         supportingContent = {
-            Text(
-                mediaSourceSummary(item),
-                Modifier.alpha(contentAlpha),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Column {
+                Text(
+                    mediaSourceSummary(item),
+                    Modifier.alpha(contentAlpha),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                SourceProfileLine(item.mediaSourceId, Modifier.alpha(contentAlpha))
+            }
         },
         leadingContent = {
             Row(verticalAlignment = Alignment.CenterVertically) {

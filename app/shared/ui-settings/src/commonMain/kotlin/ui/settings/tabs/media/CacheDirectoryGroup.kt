@@ -100,6 +100,7 @@ fun SettingsScope.BackupSettings(state: CacheDirectoryGroupState) {
             title = { Text(stringResource(Lang.settings_storage_backup_op_restore)) },
             description = { Text(stringResource(Lang.settings_storage_backup_op_restore_description)) },
         )
+        SettingsBackupFileItems(state)
     }
 
     if (showRestoreDialog) {

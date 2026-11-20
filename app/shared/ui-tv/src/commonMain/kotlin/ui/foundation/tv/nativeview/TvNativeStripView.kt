@@ -14,6 +14,7 @@ import android.content.Context
 import android.graphics.Rect
 import android.os.SystemClock
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import androidx.leanback.widget.BaseGridView
 import androidx.leanback.widget.GridLayoutManager
@@ -77,6 +78,16 @@ abstract class TvNativeStripView(
 
     /** 行首按左 (新按下的那一下) 放出去由外面接; false = 吞掉 (行首左边没有目标). */
     var startLeftExits: Boolean = true
+
+    /** 此刻按触屏的规矩走: 行还在滚时按下去先停住, 滑得慢时这一下交给卡片 (见 [stopScrollOnTouchDown]). */
+    var tapStopsScroll: () -> Boolean = { false }
+
+    private val scrollSpeed = TvNativeScrollSpeed().also { addOnScrollListener(it) }
+
+    override fun onInterceptTouchEvent(e: MotionEvent): Boolean {
+        val caught = tapStopsScroll() && stopScrollOnTouchDown(e, scrollSpeed)
+        return super.onInterceptTouchEvent(e) || caught
+    }
 
     private val itemCount: Int get() = adapter?.itemCount ?: 0
 
