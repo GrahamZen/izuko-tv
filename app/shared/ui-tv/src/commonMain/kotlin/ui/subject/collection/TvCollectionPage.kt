@@ -12,6 +12,7 @@ package me.him188.ani.app.ui.subject.collection
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -76,6 +77,7 @@ import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.foundation.LoadError
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.navigation.LocalNavigator
+import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.prefetchTvTmdbSummary
 import me.him188.ani.app.ui.foundation.widgets.selectedSemantics
 import me.him188.ani.app.ui.main.TvPosterWallPreviewPage
@@ -961,9 +963,12 @@ private fun TvCollectionPageContent(
                 },
                 // 触屏左右滑换标签: 落点同行缘按左右 (新标签同一行的行缘), 只是两头不往外走 (第一个标签往右滑不进侧边栏)
                 onSwipe = { delta ->
+                    // 「追更」上滑: 换到旁边的分类, 落点同它的行缘按左右 (见 leaveProgress); 两头不往外走 (第一个标签往右滑不进侧边栏)
                     val tvIndex = railTabs.indexOf(COLLECTION_TABS_SORTED[state.selectedTypeIndex])
                     val target = tvIndex + delta
-                    if (tvIndex >= 0 && target in railTabs.indices) {
+                    if (progressSelected) {
+                        if (railTabs.getOrNull(railTabs.indexOf(null) + delta) != null) leaveProgress(delta)
+                    } else if (tvIndex >= 0 && target in railTabs.indices) {
                         val targetTab = railTabs[target]
                         val row = if (gridRegionFocused && lastFocusedCard >= 0) lastFocusedCard / wallLayout.columns else 0
                         if (targetTab == null) {
@@ -1207,8 +1212,9 @@ private fun TvCollectionTabRow(
                 onSelectByFocus = { onSelectByFocus(type) },
                 onClick = { onSelect(type) },
                 onFocusChanged = { f -> onTabFocusChanged(index, f) },
-                // 短按同点击 (选中); 长按去排顺序. 挂在 clickable 之前接管确认键 (见 tvLongPressKey)
+                // 短按同点击 (选中); 长按去排顺序 (遥控器的确认键挂在 clickable 之前接管, 见 tvLongPressKey; 手指长按走 onLongClick)
                 modifier = Modifier.tvLongPressKey(onLongPress = { onLongPress(type) }, onShortPress = { onSelect(type) }),
+                onLongClick = if (LocalTvTouchInputEnabled.current) ({ onLongPress(type) }) else null,
             )
         }
     }
@@ -1306,6 +1312,7 @@ internal fun TvCollectionGlassTab(
  *
  * @param onSelectByFocus 本行左右键移到了这一枚; 默认 [TvRailWallSelection.moveTo] (海报墙等方向键松开才换)
  * @param onClick 点按; 默认 [TvRailWallSelection.select] (当场换)
+ * @param onLongClick 手指长按 (遥控器确认键的长按由调用方挂在 [modifier] 上, 见 tvLongPressKey); null = 不认
  */
 @Composable
 internal fun <T> TvCollectionGlassRailTab(
@@ -1319,15 +1326,18 @@ internal fun <T> TvCollectionGlassRailTab(
     onSelectByFocus: () -> Unit = { selection.moveTo(item) },
     onClick: () -> Unit = { selection.select(item, fromRail = true) },
     onFocusChanged: (focused: Boolean) -> Unit = {},
+    onLongClick: (() -> Unit)? = null,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     // 焦点按 onFocusChanged 记 (见 FocusHighlight.kt 开头: 收集交互事件会丢掉进页那一次 Focus)
     var focused by remember { mutableStateOf(false) }
     val selected by remember(selection, item) { derivedStateOf { selection.selected == item } }
+    // 触屏 (平板模式) 上不画聚焦的样子, 只画选中: 点了别的标签 / 左右滑换了标签之后焦点还停在原来那枚, 画出来就是两枚同时有颜色
+    val touchInput = LocalTvTouchInputEnabled.current
     TvCollectionGlassTab(
         label = label,
         selected = selected,
-        focused = focused,
+        focused = focused && !touchInput,
         detail = detail,
         modifier = modifier
             // 无条件挂: 链上元素个数恒定, 选中态变化不会重建其后的焦点节点
@@ -1340,7 +1350,13 @@ internal fun <T> TvCollectionGlassRailTab(
                 },
                 onSelectByFocus = onSelectByFocus,
             )
-            .clickable(interactionSource, indication = null, onClick = onClick),
+            .then(
+                if (onLongClick != null) {
+                    Modifier.combinedClickable(interactionSource, indication = null, onLongClick = onLongClick, onClick = onClick)
+                } else {
+                    Modifier.clickable(interactionSource, indication = null, onClick = onClick)
+                },
+            ),
     )
 }
 

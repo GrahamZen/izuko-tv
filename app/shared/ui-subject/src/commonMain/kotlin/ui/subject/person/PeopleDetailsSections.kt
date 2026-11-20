@@ -58,6 +58,8 @@ import me.him188.ani.app.ui.comment.UIComment
 import me.him188.ani.app.ui.external.placeholder.placeholder
 import me.him188.ani.app.ui.foundation.ImageViewer
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
+import me.him188.ani.app.ui.foundation.ProvideTouchShellUiBehavior
+import me.him188.ani.app.ui.foundation.touchShellUiBehavior
 import me.him188.ani.app.ui.foundation.avatar.AvatarImage
 import me.him188.ani.app.ui.foundation.focus.TvAnchoredStrip
 import me.him188.ani.app.ui.foundation.focus.tvBringIntoViewOnFocus
@@ -589,16 +591,19 @@ internal fun PersonCommentsSheet(
     modifier: Modifier = Modifier,
     originalCommentsUrl: String? = null,
 ) {
-    if (LocalAniUiBehavior.current.panelsAsCenteredDialogs) {
+    // 平板上页面照上游写法, 评论弹窗仍同详情页 (见 touchShellUiBehavior)
+    if (touchShellUiBehavior.panelsAsCenteredDialogs) {
         val gridComments = state.list.collectAsLazyPagingItemsWithLifecycle()
-        CommentsGridDialog(
-            title = state.count?.takeIf { it > 0 }?.let {
-                stringResource(Lang.person_details_comments) + " · " + remember(it) { groupThousands(it) }
-            } ?: stringResource(Lang.person_details_comments),
-            comments = gridComments,
-            onDismissRequest = onDismissRequest,
-            showRating = false,
-        )
+        ProvideTouchShellUiBehavior {
+            CommentsGridDialog(
+                title = state.count?.takeIf { it > 0 }?.let {
+                    stringResource(Lang.person_details_comments) + " · " + remember(it) { groupThousands(it) }
+                } ?: stringResource(Lang.person_details_comments),
+                comments = gridComments,
+                onDismissRequest = onDismissRequest,
+                showRating = false,
+            )
+        }
         return
     }
     val browserNavigator = LocalUriHandler.current

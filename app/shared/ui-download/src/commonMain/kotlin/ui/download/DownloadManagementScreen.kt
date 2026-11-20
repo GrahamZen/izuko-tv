@@ -792,8 +792,8 @@ private fun DownloadManagementTopBar(
                     Icon(Icons.Default.Checklist, enterSelectionModeText)
                 }
             },
-            // TV: 头像由主页左侧边栏统一承载, 顶栏不再重复
-            avatar = if (focusDriven) {
+            // 沉浸式外壳 (电视与平板模式): 头像由主页左侧边栏统一承载, 顶栏不再重复
+            avatar = if (LocalAniUiBehavior.current.immersiveShell) {
                 { }
             } else {
                 selfInfo?.let {

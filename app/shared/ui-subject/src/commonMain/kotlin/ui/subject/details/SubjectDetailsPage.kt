@@ -145,6 +145,7 @@ import me.him188.ani.app.ui.lang.subject_details_coming_soon
 import me.him188.ani.app.ui.lang.subject_details_login_to_collect
 import me.him188.ani.app.ui.lang.subject_details_tab_comments
 import me.him188.ani.app.ui.lang.subject_details_tab_details
+import me.him188.ani.app.ui.lang.settings_mediasource_retry
 import me.him188.ani.app.ui.lang.subject_details_tv_error_back_hint
 import me.him188.ani.app.ui.lang.subject_details_tab_discussions
 import me.him188.ani.app.ui.lang.subject_details_write_review
@@ -426,7 +427,8 @@ private fun SubjectDetailsPage(
         // 否则加载的一瞬会先闪一下默认布局再切换. 没有变体时按默认规则等 info 加载.
         val pageVariant = LocalSubjectDetailsPageVariant.current
         val useTvImmersive = pageVariant != null
-        if (layoutParams.isMultiColumn && (state.info != null || useTvImmersive)) {
+        // 有变体时不看宽度 (平板分屏的窄窗口也用平板详情页, 它自己按宽度排)
+        if (useTvImmersive || (layoutParams.isMultiColumn && state.info != null)) {
             // 双栏 / 三栏: 全新自适应布局 (复用现有 SubjectDetailsState 数据).
             // 桌面无"评价" tab, 完整评论流与"写评价"从评价预览/热门评价卡进入.
             // 变体的主题层 (TV 浅色主题换底色) 连评论、评分弹窗一起包住: 弹窗与页面同一套底色
@@ -725,7 +727,7 @@ private fun ErrorSubjectDetailsPage(
     //
     // 判据用 immersiveShell (与本页算 tenFoot 布局参数的那个一致).
     if (LocalAniUiBehavior.current.immersiveShell) {
-        TvErrorSubjectDetails(subjectInfo, error, modifier, windowInsets)
+        TvErrorSubjectDetails(subjectInfo, error, onRetry, navigationIcon, modifier, windowInsets)
         return
     }
     SubjectDetailsSingleColumnPage(
@@ -757,23 +759,31 @@ private fun ErrorSubjectDetailsPage(
 /**
  * 遥控器形态的条目加载失败页: 整页居中, 一块说明.
  *
- * 不放重试按钮 —— 这里的失败要么重试也没用 ([LoadError.SubjectNotAccessible]), 要么退出去重新进来
+ * 遥控器上不放重试按钮 —— 这里的失败要么重试也没用 ([LoadError.SubjectNotAccessible]), 要么退出去重新进来
  * 就是一次重试, 而多一个可聚焦元素就要多担一份"焦点框看不见 / 落点被抢"的风险。
+ * 平板模式 ([AniUiBehavior.showBackNavigationButton]) 没有返回键: 左上角放调用方给的返回 / 主页按钮 ([navigationIcon]),
+ * 说明下面放重试, 不提「按返回键」。
  */
 @Composable
 private fun TvErrorSubjectDetails(
     subjectInfo: SubjectInfo?,
     error: LoadError,
+    onRetry: () -> Unit,
+    navigationIcon: @Composable () -> Unit,
     modifier: Modifier = Modifier,
     windowInsets: WindowInsets = TopAppBarDefaults.windowInsets,
 ) {
+    val touch = LocalAniUiBehavior.current.showBackNavigationButton
     Box(
         modifier.fillMaxSize()
-            .windowInsetsPadding(windowInsets)
-            .padding(horizontal = 96.dp),
+            .windowInsetsPadding(windowInsets),
         contentAlignment = Alignment.Center,
     ) {
+        if (touch) {
+            Box(Modifier.align(Alignment.TopStart).padding(8.dp)) { navigationIcon() }
+        }
         Column(
+            Modifier.padding(horizontal = 96.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
@@ -794,12 +804,16 @@ private fun TvErrorSubjectDetails(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
             )
-            Text(
-                stringResource(Lang.subject_details_tv_error_back_hint),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.outline,
-                textAlign = TextAlign.Center,
-            )
+            if (touch) {
+                OutlinedButton(onRetry) { Text(stringResource(Lang.settings_mediasource_retry)) }
+            } else {
+                Text(
+                    stringResource(Lang.subject_details_tv_error_back_hint),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.outline,
+                    textAlign = TextAlign.Center,
+                )
+            }
         }
     }
 }

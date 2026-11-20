@@ -400,13 +400,17 @@
     <string name="tv_onboarding_welcome_description">开始之前需要做四步设置：</string>
     <string name="tv_onboarding_welcome_step_network">检测网络，选择怎么连接 Bangumi、怎么加载 TMDB 图片</string>
     <string name="tv_onboarding_welcome_step_remote">用手机扫码打开 Web 控制台，当遥控器和键盘用</string>
+    <string name="tv_onboarding_welcome_step_remote_touch">用手机扫码打开 Web 控制台，在手机上搜索番剧、挑选数据源和更改设置</string>
     <string name="tv_onboarding_welcome_step_login">登录 Bangumi 账号（可选，不登录也能用）</string>
     <string name="tv_onboarding_welcome_start">开始设置</string>
     <string name="tv_onboarding_step_network">检测网络</string>
     <string name="tv_onboarding_step_remote">手机遥控</string>
     <string name="tv_onboarding_remote_description">用手机扫右边的二维码，打开这台电视的 Web 控制台（手机要和电视连同一个 Wi-Fi）。不用装应用，浏览器就能用：</string>
+    <string name="tv_onboarding_remote_description_touch">用手机扫右边的二维码，打开这台设备的 Web 控制台（手机要和它连同一个 Wi-Fi）。不用装应用，浏览器就能用：</string>
     <string name="tv_onboarding_remote_feature_search">在手机上打字搜索番剧，结果直接在电视上打开</string>
+    <string name="tv_onboarding_remote_feature_search_touch">在手机上打字搜索番剧，结果直接在这台设备上打开</string>
     <string name="tv_onboarding_remote_feature_player">挑选数据源、暂停快进、调倍速，像遥控器一样控制播放</string>
+    <string name="tv_onboarding_remote_feature_player_touch">挑选数据源、暂停快进、调倍速，在手机上控制播放</string>
     <string name="tv_onboarding_remote_feature_manage">管理缓存、数据源和各项设置</string>
     <string name="tv_onboarding_remote_feature_login">登录 Bangumi 账号，手机上打字更方便</string>
     <string name="tv_onboarding_next">下一步</string>
@@ -462,11 +466,14 @@
     <string name="tv_onboarding_login_done_plain">已登录</string>
     <string name="tv_onboarding_start">开始使用</string>
     <string name="tv_onboarding_welcome_step_theme">选外观，以及在海报上按确定做什么</string>
+    <string name="tv_onboarding_welcome_step_theme_touch">选外观，以及点海报时做什么</string>
     <string name="tv_onboarding_step_theme">外观</string>
     <string name="tv_onboarding_theme_title">外观与操作</string>
     <string name="tv_onboarding_theme_description">选了马上生效，以后都能在 设置 - 主题与色彩 里改</string>
     <string name="tv_onboarding_theme_confirm">海报上按确定</string>
+    <string name="tv_onboarding_theme_confirm_touch">点海报</string>
     <string name="tv_onboarding_theme_confirm_hero_hint">先看背景大图和简介，再按确定进详情页</string>
+    <string name="tv_onboarding_theme_confirm_hero_hint_touch">先看背景大图和简介，再点一下进详情页</string>
     <string name="tv_onboarding_theme_confirm_play_hint">接着上次看到的那集播，没看过从第一集开始</string>
     <string name="tv_onboarding_theme_confirm_details_hint">直接打开详情页</string>
     <string name="tv_onboarding_theme_colors">颜色</string>
@@ -950,6 +957,7 @@
     <string name="foundation_browser_open_failed_title">无法打开链接</string>
     <string name="foundation_browser_open_failed_scan_hint">当前设备没有可用的浏览器，请用手机扫码打开，或手动输入下方链接</string>
     <string name="foundation_browser_open_failed_close">关闭</string>
+    <string name="foundation_qr_open_link">打开链接</string>
     <string name="settings_watch_together_entry_hint_tv">。入口在长按返回键弹出的菜单里</string>
     <!-- 一起看 (docs/contributing/code/together.md): 弹窗、提示; 句子里的功能名用 watch_together_title 填 -->
     <string name="tv_together_intro">与朋友同步观看同一集，由房主控制播放。</string>
@@ -1335,4 +1343,13 @@
     <string name="tv_notice_update_queued">回到首页后开始下载新版本</string>
     <string name="tv_notice_bubble_title">有 %1$d 条新通知</string>
     <string name="tv_notice_bubble_more">还有 %1$d 条</string>
+    <string name="tv_rail_back">返回</string>
+    <string name="pad_subject_details_more_tags">更多标签</string>
+    <string name="pad_subject_details_all_episodes">全部选集</string>
+    <string name="subject_details_tv_title_logo_submitting_touch">正在提交…</string>
+    <string name="collection_tv_tab_order_hint_touch">点一个标签拿起来</string>
+    <string name="collection_tv_tab_order_hint_grabbed_touch">点要放的位置  ·  再点它一下放下</string>
+    <string name="tv_wall_scale_hint_drag">点或上下拖动滑块调整大小</string>
+    <string name="tv_adjust_done">完成</string>
+    <string name="tv_remote_address_copied">已复制 Web 控制台地址</string>
 </resources>

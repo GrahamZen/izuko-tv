@@ -102,6 +102,7 @@ import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvMenuTarget
 import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativeHeroButtonStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativeHeroTextStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativeIcon
+import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativePadHeroButtonStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativeWallStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.toTvNativeTextStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.tvNativeWriteSnapshot
@@ -122,6 +123,7 @@ import me.him188.ani.app.ui.foundation.tv.tvPosterWallSecondaryLabelAlpha
 import me.him188.ani.app.ui.foundation.tv.TvPageBackdropGeometry
 import me.him188.ani.app.ui.foundation.tv.tvTitle
 import me.him188.ani.app.ui.foundation.tv.tvUseOriginalTitle
+import me.him188.ani.app.ui.foundation.tv.wall.tvPadBackdropTreatment
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.exploration_continue_watching
 import me.him188.ani.app.ui.lang.exploration_schedule
@@ -382,8 +384,12 @@ internal fun TvExplorationNativeWall(
     val posterConfirm = LocalThemeSettings.current.tvPosterConfirm
     val heroEnabled = fixedAnchor || posterConfirm == TvPosterConfirmAction.Hero
     val wallBlur = LocalThemeSettings.current.tvWallBackdropBlur
-    val heroBlur = heroEnabled && wallBlur != TvBackdropBlurLevel.None
-    val blurSpec = tvBackdropBlurSpec(wallBlur)
+    val touchInput = LocalTvTouchInputEnabled.current
+    // 触屏上 (平板) 热门轮播与 hero 态用平板版画法 (见 TvPadHeroGeometry).
+    // 平板版画法一直铺模糊底 (轮播区与 hero 态), 不看设置里关没关
+    val padHero = touchInput
+    val heroBlur = padHero || heroEnabled && wallBlur != TvBackdropBlurLevel.None
+    val blurSpec = tvBackdropBlurSpec(if (wallBlur == TvBackdropBlurLevel.None) TvBackdropBlurLevel.Strong else wallBlur)
     // 铺着模糊背景时卡片的字照 vibrancy 画 (深色主题, 见 TvNativeWallStyle.labelVibrancy); 继续观看的卡画没看几集的角标 (见 tvProgressCardLine)
     val style = rememberTvNativeWallStyle(
         cardWidth,
@@ -395,7 +401,9 @@ internal fun TvExplorationNativeWall(
     )
     val ringStyle = rememberTvNativeAnchorRingStyle(style)
     val textStyle = rememberTvNativeHeroTextStyle(titleMaxLines = 1, lineSpacing = 10.dp)
-    val buttonStyle = rememberTvNativeHeroButtonStyle()
+    val tvButtonStyle = rememberTvNativeHeroButtonStyle()
+    val padButtonStyle = rememberTvNativePadHeroButtonStyle()
+    val buttonStyle = if (padHero) padButtonStyle else tvButtonStyle
     val headerStyle = tvPosterWallHeaderStyle().toTvNativeTextStyle(density, LocalContentColor.current)
     val headerIdleAlpha = tvPosterWallSecondaryLabelAlpha()
     val visualEffects = LocalThemeSettings.current.visualEffects
@@ -409,7 +417,6 @@ internal fun TvExplorationNativeWall(
     // 卡片区在滚动 / 方向键按住: 背景图的剧照升档等它们都停了才去取原图 (见 TvNativeBackdropView.navigating)
     val scrollActivity = LocalTvScrollActivity.current
     val navKeys = LocalTvNavKeyTracker.current
-    val touchInput = LocalTvTouchInputEnabled.current
     val dotColor = MaterialTheme.colorScheme.onSurface.toArgb()
     val playIcon = rememberTvNativeIcon(Icons.Rounded.PlayArrow, 18.dp)
     val scheduleIcon = rememberTvNativeIcon(Icons.Rounded.CalendarMonth, 18.dp)
@@ -469,7 +476,12 @@ internal fun TvExplorationNativeWall(
                 view.dark = dark
                 view.headerIdleAlpha = headerIdleAlpha
                 view.fadeColor = fadeColor.toArgb()
-                view.treatmentFor = { mode -> tvPageBackdropTreatment(mode, topScrim = false, fadeColor = fadeColor, geometry = geometry) }
+                view.treatmentFor = if (padHero) {
+                    { _ -> tvPadBackdropTreatment(fadeColor) }
+                } else {
+                    { mode -> tvPageBackdropTreatment(mode, topScrim = false, fadeColor = fadeColor, geometry = geometry) }
+                }
+                view.padHero = padHero
                 view.heroEnabled = heroEnabled
                 // 钉死锚点版式选了直接播放: 按确定直接播, 不放进详情页的那段对焦
                 view.openFocusesWall = !(fixedAnchor && posterConfirm == TvPosterConfirmAction.Play)
@@ -487,7 +499,8 @@ internal fun TvExplorationNativeWall(
                     wb.crossfade = visualEffects.transitions
                 }
                 view.update(style, metrics, textStyle, buttonStyle)
-                view.setButtons(watchNow, playIcon, schedule, scheduleIcon)
+                // 平板版画法的按钮只有字
+                view.setButtons(watchNow, playIcon.takeUnless { padHero }, schedule, scheduleIcon.takeUnless { padHero })
                 view.setItems(items)
                 // 推荐换了一批 (见 TvExplorationPage): 新内容交给视图之后再让各行回到第一张, 淡入的是新的那批
                 if (rowsRestart != null && rowsRestart !== state.appliedRowsRestart) {

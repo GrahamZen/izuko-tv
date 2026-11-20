@@ -122,7 +122,7 @@ fun TvRemoteQrCard(containerColor: Color, modifier: Modifier = Modifier) {
             // 卡片这么窄会折成两行, 不省略 —— 省掉一截就输不对了
             url?.let {
                 Spacer(Modifier.height(4.dp))
-                Text(
+                RemoteAddressText(
                     it,
                     style = MaterialTheme.typography.labelSmall,
                     color = scheme.onSurface,
@@ -174,7 +174,7 @@ fun TvRemoteControlDialog(onDismissRequest: () -> Unit) {
                 )
                 url?.let {
                     Spacer(Modifier.height(6.dp))
-                    Text(it, style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
+                    RemoteAddressText(it, style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
                 }
                 Spacer(Modifier.height(12.dp))
                 Text(
@@ -235,7 +235,7 @@ fun TvRemoteLoginCard(modifier: Modifier = Modifier) {
         )
         url?.let {
             Spacer(Modifier.height(6.dp))
-            Text(it, style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant, textAlign = TextAlign.Center)
+            RemoteAddressText(it, style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant, textAlign = TextAlign.Center)
         }
         if (url != null && !phoneConnected && !hostChanged) {
             Spacer(Modifier.height(6.dp))
@@ -251,7 +251,7 @@ fun TvRemoteLoginCard(modifier: Modifier = Modifier) {
  * 动作面板那边背后是半透明玻璃, 透过来的图案会干扰扫码.
  */
 @Composable
-internal fun RemoteQrCode(url: String?, size: Dp, quietZone: Dp) {
+internal fun RemoteQrCode(url: String?, size: Dp, quietZone: Dp, openOnTap: Boolean = true) {
     val scheme = MaterialTheme.colorScheme
     val darkTheme = scheme.surface.luminance() < 0.5f
     if (url != null) {
@@ -261,6 +261,7 @@ internal fun RemoteQrCode(url: String?, size: Dp, quietZone: Dp) {
             quietZone = quietZone,
             foreground = if (darkTheme) scheme.onPrimary else scheme.onPrimaryContainer,
             background = if (darkTheme) scheme.primary else scheme.primaryContainer,
+            openOnTap = openOnTap,
         )
     } else {
         Box(

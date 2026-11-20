@@ -96,6 +96,9 @@ internal class StorageGuideState(initial: MediaStorageSetup.Choice, val libraryS
         go(StorageGuideStep.Confirm)
     }
 
+    /** 还能退回上一步 (不在第一步); 触屏上据此画「返回」 */
+    val canGoBack: Boolean get() = history.isNotEmpty()
+
     /** 退回上一步; 已经在第一步时返回 `false` (由调用方关掉引导) */
     fun back(): Boolean {
         val previous = history.removeLastOrNull() ?: return false

@@ -60,8 +60,11 @@ import me.him188.ani.app.ui.foundation.focus.rememberTvFocusScope
 import me.him188.ani.app.ui.foundation.focus.tvFocusAnchor
 import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
 import me.him188.ani.app.ui.foundation.getStringOffMain
+import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
 import me.him188.ani.app.ui.foundation.widgets.AniFocusActionButton
+import me.him188.ani.app.ui.foundation.widgets.AniPanelBackButton
+import me.him188.ani.app.ui.foundation.widgets.AniPanelCloseButton
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.aniFocusContainerColor
 import me.him188.ani.app.ui.foundation.widgets.aniFocusContentColor
@@ -181,7 +184,7 @@ private fun StorageGuideContent(
     }
     LaunchedEffect(granted, state.step) { if (granted) state.permissionGranted() }
     Column(Modifier.fillMaxSize()) {
-        GuideHeader(state)
+        GuideHeader(state, dismiss)
         Spacer(Modifier.height(SECTION_GAP))
         when (state.step) {
             StorageGuideStep.Drive -> DriveStep(state, setup, drives, focus)
@@ -193,13 +196,18 @@ private fun StorageGuideContent(
     }
 }
 
-/** 标题 (左) 与几步的进度 (右); 确认那一步算最后一步走完 */
+/**
+ * 标题 (左) 与几步的进度 (右); 确认那一步算最后一步走完. 平板模式 (触屏) 没有返回键: 不在第一步时标题左边有「返回」退一步,
+ * 最右边「关闭」([dismiss], 什么都不改就退出, 同在第一步按返回).
+ */
 @Composable
-private fun GuideHeader(state: StorageGuideState) {
+private fun GuideHeader(state: StorageGuideState, dismiss: () -> Unit) {
     val steps = state.visibleSteps
     val current = steps.indexOf(state.step).takeIf { it >= 0 } ?: steps.size
     val scheme = MaterialTheme.colorScheme
+    val touch = LocalTvTouchInputEnabled.current
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        if (touch && state.canGoBack) AniPanelBackButton({ state.back() }, Modifier.padding(end = 16.dp))
         Text(stringResource(state.step.title), Modifier.weight(1f), style = MaterialTheme.typography.headlineMedium)
         steps.forEachIndexed { index, step ->
             if (index > 0) {
@@ -217,6 +225,7 @@ private fun GuideHeader(state: StorageGuideState) {
                 color = if (index <= current) scheme.primary else scheme.onSurfaceVariant,
             )
         }
+        if (touch) AniPanelCloseButton(dismiss, Modifier.padding(start = 24.dp))
     }
 }
 

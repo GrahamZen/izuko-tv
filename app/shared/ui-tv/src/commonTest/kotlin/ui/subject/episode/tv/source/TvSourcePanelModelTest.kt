@@ -731,6 +731,19 @@ class TvSourcePanelModelTest {
     }
 
     @Test
+    fun `a drilled list gets a back pill only when the host asks for it`() {
+        val bt = bt(listOf(BtRow(btDmhy, null, false)), emptyList())
+        val drilled = TvSourceNav(railKey = TvSourceRailKeys.BT, drill = TvSourceDrill.Filter(TvSourceFilter.Alliance))
+        val withBack = buildTvSourcePanel(input(bt = bt).copy(drillBack = true), drilled, strings).right.pills
+        assertEquals(TvSourceAction.CloseDrill, withBack.first().action)
+        // 播放器的选源面板不要 (遥控器、播放器都用返回键)
+        assertTrue(buildTvSourcePanel(input(bt = bt), drilled, strings).right.pills.none { it.action == TvSourceAction.CloseDrill })
+        // 没进里层时没有
+        val top = TvSourceNav(railKey = TvSourceRailKeys.BT)
+        assertTrue(buildTvSourcePanel(input(bt = bt).copy(drillBack = true), top, strings).right.pills.none { it.action == TvSourceAction.CloseDrill })
+    }
+
+    @Test
     fun `web results that are not perfect matches hide behind a toggle`() {
         val fuzzy = media("a3", "web-a", kind = MediaSourceKind.WEB, title = "孤獨搖滾")
         val renamed = media("a4", "web-a", kind = MediaSourceKind.WEB, title = "别的番")

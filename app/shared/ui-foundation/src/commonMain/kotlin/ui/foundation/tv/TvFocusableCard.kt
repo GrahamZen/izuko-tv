@@ -22,6 +22,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
+import me.him188.ani.app.ui.foundation.ifThen
 
 /**
  * **横滑卡的示焦 modifier 链** —— 描边 + 圆角裁剪 + 按形态换示焦手段 + 文字避让, 一条链一次挂完.
@@ -68,7 +69,8 @@ fun Modifier.tvFocusableCard(
         // 描边必须在 clip 之前, 否则被卡片自己的圆角裁掉一半
         .tvFocusRing(cornerRadius, enabled = focusDriven)
         .clip(RoundedCornerShape(cornerRadius))
-        .tvTouchFocusOnTap()
+        // 点即聚焦只给焦点驱动的电视界面; 触屏上照上游写法的页面点一下就打开 (同上游)
+        .ifThen(focusDriven) { tvTouchFocusOnTap() }
         .clickable(
             interactionSource = source,
             indication = if (focusDriven) null else LocalIndication.current,

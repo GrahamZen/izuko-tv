@@ -73,6 +73,8 @@ import me.him188.ani.app.ui.foundation.ImageViewerHandler
 import me.him188.ani.app.ui.foundation.rememberImageViewerHandler
 import me.him188.ani.app.ui.foundation.AsyncImage
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
+import me.him188.ani.app.ui.foundation.ProvideTouchShellUiBehavior
+import me.him188.ani.app.ui.foundation.touchShellUiBehavior
 import me.him188.ani.app.ui.foundation.focus.tvBringIntoViewOnFocus
 import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
@@ -129,9 +131,9 @@ fun PersonDetailsScreen(
             )
         },
         summary = details?.person?.summary.orEmpty(),
-        // 电视上两排换成原生行 (同预览弹窗): 行往两侧出血中栏给的留白
+        // 电视上两排换成原生行 (同预览弹窗): 行往两侧出血中栏给的留白; 平板上页面照上游写法时照上游的行 (点一下就打开)
         centerStrips = { rowsPadding ->
-            PersonStrips(casts, works, previewRows = LocalPeoplePreviewRows.current, previewRowsPadding = rowsPadding)
+            PersonStrips(casts, works, previewRows = LocalPeoplePreviewRows.current.takeIf { LocalAniUiBehavior.current.focusDrivenNavigation }, previewRowsPadding = rowsPadding)
         },
         commentState = vm.commentState,
         originalCommentsUrl = vm.originalCommentsUrl,
@@ -175,9 +177,9 @@ fun CharacterDetailsScreen(
             )
         },
         summary = details?.summary.orEmpty(),
-        // 电视上两排换成原生行 (同预览弹窗): 行往两侧出血中栏给的留白
+        // 电视上两排换成原生行 (同预览弹窗): 行往两侧出血中栏给的留白; 平板上页面照上游写法时照上游的行 (点一下就打开)
         centerStrips = { rowsPadding ->
-            CharacterStrips(details, subjects, previewRows = LocalPeoplePreviewRows.current, previewRowsPadding = rowsPadding)
+            CharacterStrips(details, subjects, previewRows = LocalPeoplePreviewRows.current.takeIf { LocalAniUiBehavior.current.focusDrivenNavigation }, previewRowsPadding = rowsPadding)
         },
         commentState = vm.commentState,
         originalCommentsUrl = vm.originalCommentsUrl,
@@ -612,10 +614,12 @@ private fun PersonStrips(
         )
     }
 
-    // 电视 / 平板的居中弹窗形态是圆头像 / 海报画廊
-    if (LocalAniUiBehavior.current.panelsAsCenteredDialogs) {
-        if (showAllCasts) PersonCastsGalleryDialog(casts, navigation, onDismissRequest = { showAllCasts = false })
-        if (showAllWorks) PersonWorksGalleryDialog(works, navigation, onDismissRequest = { showAllWorks = false })
+    // 电视 / 平板的居中弹窗形态是圆头像 / 海报画廊 (平板上页面照上游写法, 弹窗仍同详情页, 见 touchShellUiBehavior)
+    if (touchShellUiBehavior.panelsAsCenteredDialogs) {
+        ProvideTouchShellUiBehavior {
+            if (showAllCasts) PersonCastsGalleryDialog(casts, navigation, onDismissRequest = { showAllCasts = false })
+            if (showAllWorks) PersonWorksGalleryDialog(works, navigation, onDismissRequest = { showAllWorks = false })
+        }
         return
     }
     if (showAllCasts) {
@@ -787,8 +791,11 @@ private fun CharacterStrips(
         )
     }
 
-    if (LocalAniUiBehavior.current.panelsAsCenteredDialogs) {
-        if (showAllSubjects) CharacterSubjectsGalleryDialog(subjects, navigation, onDismissRequest = { showAllSubjects = false })
+    // 平板上页面照上游写法, 弹窗仍同详情页 (见 touchShellUiBehavior)
+    if (touchShellUiBehavior.panelsAsCenteredDialogs) {
+        ProvideTouchShellUiBehavior {
+            if (showAllSubjects) CharacterSubjectsGalleryDialog(subjects, navigation, onDismissRequest = { showAllSubjects = false })
+        }
         return
     }
     if (showAllSubjects) {
