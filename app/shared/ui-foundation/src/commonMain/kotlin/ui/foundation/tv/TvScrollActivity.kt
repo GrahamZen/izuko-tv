@@ -279,10 +279,13 @@ fun <T> rememberTvScrollSettled(flushOn: () -> Any? = { null }, target: () -> T)
     // 实测未缓存条目单击换行, 文字空白 0.18~0.25s, 观感就是"等一下才出字" (用户 2026-09-19).
     // 那一档只保留"连发静默合并"与"按住期间不换" (下面 navKeys 那段), 松手即出字.
     val waitForScroll = tvContentSwapAnimated()
-    LaunchedEffect(activity, navKeys, waitForScroll) {
+    val touchInput = LocalTvTouchInputEnabled.current
+    LaunchedEffect(activity, navKeys, waitForScroll, touchInput) {
         state.burst = false
         val settle = TvNavigationSettle(TV_NAV_SETTLE_MILLIS)
         snapshotFlow { latest.value.invoke() }.collectLatest { value ->
+            // 已经当场换上了 (flushOn 与目标在同一帧变, 换挡那条先跑了, 如触屏上点卡片即聚焦并进 hero 态): 不再等滚动停稳、不藏
+            if (touchInput && value == state.settledValue && !state.pending) return@collectLatest
             state.pending = true
             state.scrolled = false
             state.latched = false

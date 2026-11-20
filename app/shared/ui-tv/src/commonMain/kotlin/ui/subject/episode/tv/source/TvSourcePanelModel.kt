@@ -312,6 +312,9 @@ sealed interface TvSourceAction {
     data object ManualRetry : TvSourceAction
     data class ManualOpenSubject(val subject: BrowseSubject) : TvSourceAction
     data object ManualCloseSubject : TvSourceAction
+
+    /** 退出右栏进去的那一层 ([TvSourceDrill]), 同在里面按返回键; 只有触屏上的「返回」胶囊用 (见 [TvSourcePanelInput.drillBack]). */
+    data object CloseDrill : TvSourceAction
     data class ManualSelectChannel(val index: Int) : TvSourceAction
     data class ManualSetRemember(val remember: Boolean) : TvSourceAction
     data class ManualPlay(val episodeIndex: Int) : TvSourceAction
@@ -355,6 +358,7 @@ data class TvSourceNav(
  * @property playbackDiskCache 设置里「边下边播」开着 (在线播放时看过的部分存在本机, 不是下载).
  * @property sourceTypes 各数据源实例 (按实例 id) 的类型与在数据源设置里的顺序; 没有的归「在线」、排在最后.
  * @property playback 在播的那一条眼下的状态, 见 [TvSourcePlayback].
+ * @property drillBack 右栏进了一层 ([TvSourceNav.drill]) 时顶上多一颗「返回」胶囊: 平板模式 (触屏) 下的缓存页选源没有返回键可按.
  */
 @Immutable
 data class TvSourcePanelInput(
@@ -372,6 +376,7 @@ data class TvSourcePanelInput(
     val playbackDiskCache: Boolean = false,
     val sourceTypes: Map<String, TvSourceType> = emptyMap(),
     val playback: TvSourcePlayback = TvSourcePlayback.Normal,
+    val drillBack: Boolean = false,
 )
 
 /**
@@ -964,11 +969,22 @@ fun buildTvSourcePanel(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvS
                 key.takeIf { rows.any { it.focusable } }
             }.apply { if (withDownloads) add(TvSourceRailKeys.DOWNLOADS) }
         },
-        right = right.copy(rows = applyFrozenOrder(right.rows, nav.frozenOrder)),
+        right = right.copy(
+            rows = applyFrozenOrder(right.rows, nav.frozenOrder),
+            pills = if (input.drillBack && nav.drill != null) listOf(drillBackPill(strings)) + right.pills else right.pills,
+        ),
         filter = if (filterable) filterOptions(input, fileSources.flatMap { it.matched }, strings) else emptyList(),
         nowPlaying = nowPlaying,
     )
 }
+
+/** 右栏里层顶上的「返回」胶囊 (见 [TvSourcePanelInput.drillBack]), 样子同手动查找条目页的「返回」. */
+private fun drillBackPill(strings: TvSourceStrings) = TvSourceRow(
+    id = "pill:drill-back",
+    style = TvSourceRowStyle.Pill,
+    title = strings.manualBack,
+    action = TvSourceAction.CloseDrill,
+)
 
 /** 查询失败的源 (本地缓存除外): 收进左栏「查询失败」那一项. 没登录网盘的不算 (胶囊照常列, 见 [driveLoginOf]). */
 private fun failedSourcesOf(input: TvSourcePanelInput): List<MediaSourceResultPresentation> =

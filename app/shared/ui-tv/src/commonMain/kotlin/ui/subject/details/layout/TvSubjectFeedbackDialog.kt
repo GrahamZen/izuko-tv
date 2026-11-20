@@ -70,10 +70,13 @@ import me.him188.ani.app.ui.foundation.AsyncImage
 import me.him188.ani.app.ui.foundation.lan.QrCodeImage
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tv.TvTitleLogoFlip
+import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.rememberTvTitleLogoLanguage
 import me.him188.ani.app.ui.foundation.widgets.AniCenteredPanelDialog
 import me.him188.ani.app.ui.foundation.widgets.AniFocusActionButton
 import me.him188.ani.app.ui.foundation.widgets.AniFocusRingSurface
+import me.him188.ani.app.ui.foundation.widgets.AniPanelBackButton
+import me.him188.ani.app.ui.foundation.widgets.AniPanelCloseButton
 import me.him188.ani.app.ui.foundation.widgets.ProvideScrollFadeFocusMargin
 import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFade
 import me.him188.ani.app.ui.lang.Lang
@@ -117,6 +120,7 @@ import me.him188.ani.app.ui.lang.subject_details_tv_title_logo_not_listed_submit
 import me.him188.ani.app.ui.lang.subject_details_tv_title_logo_rate_limited
 import me.him188.ani.app.ui.lang.subject_details_tv_title_logo_submitted
 import me.him188.ani.app.ui.lang.subject_details_tv_title_logo_submitting
+import me.him188.ani.app.ui.lang.subject_details_tv_title_logo_submitting_touch
 import me.him188.ani.app.ui.lang.subject_details_tv_title_logo_text_option
 import me.him188.ani.app.ui.lang.subject_details_tv_title_logo_unreachable
 import org.jetbrains.compose.resources.stringResource
@@ -171,41 +175,57 @@ internal fun TvSubjectFeedbackDialog(
         }
     }
 
+    // 平板模式 (触屏): 标题行左边「返回」退一层、右边「关闭」, 点外面不响应 (选到一半不误关); 遥控器照旧用返回键
+    val touch = LocalTvTouchInputEnabled.current
+    val canGoBack = submit == FeedbackSubmit.Idle && (pending != null || (page != FeedbackPage.Menu && logoAvailable))
     AniCenteredPanelDialog(
         onDismissRequest = ::back,
+        dismissOnClickOutside = !touch,
         title = {
             val logoHeader = logoCandidates.takeIf { page == FeedbackPage.Logo && pending == null && submit == FeedbackSubmit.Idle }
-            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    stringResource(
-                        when {
-                            pending != null && submit == FeedbackSubmit.Idle -> Lang.subject_details_tv_feedback_confirm_title
-                            page == FeedbackPage.Logo -> Lang.subject_details_tv_title_logo_dialog_title
-                            page == FeedbackPage.Entry -> Lang.subject_details_tv_entry_dialog_title
-                            else -> Lang.subject_details_tv_feedback_title
-                        },
-                    ),
-                )
-                Text(
-                    if (originalName.isNotBlank() && originalName != displayName) "$displayName · $originalName" else displayName,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                // logo 页的说明写在标题区, 下面整块留给网格
-                if (logoHeader != null) {
+            Row(Modifier.fillMaxWidth()) {
+                if (touch && canGoBack) AniPanelBackButton(::back, Modifier.padding(end = 12.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
                         stringResource(
-                            if (logoHeader.logos.isEmpty() && logoHeader.hidden == 0) {
-                                Lang.subject_details_tv_title_logo_empty
-                            } else {
-                                Lang.subject_details_tv_title_logo_dialog_description
+                            when {
+                                pending != null && submit == FeedbackSubmit.Idle -> Lang.subject_details_tv_feedback_confirm_title
+                                page == FeedbackPage.Logo -> Lang.subject_details_tv_title_logo_dialog_title
+                                page == FeedbackPage.Entry -> Lang.subject_details_tv_entry_dialog_title
+                                else -> Lang.subject_details_tv_feedback_title
                             },
-                            languageName(logoHeader.language),
                         ),
-                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        if (originalName.isNotBlank() && originalName != displayName) "$displayName · $originalName" else displayName,
+                        style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    // logo 页的说明写在标题区, 下面整块留给网格
+                    if (logoHeader != null) {
+                        Text(
+                            stringResource(
+                                if (logoHeader.logos.isEmpty() && logoHeader.hidden == 0) {
+                                    Lang.subject_details_tv_title_logo_empty
+                                } else {
+                                    Lang.subject_details_tv_title_logo_dialog_description
+                                },
+                                languageName(logoHeader.language),
+                            ),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                if (touch) {
+                    AniPanelCloseButton(
+                        onClick = {
+                            if (submit == FeedbackSubmit.Submitting) submitJob?.cancel()
+                            onDismissRequest()
+                        },
+                        Modifier.padding(start = 12.dp),
                     )
                 }
             }
@@ -216,7 +236,13 @@ internal fun TvSubjectFeedbackDialog(
             Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 val pick = pending
                 when (val s = submit) {
-                    FeedbackSubmit.Submitting -> FeedbackStatus(stringResource(Lang.subject_details_tv_title_logo_submitting), progress = true)
+                    FeedbackSubmit.Submitting -> if (LocalTvTouchInputEnabled.current) {
+                        // 触屏没有返回键: 给一颗取消 (同按返回)
+                        FeedbackStatus(stringResource(Lang.subject_details_tv_title_logo_submitting_touch), progress = true)
+                        AniFocusActionButton(onClick = { back() }) { Text(stringResource(Lang.subject_details_tv_feedback_cancel)) }
+                    } else {
+                        FeedbackStatus(stringResource(Lang.subject_details_tv_title_logo_submitting), progress = true)
+                    }
                     is FeedbackSubmit.Done -> FeedbackDone(resultText(s.result, s.kind), onDismissRequest)
                     FeedbackSubmit.Idle -> when {
                         pick != null -> FeedbackConfirm(

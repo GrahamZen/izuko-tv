@@ -210,13 +210,17 @@
     <string name="tv_onboarding_welcome_description">開始之前需要做四步設置：</string>
     <string name="tv_onboarding_welcome_step_network">檢測網絡，選擇怎麼連線 Bangumi、怎麼載入 TMDB 圖片</string>
     <string name="tv_onboarding_welcome_step_remote">用手機掃碼打開 Web 控制台，當遙控器和鍵盤用</string>
+    <string name="tv_onboarding_welcome_step_remote_touch">用手機掃碼打開 Web 控制台，在手機上搜尋番劇、挑選數據源和更改設置</string>
     <string name="tv_onboarding_welcome_step_login">登入 Bangumi 帳號（可選，不登入也能用）</string>
     <string name="tv_onboarding_welcome_start">開始設置</string>
     <string name="tv_onboarding_step_network">檢測網絡</string>
     <string name="tv_onboarding_step_remote">手機遙控</string>
     <string name="tv_onboarding_remote_description">用手機掃右邊的二維碼，打開這部電視的 Web 控制台（手機要和電視連同一個 Wi-Fi）。不用裝應用，瀏覽器就能用：</string>
+    <string name="tv_onboarding_remote_description_touch">用手機掃右邊的二維碼，打開這部裝置的 Web 控制台（手機要和它連同一個 Wi-Fi）。不用裝應用，瀏覽器就能用：</string>
     <string name="tv_onboarding_remote_feature_search">在手機上打字搜尋番劇，結果直接在電視上打開</string>
+    <string name="tv_onboarding_remote_feature_search_touch">在手機上打字搜尋番劇，結果直接在這部裝置上打開</string>
     <string name="tv_onboarding_remote_feature_player">挑選數據源、暫停快進、調倍速，像遙控器一樣控制播放</string>
+    <string name="tv_onboarding_remote_feature_player_touch">挑選數據源、暫停快進、調倍速，在手機上控制播放</string>
     <string name="tv_onboarding_remote_feature_manage">管理緩存、數據源和各項設置</string>
     <string name="tv_onboarding_remote_feature_login">登錄 Bangumi 帳號，手機上打字更方便</string>
     <string name="tv_onboarding_next">下一步</string>
@@ -272,11 +276,14 @@
     <string name="tv_onboarding_login_done_plain">已登錄</string>
     <string name="tv_onboarding_start">開始使用</string>
     <string name="tv_onboarding_welcome_step_theme">選外觀，以及在海報上按確定做什麼</string>
+    <string name="tv_onboarding_welcome_step_theme_touch">選外觀，以及點海報時做什麼</string>
     <string name="tv_onboarding_step_theme">外觀</string>
     <string name="tv_onboarding_theme_title">外觀與操作</string>
     <string name="tv_onboarding_theme_description">選了馬上生效，以後都能在 設置 - 主題與色彩 裏改</string>
     <string name="tv_onboarding_theme_confirm">海報上按確定</string>
+    <string name="tv_onboarding_theme_confirm_touch">點海報</string>
     <string name="tv_onboarding_theme_confirm_hero_hint">先看背景大圖和簡介，再按確定進詳情頁</string>
+    <string name="tv_onboarding_theme_confirm_hero_hint_touch">先看背景大圖和簡介，再點一下進詳情頁</string>
     <string name="tv_onboarding_theme_confirm_play_hint">接著上次看到的那集播，沒看過從第一集開始</string>
     <string name="tv_onboarding_theme_confirm_details_hint">直接打開詳情頁</string>
     <string name="tv_onboarding_theme_colors">顏色</string>
@@ -1281,4 +1288,13 @@
     <string name="tv_notice_update_queued">返回首頁後開始下載新版本</string>
     <string name="tv_notice_bubble_title">有 %1$d 條新通知</string>
     <string name="tv_notice_bubble_more">還有 %1$d 條</string>
+    <string name="tv_rail_back">返回</string>
+    <string name="pad_subject_details_more_tags">更多標籤</string>
+    <string name="pad_subject_details_all_episodes">全部選集</string>
+    <string name="subject_details_tv_title_logo_submitting_touch">正在提交…</string>
+    <string name="collection_tv_tab_order_hint_touch">點一個標籤拿起來</string>
+    <string name="collection_tv_tab_order_hint_grabbed_touch">點要放的位置  ·  再點它一下放下</string>
+    <string name="tv_wall_scale_hint_drag">點或上下拖動滑桿調整大小</string>
+    <string name="tv_adjust_done">完成</string>
+    <string name="tv_remote_address_copied">已複製 Web 控制台網址</string>
 </resources>
