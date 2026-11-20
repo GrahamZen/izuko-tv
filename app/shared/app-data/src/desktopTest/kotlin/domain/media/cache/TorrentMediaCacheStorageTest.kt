@@ -799,21 +799,70 @@ class TorrentMediaCacheStorageTest : AbstractTorrentMediaCacheEngineTest() {
     }
 
     @Test
-    fun `downloader status reports startup timeout when torrent info never arrives`() = runTest {
-        // 引擎从不报告种子信息, 启动阶段在虚拟时间中超时.
+    fun `a download whose torrent info has not arrived is waiting for it, not failed`() = runTest {
+        // 引擎一直不报告种子信息: 建缓存等一阵 (虚拟时间) 先返回, 记录照样算在下
         val storage = createStorage(createEngine())
         val cache = storage.cache(testMedia, mediaCacheMetadata(), resume = false)
         assertEquals(
             DownloaderStatus.Torrent(
                 serviceConnected = true,
-                startup = DownloaderStatus.TorrentStartup.TIMED_OUT,
+                startup = DownloaderStatus.TorrentStartup.AWAITING_METADATA,
                 state = null,
                 connectedPeers = 0,
                 seeds = 0,
             ),
             cache.downloaderStatus.first(),
         )
-        assertEquals(MediaCacheState.FAILED, cache.state.first())
+        assertEquals(MediaCacheState.IN_PROGRESS, cache.state.first())
+    }
+
+    @Test
+    fun `torrent info that arrives late starts the download`() = runTest {
+        val sessions = CopyOnWriteArrayList<AnitorrentDownloadSession>()
+        val storage = createStorage(createEngine(onDownloadStarted = { sessions += it }))
+        val cache = storage.cache(testMedia, mediaCacheMetadata(), resume = true)
+        assertNull(cache.fileHandle.entry.first(), "the torrent info has not arrived yet")
+
+        sessions.single().onTorrentChecked()
+        advanceUntilIdle()
+        assertEquals(FilePriority.NORMAL, cache.requestingPriority(), "the resume asked before the torrent info arrived")
+        assertEquals(DownloaderStatus.TorrentStartup.STARTED, (cache.downloaderStatus.first() as DownloaderStatus.Torrent).startup)
+        assertEquals(MediaCacheState.IN_PROGRESS, cache.state.first())
+    }
+
+    @Test
+    fun `a download paused while waiting for torrent info stays paused when it arrives`() = runTest {
+        val sessions = CopyOnWriteArrayList<AnitorrentDownloadSession>()
+        val storage = createStorage(createEngine(onDownloadStarted = { sessions += it }))
+        val cache = storage.cache(testMedia, mediaCacheMetadata(), resume = true)
+        cache.pause()
+        assertEquals(MediaCacheState.PAUSED, cache.state.first())
+
+        sessions.single().onTorrentChecked()
+        advanceUntilIdle()
+        assertEquals(FilePriority.IGNORE, cache.requestingPriority(), "the paused download started when the torrent info arrived")
+        assertEquals(MediaCacheState.PAUSED, cache.state.first())
+    }
+
+    @Test
+    fun `a download deleted while waiting for torrent info does not open the file when it arrives`() = runTest {
+        val sessions = CopyOnWriteArrayList<AnitorrentDownloadSession>()
+        val storage = createStorage(createEngine(onDownloadStarted = { sessions += it }))
+        val cache = storage.cache(testMedia, mediaCacheMetadata(), resume = true) as TorrentMediaCacheEngine.TorrentMediaCache
+        // 存储的删除把这一步放在后台做; 这里等它做完再让种子信息到
+        cache.closeAndDeleteFiles()
+        advanceUntilIdle()
+
+        val session = sessions.single()
+        session.onTorrentChecked()
+        advanceUntilIdle()
+        assertNull(cache.fileHandle.entry.first())
+        val files = session.getFiles()
+        assertTrue(files.isNotEmpty())
+        assertTrue(
+            files.all { (it as AbstractTorrentFileEntry).requestingPriority == FilePriority.IGNORE },
+            "the deleted download requested its file",
+        )
     }
 
     ///////////////////////////////////////////////////////////////////////////

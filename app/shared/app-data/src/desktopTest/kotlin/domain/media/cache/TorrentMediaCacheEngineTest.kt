@@ -10,7 +10,6 @@
 package me.him188.ani.app.domain.media.cache
 
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.TestScope
 import me.him188.ani.app.torrent.api.TorrentSession
 import me.him188.ani.app.torrent.api.files.FilePriority
@@ -160,7 +159,7 @@ class TorrentMediaCacheEngineTest : AbstractTorrentMediaCacheEngineTest() {
         val cache = cacheEngine.TorrentMediaCache(
             origin = testMedia,
             initialMetadata = metadata(),
-            fileHandle = TorrentMediaCacheEngine.FileHandle(flowOf(null)),
+            fileHandle = TorrentMediaCacheEngine.FileHandle.settled(null),
             relativeDir = RELATIVE_DIR,
         )
         cache.closeAndDeleteFiles()
@@ -215,9 +214,7 @@ class TorrentMediaCacheEngineTest : AbstractTorrentMediaCacheEngineTest() {
         val cache = cacheEngine.TorrentMediaCache(
             origin = testMedia,
             initialMetadata = metadata(),
-            fileHandle = TorrentMediaCacheEngine.FileHandle(
-                flowOf(TorrentMediaCacheEngine.FileHandle.State(FakeTorrentSession, entry, handle)),
-            ),
+            fileHandle = TorrentMediaCacheEngine.FileHandle.settled(TorrentMediaCacheEngine.FileHandle.State(FakeTorrentSession, entry, handle)),
             relativeDir = RELATIVE_DIR,
         )
         cache.closeAndDeleteFiles()
@@ -265,9 +262,7 @@ class TorrentMediaCacheEngineTest : AbstractTorrentMediaCacheEngineTest() {
         cacheEngine.TorrentMediaCache(
             origin = testMedia,
             initialMetadata = metadata(),
-            fileHandle = TorrentMediaCacheEngine.FileHandle(
-                flowOf(TorrentMediaCacheEngine.FileHandle.State(FakeTorrentSession, entry, handle)),
-            ),
+            fileHandle = TorrentMediaCacheEngine.FileHandle.settled(TorrentMediaCacheEngine.FileHandle.State(FakeTorrentSession, entry, handle)),
             relativeDir = RELATIVE_DIR,
         ).closeAndDeleteFiles()
         return handle

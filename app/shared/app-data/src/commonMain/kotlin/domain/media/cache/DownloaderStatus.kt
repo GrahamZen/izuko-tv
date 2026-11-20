@@ -51,7 +51,12 @@ sealed interface DownloaderStatus {
         STARTED,
 
         /**
-         * 启动阶段超时, 没有获取到种子信息; 记录显示为失败.
+         * 种子信息还没拿到, 后台在等; 记录仍算下载中.
+         */
+        AWAITING_METADATA,
+
+        /**
+         * 启动阶段出错, 没有获取到种子信息; 记录显示为失败.
          */
         TIMED_OUT,
 

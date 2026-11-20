@@ -18,6 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -36,10 +37,12 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.io.IOException
 import kotlinx.io.files.FileNotFoundException
 import kotlinx.io.files.Path
@@ -64,7 +67,6 @@ import me.him188.ani.app.tools.toProgress
 import me.him188.ani.app.torrent.api.TorrentDownloader
 import me.him188.ani.app.torrent.api.TorrentSession
 import me.him188.ani.app.torrent.api.files.EncodedTorrentInfo
-import me.him188.ani.app.torrent.api.files.FilePriority
 import me.him188.ani.app.torrent.api.files.TorrentFileEntry
 import me.him188.ani.app.torrent.api.files.TorrentFileHandle
 import me.him188.ani.app.torrent.api.files.isFinished
@@ -153,14 +155,24 @@ class TorrentMediaCacheEngine(
         combine(createsAwaitingService, isServiceConnected) { waiting, connected -> waiting > 0 && !connected }
             .distinctUntilChanged()
 
-    class FileHandle(val state: Flow<State?>) {
-        val handle = state.map { it?.handle } // single emit
-        val entry = state.map { it?.entry } // single emit
+    /**
+     * 缓存要下的那个文件. 种子信息晚到时 [state] 先是 null, 拿到后才给 (见 [TorrentFileStartup]); 取 `first()` 得到的是此刻的, 不等.
+     */
+    class FileHandle internal constructor(internal val startup: TorrentFileStartup) {
+        val state: Flow<State?> = startup.phase.map { (it as? TorrentFileStartup.Phase.Started)?.state }
+        val handle = state.map { it?.handle }
+        val entry = state.map { it?.entry }
         val session = state.map { it?.session }
 
-        suspend fun close() {
-            state.first()?.sidecars?.close()
-            handle.first()?.close()
+        suspend fun close() = startup.close()
+
+        companion object {
+            /** 已经有结果的 ([state] 为 null = 打不开) */
+            fun settled(state: State?): FileHandle = FileHandle(
+                TorrentFileStartup(
+                    if (state != null) TorrentFileStartup.Phase.Started(state) else TorrentFileStartup.Phase.Failed(null),
+                ),
+            )
         }
 
         class State(
@@ -276,9 +288,11 @@ class TorrentMediaCacheEngine(
                 DownloaderStatus.Cloud(errorMessage = error?.let { it.message ?: it::class.simpleName })
             }.flowOn(flowDispatcher)
         } else {
-            combine(isServiceConnected, fileHandle.state) { connected, handleState -> connected to handleState }
-                .flatMapLatest { (connected, handleState) ->
+            combine(isServiceConnected, fileHandle.startup.phase) { connected, phase -> connected to phase }
+                .flatMapLatest { (connected, phase) ->
+                    val handleState = (phase as? TorrentFileStartup.Phase.Started)?.state
                     val startup = when {
+                        phase is TorrentFileStartup.Phase.AwaitingMetadata -> DownloaderStatus.TorrentStartup.AWAITING_METADATA
                         handleState == null -> DownloaderStatus.TorrentStartup.TIMED_OUT
                         handleState.handle == null -> DownloaderStatus.TorrentStartup.NO_MATCHING_FILE
                         else -> DownloaderStatus.TorrentStartup.STARTED
@@ -314,9 +328,10 @@ class TorrentMediaCacheEngine(
         override val isAwaitingTorrentService: Flow<Boolean> = isServiceConnected.map { !it }
 
         override val state: Flow<MediaCacheState> =
-            combine(desiredState, fileHandle.state, fileStats) { currentState, handleState, stats ->
+            combine(desiredState, fileHandle.startup.phase, fileStats) { currentState, phase, stats ->
                 when {
-                    handleState == null -> MediaCacheState.FAILED
+                    // 还在等种子信息不算失败 (见 TorrentFileStartup)
+                    phase is TorrentFileStartup.Phase.Failed -> MediaCacheState.FAILED
                     stats.isDownloadFinished -> MediaCacheState.COMPLETED
                     currentState == MediaCacheState.PAUSED -> MediaCacheState.PAUSED
                     else -> MediaCacheState.IN_PROGRESS
@@ -327,7 +342,7 @@ class TorrentMediaCacheEngine(
             if (isDeleted.value) return
             // 先记下来 (服务没连上时下面要等它), 记不下来也照样停; 停住之后才算暂停, 中途被打断时空间保护下一轮还会再停
             persistPaused(true)
-            fileHandle.handle.first()?.pause()
+            fileHandle.startup.pause()
             desiredState.value = MediaCacheState.PAUSED
         }
 
@@ -350,9 +365,8 @@ class TorrentMediaCacheEngine(
             if (isDeleted.value) return
             desiredState.value = MediaCacheState.IN_PROGRESS
             persistPaused(false)
-            val file = fileHandle.handle.first()
-            logger.info { "Resuming file: $file" }
-            file?.resume(FilePriority.NORMAL)
+            logger.info { "Resuming file: ${fileHandle.startup.started?.handle}" }
+            fileHandle.startup.resume()
         }
 
         // User intent promotes an automatic record to a full download; lifecycle resume must not do this.
@@ -411,7 +425,8 @@ class TorrentMediaCacheEngine(
                     // 那个 return 是非局部返回, 直接退出 closeAndDeleteFiles, 把末尾的记录清理整个跳过,
                     // 按集记录和种子行就永远留在库里了 (孤儿行的来源之一)。
                     logger.info { "Deleting torrent cache: No file selected" }
-                    close()
+                    // 不走 close(): 上面已经标成删除, 它会直接返回. 还在等种子信息的要在这里停下, 等到了也不再打开文件
+                    fileHandle.close()
                     return@withServiceRequest
                 }
 
@@ -780,54 +795,96 @@ class TorrentMediaCacheEngine(
         // another one after the torrent's file list changes.
         val recordedPath = dao.getEpisode(mediaId, metadata.episodeId)?.pathInTorrent?.takeIf { it.isNotEmpty() }
         val downloader = torrentEngine.getDownloader()
-        val res = kotlinx.coroutines.withTimeoutOrNull(30_000) {
-            val session = if (saveDir == null) {
-                downloader.startDownload(encoded, parentContext)
-            } else {
-                downloader.startDownloadAt(encoded, saveDir, parentContext)
-            }
-            logger.info { "$mediaSourceId: waiting for files" }
-            onDownloadStarted(session)
-
-            val files = session.getFiles()
-
-            val selectedFile = recordedPath
-                ?.let { path -> files.firstOrNull { it.pathInTorrent == path } }
-                ?: TorrentMediaResolver.selectVideoFileEntry(
-                    files,
-                    { fileName },
-                    listOf(metadata.episodeName),
-                    episodeSort = metadata.episodeSort,
-                    episodeEp = metadata.episodeEp,
-                    listingComplete = (session as? PartialListing)?.listingComplete ?: true,
+        val startup = TorrentFileStartup()
+        // 种子的元数据迟迟不来时这一段停在读文件列表上: 安卓上列表是 BT 服务那边的对象, 读它是阻塞着等, 取消不掉.
+        // 放进单独的协程, 等一阵还没等到就先返回 (不然建缓存的调用一直不返回, 存储的锁被它占着), 它在后台接着等.
+        // 阻塞着等的那条线程放在 IO 上 (测试里给了调度器的照它, 超时走的是它的虚拟时间)
+        val blocking = if (flowDispatcher === Dispatchers.Default) Dispatchers.IO_ else flowDispatcher
+        // 里面出的错收成结果, 不让它顺着父协程取消别的缓存
+        val starting = CoroutineScope(parentContext + blocking).launch {
+            val result = try {
+                TorrentFileStartup.Phase.Started(
+                    startFile(downloader, encoded, metadata, recordedPath, parentContext, saveDir),
                 )
-
-            if (selectedFile == null) {
-                logger.error {
-                    """
-                            $mediaSourceId: Selected null file to download. Diagnosis:
-                            - Files: ${files.map { it.fileName }}
-                            - Metadata: $metadata
-                        """.trimIndent()
-                }
-            } else {
-                // 打印文件路径而不是对象 (Android 上是 AIDL 代理, toString 无意义), 便于核对选中的是不是目标剧集.
-                logger.info { "$mediaSourceId: Selected file to download: ${selectedFile.pathInTorrent}" }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                TorrentFileStartup.Phase.Failed(e)
             }
-
-            val handle = selectedFile?.createHandle()
-            if (handle == null) {
-                session.closeIfNotInUse()
-            }
-            val sidecars = handle?.let { TorrentSidecarSubtitles.prefetch(CoroutineScope(parentContext), it.entry, files) }
-            FileHandle.State(session, selectedFile, handle, sidecars)
+            startup.settle(result)
+        }
+        startup.waiting = starting
+        val finished = try {
+            withTimeoutOrNull(TORRENT_FILES_TIMEOUT_MILLIS) { starting.join() } != null
+        } catch (e: CancellationException) {
+            starting.cancel()
+            throw e
         }
 
-        if (res == null) {
-            logger.error { "$mediaSourceId: Timed out while starting download or selecting file. Returning null handle. episode name: ${metadata.episodeName}" }
+        if (!finished) {
+            logger.info { "$mediaSourceId: torrent info has not arrived yet, waiting in the background. episode name: ${metadata.episodeName}" }
+            return FileHandle(startup)
+        }
+        when (val phase = startup.phase.value) {
+            is TorrentFileStartup.Phase.Failed -> throw phase.cause ?: IllegalStateException("Failed to start the torrent")
+            // 父协程取消了 (存储关掉)
+            TorrentFileStartup.Phase.AwaitingMetadata -> throw CancellationException("Starting the torrent was cancelled")
+            is TorrentFileStartup.Phase.Started -> Unit
+        }
+        return FileHandle(startup)
+    }
+
+    /** 开始下载种子, 等到文件列表后选出这一集的文件并打开 (选不出时句柄为 null). 种子信息不来时一直等 */
+    private suspend fun startFile(
+        downloader: TorrentDownloader,
+        encoded: EncodedTorrentInfo,
+        metadata: MediaCacheMetadata,
+        recordedPath: String?,
+        parentContext: CoroutineContext,
+        saveDir: SystemPath?,
+    ): FileHandle.State {
+        val session = if (saveDir == null) {
+            downloader.startDownload(encoded, parentContext)
+        } else {
+            downloader.startDownloadAt(encoded, saveDir, parentContext)
+        }
+        logger.info { "$mediaSourceId: waiting for files" }
+        onDownloadStarted(session)
+
+        val files = session.getFiles()
+
+        val selectedFile = recordedPath
+            ?.let { path -> files.firstOrNull { it.pathInTorrent == path } }
+            ?: TorrentMediaResolver.selectVideoFileEntry(
+                files,
+                { fileName },
+                listOf(metadata.episodeName),
+                episodeSort = metadata.episodeSort,
+                episodeEp = metadata.episodeEp,
+                listingComplete = (session as? PartialListing)?.listingComplete ?: true,
+            )
+
+        if (selectedFile == null) {
+            logger.error {
+                """
+                        $mediaSourceId: Selected null file to download. Diagnosis:
+                        - Files: ${files.map { it.fileName }}
+                        - Metadata: $metadata
+                    """.trimIndent()
+            }
+        } else {
+            // 打印文件路径而不是对象 (Android 上是 AIDL 代理, toString 无意义), 便于核对选中的是不是目标剧集.
+            logger.info { "$mediaSourceId: Selected file to download: ${selectedFile.pathInTorrent}" }
         }
 
-        return FileHandle(flowOf(res))
+        // 等的时候缓存被关掉 (删除) 了: 安卓上读列表那一下取消不掉, 读完在这里停下, 不再打开文件
+        currentCoroutineContext().ensureActive()
+        val handle = selectedFile?.createHandle()
+        if (handle == null) {
+            session.closeIfNotInUse()
+        }
+        val sidecars = handle?.let { TorrentSidecarSubtitles.prefetch(CoroutineScope(parentContext), it.entry, files) }
+        return FileHandle.State(session, selectedFile, handle, sidecars)
     }
 
     @OptIn(ExperimentalStdlibApi::class)

@@ -200,6 +200,7 @@ private fun downloadStateText(details: DownloaderDetails): String {
     val detail = when (val status = details.status) {
         is DownloaderStatus.Torrent -> when {
             !status.serviceConnected -> Lang.cache_details_engine_not_running
+            status.startup == DownloaderStatus.TorrentStartup.AWAITING_METADATA -> Lang.cache_details_torrent_state_downloading_metadata
             status.startup == DownloaderStatus.TorrentStartup.TIMED_OUT -> Lang.cache_details_torrent_timed_out
             status.startup == DownloaderStatus.TorrentStartup.NO_MATCHING_FILE -> Lang.cache_details_torrent_no_file
             else -> when (status.state) {
