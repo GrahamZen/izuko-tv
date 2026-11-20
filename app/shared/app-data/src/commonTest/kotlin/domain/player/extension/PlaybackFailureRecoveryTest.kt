@@ -36,6 +36,7 @@ import me.him188.ani.app.domain.media.resolver.MediaResolver
 import me.him188.ani.app.domain.media.resolver.TestUniversalMediaResolver
 import me.him188.ani.app.domain.player.VideoLoadingState
 import me.him188.ani.app.platform.NetworkStatus
+import me.him188.ani.app.videoplayer.link.PlaybackLinks
 import me.him188.ani.utils.coroutines.childScope
 import org.openani.mediamp.PlaybackErrorCode
 import org.openani.mediamp.PlaybackException
@@ -43,6 +44,7 @@ import org.openani.mediamp.test.TestMediampPlayer
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
@@ -129,7 +131,9 @@ class PlaybackFailureRecoveryTest : AbstractPlayerExtensionTest() {
         canRefreshLink: Boolean = false,
         canReloadDecoder: Boolean = true,
         networkDown: Boolean = false,
-    ) = decidePlaybackFailure(error, PlaybackFailureFacts(canRefreshLink, canReloadDecoder, networkDown))
+        unreachable: Boolean = false,
+        handingOver: Boolean = false,
+    ) = decidePlaybackFailure(error, PlaybackFailureFacts(canRefreshLink, canReloadDecoder, networkDown, unreachable, handingOver))
 
     private fun failure(cause: Throwable) = PlayerLoadError("code=IO", cause)
 
@@ -181,6 +185,23 @@ class PlaybackFailureRecoveryTest : AbstractPlayerExtensionTest() {
     @Test
     fun `a cut stream switches the source when it has not played or was just resolved again`() {
         assertEquals(PlaybackFailureAction.SWITCH_SOURCE, decide(failure(cutStreamError()), canRefreshLink = false))
+    }
+
+    @Test
+    fun `a source confirmed unreachable switches instead of being resolved again`() {
+        assertEquals(PlaybackFailureAction.SWITCH_SOURCE, decide(failure(cutStreamError()), canRefreshLink = true, unreachable = true))
+        // 网断着是断网的事
+        assertEquals(PlaybackFailureAction.WAIT_FOR_NETWORK, decide(failure(cutStreamError()), canRefreshLink = true, networkDown = true, unreachable = true))
+    }
+
+    @Test
+    fun `a player error while handing over belongs to the old source and is ignored`() {
+        assertEquals(PlaybackFailureAction.IGNORE, decide(failure(cutStreamError()), canRefreshLink = true, unreachable = true, handingOver = true))
+        // 新的那条解析、打开失败照常换源
+        assertEquals(
+            PlaybackFailureAction.SWITCH_SOURCE,
+            decide(PlayerLoadError("NoMatchingFile", null, VideoLoadingState.NoMatchingFile), handingOver = true),
+        )
     }
 
     @Test
@@ -282,10 +303,17 @@ class PlaybackFailureRecoveryTest : AbstractPlayerExtensionTest() {
     ) {
         val player: TestMediampPlayer get() = suite.player
         val media get() = TestMediaList[0]
+
+        /** 确认接不上后当场换源的次数 (见 PlaybackFailureRecovery.trackPlayback) */
+        var switchedNow = 0
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    private fun TestScope.createCase(rememberedPositionMillis: Long? = null): Case {
+    private fun TestScope.createCase(
+        rememberedPositionMillis: Long? = null,
+        /** 接不上时能不能自动换 (见 PlaybackFailureRecovery.trackPlayback 的 canSwitch) */
+        canSwitch: Boolean = true,
+    ): Case {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val scope = childScope()
         val suite = EpisodePlayerTestSuite(this, scope)
@@ -305,8 +333,11 @@ class PlaybackFailureRecoveryTest : AbstractPlayerExtensionTest() {
         advanceUntilIdle()
         val network = FakeNetwork(testScheduler.timeSource)
         val recovery = PlaybackFailureRecovery(context, network, testScheduler.timeSource)
-        scope.launch { recovery.trackPlayback(context.sessionFlow.flatMapLatest { it.fetchSelectFlow }) }
-        return Case(scope, suite, state, network, recovery)
+        val case = Case(scope, suite, state, network, recovery)
+        scope.launch {
+            recovery.trackPlayback(context.sessionFlow.flatMapLatest { it.fetchSelectFlow }, canSwitch = { canSwitch }) { case.switchedNow++ }
+        }
+        return case
     }
 
     private suspend fun TestScope.loadAndPlay(case: Case, positionMillis: Long = 315_000L) {
@@ -357,6 +388,123 @@ class PlaybackFailureRecoveryTest : AbstractPlayerExtensionTest() {
         assertEquals(315_000L, case.player.currentPositionMillis.value)
         assertFalse(case.player.state.value.playWhenReady)
         assertEquals(case.media, case.state.mediaSelectorFlow.filterNotNull().first().selected.value)
+        case.scope.cancel()
+    }
+
+    @Test
+    fun `a playing source confirmed unreachable is switched before its buffer runs out and its later error switches too`() = runTest {
+        val case = createCase()
+        loadAndPlay(case)
+        assertEquals(0, case.switchedNow)
+
+        // 数据源断流后接着读、换地址都没读到数据: 等系统的网络状态跟上 (没报断网) 就换
+        assertNotNull(PlaybackLinks.of("https://example.com")).markUnreachable()
+        runCurrent()
+        assertEquals(0, case.switchedNow)
+        advanceTimeBy(2.seconds)
+        runCurrent()
+        assertEquals(1, case.switchedNow)
+
+        // 当场没换成 (没有别的资源) 时, 缓冲放完报的错照常换源, 不原地重载
+        val error = cutStreamError()
+        case.player.injectError(error)
+        runCurrent()
+        assertFalse(case.recovery.recover(failure(error), case.media))
+        case.scope.cancel()
+    }
+
+    @Test
+    fun `a rejected link is resolved again while its buffer plays`() = runTest {
+        val case = createCase()
+        loadAndPlay(case)
+        val opens = case.player.openCallCount
+
+        // 地址过期被拒, 数据源换不了: 不等缓冲放完报错, 当场重新解析这一条 (旧的接着放, 拿到新地址再换下来)
+        assertNotNull(PlaybackLinks.of("https://example.com")).markRejected()
+        advanceUntilIdle()
+        assertEquals(opens + 1, case.player.openCallCount)
+        assertEquals(315_000L, case.player.currentPositionMillis.value)
+        assertTrue(case.player.state.value.playWhenReady)
+        assertEquals(case.media, case.state.mediaSelectorFlow.filterNotNull().first().selected.value)
+        assertEquals(0, case.switchedNow)
+
+        // 刚重新解析过又被拒: 不是过期, 换源
+        assertNotNull(PlaybackLinks.of("https://example.com")).markRejected()
+        advanceUntilIdle()
+        assertEquals(opens + 1, case.player.openCallCount)
+        assertEquals(1, case.switchedNow)
+        case.scope.cancel()
+    }
+
+    @Test
+    fun `a source that is not switched automatically is resolved again in place as before`() = runTest {
+        // 拖入的文件、别处交来的地址、不优先在线源时: 不提前换, 报错时照旧原地重载
+        val case = createCase(canSwitch = false)
+        loadAndPlay(case)
+
+        assertNotNull(PlaybackLinks.of("https://example.com")).markUnreachable()
+        advanceTimeBy(2.seconds)
+        runCurrent()
+        assertEquals(0, case.switchedNow)
+
+        val error = cutStreamError()
+        case.player.injectError(error)
+        runCurrent()
+        assertTrue(case.recovery.recover(failure(error), case.media))
+        case.scope.cancel()
+    }
+
+    @Test
+    fun `a source confirmed unreachable while the network is down waits instead of switching at once`() = runTest {
+        val case = createCase()
+        loadAndPlay(case)
+        case.network.lose()
+
+        assertNotNull(PlaybackLinks.of("https://example.com")).markUnreachable()
+        advanceTimeBy(2.seconds)
+        runCurrent()
+        assertEquals(0, case.switchedNow)
+        case.scope.cancel()
+    }
+
+    @Test
+    fun `a source confirmed unreachable as the network drops is not switched`() = runTest {
+        val case = createCase()
+        loadAndPlay(case)
+
+        // 连不上是因为网断了, 系统一秒后才报
+        val link = assertNotNull(PlaybackLinks.of("https://example.com"))
+        link.markUnreachable()
+        runCurrent()
+        advanceTimeBy(1.seconds)
+        case.network.lose()
+        advanceTimeBy(1.seconds)
+        runCurrent()
+        assertEquals(0, case.switchedNow)
+
+        // 网刚回来时数据源又判一次 (恢复前的那几次失败): 刚断过网, 也不当场换
+        link.markReachable()
+        runCurrent()
+        case.network.restore()
+        link.markUnreachable()
+        advanceTimeBy(2.seconds)
+        runCurrent()
+        assertEquals(0, case.switchedNow)
+        case.scope.cancel()
+    }
+
+    @Test
+    fun `a source that reads again before the network check is not switched`() = runTest {
+        val case = createCase()
+        loadAndPlay(case)
+
+        val link = assertNotNull(PlaybackLinks.of("https://example.com"))
+        link.markUnreachable()
+        runCurrent()
+        link.markReachable()
+        advanceTimeBy(2.seconds)
+        runCurrent()
+        assertEquals(0, case.switchedNow)
         case.scope.cancel()
     }
 

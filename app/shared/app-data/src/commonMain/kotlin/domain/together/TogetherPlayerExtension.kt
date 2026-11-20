@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -112,7 +113,8 @@ class TogetherPlayerExtension(
         // 正在播的片源能交给房间的 (地址与线索, 见 TogetherSourceHints)
         val sharedSource = MutableStateFlow<TogetherSourceHint?>(null)
         backgroundTaskScope.launch("TogetherSharedSource") {
-            sourceHints.shared(episodeSession, context.player, context.videoLoadingStateFlow).collect { sharedSource.value = it }
+            val handingOver = context.playbackHandover?.preparing?.map { it != null } ?: flowOf(false)
+            sourceHints.shared(episodeSession, context.player, context.videoLoadingStateFlow, handingOver).collect { sharedSource.value = it }
         }
         backgroundTaskScope.launch("TogetherSourceHints") {
             sourceHints.follow(episodeSession, manager, context.videoLoadingStateFlow)

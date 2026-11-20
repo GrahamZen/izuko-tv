@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
@@ -80,14 +81,25 @@ internal class TogetherSourceHints(
     private val selection: PlaybackLineageSelection?,
     private val continuation: EpisodeContinuation?,
 ) {
-    /** 这一集正在播的资源能交给房间的; 片源装好之后才有, 没装好或两样都不能交时为 null */
+    /**
+     * 这一集正在播的资源能交给房间的; 片源装好之后才有, 没装好或两样都不能交时为 null.
+     * 后台换源时 ([handingOver], 见 PlaybackHandover) 选中的已经是新的、播放器里还是旧的, 两样凑不成一对: 不变, 换下来之后再按新的算.
+     */
     @OptIn(ExperimentalCoroutinesApi::class)
-    fun shared(episodeSession: EpisodeSession, player: MediampPlayer, loadingStates: Flow<VideoLoadingState>): Flow<TogetherSourceHint?> =
+    fun shared(
+        episodeSession: EpisodeSession,
+        player: MediampPlayer,
+        loadingStates: Flow<VideoLoadingState>,
+        handingOver: Flow<Boolean> = flowOf(false),
+    ): Flow<TogetherSourceHint?> =
         combine(
             episodeSession.fetchSelectFlow.flatMapLatest { it?.mediaSelector?.selected ?: flowOf(null) },
             loadingStates,
             player.mediaData,
         ) { media, loading, data -> if (media != null && data != null && loading is VideoLoadingState.Succeed) media to data else null }
+            .combine(handingOver) { playing, busy -> playing.takeUnless { busy } to busy }
+            .filter { (_, busy) -> !busy }
+            .map { (playing, _) -> playing }
             .distinctUntilChanged()
             .mapLatest { playing -> playing?.let { (media, data) -> hintOf(media, data) } }
 

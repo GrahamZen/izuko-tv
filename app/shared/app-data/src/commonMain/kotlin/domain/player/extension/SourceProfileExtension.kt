@@ -112,6 +112,8 @@ class SourceProfileExtension(
 
                         is Event.Playback -> {
                             val t = tracking ?: return@collect
+                            // 后台换源时播的还是旧的, 记着的已经是新选的那条 (见 PlaybackHandover)
+                            if (context.playbackHandover?.preparing?.value != null) return@collect
                             if (event.state == PlaybackState.PLAYING && t.onPlaying()) {
                                 launch { recordPlaying(t, startupMillis = currentTimeMillis() - t.selectedAt) }
                             }
@@ -138,6 +140,8 @@ class SourceProfileExtension(
                 canRefreshLink = attempt.outcome == true,
                 canReloadDecoder = true,
                 networkDown = network.isNetworkDownFor(error),
+                // 后台换源时播放器报的是旧的那条的错, 选中的 (记的这条) 已经是新的了
+                handingOver = context.playbackHandover?.preparing?.value != null,
             ),
         ) == PlaybackFailureAction.SWITCH_SOURCE
 
