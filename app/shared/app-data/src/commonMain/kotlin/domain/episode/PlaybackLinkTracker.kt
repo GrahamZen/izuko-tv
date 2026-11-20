@@ -10,6 +10,11 @@
 package me.him188.ani.app.domain.episode
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import me.him188.ani.app.domain.media.resolver.EpisodeMetadata
 import me.him188.ani.app.domain.media.resolver.MediaResolver
 import me.him188.ani.app.domain.media.resolver.resolveFreshLink
@@ -22,7 +27,6 @@ import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 import org.openani.mediamp.source.MediaData
 import org.openani.mediamp.source.UriMediaData
-import kotlin.concurrent.Volatile
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -34,8 +38,25 @@ internal class PlaybackLinkTracker(
 ) {
     private class Tracked(val uri: String, val link: RefreshablePlaybackLink)
 
-    @Volatile
-    private var tracked: Tracked? = null
+    private val current = MutableStateFlow<Tracked?>(null)
+
+    /**
+     * 正在播的这一条接不上了: 数据源断流后接着读、换地址都没读到数据 (见 [RefreshablePlaybackLink.unreachable]); 换了资源从 `false` 重新算.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val unreachable: Flow<Boolean> = current.flatMapLatest { it?.link?.unreachable ?: flowOf(false) }
+
+    /** [unreachable] 现在的值 */
+    val isUnreachable: Boolean get() = current.value?.link?.unreachable?.value == true
+
+    /**
+     * 正在播的这一条的地址被服务器拒了, 数据源又换不了 (见 [RefreshablePlaybackLink.rejected]): 要重新解析这条资源; 换了资源从 `false` 重新算.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val rejected: Flow<Boolean> = current.flatMapLatest { it?.link?.rejected ?: flowOf(false) }
+
+    /** [rejected] 现在的值 */
+    val isRejected: Boolean get() = current.value?.link?.rejected?.value == true
 
     /**
      * 开始播 [media]: [resolved] 是解析出来的, [played] 是交给播放器的.
@@ -60,14 +81,14 @@ internal class PlaybackLinkTracker(
             fresh?.let { PlaybackLink(it.uri, it.headers) }
         }
         PlaybackLinks.register(resolved.uri, link)
-        tracked = Tracked(resolved.uri, link)
+        current.value = Tracked(resolved.uri, link)
     }
 
     /** 停止播放: 注销 */
     fun clear() {
-        val current = tracked ?: return
-        tracked = null
-        PlaybackLinks.unregister(current.uri, current.link)
+        val tracked = current.value ?: return
+        current.value = null
+        PlaybackLinks.unregister(tracked.uri, tracked.link)
     }
 
     private companion object {

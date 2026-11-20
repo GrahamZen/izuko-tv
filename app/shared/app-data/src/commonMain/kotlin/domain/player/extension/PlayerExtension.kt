@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.filterIsInstance
 import me.him188.ani.app.domain.episode.EpisodeFetchSelectPlayState
+import me.him188.ani.app.domain.episode.PlaybackHandover
 import me.him188.ani.app.domain.episode.EpisodeSession
 import me.him188.ani.app.domain.episode.UnsafeEpisodeSessionApi
 import me.him188.ani.app.domain.player.VideoLoadingState
@@ -87,6 +88,9 @@ interface PlayerExtensionContext {
     val videoLoadingStateFlow: Flow<VideoLoadingState>
 
     val sessionFlow: Flow<EpisodeSession>
+
+    /** 正在播的确认接不上了时在后台换源 (见 PlayerSession.handover) */
+    val playbackHandover: PlaybackHandover? get() = null
 
     /**
      * A shared event channel for all extensions.

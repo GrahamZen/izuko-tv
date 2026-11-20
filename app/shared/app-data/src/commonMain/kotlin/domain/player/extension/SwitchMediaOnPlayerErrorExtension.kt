@@ -139,7 +139,12 @@ class SwitchMediaOnPlayerErrorExtension(
                             }
 
                             val recovery = PlaybackFailureRecovery(context, network)
-                            launch { recovery.trackPlayback(mediaFetchSessionFlow) }
+                            launch {
+                                recovery.trackPlayback(mediaFetchSessionFlow, canSwitch = { handler.switchesAutomatically(it) }) {
+                                    handler.switchUnreachable(it)
+                                }
+                            }
+                            launch { handler.observeHandoverFailures(mediaFetchSessionFlow) }
 
                             launch {
                                 handler.observeLoadErrorAndHandle(
@@ -269,6 +274,38 @@ class SwitchMediaOnPlayerErrorExtension(
         }
     }
 
+    /**
+     * 正在播的确认接不上了 (见 [PlaybackFailureRecovery.trackPlayback]): 不等缓冲放完报错, 照常换源 (拉黑、选下一条);
+     * 旧的接着放已缓冲的, 新的在后台装好再换下来 (见 PlaybackHandover). 能不能这样换见 [PlayerLoadErrorHandler.switchesAutomatically].
+     */
+    private suspend fun PlayerLoadErrorHandler.switchUnreachable(bundle: MediaFetchSelectBundle) {
+        val media = bundle.mediaSelector.selected.value ?: return
+        handleError(bundle.mediaFetchSession, bundle.mediaSelector, PlayerLoadError("source unreachable (mediaId=${media.mediaId})", null))
+    }
+
+    /**
+     * 后台换源时新的那条在换下来之前就装不成 (解析、打开失败; 旧的还在放, 见 PlaybackHandover.failures): 拉黑它、照常选下一条,
+     * 旧的接着放. 断网时新的当然装不上, 不是它的错: 不拉黑, 旧的接着放, 缓冲放完后按断网处理.
+     */
+    private suspend fun PlayerLoadErrorHandler.observeHandoverFailures(mediaFetchSessionFlow: Flow<MediaFetchSelectBundle?>) {
+        val handover = context.playbackHandover ?: return
+        mediaFetchSessionFlow.collectLatest { bundle ->
+            if (bundle == null) return@collectLatest
+            handover.failures.collect { failure ->
+                if (bundle.mediaSelector.selected.value != failure.media) return@collect
+                if (!PlayerLoadErrorHandler.canRecoverBySwitching(failure.state)) return@collect
+                // 重新解析被拒的那条也会走到这里: 不能自动换的照旧等它报错, 按原来的办法处理
+                if (!switchesAutomatically(failure.media)) return@collect
+                val error = PlayerLoadError(failure.state.toString(), (failure.state as? VideoLoadingState.UnknownError)?.cause, failure.state)
+                if (network.confirmNetworkDownFor(error)) {
+                    logger.info { "${failure.media.mediaId} failed to load while the network is down, not switching further" }
+                    return@collect
+                }
+                handleError(bundle.mediaFetchSession, bundle.mediaSelector, error)
+            }
+        }
+    }
+
     private suspend fun PlayerLoadErrorHandler.observeLoadErrorAndHandle(
         mediaFetchSessionFlow: Flow<MediaFetchSelectBundle?>,
         videoLoadingStateFlow: Flow<VideoLoadingState>,
@@ -366,6 +403,13 @@ internal class PlayerLoadErrorHandler(
 
     /** 本次会话拉黑的资源, 换源时不选 */
     internal val blacklistedMedia: Set<String> get() = blacklistedMediaIds
+
+    /**
+     * [media] 确认接不上时能不能趁缓冲还在播就自动换 (见 [PlaybackFailureRecovery.trackPlayback]). 拖入的文件、别处交来的地址出错时各有办法,
+     * 不优先在线源时报错也不自动换 (见 [handleError]): 这些照旧等它报错, 按原来的办法处理.
+     */
+    suspend fun switchesAutomatically(media: Media): Boolean =
+        !DroppedFileMedia.isDroppedFile(media) && !ExternalLinkMedia.isExternalLink(media) && getPreferKind() == MediaSourceKind.WEB
 
     suspend fun observeMediaSelectorBlacklist(
         mediaSelectorFlow: Flow<MediaSelector>

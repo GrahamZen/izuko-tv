@@ -26,6 +26,7 @@
     <string name="subject_episode_video_loading_waiting_for_network">Network disconnected. Playback resumes when it reconnects</string>
     <string name="subject_episode_video_loading_resolve_deadline">Up to %1$d more seconds</string>
     <string name="subject_episode_video_loading_resolve_deadline_auto_switch">Up to %1$d more seconds, then switching automatically</string>
+    <string name="subject_episode_video_loading_handover">This resource can no longer load. Switching to another one in the background; buffered video keeps playing</string>
     <string name="subject_episode_video_loading_unsupported_audio">This device cannot play the audio format of this video (%1$s). Please switch resources</string>
     <string name="subject_episode_video_loading_unsupported_video">This device cannot play the video format of this video (%1$s). Please switch resources</string>
     <string name="subject_episode_video_loading_cause_http_rejected">Server refused the request (HTTP %1$s)</string>
