@@ -10,6 +10,7 @@
 package me.him188.ani.app.videoplayer.link
 
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import me.him188.ani.app.platform.PlaybackRequestHints
 import kotlinx.coroutines.runBlocking
 import me.him188.ani.utils.coroutines.RejectionRefresh
@@ -72,6 +73,42 @@ class RefreshablePlaybackLink(
     suspend fun rejected(generation: Int): Verdict {
         if (confirmedGeneration < 0 || mismatched) return Verdict.Backoff
         return policy.rejected(generation)
+    }
+
+    /**
+     * 连接断了、从断处接着读也读不到数据时换一次地址 (阻塞调用线程, 给播放器的加载线程用): 什么时候换、什么时候不再换同被拒 ([rejected]).
+     * 换上了返回 `true`, 请求方用新地址再读.
+     */
+    fun refreshAfterCutBlocking(): Boolean = runBlocking { rejected(lease.generation) } == Verdict.Retry
+
+    private val unreachableState = MutableStateFlow(false)
+
+    /**
+     * 这条资源接不上了: 连接断了之后从断处接着读、换地址再读都没读到数据, 跟第一次播就打不开差不多.
+     * 加载方看它趁缓冲还在播提前找别的资源; 之后又读到数据时撤销.
+     */
+    val unreachable: StateFlow<Boolean> get() = unreachableState
+
+    fun markUnreachable() {
+        unreachableState.value = true
+    }
+
+    private val rejectedState = MutableStateFlow(false)
+
+    /**
+     * 这个地址被服务器拒了: 连接断了之后重新请求时服务器说地址不对 (过期被拒、回的不是视频), 这里又换不了地址 (要开网页现抓的源).
+     * 加载方看它趁缓冲还在播重新解析这条资源; 之后又读到数据时撤销.
+     */
+    val rejected: StateFlow<Boolean> get() = rejectedState
+
+    fun markRejected() {
+        rejectedState.value = true
+    }
+
+    /** 又读到数据了: 撤销「接不上」与「被拒」 */
+    fun markReachable() {
+        if (unreachableState.value) unreachableState.value = false
+        if (rejectedState.value) rejectedState.value = false
     }
 
     /** 这个资源一共多长, 第一次从响应里知道时记下; 还不知道时为 -1 */

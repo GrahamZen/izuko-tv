@@ -9,11 +9,13 @@
 
 package me.him188.ani.app.domain.player.extension
 
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.domain.episode.MediaFetchSelectBundle
 import me.him188.ani.app.domain.player.SeekPreviewDecoderFault
@@ -31,6 +33,7 @@ import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 import org.openani.mediamp.MediaStatus
+import org.openani.mediamp.features.Buffering
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
@@ -39,7 +42,10 @@ import kotlin.time.TimeSource
 
 /** 播放失败后怎么办, 由 [decidePlaybackFailure] 决定. */
 internal enum class PlaybackFailureAction {
-    /** 不用管: 不是失败 (加载被取消), 换源也没用 (网页引擎不可用), 或跟这条资源无关 (离开播放页时释放 Surface 超时). */
+    /**
+     * 不用管: 不是失败 (加载被取消), 换源也没用 (网页引擎不可用), 或跟这条资源无关 (离开播放页时释放 Surface 超时、
+     * 在后台换源时旧的缓冲放完报的错).
+     */
     IGNORE,
 
     /** 拖动预览换输出弄坏了解码器: 等它缓过来后原地重载, 不拉黑. */
@@ -65,11 +71,15 @@ internal enum class PlaybackFailureAction {
  * @property canRefreshLink 这条资源播起来过, 而且最近没为它重新取过地址
  * @property canReloadDecoder 这条资源还没因为解码器被抢重载过
  * @property networkDown 系统没网, 或这次失败发生在刚断网的时候 (见 [isNetworkDownFor])
+ * @property unreachable 数据源已经确认这条资源接不上了 (断流后接着读、换地址都没读到数据, 见 PlaybackHandover.unreachable), 并为它在后台换过源
+ * @property handingOver 正在后台换源 (见 PlaybackHandover): 播放器里还是旧的那条, 选中的已经是新的了
  */
 internal class PlaybackFailureFacts(
     val canRefreshLink: Boolean,
     val canReloadDecoder: Boolean,
     val networkDown: Boolean,
+    val unreachable: Boolean = false,
+    val handingOver: Boolean = false,
 )
 
 /**
@@ -78,15 +88,24 @@ internal class PlaybackFailureFacts(
  * 先后有讲究: 等网前面的几种与网络无关.
  */
 internal fun decidePlaybackFailure(error: PlayerLoadError, facts: PlaybackFailureFacts): PlaybackFailureAction = when {
+    // 后台换源时播放器报的错是旧的那条的 (缓冲放完了), 新的已经在装: 不算新的失败, 也不再换一次
+    facts.handingOver && error.state == null -> PlaybackFailureAction.IGNORE
     error.state == VideoLoadingState.WaitingForNetwork -> PlaybackFailureAction.WAIT_FOR_NETWORK
     (error.state as? VideoLoadingState.Failed)?.let { PlayerLoadErrorHandler.canRecoverBySwitching(it) } == false -> PlaybackFailureAction.IGNORE
     error.isPlayerLifecycleError() -> PlaybackFailureAction.IGNORE
     SeekPreviewDecoderFault.isFault(error.cause) -> PlaybackFailureAction.RELOAD_AFTER_SEEK_PREVIEW
     isDecoderPreempted(error.cause) && facts.canReloadDecoder -> PlaybackFailureAction.RELOAD_DECODER
     facts.networkDown -> PlaybackFailureAction.WAIT_FOR_NETWORK
+    // 数据源已经接着读、换地址都试过了, 也已经为它在后台换过源 (没换成, 比如当时没有别的资源): 原地重新加载也接不上, 接着换
+    facts.unreachable -> PlaybackFailureAction.SWITCH_SOURCE
     facts.canRefreshLink && error.cause?.let { it.isLinkRejected() || it.isStreamInterrupted() } == true -> PlaybackFailureAction.REFRESH_LINK
     else -> PlaybackFailureAction.SWITCH_SOURCE
 }
+
+/**
+ * 确认接不上后等缓冲只剩这么多再换源 (见 [PlaybackFailureRecovery.trackPlayback]): 留给找下一条、解析它 (直链即时, 网盘几秒, 要开网页现抓的十秒上下).
+ */
+private val SWITCH_AHEAD = 20.seconds
 
 /** 断网恢复后这么久之内的网络类失败也算断网造成的: 解析、嗅探在断网时开始, 要等到超时才报 (实测恢复后才超时). */
 private val RECENT_LOSS = 20.seconds
@@ -181,6 +200,9 @@ internal class PlaybackFailureRecovery(
     /** 已经为它等过网、重载过的那次断网: 恢复后这条资源再失败就不能再怪断网了. */
     private var handledLoss: TimeMark? = null
 
+    /** 数据源确认接不上、已经为它在后台换过源的那条 (见 [trackUnreachable]) */
+    private var unreachableMediaId: String? = null
+
     private var openMediaId: String? = null
     private var openPositionMillis: Long? = null
     private var openPlayWhenReady = true
@@ -189,18 +211,109 @@ internal class PlaybackFailureRecovery(
      * 记下哪条资源播起来过, 以及它打开着时的进度与播放意图.
      * 要在出错前记: 播放器一进入 [MediaStatus.Error] 就把进度清零、播放意图清成不播, 出错后读到的不算数, 重试途中也一样.
      * 换了查询会话 (如重新搜索) 后选中项跟着换.
+     *
+     * @param canSwitch 这条资源接不上时能不能自动换 (拖入的文件、别处交来的地址、不优先在线源时不换)
+     * @param switchNow 正在播的确认接不上了, 网也通着: 换源 (见 [trackUnreachable])
      */
-    suspend fun trackPlayback(bundles: Flow<MediaFetchSelectBundle?>) {
+    suspend fun trackPlayback(
+        bundles: Flow<MediaFetchSelectBundle?>,
+        canSwitch: suspend (Media) -> Boolean = { false },
+        switchNow: suspend (MediaFetchSelectBundle) -> Unit = {},
+    ) {
         bundles.collectLatest { bundle ->
-            combine(context.player.state, context.player.currentPositionMillis) { state, position -> state to position }.collect { (state, position) ->
-                val mediaId = bundle?.mediaSelector?.selected?.value?.mediaId ?: return@collect
-                if (state.isPlaying) playedMediaId = mediaId
-                if (state.mediaStatus == MediaStatus.Ready) {
-                    if (openMediaId != mediaId) openPositionMillis = null
-                    openMediaId = mediaId
-                    if (position > 0) openPositionMillis = position
-                    openPlayWhenReady = state.playWhenReady
+            coroutineScope {
+                if (bundle != null) {
+                    launch { trackUnreachable(bundle, canSwitch, switchNow) }
+                    launch { trackRejected(bundle, canSwitch, switchNow) }
                 }
+                trackProgress(bundle)
+            }
+        }
+    }
+
+    /**
+     * 数据源说正在播的这条地址被拒了、它又换不了 (要开网页现抓的源暂停很久后地址过期): 不等缓冲放完报错再原地重载, 趁缓冲还在播就重新解析它
+     * (同原地重载, 只是旧的接着放, 拿到新地址再换下来, 见 PlaybackHandover). 规矩同 [PlaybackFailureAction.REFRESH_LINK]:
+     * [LINK_REFRESH_INTERVAL] 内重新取过地址又被拒说明不是过期, 能自动换的趁缓冲还在播换源, 不能的照旧等它报错.
+     */
+    private suspend fun trackRejected(
+        bundle: MediaFetchSelectBundle,
+        canSwitch: suspend (Media) -> Boolean,
+        switchNow: suspend (MediaFetchSelectBundle) -> Unit,
+    ) {
+        val rejectedFlow = context.playbackHandover?.rejected ?: return
+        rejectedFlow.collectLatest { rejected ->
+            if (!rejected) return@collectLatest
+            val selected = bundle.mediaSelector.selected.value ?: return@collectLatest
+            if (selected.mediaId != playedMediaId) return@collectLatest
+            val lastRefresh = lastLinkRefresh?.takeIf { it.mediaId == selected.mediaId }
+            if (lastRefresh != null && lastRefresh.at.elapsedNow() < LINK_REFRESH_INTERVAL) {
+                if (!canSwitch(selected)) return@collectLatest
+                unreachableMediaId = selected.mediaId
+                logger.info { "Link of ${selected.mediaId} was rejected again soon after resolving it, switching while its buffer plays" }
+                switchNow(bundle)
+                return@collectLatest
+            }
+            lastLinkRefresh = LinkRefresh(selected.mediaId, timeSource.markNow())
+            logger.info { "Link of ${selected.mediaId} was rejected, resolving it again while its buffer plays" }
+            reload(selected)
+        }
+    }
+
+    /**
+     * 数据源确认正在播的这条接不上了 (断流后接着读、换地址都没读到数据, 跟第一次播就打不开差不多): 不等缓冲放完报错, 趁缓冲还在播就换源
+     * ([switchNow]): 旧的接着放已缓冲的, 新的在后台装好再换下来 (见 PlaybackHandover). 换过的这条之后报错直接换源, 不再原地重载.
+     *
+     * 不马上换, 等缓冲只剩 [SWITCH_AHEAD] 再换: 外网断了一会儿而系统没报 (路由器连着、上游在重拨) 时数据源也会判成接不上,
+     * 这期间播放器自己一直在重试, 网回来就接着读、数据源撤销「接不上」, 这里跟着作罢. 剩的这些留给找下一条、解析它.
+     * 网断着或刚断过 ([RECENT_LOSS] 内) 时是断网的事, 不换 (等网那条路管); 断网刚开始时系统要过一会儿才报 ([SYSTEM_REPORT_LAG]), 等它跟上再看.
+     * 不能自动换的 ([canSwitch]) 照旧等它报错, 按原来的办法处理 (原地重载).
+     */
+    private suspend fun trackUnreachable(
+        bundle: MediaFetchSelectBundle,
+        canSwitch: suspend (Media) -> Boolean,
+        switchNow: suspend (MediaFetchSelectBundle) -> Unit,
+    ) {
+        val unreachableFlow = context.playbackHandover?.unreachable ?: return
+        unreachableFlow.collectLatest { unreachable ->
+            val selected = bundle.mediaSelector.selected.value
+            if (!unreachable) {
+                unreachableMediaId = null
+                return@collectLatest
+            }
+            if (selected == null || selected.mediaId != playedMediaId || !canSwitch(selected)) return@collectLatest
+            awaitBufferRunningLow()
+            delay(SYSTEM_REPORT_LAG)
+            val lostRecently = network.lastLostAt?.let { it.elapsedNow() <= RECENT_LOSS } == true
+            if (!network.isAvailable.value || lostRecently) {
+                logger.info { "Playing source ${selected.mediaId} is unreachable while the network is down or just came back, not switching now" }
+                return@collectLatest
+            }
+            if (bundle.mediaSelector.selected.value != selected) return@collectLatest
+            unreachableMediaId = selected.mediaId
+            logger.info { "Playing source ${selected.mediaId} is unreachable, switching while its buffer plays" }
+            switchNow(bundle)
+        }
+    }
+
+    /** 等到往前的缓冲只剩 [SWITCH_AHEAD]; 播放器不报缓冲位置时不等 */
+    private suspend fun awaitBufferRunningLow() {
+        val buffered = context.player.features[Buffering]?.bufferedPositionMillis ?: return
+        combine(buffered, context.player.currentPositionMillis) { end, position -> end - position }
+            .first { it <= SWITCH_AHEAD.inWholeMilliseconds }
+    }
+
+    private suspend fun trackProgress(bundle: MediaFetchSelectBundle?) {
+        combine(context.player.state, context.player.currentPositionMillis) { state, position -> state to position }.collect { (state, position) ->
+            // 后台换源时播放器里还是旧的那条, 选中的已经是新的: 旧的在播不算新的播起来过, 进度也不是新的
+            if (context.playbackHandover?.preparing?.value != null) return@collect
+            val mediaId = bundle?.mediaSelector?.selected?.value?.mediaId ?: return@collect
+            if (state.isPlaying) playedMediaId = mediaId
+            if (state.mediaStatus == MediaStatus.Ready) {
+                if (openMediaId != mediaId) openPositionMillis = null
+                openMediaId = mediaId
+                if (position > 0) openPositionMillis = position
+                openPlayWhenReady = state.playWhenReady
             }
         }
     }
@@ -218,11 +331,14 @@ internal class PlaybackFailureRecovery(
             canRefreshLink = hasPlayed && (lastRefresh == null || lastRefresh.at.elapsedNow() >= LINK_REFRESH_INTERVAL),
             canReloadDecoder = media != null && media.mediaId != decoderReloadedMediaId,
             networkDown = isNetworkDown(error),
+            unreachable = media != null && media.mediaId == unreachableMediaId,
+            handingOver = context.playbackHandover?.preparing?.value != null,
         )
         val action = decidePlaybackFailure(error, facts)
         logger.info {
             "Player errored (${error.description}): $action, media=${media?.mediaId}, hasPlayed=$hasPlayed, " +
-                "networkDown=${facts.networkDown}, networkAvailable=${network.isAvailable.value}"
+                "networkDown=${facts.networkDown}, unreachable=${facts.unreachable}, handingOver=${facts.handingOver}, " +
+                "networkAvailable=${network.isAvailable.value}"
         }
         return when (action) {
             PlaybackFailureAction.IGNORE -> true

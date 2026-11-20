@@ -390,7 +390,11 @@ class EpisodeFetchSelectPlayState(
                                 PlayTimeline.mark("t_before_load")
                                 val startPositionMillis = extensionManager.startPositionMillis(episodeInfo.episodeId) ?: 0L
                                 PlayTimeline.mark("t_start_pos")
-                                playerSession.loadMedia(media, episodeInfo.toEpisodeMetadata(), startPositionMillis)
+                                playerSession.loadMedia(
+                                    media, episodeInfo.toEpisodeMetadata(), startPositionMillis,
+                                    // 在后台换源时旧的接着放, 换下来那一刻再问一次
+                                    positionAtHandover = { extensionManager.startPositionMillis(episodeInfo.episodeId) },
+                                )
                                 onMediaLoaded(episodeInfo.episodeId)
                             }
 
@@ -404,7 +408,11 @@ class EpisodeFetchSelectPlayState(
                                 }
                                 // 先让记忆进度的扩展知道这次要回到哪里, 再装: 从这个位置打开, 开播时它据此确认已经回到这里
                                 onReloadMedia(episodeInfo.episodeId, positionMillis)
-                                playerSession.loadMedia(media, episodeInfo.toEpisodeMetadata(), positionMillis, request.playWhenReady)
+                                playerSession.loadMedia(
+                                    media, episodeInfo.toEpisodeMetadata(), positionMillis, request.playWhenReady,
+                                    // 地址被拒时在后台重新解析, 旧的接着放 (见 PlaybackHandover), 换下来那一刻再问一次
+                                    positionAtHandover = { extensionManager.startPositionMillis(episodeInfo.episodeId) },
+                                )
                             }
                         }
                     }

@@ -71,6 +71,45 @@ class RefreshablePlaybackLinkTest {
     }
 
     @Test
+    fun `a stream cut after the link worked gets a fresh link once`() {
+        val link = link { fresh(2) }
+        link.read()
+        assertTrue(link.refreshAfterCutBlocking())
+        assertEquals("https://dl.test/v?key=2", link.lease.link.uri)
+        // 刚换过: 冷却期里不再换
+        assertFalse(link.refreshAfterCutBlocking())
+        assertEquals(1, refreshes)
+    }
+
+    @Test
+    fun `a stream cut before the link ever worked does not refresh it`() {
+        val link = link { fresh(2) }
+        assertFalse(link.refreshAfterCutBlocking())
+        assertEquals(0, refreshes)
+    }
+
+    @Test
+    fun `the unreachable mark is set and cleared`() {
+        val link = link { fresh(2) }
+        assertFalse(link.unreachable.value)
+        link.markUnreachable()
+        assertTrue(link.unreachable.value)
+        link.markReachable()
+        assertFalse(link.unreachable.value)
+    }
+
+    @Test
+    fun `the rejected mark is set and cleared by reading again`() {
+        val link = link { fresh(2) }
+        assertFalse(link.rejected.value)
+        link.markRejected()
+        assertTrue(link.rejected.value)
+        assertFalse(link.unreachable.value)
+        link.markReachable()
+        assertFalse(link.rejected.value)
+    }
+
+    @Test
     fun `other failures are not taken as a rejected link`() {
         val link = link { fresh(2) }
         link.read()
