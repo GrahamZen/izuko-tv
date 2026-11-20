@@ -861,7 +861,7 @@
     <string name="tv_source_manual_pick_failed">Could not load this episode</string>
     <string name="tv_source_detail_pick">Select</string>
     <string name="tv_source_detail_open">Open</string>
-    <string name="tv_source_detail_nav_hint">Left / Right: previous / next</string>
+    <string name="tv_source_detail_nav_hint">Up / Down: previous / next</string>
     <string name="tv_source_detail_status">Status</string>
     <string name="tv_source_detail_lines">Lines</string>
     <string name="tv_source_detail_source">Source</string>
