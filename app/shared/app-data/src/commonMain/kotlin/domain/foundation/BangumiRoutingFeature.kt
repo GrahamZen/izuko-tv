@@ -24,6 +24,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.URLBuilder
 import io.ktor.http.contentType
+import io.ktor.http.encodedPath
 import io.ktor.http.takeFrom
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.flow.Flow
@@ -38,6 +39,8 @@ import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
+import kotlin.time.Duration
+import kotlin.time.TimeSource
 
 /**
  * 把发往 bangumi 的请求按 [BangumiRouting] 依次发到各条线路上 (官方、自建、加密直连、镜像…), 前一条不通用下一条.
@@ -77,6 +80,8 @@ class BangumiRoutingFeatureHandler(
      */
     private val recover: suspend (route: BangumiRoute, cause: Throwable) -> Boolean = { _, _ -> false },
     private val clock: Clock = Clock.System,
+    /** 记下每个请求在各条线路上的成败 (网络体检用); `null` = 不记. */
+    private val stats: BangumiRouteStats? = null,
 ) : ScopedHttpClientFeatureHandler<Boolean>(BangumiRoutingFeature) {
     private val logger = logger<BangumiRoutingFeatureHandler>()
 
@@ -137,7 +142,16 @@ class BangumiRoutingFeatureHandler(
         // 数据里存着的线路地址 (见 BangumiRouting.knownRoutes) 先换回原站, 下面统一按路由走
         val originalHost = routing.originHostOf(request.url.host) ?: return null
         request.url.host = originalHost
+        val trackId = stats?.requestStarted(originalHost)
+        try {
+            return send(request, routing, originalHost)
+        } finally {
+            trackId?.let { stats?.requestFinished(it) }
+        }
+    }
 
+    /** 按 [routing] 依次试各条线路. */
+    private suspend fun Sender.send(request: HttpRequestBuilder, routing: BangumiRouting, originalHost: String): HttpClientCall {
         val candidates = routing.routes.filter { routing.accepts(it, request, originalHost) }
         if (candidates.isEmpty()) {
             if (isOAuth(request)) {
@@ -145,9 +159,9 @@ class BangumiRoutingFeatureHandler(
             } else {
                 logger.debug { "Bangumi request to $originalHost carries credentials, keeping it on the origin" }
             }
-            return null
+            return executeOnOrigin(request, originalHost)
         }
-        if (candidates == listOf(BangumiRoute.Origin)) return null
+        if (candidates == listOf(BangumiRoute.Origin)) return executeOnOrigin(request, originalHost)
 
         val signature = routing.hashCode()
         // 还有效的粘性, 见 Sticky 的文档
@@ -161,6 +175,8 @@ class BangumiRoutingFeatureHandler(
         var timeoutsChanged = false
 
         var lastCall: HttpClientCall? = null
+        /** 最后一条线路为什么连不上, 全都不通时作为抛出的异常的原因 (请求日志里会带上根因). */
+        var lastFailure: Throwable? = null
         var answeredWithWebPage = false
         var originConnectFailed = false
         var recovered = false
@@ -195,6 +211,7 @@ class BangumiRoutingFeatureHandler(
                 timeoutsChanged = false
             }
 
+            val attemptStarted = TimeSource.Monotonic.markNow()
             val thisCall = try {
                 execute(request)
             } catch (e: CancellationException) {
@@ -202,10 +219,14 @@ class BangumiRoutingFeatureHandler(
             } catch (e: ClientRequestException) {
                 // 4xx 是服务端在回答, 换条线路也是同一个答案
                 throw e
-            } catch (_: ResponseException) {
+            } catch (e: ResponseException) {
+                lastFailure = e
+                routeFailed(route, originalHost, request, attemptStarted.elapsedNow(), e)
                 i++
                 continue
             } catch (e: IOException) {
+                lastFailure = e
+                routeFailed(route, originalHost, request, attemptStarted.elapsedNow(), e)
                 if (route == BangumiRoute.Origin) originConnectFailed = true
                 if (!recovered && recover(route, e)) {
                     recovered = true
@@ -229,11 +250,13 @@ class BangumiRoutingFeatureHandler(
                 thisCall.response.contentType()?.match(ContentType.Text.Html) == true
             ) {
                 logger.info { "Bangumi: ${route.label} answered an API request with a web page, trying the next route" }
+                stats?.routeFailed(route, originalHost, request.url.encodedPath, attemptStarted.elapsedNow().inWholeMilliseconds, "answered an API request with a web page")
                 answeredWithWebPage = true
                 i++
                 continue
             }
             lastCall = thisCall
+            recordAnswer(route, originalHost, request, attemptStarted.elapsedNow(), status)
             if (status < 400) {
                 if (sticky.value?.let { it.signature == signature && it.route == route } != true) {
                     logger.info { "Bangumi endpoint settled on ${route.label}" }
@@ -264,11 +287,51 @@ class BangumiRoutingFeatureHandler(
             i++
         }
         // 全都不通: 把最后一次真正的失败 (5xx) 交出去, 让上层看到真实的错误; 只有连不上与回网页的, 当成连不上
-        return lastCall ?: throw IOException(
+        if (lastCall != null) return lastCall
+        stats?.allRoutesFailed(originalHost, request.url.encodedPath, candidates, lastFailure?.summarizeForLog())
+        throw IOException(
             "All bangumi endpoints failed for $originalHost" +
                 (if (answeredWithWebPage) " (some answered with a web page)" else "") +
                 ". Tried: " + candidates.joinToString { it.label },
+            lastFailure,
         )
+    }
+
+    /** 不分线路照常发到官方 (只开着官方, 或这个请求只能走官方), 成败记给 [stats]. */
+    private suspend fun Sender.executeOnOrigin(request: HttpRequestBuilder, originalHost: String): HttpClientCall {
+        val started = TimeSource.Monotonic.markNow()
+        val call = try {
+            execute(request)
+        } catch (e: IOException) {
+            stats?.let { stats ->
+                val cause = e.summarizeForLog()
+                stats.routeFailed(BangumiRoute.Origin, originalHost, request.url.encodedPath, started.elapsedNow().inWholeMilliseconds, cause)
+                stats.allRoutesFailed(originalHost, request.url.encodedPath, listOf(BangumiRoute.Origin), cause)
+            }
+            throw e
+        }
+        recordAnswer(BangumiRoute.Origin, originalHost, request, started.elapsedNow(), call.response.status.value)
+        return call
+    }
+
+    /** 线路回了 HTTP 响应: 5xx 算这条线路这次失败, 其余 (含 4xx, 那是对方在回答) 算通. */
+    private fun recordAnswer(route: BangumiRoute, originalHost: String, request: HttpRequestBuilder, elapsed: Duration, status: Int) {
+        val stats = stats ?: return
+        if (status >= 500) {
+            stats.routeFailed(route, originalHost, request.url.encodedPath, elapsed.inWholeMilliseconds, "HTTP $status")
+        } else {
+            stats.routeSucceeded(route)
+        }
+    }
+
+    /**
+     * 每条线路连不上都记一行: 哪条、等了多久、什么原因. 全都不通时请求日志只看得到最后一条的原因,
+     * 前面的 (比如官方连接超时之后加密直连握手失败) 靠这里分辨.
+     */
+    private fun routeFailed(route: BangumiRoute, originalHost: String, request: HttpRequestBuilder, elapsed: Duration, cause: Throwable) {
+        val summary = cause.summarizeForLog()
+        logger.info { "Bangumi: ${route.label} failed for $originalHost after ${elapsed.inWholeMilliseconds}ms: $summary" }
+        stats?.routeFailed(route, originalHost, request.url.encodedPath, elapsed.inWholeMilliseconds, summary)
     }
 
     /** 只回 JSON 的 API 子域 (不含主站与图床). */

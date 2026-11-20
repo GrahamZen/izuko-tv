@@ -15,6 +15,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import me.him188.ani.app.ui.diagnostics.TvNetworkDiagnostics
 import me.him188.ani.app.ui.diagnostics.TvPerfDiagnostics
 
 /**
@@ -23,7 +24,7 @@ import me.him188.ani.app.ui.diagnostics.TvPerfDiagnostics
  */
 internal class FeedbackPerfReport(
     val id: String,
-    /** `health` = 设备体检, 其余 = 录制. */
+    /** `health` = 设备体检, `network` / `netauto` = 网络体检 (手动 / 自动), 其余 = 录制. */
     val kind: String,
     val seconds: Int,
     /** 录制时停在哪个页面 (导航栈顶). */
@@ -39,7 +40,12 @@ internal class FeedbackPerfReport(
 
     /** issue 里「性能报告」那张表的一行: 键给维护者看 (中文), 值是结论. */
     val row: Pair<String, String>
-        get() = (if (health) "设备体检 $time" else "录制 $seconds 秒 · ${page ?: "?"} · $time") to (headline ?: "没有发现问题")
+        get() = when (kind) {
+            "health" -> "设备体检 $time"
+            TvNetworkDiagnostics.KIND -> "网络体检 $time"
+            TvNetworkDiagnostics.AUTO_KIND -> "自动网络体检 $time"
+            else -> "录制 $seconds 秒 · ${page ?: "?"} · $time"
+        } to (headline ?: "没有发现问题")
 
     companion object {
         /** 读编号为 [id] 的报告; 不在了或读不出来为 `null`. */
