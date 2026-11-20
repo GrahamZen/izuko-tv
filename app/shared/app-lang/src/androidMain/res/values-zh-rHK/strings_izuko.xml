@@ -1264,4 +1264,13 @@
     <string name="tv_notice_section_new">新通知</string>
     <string name="tv_notice_section_earlier">之前的</string>
     <string name="tv_notice_qr_hint">手機掃碼查看</string>
+    <string name="tv_rail_back">返回</string>
+    <string name="pad_subject_details_more_tags">更多標籤</string>
+    <string name="pad_subject_details_all_episodes">全部選集</string>
+    <string name="subject_details_tv_title_logo_submitting_touch">正在提交…</string>
+    <string name="collection_tv_tab_order_hint_touch">點一個標籤拿起來</string>
+    <string name="collection_tv_tab_order_hint_grabbed_touch">點要放的位置  ·  再點它一下放下</string>
+    <string name="tv_wall_scale_hint_drag">點或上下拖動滑桿調整大小</string>
+    <string name="tv_adjust_done">完成</string>
+    <string name="tv_remote_address_copied">已複製 Web 控制台網址</string>
 </resources>

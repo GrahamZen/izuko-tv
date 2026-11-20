@@ -1312,4 +1312,13 @@
     <string name="tv_notice_section_new">New</string>
     <string name="tv_notice_section_earlier">Earlier</string>
     <string name="tv_notice_qr_hint">Scan to view on your phone</string>
+    <string name="tv_rail_back">Back</string>
+    <string name="pad_subject_details_more_tags">More tags</string>
+    <string name="pad_subject_details_all_episodes">All episodes</string>
+    <string name="subject_details_tv_title_logo_submitting_touch">Submitting…</string>
+    <string name="collection_tv_tab_order_hint_touch">Tap a tab to pick it up</string>
+    <string name="collection_tv_tab_order_hint_grabbed_touch">Tap where it should go  ·  Tap it again to put it down</string>
+    <string name="tv_wall_scale_hint_drag">Tap or drag the slider to change the size</string>
+    <string name="tv_adjust_done">Done</string>
+    <string name="tv_remote_address_copied">Web console address copied</string>
 </resources>

@@ -169,7 +169,8 @@ internal object TvNativeFocusCues {
         if (page === spotlightPage) return
         if (!page.isAttachedToWindow || !page.hasWindowFocus()) return
         val focused = page.findFocus() as? TvNativeCardView ?: return
-        if (!focused.isFocused) return
+        // 按触屏的规矩走时卡片墙上不画聚焦 (见 TvNativeCardView.touchLookHidden), 也不压暗
+        if (!focused.isFocused || focused.touchLookHidden) return
         dimAround(page, focused, animated = true, inMillis = IDLE_IN_MILLIS)
     }
 

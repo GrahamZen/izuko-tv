@@ -1312,4 +1312,13 @@
     <string name="tv_notice_section_new">新通知</string>
     <string name="tv_notice_section_earlier">之前的</string>
     <string name="tv_notice_qr_hint">手机扫码查看</string>
+    <string name="tv_rail_back">返回</string>
+    <string name="pad_subject_details_more_tags">更多标签</string>
+    <string name="pad_subject_details_all_episodes">全部选集</string>
+    <string name="subject_details_tv_title_logo_submitting_touch">正在提交…</string>
+    <string name="collection_tv_tab_order_hint_touch">点一个标签拿起来</string>
+    <string name="collection_tv_tab_order_hint_grabbed_touch">点要放的位置  ·  再点它一下放下</string>
+    <string name="tv_wall_scale_hint_drag">点或上下拖动滑块调整大小</string>
+    <string name="tv_adjust_done">完成</string>
+    <string name="tv_remote_address_copied">已复制 Web 控制台地址</string>
 </resources>
