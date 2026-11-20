@@ -116,7 +116,7 @@ class TvSourcePanelState(
     private val nav = MutableStateFlow(TvSourceNav(railKey = initialRailKey, sourceKey = initialSourceKey))
     private val strings = MutableStateFlow(initialStrings)
 
-    /** 开着的详情弹窗是哪一行的 (见 TvSourceDetailsDialog); null = 没开. 弹窗里左右键换行就是改它. */
+    /** 开着的详情弹窗是哪一行的 (见 TvSourceDetailsDialog); null = 没开. 弹窗里上下键换行就是改它. */
     val detailsTarget: MutableStateFlow<TvSourceAction.ShowDetails?> = MutableStateFlow(null)
 
     /** 筛选弹窗开着 (表头的「筛选」, 见 TvSourceFilterDialog). */
@@ -183,7 +183,7 @@ class TvSourcePanelState(
     /** 拼好的面板内容; null = 还没拼出第一份 (文案或上游状态未到). */
     val content: StateFlow<TvSourcePanelContent?> = built.map { it?.first }.stateIn(scope, SharingStarted.Eagerly, null)
 
-    /** 详情弹窗左右键走的那一串 (见 [buildTvSourceDetailsSequence]); null = 弹窗没开或还没拼好. 与 [content] 同一次拼出. */
+    /** 详情弹窗上下键走的那一串 (见 [buildTvSourceDetailsSequence]); null = 弹窗没开或还没拼好. 与 [content] 同一次拼出. */
     val detailsSequence: StateFlow<TvSourceDetailsSequence?> =
         built.map { it?.second }.stateIn(scope, SharingStarted.Eagerly, null)
 
