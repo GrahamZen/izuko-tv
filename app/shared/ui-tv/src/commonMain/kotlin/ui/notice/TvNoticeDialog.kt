@@ -274,13 +274,17 @@ private fun noticeTimeText(atMillis: Long, nowMillis: Long): String {
     }
 }
 
+/** 年、月、日与月份的英文缩写 (英文的格式写「Nov 20, 2026」用第 4 个参数, 中文的用前 3 个). */
 @Composable
 private fun dateText(date: LocalDate, sameYear: Boolean): String {
     val y = date.year.toString()
     val m = date.month.number.toString()
     val d = date.day.toString()
-    return if (sameYear) stringResource(Lang.notification_time_month_day, y, m, d) else stringResource(Lang.notification_time_date, y, m, d)
+    val month = MONTH_ABBREVIATIONS[date.month.number - 1]
+    return if (sameYear) stringResource(Lang.notification_time_month_day, y, m, d, month) else stringResource(Lang.notification_time_date, y, m, d, month)
 }
+
+private val MONTH_ABBREVIATIONS = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
 private const val MINUTE = 60_000L
 private const val HOUR = 3_600_000L
