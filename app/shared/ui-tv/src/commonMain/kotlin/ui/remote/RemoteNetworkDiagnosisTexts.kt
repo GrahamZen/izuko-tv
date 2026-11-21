@@ -62,4 +62,9 @@ internal fun networkDiagnosisTexts() = listOf(
     RemoteText("最近 10 分钟成功 {0} 次、失败 {1} 次", "Last 10 min: {0} succeeded, {1} failed", "最近 10 分鐘成功 {0} 次、失敗 {1} 次", "最近 10 分鐘成功 {0} 次、失敗 {1} 次"),
     RemoteText("{0} 秒前", "{0} s ago", "{0} 秒前", "{0} 秒前"),
     RemoteText("应用里的 Bangumi 请求", "Bangumi requests in the app", "應用裡的 Bangumi 請求", "應用裡的 Bangumi 請求"),
+    RemoteText("加密直连的各个地址", "Encrypted direct addresses, one by one", "加密直連的各個地址", "加密直連的各個位址"),
+    RemoteText("清单", "Lists", "清單", "清單"),
+    RemoteText("安装包里自带的", "bundled with the app", "安裝包裡自帶的", "安裝包裡自帶的"),
+    RemoteText("{0} 分钟前拉到的", "fetched {0} min ago", "{0} 分鐘前拉到的", "{0} 分鐘前拉到的"),
+    RemoteText("这次没拉到新的", "could not fetch a new copy this time", "這次沒拉到新的", "這次沒拉到新的"),
 )

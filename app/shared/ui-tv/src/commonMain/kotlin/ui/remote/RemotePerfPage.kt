@@ -117,6 +117,19 @@ internal val PERF_SCRIPT = """
       h += '<div class="set-title">' + esc(route(rt.route)) + (rt.enabled ? '' : esc(T('（设置里没开）'))) + '</div>' +
         kv((cf.length ? [[T('Cloudflare'), cf.join(' · ')]] : []).concat((rt.requests || []).map(function (p) { return [L[p.name] || p.name, probeText(p)]; })));
     });
+    // 加密直连清单里的地址逐个握手 (清单顺序, 排第一的先试)
+    if ((n.echAddressChecks || []).length) {
+      h += '<div class="set-title">' + T('加密直连的各个地址') + '</div>' + kv(n.echAddressChecks.map(function (c) {
+        return [c.address, probeText(c.probe) + (c.sni ? ' · sni=' + c.sni : '')];
+      }));
+    }
+    // 体检开始时把仓库里的清单都拉了一遍: 拉没拉到、几条、用的是哪份
+    if ((n.lists || []).length) {
+      h += '<div class="set-title">' + T('清单') + '</div>' + kv(n.lists.map(function (l) {
+        var where = l.bundled ? T('安装包里自带的') : l.updatedAgoSeconds != null ? T('{0} 分钟前拉到的', Math.round(l.updatedAgoSeconds / 60)) : '';
+        return [l.file, T('{0} 条', l.entries) + (where ? ' · ' + where : '') + (l.refreshed ? '' : ' · ' + T('这次没拉到新的'))];
+      }));
+    }
     var bad = {};
     (r.suspiciousDns || []).forEach(function (x) { bad[x] = true; });
     h += '<div class="set-title">' + T('域名解析') + '</div>' + kv((n.dns || []).map(function (d) {
