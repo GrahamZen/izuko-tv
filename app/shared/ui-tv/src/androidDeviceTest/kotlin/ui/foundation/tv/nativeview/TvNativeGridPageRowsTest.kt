@@ -19,6 +19,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
 import android.widget.FrameLayout
+import androidx.compose.ui.geometry.Rect as ComposeRect
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlin.test.AfterTest
@@ -77,7 +78,7 @@ class TvNativeGridPageRowsTest {
             cardClicks += rowKey to index
         }
 
-        override fun onCardLongPress(rowKey: String, index: Int, anchor: Rect) = Unit
+        override fun onCardLongPress(rowKey: String, index: Int, anchor: ComposeRect) = Unit
         override fun onBindCard(rowKey: String, index: Int) = Unit
         override fun onExitLeft() = Unit
         override fun onHeroActiveChanged(active: Boolean) = Unit

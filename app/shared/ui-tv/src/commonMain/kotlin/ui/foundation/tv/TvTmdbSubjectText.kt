@@ -17,6 +17,8 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.text.intl.Locale
+import kotlinx.atomicfu.locks.SynchronizedObject
+import kotlinx.atomicfu.locks.synchronized
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -56,9 +58,10 @@ object TvTmdbSubjectTexts {
     /** subjectId -> 文字. 语言不是当前界面语言的条目当没有. */
     val texts: SnapshotStateMap<Int, TmdbSubjectText> = mutableStateMapOf()
     private val order = ArrayDeque<Int>()
+    private val orderLock = SynchronizedObject()
 
     internal fun put(subjectId: Int, text: TmdbSubjectText) {
-        synchronized(order) {
+        synchronized(orderLock) {
             if (subjectId !in texts) {
                 order.addLast(subjectId)
                 if (order.size > MAX_ENTRIES) {
@@ -75,9 +78,10 @@ object TvTmdbSubjectTexts {
      */
     val settled: SnapshotStateMap<Int, String> = mutableStateMapOf()
     private val settledOrder = ArrayDeque<Int>()
+    private val settledLock = SynchronizedObject()
 
     internal fun settle(subjectId: Int, language: String) {
-        synchronized(settledOrder) {
+        synchronized(settledLock) {
             if (subjectId !in settled) {
                 settledOrder.addLast(subjectId)
                 if (settledOrder.size > MAX_ENTRIES) {

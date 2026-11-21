@@ -40,7 +40,6 @@ import me.him188.ani.app.ui.lang.tv_notice_banner_hint_quick_more
 import me.him188.ani.app.ui.onboarding.TvOnboardingLogin
 import me.him188.ani.app.ui.profile.TvUserProfilePicker
 import me.him188.ani.app.ui.remote.TvRemoteControl
-import me.him188.ani.app.ui.whatsnew.TvWhatsNew
 import org.jetbrains.compose.resources.stringResource
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
@@ -305,7 +304,7 @@ private fun openBubbleItems(items: List<TvShownNotice>) {
 
 private fun nothingCovering(): Boolean =
     TvOnboardingLogin.request.value == null && !TvUserProfilePicker.visible.value &&
-            TvWhatsNew.launchContent.value == null && !TvRemoteControl.dialogVisible.value
+            !tvPlatformLayerCovering() && !TvRemoteControl.dialogVisible.value
 
 private val POLL_INTERVAL = 300.milliseconds
 

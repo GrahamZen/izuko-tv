@@ -98,8 +98,7 @@ object TvNotices {
     /** 种类表: 加一种通知在这里登记一行. */
     private val kinds: List<TvNoticeKind> = listOf(
         TvFeedbackNotice,
-        TvPendingCollectionsNotice,
-        TvReleaseNotice,
+        *tvPlatformNoticeKinds.toTypedArray(),
         TvUpdateNotice,
     )
 

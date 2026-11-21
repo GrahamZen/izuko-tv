@@ -64,6 +64,7 @@ import me.him188.ani.app.ui.lang.tv_remote_qr_ip_changed_hint
 import me.him188.ani.app.ui.lang.tv_remote_qr_waiting
 import me.him188.ani.app.ui.lang.tv_remote_qr_troubleshoot
 import me.him188.ani.app.ui.lang.tv_remote_qr_troubleshoot_vpn
+import me.him188.ani.utils.coroutines.IO_
 import org.jetbrains.compose.resources.stringResource
 
 /** TV 根组合里调一次: 启动时 [TvRemoteControl.showDialogOnLaunch] 之后在这里画弹窗. */
@@ -293,7 +294,7 @@ internal fun RemoteQrCode(url: String?, size: Dp, quietZone: Dp, openOnTap: Bool
 internal fun RemoteTroubleshootHint(style: TextStyle, textAlign: TextAlign? = null) {
     val vpn by produceState(false) {
         while (true) {
-            value = withContext(Dispatchers.IO) { TvRemoteControl.tvVpnActive() }
+            value = withContext(Dispatchers.IO_) { TvRemoteControl.tvVpnActive() }
             delay(3.seconds)
         }
     }

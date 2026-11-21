@@ -49,5 +49,4 @@ internal interface TvScheduleDateRow {
 
 /** 日期行 (见 [TvScheduleDateRow]). [selection] = 选中的那天, [focus] = 页面的焦点域 (Compose 那份按它送焦). */
 @Composable
-internal fun rememberTvScheduleDateRow(selection: TvRailWallSelection<Int>, focus: TvFocusScope): TvScheduleDateRow =
-    rememberTvScheduleNativeDateRow(selection)
+internal expect fun rememberTvScheduleDateRow(selection: TvRailWallSelection<Int>, focus: TvFocusScope): TvScheduleDateRow

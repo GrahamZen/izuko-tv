@@ -11,12 +11,12 @@ package me.him188.ani.app.ui.foundation.tv.nativeview
 
 import android.animation.ValueAnimator
 import android.content.Context
-import android.graphics.Rect
 import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.View
 import android.view.View.MeasureSpec
 import android.widget.FrameLayout
+import androidx.compose.ui.geometry.Rect
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlin.math.abs

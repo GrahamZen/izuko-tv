@@ -9,12 +9,6 @@
 
 package me.him188.ani.app.ui.notice
 
-import android.annotation.SuppressLint
-import android.content.Context
-import android.graphics.Outline
-import android.view.View
-import android.view.ViewOutlineProvider
-import android.widget.ImageView
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -29,11 +23,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
-import com.github.panpf.sketch.Sketch
 import me.him188.ani.app.ui.foundation.AsyncImage
 import me.him188.ani.app.ui.foundation.NSFW_OBSCURED_COVER_LONG_EDGE_PX
 import me.him188.ani.app.ui.foundation.NsfwPolicy
-import me.him188.ani.app.ui.foundation.TvNativeImages
 
 /**
  * 通知说的是哪一部作品 ([TvNoticeKind.cover]): 列表行、横幅与手机控制台的列表左边画它的竖版封面 [url], 不画类别图标
@@ -74,7 +66,7 @@ internal val TV_NOTICE_COVER_GAP = 10.dp
 internal fun tvNoticeCoverColumn(items: List<TvNoticeColumnItem>): Boolean = items.any { it.cover != null }
 
 /**
- * Compose 画的封面 (触屏的列表行、横幅): 中心裁剪进 [modifier] 给的框, 照 [shape] 裁角; 还没取到、取不到时画 [fallback] (类别图标).
+ * Compose 画的封面 (触屏的列表行、横幅; 原生列表行里的见 TvNoticeRowCover): 中心裁剪进 [modifier] 给的框, 照 [shape] 裁角; 还没取到、取不到时画 [fallback] (类别图标).
  */
 @Composable
 internal fun TvNoticeCoverBox(image: TvNoticeCoverImage, modifier: Modifier, shape: Shape, fallback: @Composable () -> Unit) {
@@ -90,55 +82,5 @@ internal fun TvNoticeCoverBox(image: TvNoticeCoverImage, modifier: Modifier, sha
             onError = { shown = false },
             downsampleLongEdgePx = if (image.obscure) NSFW_OBSCURED_COVER_LONG_EDGE_PX else null,
         )
-    }
-}
-
-/**
- * 原生列表行里的封面 (见 [TvNoticeRowView]): 一张圆角、中心裁剪的图. [show] 换一张 (同一张不重取), 取到没有经 [onShown] 告诉行 ——
- * 取到之前、取不到时行照旧画类别图标; [clear] 撤掉.
- */
-@SuppressLint("ViewConstructor", "AppCompatCustomView")
-internal class TvNoticeRowCover(context: Context, cornerPx: Float, private val onShown: (Boolean) -> Unit) : ImageView(context) {
-    private var image: TvNoticeCoverImage? = null
-
-    var cornerPx: Float = cornerPx
-        set(value) {
-            if (field == value) return
-            field = value
-            invalidateOutline()
-        }
-
-    init {
-        scaleType = ScaleType.CENTER_CROP
-        clipToOutline = true
-        outlineProvider = object : ViewOutlineProvider() {
-            override fun getOutline(view: View, outline: Outline) {
-                outline.setRoundRect(0, 0, view.width, view.height, this@TvNoticeRowCover.cornerPx)
-            }
-        }
-        visibility = GONE
-    }
-
-    fun show(next: TvNoticeCoverImage, sketch: Sketch, widthPx: Int, heightPx: Int) {
-        if (next == image) return
-        image = next
-        visibility = VISIBLE
-        onShown(false)
-        TvNativeImages.loadCover(
-            sketch, this, next.url, widthPx, heightPx,
-            crossfade = false,
-            obscureLongEdgePx = if (next.obscure) NSFW_OBSCURED_COVER_LONG_EDGE_PX else null,
-        ) { ok ->
-            // 这一行已经换成别的图 (复用到别的通知) 以后才回来的结果不算
-            if (image == next) onShown(ok)
-        }
-    }
-
-    fun clear() {
-        if (image == null) return
-        image = null
-        TvNativeImages.clearCover(this)
-        visibility = GONE
-        onShown(false)
     }
 }

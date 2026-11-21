@@ -10,7 +10,7 @@
 package me.him188.ani.app.ui.foundation.tv.nativeview
 
 import android.graphics.Color
-import android.graphics.Rect
+import androidx.compose.ui.geometry.Rect
 import android.os.SystemClock
 import android.view.Choreographer
 import android.view.KeyEvent

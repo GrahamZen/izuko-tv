@@ -19,6 +19,7 @@ import me.him188.ani.app.domain.settings.SettingAdjustment
 import me.him188.ani.app.domain.settings.SettingAdjustments
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.ui.subject.episode.EpisodeViewModel
+import kotlin.concurrent.Volatile
 
 /**
  * 播放哨兵 (TvPlaybackSentinel) 判出「搜索导致画面卡顿」时报到这里 (见 PerfPlaybackAnalysis.searchBlamed), 播放页的 [TvSearchStutterGuard] 收.

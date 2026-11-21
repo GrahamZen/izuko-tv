@@ -185,8 +185,8 @@ private fun TvSearchNativeSource(
     )
     // NSFW 设为模糊时背景打码 (见 withNsfw)
     val shown = source.withNsfw(rememberNsfwPolicy())
-    val view = state.view
-    SideEffect { view?.setSource(shown) }
+    val surface = state.surface
+    SideEffect { surface?.setSource(shown) }
 }
 
 /** hero 文字: 标题 (至多两行); ★评分 + 标签行 (开播季度 · 话数 · 类型); 简介 (Bangumi 兜底表). */

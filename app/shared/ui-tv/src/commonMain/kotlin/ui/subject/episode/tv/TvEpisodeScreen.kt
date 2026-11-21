@@ -17,7 +17,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import me.him188.ani.app.ui.foundation.animation.LocalAniMotionScheme
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
 import androidx.compose.foundation.background
@@ -108,7 +107,6 @@ import me.him188.ani.app.ui.subject.details.sections.episodeStillImageUrl
 import me.him188.ani.app.ui.subject.details.SubjectDetailsLoadState
 import me.him188.ani.app.data.models.preference.DarkMode
 import me.him188.ani.app.data.models.preference.TvPlayerChromeItem
-import me.him188.ani.app.data.models.preference.seekPreviewOnFullScreen
 import me.him188.ani.app.domain.player.VideoLoadingState
 import me.him188.ani.app.ui.danmaku.DanmakuEditorState
 import me.him188.ani.app.ui.foundation.LocalImageViewerHandler
@@ -168,14 +166,11 @@ import me.him188.ani.app.ui.subject.episode.video.loading.EpisodeVideoLoadingInd
 import me.him188.ani.app.ui.subject.episode.video.loading.shouldShowVideoLoadingIndicator
 import me.him188.ani.app.ui.main.LocalTvAdjustWindows
 import me.him188.ani.app.ui.main.TvAdjustWindow
-import me.him188.ani.app.ui.remote.RegisterTvRemotePlayer
 import me.him188.ani.app.videoplayer.ui.PlayerStatsOverlay
 import me.him188.ani.app.videoplayer.ui.LocalSubtitleObstructionTop
 import me.him188.ani.app.videoplayer.ui.VideoPlayer
 import me.him188.ani.app.videoplayer.ui.hasPageAsState
 import me.him188.ani.app.videoplayer.ui.progress.PlayerProgressSliderState
-import me.him188.ani.app.videoplayer.ui.progress.SeekPreviewFullScreenLayer
-import me.him188.ani.app.videoplayer.ui.progress.rememberPlayerSeekPreviewState
 import me.him188.ani.app.videoplayer.ui.progress.rememberMediaProgressSliderState
 import me.him188.ani.app.videoplayer.ui.rememberPlayerStatsState
 import me.him188.ani.app.videoplayer.ui.rememberVideoSideSheetsController
@@ -324,9 +319,9 @@ fun TvEpisodeScreenContent(
     SideEffect { vm.onUIReady() }
 
     // Web 控制台的「播放器」标签: 页面在组合里时登记, 手机才能读候选、切数据源 (见 RegisterTvRemotePlayer)
-    RegisterTvRemotePlayer(vm, page)
+    RegisterPlayerOnRemoteConsole(vm, page)
     // Web 控制台的「截图」读这个播放器的画面与字幕 (见 TvPlayerScreenshot)
-    RegisterTvPlayerScreenshot(vm.player)
+    RegisterPlayerScreenshotOnRemoteConsole(vm.player)
 
     // 预载条目详情 (TMDB 剧照/时长/简介, 详情层内容, 角色/制作人员): 详情层与选集条的增量信息共用同一 loader
     // (有"已加载"守卫, 不会重复请求). 分集列表本身不等它, 见 EpisodeViewModel.episodeListUiStateFlow.
@@ -408,11 +403,7 @@ fun TvEpisodeScreenContent(
     // 拖拽预览浮窗的画面位 (小圆点上方): 画面停着时由主播放器把预览位置的画面画进来, 不另开解码器取缩略图 (见 PlayerSeekPreviewState);
     // 设置成画在全屏上或开着隧道播放 (seekPreviewOnFullScreen) 时预览画面直接出在全屏上, 浮窗只显示时间. 边播边选时主播放器腾不出来, 浮窗只显示时间.
     // 尊重"显示视频帧预览"设置项 (与手机端同一个开关): 关掉后浮窗只剩时间文本.
-    val seekPreview = if (vm.videoScaffoldConfig.enableFramePreview) {
-        rememberPlayerSeekPreviewState(vm.player, vm.cacheProgressInfoFlow)
-    } else {
-        null
-    }
+    val seekPreview = rememberTvSeekPreview(vm, enabled = vm.videoScaffoldConfig.enableFramePreview)
 
     val progressSliderState = rememberMediaProgressSliderState(
         vm.player,
@@ -480,7 +471,7 @@ fun TvEpisodeScreenContent(
         if (progressSliderState.isPreviewing) return
         val playing = scrubPlayback.onEnter()
         if (playing && !vm.videoScaffoldConfig.pauseVideoOnScrub) return
-        seekPreview?.begin(onFullScreen = vm.videoScaffoldConfig.seekPreviewOnFullScreen)
+        seekPreview?.begin()
     }
 
     /** 纯视频态长按或连按第二次: 升级成拖拽预览态. */
@@ -1823,7 +1814,7 @@ fun TvEpisodeScreenContent(
 
                 // 拖动预览画在全屏上时, 全屏上的画面还是别处的那会儿盖成黑底并提示 (见 SeekPreviewFullScreenLayer)
                 if (seekPreview != null) {
-                    SeekPreviewFullScreenLayer(seekPreview, Modifier.matchParentSize())
+                    seekPreview.FullScreenLayer(Modifier.matchParentSize())
                 }
 
                 // 缓冲/加载指示 (居中悬浮).
