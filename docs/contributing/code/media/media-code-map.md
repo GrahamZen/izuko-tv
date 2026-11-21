@@ -62,6 +62,9 @@
 - 请求里认部用的名字 `MediaFetchNameHints`（`datasource/api/.../source/MediaFetchNameHints.kt`）由 `fetchNameHintsOf`
   （`domain/media/fetch/FetchNameHints.kt`）与 `withRegionalNames` 填；「系列名 第N季」由 `seriesSeasons` / `withSeasonNames`
   （`data/network/SeriesSeasonNames.kt`）从系列索引推出，选择器的条目信息经 `withSeasonAliases` 带上同一组。
+  接在本篇后面编号的 OVA 的本篇 `MediaFetchHostWork` 由 `findHostWork`（`data/network/HostWorks.kt`）随系列索引算出；
+  认本篇的页 `isHostPage`（`domain/mediasource/search/HostWorkPages.kt`），页上挑本条目的集在 `asEpisodesOf`
+  （`domain/mediasource/web/OvaEpisodes.kt`），选择器收下它们在 `claimsAsHostWorkEpisode`（`domain/media/selector/filter/HostWorkEpisodes.kt`）。
 - `SiteSearchMemory`（同包）：站点回应跨条目共用的内存记忆，挂在 `SelectorMediaSourceEpisodeCacheRepository.siteMemory`。
 
 ### Selector 数据源查询/解析管线

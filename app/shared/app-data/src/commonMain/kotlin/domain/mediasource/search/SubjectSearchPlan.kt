@@ -200,10 +200,14 @@ class SubjectSearchPlan private constructor(private val request: MediaFetchReque
 
     /**
      * 站点上叫 [name] 的条目 (页名、分享标题) 与这一部的关系, 见 [SubjectMatch].
-     * 名字表认出是别的作品、或只含着本条目太短的名字的不是 ([TitleIdentity.rejectsPageTitle]).
+     * 名字表认出是别的作品、或只含着本条目太短的名字的不是 ([TitleIdentity.rejectsPageTitle]);
+     * 本条目所依附的本篇的页 ([MediaFetchNameHints.hostWork]) 说不准: 本条目可能放在那页上 (见 [isHostPage]).
      */
-    fun identify(name: String): SubjectMatch =
-        if (names.rejectsPageTitle(name)) SubjectMatch.OTHER else nameRules.identify(name)
+    fun identify(name: String): SubjectMatch = when {
+        hints.hostWork?.isHostPage(name) == true -> SubjectMatch.MAYBE
+        names.rejectsPageTitle(name) -> SubjectMatch.OTHER
+        else -> nameRules.identify(name)
+    }
 
     /** 选择器定精确匹配的名字规则 (资源的条目名与这一部的名字算不算同一个); 首播年份按最早播出的一集 */
     private val exactNames by lazy {

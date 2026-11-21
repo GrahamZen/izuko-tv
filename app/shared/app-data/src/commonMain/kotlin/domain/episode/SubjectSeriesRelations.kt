@@ -94,7 +94,7 @@ internal class PlaybackSeriesInfo(
     fun seriesInfoOf(subject: SubjectCollectionInfo): SubjectSeriesInfo {
         val info = SubjectSeriesInfo.compute(subject)
         val index = relationIndex ?: return info
-        return info.copy(sortsSpanSeries = index.sortsSpanSeriesOf(subject))
+        return info.copy(sortsSpanSeries = index.sortsSpanSeriesOf(subject), hostWork = index.hostWork)
             .withSeasonNames(index, subject.subjectId, subject.subjectInfo.allNames)
     }
 }

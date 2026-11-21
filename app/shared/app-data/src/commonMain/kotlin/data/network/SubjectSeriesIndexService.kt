@@ -30,6 +30,7 @@ import me.him188.ani.app.data.network.mapper.orBangumiPlaceholder
 import me.him188.ani.app.data.persistent.database.dao.SubjectRelations
 import me.him188.ani.app.data.repository.RepositoryException
 import me.him188.ani.datasources.api.PackedDate
+import me.him188.ani.datasources.api.source.MediaFetchHostWork
 import me.him188.ani.datasources.bangumi.next.apis.SubjectBangumiNextApi
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextSlimSubject
 import me.him188.ani.datasources.bangumi.next.models.BangumiNextSubject
@@ -73,6 +74,8 @@ data class SubjectRelationIndex(
     val sequelSubjectNames: List<String>,
     /** [seriesMainSubjectIds] 里能找到的条目节点 (自己的节点来自邻居的关系列表, 孤立条目没有). 识别拆分季用, 见 [splitSeasonOf]. */
     val seriesMainNodes: List<SeriesNode> = emptyList(),
+    /** 本条目接在后面编号的本篇, 见 [findHostWork] */
+    val hostWork: MediaFetchHostWork? = null,
 ) {
     companion object {
         val Empty = SubjectRelationIndex(emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
@@ -208,7 +211,8 @@ class SubjectSeriesIndexService(
                 }
                 logger.info {
                     "bgm-direct: seriesIndex subject=$subjectId -> main=${computed.seriesMainSubjectIds} " +
-                            "sequels=${computed.sequelSubjects} rootNames=${computed.seriesRootNames.take(2)}"
+                            "sequels=${computed.sequelSubjects} rootNames=${computed.seriesRootNames.take(2)}" +
+                            (computed.hostWork?.let { " host=${it.names.take(2)} (${it.episodeCount} episodes)" } ?: "")
                 }
                 cacheLock.withLock {
                     cache[subjectId] = computed
@@ -345,6 +349,10 @@ class SubjectSeriesIndexService(
             sequelSubjects = sequels.toList(),
             sequelSubjectNames = sequels.toList().flatMap { namesOf(it, edges) },
             seriesMainNodes = mainLine.mapNotNull { nodeOf(it, edges) },
+            hostWork = findHostWork(subjectId, isolated = mainLine.size == 1, graph?.invoke()) {
+                requestCount.incrementAndGet()
+                fetchMainStories(subjectId)
+            },
         )
     }
 
@@ -379,6 +387,15 @@ class SubjectSeriesIndexService(
             prequels = relations.filter { it.relation.id == SERIES_RELATION_PREQUEL }.map { it.subject.toSeriesNode() },
             sequels = relations.filter { it.relation.id == SERIES_RELATION_SEQUEL }.map { it.subject.toSeriesNode() },
         )
+    }
+
+    /** 本条目的「主线故事」(番外、OVA 所依附的本篇), 见 [findHostWork]. */
+    private suspend fun fetchMainStories(subjectId: Int): List<SeriesNode> = bangumiSubjectApi {
+        getSubjectRelations(
+            subjectID = subjectId,
+            type = BangumiNextSubjectType.Anime,
+            limit = SERIES_RELATIONS_PAGE_SIZE,
+        ).body().data.filter { it.relation.id == SERIES_RELATION_MAIN_STORY }.map { it.subject.toSeriesNode() }
     }
 
     private fun BangumiNextSlimSubject.toSeriesNode() = SeriesNode(
@@ -420,6 +437,9 @@ internal const val SERIES_RELATION_PREQUEL = 2
 
 /** 关系类型「续集」. */
 internal const val SERIES_RELATION_SEQUEL = 3
+
+/** 关系类型「主线故事」: 关联条目是本条目 (番外、OVA) 所依附的本篇. */
+internal const val SERIES_RELATION_MAIN_STORY = 12
 
 /**
  * 一次只取一页关联, 这么多条 (按 order、id 排). 离线出系列关系图的一方 (bangumi-sequel-seasons, 见 [SeriesGraphTable])
