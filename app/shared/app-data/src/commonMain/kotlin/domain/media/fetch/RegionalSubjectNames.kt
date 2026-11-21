@@ -12,6 +12,7 @@ package me.him188.ani.app.domain.media.fetch
 import me.him188.ani.app.data.models.subject.SplitSeason
 import me.him188.ani.app.data.models.subject.SubjectInfo
 import me.him188.ani.app.data.models.subject.SubjectSeriesInfo
+import me.him188.ani.app.data.network.TmdbEpisodeMap
 import me.him188.ani.app.data.network.TmdbSubjectMapEntry
 import me.him188.ani.app.data.network.TmdbSubjectMapRepository
 import me.him188.ani.app.domain.mediasource.MediaListFilters
@@ -31,6 +32,8 @@ import org.koin.core.component.KoinComponent
  *   查询请求认部用的名字 ([MediaFetchRequest.nameHints]) 带上同样的两组, 数据源与选择器按同一组名字认站点上的条目.
  *
  * TMDB 的剧集按整个系列登记, 译名是系列名, 而 Bangumi 一季一个条目, 所以按条目自己名字里的季号补上.
+ * Bangumi 单独立条目、TMDB 挂在某部剧特别篇 (第 0 季) 下的 OVA / 特别篇 ([isSpecialOfShow]) 不用译名: 那是本篇的名字,
+ * 当成自己的名字会把本篇第一季的页面认成这一部.
  * 表里没有这个条目 (或设置里关了 TMDB 图片、表从没下载过) 时什么都不加.
  */
 
@@ -133,11 +136,11 @@ private suspend fun KoinComponent.lookupMapEntry(subjectId: Int): TmdbSubjectMap
 /**
  * 搜索用的港台译名, 只有一个 (台湾的优先): 条目名字带季号时补上季号, 只搜到这一季.
  * 只搜一次是因为用它搜到的繁体条目名对不上 Bangumi 的名字, 关键词链认不出已经搜到, 再给一个就会对同一个站再搜一遍.
- * 合集的名字是整个系列电影的总称, 不用.
+ * 合集的名字是整个系列电影的总称, 挂在剧集特别篇下的条目 ([isSpecialOfShow]) 的是本篇的名字, 都不用.
  */
 internal fun regionalSearchName(entry: TmdbSubjectMapEntry, subjectNames: List<String>): String? {
     val type = entry.backdrop?.type
-    if (type == TYPE_COLLECTION) return null
+    if (type == TYPE_COLLECTION || entry.isSpecialOfShow()) return null
     val name = orderedRegionalNames(entry).firstOrNull() ?: return null
     val marker = if (type == TYPE_TV && !SEASON_MARKER.containsMatchIn(name)) seasonMarkerOf(subjectNames) else null
     return if (marker != null) "$name $marker" else name
@@ -150,6 +153,8 @@ internal fun regionalSearchName(entry: TmdbSubjectMapEntry, subjectNames: List<S
  * - 系列的第一季, 或不属于系列: 原样.
  * - 后面的季又没有季号 (「更多 出包王女」): 不用, 否则系列名会让第一季的资源也算作本季.
  * - 合集: 不用 (同上, 总称对得上系列里每一部).
+ * - 挂在剧集特别篇下的 OVA / 特别篇 ([isSpecialOfShow]): 不用, 译名是本篇的名字. 这种条目常常不在 Bangumi 的系列关系里,
+ *   [seasonSort] 按第一季算, 不排除的话会照「系列的第一季」原样用.
  *
  * 选择器在安卓上把资源的条目名转成简体再与别名比 (`MediaListFilters.ContainsSubjectName`), 所以同时给出简体形式.
  *
@@ -157,7 +162,7 @@ internal fun regionalSearchName(entry: TmdbSubjectMapEntry, subjectNames: List<S
  */
 internal fun regionalSubjectAliases(entry: TmdbSubjectMapEntry, subjectNames: List<String>, seasonSort: Int): List<String> {
     val type = entry.backdrop?.type ?: return emptyList()
-    if (type == TYPE_COLLECTION) return emptyList()
+    if (type == TYPE_COLLECTION || entry.isSpecialOfShow()) return emptyList()
     val marker = if (type == TYPE_TV) seasonMarkerOf(subjectNames) else null
     val names = orderedRegionalNames(entry).mapNotNull { name ->
         when {
@@ -168,6 +173,17 @@ internal fun regionalSubjectAliases(entry: TmdbSubjectMapEntry, subjectNames: Li
         }
     }
     return names.flatMap { listOf(it, it.toSimplifiedChinese()) }.distinct()
+}
+
+/**
+ * 条目在 TMDB 上只是某部剧特别篇 (第 0 季) 里的几集: 剧照只取 S0, 或分集全对到 S0.
+ * Bangumi 给 OVA、特别篇单独立条目, TMDB 多半把它们挂在本篇的 S0 下, 这时表里的译名是本篇的.
+ */
+internal fun TmdbSubjectMapEntry.isSpecialOfShow(): Boolean {
+    if (backdrop?.type != TYPE_TV) return false
+    if (stills.isNotEmpty() && stills.all { it.type == TYPE_TV && it.season == 0 }) return true
+    val seasons = episodes?.let(TmdbEpisodeMap::parse)?.seasons ?: return false
+    return seasons == setOf(0)
 }
 
 private fun orderedRegionalNames(entry: TmdbSubjectMapEntry): List<String> =
