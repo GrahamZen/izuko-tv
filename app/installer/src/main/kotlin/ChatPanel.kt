@@ -26,11 +26,11 @@ import com.google.zxing.qrcode.QRCodeWriter
 /**
  * 界面右边的交流群: QQ 群与 Telegram 两个码上下排, 码右边写名字 (QQ 再写群号与入群问题的答案); 下载、安装、出错时都在 ——
  * 等下载的那一阵正好扫码, 装不上也能进群问. 这一栏定宽, 文字在栏里换行, 不把左边的内容挤窄.
- * 群只给装了应用的人看, 链接不写进源码, 构建时注入 (见 build.gradle.kts 的 CHAT_*); 都没配时返回 null, 不放这一栏.
+ * 群只给装了应用的人看, 链接不写进源码: 用加密的应用配置 ([ChatConfig], 运行时取, 换群不用重发助手); 都没有时返回 null, 不放这一栏.
  */
-internal fun buildChatPanel(context: Context, muted: Int): View? {
-    val qqLink = BuildConfig.CHAT_QQ_LINK
-    val telegramLink = BuildConfig.CHAT_TELEGRAM_LINK
+internal fun buildChatPanel(context: Context, muted: Int, chat: ChatConfig): View? {
+    val qqLink = chat.qqLink
+    val telegramLink = chat.telegramLink
     if (qqLink.isBlank() && telegramLink.isBlank()) return null
     val density = context.resources.displayMetrics.density
     fun dp(value: Int) = (value * density).toInt()
@@ -77,7 +77,7 @@ internal fun buildChatPanel(context: Context, muted: Int): View? {
             qqLink,
             context.getString(R.string.chat_qq_short),
             listOfNotNull(
-                BuildConfig.CHAT_QQ_ID.takeIf { it.isNotBlank() }?.let { context.getString(R.string.chat_qq_id, it) },
+                chat.qqId.takeIf { it.isNotBlank() }?.let { context.getString(R.string.chat_qq_id, it) },
                 context.getString(R.string.chat_qq_answer, BuildConfig.REPOSITORY.substringBefore('/')),
             ),
         )
@@ -92,9 +92,9 @@ internal fun buildChatPanel(context: Context, muted: Int): View? {
  * 把交流群一栏 ([buildChatPanel]) 拼在 [content] 右边, 两栏都垂直居中; 没有这一栏时原样返回 [content].
  * [content] 右边原来的留白挪到两栏外面, 中间只留一道间隔. 屏幕太窄放不下两栏时也原样返回.
  */
-internal fun attachChatPanel(context: Context, content: LinearLayout, muted: Int): View {
+internal fun attachChatPanel(context: Context, content: LinearLayout, muted: Int, chat: ChatConfig): View {
     if (context.resources.configuration.screenWidthDp < MIN_SCREEN_WIDTH_DP) return content
-    val panel = buildChatPanel(context, muted) ?: return content
+    val panel = buildChatPanel(context, muted, chat) ?: return content
     val gap = (PANEL_GAP_DP * context.resources.displayMetrics.density).toInt()
     val endPadding = content.paddingRight
     content.setPadding(content.paddingLeft, content.paddingTop, gap, content.paddingBottom)

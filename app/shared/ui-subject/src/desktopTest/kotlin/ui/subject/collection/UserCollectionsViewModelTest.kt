@@ -197,6 +197,7 @@ class UserCollectionsViewModelTest {
         override val tmdbImageHostCache: Settings<RepoHostedListCache> by lazy { error("not implemented") }
         override val githubDownloadMirrorCache: Settings<RepoHostedListCache> by lazy { error("not implemented") }
         override val feedbackEndpointCache: Settings<RepoHostedListCache> by lazy { error("not implemented") }
+        override val ticketEndpointCache: Settings<RepoHostedListCache> by lazy { error("not implemented") }
         override val feedbackRecords: Settings<FeedbackRecords> by lazy { error("not implemented") }
         override val notices: Settings<NoticeLog> by lazy { error("not implemented") }
         override val danmakuConfig: Settings<DanmakuConfig> by lazy { error("not implemented") }

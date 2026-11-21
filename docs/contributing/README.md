@@ -27,6 +27,7 @@
 - [Kotlin 多平台](kmp.md)
 - [条目系统](code/subjects.md)
 - [通知](code/notices.md)
+- [远程文件 (清单、加密配置与通知)](code/remote-files.md)
 - [Android TV 导航焦点](code/android-tv-focus.md)
 - [Android TV 加载占位](code/android-tv-loading.md)
 - [播放器键盘与焦点](code/player-keyboard.md)

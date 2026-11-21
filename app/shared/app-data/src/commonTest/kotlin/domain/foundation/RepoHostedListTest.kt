@@ -98,16 +98,16 @@ class RepoHostedListTest {
     }
 
     @Test
-    fun `入口按顺序试 — jsDelivr 在前，raw 兜底`() = runTest {
+    fun `入口按顺序试 — 清单分支，jsDelivr 在前，raw 兜底`() = runTest {
         val harness = Harness(testScheduler, bundled)
         harness.bodies = { url -> if ("raw.githubusercontent.com" in url) """{"hosts": ["img.example.com"]}""" else null }
         harness.list.refreshIfStale()
         assertEquals(
             listOf(
-                "https://testingcf.jsdelivr.net/gh/owner/repo@main/tmdb-image-hosts.json",
-                "https://gcore.jsdelivr.net/gh/owner/repo@main/tmdb-image-hosts.json",
-                "https://cdn.jsdelivr.net/gh/owner/repo@main/tmdb-image-hosts.json",
-                "https://raw.githubusercontent.com/owner/repo/main/tmdb-image-hosts.json",
+                "https://testingcf.jsdelivr.net/gh/owner/repo@lists/tmdb-image-hosts.json",
+                "https://gcore.jsdelivr.net/gh/owner/repo@lists/tmdb-image-hosts.json",
+                "https://cdn.jsdelivr.net/gh/owner/repo@lists/tmdb-image-hosts.json",
+                "https://raw.githubusercontent.com/owner/repo/lists/tmdb-image-hosts.json",
             ),
             harness.requested,
         )

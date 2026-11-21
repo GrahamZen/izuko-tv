@@ -14,6 +14,8 @@ import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import kotlinx.io.IOException
 import me.him188.ani.app.data.persistent.MemoryDataStore
@@ -46,8 +48,12 @@ class PeerFilterSubscriptionRepositoryTest {
     private val oldRules = """{"blockedIpPattern": ["9.9.9.9"], "blockedIdRegex": [], "blockedClientRegex": []}"""
     private val savedFile get() = dir.resolve("${PeerFilterSubscription.BUILTIN_SUBSCRIPTION_ID}.json")
 
-    /** @param bodies 按地址给响应体; 返回 `null` = 连不上 */
-    private fun repository(
+    /**
+     * @param bodies 按地址给响应体; 返回 `null` = 连不上
+     *
+     * 引擎跑在测试调度器上: 请求与每个入口的超时走同一个虚拟时钟 (默认的 IO 线程上回响应时, 测试调度器以为没事可做, 直接把时间拨过超时)
+     */
+    private fun TestScope.repository(
         requested: MutableList<String> = mutableListOf(),
         clock: () -> Long = { 1_000L },
         bodies: (String) -> String?,
@@ -55,13 +61,16 @@ class PeerFilterSubscriptionRepositoryTest {
         PeerFilterSubscriptionRepository(
             MemoryDataStore(PeerFilterSubscriptionsSaveData.Default),
             dir,
-            HttpClient(
-                MockEngine { request ->
-                    val url = request.url.toString()
-                    requested += url
-                    respond(bodies(url) ?: throw IOException("blocked"), HttpStatusCode.OK)
-                },
-            ).asScopedHttpClient(),
+            HttpClient(MockEngine) {
+                engine {
+                    dispatcher = StandardTestDispatcher(testScheduler)
+                    addHandler { request ->
+                        val url = request.url.toString()
+                        requested += url
+                        respond(bodies(url) ?: throw IOException("blocked"), HttpStatusCode.OK)
+                    }
+                }
+            }.asScopedHttpClient(),
             repository = { "owner/repo" },
             clock = clock,
         )
@@ -74,7 +83,7 @@ class PeerFilterSubscriptionRepositoryTest {
         val requested = mutableListOf<String>()
         val repo = repository(requested) { rules }
         repo.updateOrLoadAll()
-        assertEquals(listOf("https://testingcf.jsdelivr.net/gh/owner/repo@main/peer-filter-rules.json"), requested)
+        assertEquals(listOf("https://testingcf.jsdelivr.net/gh/owner/repo@lists/peer-filter-rules.json"), requested)
         val loaded = repo.rulesFlow.first().single()
         assertEquals(listOf("1.2.3.4", "5.6.7.0/24"), loaded.blockedIpPattern)
         assertEquals(2, repo.builtin().lastLoaded?.ruleStat?.ipRuleCount)

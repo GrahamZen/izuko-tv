@@ -77,6 +77,9 @@ interface SettingsRepository {
     /** 详情页「反馈」的中转地址清单的本地缓存, 见 `SubjectFeedbackService`. */
     val feedbackEndpointCache: Settings<RepoHostedListCache>
 
+    /** 工单服务地址清单的本地缓存, 见 `FeedbackTicketEndpoints`. */
+    val ticketEndpointCache: Settings<RepoHostedListCache>
+
     /** 这台电视提交过的反馈 (见 FeedbackRecordRepository). */
     val feedbackRecords: Settings<FeedbackRecords>
 
@@ -251,6 +254,11 @@ class PreferencesRepositoryImpl(
     )
     override val feedbackEndpointCache: Settings<RepoHostedListCache> = SerializablePreference(
         "feedbackEndpointCache",
+        RepoHostedListCache.serializer(),
+        default = { RepoHostedListCache.Default },
+    )
+    override val ticketEndpointCache: Settings<RepoHostedListCache> = SerializablePreference(
+        "ticketEndpointCache",
         RepoHostedListCache.serializer(),
         default = { RepoHostedListCache.Default },
     )

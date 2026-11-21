@@ -9,20 +9,13 @@
 
 package me.him188.ani.app.domain.foundation
 
-import io.ktor.client.request.get
-import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -33,19 +26,17 @@ import me.him188.ani.app.platform.currentAniBuildConfig
 import me.him188.ani.utils.ktor.ScopedHttpClient
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
-import me.him188.ani.utils.logging.warn
 import me.him188.ani.utils.platform.currentTimeMillis
-import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration.Companion.hours
-import kotlin.time.Duration.Companion.seconds
 
 /**
- * 在本项目仓库根目录维护的一份清单 (Bangumi 镜像、TMDB 图片入口…).
+ * 在仓库里维护的一份清单 (Bangumi 镜像、TMDB 图片入口…): 本项目仓库的放在清单分支 [GitHubFileSources.LISTS_BRANCH] 的根目录
+ * (改清单只推那个分支, 不碰代码的 main).
  *
  * 这类地址会死、会搬家, 写死在包里就只能跟着发版; 放在仓库里, 改了 json, 已经装上的包隔天就用上.
  *
- * - 每 [REFRESH_INTERVAL_MILLIS] 拉一次, 下载入口按 [GitHubFileSources] 的顺序试, 每个最多等 [SOURCE_TIMEOUT]: 进程里第一次用到时查一次,
- *   之后每 [CHECK_INTERVAL] 再看一眼过期没有 (电视上的应用常常几天不重启); 网络体检时不管过没过期都拉一次 ([refreshNow]);
+ * - 什么时候拉见 [RemoteRefresh] (每 [REFRESH_INTERVAL] 拉一次, 每 [CHECK_INTERVAL] 看一眼过期没有, 网络体检时不管过没过期都拉 [refreshNow]);
+ *   入口按 [GitHubFileSources] 的顺序试 ([RemoteFetch]);
  * - 拉到的每一条都过 [Spec.normalize], 认不出的丢掉 —— 清单是远程内容, 里面写着什么不由我们决定;
  * - 都拉不到用上次存下的, 从没拉到过用包里内置的 [Spec.bundled].
  *
@@ -62,6 +53,8 @@ open class RepoHostedList(
     private val client: () -> ScopedHttpClient,
     scope: CoroutineScope,
     private val repository: () -> String = { currentAniBuildConfig.projectRepository },
+    /** 清单在哪个分支; 别的仓库 (如对应表仓库的反馈入口) 放在 main. */
+    private val branch: String = GitHubFileSources.LISTS_BRANCH,
 ) {
     class Spec(
         /** 仓库根目录下的文件名. */
@@ -84,25 +77,27 @@ open class RepoHostedList(
     /** 仓库根目录下的文件名. */
     val fileName: String get() = spec.fileName
 
-    /** 同一时间只拉一次: 定时检查与网络体检可能撞在一起. */
-    private val fetching = Mutex()
+    private val refresh = RemoteRefresh(
+        name = spec.fileName,
+        scope = scope,
+        staleAfter = REFRESH_INTERVAL,
+        checkEvery = CHECK_INTERVAL,
+        lastFetchedAt = { cache.flow.first().takeIf { it.entries.isNotEmpty() }?.updatedAt },
+        fetch = ::fetch,
+    )
 
     init {
         registry.update { it + this }
-        scope.launch {
-            while (true) {
-                refreshIfStale()
-                delay(CHECK_INTERVAL)
-            }
-        }
     }
 
+    /** 过期了 (或从没拉到过) 才拉; 等着清单的地方 (清单还空着时) 用它: 先等建出来后的第一次检查, 还是空的再拉一次. */
     internal suspend fun refreshIfStale() {
-        fetch(onlyIfStale = true)
+        refresh.awaitFirstCheck()
+        refresh.refreshIfStale()
     }
 
     /** 不管多久前拉过, 现在就拉一次 (网络体检用: 出了问题的人马上用上仓库里最新的清单). 拉到了返回 `true`. */
-    suspend fun refreshNow(): Boolean = fetch(onlyIfStale = false)
+    suspend fun refreshNow(): Boolean = refresh.refreshNow()
 
     /** 现在用的是哪份: 条目数、是不是包里内置的、多久前拉到的 (网络体检报告用). */
     suspend fun state(): State {
@@ -117,35 +112,18 @@ open class RepoHostedList(
 
     class State(val fileName: String, val entries: Int, val bundled: Boolean, val updatedAgoMillis: Long?)
 
-    private suspend fun fetch(onlyIfStale: Boolean): Boolean = fetching.withLock {
-        val cached = cache.flow.first()
-        if (onlyIfStale && cached.entries.isNotEmpty() && currentTimeMillis() - cached.updatedAt < REFRESH_INTERVAL_MILLIS) {
-            return@withLock true
+    private suspend fun fetch(): Boolean {
+        // 某个入口拿到的不是这份清单 (错误页、格式不对、一条都认不出) 就试下一个
+        val fetched = RemoteFetch.firstSuccessful(spec.fileName, GitHubFileSources.urls(repository(), spec.fileName, branch), client) { text ->
+            parse(text)?.mapNotNull(spec.normalize)?.distinct()?.takeIf { it.isNotEmpty() }
         }
-        for (url in GitHubFileSources.urls(repository(), spec.fileName)) {
-            val text = try {
-                withTimeoutOrNull(SOURCE_TIMEOUT) { client().use { get(url).bodyAsText() } }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                logger.info { "${spec.fileName}: $url unreachable (${e::class.simpleName})" }
-                continue
-            }
-            if (text == null) {
-                logger.info { "${spec.fileName}: $url timed out" }
-                continue
-            }
-            val entries = parse(text)?.mapNotNull(spec.normalize)?.distinct().orEmpty()
-            if (entries.isEmpty()) {
-                logger.warn { "${spec.fileName} from $url has no usable entry, ignoring" }
-                continue
-            }
-            cache.set(RepoHostedListCache(entries = entries, updatedAt = currentTimeMillis()))
-            logger.info { "${spec.fileName} updated from $url: $entries" }
-            return@withLock true
+        if (fetched == null) {
+            logger.info { "${spec.fileName}: keeping ${cache.flow.first().entries.ifEmpty { spec.bundled }}" }
+            return false
         }
-        logger.info { "${spec.fileName}: all sources unreachable, keeping ${cached.entries.ifEmpty { spec.bundled }}" }
-        false
+        cache.set(RepoHostedListCache(entries = fetched.value, updatedAt = currentTimeMillis()))
+        logger.info { "${spec.fileName} updated from ${fetched.source}: ${fetched.value}" }
+        return true
     }
 
     /** 取出 [Spec.field] 里的字符串条目; 格式不对返回 `null`. */
@@ -166,29 +144,32 @@ open class RepoHostedList(
         val created: List<RepoHostedList> get() = registry.value
 
         /** 多久拉一次. 这些地址死得快, 但也没必要每次启动都拉. */
-        private val REFRESH_INTERVAL_MILLIS = 24.hours.inWholeMilliseconds
+        private val REFRESH_INTERVAL = 24.hours
 
         /** 隔多久看一眼过期没有 (只读本地缓存的时间, 过期了才去拉). */
         private val CHECK_INTERVAL = 1.hours
-
-        /**
-         * 每个入口最多等多久, 到点换下一个. 清单文件都很小, 连得上的入口几秒内就回; 被墙的入口常常连接一直挂着,
-         * 不限时要等到客户端的默认超时 (几十秒到几分钟), 等着清单的地方 (如提交反馈) 就一直转圈.
-         */
-        private val SOURCE_TIMEOUT = 10.seconds
     }
 }
 
 /**
- * GitHub 仓库里一个文件的下载入口, 按顺序试.
+ * GitHub 上的文件从哪些入口取, 应用里只有这一份 (检查更新、本版说明、清单、数据表都按它).
  *
- * jsDelivr 在前: 在中国大陆连得上, `raw.githubusercontent.com` 常常连不上, 放最后兜底.
- * jsDelivr 的三个节点里 testingcf 在前: 推送后主动刷新缓存时, testingcf 与 cdn 刷新即生效, gcore 不认主动刷新,
- * 边缘缓存最长 12 小时才过期; 大陆真机上 testingcf 与 gcore 一样快, cdn 时好时坏 (见更新检查的 `JSDELIVR_HOSTS`).
+ * 仓库文件 ([urls]): jsDelivr 在前 —— 在中国大陆连得上, `raw.githubusercontent.com` 常常连不上, 放最后兜底.
+ * jsDelivr 的三个节点 ([JSDELIVR_HOSTS]): 大陆真机上 testingcf 与 gcore 一样快, cdn 时好时坏 (国内有时 301 到 raw, 白等 20 秒), 放最后;
+ * 推送后主动刷新缓存 (purge) 只有 cdn 认, testingcf 与 gcore 的边缘缓存最长 12 小时才过期 —— 要马上生效的不放仓库文件, 放 release 附件.
+ * release 附件 ([releaseAsset]) 没有 jsDelivr 入口, 走原地址与下载镜像 (`GitHubDownloadMirrors.sourcesOf`).
  */
 object GitHubFileSources {
+    val JSDELIVR_HOSTS = listOf("testingcf.jsdelivr.net", "gcore.jsdelivr.net", "cdn.jsdelivr.net")
+
+    /** 本项目仓库里放清单类文件的分支 (只有清单、加密配置这些, 与代码的 main 分开: 改清单只推它). */
+    const val LISTS_BRANCH = "lists"
+
     fun urls(repository: String, path: String, branch: String = "main"): List<String> =
-        listOf("testingcf.jsdelivr.net", "gcore.jsdelivr.net", "cdn.jsdelivr.net")
-            .map { "https://$it/gh/$repository@$branch/$path" } +
-                "https://raw.githubusercontent.com/$repository/$branch/$path"
+        JSDELIVR_HOSTS.map { "https://$it/gh/$repository@$branch/$path" } +
+            "https://raw.githubusercontent.com/$repository/$branch/$path"
+
+    /** release [tag] 的附件 [name] 的原地址 (镜像地址由 `GitHubDownloadMirrors.sourcesOf` 接在后面). */
+    fun releaseAsset(repository: String, tag: String, name: String): String =
+        "https://github.com/$repository/releases/download/$tag/$name"
 }

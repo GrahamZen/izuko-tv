@@ -31,6 +31,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import me.him188.ani.app.data.network.protocol.ReleaseClass
+import me.him188.ani.app.domain.foundation.GitHubFileSources
 import me.him188.ani.app.platform.currentAniBuildConfig
 import me.him188.ani.app.platform.getAniUserAgent
 import me.him188.ani.utils.ktor.ScopedHttpClient
@@ -71,13 +72,12 @@ internal fun isInUpdateLine(version: String): Boolean =
 private const val JSDELIVR_UPDATE_LINE_RANGE = "%3C$UPDATE_LINE_MAJOR_EXCLUSIVE"
 
 /**
- * jsDelivr 的几个入口, 按顺序试. 版本范围的解析只含正式版 (实测 6.0.6-alpha01 存在时 `@latest` 仍解析到 6.0.5),
+ * jsDelivr 的几个入口, 按顺序试; 与应用里取别的 GitHub 文件同一份 ([GitHubFileSources.JSDELIVR_HOSTS], 顺序的理由在那里).
+ * 版本范围的解析只含正式版 (实测 6.0.6-alpha01 存在时 `@latest` 仍解析到 6.0.5),
  * 版本号在响应头 `x-jsd-version` 里; 解析结果有最长 12 小时的缓存, 刚发版时可能还是上一版.
- *
  * 不含 fastly 入口: 它在国内会 301 到 raw.githubusercontent.com, 真机上要么超时要么 10 秒才回, 且没有版本头.
- * cdn 入口在国内时好时坏 (同一台电视两次测试, 一次通一次同样 301 白等 20 秒), 放最后.
  */
-internal val JSDELIVR_HOSTS = listOf("gcore.jsdelivr.net", "testingcf.jsdelivr.net", "cdn.jsdelivr.net")
+internal val JSDELIVR_HOSTS get() = GitHubFileSources.JSDELIVR_HOSTS
 
 /** GitHub 连不上时依次查几个镜像: jsDelivr 的各个入口, 最后是 ghfast. */
 internal val UPDATE_CHECK_MIRROR_COUNT get() = JSDELIVR_HOSTS.size + 1

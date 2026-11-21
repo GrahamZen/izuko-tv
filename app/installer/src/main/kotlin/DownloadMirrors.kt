@@ -12,7 +12,7 @@ package io.github.grahamzen.izuko.installer
 import org.json.JSONObject
 
 /**
- * GitHub 下载的加速镜像, 与应用内更新共用仓库根目录的 `github-download-mirrors.json` (见 GitHubDownloadMirrors):
+ * GitHub 下载的加速镜像, 与应用内更新共用本仓库 `lists` 分支的 `github-download-mirrors.json` (见 GitHubDownloadMirrors):
  * 镜像死了改那个文件, 助手不用重发. 条目两种写法: 前缀 (GitHub 原地址整个接在后面), 或含 [PLACEHOLDER] 的模板.
  */
 object DownloadMirrors {
@@ -25,10 +25,7 @@ object DownloadMirrors {
 
     /** 仓库里的镜像清单; 各个来源都取不到时用内置的. */
     fun load(repository: String, log: (String) -> Unit): List<String> {
-        val urls = listOf("testingcf.jsdelivr.net", "gcore.jsdelivr.net", "cdn.jsdelivr.net")
-            .map { "https://$it/gh/$repository@main/$FILE_NAME" } +
-            "https://raw.githubusercontent.com/$repository/main/$FILE_NAME"
-        for (url in urls) {
+        for (url in repoFileUrls(repository, LISTS_BRANCH, FILE_NAME)) {
             try {
                 val array = JSONObject(Http.getText(url, connectTimeoutMs = 5_000, readTimeoutMs = 8_000)).optJSONArray("mirrors")
                 val entries = (0 until (array?.length() ?: 0)).mapNotNull { normalize(array!!.optString(it)) }

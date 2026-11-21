@@ -33,6 +33,8 @@ import kotlinx.serialization.json.Json
 import me.him188.ani.app.data.repository.subject.SubjectNsfw
 import me.him188.ani.app.data.models.subject.SubjectRecurrence
 import me.him188.ani.app.data.network.mapper.orBangumiPlaceholder
+import me.him188.ani.app.domain.foundation.GitHubFileSources
+import me.him188.ani.app.domain.foundation.RemoteFetch
 import me.him188.ani.utils.ktor.ScopedHttpClient
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
@@ -224,13 +226,10 @@ class BangumiScheduleSource(
         val key = month.key
         cached { cache -> cache.bangumiDataMonths[key]?.takeIf { !it.isStale(BANGUMI_DATA_TTL) } }?.let { return }
 
-        val items = try {
-            val body = client.use { get(month.bangumiDataUrl()).bodyAsText() }
-            json.decodeFromString(ListSerializer(BangumiDataItem.serializer()), body)
-        } catch (e: Exception) {
-            logger.warn(e) { "Failed to fetch bangumi-data for $key" }
-            return
-        }
+        // jsDelivr 各节点与 raw 依次试 (原来只有一个节点, 它不通时整月的放送时刻都没有)
+        val items = RemoteFetch.firstSuccessful("bangumi-data $key", month.bangumiDataUrls(), { client }) { body ->
+            runCatching { json.decodeFromString(ListSerializer(BangumiDataItem.serializer()), body) }.getOrNull()
+        }?.value ?: return
 
         val rules = buildMap {
             for (item in items) {
@@ -391,10 +390,8 @@ internal class BangumiDataSite(val site: String = "", val id: String = "")
 
 private class YearMonth(val year: Int, val month: Int) {
     val key get() = "$year-${month.toString().padStart(2, '0')}"
-    fun bangumiDataUrl() =
-        "https://cdn.jsdelivr.net/gh/bangumi-data/bangumi-data@master/data/items/$year/${
-            month.toString().padStart(2, '0')
-        }.json"
+    fun bangumiDataUrls() =
+        GitHubFileSources.urls("bangumi-data/bangumi-data", "data/items/$year/${month.toString().padStart(2, '0')}.json", branch = "master")
 }
 
 private fun String.toYearMonthOrNull(): YearMonth? {

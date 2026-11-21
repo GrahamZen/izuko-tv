@@ -83,8 +83,8 @@ sealed interface WhatsNewLoad {
  *   首次引导要出现 (新装) 时不介绍, 直接记下.
  *   说明的来源: 先 GitHub (一次取到那几版); 首屏好了、且开始等了 [INTRODUCE_WAIT] 还没取到 (或 GitHub 连不上),
  *   就用存下的那几版 (下载安装包时存的、以前取到的); 连当前版本都没存就这次不出现, 下次打开再试 ([MAX_FAILED_LAUNCHES] 次后放弃).
- * - **通知**: 只读加密的应用内通知 ([TvSealedNotices], release `notices` 的附件, 只给装了应用的人看): 每次冷启动取一次 (取不到用上次存下的),
- *   给这一版的几句交给应用内通知 ([releaseNotice], 见 TvReleaseNotice: 有新的就在进应用时的通知弹窗里, 不另盖一页; 没赶上那个弹窗的下次进应用弹).
+ * - **通知**: 只读加密的应用内通知 ([TvSealedNotices], release `notices` 的附件, 只给装了应用的人看): 一小时左右取一次 (取不到用上次存下的),
+ *   给这一版的几句交给应用内通知 ([releaseNotice], 见 TvReleaseNotice), 不另盖一页; 什么时候提示由通知那边管 (见 TvNotices).
  *   介绍新功能那一页上的通知卡片也是它, 显示过的几句在通知里记成看过.
  *   release 正文里的「## 通知」只给没有这套代码的旧版 (1.0.9-alpha04 及以前), 这里不读.
  *
@@ -258,9 +258,16 @@ object TvWhatsNew {
         return WhatsNewContent(check.version, releases, notice, full = false)
     }
 
-    /** 加密通知取到了 (取不到是上次存下的) 就交给应用内通知 (不盖页): 赶在启动时的通知弹窗之前到的, 这次进应用就弹. */
+    /**
+     * 当前版本的加密通知交给应用内通知 (不盖页), 之后一直跟着: 冷启动这次的检查做完先交一次 (赶在启动时的通知之前到的, 这次进应用就提示);
+     * 运行中取到新的一句 (一小时左右取一次, 见 SealedNoticesRepository) 照样交过去, 什么时候提示由通知那边管 (见 TvNotices).
+     */
     private fun publishNotice(check: LaunchCheck) {
-        scope.launch { releaseNotice.value = ReleaseNotice(check.version, check.sealed.await()) }
+        scope.launch {
+            // 先等这次的检查: 不先把存下的旧通知亮出来又撤掉
+            check.sealed.await()
+            TvSealedNotices.flowFor(check.version).collect { items -> releaseNotice.value = ReleaseNotice(check.version, items) }
+        }
     }
 
     /** 已经取到就是结果, 还在取就当没有 (不为它多等). */

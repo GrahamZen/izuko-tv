@@ -10,17 +10,8 @@
 package me.him188.ani.app.data.network
 
 import androidx.datastore.core.DataStore
-import io.ktor.client.plugins.expectSuccess
-import io.ktor.client.request.get
-import io.ktor.client.request.header
-import io.ktor.client.statement.readRawBytes
-import io.ktor.http.HttpHeaders
-import io.ktor.http.HttpStatusCode
-import io.ktor.http.isSuccess
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.filterNotNull
@@ -30,6 +21,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.Serializable
 import me.him188.ani.app.domain.foundation.GitHubFileSources
+import me.him188.ani.app.domain.foundation.RemoteFetch
+import me.him188.ani.app.domain.foundation.RemoteRefresh
 import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.io.SystemPath
 import me.him188.ani.utils.io.exists
@@ -41,9 +34,7 @@ import me.him188.ani.utils.io.writeBytes
 import me.him188.ani.utils.ktor.ScopedHttpClient
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
-import me.him188.ani.utils.logging.warn
 import me.him188.ani.utils.platform.currentTimeMillis
-import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource
@@ -76,10 +67,21 @@ class TmdbSubjectMapRepository(
     private val entries = MutableStateFlow<TmdbSubjectMapIndex?>(null)
 
     /**
-     * 第一轮检查 (下载或确认不用下载) 结束. 本地还没有表 (刚安装) 时, [lookup] 会等它一小会儿,
-     * 免得刚装好的头几个条目全都自己去搜.
+     * 什么时候问一次 (多数时候是 304); 本地没有表就不管上次什么时候问过, 下整份. 第一轮检查做完前 [lookup] 在本地没有表 (刚安装) 时
+     * 等它一小会儿, 免得刚装好的头几个条目全都自己去搜.
      */
-    private val firstCheckDone = CompletableDeferred<Unit>()
+    private val refresh = RemoteRefresh(
+        name = "tmdb subject map",
+        scope = scope,
+        staleAfter = REFRESH_INTERVAL,
+        checkEvery = CHECK_INTERVAL,
+        refreshOnNetworkCheck = false,
+        lastFetchedAt = {
+            val loaded = entries.filterNotNull().first()
+            cache.data.first().checkedAt.takeIf { loaded.size > 0 }
+        },
+        fetch = { enabled.first() && fetch() },
+    )
 
     init {
         scope.launch {
@@ -87,12 +89,6 @@ class TmdbSubjectMapRepository(
             val loaded = loadLocal()
             entries.value = loaded
             logger.info { "tmdb subject map loaded: ${loaded.size} entries in ${start.elapsedNow().inWholeMilliseconds}ms" }
-            if (loaded.size > 0) firstCheckDone.complete(Unit)
-            while (true) {
-                if (enabled.first()) refreshIfStale()
-                firstCheckDone.complete(Unit)
-                delay(CHECK_INTERVAL)
-            }
         }
     }
 
@@ -102,8 +98,8 @@ class TmdbSubjectMapRepository(
     /** 表里这个条目的结果; 表里没有返回 null. */
     suspend fun lookup(subjectId: Int): TmdbSubjectMapEntry? {
         val map = entries.value ?: entries.filterNotNull().first()
-        if (map.size == 0 && !firstCheckDone.isCompleted) {
-            withTimeoutOrNull(FIRST_DOWNLOAD_WAIT) { firstCheckDone.await() }
+        if (map.size == 0) {
+            withTimeoutOrNull(FIRST_DOWNLOAD_WAIT) { refresh.awaitFirstCheck() }
             return entries.value?.get(subjectId)
         }
         return map[subjectId]
@@ -123,72 +119,35 @@ class TmdbSubjectMapRepository(
         temp.moveTo(mapFile)
     }
 
-    private suspend fun refreshIfStale() {
+    /** 问一次; 没变或换上了新的返回 true. */
+    private suspend fun fetch(): Boolean {
         val cached = cache.data.first()
         val current = entries.value
-        val hasLocal = current != null && current.size > 0
-        if (hasLocal && currentTimeMillis() - cached.checkedAt < REFRESH_INTERVAL.inWholeMilliseconds) {
-            return
-        }
-        for (url in MAP_URLS) {
-            val fetched = try {
-                client().use {
-                    val response = get(url) {
-                        expectSuccess = false
-                        // ETag 各个 CDN 各算各的, 只对上次成功的那个入口带; 本地没有表时要整份, 不带
-                        if (hasLocal && cached.etag != null && cached.source == url) {
-                            header(HttpHeaders.IfNoneMatch, cached.etag)
-                        }
-                    }
-                    when {
-                        response.status == HttpStatusCode.NotModified -> Fetched.NotModified
-                        response.status.isSuccess() -> Fetched.Body(response.readRawBytes(), response.headers[HttpHeaders.ETag])
-                        else -> Fetched.Failed(response.status.toString())
-                    }
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Fetched.Failed(e::class.simpleName.orEmpty())
-            }
-            val (bytes, etag) = when (fetched) {
-                is Fetched.Failed -> {
-                    logger.info { "tmdb subject map: $url unreachable (${fetched.reason})" }
-                    continue
-                }
-
-                Fetched.NotModified -> {
-                    cache.updateData { it.copy(checkedAt = currentTimeMillis()) }
-                    logger.info { "tmdb subject map: not modified ($url)" }
-                    return
-                }
-
-                is Fetched.Body -> fetched.bytes to fetched.etag
-            }
+        val fetched = RemoteFetch.firstChanged(
+            "tmdb subject map",
+            MAP_URLS,
+            client,
+            // 本地没有表时要整份, 不带 ETag
+            previous = RemoteFetch.Revision(cached.source, cached.etag).takeIf { current != null && current.size > 0 },
+        ) { _, bytes ->
             // 远程内容, 认不出格式就不用 (例如 CDN 回了一张错误页)
             val parsed = TmdbSubjectMapIndex.parse(bytes)
-            if (!bytes.startsWith(HEADER_PREFIX) || parsed.size == 0) {
-                logger.warn { "tmdb subject map from $url is not a map file, ignoring" }
-                continue
-            }
+            if (!bytes.startsWith(HEADER_PREFIX) || parsed.size == 0) RemoteFetch.reject("not a map file")
             // CDN 的边缘缓存可能还是很早的一版 (gcore 不认主动刷新, 最长 12 小时): 条目数不到本机这份的一半就当它过时, 换下一个入口
-            if (current != null && parsed.size < current.size / 2) {
-                logger.warn { "tmdb subject map from $url has ${parsed.size} entries, cached one has ${current.size}; looks stale, ignoring" }
-                continue
+            if (current != null && parsed.size < current.size / 2) RemoteFetch.reject("stale (${parsed.size} entries < half of ${current.size})")
+            bytes to parsed
+        } ?: return false
+        when (fetched) {
+            is RemoteFetch.Conditional.NotModified -> cache.updateData { it.copy(checkedAt = currentTimeMillis()) }
+            is RemoteFetch.Conditional.Changed -> {
+                val (bytes, parsed) = fetched.value
+                writeMapFile(bytes)
+                cache.updateData { TmdbSubjectMapCache(etag = fetched.etag, source = fetched.source, checkedAt = currentTimeMillis()) }
+                entries.value = parsed
+                logger.info { "tmdb subject map updated from ${fetched.source}: ${parsed.size} entries" }
             }
-            writeMapFile(bytes)
-            cache.updateData { TmdbSubjectMapCache(etag = etag, source = url, checkedAt = currentTimeMillis()) }
-            entries.value = parsed
-            logger.info { "tmdb subject map updated from $url: ${parsed.size} entries" }
-            return
         }
-        logger.info { "tmdb subject map: all sources unreachable, keeping ${entries.value?.size ?: 0} entries" }
-    }
-
-    private sealed interface Fetched {
-        data object NotModified : Fetched
-        class Body(val bytes: ByteArray, val etag: String?) : Fetched
-        class Failed(val reason: String) : Fetched
+        return true
     }
 
     private companion object {

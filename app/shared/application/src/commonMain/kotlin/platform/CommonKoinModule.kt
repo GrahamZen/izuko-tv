@@ -50,6 +50,7 @@ import me.him188.ani.app.data.network.RemoteSubjectService
 import me.him188.ani.app.data.network.RecommendationCatalogRepository
 import me.him188.ani.app.data.network.SeriesGraphTableRepository
 import me.him188.ani.app.data.network.SubjectRecommendationsCache
+import me.him188.ani.app.data.network.FeedbackTicketEndpoints
 import me.him188.ani.app.data.network.FeedbackTicketService
 import me.him188.ani.app.data.network.SubjectFeedbackService
 import me.him188.ani.app.data.network.SubjectSeriesIndexService
@@ -340,8 +341,12 @@ private fun KoinApplication.otherModules(
             records = get(),
         )
     }
+    single<FeedbackTicketEndpoints> {
+        FeedbackTicketEndpoints(get<SettingsRepository>().ticketEndpointCache, { get<HttpClientProvider>().get() }, coroutineScope)
+    }
     single<FeedbackTicketService> {
-        FeedbackTicketService({ get<HttpClientProvider>().get() }, get(), FeedbackTicketService::configuredEndpoints)
+        val endpoints = get<FeedbackTicketEndpoints>()
+        FeedbackTicketService({ get<HttpClientProvider>().get() }, get()) { FeedbackTicketService.configuredEndpoints(endpoints.current.value) }
     }
     // 启动就建: 每天查一次故障工单与修正请求的处理结果
     single<FeedbackTickets>(createdAtStart = true) {
@@ -574,12 +579,13 @@ private fun KoinApplication.otherModules(
             scope = coroutineScope,
         )
     }
-    // 加密的应用内通知 (release notices 的附件), 冷启动时「本版新功能」那边取
-    single<SealedNoticesRepository> {
+    // 加密的应用内通知 (release notices 的附件): 启动就建, 回到前台时取新的 (正在用的电视也收得到)
+    single<SealedNoticesRepository>(createdAtStart = true) {
         SealedNoticesRepository(
             file = getContext().files.cacheDir.resolve("sealed-notices.json"),
             mirrors = get(),
             client = { get<HttpClientProvider>().get() },
+            scope = coroutineScope,
         )
     }
     single<TmdbSubjectMapRepository> {

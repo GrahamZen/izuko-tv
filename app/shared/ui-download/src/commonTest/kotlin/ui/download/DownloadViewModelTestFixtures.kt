@@ -317,6 +317,7 @@ internal class FakeSettingsRepository : SettingsRepository {
     override val tmdbImageHostCache: Settings<RepoHostedListCache> get() = error("Not used")
     override val githubDownloadMirrorCache: Settings<RepoHostedListCache> get() = error("Not used")
     override val feedbackEndpointCache: Settings<RepoHostedListCache> get() = error("Not used")
+    override val ticketEndpointCache: Settings<RepoHostedListCache> get() = error("Not used")
     override val feedbackRecords: Settings<FeedbackRecords> get() = error("Not used")
     override val notices: Settings<NoticeLog> get() = error("Not used")
     override val videoResolverSettings: Settings<VideoResolverSettings> get() = error("Not used")
