@@ -24,6 +24,7 @@ import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
 import android.graphics.RectF
 import android.graphics.Shader
+import android.os.SystemClock
 import android.view.Choreographer
 import android.view.View
 import android.view.animation.PathInterpolator
@@ -70,7 +71,8 @@ data class TvNativeWallBackdropTarget(
  * 不做实时模糊: Shield 是 Android 11, 没有 RenderEffect; 索尼有, 但整屏每帧模糊是低端机上最贵的常驻 GPU 开销之一. 整屏压暗 ([maskColor])
  * 按每张图自己的亮度加深, 保证上面的字 ([textColor]) 看得清 (见 tvBackdropMaskAlpha); hero 态铺模糊背景时 (深色主题) 照 Apple TV 只分两档
  * ([brightMaskAlpha]). 压暗用颜色滤镜画在同一次绘制里, 不另开一层. 换图时新图解好后叠在旧图上淡入 ([TV_WALL_BACKDROP_CROSSFADE_MILLIS]; [crossfade] = false 时当场换), 满了再撤掉
- * 下面的; 新图没解好之前旧图一直在; 连着换时可以等上一张淡满再换 ([coalesceSwaps]). 各层是直接改透明度的 ImageView (没有背景, 透明度逐绘制指令乘, 不开离屏层).
+ * 下面的; 新图没解好之前旧图一直在; 连着换时可以等上一张淡满再换 ([coalesceSwaps]). 页面刚换过来时的第一张 (底下什么都没有、进页后不久就解好,
+ * [TV_WALL_BACKDROP_ENTRY_INSTANT_MILLIS]) 当场铺上, 不从底色淡入: 不然换页那一下整屏先黑 (浅色主题上的字也一起看不见). 各层是直接改透明度的 ImageView (没有背景, 透明度逐绘制指令乘, 不开离屏层).
  *
  * 清晰层: 同一张图按原尺寸解 (TMDB w1280, 与详情页同一个内存缓存键), 叠在模糊层上, 透明度 = [sharpness] (解好之前恒 0; 透明度 0 的层
  * 不画). 换图后停在这张上 [TV_WALL_BACKDROP_SHARP_DELAY_MILLIS] 才解 ([prepareSharp] 当场解), 解好先传到 GPU ([Bitmap.prepareToDraw]);
@@ -91,6 +93,9 @@ class TvNativeWallBackdropView(
         alpha = 0f
     }
     private var target: TvNativeWallBackdropTarget? = null
+
+    /** 第一次有目标 (页面换过来) 的时刻 (uptime 毫秒); 0 = 还没有. */
+    private var firstTargetAt = 0L
 
     /** 清晰层上此刻解好的那张的地址 (null = 没有). */
     private var sharpUrl: String? = null
@@ -262,6 +267,7 @@ class TvNativeWallBackdropView(
         val old = this.target
         if (target == old) return
         this.target = target
+        if (target != null && firstTargetAt == 0L) firstTargetAt = SystemClock.uptimeMillis()
         if (old?.url != target?.url || old?.subjectId != target?.subjectId) retractZoom()
         if (old?.url != target?.url || target?.sharp != true) clearSharp()
         if (old?.url != target?.url) {
@@ -465,7 +471,10 @@ class TvNativeWallBackdropView(
             sharpMaskAlpha = -1
             applySharpMask()
             shown = true
-            fadeTo(1f, animated = crossfade && !direct) {
+            // 页面刚换过来的第一张: 当场铺上 (从底色淡入就是先黑一下)
+            val entering = slots.none { it !== this && it.shown } &&
+                SystemClock.uptimeMillis() - firstTargetAt <= TV_WALL_BACKDROP_ENTRY_INSTANT_MILLIS
+            fadeTo(1f, animated = crossfade && !direct && !entering) {
                 removeBelow(this)
                 // 连着换时等着的那张 (见 coalesceSwaps)
                 startPendingSwap()
@@ -744,6 +753,11 @@ internal fun tvNativeEndListener(onEnd: (() -> Unit)?): Animator.AnimatorListene
 
 /** 模糊层换图的交叉淡入. */
 const val TV_WALL_BACKDROP_CROSSFADE_MILLIS = 400
+
+/**
+ * 页面换过来后这么久之内解好的第一张背景当场铺上、不淡入 (换页的过渡加上从缓存解一张小图都在这之内); 更晚才到的 (冷启动从网上取) 照常淡入.
+ */
+const val TV_WALL_BACKDROP_ENTRY_INSTANT_MILLIS = 800L
 
 /** 对焦时卡片 (点开时连同顶栏) 淡没、倒放时淡回的时长. */
 const val TV_WALL_BACKDROP_CARDS_MILLIS = 200
