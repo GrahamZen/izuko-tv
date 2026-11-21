@@ -12,17 +12,27 @@ package me.him188.ani.app.domain.media.fetch
 import me.him188.ani.app.data.models.subject.SubjectSeriesInfo
 import me.him188.ani.app.data.network.TmdbSubjectMapEntry
 import me.him188.ani.app.data.network.TmdbSubjectMapRef
+import me.him188.ani.app.domain.mediasource.search.SubjectMatch
+import me.him188.ani.app.domain.mediasource.search.SubjectSearchPlan
+import me.him188.ani.datasources.api.EpisodeSort
+import me.him188.ani.datasources.api.source.MediaFetchRequest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class RegionalSubjectNamesTest {
-    private fun entry(type: String, vararg names: Pair<String, String>) = TmdbSubjectMapEntry(
+    private fun entry(
+        type: String,
+        vararg names: Pair<String, String>,
+        episodes: String? = null,
+        stills: List<TmdbSubjectMapRef> = emptyList(),
+    ) = TmdbSubjectMapEntry(
         backdrop = TmdbSubjectMapRef(type, 1),
         backdropPath = null,
-        stills = emptyList(),
+        stills = stills,
         manual = false,
+        episodes = episodes,
         regionalNames = names.toMap(),
     )
 
@@ -138,5 +148,56 @@ class RegionalSubjectNamesTest {
         val final = entry("tv", "tw" to "進擊的巨人 第四季")
         assertEquals(listOf("進擊的巨人 第四季"), regionalSubjectAliases(final, listOf("进击的巨人 最终季"), seasonSort = 4))
         assertEquals(emptyList(), regionalSubjectAliases(entry("collection", "tw" to "鬼滅之刃 系列"), listOf("鬼灭之刃"), 1))
+    }
+
+    private val ovaName = "全金属狂潮 The Second Raid OVA 战队长悠闲的一天"
+
+    /** 对应表里的这部 OVA: TMDB 挂在整部剧的 S0E4, 译名是整个系列的 */
+    private val ova = entry("tv", "tw" to "驚爆危機！", "hk" to "驚爆危機", episodes = "S0E4", stills = listOf(TmdbSubjectMapRef("tv", 1)))
+
+    @Test
+    fun `specials of a show - the regional name of the show is not theirs`() {
+        assertTrue(ova.isSpecialOfShow())
+        assertEquals(emptyList(), regionalSubjectAliases(ova, listOf(ovaName), seasonSort = 1))
+        assertNull(regionalSearchName(ova, listOf(ovaName)))
+        // 剧照只取 S0 的同样算
+        val stillsOnlyS0 = entry("tv", "tw" to "驚爆危機！", stills = listOf(TmdbSubjectMapRef("tv", 1, season = 0)))
+        assertTrue(stillsOnlyS0.isSpecialOfShow())
+        assertEquals(emptyList(), regionalSubjectAliases(stillsOnlyS0, listOf(ovaName), seasonSort = 1))
+    }
+
+    @Test
+    fun `specials of a show - seasons with specials in S0 keep the regional name`() {
+        // 本篇在 S1, 夹在中间与最后的特别篇对到 S0: 是本篇自己
+        val withSpecials = entry("tv", "tw" to "某部剧", episodes = "1-8:S1E1 9-16:S1E10 SP24.5:S0E1")
+        assertEquals(false, withSpecials.isSpecialOfShow())
+        assertEquals(listOf("某部剧"), regionalSubjectAliases(withSpecials, listOf("某部剧"), seasonSort = 1))
+        // 没有分集编码的照旧
+        assertEquals(false, entry("tv", "tw" to "某部剧").isSpecialOfShow())
+        // 电影挂在剧集下面: 译名是电影自己的
+        assertEquals(false, entry("movie", "tw" to "劇場版", episodes = "S0E1").isSpecialOfShow())
+    }
+
+    @Test
+    fun `specials of a show - the first season page of the show is not taken for them`() {
+        val request = withRegionalNames(
+            MediaFetchRequest(
+                subjectId = "2689",
+                episodeId = "16990",
+                subjectNameCN = ovaName,
+                subjectNames = listOf(ovaName, "フルメタル・パニック! The Second Raid 特別版OVA「わりとヒマな戦隊長の一日」"),
+                episodeSort = EpisodeSort(14),
+                episodeName = "战队长悠闲的一天",
+                episodeEp = EpisodeSort(1),
+            ),
+            ova,
+            seriesInfo = null,
+        )
+        assertTrue(request.nameHints.ownNames.none { it.contains("驚爆危機") || it.contains("惊爆危机") })
+        assertTrue(request.fallbackSearchKeywords.none { it.contains("驚爆危機") })
+        // 站点上第一季的页叫「全金属狂潮」, 站点别名里有「惊爆危机」
+        val plan = SubjectSearchPlan.of(request)
+        assertEquals("全金属狂潮", plan.nameWithSiteAliases("全金属狂潮", listOf("惊爆危机", "驚爆危機", "Full Metal Panic!")))
+        assertEquals(SubjectMatch.OTHER, plan.identify("全金属狂潮"))
     }
 }
