@@ -18,9 +18,10 @@ plugins {
     id("ani.build-config")
 }
 
-val dandanplayAppId = getPropertyOrNull("ani.dandanplay.app.id") ?: ""
-val dandanplayAppSecret = getPropertyOrNull("ani.dandanplay.app.secret") ?: ""
-val tmdbApiToken = getPropertyOrNull("ani.tmdb.api.token") ?: ""
+// 弹弹 play 凭据、TMDB token、交流群可能要换: 走加密的应用配置 (仓库 lists 分支的密文, 应用运行时也会取最新的), 见 build-logic 的 appConfig.kt
+val dandanplayAppId = appConfigValue("dandanplay.app.id")
+val dandanplayAppSecret = appConfigValue("dandanplay.app.secret")
+val tmdbApiToken = appConfigValue("tmdb.api.token")
 
 // 直连 bangumi 的 OAuth 应用 (fork 自己注册的). 回调地址 `ani://bangumi-oauth-callback`.
 // 没配置时为空串 —— 登录页会直接告诉用户"这个构建没带凭据", 而不是跳到一个必然报错的授权页.
@@ -30,10 +31,11 @@ val bangumiOauthClientSecret = getPropertyOrNull("ani.bangumi.oauth.client.secre
 val bangumiOauthRelayClientId = getPropertyOrNull("ani.bangumi.oauth.relay.client.id") ?: ""
 val bangumiOauthRelayClientSecret = getPropertyOrNull("ani.bangumi.oauth.relay.client.secret") ?: ""
 val sentryDsn = getPropertyOrNull("ani.sentry.dsn") ?: ""
-// 交流群: 只给装了应用的人看, 不写进源码 (GitHub 上谁都能翻到); 本机放 local.properties, CI 由 secret 写进去. 没配就是空, 界面上不显示
-val chatQqGroupId = getPropertyOrNull("ani.chat.qq.id") ?: ""
-val chatQqGroupLink = getPropertyOrNull("ani.chat.qq.link") ?: ""
-val chatTelegramLink = getPropertyOrNull("ani.chat.telegram.link") ?: ""
+// 交流群: 只给装了应用的人看, 明文不进仓库与 CI. 没配就是空, 界面上不显示
+val chatQqGroupId = appConfigValue("chat.qq.id")
+val chatQqGroupLink = appConfigValue("chat.qq.link")
+val chatTelegramLink = appConfigValue("chat.telegram.link")
+val appConfigKey = appConfigKey()
 val analyticsKey = getPropertyOrNull("ani.analytics.key") ?: ""
 val distroChannel = getPropertyOrNull("ani.distro.channel") ?: "default"
 
@@ -166,6 +168,7 @@ buildConfig {
         stringField("chatQqGroupId", chatQqGroupId)
         stringField("chatQqGroupLink", chatQqGroupLink)
         stringField("chatTelegramLink", chatTelegramLink)
+        stringField("appConfigKey", appConfigKey)
 
         firebaseFields()
     }
@@ -190,6 +193,7 @@ buildConfig {
         stringField("chatQqGroupId", chatQqGroupId)
         stringField("chatQqGroupLink", chatQqGroupLink)
         stringField("chatTelegramLink", chatTelegramLink)
+        stringField("appConfigKey", appConfigKey)
 
         booleanField("analyticsEnabled", enableFirebase)
         booleanField("devConsole", devConsole)

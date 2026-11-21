@@ -87,14 +87,19 @@ interface AniBuildConfig {
         get() = projectRepository
 
     /**
-     * 交流群: QQ 群号与加群链接 (`ani.chat.qq.id` / `ani.chat.qq.link`)、Telegram 链接 (`ani.chat.telegram.link`).
-     * 只给装了应用的人看, 不写进源码, 构建时从 local.properties 或 CI secret 注入; 没配置时为空串, 界面上不显示 (见 `ChatGroups`).
+     * 交流群: QQ 群号与加群链接、Telegram 链接, 编包时内置的那份. 只给装了应用的人看, 明文不进仓库与 CI:
+     * 构建时用 [appConfigKey] 解开仓库 `lists` 分支上的应用配置密文 (见 build-logic 的 `appConfig.kt`); 没配置时为空串, 界面上不显示.
+     * 读的时候经 [RemoteAppConfig] (运行时取到的那份优先).
      */
     val chatQqGroupId: String
         get() = ""
     val chatQqGroupLink: String
         get() = ""
     val chatTelegramLink: String
+        get() = ""
+
+    /** 应用配置密文的解密钥匙 (base64url): 运行时取仓库里最新的密文再解开 (见 [RemoteAppConfig]); 没配置时为空串. */
+    val appConfigKey: String
         get() = ""
 
     val sentryEnabled: Boolean

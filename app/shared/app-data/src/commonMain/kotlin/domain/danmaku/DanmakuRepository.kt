@@ -32,7 +32,7 @@ import me.him188.ani.app.domain.foundation.HttpClientProvider
 import me.him188.ani.app.domain.foundation.get
 import me.him188.ani.app.domain.media.cache.GetMediaCacheUseCase
 import me.him188.ani.app.domain.media.cache.MediaCache
-import me.him188.ani.app.platform.currentAniBuildConfig
+import me.him188.ani.app.platform.RemoteAppConfig
 import me.him188.ani.app.ui.foundation.BackgroundScope
 import me.him188.ani.app.ui.foundation.HasBackgroundScope
 import me.him188.ani.danmaku.api.DanmakuContent
@@ -103,8 +103,8 @@ class DanmakuRepository(
     private val remoteProviders by lazy {
         listOf(
             DandanplayDanmakuProvider(
-                dandanplayAppId = currentAniBuildConfig.dandanplayAppId,
-                dandanplayAppSecret = currentAniBuildConfig.dandanplayAppSecret,
+                dandanplayAppId = RemoteAppConfig.dandanplayAppId,
+                dandanplayAppSecret = RemoteAppConfig.dandanplayAppSecret,
                 httpClientProvider.get(),
             ),
         )
