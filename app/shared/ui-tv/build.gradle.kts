@@ -101,6 +101,7 @@ kotlin {
         api(projects.app.shared.videoPlayer)
         api(projects.danmaku.danmakuUi)
         implementation(libs.koin.core)
+        implementation(libs.filekit.dialogs.compose) // 平板播放页导入弹幕文件 (TabletDanmakuImportDialog)
         // 进度条缩略图取帧 (见 TvFramePreviewSource): media3 的 ExperimentalFrameExtractor,
         // 用来替代 mediamp 那份打不开 HLS 的 MediaMetadataRetriever 实现
         implementation(libs.androidx.media3.transformer)

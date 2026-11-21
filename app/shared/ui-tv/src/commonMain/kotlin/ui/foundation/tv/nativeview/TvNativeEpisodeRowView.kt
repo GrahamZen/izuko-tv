@@ -54,7 +54,8 @@ import kotlin.math.min
  *
  * @param stillUrl 剧照 (卡片档 URL); null = 纯文字卡.
  * @param playing 正在播放 (详情页: 下一集要看) 的那一集: 没聚焦时行首画声浪图标, 底色换主色调.
- * @param progress 进度条 (0..1); null / 0 不画. 看过的集由调用方给 1 (满条).
+ * @param progress 进度条 (0..1); null / 0 不画. 电视上看过的集由调用方给 1 (满条); 触屏的全部选集弹窗只给看到一半的
+ *   (看完的打勾, 见 [TvNativeEpisodeStyle.watchedCheck]).
  */
 @Immutable
 data class TvNativeEpisodeCard(
@@ -110,8 +111,12 @@ class TvNativeEpisodeCardView(context: Context, style: TvNativeEpisodeStyle) : T
     private var sortTop = 0
     private var nameLeft = 0
     private var nameTop = 0
+    private var check: Bitmap? = null
+    private var checkLeft = 0
+    private var checkTop = 0
 
     private val iconPaint = Paint(Paint.FILTER_BITMAP_FLAG)
+    private val checkPaint = Paint(Paint.FILTER_BITMAP_FLAG)
     private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val barRect = RectF()
@@ -187,6 +192,8 @@ class TvNativeEpisodeCardView(context: Context, style: TvNativeEpisodeStyle) : T
         sort.setTextColor(if (hasStill) Color.WHITE else colors.sort)
         name.setTextColor(if (hasStill) style.imageNameColor else colors.name)
         iconPaint.colorFilter = if (hasStill) null else PorterDuffColorFilter(colors.sort, PorterDuff.Mode.SRC_IN)
+        checkPaint.colorFilter = PorterDuffColorFilter(if (hasStill) Color.WHITE else colors.sort, PorterDuff.Mode.SRC_IN)
+        still.dim = if (hasStill && card.watched && !card.playing) style.watchedStillDim else 0
         trackPaint.color = if (hasStill) style.imageTrackColor else colors.track
         fillPaint.color = colors.progress
         still.scrim = if (hasStill) style else null
@@ -292,6 +299,13 @@ class TvNativeEpisodeCardView(context: Context, style: TvNativeEpisodeStyle) : T
         sortLeft = x
         // Compose 的 Text 在有字距时把固有宽度多算半个像素再向上取整 (LayoutIntrinsics), 后面的集名跟着右移一个像素
         x += sort.measuredWidth + if (sort.letterSpacing != 0f) 1 else 0
+        // 看完的勾 (触屏样式, 见 TvNativeEpisodeStyle.watchedCheck) 跟在集号后面, 集名再往后挪
+        val shownCheck = if (c?.watched == true) s.watchedCheck else null
+        check = shownCheck
+        if (shownCheck != null) {
+            checkLeft = x + s.textGapPx
+            x = checkLeft + s.watchedCheckPx
+        }
         // 行首图标的对齐线: 图标中心在集号基线上方半个 cap height
         val iconLine = iconSize / 2 + s.iconBaselineOffsetPx
         if (hasStill) {
@@ -326,6 +340,8 @@ class TvNativeEpisodeCardView(context: Context, style: TvNativeEpisodeStyle) : T
     }
 
     override fun layoutContent(width: Int, height: Int) {
+        // 勾的中心对着集号的大写字高中线 (同行首图标)
+        checkTop = sortTop + sort.baseline - (style.watchedCheckPx / 2 + style.iconBaselineOffsetPx)
         still.layout(0, 0, width, height)
         sort.layout(sortLeft, sortTop, sortLeft + sort.measuredWidth, sortTop + sort.measuredHeight)
         name.layout(nameLeft, nameTop, nameLeft + name.measuredWidth, nameTop + name.measuredHeight)
@@ -334,6 +350,7 @@ class TvNativeEpisodeCardView(context: Context, style: TvNativeEpisodeStyle) : T
     override fun dispatchDraw(canvas: Canvas) {
         super.dispatchDraw(canvas)
         icon?.let { canvas.drawBitmap(it, iconLeft.toFloat(), iconTop.toFloat(), iconPaint) }
+        check?.let { canvas.drawBitmap(it, checkLeft.toFloat(), checkTop.toFloat(), checkPaint) }
         drawProgress(canvas)
     }
 
@@ -486,19 +503,30 @@ private class TvNativeEpisodeStillView(context: Context) : ImageView(context) {
             invalidate()
         }
 
+    /** 整张图上再盖的一层 (ARGB, 看完的集压暗, 见 [TvNativeEpisodeStyle.watchedStillDim]); 0 = 不盖. */
+    var dim: Int = 0
+        set(value) {
+            if (field == value) return
+            field = value
+            invalidate()
+        }
+
     init {
         scaleType = ScaleType.CENTER_CROP
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        val s = scrim ?: return
-        val top = height * s.scrimStart
-        if (shaderHeight != height) {
-            shaderHeight = height
-            scrimPaint.shader = LinearGradient(0f, top, 0f, height.toFloat(), Color.TRANSPARENT, s.scrimColor, Shader.TileMode.CLAMP)
+        val s = scrim
+        if (s != null) {
+            val top = height * s.scrimStart
+            if (shaderHeight != height) {
+                shaderHeight = height
+                scrimPaint.shader = LinearGradient(0f, top, 0f, height.toFloat(), Color.TRANSPARENT, s.scrimColor, Shader.TileMode.CLAMP)
+            }
+            canvas.drawRect(0f, top, width.toFloat(), height.toFloat(), scrimPaint)
         }
-        canvas.drawRect(0f, top, width.toFloat(), height.toFloat(), scrimPaint)
+        if (dim != 0) canvas.drawColor(dim)
     }
 
     override fun requestLayout() {

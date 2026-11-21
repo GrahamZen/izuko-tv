@@ -11,6 +11,7 @@ package me.him188.ani.app.ui.foundation.tv.nativeview
 
 import android.graphics.Bitmap
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.MaterialTheme
@@ -239,6 +240,14 @@ data class TvNativeEpisodeStyle(
     /** 集名跑马灯的圈数: 0 = 不跑 (流畅档), -1 = 一直跑. */
     val marqueeRepeat: Int,
     val crossfade: Boolean,
+    /**
+     * 看完的集在集号后画的勾 (触屏的全部选集弹窗, 同平板的 TvPadEpisodeCard: 看完打勾、进度条只给看到一半的); null = 不画
+     * (电视上看完的给满条, 见调用方给的 progress).
+     */
+    val watchedCheck: Bitmap? = null,
+    val watchedCheckPx: Int = 0,
+    /** 看完的有剧照的卡在图上再盖的一层黑 (ARGB, 正在播的不盖); 0 = 不盖. */
+    val watchedStillDim: Int = 0,
 ) {
     fun colors(playing: Boolean, watched: Boolean): TvNativeEpisodeColors =
         palette[(if (playing) 2 else 0) + (if (watched) 1 else 0)]
@@ -252,6 +261,8 @@ fun rememberTvNativeEpisodeStyle(
     cellSpacing: Dp,
     monochrome: Boolean,
     glass: Boolean,
+    /** 触屏的看过样式 (见 [TvNativeEpisodeStyle.watchedCheck]). */
+    watchedCheck: Boolean = false,
 ): TvNativeEpisodeStyle {
     val density = LocalDensity.current
     val colorScheme = MaterialTheme.colorScheme
@@ -270,9 +281,10 @@ fun rememberTvNativeEpisodeStyle(
     val playingIconSize = with(density) { EPISODE_PLAYING_ICON_SIZE.toDp() }
     val playIcon = rememberTvNativeIcon(Icons.Rounded.PlayArrow, playIconSize)
     val playingIcon = rememberTvNativeIcon(Icons.Rounded.GraphicEq, playingIconSize)
+    val checkIcon = rememberTvNativeIcon(Icons.Rounded.Check, TV_NATIVE_WATCHED_CHECK_SIZE)
     return remember(
-        density, colorScheme, typography, visualEffects, crossfade, palette, playIcon, playingIcon,
-        cellWidth, cellHeight, cellSpacing, monochrome,
+        density, colorScheme, typography, visualEffects, crossfade, palette, playIcon, playingIcon, checkIcon,
+        cellWidth, cellHeight, cellSpacing, monochrome, watchedCheck,
     ) {
         with(density) {
             val ringWidthPx = (cellWidth + TvFocusRing.Gap * 2).roundToPx()
@@ -325,7 +337,16 @@ fun rememberTvNativeEpisodeStyle(
                     else -> TV_REDUCED_MARQUEE_ITERATIONS
                 },
                 crossfade = crossfade,
+                watchedCheck = checkIcon.takeIf { watchedCheck },
+                watchedCheckPx = if (watchedCheck) TV_NATIVE_WATCHED_CHECK_SIZE.roundToPx() else 0,
+                watchedStillDim = if (watchedCheck) Color.Black.copy(alpha = TV_NATIVE_WATCHED_STILL_DIM_ALPHA).toArgb() else 0,
             )
         }
     }
 }
+
+/** 看完的勾的边长 (同 TvPadEpisodeCard). */
+internal val TV_NATIVE_WATCHED_CHECK_SIZE = 14.dp
+
+/** 看完的剧照卡上再盖的那层黑的不透明度 (同 TvPadEpisodeCard). */
+private const val TV_NATIVE_WATCHED_STILL_DIM_ALPHA = 0.45f

@@ -52,6 +52,7 @@ import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
 import me.him188.ani.app.ui.foundation.widgets.AniButton
 import me.him188.ani.app.ui.foundation.widgets.dismissDialogButton
 import me.him188.ani.app.ui.foundation.HasBackgroundScope
+import me.him188.ani.app.ui.foundation.widgets.menuHeightCap
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_media_source_add_button
 import me.him188.ani.app.ui.lang.settings_media_source_cancel
@@ -334,6 +335,7 @@ private fun SimpleEnumArgument(argument: SimpleEnumArgumentState, modifier: Modi
             ExposedDropdownMenu(
                 expanded = expanded,
                 onDismissRequest = { expanded = false },
+                modifier = Modifier.menuHeightCap(),
             ) {
                 argument.options.forEach { option ->
                     DropdownMenuItem(

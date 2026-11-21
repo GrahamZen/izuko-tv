@@ -142,16 +142,15 @@ fun rememberTvTitleLogo(subjectId: Int, originalName: String?): TmdbTitleLogo? =
 
 /**
  * 标题 logo 的框 (见 [tvTitleLogoBox]): 列表页 hero 文字块、hero 流水线的 logo 预热、详情页首屏与播放器共用 —— 按同一个框挑图片档位
- * ([TmdbTitleLogo.url]), 预热的才是显示时要的那张. 行高取标题 (headlineLarge) 的, 按像素向上取整 (同 toTvNativeTextStyle).
- * [titleWidthPx] = 标题宽 (宽度上限另不超过它), 0 = 不限. 设置里关了为 null.
+ * ([TmdbTitleLogo.url]), 预热的才是显示时要的那张. 行高取 logo 顶替的文字标题 [titleStyle] 的 (电视上都是 headlineLarge; 平板全屏播放器的标题小一档),
+ * 按像素向上取整 (同 toTvNativeTextStyle). [titleWidthPx] = 标题宽 (宽度上限另不超过它), 0 = 不限. 设置里关了为 null.
  */
 @Composable
-fun rememberTvTitleLogoBox(titleWidthPx: Int = 0): TvTitleLogoBox? {
+fun rememberTvTitleLogoBox(titleWidthPx: Int = 0, titleStyle: TextStyle = MaterialTheme.typography.headlineLarge): TvTitleLogoBox? {
     val enabled = LocalThemeSettings.current.tvTitleLogoDisplay != TvTitleLogoDisplay.Off
     val density = LocalDensity.current
-    val typography = MaterialTheme.typography
-    return remember(enabled, density, typography, titleWidthPx) {
-        if (enabled) tvTitleLogoBox(typography.headlineLarge.lineHeightPx(density), titleWidthPx) else null
+    return remember(enabled, density, titleStyle, titleWidthPx) {
+        if (enabled) tvTitleLogoBox(titleStyle.lineHeightPx(density), titleWidthPx) else null
     }
 }
 

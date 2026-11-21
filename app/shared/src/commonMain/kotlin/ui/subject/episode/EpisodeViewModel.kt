@@ -96,6 +96,7 @@ import me.him188.ani.app.domain.episode.EpisodeFetchSelectPlayState
 import me.him188.ani.app.domain.episode.EpisodeSession
 import me.him188.ani.app.domain.episode.GetSubjectRecommendationUseCase
 import me.him188.ani.app.domain.episode.PlaybackStartGate
+import me.him188.ani.app.domain.episode.PlaybackStartHold
 import me.him188.ani.app.domain.episode.SetEpisodeCollectionTypeUseCase
 import me.him188.ani.app.domain.episode.SubjectEpisodeInfoBundle
 import me.him188.ani.app.domain.episode.SubjectRecommendation
@@ -527,6 +528,9 @@ open class EpisodeViewModel(
 
     /** 见 [PlaybackStartGate]; 电视的保留会话宿主看管这个会话期间装上它的 */
     var playbackStartGate: PlaybackStartGate by fetchPlayState.playerSession::startGate
+
+    /** 「打开时先不播放」(平板模式), 见 [PlaybackStartHold] */
+    val startHold = PlaybackStartHold { fetchPlayState.episodeSessionFlow.value.episodeId }.also { fetchPlayState.playerSession.startHold = it }
 
     /**
      * 选择器模式, 会话内保持; null = 尚未锁存, 宿主用 `vm.mediaSelectorMode ?: page.initialMediaSelectorMode`.

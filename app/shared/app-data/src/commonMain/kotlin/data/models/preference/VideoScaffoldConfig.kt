@@ -351,6 +351,10 @@ data class VideoScaffoldConfig @SerializationOnly constructor(
      * TV: 播放器评论面板 (本集吐槽箱) 的排序, 在评论胶囊的长按菜单里换.
      */
     val episodeCommentSort: EpisodeCommentSort = EpisodeCommentSort.TIME_ASCENDING,
+    /**
+     * 平板模式: 打开一集时先停在剧照上, 点播放键才开始; 数据源照常查找、选好的资源照常打开 (见 PlaybackStartHold). 电视上不起作用.
+     */
+    val holdStartOnOpen: Boolean = false,
     // WARNING: if you add new property here, review Companion properties.
     @Suppress("PropertyName") @Transient val _placeholder: Int = 0,
 ) {

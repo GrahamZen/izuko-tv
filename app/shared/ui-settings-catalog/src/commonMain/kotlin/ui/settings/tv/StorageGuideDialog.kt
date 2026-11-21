@@ -69,6 +69,7 @@ import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.aniFocusContainerColor
 import me.him188.ani.app.ui.foundation.widgets.aniFocusContentColor
 import me.him188.ani.app.ui.foundation.widgets.selectedSemantics
+import me.him188.ani.app.ui.foundation.widgets.windowSizeCap
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_storage_cache_location_fat32
 import me.him188.ani.app.ui.lang.settings_storage_cache_location_internal
@@ -149,7 +150,7 @@ internal fun StorageGuideDialog(dismiss: () -> Unit) {
     ) {
         val focus = rememberTvFocusScope()
         Surface(
-            Modifier.fillMaxSize(),
+            Modifier.windowSizeCap().fillMaxSize(), // iOS 转屏 (见 windowSizeCap)
             color = MaterialTheme.colorScheme.background,
             contentColor = MaterialTheme.colorScheme.onBackground,
         ) {

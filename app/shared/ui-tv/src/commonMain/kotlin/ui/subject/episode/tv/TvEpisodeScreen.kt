@@ -77,6 +77,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.AwaitPointerEventScope
 import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -136,7 +137,27 @@ import me.him188.ani.app.ui.subject.episode.list.arrangeSpecials
 import me.him188.ani.app.ui.subject.episode.sourceSearchProgress
 import me.him188.ani.app.ui.subject.episode.tv.source.PrewarmTvSourcePanelStrings
 import me.him188.ani.app.ui.subject.episode.tv.source.PrewarmTvSourcePanelView
+import me.him188.ani.app.navigation.LocalNavigator
 import me.him188.ani.app.ui.subject.episode.tv.source.TvPlayerSourcePanel
+import me.him188.ani.app.ui.subject.episode.tv.tablet.TabletBelowVideo
+import me.him188.ani.app.ui.subject.episode.tv.tablet.TabletEpisodeStill
+import me.him188.ani.app.ui.subject.episode.tv.tablet.TabletLandscapeLock
+import me.him188.ani.app.ui.subject.episode.tv.tablet.TabletPlayerBackKeys
+import me.him188.ani.app.ui.subject.episode.tv.tablet.TabletPlayerControls
+import me.him188.ani.app.ui.subject.episode.tv.tablet.TabletPlayerFrame
+import me.him188.ani.app.ui.subject.episode.tv.tablet.TabletPlayerState
+import me.him188.ani.app.ui.subject.episode.tv.tablet.TabletSeekStreakIndicator
+import me.him188.ani.app.ui.subject.episode.tv.tablet.TabletSeekStreakState
+import me.him188.ani.app.ui.subject.episode.tv.tablet.TabletSideColumn
+import me.him188.ani.app.ui.subject.episode.tv.tablet.TabletStartHoldButton
+import me.him188.ani.app.ui.subject.episode.tv.tablet.TabletStartHoldEffects
+import me.him188.ani.app.ui.subject.episode.tv.tablet.TabletTapZone
+import me.him188.ani.app.ui.subject.episode.tv.tablet.rememberTabletBackdropUrl
+import me.him188.ani.app.ui.subject.episode.tv.tablet.rememberTabletLevelGestures
+import me.him188.ani.app.ui.subject.episode.tv.tablet.rememberTabletPictureInPicture
+import me.him188.ani.app.ui.subject.episode.tv.tablet.rememberTabletStartHeld
+import me.him188.ani.app.ui.subject.episode.tv.tablet.rememberTabletSubjectTheme
+import me.him188.ani.app.ui.subject.episode.tv.tablet.tabletTapZone
 import me.him188.ani.app.ui.subject.episode.tv.source.TvSearchStutterGuard
 import me.him188.ani.app.ui.subject.episode.tv.source.TvSourcePanelController
 import me.him188.ani.app.ui.subject.episode.video.SkipOpEdKind
@@ -271,6 +292,21 @@ fun TvEpisodeScreenContent(
     // rememberSaveable: 从面板点开人物预览、再从预览跳到条目详情页时本页被销毁, 返回要回到
     // 离开前那一层 (控制层/面板) 而不是复位成纯视频. 存哪些字段与为什么见 [TvPlayerOverlayState.Saver]
     val overlay = rememberSaveable(saver = TvPlayerOverlayState.Saver) { TvPlayerOverlayState() }
+    // 平板模式 (触屏且没选电视模式) 的分栏 / 全屏状态 (见 TabletPlayerFrame); 电视上为 null, 播放页照原来的样子摆
+    val tablet = if (LocalTvTouchInputEnabled.current) {
+        rememberSaveable(saver = TabletPlayerState.Saver) { TabletPlayerState() }
+    } else {
+        null
+    }
+    // 平板模式画面上的纵向拖动 (左亮度 / 右音量, 见 TabletLevelGestures)
+    val levelGestures = if (tablet != null) rememberTabletLevelGestures() else null
+    // 平板模式的系统小窗 (见 TabletPictureInPicture)
+    val pictureInPicture = if (tablet != null) rememberTabletPictureInPicture(vm) else null
+    // 平板模式的「打开时先不播放」: 停着时视频框里是剧照 + 正中一颗播放键 (见 TabletStartHold)
+    if (tablet != null) TabletStartHoldEffects(vm, page.episodePresentation.episodeId)
+    val startHeld = tablet != null && rememberTabletStartHeld(vm, page.episodePresentation.episodeId)
+    // 平板模式全屏时锁横屏 (竖着拿点全屏也转成横的, 见 TabletLandscapeLock); 小窗里不锁
+    if (tablet != null) TabletLandscapeLock(tablet.fullScreen && pictureInPicture?.isActive != true)
     val seekFlash = remember { TvSeekFlashState() }
     val sheetsController = rememberVideoSideSheetsController<EpisodeVideoSideSheetPage>()
     val anySheetVisible by sheetsController.hasPageAsState()
@@ -1497,6 +1533,8 @@ fun TvEpisodeScreenContent(
             if (!confirmKeyHeld) return@collectLatest // 短按, 已经在抬起时当切换播放处理了
             val playbackSpeed = vm.player.features[PlaybackSpeed] ?: return@collectLatest
             val originalSpeed = playbackSpeed.value
+            // 平板上开着控制层长按 (见触屏的 canHold): 先收起来再倍速, 下面"挂到松手"按纯视频态等
+            if (tablet != null && overlay.layer == TvPlayerLayer.CONTROLS) overlay.hideAll()
             fastForwarding = true
             try {
                 playbackSpeed.set(vm.videoScaffoldConfig.fastForwardSpeed)
@@ -1621,11 +1659,19 @@ fun TvEpisodeScreenContent(
     val touchInput = LocalTvTouchInputEnabled.current
     // 电视上连这个落点对象都不建 (每次重组都会分配一把 lambda)
     val touchScrub = if (touchInput) remember { TvTouchScrubState() } else null
-    val touchHandler = if (touchScrub == null) null else TvPlayerTouchHandler(
+    val seekStreak = if (touchInput) remember { TabletSeekStreakState() } else null
+    val touchHandler = if (touchScrub == null || seekStreak == null) null else TvPlayerTouchHandler(
         layer = { overlay.layer },
+        // 平板上控制层开着也能长按倍速 (同哔哩哔哩), 倍速协程起来时先把控制层收起; 发弹幕、回复评论时不算
+        canHold = {
+            overlay.layer == TvPlayerLayer.HIDDEN || (
+                tablet != null && overlay.layer == TvPlayerLayer.CONTROLS &&
+                    !overlay.danmakuInputExpanded && overlay.replyingComment == null
+                )
+        },
         onPressStart = {
-            // 与确认键 KeyDown 同一记账: 倍速协程按 TV_FAST_FORWARD_HOLD_MILLIS 判长按
-            if (!confirmKeyHeld) {
+            // 与确认键 KeyDown 同一记账: 倍速协程按 TV_FAST_FORWARD_HOLD_MILLIS 判长按. 平板锁屏时不倍速
+            if (!confirmKeyHeld && tablet?.gesturesLocked != true) {
                 confirmKeyHeld = true
                 confirmKeyHoldTick++
             }
@@ -1634,8 +1680,9 @@ fun TvEpisodeScreenContent(
         isFastForwarding = { fastForwarding },
         onTap = {
             when (overlay.layer) {
-                // 单击只唤出控制层, 不切播放 (平板惯例; 遥控器确认键是"切播放并唤出")
-                TvPlayerLayer.HIDDEN -> overlay.showControls()
+                // 单击只唤出控制层, 不切播放 (平板惯例; 遥控器确认键是"切播放并唤出").
+                // 不送焦点: 平板的控件 (TabletPlayerControls) 都是点的, 没有可聚焦的进度条
+                TvPlayerLayer.HIDDEN -> overlay.showControls(focusProgress = false)
                 // 空白处单击 = 收起; 拖拽预览中 = 取消 (与返回键同义)
                 TvPlayerLayer.CONTROLS -> {
                     if (progressSliderState.isPreviewing) exitScrub(commit = false) else overlay.hideAll()
@@ -1645,28 +1692,33 @@ fun TvEpisodeScreenContent(
                 TvPlayerLayer.SOURCES -> closeSourcePanel()
             }
         },
-        onDoubleTap = { zone ->
-            when (zone) {
-                TvTouchZone.CENTER -> {
-                    // 与播放/暂停键同义 (见根路由): 暂停态恢复不唤出控制层, 播放态暂停仍唤出
-                    val resuming = !vm.player.state.value.playWhenReady
-                    vm.player.togglePlayWhenReady()
-                    if (!resuming) overlay.showControls()
-                }
-
-                TvTouchZone.LEFT, TvTouchZone.RIGHT -> {
-                    // 与单按左右键同义: 跳一步, 中央箭头反馈, 不唤出控制层
-                    if (!progressSliderState.isPreviewing) {
-                        val forward = zone == TvTouchZone.RIGHT
-                        vm.player.skip(if (forward) TV_PLAYER_SEEK_STEP_MILLIS else -TV_PLAYER_SEEK_STEP_MILLIS)
-                        seekFlash.flash(forward)
-                    }
-                }
-            }
+        onDoubleTap = double@{
+            if (tablet?.gesturesLocked == true) return@double
+            // 与播放/暂停键同义 (见根路由): 暂停态恢复不唤出控制层, 播放态暂停仍唤出
+            val resuming = !vm.player.state.value.playWhenReady
+            vm.player.togglePlayWhenReady()
+            if (!resuming) overlay.showControls(focusProgress = false)
         },
+        canSideSeek = { progressSliderState.totalDurationMillis > 0L && tablet?.gesturesLocked != true },
+        // 双击两侧 / 连着点: 跳到 TabletSeekStreakState 算好的落点, 不唤出控制层 (同遥控器左右键); 拖拽预览中先取消预览
+        onSideSeek = { forward ->
+            if (progressSliderState.isPreviewing) exitScrub(commit = false)
+            vm.player.seekTo(
+                seekStreak.step(
+                    forward,
+                    currentMillis = progressSliderState.currentPositionMillis,
+                    totalMillis = progressSliderState.totalDurationMillis,
+                ),
+            )
+        },
+        seekStreakActive = { seekStreak.visible },
+        endSeekStreak = { seekStreak.end() },
+        onLevelDragStart = { left -> tablet?.gesturesLocked != true && levelGestures?.start(left) == true },
+        onLevelDrag = { heightFraction -> levelGestures?.drag(heightFraction) },
+        onLevelDragEnd = { levelGestures?.end() },
         canScrub = {
             progressSliderState.totalDurationMillis > 0L &&
-                    !overlay.danmakuInputExpanded && overlay.replyingComment == null
+                    !overlay.danmakuInputExpanded && overlay.replyingComment == null && tablet?.gesturesLocked != true
         },
         onScrubStart = {
             val total = progressSliderState.totalDurationMillis
@@ -1678,7 +1730,7 @@ fun TvEpisodeScreenContent(
             // 与 enterScrub 同一套: 中央箭头让位, 按设置暂停 (见 TvScrubPlayback), 唤出进度条
             seekFlash.cancel()
             beginScrub()
-            if (overlay.layer == TvPlayerLayer.HIDDEN) overlay.showControls()
+            if (overlay.layer == TvPlayerLayer.HIDDEN) overlay.showControls(focusProgress = false)
         },
         onScrub = { widthFraction ->
             val total = progressSliderState.totalDurationMillis
@@ -1689,12 +1741,36 @@ fun TvEpisodeScreenContent(
             }
         },
         onScrubEnd = { commit -> exitScrub(commit) },
+        canFullScreenGesture = { tablet != null && !tablet.gesturesLocked && overlay.layer != TvPlayerLayer.DETAILS },
+        // 张开 / 上滑 = 进全屏, 捏合 / 下滑 = 退出全屏; 已经在那一态时不动. 画面比例不跟手势变 (在 ⋮ 里改)
+        onFullScreenGesture = { enter -> if (tablet != null && enter != tablet.fullScreen) tablet.toggleFullScreen() },
     )
+
+    // 平板模式: 返回先收平板自己那几层 (全屏抽屉 / 全屏 / 右栏面板), 收不了的再按原来的路由走 (见 TabletPlayerBackKeys)
+    val tabletBackKeys = if (tablet == null) {
+        null
+    } else {
+        remember(tablet, overlay, progressSliderState) {
+            TabletPlayerBackKeys(
+                tablet,
+                blocked = {
+                    overlay.danmakuInputExpanded || progressSliderState.isPreviewing || imageViewer.viewing.value ||
+                        overlay.replyingComment != null || anySheetVisible
+                },
+                onNothingLeft = { if (overlay.layer == TvPlayerLayer.CONTROLS) overlay.hideAll() },
+            )
+        }
+    }
+    val navigator = LocalNavigator.current
+    // 平板分栏时视频外跟这一份主题 (下面的强制深色之前的), 见 TabletPlayerFrame
+    val pageTheme = LocalThemeSettings.current
 
     CompositionLocalProvider(LocalTvPlayPauseHandler provides togglePlayPause) {
         AniTheme(darkModeOverride = DarkMode.DARK) {
+            // 播放器本体: 电视上铺满整屏; 平板模式下摆进分栏 / 全屏骨架的视频那一块 (同一个节点, 进出全屏不重建, 见 TabletPlayerFrame)
+            val playerRoot: @Composable (Modifier) -> Unit = { rootModifier ->
             Box(
-                modifier
+                rootModifier
                     .fillMaxSize()
                     .background(Color.Black)
                     .tvFocusNavSignal(focus)
@@ -1712,7 +1788,8 @@ fun TvEpisodeScreenContent(
                 val subtitleObstructionTop = remember(overlay) { { overlay.subtitleObstructionTopPx() } }
                 TvDanmakuAroundVideo(
                     danmaku = {
-                        // 拖动预览画在全屏上时藏起来: 弹幕停在开始拖的那一刻, 盖在预览位置的画面上对不上
+                        // 拖动预览画在全屏上时藏起来: 弹幕停在开始拖的那一刻, 盖在预览位置的画面上对不上.
+                        // 弹幕层不随控件挪: 控件 (平板的顶栏与渐变底) 画在它上面, 开关控件时弹幕原地不动
                         TraceSection("Izuko:Player/Danmaku") {
                             TvPlayerDanmaku(
                                 vm.player, danmakuHostState, vm.uiDanmakuEventFlow,
@@ -1734,6 +1811,9 @@ fun TvEpisodeScreenContent(
                         }
                     },
                 )
+
+                // 平板模式: 出第一帧之前视频框里先放这一集的剧照 (见 TabletEpisodeStill); 电视上不组合
+                if (tablet != null) TabletEpisodeStill(vm, page.episodePresentation.episodeId, startHeld, Modifier.matchParentSize())
 
                 // 触屏手势层 (电视上不组合): 在视频面之上、一切覆盖层之下 —— 覆盖层里可点/可滚的节点
                 // 在 z 序上压着它, 命中它们的事件到不了这里, 只有落在空白处的手势才算画面手势
@@ -1761,12 +1841,15 @@ fun TvEpisodeScreenContent(
                 TraceSection("Izuko:Player/LoadingLayer") {
                     TvPlayerLoadingLayer(
                         vm,
-                        hintEnabled = overlay.layer == TvPlayerLayer.HIDDEN,
+                        // 「按 ▲ 选择数据源」是遥控器的说法; 平板上数据源在画面右上角
+                        hintEnabled = overlay.layer == TvPlayerLayer.HIDDEN && tablet == null,
                         modifier = Modifier
                             .align(Alignment.Center)
-                            .graphicsLayer { alpha = if (seekFlash.visible || seekPreview?.holdsFrame == true) 0f else 1f },
+                            .graphicsLayer { alpha = if (seekFlash.visible || seekPreview?.holdsFrame == true || startHeld) 0f else 1f },
                     )
                 }
+                // 「打开时先不播放」停着时的播放键 (加载提示这时藏着, 点了才露出来)
+                if (startHeld) TabletStartHoldButton(vm, Modifier.align(Alignment.Center))
 
                 // 播放/暂停切换反馈: 画面中央浮现对应图标并渐隐 (监听播放器状态流,
                 // 无论切换来自确认键/控制按钮/面板操作都有反馈)
@@ -1795,6 +1878,8 @@ fun TvEpisodeScreenContent(
 
                 // 快进退反馈: 纯视频态左右键不唤出控制层, 这是唯一的反馈
                 TvSeekFlash(seekFlash, Modifier.align(Alignment.Center))
+                // 触屏双击两侧快进退的反馈 (那一侧的半椭圆 + 累计秒数)
+                if (seekStreak != null) TabletSeekStreakIndicator(seekStreak, Modifier.matchParentSize())
 
                 // 长按倍速指示: 按住期间常显 (不是闪一下就走的反馈, 用户需要知道"现在还在倍速").
                 // 在画面上方居中, 不挡画面中央 (倍速只在纯视频态触发, 上方没有别的东西).
@@ -1814,6 +1899,59 @@ fun TvEpisodeScreenContent(
                 // 从头组合整层在慢电视上要一两百毫秒.
                 // 提示按钮也靠这一点: 它是胶囊行的一员, 位置由那一行的布局直接给出 (不是浮在屏幕上按实测坐标跟随 ——
                 // 那样在图标行收起的逐帧动画里总慢一拍), 控制层收起时屏幕上只剩那颗按钮, 且纹丝不动
+                // OP/ED 提示按钮 (取舍见 TvSkipOpEdTipButton 的 KDoc): 电视上是胶囊行最右的插槽, 平板上停在进度条上方右边
+                val skipTipSlot: @Composable () -> Unit = {
+                    val shownTip = skipTip ?: lastSkipTip
+                    AniAnimatedVisibility(visible = skipTipVisible) {
+                        if (shownTip == null) return@AniAnimatedVisibility
+                        TvSkipOpEdTipButton(
+                            tip = shownTip,
+                            onClick = {
+                                if (shownTip.canCancel) {
+                                    vm.playerSkipOpEdState.cancelSkipOpEd()
+                                } else {
+                                    vm.playerSkipOpEdState.skipOpEd()
+                                }
+                            },
+                            modifier = Modifier
+                                // 吞掉"按钮出现时手上那次按住"的余波, 直到看见新的一次按下为止 ——
+                                // 与详情页"长按开始观看 -> 跳到选集卡片"是同一个局面: 本按钮一出现
+                                // 就抢焦点, 用户手还按着 (长按倍速), 那次按住剩下的连发与 KeyUp 就
+                                // 全落在它身上, 松手即"取消跳过". 判据与原生控件同一条 (repeatCount
+                                // == 0 才算新手势), 不依赖根路由的记账: 根路由并非每条分支都消费
+                                // 确认键 (控制层那条 `if (!isKeyDown) return false` 会把所有 KeyUp
+                                // 放行给持焦控件), 少一条就漏
+                                .consumeHeldConfirmKey()
+                                // 提示已经没了、按钮还在淡出: 吞掉按键, 免得用旧内容再取消 / 跳过一次 (2026-09-14 审查)
+                                .tvSwallowKeysWhenLeaving { vm.playerSkipOpEdState.currentTip == null }
+                                .tvFocusAnchor(focus, TvEpisodeFocus.SKIP_TIP)
+                                .onFocusChanged {
+                                    skipTipFocused = it.hasFocus
+                                    if (it.hasFocus) overlay.markInteraction()
+                                },
+                        )
+                    }
+                }
+                if (tablet != null) {
+                    // 平板模式: 画面上换成触屏控件 (见 TabletPlayerControls), 电视的胶囊行 / 图标行 / 选集条不组合
+                    TraceSection("Izuko:Player/TabletControls") {
+                        TabletPlayerControls(
+                            vm = vm,
+                            page = page,
+                            overlay = overlay,
+                            tablet = tablet,
+                            progressSliderState = progressSliderState,
+                            framePreview = seekPreview?.framePreview,
+                            danmakuEditorState = danmakuEditorState,
+                            onExitPage = { navigator.popBackStack() },
+                            skipTip = skipTipSlot,
+                            levelGestures = levelGestures,
+                            pictureInPicture = pictureInPicture,
+                            startHeld = startHeld,
+                            modifier = Modifier.matchParentSize(),
+                        )
+                    }
+                } else {
                 val controlsRetained = remember { mutableStateOf(false) }
                 LaunchedEffect(overlay) {
                     snapshotFlow { overlay.layer }.first { it == TvPlayerLayer.CONTROLS }
@@ -1842,48 +1980,22 @@ fun TvEpisodeScreenContent(
                             sheetsController = sheetsController,
                             onEditChromeItem = editChromeItem,
                             // 胶囊行最右的插槽 (OP/ED 提示按钮): 底边与胶囊对齐, 面板从上方浮出也不顶它
-                            pillsRowTrailing = {
-                                // OP/ED 提示按钮 (取舍见 TvSkipOpEdTipButton 的 KDoc)
-                                val shownTip = skipTip ?: lastSkipTip
-                                AniAnimatedVisibility(visible = skipTipVisible) {
-                                    if (shownTip == null) return@AniAnimatedVisibility
-                                    TvSkipOpEdTipButton(
-                                        tip = shownTip,
-                                        onClick = {
-                                            if (shownTip.canCancel) {
-                                                vm.playerSkipOpEdState.cancelSkipOpEd()
-                                            } else {
-                                                vm.playerSkipOpEdState.skipOpEd()
-                                            }
-                                        },
-                                        modifier = Modifier
-                                            // 吞掉"按钮出现时手上那次按住"的余波, 直到看见新的一次按下为止 ——
-                                            // 与详情页"长按开始观看 -> 跳到选集卡片"是同一个局面: 本按钮一出现
-                                            // 就抢焦点, 用户手还按着 (长按倍速), 那次按住剩下的连发与 KeyUp 就
-                                            // 全落在它身上, 松手即"取消跳过". 判据与原生控件同一条 (repeatCount
-                                            // == 0 才算新手势), 不依赖根路由的记账: 根路由并非每条分支都消费
-                                            // 确认键 (控制层那条 `if (!isKeyDown) return false` 会把所有 KeyUp
-                                            // 放行给持焦控件), 少一条就漏
-                                            .consumeHeldConfirmKey()
-                                            // 提示已经没了、按钮还在淡出: 吞掉按键, 免得用旧内容再取消 / 跳过一次 (2026-09-14 审查)
-                                            .tvSwallowKeysWhenLeaving { vm.playerSkipOpEdState.currentTip == null }
-                                            .tvFocusAnchor(focus, TvEpisodeFocus.SKIP_TIP)
-                                            .onFocusChanged {
-                                                skipTipFocused = it.hasFocus
-                                                if (it.hasFocus) overlay.markInteraction()
-                                            },
-                                    )
-                                }
-                            },
+                            pillsRowTrailing = skipTipSlot,
                             modifier = Modifier.fillMaxSize(),
                         )
                     }
+                }
                 }
 
                 // 播放器统计悬浮层 (三个点菜单开关)
                 if (overlay.showPlayerStats) {
                     val playerStats by rememberPlayerStatsState(vm.player)
-                    PlayerStatsOverlay(playerStats)
+                    // 平板: ⋮ 里「播放信息」再点一次收起, 不提键盘快捷键; 离开画面圆角边
+                    PlayerStatsOverlay(
+                        playerStats,
+                        modifier = if (tablet != null) Modifier.padding(12.dp) else Modifier,
+                        showHideHint = tablet == null,
+                    )
                 }
 
                 // 详情页覆盖层 (L3): 视频画面作背景. 淡入淡出 —— 尤其顶部按上键回选集条时,
@@ -1949,6 +2061,21 @@ fun TvEpisodeScreenContent(
                     TvPlayerSideSheets(vm, sheetsController)
                 }
 
+            }
+            }
+            if (tablet == null || tabletBackKeys == null) {
+                playerRoot(modifier)
+            } else {
+                TabletPlayerFrame(
+                    tablet,
+                    pictureInPicture = pictureInPicture?.isActive == true,
+                    pageTheme = rememberTabletSubjectTheme(vm.subjectId, page.subjectPresentation.info.imageLarge, pageTheme),
+                    backdropUrl = rememberTabletBackdropUrl(vm.subjectId, page.subjectPresentation.info),
+                    player = { playerRoot(Modifier) },
+                    below = { geometry -> TabletBelowVideo(vm, page, overlay, tablet, geometry) },
+                    side = { geometry -> TabletSideColumn(vm, page, overlay, tablet, geometry) },
+                    modifier = modifier.onPreviewKeyEvent(tabletBackKeys::onPreviewKeyEvent),
+                )
             }
         }
     }
@@ -2262,17 +2389,19 @@ private val logger = logger("TvEpisodeScreen")
  * | 手势 | 纯视频态 | 控制层 |
  * |---|---|---|
  * | 单击 | 唤出控制层 (不切播放, 平板惯例) | 空白处收起; 拖拽预览中取消 |
- * | 双击中央 | 播放/暂停 (= 播放键) | 同左 |
- * | 双击左/右边缘 ([TV_TOUCH_SEEK_EDGE_FRACTION]) | 退/进 [TV_PLAYER_SEEK_STEP_MILLIS] (= 单按左右键) | 同左 |
- * | 长按 | 倍速 (= 长按确认键, 同一协程同一记账) | 无 |
+ * | 双击 (画面横分三列, 同 YouTube) | 左边后退、右边快进 10 秒, 提示还在时再点两侧每下再跳一步 (见 TabletSeekStreakState);
+ *   中间播放/暂停 (= 播放键); 时长未知时两侧也是播放/暂停 | 同左 |
+ * | 长按 | 倍速 (= 长按确认键, 同一协程同一记账) | 平板上同左, 倍速时收起控制层 |
  * | 横向拖动 | 拖拽预览 (= 长按左右键那一态), 松手落地 | 同左 |
+ * | 纵向拖动 | 左边亮度, 右边音量 (见 TabletLevelGestures); 平板上分三列 (同上游手机播放器 PlayerGestureHost):
+ *   左三分之一亮度, 中间上滑进全屏 / 下滑退出全屏, 右三分之一音量 | 同左 |
+ * | 双指张开 / 捏合 (平板) | 分栏时张开进全屏, 全屏时捏合退出全屏; 不改画面比例 | 同左 |
  *
  * 详情层什么都不做: 那一层的空白处是详情页自己的背景. 只在**空白处**起手: 覆盖层里可点/可滚的节点在 z 序上
  * 压着本层, 命中它们的事件到不了这里. 单击要等一个双击窗口才兑现 (与手机端一样), 代价是控制层晚约 0.3 秒出现.
- * 纵向滑动不做事 (亮度/音量留待以后), 起手后直接放弃本次手势.
  *
- * 左右两条系统手势区 (手势导航的返回) 里起手的一概不接: 播放页藏着系统栏, 从屏幕边缘滑进来时系统只把栏叫出来,
- * 这一下仍会传到本层, 当成横向拖动就跳了进度.
+ * 系统手势区里起手的不接: 左右两条 (手势导航的返回) 一概不接, 上下两条 (拉下通知栏 / 回桌面) 不当纵向拖动.
+ * 播放页藏着系统栏, 从屏幕边缘滑进来时系统只把栏叫出来, 这一下仍会传到本层, 当成拖动就跳了进度、改了亮度.
  */
 @Composable
 private fun TvPlayerTouchLayer(handler: TvPlayerTouchHandler, modifier: Modifier = Modifier) {
@@ -2282,6 +2411,8 @@ private fun TvPlayerTouchLayer(handler: TvPlayerTouchHandler, modifier: Modifier
     val layoutDirection = LocalLayoutDirection.current
     val edgeLeft by rememberUpdatedState(gestureInsets.getLeft(density, layoutDirection))
     val edgeRight by rememberUpdatedState(gestureInsets.getRight(density, layoutDirection))
+    val edgeTop by rememberUpdatedState(gestureInsets.getTop(density))
+    val edgeBottom by rememberUpdatedState(gestureInsets.getBottom(density))
     Box(
         modifier.pointerInput(Unit) {
             awaitEachGesture {
@@ -2290,8 +2421,8 @@ private fun TvPlayerTouchLayer(handler: TvPlayerTouchHandler, modifier: Modifier
                 if (h.layer() == TvPlayerLayer.DETAILS) return@awaitEachGesture
                 if (down.position.x < edgeLeft || down.position.x > size.width - edgeRight) return@awaitEachGesture
                 val slop = viewConfiguration.touchSlop
-                // 纯视频态的按下 = 确认键按下 (倍速记账); 抬起/滑动起手/取消都要关掉这笔账, 且只关一次
-                var pressOpen = h.layer() == TvPlayerLayer.HIDDEN
+                // 按下 = 确认键按下 (倍速记账, 哪几层能长按见 canHold); 抬起/滑动起手/取消都要关掉这笔账, 且只关一次
+                var pressOpen = h.canHold()
                 if (pressOpen) h.onPressStart()
                 fun closePress() {
                     if (pressOpen) {
@@ -2301,17 +2432,28 @@ private fun TvPlayerTouchLayer(handler: TvPlayerTouchHandler, modifier: Modifier
                 }
 
                 var scrubbing = false
+                var leveling = false
+                var pinching = false
+                // 中间那列竖着滑进出全屏: 起了手就一直吃事件到松手, 过了门槛切一次
+                var swipingFullScreen = false
+                var swipeFired = false
+                val swipeThreshold = TV_TOUCH_FULL_SCREEN_SWIPE.toPx()
                 var endedWithUp = false
                 try {
                     while (true) {
                         val event = awaitPointerEvent()
+                        // 第二根手指落下: 转成双指手势, 已经起手的拖进度 / 亮度音量作废 (见下面 pinching 那一段)
+                        if (event.changes.count { it.pressed } >= 2 && h.canFullScreenGesture()) {
+                            pinching = true
+                            break
+                        }
                         val change = event.changes.firstOrNull { it.id == down.id } ?: break
                         if (change.changedToUpIgnoreConsumed()) {
-                            endedWithUp = scrubbing || !change.isConsumed
+                            endedWithUp = scrubbing || leveling || swipingFullScreen || !change.isConsumed
                             break
                         }
                         if (!change.pressed) break
-                        if (!scrubbing && change.isConsumed) break // 别处接管了
+                        if (!scrubbing && !leveling && !swipingFullScreen && change.isConsumed) break // 别处接管了
                         val dx = change.position.x - down.position.x
                         val dy = change.position.y - down.position.y
                         if (scrubbing) {
@@ -2319,28 +2461,76 @@ private fun TvPlayerTouchLayer(handler: TvPlayerTouchHandler, modifier: Modifier
                             h.onScrub(dx / size.width)
                             continue
                         }
+                        if (leveling) {
+                            change.consume()
+                            h.onLevelDrag(-dy / size.height)
+                            continue
+                        }
+                        if (swipingFullScreen) {
+                            change.consume()
+                            if (!swipeFired && abs(dy) >= swipeThreshold) {
+                                swipeFired = true
+                                h.onFullScreenGesture(dy < 0) // 上滑 = 进全屏
+                            }
+                            continue
+                        }
                         if (abs(dx) <= slop && abs(dy) <= slop) continue
-                        // 横向滑出阈值 = 拖拽预览; 纵向 / 倍速中 / 不能拖 (时长未知等) 则放弃本次手势
-                        if (abs(dx) > abs(dy) && !h.isFastForwarding() && h.canScrub()) {
+                        // 横向滑出阈值 = 拖拽预览; 纵向 = 亮度 / 音量 (平板中间那列 = 进出全屏);
+                        // 倍速中 / 不能拖 (时长未知等) / 上下系统手势区起手则放弃本次手势
+                        val vertical = abs(dy) > abs(dx)
+                        val verticalAllowed = vertical && !h.isFastForwarding() &&
+                            down.position.y >= edgeTop && down.position.y <= size.height - edgeBottom
+                        val third = size.width / 3f
+                        val middleColumn = down.position.x >= third && down.position.x <= size.width - third
+                        if (!vertical && !h.isFastForwarding() && h.canScrub()) {
                             closePress() // 滑动不是按住
                             scrubbing = true
                             h.onScrubStart()
                             change.consume()
                             h.onScrub(dx / size.width)
+                        } else if (verticalAllowed && middleColumn && h.canFullScreenGesture()) {
+                            closePress()
+                            swipingFullScreen = true
+                            change.consume()
+                        } else if (
+                            verticalAllowed &&
+                            h.onLevelDragStart(down.position.x < size.width / 2f)
+                        ) {
+                            closePress()
+                            leveling = true
+                            change.consume()
+                            h.onLevelDrag(-dy / size.height)
                         } else {
                             break
                         }
                     }
                 } finally {
                     closePress()
+                    if (leveling) h.onLevelDragEnd()
+                }
+                if (pinching) {
+                    if (scrubbing) h.onScrubEnd(false)
+                    awaitPinch(h)
+                    return@awaitEachGesture
                 }
                 if (scrubbing) {
                     h.onScrubEnd(endedWithUp)
                     return@awaitEachGesture
                 }
+                if (leveling || swipingFullScreen) return@awaitEachGesture
                 if (!endedWithUp) return@awaitEachGesture
                 // 长按倍速已生效: 抬起只负责还原 (由倍速协程做), 不当点击 —— 与根路由的确认键抬起同一判据
                 if (h.isFastForwarding()) return@awaitEachGesture
+                val width = size.width.toFloat()
+                // 双击两侧快进退的提示还在: 点两侧立刻再跳一步, 不等双击窗口; 点中间结束这一串, 照常当单击 / 双击
+                if (h.seekStreakActive()) {
+                    val zone = tabletTapZone(down.position.x, width)
+                    if (zone != TabletTapZone.MIDDLE) {
+                        h.onSideSeek(zone == TabletTapZone.FORWARD)
+                        return@awaitEachGesture
+                    }
+                    h.endSeekStreak()
+                }
                 // 单击 / 双击: 等一个双击窗口, 第二下也必须落在空白处
                 val second = withTimeoutOrNull(viewConfiguration.doubleTapTimeoutMillis) { awaitFirstDown() }
                 if (second == null) {
@@ -2349,40 +2539,85 @@ private fun TvPlayerTouchLayer(handler: TvPlayerTouchHandler, modifier: Modifier
                 }
                 val secondUp = waitForUpOrCancellation() ?: return@awaitEachGesture
                 if ((secondUp.position - second.position).getDistance() > slop) return@awaitEachGesture
-                val width = size.width.toFloat()
-                h.onDoubleTap(
-                    when {
-                        second.position.x < width * TV_TOUCH_SEEK_EDGE_FRACTION -> TvTouchZone.LEFT
-                        second.position.x > width * (1f - TV_TOUCH_SEEK_EDGE_FRACTION) -> TvTouchZone.RIGHT
-                        else -> TvTouchZone.CENTER
-                    },
-                )
+                // 按第二下落在哪一列: 两侧快进退, 中间播放 / 暂停
+                val zone = tabletTapZone(second.position.x, width)
+                if (zone != TabletTapZone.MIDDLE && h.canSideSeek()) {
+                    h.onSideSeek(zone == TabletTapZone.FORWARD)
+                } else {
+                    h.onDoubleTap()
+                }
             }
         },
     )
 }
 
+/**
+ * 双指手势: 两指间距相对第二根手指落下那一刻张开到 [TV_TOUCH_PINCH_OUT] 倍或捏到 [TV_TOUCH_PINCH_IN] 倍时切一次 (一次手势只切一次, 不跟手),
+ * 之后吃掉这一串事件直到手指全部抬起, 不再当成点击或拖动.
+ */
+private suspend fun AwaitPointerEventScope.awaitPinch(h: TvPlayerTouchHandler) {
+    var startDistance = 0f
+    var fired = false
+    while (true) {
+        val event = awaitPointerEvent()
+        val pressed = event.changes.filter { it.pressed }
+        if (pressed.isEmpty()) return
+        event.changes.forEach { it.consume() }
+        if (fired || pressed.size < 2) continue
+        val distance = (pressed[0].position - pressed[1].position).getDistance()
+        if (startDistance <= 0f) {
+            startDistance = distance
+            continue
+        }
+        val ratio = distance / startDistance
+        if (ratio >= TV_TOUCH_PINCH_OUT || ratio <= TV_TOUCH_PINCH_IN) {
+            fired = true
+            h.onFullScreenGesture(ratio >= TV_TOUCH_PINCH_OUT) // 张开 = 进全屏
+        }
+    }
+}
+
+/** 双指张开 / 捏合算数的门槛 (相对两指刚落下时的间距). */
+private const val TV_TOUCH_PINCH_OUT = 1.2f
+private const val TV_TOUCH_PINCH_IN = 0.83f
+
+/** 中间那列竖着滑多远算进 / 出全屏 (同上游手机播放器的 swipeToFullscreen). */
+private val TV_TOUCH_FULL_SCREEN_SWIPE = 64.dp
+
 /** [TvPlayerTouchLayer] 的落点: 每一项都对应根路由里的一档, 由 TvEpisodeScreenContent 用同一批局部函数实现. */
 private class TvPlayerTouchHandler(
     val layer: () -> TvPlayerLayer,
+    /** 此刻按下要不要开倍速记账 (纯视频态; 平板上控制层开着也算). */
+    val canHold: () -> Boolean,
     /** 纯视频态按下 / 抬起: 与确认键 KeyDown / KeyUp 同一倍速记账. */
     val onPressStart: () -> Unit,
     val onPressEnd: () -> Unit,
     val isFastForwarding: () -> Boolean,
     val onTap: () -> Unit,
-    val onDoubleTap: (TvTouchZone) -> Unit,
+    /** 双击中间 (或时长未知时双击两侧): 播放 / 暂停. */
+    val onDoubleTap: () -> Unit,
+    /** 双击两侧能不能快进退: 时长已知、没锁屏. */
+    val canSideSeek: () -> Boolean,
+    /** 双击两侧, 或提示还在时再点两侧: 快进 / 后退一步. */
+    val onSideSeek: (forward: Boolean) -> Unit,
+    /** 双击两侧的提示还在 = 再点两侧接着跳. */
+    val seekStreakActive: () -> Boolean,
+    val endSeekStreak: () -> Unit,
     val canScrub: () -> Boolean,
     val onScrubStart: () -> Unit,
     /** 相对起手点的横向位移, 以本层宽度为单位 (右为正). */
     val onScrub: (widthFraction: Float) -> Unit,
     val onScrubEnd: (commit: Boolean) -> Unit,
+    /** 纵向拖动起手: 左边 (亮度) 还是右边 (音量); 返回 false = 调不了, 放弃本次手势. */
+    val onLevelDragStart: (left: Boolean) -> Boolean,
+    /** 相对起手点的纵向位移, 以本层高度为单位 (上为正). */
+    val onLevelDrag: (heightFraction: Float) -> Unit,
+    val onLevelDragEnd: () -> Unit,
+    /** 此刻接不接进出全屏的手势 (双指张开 / 捏合, 中间那列竖着滑): 平板、没锁屏. */
+    val canFullScreenGesture: () -> Boolean,
+    /** 进出全屏的手势过了门槛, 一次手势只来一次: [enter] = 张开或上滑. */
+    val onFullScreenGesture: (enter: Boolean) -> Unit,
 )
-
-/**
- * 双击落点分区: 左右各一条窄边 ([TV_TOUCH_SEEK_EDGE_FRACTION]) 是跳步, 其余一大片都是播放/暂停 ——
- * 双击暂停远比跳步常用, 早先三等分时暂停只占中间三分之一, 稍偏一点就成了快进退.
- */
-private enum class TvTouchZone { LEFT, CENTER, RIGHT }
 
 /** 横向拖动的锚: 起手那一刻的播放位置, 之后按位移算目标. */
 private class TvTouchScrubState {
@@ -2392,5 +2627,3 @@ private class TvTouchScrubState {
 /** 横向拖满一屏宽对应的时间量 (与手机端滑动 seek 同量级, 见 SwipeSeekerConfig.maxDragSeconds). */
 private const val TV_TOUCH_SCRUB_FULL_WIDTH_MILLIS = 90_000L
 
-/** 触屏双击跳步的边缘宽度 (占画面宽度的比例, 左右各一条); 其余一大片都是双击暂停. */
-private const val TV_TOUCH_SEEK_EDGE_FRACTION = 0.2f

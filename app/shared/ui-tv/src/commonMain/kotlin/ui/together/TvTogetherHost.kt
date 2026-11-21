@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import me.him188.ani.app.domain.episode.PlaybackStartHold
 import me.him188.ani.app.domain.media.player.PlaybackActivity
 import me.him188.ani.app.domain.together.TogetherEffect
 import me.him188.ani.app.domain.together.TogetherManager
@@ -125,6 +126,8 @@ fun TvTogetherHost(navigator: AniNavigator, playback: PlaybackSessionEntry = Pla
                     return@collect
                 }
                 navigator.findLast<NavRoutes.EpisodeDetail>()?.let { navigator.popBackStack(it, inclusive = true) }
+                // 跟着房主进的播放页: 平板「打开时先不播放」也直接播 (播不播由房间同步)
+                PlaybackStartHold.openedRemotely(target.subjectId, target.episodeId)
                 navigator.navigateEpisodeDetails(target.subjectId, target.episodeId, force = true)
                 val subjectName = target.subjectName
                 val episodeSort = target.episodeSort

@@ -11,6 +11,7 @@ package me.him188.ani.app.ui.settings.tv
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import me.him188.ani.app.data.models.preference.BackgroundBehavior
 import me.him188.ani.app.data.models.preference.DISPLAY_MODE_FOLLOW_CONTENT
 import me.him188.ani.app.data.models.preference.DarkMode
 import me.him188.ani.app.data.models.preference.HlsAdFilteringMode
@@ -77,6 +78,10 @@ import me.him188.ani.app.ui.lang.settings_player_audio_time_stretch
 import me.him188.ani.app.ui.lang.settings_player_audio_time_stretch_description
 import me.him188.ani.app.ui.lang.settings_player_auto_mark_done
 import me.him188.ani.app.ui.lang.settings_player_auto_play_next
+import me.him188.ani.app.ui.lang.settings_player_background_behavior
+import me.him188.ani.app.ui.lang.settings_player_background_behavior_auto_pip
+import me.him188.ani.app.ui.lang.settings_player_background_behavior_description
+import me.him188.ani.app.ui.lang.settings_player_background_behavior_pause
 import me.him188.ani.app.ui.lang.settings_player_auto_skip_op_ed
 import me.him188.ani.app.ui.lang.settings_player_auto_skip_op_ed_description
 import me.him188.ani.app.ui.lang.settings_player_auto_switch_media_on_error
@@ -89,6 +94,8 @@ import me.him188.ani.app.ui.lang.settings_player_disk_cache
 import me.him188.ani.app.ui.lang.settings_player_disk_cache_description
 import me.him188.ani.app.ui.lang.settings_player_enable_regex_filter
 import me.him188.ani.app.ui.lang.settings_player_hide_selector_on_select
+import me.him188.ani.app.ui.lang.settings_player_hold_start_on_open
+import me.him188.ani.app.ui.lang.settings_player_hold_start_on_open_description
 import me.him188.ani.app.ui.lang.settings_player_hls_ad_filter
 import me.him188.ani.app.ui.lang.settings_player_hls_ad_filter_all
 import me.him188.ani.app.ui.lang.settings_player_hls_ad_filter_all_description
@@ -704,6 +711,32 @@ private fun TvSettingsItemsBuilder.playerItems() {
         write = { copy(hideSelectorOnSelect = it) },
     )
     toggle(player, Lang.settings_player_auto_play_next, read = { it.autoPlayNext }, write = { copy(autoPlayNext = it) })
+    // 打开一集时先停在剧照上 (见 PlaybackStartHold): 只有平板模式的播放页接了, 电视与电视模式不列
+    toggleOf(
+        listOf(player, TvSettingKeys.touchscreen, TvSettingKeys.interfaceMode), Lang.settings_player_hold_start_on_open,
+        description = { tvText(Lang.settings_player_hold_start_on_open_description) },
+        visible = { it[TvSettingKeys.touchscreen] == true && it[TvSettingKeys.interfaceMode] != true },
+        read = { it[player]?.holdStartOnOpen == true },
+        write = { on -> listOf(TvSettingsEdit.Update(player) { it.copy(holdStartOnOpen = on) }) },
+    )
+    // 切到别的应用时小窗接着播还是暂停: 只有平板模式的播放页接了系统小窗, 电视与电视模式一律暂停, 不列
+    choiceOf(
+        listOf(player, TvSettingKeys.touchscreen, TvSettingKeys.interfaceMode),
+        Lang.settings_player_background_behavior, Lang.settings_player_background_behavior_description,
+        options = { listOf(BackgroundBehavior.AUTO_PICTURE_IN_PICTURE, BackgroundBehavior.PAUSE) },
+        label = {
+            tvText(
+                if (it == BackgroundBehavior.AUTO_PICTURE_IN_PICTURE) {
+                    Lang.settings_player_background_behavior_auto_pip
+                } else {
+                    Lang.settings_player_background_behavior_pause
+                },
+            )
+        },
+        read = { it[player]?.backgroundBehavior },
+        write = { behavior -> listOf(TvSettingsEdit.Update(player) { it.copy(backgroundBehavior = behavior) }) },
+        visible = { it[TvSettingKeys.touchscreen] == true && it[TvSettingKeys.interfaceMode] == false },
+    )
     // 最左一档 = 不显示, 往右依次 2~8dp; 写的时候顺手把旧开关置真 (从此这一项说了算)
     choice(
         player, Lang.settings_player_idle_progress_bar, Lang.settings_player_idle_progress_bar_description,

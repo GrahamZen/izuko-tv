@@ -71,6 +71,7 @@ import me.him188.ani.app.ui.foundation.tv.tvCardTextInset
 import me.him188.ani.app.ui.foundation.tv.tvFocusableCard
 import me.him188.ani.app.ui.foundation.tv.tvReadableBlock
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
+import me.him188.ani.app.ui.foundation.widgets.windowSizeCap
 import me.him188.ani.app.ui.richtext.RichTextDefaults
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.foundation_richtext_external_app_link_warning_prefix
@@ -614,7 +615,7 @@ internal fun PersonCommentsSheet(
 
     ModalBottomSheet(
         onDismissRequest,
-        modifier = modifier,
+        modifier = modifier.windowSizeCap(), // iOS 转屏 (见 windowSizeCap)
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
     ) {
         Column(Modifier.fillMaxWidth()) {

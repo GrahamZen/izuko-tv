@@ -722,7 +722,7 @@ private fun renderTvPlayerTimeShort(millis: Long): String {
 // ============================ 相关推荐画廊 ============================
 
 /** 点一条相关推荐: 去那个条目的详情页 (面板与画廊同一个动作). 没有条目 id 的不动. */
-private fun openRecommendation(navigator: AniNavigator, recommendation: SubjectRecommendation) {
+internal fun openRecommendation(navigator: AniNavigator, recommendation: SubjectRecommendation) {
     val targetSubjectId = recommendation.subjectId?.toInt() ?: return
     Analytics.recordEvent(SubjectRecommendationClick) {
         put("subject_id", targetSubjectId)

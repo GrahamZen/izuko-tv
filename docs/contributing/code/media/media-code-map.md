@@ -126,6 +126,8 @@
    `PlayerSession.loadMedia(...)`。
 9. `PlayerSession.loadMedia(...)` 通过 `MediaResolver.resolve(...)` 解析，打开得到的
    `MediaDataProvider`，然后调用 `player.setMediaData(...)`，播放器直接在起播位置打开。
+   要「装好就播」时先问 `startHold`（平板模式的「打开时先不播放」，`PlaybackStartHold`：只停打开时的那一集，等用户点播放），
+   再问 `startGate`（电视保留会话不在眼前时停着装，`PlaybackStartGate`）；说不播的照样打开、缓冲，停在起播位置，由回答的一方之后起播。
    Android 上 `LibassExoPlayerMediampPlayer` 给本机文件（`file://`，本地缓存与本地文件资源）套 `BufferedReadDataSource` 读缓冲：
    mkv 提取器解析元素头时一次只读一两个字节，`FileDataSource` 每次读都是一次系统调用。
    它拦截后重建的媒体用 `OpeningLoadErrorPolicy`：打开期间（`setMediaData` 返回前）读取出错只重试一次，

@@ -34,6 +34,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import me.him188.ani.app.ui.foundation.dialogs.PlatformPopupProperties
+import me.him188.ani.app.ui.foundation.widgets.menuHeightCap
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.media_selector_bt_filter_any
 import me.him188.ani.app.ui.lang.media_selector_filter_alliance
@@ -156,6 +157,7 @@ private fun MediaSelectorFilterChip(
         DropdownMenu(
             showDropdown,
             onDismissRequest = { showDropdown = false },
+            modifier = Modifier.menuHeightCap(),
             properties = PlatformPopupProperties(clippingEnabled = false),
         ) {
             DropdownMenuItem(

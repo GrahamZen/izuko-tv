@@ -47,6 +47,7 @@ import me.him188.ani.app.ui.foundation.layout.materialWindowMarginPadding
 import me.him188.ani.app.ui.foundation.navigation.BackHandler
 import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
 import me.him188.ani.app.ui.foundation.widgets.BackNavigationIconButton
+import me.him188.ani.app.ui.foundation.widgets.menuHeightCap
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_mediasource_selector_more
 import me.him188.ani.app.ui.lang.settings_mediasource_selector_test
@@ -121,7 +122,7 @@ fun <A : MediaSourceArguments> MediaSourceEditorScaffold(
                                         stringResource(Lang.settings_mediasource_selector_more),
                                     )
                                 }
-                                DropdownMenu(showDropdown, { showDropdown = false }) {
+                                DropdownMenu(showDropdown, { showDropdown = false }, Modifier.menuHeightCap()) {
                                     MediaSourceConfigurationDefaults.DropdownMenuImport(
                                         state = importState,
                                         onImported = { showDropdown = false },

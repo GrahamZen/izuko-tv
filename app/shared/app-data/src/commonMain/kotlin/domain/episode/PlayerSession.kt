@@ -104,6 +104,10 @@ class PlayerSession(
     @Volatile
     var startGate: PlaybackStartGate = PlaybackStartGate.Always
 
+    /** 「打开时先不播放」, 排在 [startGate] 前面问 (它说不播时 [startGate] 不问), 见 [PlaybackStartHold] */
+    @Volatile
+    var startHold: PlaybackStartGate = PlaybackStartGate.Always
+
     private val hlsPlaybackProxySessionFlow = MutableStateFlow<HlsPlaybackProxySession?>(null)
     private var hlsPlaybackProxySession: HlsPlaybackProxySession?
         get() = hlsPlaybackProxySessionFlow.value
@@ -267,7 +271,7 @@ class PlayerSession(
             PlayTimeline.mark("set_media", "at ${startAt}ms")
             // v2: setMediaData 挂起直到媒体真正打开, 播放意图和起播位置随打开一并生效.
             withContext(mainDispatcher) {
-                player.setMediaData(preparedData, playWhenReady = playNow && startGate.admit(), startPositionMillis = startAt)
+                player.setMediaData(preparedData, playWhenReady = playNow && startHold.admit() && startGate.admit(), startPositionMillis = startAt)
             }
             PlayTimeline.mark("player_opened")
             hlsPlaybackProxySession = preparedHlsPlaybackProxySession

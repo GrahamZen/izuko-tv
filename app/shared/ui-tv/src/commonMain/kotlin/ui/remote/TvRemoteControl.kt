@@ -69,6 +69,7 @@ import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 import me.him188.ani.app.domain.episode.GetAnimeSeasonIdsFlowUseCase
+import me.him188.ani.app.domain.episode.PlaybackStartHold
 import me.him188.ani.app.domain.media.fetch.MediaFetchSessionRefresh
 import me.him188.ani.app.domain.foundation.BangumiEndpointProvider
 import me.him188.ani.app.ui.settings.tabs.log.getLogsDir
@@ -1424,6 +1425,8 @@ object TvRemoteControl {
         val nav = navigator ?: return result(false, tr("电视还没准备好"))
         notifyRemoteNavigation()
         scope.launch(Dispatchers.Main) {
+            // 手机上点的播放: 平板「打开时先不播放」也直接播
+            PlaybackStartHold.openedRemotely(target.subjectId, target.episodeId)
             runCatching { nav.navigateEpisodeDetails(target.subjectId, target.episodeId, force = true) }
                 .onFailure { logger.warn(it) { "Failed to start up-next playback for remote control" } }
         }
@@ -1473,6 +1476,7 @@ object TvRemoteControl {
             }
         }
         uiScope.launch(Dispatchers.Main) {
+            PlaybackStartHold.openedRemotely(subjectId, episodeId)
             runCatching { navigator.navigateEpisodeDetails(subjectId, episodeId) }.onFailure(onNavigateFailure)
         }
         return RemotePlayResult.Opened

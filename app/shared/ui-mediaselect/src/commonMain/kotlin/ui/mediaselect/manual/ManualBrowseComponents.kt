@@ -70,6 +70,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import me.him188.ani.app.ui.foundation.ifThen
+import me.him188.ani.app.ui.foundation.widgets.menuHeightCap
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.media_selector_load_failed
 import me.him188.ani.app.ui.lang.media_selector_manual_captcha_unsupported
@@ -155,6 +156,7 @@ internal fun ManualSourceSelector(
         ExposedDropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
+            modifier = Modifier.menuHeightCap(),
         ) {
             for (source in sources) {
                 ManualSourceMenuItem(

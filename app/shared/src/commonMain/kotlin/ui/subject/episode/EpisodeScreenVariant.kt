@@ -36,3 +36,9 @@ fun interface EpisodeScreenVariant {
 }
 
 val LocalEpisodeScreenVariant = staticCompositionLocalOf<EpisodeScreenVariant?> { null }
+
+/**
+ * 播放页还没拿到页面状态 (进页后第一批数据到之前) 时画的东西, 与 [LocalEpisodeScreenVariant] 配套: 让进页那一刻就有和变体一样的底,
+ * 不露出外层底色. null (默认) = 不画.
+ */
+val LocalEpisodeScreenPlaceholder = staticCompositionLocalOf<(@Composable (EpisodeViewModel, Modifier) -> Unit)?> { null }

@@ -140,6 +140,7 @@ import me.him188.ani.app.domain.search.SubjectSearchQuery
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.navigation.LocalNavigator
 import me.him188.ani.app.ui.foundation.tv.prefetchTvTmdbSummary
+import me.him188.ani.app.ui.foundation.widgets.windowSizeCap
 import me.him188.ani.app.ui.main.TvPosterWallPreviewPage
 import me.him188.ani.app.ui.main.TvWallScaleEntry
 import me.him188.ani.app.ui.foundation.TV_CONFIRM_KEYS
@@ -2229,6 +2230,8 @@ private fun TvSearchFilterDialog(
         Surface(
             // 独立窗口: 遥控器全局键接回主窗口 (长按返回一步弹快捷菜单, 见 tvOverlayWindowKeys)
             Modifier.tvOverlayWindowKeys(onDismiss)
+                // 不超过窗口: iOS 转屏时弹窗拿到不限的约束, 按比例定的宽高不起作用, 里面的 verticalScroll 会抛异常
+                .windowSizeCap()
                 .fillMaxWidth(TV_SEARCH_FILTER_DIALOG_WIDTH_FRACTION)
                 .fillMaxHeight(TV_SEARCH_FILTER_DIALOG_HEIGHT_FRACTION),
             shape = CENTERED_PANEL_SHAPE,

@@ -140,14 +140,20 @@ import me.him188.ani.app.ui.subject.details.layout.TvHeroZoomLayer
 import me.him188.ani.app.ui.subject.details.layout.tvHeroZoomHoldsPlaceholder
 import me.him188.ani.app.ui.subject.details.state.SubjectDetailsState
 import me.him188.ani.app.ui.subject.episode.EpisodeScreenVariant
+import me.him188.ani.app.ui.subject.episode.LocalEpisodeScreenPlaceholder
 import me.him188.ani.app.ui.subject.episode.LocalEpisodeScreenVariant
 import me.him188.ani.app.ui.foundation.tv.LocalTvLoginSidePanel
 import me.him188.ani.app.ui.foundation.tv.LocalTvOnboardingVariant
 import me.him188.ani.app.ui.foundation.tv.TvOnboardingVariant
 import me.him188.ani.app.ui.subject.episode.tv.TvEpisodeScreenContent
+import me.him188.ani.app.ui.subject.episode.tv.tablet.TvEpisodeScreenPlaceholder
 import me.him188.ani.app.ui.subject.episode.tv.source.PrepareTvDownloadPickerBackdrop
 import me.him188.ani.app.ui.subject.episode.tv.source.TvDownloadSourcePanel
+import me.him188.ani.app.ui.subject.episode.tv.tablet.TabletDownloadEpisodePage
+import me.him188.ani.app.ui.subject.episode.tv.tablet.TabletDownloadSourcePage
 import me.him188.ani.app.ui.download.subject.LocalTvDownloadMediaPickerVariant
+import me.him188.ani.app.ui.download.subject.DownloadEpisodePickerVariant
+import me.him188.ani.app.ui.download.subject.LocalDownloadEpisodePickerVariant
 import me.him188.ani.app.ui.download.subject.LocalTvDownloadPickerPrewarm
 import me.him188.ani.app.ui.download.subject.TvDownloadMediaPickerVariant
 import me.him188.ani.app.ui.user.SelfInfoUiState
@@ -313,6 +319,8 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
                 )
             }
         },
+        // 播放页数据到之前: 平板模式先铺分栏的底 (同详情页那张模糊底), 电视上不画
+        LocalEpisodeScreenPlaceholder provides { vm, modifier -> TvEpisodeScreenPlaceholder(vm, modifier) },
         // ProvideTvScrollActivity: 每个带卡片的 TV 页一份"有卡片在滚动"的信号, 低特效档下
         // hero 文字 / 集信息行据此在滚动期间隐藏, 背景图也等停稳才换 (时间表页只有后一项).
         // TvPosterWallTheme: 海报墙页面 (探索 / 搜索 / 追番三页) 换上 Apple TV 那套灰阶底色, 不留近黑的块
@@ -348,10 +356,19 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         LocalViewAllGalleries provides TvViewAllGalleries,
         // 「查看全部」评论列表也用原生 (长按连翻不卡)
         LocalViewAllCommentsList provides TvViewAllCommentsList,
-        // 缓存页的选源: 与播放器同一块选源面板
-        LocalTvDownloadMediaPickerVariant provides TvDownloadMediaPickerVariant { TvDownloadSourcePanel(it) },
-        // 缓存页一打开就准备选源背后的模糊背景, 按下载时不用再等
-        LocalTvDownloadPickerPrewarm provides { subjectId -> PrepareTvDownloadPickerBackdrop(subjectId) },
+        // 缓存页的选源: 与播放器同一块选源面板; 平板模式是全屏的「下载第 N 话」(同播放页的选择数据源), 选集也是全屏那一页
+        LocalTvDownloadMediaPickerVariant provides if (touchInput) {
+            TvDownloadMediaPickerVariant { TabletDownloadSourcePage(it) }
+        } else {
+            TvDownloadMediaPickerVariant { TvDownloadSourcePanel(it) }
+        },
+        LocalDownloadEpisodePickerVariant provides if (touchInput) {
+            DownloadEpisodePickerVariant { state, onBack, onConfirm -> TabletDownloadEpisodePage(state, onBack, onConfirm) }
+        } else {
+            null
+        },
+        // 缓存页一打开就准备选源背后的模糊背景, 按下载时不用再等 (平板模式的选源没有这层背景)
+        LocalTvDownloadPickerPrewarm provides if (touchInput) null else { subjectId -> PrepareTvDownloadPickerBackdrop(subjectId) },
         // 设置页: 原生三栏 (要打字的设置在手机 Web 控制台里)
         LocalSettingsScreenVariant provides SettingsScreenVariant { vm, initialTab, legacy, licenses, modifier ->
             TvSettingsPage(vm, initialTab, legacy, licenses, modifier)

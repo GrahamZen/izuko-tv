@@ -27,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
+import me.him188.ani.app.ui.foundation.widgets.menuHeightCap
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.comment_block_user
 import me.him188.ani.app.ui.lang.comment_copy_content
@@ -65,7 +66,7 @@ fun CommentContextMenu(
     DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
-        modifier = modifier,
+        modifier = modifier.menuHeightCap(), // iOS 转屏 (见 menuHeightCap)
         offset = offset,
         shape = MaterialTheme.shapes.medium,
     ) {

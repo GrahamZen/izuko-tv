@@ -63,7 +63,8 @@ internal fun AniPanelSideNavHost(
 ) {
     val nav by rememberUpdatedState(sideNav)
     Box(
-        Modifier.fillMaxSize()
+        // 不超过窗口: iOS 转屏时弹窗拿到不限的约束, 下面那层按给的最大宽高铺满, 量成无限大就抛异常、整个应用退出 (见 windowSizeCap)
+        Modifier.windowSizeCap().fillMaxSize()
             .pointerInput(Unit) {
                 var dragged = 0f
                 detectHorizontalDragGestures(

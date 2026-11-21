@@ -285,12 +285,15 @@ object ComposeViewAllGalleries : ViewAllGalleries {
         compact: Boolean,
     ) {
         // 最下一行再按下: Compose 网格不拦方向键, 焦点搜索自己出网格, 外层 (弹窗 / 叠层) 的边接住; onExitDown 用不上
+        val touch = LocalTvTouchInputEnabled.current
         GalleryGrid(items.size, columns, initialFocusIndex, compact, modifier) { index, cellWidth ->
             onBind(index)
-            GalleryMonogramCell(
+            val circle = viewAllGalleryCircleSize(cellWidth, compact)
+            GalleryPeopleCell(
                 items[index],
                 cellWidth,
-                circleSize = viewAllGalleryCircleSize(cellWidth, compact),
+                // 触屏上照稿缩小 (见 viewAllGalleryTouchCircle), 不超过原来的 (紧凑档本来就窄一圈); 字仍按格宽排
+                circleSize = if (touch) minOf(viewAllGalleryTouchCircle(cellWidth), circle) else circle,
                 onClick = { onClick(index) },
                 onLongPress = onLongPress?.let { { it(index) } },
                 modifier = if (index == initialFocusIndex) initialFocus else Modifier,
@@ -359,12 +362,13 @@ private fun GalleryGrid(
 }
 
 /**
- * 人物画廊的一格 (宽 [size], 圆的直径 [circleSize]): 圆 + 名字 + 一行副标题, 标签压在圆下缘. 聚焦 (遥控器) 时只放大圆并描一圈主题色细环, 字与标签不放大、跟着圆的下缘下移,
+ * 人物画廊的一格 (宽 [size], 圆的直径 [circleSize], 圆在格里居中): 圆 + 名字 + 一行副标题, 标签压在圆下缘. 聚焦 (遥控器) 时只放大圆并描一圈主题色细环, 字与标签不放大、跟着圆的下缘下移,
  * 副标题提亮 (取值同详情页圆头像行, 见 [TV_MONOGRAM_FOCUS_SCALE]). [item] 为 null = 分页还没到的占位.
+ * 平板详情页的角色 / 制作人员行也用它 (同画廊一个样子).
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun GalleryMonogramCell(
+fun GalleryPeopleCell(
     item: PeopleRowItem?,
     size: Dp,
     circleSize: Dp,
@@ -375,9 +379,7 @@ private fun GalleryMonogramCell(
     var focused by remember { mutableStateOf(false) }
     val touch = LocalTvTouchInputEnabled.current
     val showFocus = focused && !touch
-    // 触屏照稿缩小圆, 字仍按格宽排
-    // 触屏上照稿缩小 (见 viewAllGalleryTouchCircle), 不超过传进来的 (紧凑档本来就窄一圈)
-    val circle = if (touch) minOf(viewAllGalleryTouchCircle(size), circleSize) else circleSize
+    val circle = circleSize
     val progress by animateFloatAsState(
         targetValue = if (showFocus) 1f else 0f,
         animationSpec = spring(dampingRatio = 0.8f, stiffness = TV_SCROLL_STIFFNESS),

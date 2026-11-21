@@ -111,6 +111,21 @@ class PlayerSessionStartGateTest {
     }
 
     @Test
+    fun `start hold opens paused without asking the gate`() = runTest {
+        val session = createPlayerSession()
+        var asked = 0
+        session.startGate = PlaybackStartGate { asked++; true }
+        session.startHold = PlaybackStartGate { false }
+
+        session.loadMedia(TestMediaList.first(), episode)
+
+        // 停着等点播放的由「打开时先不播放」自己起播, 后台那道门不记账
+        assertEquals(0, asked)
+        assertEquals(MediaStatus.Ready, session.player.state.value.mediaStatus)
+        assertFalse(session.player.state.value.playWhenReady)
+    }
+
+    @Test
     fun `play after a held start resumes the opened media`() = runTest {
         val session = createPlayerSession()
         session.startGate = PlaybackStartGate { false }

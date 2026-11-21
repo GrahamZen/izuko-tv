@@ -59,6 +59,7 @@ import me.him188.ani.app.ui.foundation.animation.LocalAniMotionScheme
 import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.foundation.setClipEntryText
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
+import me.him188.ani.app.ui.foundation.widgets.menuHeightCap
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_media_source_cancel
 import me.him188.ani.app.ui.lang.settings_media_source_delete_confirm
@@ -196,7 +197,7 @@ internal fun SettingsScope.MediaSourceSubscriptionPage(
                                 contentDescription = stringResource(Lang.settings_media_source_more),
                             )
                         }
-                        DropdownMenu(showMoreDropdown, onDismissRequest = { showMoreDropdown = false }) {
+                        DropdownMenu(showMoreDropdown, onDismissRequest = { showMoreDropdown = false }, modifier = Modifier.menuHeightCap()) {
                             ToggleEnabledMenuItem(
                                 item,
                                 onEnabledChange = { editState.toggleMediaSourceEnabled(item, it) },
@@ -334,7 +335,7 @@ internal fun MediaSourceSubscriptionPageActions(
         IconButton({ showMenu = true }) {
             Icon(Icons.Rounded.MoreVert, contentDescription = stringResource(Lang.settings_media_source_more))
         }
-        DropdownMenu(showMenu, onDismissRequest = { showMenu = false }) {
+        DropdownMenu(showMenu, onDismissRequest = { showMenu = false }, modifier = Modifier.menuHeightCap()) {
             DropdownMenuItem(
                 text = { Text(stringResource(Lang.settings_media_source_subscription_enable_all)) },
                 onClick = {
