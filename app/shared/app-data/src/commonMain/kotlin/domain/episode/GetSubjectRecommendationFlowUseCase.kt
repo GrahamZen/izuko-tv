@@ -25,8 +25,18 @@ class SubjectRecommendation(
     val desc2: String,
     val imageUrl: String,
     val uri: String?,
+    /** 这一条从哪来的 (平板播放页的推荐行写成推荐理由). */
+    val source: Source = Source.ALSO_WATCHED,
 ) {
     val uniqueId: String = Uuid.randomString()
+
+    enum class Source {
+        /** Bangumi 的「看过这部的人也看过」. */
+        ALSO_WATCHED,
+
+        /** 推荐系统里和这部相似的作品 ([RecommendationRepository.similarTo]). */
+        SIMILAR,
+    }
 }
 
 /**
@@ -82,6 +92,7 @@ class GetSubjectRecommendationUseCaseImpl(
                 desc2 = "",
                 imageUrl = it.imageLarge,
                 uri = null,
+                source = SubjectRecommendation.Source.SIMILAR,
             )
         }
     }

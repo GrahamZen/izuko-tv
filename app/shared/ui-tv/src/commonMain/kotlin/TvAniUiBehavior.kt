@@ -39,6 +39,7 @@ val TvAniUiBehavior = AniUiBehavior(
  * 平板模式 (触屏上跑电视界面): 二级页面要有带返回按钮的顶栏 (同上游的平板界面), 打开上游页面的顶栏与返回按钮;
  * 弹窗与面板带「关闭」「取消」按钮 (没有返回键, 不然只能点外面关).
  * 电视界面自己的二级页面 (详情页、新番时间表) 按 LocalTvTouchInputEnabled 自己画.
+ * 播放页同上游平板: 视频外 (视频下面、右栏) 跟用户主题, 设置里「播放页始终使用深色」打开时才整页深色; 视频本身恒深色.
  */
 fun AniUiBehavior.withTouchNavigation(): AniUiBehavior =
-    copy(showBackNavigationButton = true, showNavigationTopAppBar = true, showDismissButtons = true)
+    copy(showBackNavigationButton = true, showNavigationTopAppBar = true, showDismissButtons = true, forceDarkInPlayer = false)

@@ -1321,4 +1321,20 @@
     <string name="tv_wall_scale_hint_drag">Tap or drag the slider to change the size</string>
     <string name="tv_adjust_done">Done</string>
     <string name="tv_remote_address_copied">Web console address copied</string>
+
+    <!-- 平板模式播放页 (分栏 / 全屏) -->
+    <string name="tablet_player_fullscreen">Full screen</string>
+    <string name="tablet_player_exit_fullscreen">Exit full screen</string>
+    <string name="tablet_player_more_settings">More playback settings</string>
+    <string name="tablet_player_danmaku_placeholder">Send a danmaku…</string>
+    <string name="tablet_player_details">Details</string>
+    <string name="tablet_player_series">Series</string>
+    <string name="tablet_player_stats">Playback info</string>
+    <string name="tablet_player_replies">Replies</string>
+    <string name="tablet_player_open_full_details">Open full details</string>
+    <string name="tablet_player_rec_also_watched">Viewers of this title also watched</string>
+    <string name="tablet_player_rec_similar">Similar titles</string>
+    <string name="tablet_source_drive_login_hint">This source needs a signed-in cloud drive to find anything</string>
+    <string name="tablet_source_resume_full_search">Resume full search</string>
+    <string name="tablet_player_together_members">Watch Together · %1$d</string>
 </resources>
