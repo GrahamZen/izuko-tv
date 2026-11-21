@@ -48,6 +48,8 @@ android {
         buildConfigField("int", "NORMAL_MIN_SDK", getProperty("android.min.sdk"))
         buildConfigField("int", "LEGACY_MIN_SDK", LEGACY_ANDROID_MIN_SDK.toString())
         // 交流群: 同 app-platform (加密的应用配置, 见 build-logic 的 appConfig.kt); 没配就是空, 界面上不显示
+        // 交流群: 运行时取加密的应用配置 (见 AppConfig.kt), 用这把钥匙解开; 下面三项是取不到时用的 (编包时解开的那份)
+        buildConfigField("String", "APP_CONFIG_KEY", "\"${appConfigKey()}\"")
         buildConfigField("String", "CHAT_QQ_ID", "\"${appConfigValue("chat.qq.id")}\"")
         buildConfigField("String", "CHAT_QQ_LINK", "\"${appConfigValue("chat.qq.link")}\"")
         buildConfigField("String", "CHAT_TELEGRAM_LINK", "\"${appConfigValue("chat.telegram.link")}\"")

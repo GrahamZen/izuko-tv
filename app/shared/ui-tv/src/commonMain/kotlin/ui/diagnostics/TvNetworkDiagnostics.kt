@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import me.him188.ani.app.data.network.FeedbackTicketEndpoints
 import me.him188.ani.app.data.repository.user.AccessTokenSession
 import me.him188.ani.app.domain.foundation.BangumiEchDohList
 import me.him188.ani.app.domain.foundation.BangumiEchTransport
@@ -106,6 +107,7 @@ internal object TvNetworkDiagnostics {
                     echConfig = koin.get(),
                     echAddresses = koin.get(),
                     stats = koin.get(),
+                    ticketEndpoints = koin.get<FeedbackTicketEndpoints>().current.value,
                     bangumiToken = { (sessions.sessionFlow.value as? AccessTokenSession)?.tokens?.bangumiAccessToken },
                 )
                 val report = withTimeoutOrNull(RUN_TIMEOUT) {

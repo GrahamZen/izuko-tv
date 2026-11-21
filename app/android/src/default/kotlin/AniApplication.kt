@@ -33,9 +33,11 @@ import me.him188.ani.app.data.persistent.database.DeviceAniDatabase
 import me.him188.ani.app.data.persistent.database.dao.TorrentCacheEpisodeEntity
 import me.him188.ani.app.data.persistent.database.dao.TorrentCacheInfoEntity
 import me.him188.ani.app.domain.media.cache.engine.MediaCacheEngineKey
+import me.him188.ani.app.domain.foundation.AppForeground
 import me.him188.ani.app.domain.foundation.HttpClientProvider
 import me.him188.ani.app.domain.foundation.ScopedHttpClientUserAgent
 import me.him188.ani.app.domain.foundation.get
+import me.him188.ani.app.domain.foundation.follow
 import me.him188.ani.app.domain.media.cache.location.MediaCacheLocations
 import me.him188.ani.app.domain.media.fetch.AndroidSearchConcurrency
 import me.him188.ani.app.domain.media.fetch.AndroidSearchDispatcher
@@ -233,6 +235,8 @@ class AniApplication : Application() {
             processLifecycle = ProcessLifecycleOwner.get().lifecycle,
             scope = scope,
         ).start()
+        // 远程文件 (通知、配置) 回到前台时取新的, 见 RemoteRefresh
+        AppForeground.follow(ProcessLifecycleOwner.get().lifecycle)
 
         runBlocking { analyticsInitializer.join() }
         ExternalContentProviderFactoryImpl.initializeApp(this)

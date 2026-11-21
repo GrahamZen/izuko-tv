@@ -53,10 +53,27 @@ class InstallerActivity : Activity() {
     private lateinit var reportLeft: TextView
     private lateinit var reportRight: TextView
 
+    /** 右边一栏显示的交流群 (见 [AppConfig]). */
+    private lateinit var chat: ChatConfig
+    private val appConfigListener: (Map<String, String>) -> Unit = { onAppConfig(it) }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        chat = ChatConfig.of(AppConfig.current(this))
         setContentView(buildLayout())
         InstallFlow.start(this)
+        AppConfig.listener = appConfigListener
+        AppConfig.refresh(this)
+    }
+
+    /** 取到了加密配置: 交流群和正在显示的不一样就重排一次界面 (换群后第一次打开时; 之后用存下的, 一开始就是新的). */
+    private fun onAppConfig(config: Map<String, String>) {
+        val updated = ChatConfig.of(config)
+        if (updated == chat || isFinishing) return
+        InstallFlow.log("App config: chat group changed (QQ ${chat.qqId.ifEmpty { "-" }} -> ${updated.qqId.ifEmpty { "-" }}), relayout")
+        chat = updated
+        setContentView(buildLayout())
+        render(InstallFlow.state)
     }
 
     override fun onStart() {
@@ -75,6 +92,7 @@ class InstallerActivity : Activity() {
     }
 
     override fun onDestroy() {
+        if (AppConfig.listener === appConfigListener) AppConfig.listener = null
         uploadDialog?.dismiss()
         super.onDestroy()
     }
@@ -138,7 +156,7 @@ class InstallerActivity : Activity() {
             isFillViewport = true
             setBackgroundColor(Color.rgb(0x12, 0x14, 0x16))
             // 右边一栏交流群 (见 ChatPanel), 没配群时只有这一栏; 手机上不放: 屏幕上的码得用另一台手机扫
-            addView(if (onPhone) root else attachChatPanel(this@InstallerActivity, root, MUTED), ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            addView(if (onPhone) root else attachChatPanel(this@InstallerActivity, root, MUTED, chat), ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
     }
 

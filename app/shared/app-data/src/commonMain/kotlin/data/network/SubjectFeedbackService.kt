@@ -42,6 +42,7 @@ import me.him188.ani.app.data.repository.feedback.FeedbackRecordRepository
 import me.him188.ani.app.data.repository.user.Settings
 import me.him188.ani.app.domain.foundation.CloudflareServiceTransport
 import me.him188.ani.app.domain.foundation.GitHubFileSources
+import me.him188.ani.app.domain.foundation.RemoteFetch
 import me.him188.ani.app.domain.foundation.RepoHostedList
 import me.him188.ani.app.domain.foundation.probeConnectTimeout
 import me.him188.ani.app.platform.currentAniBuildConfig
@@ -73,7 +74,7 @@ class SubjectFeedbackService(
     private val records: FeedbackRecordRepository? = null,
     private val clock: () -> Long = { currentTimeMillis() },
 ) {
-    private val endpoints = RepoHostedList(SPEC, listCache, client, scope, repository = { TMDB_SUBJECT_MAP_REPOSITORY })
+    private val endpoints = RepoHostedList(SPEC, listCache, client, scope, repository = { TMDB_SUBJECT_MAP_REPOSITORY }, branch = "main")
 
     /** 一次报告的结果. */
     sealed interface Result {
@@ -263,26 +264,12 @@ class SubjectFeedbackService(
      */
     suspend fun entryCandidates(subjectId: Int): SubjectEntryCandidates? {
         val path = "docs/data/s/${subjectId / REVIEW_SHARD}.json"
-        for (url in GitHubFileSources.urls(TMDB_SUBJECT_MAP_REPOSITORY, path)) {
-            val text = try {
-                withTimeoutOrNull(CANDIDATES_TIMEOUT) {
-                    client().use {
-                        val response = get(url) { expectSuccess = false }
-                        if (!response.status.isSuccess()) null else response.bodyAsText()
-                    }
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                logger.info { "feedback: $url unreachable (${e::class.simpleName})" }
-                null
-            } ?: continue
-            val record = extractTopLevelObject(text, subjectId.toString()) ?: return SubjectEntryCandidates.Empty
-            return runCatching { parseSubjectEntryCandidates(Json.parseToJsonElement(record) as JsonObject) }
-                .onFailure { logger.warn(it) { "feedback: unreadable review record for $subjectId" } }
-                .getOrNull()
-        }
-        return null
+        val text = RemoteFetch.firstSuccessful("feedback candidates $path", GitHubFileSources.urls(TMDB_SUBJECT_MAP_REPOSITORY, path), client, CANDIDATES_TIMEOUT) { it }
+            ?.value ?: return null
+        val record = extractTopLevelObject(text, subjectId.toString()) ?: return SubjectEntryCandidates.Empty
+        return runCatching { parseSubjectEntryCandidates(Json.parseToJsonElement(record) as JsonObject) }
+            .onFailure { logger.warn(it) { "feedback: unreadable review record for $subjectId" } }
+            .getOrNull()
     }
 
     companion object {
