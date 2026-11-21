@@ -9,7 +9,6 @@
 
 package me.him188.ani.app.ui.foundation.tv.nativeview
 
-import androidx.compose.ui.graphics.toComposeRect
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
@@ -25,6 +24,7 @@ import android.view.ViewGroup
 import android.view.ViewTreeObserver
 import android.widget.FrameLayout
 import androidx.compose.runtime.Immutable
+import androidx.compose.ui.graphics.toComposeRect
 import androidx.compose.ui.unit.Dp
 import androidx.recyclerview.widget.RecyclerView
 import com.github.panpf.sketch.Sketch
@@ -47,6 +47,8 @@ import me.him188.ani.app.ui.foundation.tv.TvKeyRepeatGate
 import me.him188.ani.app.ui.foundation.tv.TvWallConfirm
 import me.him188.ani.app.ui.foundation.tv.tvWallConfirm
 import me.him188.ani.app.ui.foundation.tv.tvWallTapConfirmsWhileFocusing
+import me.him188.ani.utils.logging.info
+import me.him188.ani.utils.logging.logger
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -296,14 +298,14 @@ open class TvNativeRowWallView private constructor(
         }
 
     /**
-     * 此刻按触屏的规矩走: 触屏设备上最近一次输入是手指 (见 [lastInputTouch]). 手指点卡片按
+     * 此刻按触屏的规矩走 (同 iPad 的 Compose 海报墙): 触屏设备上最近一次输入是手指 (见 [lastInputTouch]). 手指点卡片按
      * tvWallTouchTap 判 (按下不动焦点), 卡片墙上不画聚焦效果 (hero 态里照画); 列表由手指自由滚, 焦点不带着滚动 —— 卡片墙上焦点停在本视图
      * 自己身上 (见 [touchPark]), 只有进 hero 态、hero 态里换卡才滚到停位; 退出 hero 态停在原地.
      */
     protected val touchMode: Boolean get() = touchInput && lastInputTouch
 
     /**
-     * 本页最近一次收到的输入是手指: 手指按下算触屏, 方向键与确认键算回到电视的规矩; 焦点在页外时按的键不算.
+     * 本页最近一次收到的输入是手指 (同 iPad 的 tvWallInputMode): 手指按下算触屏, 方向键与确认键算回到电视的规矩; 焦点在页外时按的键不算.
      * 不用系统的触摸模式: 页面里的焦点请求 (弹窗关掉后交还焦点等) 也会让窗口退出触摸模式, 手指还在用.
      */
     internal var lastInputTouch: Boolean = true
@@ -327,6 +329,7 @@ open class TvNativeRowWallView private constructor(
      * 按触屏的规矩走时焦点不留在卡上: 停在本视图自己身上 (看不见、不画聚焦; 持焦的卡随手指滚出屏被回收也不丢焦点、不被系统塞给别的卡).
      * 还在 hero 态就原地退回卡片墙 (hero 背景与文字淡出, 列表不滚回卡片墙的停位); 焦点离开卡片区等 hero 淡完才报给页面 ([onTouchParked]),
      * 这之前聚焦行留着 (hero 还画着那张卡). 之后按方向键落到屏上离视口中线最近的那一行 (见 [landFromTouchPark]).
+     * 同 iPad 的 Compose 海报墙 (TvExploreComposeSurface.parkFocus).
      */
     protected fun touchPark() {
         if (touchParkedNow && !timeline.active) return
@@ -572,6 +575,9 @@ open class TvNativeRowWallView private constructor(
     /** [restore] 恢复在 hero 态: 停位按聚焦行的 hero 停位重新对 (见 [applyRestoredScroll]). */
     private var restoreHeroStop = false
 
+    /** 宾客模式: 换过来跟上宿主 hero 态时一行都还没到 (见 [onHostHeroChanged]), 数据到了再对停位 (见 [setItems]). */
+    private var hostHeroStopDeferred = false
+
     /** 下一次从页面外进来落在第几行 (见 [enterRow]); null = 不按行号. */
     private var enterRowNumber: Int? = null
 
@@ -787,6 +793,7 @@ open class TvNativeRowWallView private constructor(
         } else if (structural) {
             realignFocusedRow()
         }
+        if (hostHeroStopDeferred && firstRowKey() != null) onHostHeroChanged(animated = false)
         if (focusedRow != null) followFocusAfterItemsChanged(oldItems, focusedRow, focusedSubject)
         // 等的落点行到了
         post { resolvePending(scrollIfMissing = true) }
@@ -907,7 +914,8 @@ open class TvNativeRowWallView private constructor(
         list.jumpTo(px)
         if (!restoreHeroStop) return
         restoreHeroStop = false
-        val item = focusedRowKey?.let { list.indexOfKey(it) } ?: -1
+        // 没聚焦过按第一行停 (同 onHostHeroChanged)
+        val item = (focusedRowKey ?: firstRowKey())?.let { list.indexOfKey(it) } ?: -1
         if (item < 0) return
         list.jumpTo(stopFor(item))
         shiftToStop(item, pace = null)
@@ -1370,7 +1378,19 @@ open class TvNativeRowWallView private constructor(
             // 按触屏的规矩走时退出 hero 态停在原地 (见 exitHeroInPlace)
             if (touchMode && !timeline.active) shiftToStop(-1, TvScrollSpring.Far) else updateStop(heroToggled = true)
         } else {
-            val item = focusedRowKey?.let { list.indexOfKey(it) } ?: -1
+            // hero 态里没聚焦过 (在标签行上换过来的) 按第一行停, 同网格: 不然停在列表顶, 第一行在 hero 线以上被淡没, 屏上只剩第二行
+            val rowKey = focusedRowKey ?: firstRowKey().takeIf { timeline.active }
+            val item = rowKey?.let { list.indexOfKey(it) } ?: -1
+            // 一行都还没到 (换过来时数据在路上): 到了再对
+            hostHeroStopDeferred = guest != null && timeline.active && item < 0 && firstRowKey() == null
+            if (guest != null) {
+                val what = when {
+                    hostHeroStopDeferred -> "还没有行, 数据到了再对"
+                    focusedRowKey != null -> "聚焦行 $rowKey (第 $item 项)"
+                    else -> "没聚焦过, 第一行 $rowKey (第 $item 项)"
+                }
+                logger.info { "[RowWallGuest] 跟上宿主 hero=${timeline.active}: $what" }
+            }
             if (item >= 0) {
                 list.jumpTo(stopFor(item))
                 shiftToStop(item, pace = null)
@@ -2382,8 +2402,10 @@ private const val TV_NATIVE_ROW_RESTART_FADE_MILLIS = 250L
 /** 换内容滑动开始时跨出那一屏宽的卡淡出多久 (见 TvNativeRowWallView.beginLane): 赶在整片滑起来之前没掉. */
 private const val TV_NATIVE_LANE_CARD_OUT_MILLIS = 120L
 
-/** 算「用键盘 / 遥控器操作」的键: 方向键与确认键. */
+/** 算「用键盘 / 遥控器操作」的键 (同 iPad 的 tvWallInputMode): 方向键与确认键. */
 internal fun tvNativeIsWallInputKey(keyCode: Int): Boolean = when (keyCode) {
     KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> true
     else -> tvNativeIsConfirmKey(keyCode)
 }
+
+private val logger = logger("TvNativeRowWallView")

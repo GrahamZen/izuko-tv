@@ -210,7 +210,7 @@ class UserProfileRegistry private constructor(
  *
  * 平台入口在建数据库与配置之前 [install] (Android: `AniApplication.onCreate` 里 `startKoin` 之前), 之后 [currentId] 不变:
  * 换用户是改下次启动的用户再重启进程, 不在进程里热切换 —— 数据库、配置、各种单例和内存缓存都绑着一个用户, 逐个重建容易漏.
- * 没装 (桌面、iOS、测试) 时只有 1 号用户, 行为与多用户之前一样.
+ * 没装 (桌面、测试) 时只有 1 号用户, 行为与多用户之前一样; iOS 装上但只有 1 号用户 (记它改没改成本地用户).
  */
 object UserProfiles {
     @Volatile

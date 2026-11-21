@@ -55,6 +55,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import me.him188.ani.app.data.models.preference.TvCardFocusStyle
+import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 
 /*
@@ -113,8 +114,9 @@ val TV_POSTER_WALL_BACKGROUND_DARK: Color = Color(0xFF2C2C2E)
  * 浅色主题下海报墙页面的底色 (191, 196, 199): Apple TV App 关掉透明效果时浅色主题的实色页面底 (app.js 的
  * `AccessibilityReduceTransparencyBackground`), 同一张表里深色那一档正是 [TV_POSTER_WALL_BACKGROUND_DARK]. tvOS 平时的页面是半透明
  * 材质叠在画面上, 这是它的实色等价. 不用纯白或更浅的灰: 电视上大片亮底刺眼 (Android TV 设计指南: 除非必要不要用白底).
+ * 浅色外壳的底色也是这一档, 值放在 [AniThemeDefaults.ShellBackgroundLight].
  */
-val TV_POSTER_WALL_BACKGROUND_LIGHT: Color = Color(0xFFBFC4C7)
+val TV_POSTER_WALL_BACKGROUND_LIGHT: Color = AniThemeDefaults.ShellBackgroundLight
 
 /**
  * 海报墙卡片墙的底色: 深色主题铺 [TV_POSTER_WALL_BACKGROUND_DARK], 浅色主题铺 [TV_POSTER_WALL_BACKGROUND_LIGHT].

@@ -9,6 +9,10 @@
 
 package me.him188.ani.app.videoplayer.diagnostics
 
+import kotlinx.atomicfu.locks.SynchronizedObject
+import kotlinx.atomicfu.locks.synchronized
+import kotlin.concurrent.Volatile
+
 /**
  * 播放链路上那些只在设备上才看得出对不对的判定, 记在这里给 Web 控制台的调试区读
  * (`GET api/debug/probes`, 只在 debug 包里开; 写入侧无条件记, release 包没人读).
@@ -50,9 +54,10 @@ object PlayerProbes {
     private const val HLS_HISTORY = 20
 
     private val hlsDecisions = ArrayDeque<HlsDecision>()
+    private val hlsLock = SynchronizedObject()
 
     /** 最近的在前. */
-    val hls: List<HlsDecision> get() = synchronized(hlsDecisions) { hlsDecisions.toList() }
+    val hls: List<HlsDecision> get() = synchronized(hlsLock) { hlsDecisions.toList() }
 
     @Volatile
     var videoPipeline: VideoPipeline? = null
@@ -67,7 +72,7 @@ object PlayerProbes {
         atMillis: Long,
     ) {
         val decision = HlsDecision(host, totalSegments, removedSegments, removedSeconds, skippedReason, atMillis)
-        synchronized(hlsDecisions) {
+        synchronized(hlsLock) {
             hlsDecisions.addFirst(decision)
             while (hlsDecisions.size > HLS_HISTORY) hlsDecisions.removeLast()
         }

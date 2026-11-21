@@ -301,7 +301,7 @@ fun TvEpisodeScreenContent(
     if (tablet != null) TabletStartHoldEffects(vm, page.episodePresentation.episodeId)
     val startHeld = tablet != null && rememberTabletStartHeld(vm, page.episodePresentation.episodeId)
     // 平板模式全屏时锁横屏 (竖着拿点全屏也转成横的, 见 TabletLandscapeLock); 小窗里不锁
-    if (tablet != null) TabletLandscapeLock(tablet.fullScreen && pictureInPicture?.isActive != true)
+    if (tablet != null) TabletLandscapeLock(tablet.fullScreen && pictureInPicture?.occupiesWindow != true)
     val seekFlash = remember { TvSeekFlashState() }
     val sheetsController = rememberVideoSideSheetsController<EpisodeVideoSideSheetPage>()
     val anySheetVisible by sheetsController.hasPageAsState()
@@ -2059,7 +2059,7 @@ fun TvEpisodeScreenContent(
             } else {
                 TabletPlayerFrame(
                     tablet,
-                    pictureInPicture = pictureInPicture?.isActive == true,
+                    pictureInPicture = pictureInPicture?.occupiesWindow == true,
                     pageTheme = rememberTabletSubjectTheme(vm.subjectId, page.subjectPresentation.info.imageLarge, pageTheme),
                     backdropUrl = rememberTabletBackdropUrl(vm.subjectId, page.subjectPresentation.info),
                     player = { playerRoot(Modifier) },

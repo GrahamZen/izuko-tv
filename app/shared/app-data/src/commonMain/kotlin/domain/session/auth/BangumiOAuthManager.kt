@@ -43,8 +43,8 @@ import kotlin.time.Duration.Companion.days
  *
  * 1. **应用内浏览器** ([startInAppBrowser]): 拦下那一跳, 不经过系统。电视上只有这条能用
  *    (遥控器没有外部浏览器可跳, 而且跳出去就回不来了)。
- * 2. **外部浏览器 + deep link** ([startExternalBrowser] + [submitCallbackUrl]): 手机上的兜底,
- *    由 manifest 的 intent-filter 接住后喂回来。
+ * 2. **外部浏览器** ([startExternalBrowser] + [submitCallbackUrl]): 手机上的兜底, 回调由本机回环监听接住
+ *    ([OAuthLoopbackServer]); iOS 上授权页开在系统授权弹窗里 ([SystemOAuthSession]), 应用一直在前台.
  * 3. **手机授权、经 Worker 跳回电视** ([startRelay] + [submitCallback]): Web 控制台发起, 用另一个 bgm 应用,
  *    见 [BangumiOAuthRelay]。
  *
@@ -205,8 +205,10 @@ class BangumiOAuthManager(
     }
 
     /**
-     * 用外部浏览器授权: 只生成地址, 打开由调用方做 (平台各异), 回调靠 deep link 走
-     * [submitCallbackUrl] 回来.
+     * 用外部浏览器授权: 生成地址并起回环监听接回调 (见 [OAuthLoopbackServer]). 有系统授权弹窗的平台 (iOS, 见 [SystemOAuthSession])
+     * 直接开在弹窗里; 其余由调用方交给系统浏览器.
+     *
+     * @return 要交给系统浏览器打开的地址; `null` = 没配置凭据, 或已经开在系统授权弹窗里
      */
     fun startExternalBrowser(): String? {
         if (!client.isConfigured) {
@@ -233,7 +235,33 @@ class BangumiOAuthManager(
             }
         }
         logger.info { "bgm-direct: oauth 打开授权页 (外部浏览器)" }
+        // iOS: 跳去浏览器应用的话应用被挂起, 回环接不到回调; 开在系统授权弹窗里. 用户自己关掉弹窗 = 放弃这一次
+        if (SystemOAuthSession.open(url) { if (pendingState == oauthState) cancel() }) return null
         return url
+    }
+
+    /**
+     * 退出登录时调用: 清掉应用内浏览器里 bgm 的网页登录状态 (浏览器的 cookie 整个应用共用), 下次用应用内浏览器登录要重新输账号,
+     * 能登别的账号. 在后台做, 调用方不等; 系统授权弹窗共用 Safari 的登录状态, 不在这里清.
+     */
+    fun clearWebLoginOnLogout() {
+        if (!browserFactory.isSupported) return
+        scope.launch {
+            try {
+                val browser = browserFactory.create(userAgent = null)
+                try {
+                    val authorizeUrl = BangumiOAuthConstants.authorizeUrl(state = "", mirrorRoot = trustedMirrorRoot())
+                    browser.clearCookies(BangumiOAuthConstants.webLoginUrls(authorizeUrl))
+                } finally {
+                    runCatching { browser.close() }
+                }
+                logger.info { "bgm-direct: 退出登录, 清掉了内置浏览器里 bgm 的登录状态" }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.info { "bgm-direct: 退出登录时清内置浏览器里 bgm 的登录状态失败: ${e::class.simpleName}" }
+            }
+        }
     }
 
     /** 这个构建带了中转应用的凭据, [startRelay] 能用. */
@@ -383,6 +411,7 @@ class BangumiOAuthManager(
     private fun closeBrowser() {
         // 回环监听与浏览器同生共死: 换一条路 / 取消 / 换到 token 了都要把端口放掉
         stopLoopback()
+        SystemOAuthSession.close()
         browserJob?.cancel()
         browserJob = null
         currentBrowser?.let { browser ->

@@ -226,7 +226,8 @@ internal fun TabletPlayerControls(
     modifier: Modifier = Modifier,
 ) {
     // 小窗里只有视频
-    if (pictureInPicture?.isActive == true) return
+    if (pictureInPicture?.occupiesWindow == true) return
+    TabletSystemBarsEffect(tablet.fullScreen) { overlay.layer == TvPlayerLayer.CONTROLS && tablet.drawer == null && !tablet.gesturesLocked }
     val chromeVisible = overlay.layer == TvPlayerLayer.CONTROLS && tablet.drawer == null
     val onBack = { if (tablet.fullScreen) tablet.exitFullScreen() else onExitPage() }
     val large = tablet.fullScreen

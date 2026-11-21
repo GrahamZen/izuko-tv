@@ -15,15 +15,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.ComposeUIViewController
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -33,7 +29,9 @@ import kotlinx.io.files.SystemFileSystem
 import me.him188.ani.app.data.persistent.database.DeviceAniDatabase
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.data.repository.user.UserRepository
+import me.him188.ani.app.domain.foundation.BangumiEchTransport
 import me.him188.ani.app.domain.foundation.HttpClientProvider
+import me.him188.ani.app.domain.foundation.IosEchTransport
 import me.him188.ani.app.domain.foundation.get
 import me.him188.ani.app.domain.media.cache.engine.AlwaysUseTorrentEngineAccess
 import me.him188.ani.app.domain.media.cache.engine.HttpMediaCacheEngine
@@ -49,9 +47,12 @@ import me.him188.ani.app.domain.media.resolver.IosWebMediaResolver
 import me.him188.ani.app.domain.media.resolver.LocalFileUriMediaResolver
 import me.him188.ani.app.domain.media.resolver.MediaResolver
 import me.him188.ani.app.domain.media.resolver.CloudDriveMediaResolver
+import me.him188.ani.app.domain.media.range.ParallelRangePlayback
 import me.him188.ani.app.domain.mediasource.web.captcha.CaptchaBrowserFactory
 import me.him188.ani.app.domain.mediasource.web.captcha.ImageCaptchaRecognizer
-import me.him188.ani.app.domain.mediasource.web.captcha.UnsupportedCaptchaBrowserFactory
+import me.him188.ani.app.domain.mediasource.web.captcha.WkWebViewCaptchaBrowserFactory
+import me.him188.ani.app.domain.profile.UserProfileRegistry
+import me.him188.ani.app.domain.profile.UserProfiles
 import me.him188.ani.app.domain.torrent.DefaultTorrentManager
 import me.him188.ani.app.domain.torrent.TorrentManager
 import me.him188.ani.app.domain.torrent.engines.PikPakEngine
@@ -60,14 +61,18 @@ import me.him188.ani.app.navigation.BrowserNavigator
 import me.him188.ani.app.navigation.IosBrowserNavigator
 import me.him188.ani.app.navigation.LocalNavigator
 import me.him188.ani.app.platform.AniHostingUIViewController
+import me.him188.ani.app.platform.AppRestarter
 import me.him188.ani.app.platform.AppStartupTasks
 import me.him188.ani.app.platform.GrantedPermissionManager
 import me.him188.ani.app.platform.IosContext
 import me.him188.ani.app.platform.IosContextFiles
+import me.him188.ani.app.platform.IosSystemNotifier
 import me.him188.ani.app.platform.LocalContext
+import me.him188.ani.app.platform.ManualRelaunchRestarter
 import me.him188.ani.app.platform.PermissionManager
 import me.him188.ani.app.platform.StartupTimeMonitor
 import me.him188.ani.app.platform.StepName
+import me.him188.ani.app.platform.SystemNotifier
 import me.him188.ani.app.platform.createAppRootCoroutineScope
 import me.him188.ani.app.platform.getCommonKoinModule
 import me.him188.ani.app.platform.rememberPlatformWindow
@@ -76,16 +81,19 @@ import me.him188.ani.app.platform.torrentMediaResolvers
 import me.him188.ani.app.platform.trace.recordAppStart
 import me.him188.ani.app.tools.update.IosUpdateInstaller
 import me.him188.ani.app.tools.update.UpdateInstaller
+import me.him188.ani.app.ui.debugconsole.startIosDebugConsole
 import me.him188.ani.app.ui.foundation.TestGlobalLifecycleOwner
 import me.him188.ani.app.ui.foundation.layout.LocalPlatformWindow
 import me.him188.ani.app.ui.foundation.navigation.LocalOnBackPressedDispatcherOwner
 import me.him188.ani.app.ui.foundation.navigation.SkikoOnBackPressedDispatcherOwner
+import me.him188.ani.app.ui.foundation.tv.TvPageBackgroundTheme
+import me.him188.ani.app.ui.foundation.widgets.ActionToastHost
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
-import me.him188.ani.app.ui.foundation.widgets.Toast
-import me.him188.ani.app.ui.foundation.widgets.ToastViewModel
-import me.him188.ani.app.ui.foundation.widgets.Toaster
+import me.him188.ani.app.ui.foundation.widgets.rememberActionToastState
 import me.him188.ani.app.ui.main.AniApp
 import me.him188.ani.app.ui.main.AniAppContent
+import me.him188.ani.app.ui.main.InstallTvTouchPageVariants
+import me.him188.ani.app.ui.main.TvTouchAniUiBehavior
 import me.him188.ani.app.videoplayer.player.AniAVKitMediampPlayerFactory
 import me.him188.ani.utils.analytics.Analytics
 import me.him188.ani.utils.httpdownloader.HttpDownloader
@@ -162,6 +170,9 @@ fun startIosApp(): AniIosApplication {
     activateAudioSession()
     startupTimeMonitor.mark(StepName.Logging)
 
+    // 本进程属于哪个用户: 在建数据库与配置 (startKoin) 之前从文件读出来, 见 UserProfiles. iPad 上只有 1 号用户, 记的是它改没改成本地用户
+    UserProfiles.install(UserProfileRegistry.load(context.files.dataDir.resolve(UserProfileRegistry.FILE_NAME)))
+
     val koin = startKoin {
         modules(getCommonKoinModule({ context }, scope))
         modules(getIosModules(context, context.files.dataDir.resolve("torrent"), scope))
@@ -195,6 +206,8 @@ fun startIosApp(): AniIosApplication {
     }
 
     koin.get<TorrentManager>() // start sharing, connect to DHT now
+    startIosDebugConsole(context.files.dataDir, context.files.logsDir) // debug 包: 开发机经局域网调试本机 (见 DebugConsole)
+    startIosSystemNotices(context.files.dataDir, scope) // 系统通知与后台刷新 (见 IosSystemNotices)
 
     val aniNavigator = AniNavigator()
     val onBackPressedDispatcherOwner = SkikoOnBackPressedDispatcherOwner(
@@ -257,7 +270,9 @@ fun MainViewController(app: AniIosApplication): UIViewController {
                 LocalOnBackPressedDispatcherOwner provides app.onBackPressedDispatcherOwner,
                 LocalContext provides app.context,
             ) {
-                AniApp {
+                DisableEdgeSwipeBack()
+                // 电视界面 (同电视包装在平板上的样子, 见 InstallTvTouchPageVariants); 页面底色同电视包 (浅色下整屏同海报墙的浅灰, 见 TvPageBackgroundTheme)
+                AniApp(uiBehavior = TvTouchAniUiBehavior) { TvPageBackgroundTheme {
                     val platformWindow = rememberPlatformWindow()
                     CompositionLocalProvider(
                         LocalPlatformWindow provides platformWindow,
@@ -269,30 +284,24 @@ fun MainViewController(app: AniIosApplication): UIViewController {
                             Box(Modifier.fillMaxSize()) {
                                 val paddingByWindowSize by animateDpAsState(0.dp)
 
-                                val vm = viewModel { ToastViewModel() }
-
-                                val showing by vm.showing.collectAsStateWithLifecycle()
-                                val content by vm.content.collectAsStateWithLifecycle()
+                                // 应用里画的 toast, 带点按动作的 (后台播放的提示) 点得到 (见 ActionToastState)
+                                val toasts = rememberActionToastState(plain = null)
 
                                 CompositionLocalProvider(
                                     LocalNavigator provides app.aniNavigator,
-                                    LocalToaster provides remember {
-                                        object : Toaster {
-                                            override fun toast(text: String) {
-                                                vm.show(text)
-                                            }
-                                        }
-                                    },
+                                    LocalToaster provides toasts,
                                 ) {
                                     Box(Modifier.padding(all = paddingByWindowSize)) {
-                                        AniAppContent(app.aniNavigator)
-                                        Toast({ showing }, { Text(content) })
+                                        InstallTvTouchPageVariants(app.aniNavigator) { AniAppContent(app.aniNavigator) }
+                                        ActionToastHost(toasts)
+                                        // 改成本地用户等要重开应用时: 请用户从后台关掉再打开 (iOS 应用不能自己重开)
+                                        ManualRelaunchPrompt()
                                     }
                                 }
                             }
                         }
                     }
-                }
+                } }
             }
         }
     }
@@ -329,8 +338,11 @@ fun getIosModules(
         GrantedPermissionManager
     }
     single<BrowserNavigator> { IosBrowserNavigator() }
-    // iOS 暂无 CaptchaBrowser 实现: isInteractiveSupported = false, UI 显示降级提示
-    single<CaptchaBrowserFactory> { UnsupportedCaptchaBrowserFactory }
+    single<AppRestarter> { ManualRelaunchRestarter } // 改成本地用户等: 改完请用户手动重开 (见 ManualRelaunchPrompt)
+    single<SystemNotifier> { IosSystemNotifier } // 系统通知 (见 TvSystemNotices)
+    single<BangumiEchTransport> { IosEchTransport(get(), lazy { get() }) } // bangumi 加密直连
+    // WKWebView: Bangumi 应用内登录 (授权页的回调在浏览器里拦下) 与网页源的人机验证
+    single<CaptchaBrowserFactory> { WkWebViewCaptchaBrowserFactory }
     single<ImageCaptchaRecognizer> { IosOnnxImageCaptchaRecognizer() }
     single<TorrentManager> {
         DefaultTorrentManager.create(
@@ -358,6 +370,7 @@ fun getIosModules(
         AniAVKitMediampPlayerFactory()
     }
     single<HlsPlaybackPreparer> { PlatformHlsPlaybackPreparer(get()) }
+    single { ParallelRangePlayback(get()) }
     single<MediaSaveDirProvider> {
         object : MediaSaveDirProvider {
             override val saveDir: String

@@ -168,7 +168,7 @@ class TvNativeGridPageView(
     private var heroBlankTap: TvNativeHeroBlankTap? = null
 
     /**
-     * 此刻按触屏的规矩走: 触屏设备上最近一次输入是手指 (见 [lastInputTouch]). 手指点卡片按
+     * 此刻按触屏的规矩走 (同 iPad 的 Compose 海报墙): 触屏设备上最近一次输入是手指 (见 [lastInputTouch]). 手指点卡片按
      * tvWallTouchTap 判 (按下不动焦点), 卡片墙上不画聚焦效果 (hero 态里照画).
      */
     private val touchMode: Boolean get() = touchInput && lastInputTouch
@@ -937,7 +937,7 @@ class TvNativeGridPageView(
             val columns = metrics.grid.columns.coerceAtLeast(1)
             val target = grid?.indexNearestViewportCenter(grid.selectedPosition.coerceAtLeast(0) % columns)
             unparkFocus()
-            if (grid != null && target != null) grid.focusItem(target) else rowsShown()?.requestFocus()
+            if (grid != null && target != null) grid.focusItem(target) else rowsShown()?.requestCardsFocus()
             return true
         }
         // 焦点在扩展的视图里 (如标签栏): 方向键与确认键先给扩展

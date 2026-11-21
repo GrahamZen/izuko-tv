@@ -92,13 +92,13 @@ fun ConvertToLocalProfileDialog(
                             if (progress.total == 0) stringResource(Lang.profile_convert_local_downloading_list)
                             else stringResource(Lang.profile_convert_local_downloading, progress.done, progress.total),
                         )
-                        Text(stringResource(Lang.profile_convert_local_downloading_hint))
+                        Text(stringResource(relaunchText(Lang.profile_convert_local_downloading_hint)))
                     }
 
                     is ConvertToLocalProgress.Failed -> Text(stringResource(Lang.profile_convert_local_failed, progress.message))
 
                     null -> {
-                        Text(stringResource(Lang.profile_convert_local_text))
+                        Text(stringResource(relaunchText(Lang.profile_convert_local_text)))
                         if (loggedIn) {
                             Text(stringResource(Lang.profile_convert_local_logout))
                             if (hasRecords) {
@@ -162,7 +162,7 @@ fun ConvertToBangumiProfileDialog(
         title = { Text(stringResource(Lang.profile_convert_bangumi_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(stringResource(Lang.profile_convert_bangumi_text))
+                Text(stringResource(relaunchText(Lang.profile_convert_bangumi_text)))
                 if (!records.isEmpty) {
                     Text(stringResource(Lang.profile_convert_bangumi_kept, records.collections, records.watchedEpisodes))
                 }

@@ -131,6 +131,34 @@ class SelectUsableReleaseTest {
         assertNull(select(releases))
     }
 
+    private fun selectOnIos(releases: List<GitHubRelease>) = selectUsableRelease(
+        releases = releases,
+        currentVersion = "1.0.0",
+        releaseClass = ReleaseClass.STABLE,
+        assetPrefix = "izuko",
+        abis = null,
+        ios = true,
+        isNewer = ::isNewer,
+    )
+
+    /** iPad 装不了安卓包: 只有 APK 的版本不提示, 否则点「新版」没有东西可装 */
+    @Test
+    fun `ios skips releases without an ipa`() {
+        val releases = listOf(release("v1.0.2", "izuko-1.0.2-arm64-v8a.apk", "izuko-1.0.2-universal.apk"))
+        assertNull(selectOnIos(releases))
+    }
+
+    @Test
+    fun `ios takes the newest release that carries an ipa`() {
+        val releases = listOf(
+            release("v1.0.3", "izuko-1.0.3-universal.apk"),
+            release("v1.0.2", "izuko-1.0.2-universal.apk", "izuko-1.0.2.ipa", "ani-1.0.2.ipa"),
+        )
+        val (release, packages) = selectOnIos(releases)!!
+        assertEquals("v1.0.2", release.tagName)
+        assertEquals(listOf("izuko-1.0.2.ipa"), packages.map { it.name })
+    }
+
     @Test
     fun `版本线按主版本号划分`() {
         assertTrue(isInUpdateLine("1.0.0"))

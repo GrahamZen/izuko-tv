@@ -60,6 +60,7 @@ import org.koin.mp.KoinPlatform
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
+import kotlin.concurrent.Volatile
 
 /**
  * 通知中心右上角的「刷新」(见 docs/contributing/code/notices.md): 一次把通知的几个来源都取一遍 —— 发版后的通知 (加密通知)、

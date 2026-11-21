@@ -138,8 +138,8 @@ internal fun TvNoticeDialog(
         heightFraction = null,
         maxWidth = TV_NOTICE_DIALOG_MAX_WIDTH,
     ) {
-        // 安卓 (电视与平板) 上是原生视图; Compose 画法 TvNoticeDialogBody 照同一份数据画, 给没有原生视图的平台
-        TvNoticeNativeBody(items, state, tabs, onAction, onRead, onSelectTab, refreshUi = { rememberTvNoticeRefreshUi() }, onRefresh = refresh)
+        // 安卓 (电视与平板) 上是原生视图, iOS 上是 Compose 画法 TvNoticeDialogBody, 照同一份数据画 (见 TvPlatformNotices)
+        TvNoticePlatformBody(items, state, tabs, onAction, onRead, onSelectTab, onDismiss, refreshUi = { rememberTvNoticeRefreshUi() }, onRefresh = refresh)
     }
 }
 
@@ -960,7 +960,7 @@ internal fun TvNoticeBlocks(blocks: List<TvNoticeBlock>, touch: Boolean) {
             is TvNoticeParagraph -> TvNoticeParagraphText(block, touch)
             is TvNoticeMessage -> TvNoticeMessageBubble(block)
             is TvNoticeCard -> TvNoticeCardBlock(block)
-            is TvNoticeQr -> TvNoticeQrBlock(block, touch)
+            is TvNoticeQr -> if (tvNoticeHasConsole || !block.console) TvNoticeQrBlock(block, touch)
         }
     }
 }

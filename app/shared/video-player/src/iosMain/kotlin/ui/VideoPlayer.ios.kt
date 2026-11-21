@@ -70,7 +70,7 @@ actual fun VideoPlayer(
             }
         },
         onRelease = { view ->
-            IosVideoLayerRegistry.unregister(player)
+            (view.layer as? AVPlayerLayer)?.let { IosVideoLayerRegistry.unregister(player, it) }
             view.player = null
         },
     )

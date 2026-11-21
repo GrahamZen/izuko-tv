@@ -104,8 +104,9 @@ kotlin {
         api(projects.app.shared.videoPlayer)
         api(projects.danmaku.danmakuUi)
         implementation(libs.koin.core)
-        implementation(libs.filekit.dialogs.compose) // 平板播放页导入弹幕文件 (TabletDanmakuImportDialog)
+        implementation(libs.filekit.dialogs.compose) // 平板播放页导入弹幕文件 (TabletDanmakuImportDialog), 触屏端反馈从相册选照片 (ui/feedback)
         implementation(libs.atomicfu)
+        implementation(libs.ktor.network) // debug 包的调试接口 (ui/debugconsole, iOS 用)
     }
     sourceSets.androidMain.dependencies {
         // 进度条缩略图取帧 (见 TvFramePreviewSource): media3 的 ExperimentalFrameExtractor,

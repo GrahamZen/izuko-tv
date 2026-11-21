@@ -9,12 +9,16 @@
 
 package me.him188.ani.app.domain.media.hls
 
+import io.ktor.network.sockets.isClosed
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import me.him188.ani.app.domain.foundation.ForegroundListenerRefresh
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotSame
+import kotlin.test.assertTrue
 
 class KtorNetworkHlsProxyServerTest {
     private suspend fun startEchoServer(): KtorNetworkHlsProxyServer {
@@ -60,6 +64,29 @@ class KtorNetworkHlsProxyServerTest {
             repeat(3) {
                 server.breakListenerForTest()
                 assertEquals("path=/playlist.m3u8;range=null", awaitServing(url))
+                assertEquals(port, server.port)
+            }
+        } finally {
+            server.close()
+        }
+    }
+
+    /**
+     * 被回收的监听上 accept 不一定醒来: 回到前台时主动关掉监听, 服务要在原端口接着答.
+     */
+    @Test
+    fun `keeps serving on the same port after a return to the foreground`() = runBlocking {
+        val server = startEchoServer()
+        try {
+            val url = "http://127.0.0.1:${server.port}/playlist.m3u8"
+            awaitServing(url)
+            val port = server.port
+            repeat(3) {
+                val before = server.listenerForTest
+                ForegroundListenerRefresh.refreshAll()
+                assertEquals("path=/playlist.m3u8;range=null", awaitServing(url))
+                assertTrue(before.isClosed)
+                assertNotSame(before, server.listenerForTest)
                 assertEquals(port, server.port)
             }
         } finally {

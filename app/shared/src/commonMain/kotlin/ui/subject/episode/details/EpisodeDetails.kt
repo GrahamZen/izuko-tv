@@ -100,7 +100,6 @@ import me.him188.ani.app.platform.navigation.LocalBrowserNavigator
 import me.him188.ani.app.ui.episode.danmaku.DanmakuSourceSettingsDropdown
 import me.him188.ani.app.ui.episode.danmaku.DanmakuTimeShiftDialog
 import me.him188.ani.app.ui.episode.danmaku.renderDanmakuServiceId
-import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.LocalSubjectAppearanceSettings
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
 import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
@@ -153,6 +152,8 @@ import me.him188.ani.app.ui.subject.details.SubjectDetailsScreen
 import me.him188.ani.app.ui.subject.details.state.SubjectDetailsStateLoader
 import me.him188.ani.app.ui.subject.details.state.createTestSubjectDetailsLoader
 import me.him188.ani.app.ui.subject.episode.EpisodePageLoadError
+import me.him188.ani.app.ui.subject.episode.MediaSelectorFullSearchRow
+import me.him188.ani.app.ui.subject.episode.MediaSelectorShownEffect
 import me.him188.ani.app.ui.subject.episode.details.components.DanmakuMatchInfoGrid
 import me.him188.ani.app.ui.subject.episode.details.components.DanmakuSourceCard
 import me.him188.ani.app.ui.subject.episode.details.components.FavoriteIconButton
@@ -231,11 +232,7 @@ fun EpisodeDetails(
      * 入口按钮 (onClickManualSelect / onClickSwitchSource) 打开容器前调用一次; 宿主在这里锁存模式.
      */
     onBeforeOpenMediaSelector: () -> Unit = {},
-    /**
-     * 选中一个数据源后是否顺手关掉选择器, 见 `VideoScaffoldConfig.hideSelectorOnSelect`.
-     *
-     * **只有遥控器形态读它**, 见下面的 `hideOnSelectEffective`.
-     */
+    /** 选中一个数据源后是否顺手关掉选择器, 宿主按界面形态取值, 见 `hideSelectorOnSelectForCurrentUi`. */
     hideSelectorOnSelect: Boolean = false,
     /** 选源面板打开 / 关闭, 见 `EpisodeViewModel.onMediaSelectorShown` 与 `onMediaSelectorHidden`. */
     onMediaSelectorShown: () -> Unit = {},
@@ -551,14 +548,11 @@ fun EpisodeDetails(
     )
 
     if (showMediaSelector) {
+        MediaSelectorShownEffect(onMediaSelectorShown, onMediaSelectorHidden)
         val sourceResults = mediaSourceResultListPresentation()
         val showBt = sourceResults.btSources.isNotEmpty()
         val closeSelector = { showMediaSelector = false }
-        // 选中一个资源之后要不要顺手关掉. 指针形态一律选完即关: 那个开关默认是关的, 直接读它等于把
-        // "点完源弹窗还盖着"变成默认行为, 而这里一贯是点完即关. 遥控器形态才照配置走: 那边返回键本来
-        // 就是关面板的固定出口, 留着可以当场接着换下一个源.
-        val hideOnSelectEffective = hideSelectorOnSelect || !LocalAniUiBehavior.current.focusDrivenNavigation
-        val closeAfterSelect = { if (hideOnSelectEffective) closeSelector() }
+        val closeAfterSelect = { if (hideSelectorOnSelect) closeSelector() }
         val closeSelectorText = stringResource(Lang.subject_episode_close_selector)
         // 侧边栏占满窗口高度. 窗口太矮 (手机横屏) 时手动查找与 BT 改开窗口级对话框, 规则与播放器侧边栏相同.
         // 关掉对话框回到侧边栏并把模式置回自动匹配, 否则侧边栏立刻又变回对话框; 选中播放后全部关闭.
@@ -622,6 +616,7 @@ fun EpisodeDetails(
                     when (mediaSelectorMode) {
                         MediaSelectorMode.AUTO -> {
                             topBar()
+                            MediaSelectorFullSearchRow(fullSearch, onFullSearchChange)
                             AutoMatchPage(
                                 mediaSelectorState,
                                 onClickItem = {
@@ -648,6 +643,7 @@ fun EpisodeDetails(
                         // 侧边栏宽度下 BT 页是紧凑列表. 窗口够高时切模式只换侧边栏的内容, 不换容器.
                         MediaSelectorMode.BT -> {
                             topBar()
+                            MediaSelectorFullSearchRow(fullSearch, onFullSearchChange)
                             BtResourcesPage(
                                 mediaSelectorState,
                                 sourceResults,

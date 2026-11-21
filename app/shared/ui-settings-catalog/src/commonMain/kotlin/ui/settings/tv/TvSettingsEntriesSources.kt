@@ -310,6 +310,8 @@ internal fun TvSettingsItemsBuilder.mediaSourceItems() {
         Lang.tv_settings_drive_webdav_add, Lang.tv_settings_drive_webdav_add_description,
         keys = listOf(touchPage),
         value = { v -> if (v[touchPage] == true) null else tvText(Lang.tv_settings_on_phone) },
+        // 电视上只能在手机控制台里填: 没有控制台的电视端不列
+        visible = { v -> v[touchPage] == true || hasConsole(v) },
         qr = { v -> if (v[touchPage] == true) null else consoleQr(v, "#sources/webdav") },
     ) { v ->
         if (v[touchPage] != true) {

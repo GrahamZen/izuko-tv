@@ -40,7 +40,7 @@ interface TvNativeCardListener {
     fun tapConfirmsWhileFocusing(index: Int): Boolean = false
 
     /**
-     * 此刻按触屏的规矩走 (平板模式): 手指按下不动焦点, 轻点抬起交给 [onTouchTap] (页面按 tvWallTouchTap 判), 长按同确定键长按
+     * 此刻按触屏的规矩走 (平板, 同 iPad 的 Compose 海报墙): 手指按下不动焦点, 轻点抬起交给 [onTouchTap] (页面按 tvWallTouchTap 判), 长按同确定键长按
      * ([onLongPress]). false (电视) 时照系统的点按, 见 [tapConfirmsWhileFocusing].
      */
     val touchTaps: Boolean get() = false

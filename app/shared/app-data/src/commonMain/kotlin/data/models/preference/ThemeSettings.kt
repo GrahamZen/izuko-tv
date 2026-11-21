@@ -395,6 +395,11 @@ data class ThemeSettings(
      */
     val tvNoticesOnLaunch: Boolean = true,
     /**
+     * 设置「系统通知」: 应用不在前台时新来的通知 (反馈回复等) 也发到系统通知里 (只有有系统通知的平台列这一项, 见 ui-tv TvSystemNotices).
+     * 默认关: 开的时候才向系统要权限.
+     */
+    val systemNotifications: Boolean = false,
+    /**
      * 装了 TV 包的平板 / 手机: 播放页以外的页面也藏起导航栏 (从屏幕边缘滑一下临时出来). 默认关: 这种形态界面内没有返回按钮,
      * 导航栏是返回的途径. 播放页不看它, 两条栏都藏. 没有触摸屏的设备 (电视) 不列这一项也不读它, 见 `ImmersiveShellSystemBars.kt`.
      */

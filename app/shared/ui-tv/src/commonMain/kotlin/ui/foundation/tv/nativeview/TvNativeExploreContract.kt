@@ -73,7 +73,10 @@ interface TvNativeExploreListener : TvNativeRowWallListener {
 
     fun onHeroButtonClick(button: Int)
 
-    /** 触屏上按触屏的规矩停放了焦点 (见 TvNativeExploreView.onTouchParked), 没送到卡 / 按钮: 挂着的落点请求作废. */
+    /**
+     * 触屏上程序送来的焦点 (落点请求、焦点兜底) 停在了画面的入口节点上, 没送到卡 / 按钮 (平板上海报墙不按焦点滚动, 见 TvExploreComposeSurface.parkFocus):
+     * 挂着的落点请求作废.
+     */
     fun onFocusParked() {}
 
     /** hero 按钮上按左 / 右翻轮播; 返回 false = 没翻 (第一项按左: 交给侧边栏). */
@@ -121,6 +124,12 @@ interface TvExploreSurface {
     val scrolledPx: Int
     val rowLeftIndex: Map<String, Int>
     val rowFocusedIndexMap: Map<String, Int>
+
+    /**
+     * 各行此刻停在哪 (第一张露出的卡, 它滑出去的像素): 触屏上行停在手指放开处, 可以滑进行尾留白 (露出「更多」), 按行首恢复对不上,
+     * 页面重建时照它原样恢复. 没有的端 (原生行按行首停) 给空.
+     */
+    val rowScrollPositions: Map<String, Pair<Int, Int>> get() = emptyMap()
 
     /** 两路 hero 内容 (热门轮播 / 聚焦卡). */
     fun setSources(carousel: TvNativeHeroSource, card: TvNativeHeroSource)

@@ -72,6 +72,7 @@ import me.him188.ani.app.data.models.preference.VideoEnhancementDefaultMode
 import me.him188.ani.app.data.models.preference.VideoScaffoldConfig
 import me.him188.ani.app.data.models.preference.effectiveFullSearchMode
 import me.him188.ani.app.data.models.preference.parseMpvOptions
+import me.him188.ani.app.data.models.preference.withinPlaybackSpeedCap
 import me.him188.ani.app.data.models.subject.SubjectInfo
 import me.him188.ani.app.data.models.subject.SubjectProgressInfo
 import me.him188.ani.app.data.models.subject.nameCnOrName
@@ -136,6 +137,7 @@ import me.him188.ani.app.domain.player.extension.CacheOnBtPlayExtension
 import me.him188.ani.app.domain.player.extension.EpisodeExitAnalyticsExtension
 import me.him188.ani.app.domain.player.extension.MarkAsWatchedExtension
 import me.him188.ani.app.domain.player.extension.MediaFetchAnalyticsExtension
+import me.him188.ani.app.domain.player.extension.NextEpisodeWarmupExtension
 import me.him188.ani.app.domain.player.extension.ObserveWebMediaSourcePreferenceExtension
 import me.him188.ani.app.domain.player.extension.PlaybackLineageExtension
 import me.him188.ani.app.domain.player.extension.PauseMediaFetchWhilePlayingExtension
@@ -148,6 +150,7 @@ import me.him188.ani.app.domain.player.extension.RememberPlayProgressExtension
 import me.him188.ani.app.domain.player.extension.SaveMediaPreferenceExtension
 import me.him188.ani.app.domain.player.extension.PlaybackFailureReportExtension
 import me.him188.ani.app.domain.player.extension.PlaybackPerfTraceExtension
+import me.him188.ani.app.domain.player.extension.PlaybackStallReopenExtension
 import me.him188.ani.app.domain.player.extension.PlayTimelineExtension
 import me.him188.ani.app.domain.player.extension.SeekPreviewDecoderFaultExtension
 import me.him188.ani.app.domain.player.extension.SourceProfileExtension
@@ -431,6 +434,22 @@ open class EpisodeViewModel(
      */
     var autoPausedOffPage: Boolean = false
 
+    /**
+     * 此刻允许「回桌面自动进系统小窗」: 播放页或触屏小窗的小窗策略登记着 ([setAutoPictureInPictureArmed]). 这时应用退到后台不该按暂停:
+     * 小窗或后台续播交给系统 (iOS 进小窗时也会先报退到后台), 见 `RetainedPlaybackSessionHolder` 第 2 条.
+     */
+    val autoPictureInPictureArmed: Boolean get() = autoPictureInPictureOwners.isNotEmpty()
+
+    private val autoPictureInPictureOwners = mutableSetOf<Any>()
+
+    /**
+     * [owner] (播放页或触屏小窗) 登记或撤销「回桌面自动进系统小窗」. 按登记者记: 离开播放页时小窗先进场登记、播放页后退场撤销,
+     * 各撤各的, 播放页的撤销不会把小窗的登记一起抹掉.
+     */
+    fun setAutoPictureInPictureArmed(owner: Any, armed: Boolean) {
+        if (armed) autoPictureInPictureOwners += owner else autoPictureInPictureOwners -= owner
+    }
+
     /** `null` 表示本次播放尚未调整过倍速, 此时跟随配置. */
     private val playbackSpeedOverride = MutableStateFlow<Float?>(null)
 
@@ -441,7 +460,7 @@ open class EpisodeViewModel(
         settingsRepository.videoScaffoldConfig.flow,
         playbackSpeedOverride,
     ) { config, override ->
-        override ?: config.playbackSpeed
+        override ?: config.withinPlaybackSpeedCap().playbackSpeed
     }.distinctUntilChanged()
 
     /** 选源面板开着: 「打开选源面板时」那档开着期间搜索一直查完, 不因开播而暂停 (见 [PauseMediaFetchWhilePlayingExtension]). */
@@ -496,6 +515,7 @@ open class EpisodeViewModel(
                 getNextEpisode = { currentEpisodeId -> computeAutoPlayNextEpisodeId(currentEpisodeId) },
             ),
             SwitchMediaOnPlayerErrorExtension,
+            PlaybackStallReopenExtension, // 连接卡死时原地重开 (iOS 报)
             SearchAfterNetworkOutageExtension,
             SeekPreviewDecoderFaultExtension,
             PlaybackFailureReportExtension,
@@ -512,6 +532,7 @@ open class EpisodeViewModel(
             SaveMediaPreferenceExtension,
             ObserveWebMediaSourcePreferenceExtension,
             PlaybackLineageExtension,
+            NextEpisodeWarmupExtension,
             // 字幕跟界面语言、音轨原声优先, 手动换过的按番记住 (界面语言用 remote_web_lang: 各语言资源里写的语言标记)
             PreferredTracksExtension.Factory(uiLanguage = { getStringOffMain(Lang.remote_web_lang) }),
         ),
@@ -698,7 +719,7 @@ open class EpisodeViewModel(
     ).videoStatisticsFlow
 
     val videoScaffoldConfig: VideoScaffoldConfig by settingsRepository.videoScaffoldConfig
-        .flow.produceState(VideoScaffoldConfig.Default)
+        .flow.map { it.withinPlaybackSpeedCap() }.produceState(VideoScaffoldConfig.Default.withinPlaybackSpeedCap())
 
     /** 当前生效的用户倍速范围. */
     val playbackSpeedRange: ClosedFloatingPointRange<Float>

@@ -753,7 +753,7 @@ private fun FrameWindowScope.MainWindowContent(
                             AniAppContent(aniNavigator)
                         }
                         InstallPackageDropDialogs(installPackageState)
-                        Toast({ showing }, { Text(content) })
+                        Toast({ showing }, content = { Text(content) })
                     }
                 }
             }

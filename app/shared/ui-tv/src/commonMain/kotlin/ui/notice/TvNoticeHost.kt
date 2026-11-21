@@ -57,7 +57,7 @@ import kotlin.time.Duration.Companion.seconds
 @Composable
 fun TvNoticeHost(navigator: AniNavigator, onMainPage: () -> Boolean, onBannerPage: () -> Boolean = onMainPage) {
     LaunchedEffect(Unit) { TvNotices.install() }
-    PrewarmTvNoticeView { onMainPage() && nothingCovering() && TvNotices.dialog.value == null }
+    PrewarmTvNoticePlatform { onMainPage() && nothingCovering() && TvNotices.dialog.value == null }
     val currentOnMainPage by rememberUpdatedState(onMainPage)
     val currentOnBannerPage by rememberUpdatedState(onBannerPage)
     val toaster = LocalToaster.current

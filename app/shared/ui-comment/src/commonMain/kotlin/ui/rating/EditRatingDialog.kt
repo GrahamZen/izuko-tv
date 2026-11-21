@@ -173,7 +173,7 @@ fun RatingEditorDialog(
     val focusManager = LocalFocusManager.current
 
     // 遥控器形态: 换成居中大弹窗 (可用方向键调分/写评价), 而不是手机那套 AlertDialog ——
-    // 星星只能点、按钮挤在角上, 遥控器上既选不动分也看不清焦点. 平板模式照手机那套
+    // 星星只能点、按钮挤在角上, 遥控器上既选不动分也看不清焦点. 触屏上的电视界面 (平板、iPad) 照手机那套
     if (LocalAniUiBehavior.current.panelsAsCenteredDialogs && !LocalTvTouchInputEnabled.current) {
         TvRatingEditorDialog(
             state = state,

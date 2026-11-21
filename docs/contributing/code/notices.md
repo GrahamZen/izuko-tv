@@ -193,8 +193,19 @@
 |---|---|---|---|
 | 有新通知时弹出提示 | 用户档 | 开 | 设置「界面」，紧挨「启动时弹出 Web 控制台」 |
 | 新通知提示 | 这台手机（浏览器里） | 提示 | 控制台「设置 → 这台手机」 |
+| 系统通知 | 用户档 | 关（装好后头一次打开时允许了权限就开） | 设置「界面」，接在「有新通知时弹出提示」后面；只有有系统通知的平台列（现在只有 iPad），打开时向系统要权限 |
 
 关着时不弹通知横幅，侧边栏「通知」上的红点照常。
+
+### 7.1 系统通知（iPad）
+
+iPad 上应用不在前台时（切到别的应用、开着小窗、锁屏），新来的通知同时发一条系统通知（锁屏与系统通知中心里那种），点开就打开通知弹窗、停在这一条（同手机控制台的「在电视上打开」）；在应用里看过了，系统通知中心里那条撤掉。
+
+- **哪些种类发**：只发「用户不在应用里时也想马上知道」、而且在 iPad 上真有的：现在只有反馈的回复与处理结果，其余种类（公告、新版本等）只在应用里列；订阅的通知接上以后在种类表 `TvSystemNoticePolicy` 里加一行。
+- **哪些算新来的**：应用在前台时（或设置关着时）列着的都算处理过，不发；进了后台之后新出现的（键或时间变了）才发。发过的记在数据目录里，应用被系统收掉、在后台重新起来也不重发。
+- **后台怎么查**：iOS 不让应用一直在后台跑，切走几秒到半分钟就挂起。系统会不定时把应用叫醒一下（后台刷新，约 30 秒），叫醒时先取一遍反馈的回复，再按取到的发系统通知。什么时候叫、一天几次由系统按用户平时用得多不多定；应用这边每次进后台、每次被叫醒后都向系统要「最早 30 分钟后再叫」。
+- **前台时**：不发，应用里的通知横幅与红点照常。
+- **权限**：装好后头一次到前台就向系统要权限（系统每次安装只弹一次）：允许了同时打开设置「系统通知」，不允许就留着关；之后在设置里打开时，被拒绝过的提示去系统设置。
 
 ## 8. 现有的事怎么接
 
@@ -321,6 +332,7 @@ class TvNoticeColumnItem(key, icon, iconLabel, title, atMillis, summary, fresh, 
 - **认不出的种类**（降级后读到新版本存的）不列，留到过期清掉。参数都是字符串，以后加取值不影响旧版本读。
 - **控制台**：`GET api/notices` 列表（标题、摘要、封面、时间、读没读过、跟不跟状态、控制台去处、有没有电视去处）；`POST api/notices/seen`（`key` 可多个）标读过（网页上整条字都写着）；`POST api/notices/open`（`key`）让电视打开通知弹窗、停在这一条（`TvNotices.open`，在别的签里看的开到那个签），先把 Izuko 叫回前台。实时提示搭在网页每 2 秒一次的 `api/notice` 上：回包的 `notices` 里有新的几条（标题与摘要）与条数。
 - **调试**（debug 包）：`GET api/debug/notices` 看列表（类别、标题、摘要、封面、看没看过与读没读过、右栏正文与操作、横幅上短按做的那个）与弹窗开没开；`POST api/debug/notices/post`（`kind`、`key`、`arg.<名>`）发一条消息；`POST api/debug/notices/release`（`title` 可多个）换掉当前版本的「## 通知」；`POST api/debug/notices/clear` 撤回全部消息；`POST api/debug/notices/open` 打开通知弹窗；`POST api/debug/notices/foreground` 当作刚从后台回到前台。
+- **系统通知与后台刷新**（iPad 的 debug 包调试接口）：`GET api/debug/system-notices` 看权限、设置、前后台、发过的与记着的、后台刷新登记的活、间隔、上次向系统要叫醒的情况、最近 30 次后台刷新的记录（系统叫醒的记成 `system`）；`POST api/debug/system-notices/test`（`title`、`body`、`key`）发一条测试通知；`POST api/debug/system-notices/authorize` 要权限；`POST api/debug/system-notices/refresh` 马上跑一遍后台刷新；`POST api/debug/system-notices/schedule`（`minutes`）改间隔并马上向系统要一次叫醒。
 
 ### 代码地图
 
@@ -357,6 +369,11 @@ class TvNoticeColumnItem(key, icon, iconLabel, title, atMillis, summary, fresh, 
 | ui-tv `ui/notice/TvUpdateNotice.kt` | 「有新版本」那一种：右栏完整的更新内容（`Changelog.fullChanges`）、「查看详情」是发布页（`releaseNotesUrl`）的码 |
 | ui-tv `ui/remote/RemoteAppUpdate.kt` | 下载并安装（手机控制台「应用更新」、工单回复里的测试包、传上来的安装包）：只装本项目的包、签名对得上；系统安装会话，没装上带原因；电视上「安装测试包」（`installTestPackage`：收起通知弹窗、弹动作面板，播放中下好了等退出播放再装）、取消（`cancel`）、再装一次（`retryInstall`）；状态 `status` 手机与电视读同一份（`AppInstallStatus.kt`）。测试包下到 `cache/updates/tickets/`，与自动更新的下载目录并排 |
 | ui-tv `ui/main/TvAppInstallTask.kt` | 动作面板顶上的「下载并安装」：装的是什么、走到哪一步或没装上的原因、进度、✕ 取消下载 / 关掉、「再装一次」 |
+| ui-tv `ui/notice/TvSystemNotices.kt` | 系统通知（iPad，见 7.1）：发哪些种类（`TvSystemNoticePolicy`）、哪些算新来的、发与撤（`planSystemNotices`）、点开交给 `TvNotices.handle`；后台刷新里登记取反馈回复与发通知两件活 |
+| app-platform `platform/SystemNotifier.kt`、`platform/BackgroundRefresh.kt` | 系统通知的平台接口（Koin 里有才发）；后台刷新的活的登记表、跑一次的先后与限时、记录 |
+| app-platform `platform/IosSystemNotifier.kt`、`platform/IosBackgroundRefresh.kt` | iOS 的本地通知（UNUserNotificationCenter）与前后台；后台刷新（BGAppRefreshTask，Info.plist 里登记标识 `izuko.background-refresh` 与 fetch） |
+| ui-settings-catalog `ui/settings/tv/TouchSystemNotificationsItem.kt` | 设置「系统通知」：打开时要权限 |
+| ui-tv `ui/debugconsole/DebugConsoleSystemNotices.kt` | iPad debug 包调试接口里系统通知与后台刷新的几条 |
 | ui-tv `ui/settings/tv/TvSettingsEntryGroup.kt` | 打开设置页并直接进某一组（按组的锚点，见 `TvSettingsState.openGroup`）：落在某一行（`focusRow`，见 `TvSettingsState.rowOf`）：通知里的设置链接（如交流群那一行） |
 
 钩子：TV 根部（`TvPageVariants`）挂 `TvNoticeHost`（`onBannerPage` 照 `tvNoticeBannerRoute` 判眼前是不是有侧边栏的页面），进应用时等控制台二维码弹窗关掉（`TvRemoteControl.showDialogOnLaunch` 返回的 Job）再 `TvNotices.startBubbles`（本版新功能页盖了的，先等它关掉再出二维码）；TV 根部挂 `TvAppUpdateHost`（应用更新），经 `LocalAppUpdateViewModel` 把同一份更新状态交给首页、设置页与动作面板，首页据它不再挂 `UpdateNotifier`；有侧边栏的页面各挂一个 `TvNoticeBubbleHost`（右上角的通知横幅位：首页 `TvMainScreenLayout`、搜索页 `TvSearchPage` 的结果态、详情页 `SubjectDetailsTvPage` 的首屏）；侧边栏的「通知」一项与它的数字角标（`buildTvRailItems`，在 `TvNavigationSideRail`）；`TvWhatsNew` 把当前版本的「## 通知」交给 `TvReleaseNotice`；控制台路由与轮询（`TvRemoteControl`）、页面的样式与脚本、轮询回调（`RemoteControlPage`）。

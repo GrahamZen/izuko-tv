@@ -31,7 +31,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * 探索页在触屏设备上照触屏的规矩走 ([TvNativeRowWallView.touchInput], 规则见 tvWallTouchTap): 按下不动焦点,
+ * 探索页在触屏设备上照触屏的规矩走 ([TvNativeRowWallView.touchInput], 同 iPad 的 Compose 海报墙, 规则见 tvWallTouchTap): 按下不动焦点,
  * 卡片墙上点一下聚焦并进 hero 态, hero 态里点另一张只换焦点、点聚焦那张才进, 点占位不做什么, 长按弹菜单, 点 hero 区进聚焦那张;
  * 卡片墙上不画聚焦效果; 列表由手指自由滚 (不就近停, 甩不进末尾的空白), 手指一拖焦点就停放在海报墙自己身上 (hero 态里原地退回卡片墙),
  * 程序送来的焦点也停放、列表不动, 之后按方向键落到屏上中间那一行. 触摸经 Instrumentation.sendPointerSync 走窗口的输入派发 (同真触摸).

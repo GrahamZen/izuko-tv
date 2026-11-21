@@ -13,7 +13,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import me.him188.ani.app.domain.episode.EpisodeSession
 import me.him188.ani.utils.logging.info
@@ -29,7 +31,8 @@ import kotlin.coroutines.CoroutineContext
  * 播放页内切集时本扩展会随新的 [EpisodeSession] 重新应用当前值, 因此倍速在切集后保持;
  * 播放页退出后该 flow 随之消失.
  *
- * 下发倍速有两处, 少一处就会得到一个"假倍速" (界面显示变了, 声音画面还是原速), 见 [onStart].
+ * 下发倍速有两处, 少一处就会得到一个"假倍速" (界面显示变了, 声音画面还是原速), 见 [onStart];
+ * 另外每次恢复播放都补发一次播放器记下的倍速, 防止长按倍速松手时的还原落空.
  */
 class PlaybackSpeedExtension(
     private val context: PlayerExtensionContext,
@@ -69,6 +72,21 @@ class PlaybackSpeedExtension(
                 // 长按倍速撞上缓冲时, 还原成 1f 的那一发会被整条链路一致地忽略掉, 播放器就一直
                 // 停在长按时的倍速上, 而界面显示的是原速.
                 applySpeed(playbackSpeedFlow.first(), force = true)
+            }
+        }
+        backgroundTaskScope.launch("PlaybackSpeedResync") {
+            // 每次恢复播放 (缓冲完、暂停后再播) 都把播放器记下的倍速再下发一遍.
+            //
+            // mediamp 的 PlaybackSpeed.set 只在 isPlaying 时才把速率交给播放器, 不在播时只记下来;
+            // 恢复播放时它自己又只在记下的速率不是 1x 时才补发. 于是长按倍速撞上缓冲再松手, 还原成 1x 的那一发
+            // 落不到播放器上, 之后也没人补: 播放器一直停在长按时的倍速, 界面却显示原速 (iOS 播在线源时越播越跟不上,
+            // 反复缓冲). 电视播放页的长按自己有一套补发, 共享播放器 (平板 / iPad) 的长按没有, 在这里统一补.
+            // 补的是播放器记下的值而不是设置里的倍速: 长按期间它就是长按的倍速.
+            context.player.state.map { it.isPlaying }.distinctUntilChanged().filter { it }.collect {
+                withContext(mainDispatcher) {
+                    val playbackSpeed = context.player.features[PlaybackSpeed] ?: return@withContext
+                    playbackSpeed.set(playbackSpeed.value)
+                }
             }
         }
     }

@@ -21,14 +21,16 @@ import me.him188.ani.datasources.api.topic.titles.LabelFirstRawTitleParser
 internal object SubtitleLanguageGuesses {
     private const val SIZE = 2048
     private val lock = SynchronizedObject()
-    private val guesses = object : LinkedHashMap<String, List<SubtitleLanguage>>(256, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<SubtitleLanguage>>?): Boolean = size > SIZE
-    }
+    /** 按最近用过排序: 命中就挪到末尾, 超出 [SIZE] 从头上淘汰. */
+    private val guesses = LinkedHashMap<String, List<SubtitleLanguage>>()
 
     fun of(parser: LabelFirstRawTitleParser, text: String): List<SubtitleLanguage> {
-        synchronized(lock) { guesses[text] }?.let { return it }
+        synchronized(lock) { guesses.remove(text)?.also { guesses[text] = it } }?.let { return it }
         val result = parser.parseSubtitleLanguages(text)
-        synchronized(lock) { guesses[text] = result }
+        synchronized(lock) {
+            guesses[text] = result
+            if (guesses.size > SIZE) guesses.remove(guesses.keys.first())
+        }
         return result
     }
 }
