@@ -52,6 +52,7 @@ internal object NetworkAnalysis {
         }
 
         routeFindings(report, out)
+        echAddressFindings(report, out)
 
         val poisoned = pollutedHosts(report)
         if (poisoned.isNotEmpty()) {
@@ -62,6 +63,7 @@ internal object NetworkAnalysis {
         }
 
         serviceFindings(report, out)
+        listFindings(report, out)
         appFindings(report, out)
 
         val sorted = out.sortedBy { it.level.ordinal }
@@ -141,6 +143,31 @@ internal object NetworkAnalysis {
         }
     }
 
+    /**
+     * 加密直连清单里的地址逐个测的结果. 排在第一的连不上算警告: 加密直连按清单顺序连, 每次新建连接都要先等它超时才换下一个;
+     * 后面的连不上只是少了替补, 列出来看清单该怎么排.
+     */
+    private fun echAddressFindings(report: NetworkReport, out: MutableList<PerfFinding>) {
+        val checks = report.echAddressChecks
+        val up = checks.filter { it.probe.answered }.map { it.address }
+        val down = checks.filter { !it.probe.answered }
+        if (up.isEmpty() || down.isEmpty()) return // 全不通时加密直连那条线路本身已经报了
+        val first = checks.first()
+        if (first in down) {
+            out += PerfFinding(
+                PerfFinding.Level.WARN,
+                tr("加密直连排在第一的地址 {0} 连不上（{1}）：每次新建连接都要先等它超时才换下一个。能用的地址：{2}。", first.address, failureText(first.probe), up.joinToString("、")),
+            )
+        }
+        val others = down.filter { it !== first }
+        if (others.isNotEmpty()) {
+            out += PerfFinding(PerfFinding.Level.INFO, tr("加密直连有的地址连不上：{0}；能用的：{1}。", others.joinToString("、") { it.address }, up.joinToString("、")))
+        }
+        checks.filter { it.probe.answered && it.sni != null && it.sni != "encrypted" }.forEach {
+            out += PerfFinding(PerfFinding.Level.WARN, tr("加密直连经 {0} 连上了，但没用上加密握手（sni={1}）。", it.address, it.sni))
+        }
+    }
+
     private fun serviceFindings(report: NetworkReport, out: MutableList<PerfFinding>) {
         val byName = report.services.groupBy { it.name }
         fun down(name: String) = byName[name]?.let { list -> list.isNotEmpty() && list.none { it.answered } } == true
@@ -169,6 +196,16 @@ internal object NetworkAnalysis {
     }
 
     private const val TMDB_IMAGE = "tmdb-image:"
+
+    /** 体检开始时有清单没拉到最新的: 用的是旧的或包里内置的那份, 仓库里改过的地址这台电视还没用上. */
+    private fun listFindings(report: NetworkReport, out: MutableList<PerfFinding>) {
+        val stale = report.lists.filter { !it.refreshed }
+        if (stale.isEmpty()) return
+        out += PerfFinding(
+            PerfFinding.Level.INFO,
+            tr("这些清单没拉到最新的，用的是之前存下的或安装包里自带的：{0}", stale.joinToString("、") { it.file }),
+        )
+    }
 
     private fun appFindings(report: NetworkReport, out: MutableList<PerfFinding>) {
         val app = report.app

@@ -30,6 +30,7 @@ import me.him188.ani.utils.ktor.asScopedHttpClient
 import me.him188.ani.utils.platform.currentTimeMillis
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -160,5 +161,35 @@ class RepoHostedListTest {
         harness.bodies = { """{"hosts": ["img.example.com"]}""" }
         harness.list.refreshIfStale()
         assertEquals(listOf("https://img.example.com"), harness.list.entries.first())
+    }
+
+    @Test
+    fun `refreshNow fetches even when the cache is fresh and reports the result`() = runTest {
+        val harness = Harness(testScheduler, bundled, RepoHostedListCache(listOf("https://old.example.com"), updatedAt = currentTimeMillis()))
+        harness.bodies = { """{"hosts": ["img.example.com"]}""" }
+        harness.list.refreshIfStale()
+        assertEquals(emptyList(), harness.requested)
+        assertTrue(harness.list.refreshNow())
+        assertEquals(listOf("https://img.example.com"), harness.list.entries.first())
+        val state = harness.list.state()
+        assertEquals("tmdb-image-hosts.json", state.fileName)
+        assertEquals(1, state.entries)
+        assertFalse(state.bundled)
+    }
+
+    @Test
+    fun `refreshNow returns false when every source is down and the state shows the bundled list`() = runTest {
+        val harness = Harness(testScheduler, bundled)
+        assertFalse(harness.list.refreshNow())
+        val state = harness.list.state()
+        assertTrue(state.bundled)
+        assertEquals(bundled.size, state.entries)
+        assertEquals(null, state.updatedAgoMillis)
+    }
+
+    @Test
+    fun `created lists are registered for the network check`() = runTest {
+        val harness = Harness(testScheduler, bundled)
+        assertTrue(RepoHostedList.created.any { it === harness.list })
     }
 }

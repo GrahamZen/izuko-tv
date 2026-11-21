@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.data.repository.user.AccessTokenSession
+import me.him188.ani.app.domain.foundation.BangumiEchDohList
 import me.him188.ani.app.domain.foundation.BangumiEchTransport
 import me.him188.ani.app.domain.foundation.BangumiRouteStats
 import me.him188.ani.app.domain.foundation.diagnosis.NetworkDiagnosis
@@ -94,6 +95,8 @@ internal object TvNetworkDiagnostics {
         scope.launch {
             try {
                 val koin = KoinPlatform.getKoin()
+                // 加密直连取配置用的 DNS 清单第一次用到加密直连才建; 先建出来, 体检开始时它也跟着拉一遍
+                koin.getOrNull<BangumiEchDohList>()
                 val sessions = koin.get<SessionManager>()
                 val diagnosis = NetworkDiagnosis(
                     context = context,

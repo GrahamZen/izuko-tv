@@ -24,6 +24,10 @@ data class NetworkReport(
     val app: AppNetworkState,
     /** 整次体检花了多久. */
     val durationMs: Long,
+    /** 加密直连清单里的每个地址各自握手一次 (清单顺序); 加密直连用不了时为空. */
+    val echAddressChecks: List<EchAddressCheck> = emptyList(),
+    /** 体检开始时把仓库里的各份清单拉了一遍, 拉完各是什么样. */
+    val lists: List<ListCheck> = emptyList(),
 )
 
 @Serializable
@@ -108,6 +112,24 @@ data class RouteCheck(
     val requests: List<ProbeResult>,
     /** Cloudflare 的 `/cdn-cgi/trace` 回答 (`sni` = encrypted 才是真用上了加密直连, `loc` 是国家 / 地区…). */
     val trace: Map<String, String> = emptyMap(),
+)
+
+/** 仓库里的一份清单 (见 `RepoHostedList`): [refreshed] = 这次拉到了; 没拉到时 [updatedAgoSeconds] 是缓存的那份有多旧, [bundled] = 用的是包里内置的. */
+@Serializable
+data class ListCheck(
+    val file: String,
+    val entries: Int,
+    val bundled: Boolean,
+    val updatedAgoSeconds: Long? = null,
+    val refreshed: Boolean,
+)
+
+/** 加密直连的一个 Cloudflare 地址: 只连它, 请求 `/cdn-cgi/trace`. [sni] = `encrypted` 才是真用上了加密握手. */
+@Serializable
+data class EchAddressCheck(
+    val address: String,
+    val probe: ProbeResult,
+    val sni: String? = null,
 )
 
 /** 一个请求. 各段耗时从发起算起, 没走到那一段的为 `null`. */

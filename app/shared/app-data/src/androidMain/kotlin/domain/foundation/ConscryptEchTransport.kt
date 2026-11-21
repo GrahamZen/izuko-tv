@@ -106,13 +106,23 @@ class ConscryptEchTransport(
 
     /**
      * 网络体检用: 与加密直连同样的连法 (Cloudflare 地址、ECH 握手), 自己一个连接池, 挂着 [eventListener] 记各段耗时.
-     * 请求地址用真实域名 (`api.bgm.tv`). Conscrypt 加载不了时抛出原因.
+     * 请求地址用真实域名 (`api.bgm.tv`). [address] 不为 `null` 时只连这一个地址 (逐个测清单里的地址), 否则照常按清单顺序试.
+     * Conscrypt 加载不了时抛出原因.
      */
-    fun diagnosticClient(eventListener: EventListener): OkHttpClient {
+    fun diagnosticClient(eventListener: EventListener, address: String? = null): OkHttpClient {
         echConfig.refreshInBackgroundOnce()
         return echClient.getOrThrow().newBuilder()
             .connectionPool(ConnectionPool())
             .eventListener(eventListener)
+            .apply {
+                if (address != null) {
+                    dns(
+                        object : Dns {
+                            override fun lookup(hostname: String): List<InetAddress> = listOf(InetAddress.getByName(address))
+                        },
+                    )
+                }
+            }
             .build()
     }
 
