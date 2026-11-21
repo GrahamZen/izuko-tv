@@ -57,7 +57,8 @@ fun AniAlertDialog(
         AlertDialog(
             onDismissRequest = onDismissRequest,
             confirmButton = confirmButton,
-            modifier = modifier,
+            // 不超过窗口: iOS 转屏时弹窗拿到不限的约束, 按比例定的宽高不起作用, 里面可滚的会抛异常 (见 windowSizeCap)
+            modifier = Modifier.windowSizeCap().then(modifier),
             dismissButton = dismissButton,
             icon = icon,
             title = title,

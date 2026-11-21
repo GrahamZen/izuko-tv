@@ -123,6 +123,8 @@ sealed class MediaSelectorSummary {
 
 /**
  * https://www.figma.com/design/LET1n9mmDa6npDTIlUuJjU/Animeko?node-id=935-6969&t=lhxsUsBY06BworUx-4
+ *
+ * @param buttonContainerColor 「更换 / 手动选择」按钮的底色; 给了就是这个底色、不描边 (平板播放页), 不给是描边按钮
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -130,6 +132,7 @@ fun MediaSelectorSummaryCard(
     summary: MediaSelectorSummary,
     onClickManualSelect: () -> Unit,
     modifier: Modifier = Modifier,
+    buttonContainerColor: Color? = null,
 ) {
     val colors = MediaSelectorColors.calculate(summary)
     val summaryUpdated by rememberUpdatedState(summary)
@@ -186,6 +189,10 @@ fun MediaSelectorSummaryCard(
                     OutlinedButton(
                         onClickManualSelect,
                         contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
+                        colors = buttonContainerColor?.let {
+                            ButtonDefaults.outlinedButtonColors(containerColor = it, contentColor = MaterialTheme.colorScheme.onSurface)
+                        } ?: ButtonDefaults.outlinedButtonColors(),
+                        border = if (buttonContainerColor != null) null else ButtonDefaults.outlinedButtonBorder(),
                     ) {
                         Icon(
                             Icons.Rounded.SyncAlt,

@@ -31,6 +31,7 @@ import android.view.ViewGroup
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.height
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -70,6 +71,8 @@ import me.him188.ani.app.ui.subject.details.sections.focusEpisodeCardColors
  * @param cards 要排的集 (剧照卡与集号格用同一份数据).
  * @param selectedIndex 焦点在网格外时选中第几格: 网格把它滚进来, 焦点送进网格时落在它上面. 焦点在网格里时不动.
  * @param touchTaps 触屏: 格子不可聚焦, 点一下就是点击, 长按开详情.
+ * @param watchedCheck 触屏的看过样式 (同平板的 TvPadEpisodeCard): 看完的集号后打勾 (剧照卡再压暗), 进度只画看到一半的
+ *   (集号格从左铺淡色, 剧照卡底下的细条); 电视上 false, 看完的满条 / 整格铺深色.
  * @param topBleed 原生视图往上伸多少, 首行的聚焦框画得进这一截, 往下滚了以后整个擦掉 (见 TvNativeMonogramGallery 的同名参数);
  *   默认是居中弹窗里标题行与内容之间的间距 (全部选集弹窗里网格就在标题行下面).
  * @param modifier 挂在装网格的那一层上 (按宽排列数; 送焦的锚点也挂这里: 焦点送进来时落在 [selectedIndex]).
@@ -85,6 +88,7 @@ fun TvNativeEpisodeGrid(
     onLongPress: (index: Int) -> Unit,
     modifier: Modifier = Modifier,
     topBleed: Dp = CENTERED_PANEL_TITLE_GAP,
+    watchedCheck: Boolean = false,
 ) {
     BoxWithConstraints(modifier) {
         val density = LocalDensity.current
@@ -106,8 +110,10 @@ fun TvNativeEpisodeGrid(
         } else {
             (cellWidthPx / TV_NATIVE_EPISODE_STILL_RATIO).toInt()
         }
-        val cardStyle = rememberTvNativeEpisodeStyle(cellWidth, with(density) { cellHeightPx.toDp() }, gap, monochrome = false, glass = true)
-        val numberStyle = rememberTvNativeEpisodeNumberStyle(cellWidthPx, cellHeightPx)
+        val cardStyle = rememberTvNativeEpisodeStyle(
+            cellWidth, with(density) { cellHeightPx.toDp() }, gap, monochrome = false, glass = true, watchedCheck = watchedCheck,
+        )
+        val numberStyle = rememberTvNativeEpisodeNumberStyle(cellWidthPx, cellHeightPx, watchedCheck)
         var hiddenAbove by remember { mutableFloatStateOf(0f) }
         var hiddenBelow by remember { mutableFloatStateOf(0f) }
         val currentOnFocused by rememberUpdatedState(onFocused)
@@ -313,7 +319,8 @@ private class TvNativeEpisodeGridPress(private val grid: RecyclerView, private v
  * 集号格的尺寸 (px) 与配色, 由 [rememberTvNativeEpisodeNumberStyle] 按主题算好.
  *
  * @property palette 四种状态的配色, 顺序同 [TvNativeEpisodeStyle.palette] (取自同一个 focusEpisodeCardColors).
- * @property progressShade 进度那层深色 (从左铺到看了多少, 看完的整格铺满).
+ * @property progressShade 进度那层 (从左铺到看了多少; 电视上是深色、看完的整格铺满, 触屏是淡的中性色、只给看到一半的).
+ * @property watchedCheck 看完的集号后画的勾 (触屏样式); null = 不画.
  */
 @Immutable
 data class TvNativeEpisodeNumberStyle(
@@ -328,13 +335,15 @@ data class TvNativeEpisodeNumberStyle(
     val icon: Bitmap,
     val iconPx: Int,
     val iconGapPx: Int,
+    val watchedCheck: Bitmap?,
+    val watchedCheckPx: Int,
 ) {
     fun colors(playing: Boolean, watched: Boolean): TvNativeEpisodeColors =
         palette[(if (playing) 2 else 0) + (if (watched) 1 else 0)]
 }
 
 @Composable
-private fun rememberTvNativeEpisodeNumberStyle(cellWidthPx: Int, cellHeightPx: Int): TvNativeEpisodeNumberStyle {
+private fun rememberTvNativeEpisodeNumberStyle(cellWidthPx: Int, cellHeightPx: Int, watchedCheck: Boolean): TvNativeEpisodeNumberStyle {
     val density = LocalDensity.current
     val typography = MaterialTheme.typography
     val palette = listOf(
@@ -348,7 +357,11 @@ private fun rememberTvNativeEpisodeNumberStyle(cellWidthPx: Int, cellHeightPx: I
     val focusedContainer = aniFocusContainerColor().toArgb()
     val focusedContent = aniFocusContentColor().toArgb()
     val icon = rememberTvNativeIcon(Icons.Rounded.GraphicEq, TV_NATIVE_EPISODE_GRID_NUMBER_ICON)
-    return remember(density, typography, palette, focusedContainer, focusedContent, icon, cellWidthPx, cellHeightPx) {
+    val checkIcon = rememberTvNativeIcon(Icons.Rounded.Check, TV_NATIVE_WATCHED_CHECK_SIZE)
+    val onSurface = MaterialTheme.colorScheme.onSurface
+    return remember(
+        density, typography, palette, focusedContainer, focusedContent, icon, checkIcon, onSurface, cellWidthPx, cellHeightPx, watchedCheck,
+    ) {
         with(density) {
             TvNativeEpisodeNumberStyle(
                 cellWidthPx = cellWidthPx,
@@ -357,19 +370,25 @@ private fun rememberTvNativeEpisodeNumberStyle(cellWidthPx: Int, cellHeightPx: I
                 palette = palette,
                 focusedContainer = focusedContainer,
                 focusedContent = focusedContent,
-                progressShade = Color.Black.copy(alpha = TV_NATIVE_EPISODE_GRID_NUMBER_SHADE_ALPHA).toArgb(),
+                progressShade = if (watchedCheck) {
+                    onSurface.copy(alpha = TV_NATIVE_EPISODE_GRID_PARTIAL_FILL_ALPHA).toArgb()
+                } else {
+                    Color.Black.copy(alpha = TV_NATIVE_EPISODE_GRID_NUMBER_SHADE_ALPHA).toArgb()
+                },
                 text = typography.titleSmall.toTvNativeTextStyle(density, Color.White),
                 icon = icon,
                 iconPx = TV_NATIVE_EPISODE_GRID_NUMBER_ICON.roundToPx(),
                 iconGapPx = 4.dp.roundToPx(),
+                watchedCheck = checkIcon.takeIf { watchedCheck },
+                watchedCheckPx = if (watchedCheck) TV_NATIVE_WATCHED_CHECK_SIZE.roundToPx() else 0,
             )
         }
     }
 }
 
 /**
- * 只显示集号时的一格: 集号居中 (正在播放的前面画声浪图标), 底色与字色同剧照卡 (正在播放 / 看过 / 没看); 进度画成格子本身从左边起铺
- * 一层深色, 不另画进度条 (密排时每格一条细线连成一片, 太吵). 聚焦铺实底. 确定键点击, 按住确定长按 (同剧照卡, [TvNativeConfirmKey]).
+ * 只显示集号时的一格: 集号居中 (正在播放的前面画声浪图标, 触屏上看完的后面画勾), 底色与字色同剧照卡 (正在播放 / 看过 / 没看);
+ * 进度画成格子本身从左边起铺一层 (见 [TvNativeEpisodeNumberStyle.progressShade]), 不另画进度条 (密排时每格一条细线连成一片, 太吵). 聚焦铺实底. 确定键点击, 按住确定长按 (同剧照卡, [TvNativeConfirmKey]).
  * 尺寸定死, 整格自己画 (没有子视图).
  */
 @SuppressLint("ViewConstructor")
@@ -384,6 +403,8 @@ class TvNativeEpisodeNumberView(context: Context, private val style: TvNativeEpi
     }
     private val iconPaint = Paint(Paint.FILTER_BITMAP_FLAG)
     private var iconColor = 0
+    private val checkPaint = Paint(Paint.FILTER_BITMAP_FLAG)
+    private var checkColor = 0
     private val rect = RectF()
     private val clip = Path()
     private var lastPressed = false
@@ -433,7 +454,8 @@ class TvNativeEpisodeNumberView(context: Context, private val style: TvNativeEpi
         canvas.clipPath(clip)
         fillPaint.color = if (focused) style.focusedContainer else colors.container
         canvas.drawRect(rect, fillPaint)
-        val progress = (if (c.watched) 1f else c.progress ?: 0f).coerceIn(0f, 1f)
+        // 触屏样式时看完的不铺满 (打勾), 只铺调用方给的看到一半的进度
+        val progress = (if (c.watched && style.watchedCheck == null) 1f else c.progress ?: 0f).coerceIn(0f, 1f)
         if (progress > 0f) {
             fillPaint.color = style.progressShade
             canvas.drawRect(0f, 0f, w * progress, h, fillPaint)
@@ -443,7 +465,9 @@ class TvNativeEpisodeNumberView(context: Context, private val style: TvNativeEpi
         textPaint.color = content
         val textWidth = textPaint.measureText(c.sort)
         val iconWidth = if (c.playing) style.iconPx + style.iconGapPx else 0
-        var x = (w - textWidth - iconWidth) / 2f
+        val check = if (c.watched) style.watchedCheck else null
+        val checkWidth = if (check != null) style.iconGapPx + style.watchedCheckPx else 0
+        var x = (w - textWidth - iconWidth - checkWidth) / 2f
         if (c.playing) {
             if (iconColor != content) {
                 iconColor = content
@@ -454,6 +478,13 @@ class TvNativeEpisodeNumberView(context: Context, private val style: TvNativeEpi
         }
         val metrics = textPaint.fontMetrics
         canvas.drawText(c.sort, x, h / 2f - (metrics.ascent + metrics.descent) / 2f, textPaint)
+        if (check != null) {
+            if (checkColor != content) {
+                checkColor = content
+                checkPaint.colorFilter = PorterDuffColorFilter(content, PorterDuff.Mode.SRC_IN)
+            }
+            canvas.drawBitmap(check, x + textWidth + style.iconGapPx, (h - style.watchedCheckPx) / 2f, checkPaint)
+        }
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean =
@@ -553,6 +584,9 @@ private val TV_NATIVE_EPISODE_GRID_NUMBER_ICON = 14.dp
 
 /** 集号格的进度那层黑的不透明度. */
 private const val TV_NATIVE_EPISODE_GRID_NUMBER_SHADE_ALPHA = 0.16f
+
+/** 触屏样式时看到一半的那层中性色 (onSurface) 的不透明度 (同 TvPadEpisodeCard 的文字卡). */
+private const val TV_NATIVE_EPISODE_GRID_PARTIAL_FILL_ALPHA = 0.10f
 
 /** 网格左右让出的一截: 聚焦框伸出格外的那一圈画在里面 (同「查看全部」画廊). */
 private val TV_NATIVE_EPISODE_GRID_SIDE_INSET = 12.dp

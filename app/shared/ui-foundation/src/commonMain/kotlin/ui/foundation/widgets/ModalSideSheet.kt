@@ -138,7 +138,8 @@ fun ModalSideSheet(
             animateTransition = false,
         ),
     ) {
-        Box(Modifier.fillMaxSize().imePadding()) {
+        // 不超过窗口: iOS 转屏时弹窗拿到不限的约束, 按比例定的宽高不起作用, 里面可滚的会抛异常 (见 windowSizeCap)
+        Box(Modifier.windowSizeCap().fillMaxSize().imePadding()) {
             Canvas(
                 modifier = Modifier.fillMaxSize().clickable(
                     interactionSource = remember { MutableInteractionSource() },

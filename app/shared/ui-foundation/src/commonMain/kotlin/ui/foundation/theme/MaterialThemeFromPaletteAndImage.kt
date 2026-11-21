@@ -122,10 +122,11 @@ suspend fun ImageBitmap.subjectSeedColor(): Color =
  * 只存**取出来的那一个主色**: 它与深浅色/纯黑背景无关, 所以键只要条目 id; 配色由 [dynamicColorScheme]
  * 同步算出来. 位图与调色板一概不存 —— 那两个大得多, 而重算它们的目的就是为了得到这一个色.
  *
- * 两个写入点:
+ * 三个写入点:
  * - 详情页自己取到色之后 (见 [MaterialThemeFromPaletteAndImage] 的 cacheKey);
  * - **电视端卡片聚焦停稳时提前算** (见 TvPortraitCard 的 themeSeedSubjectId) —— 于是点进去
- *   第一帧就是对的, 不再"先主题色再跳动态色".
+ *   第一帧就是对的, 不再"先主题色再跳动态色";
+ * - 平板播放页没算过时自己取封面算 (见 ui-tv 的 rememberTabletSubjectTheme): 播放页与详情页用同一个色.
  *
  * 两处必须**用同一张图**(竖版封面), 否则会从"跳一次"变成"跳成另一个色".
  *

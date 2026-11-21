@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import me.him188.ani.app.platform.LocalContext
 import me.him188.ani.app.platform.currentAniBuildConfig
 import me.him188.ani.app.platform.navigation.rememberAsyncBrowserNavigator
+import me.him188.ani.app.ui.foundation.widgets.menuHeightCap
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_help_feedback
 import me.him188.ani.app.ui.lang.settings_help_github
@@ -45,7 +46,7 @@ fun HelpDropdown(
     val browserNavigator = rememberAsyncBrowserNavigator()
     val context = LocalContext.current
 
-    DropdownMenu(expanded, onDismissRequest, modifier) {
+    DropdownMenu(expanded, onDismissRequest, modifier.menuHeightCap()) {
         DropdownMenuItem(
             text = { Text(stringResource(Lang.settings_help_telegram)) },
             onClick = { browserNavigator.openJoinTelegram(context) },

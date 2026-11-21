@@ -1404,7 +1404,7 @@ private fun TvNowPlayingThumbnail(subjectId: Int, episodeId: Int, episodeSort: S
  * 现拉一整条链不值得.
  */
 @Composable
-private fun rememberTvPlayingEpisodeStill(subjectId: Int, episodeId: Int): String? {
+internal fun rememberTvPlayingEpisodeStill(subjectId: Int, episodeId: Int): String? {
     val tmdb = remember { GlobalKoin.get<TmdbImageService>() }
     val settings = remember { GlobalKoin.get<SettingsRepository>() }
     var url by remember(subjectId, episodeId) { mutableStateOf<String?>(null) }

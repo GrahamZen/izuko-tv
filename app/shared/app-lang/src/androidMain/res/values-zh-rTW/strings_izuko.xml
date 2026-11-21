@@ -1304,4 +1304,21 @@
     <string name="tv_wall_scale_hint_drag">點或上下拖動滑桿調整大小</string>
     <string name="tv_adjust_done">完成</string>
     <string name="tv_remote_address_copied">已複製 Web 控制台網址</string>
+
+    <!-- 平板模式播放页 (分栏 / 全屏) -->
+    <string name="tablet_player_fullscreen">全螢幕</string>
+    <string name="tablet_player_exit_fullscreen">退出全螢幕</string>
+    <string name="tablet_player_more_settings">更多播放設定</string>
+    <string name="tablet_player_danmaku_placeholder">發送彈幕…</string>
+    <string name="tablet_player_details">詳情</string>
+    <string name="tablet_player_series">系列</string>
+    <string name="tablet_player_stats">播放資訊</string>
+    <string name="tablet_player_replies">回覆</string>
+    <string name="tablet_player_open_full_details">開啟完整詳情頁</string>
+    <string name="tablet_player_rec_also_watched">看過此作品的使用者也看過</string>
+    <string name="tablet_player_rec_similar">相似作品</string>
+    <string name="tablet_player_double_tap_seek_seconds">%1$d 秒</string>
+    <string name="tablet_source_drive_login_hint">這個資料來源要登入網盤後才能搜到資源</string>
+    <string name="tablet_source_resume_full_search">繼續完整搜尋</string>
+    <string name="tablet_player_together_members">一起看 · %1$d 人</string>
 </resources>

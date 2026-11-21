@@ -45,6 +45,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import me.him188.ani.app.ui.foundation.dialogs.PlatformPopupProperties
 import me.him188.ani.app.ui.foundation.widgets.SelectableDropdownMenuItem
+import me.him188.ani.app.ui.foundation.widgets.menuHeightCap
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.media_selector_episode_label
 import me.him188.ani.app.ui.lang.media_selector_episode_label_with_ep
@@ -87,6 +88,7 @@ fun MediaSelectorModeChip(
         DropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
+            modifier = Modifier.menuHeightCap(),
             properties = PlatformPopupProperties(clippingEnabled = false),
         ) {
             for (item in MediaSelectorMode.entries) {

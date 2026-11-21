@@ -140,11 +140,13 @@ import me.him188.ani.app.ui.subject.details.layout.TvHeroZoomLayer
 import me.him188.ani.app.ui.subject.details.layout.tvHeroZoomHoldsPlaceholder
 import me.him188.ani.app.ui.subject.details.state.SubjectDetailsState
 import me.him188.ani.app.ui.subject.episode.EpisodeScreenVariant
+import me.him188.ani.app.ui.subject.episode.LocalEpisodeScreenPlaceholder
 import me.him188.ani.app.ui.subject.episode.LocalEpisodeScreenVariant
 import me.him188.ani.app.ui.foundation.tv.LocalTvLoginSidePanel
 import me.him188.ani.app.ui.foundation.tv.LocalTvOnboardingVariant
 import me.him188.ani.app.ui.foundation.tv.TvOnboardingVariant
 import me.him188.ani.app.ui.subject.episode.tv.TvEpisodeScreenContent
+import me.him188.ani.app.ui.subject.episode.tv.tablet.TvEpisodeScreenPlaceholder
 import me.him188.ani.app.ui.subject.episode.tv.source.PrepareTvDownloadPickerBackdrop
 import me.him188.ani.app.ui.subject.episode.tv.source.TvDownloadSourcePanel
 import me.him188.ani.app.ui.download.subject.LocalTvDownloadMediaPickerVariant
@@ -313,6 +315,8 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
                 )
             }
         },
+        // 播放页数据到之前: 平板模式先铺分栏的底 (同详情页那张模糊底), 电视上不画
+        LocalEpisodeScreenPlaceholder provides { vm, modifier -> TvEpisodeScreenPlaceholder(vm, modifier) },
         // ProvideTvScrollActivity: 每个带卡片的 TV 页一份"有卡片在滚动"的信号, 低特效档下
         // hero 文字 / 集信息行据此在滚动期间隐藏, 背景图也等停稳才换 (时间表页只有后一项).
         // TvPosterWallTheme: 海报墙页面 (探索 / 搜索 / 追番三页) 换上 Apple TV 那套灰阶底色, 不留近黑的块
