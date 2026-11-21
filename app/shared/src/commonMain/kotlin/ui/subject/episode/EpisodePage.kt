@@ -366,6 +366,7 @@ private fun EpisodeScreenContent(
         when (val page = pageState.value) {
             null -> {
                 // TODO: EpisodePage loading
+                LocalEpisodeScreenPlaceholder.current?.invoke(vm, Modifier.fillMaxSize())
             }
 
             else -> {

@@ -38,6 +38,7 @@ import me.him188.ani.app.ui.foundation.layout.desktopTitleBar
 import me.him188.ani.app.ui.foundation.layout.desktopTitleBarPadding
 import me.him188.ani.app.ui.foundation.layout.plus
 import me.him188.ani.app.ui.foundation.tv.TvImageZoomState
+import me.him188.ani.app.ui.foundation.widgets.windowSizeCap
 
 /**
  * "查看全部" 的全量列表 sheet: 标题 + 自适应网格 (按 [cellMinWidth] 自动分列).
@@ -79,7 +80,7 @@ internal fun <T : Any> ViewAllSheet(
     }
     ModalBottomSheet(
         onDismissRequest,
-        modifier = modifier.desktopTitleBarPadding().statusBarsPadding(),
+        modifier = modifier.windowSizeCap().desktopTitleBarPadding().statusBarsPadding(), // iOS 转屏 (见 windowSizeCap)
         contentWindowInsets = {
             BottomSheetDefaults.windowInsets
                 .add(WindowInsets.desktopTitleBar())

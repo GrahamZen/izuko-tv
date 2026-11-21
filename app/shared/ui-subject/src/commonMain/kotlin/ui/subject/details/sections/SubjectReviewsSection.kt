@@ -78,6 +78,7 @@ import me.him188.ani.app.ui.foundation.layout.desktopTitleBarPadding
 import me.him188.ani.app.ui.foundation.layout.rememberConnectedScrollState
 import me.him188.ani.app.ui.foundation.tv.ProvideRingOnlyFocus
 import me.him188.ani.app.ui.foundation.widgets.AniTextButton
+import me.him188.ani.app.ui.foundation.widgets.windowSizeCap
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.subject_details_hot_reviews
 import me.him188.ani.app.ui.lang.subject_details_reviews_count
@@ -545,7 +546,7 @@ fun SubjectCommentsSheet(
     }
     ModalBottomSheet(
         onDismissRequest,
-        modifier = modifier.desktopTitleBarPadding().statusBarsPadding(),
+        modifier = modifier.windowSizeCap().desktopTitleBarPadding().statusBarsPadding(), // iOS 转屏 (见 windowSizeCap)
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         contentWindowInsets = {
             BottomSheetDefaults.windowInsets

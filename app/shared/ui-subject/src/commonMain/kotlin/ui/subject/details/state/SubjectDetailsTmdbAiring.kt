@@ -15,6 +15,7 @@ import androidx.compose.runtime.remember
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.todayIn
+import me.him188.ani.app.data.models.subject.SubjectAiringInfo
 import me.him188.ani.app.data.network.TmdbCorrectedAiring
 import me.him188.ani.app.data.network.correctAiringByTmdb
 import me.him188.ani.app.ui.subject.AiringLabelState
@@ -35,6 +36,14 @@ fun SubjectDetailsState.rememberTmdbAiringLabelState(uiState: SubjectDetailsUiSt
     val progressInfo = corrected?.progressInfo ?: uiState.progressInfo
     return remember(airingInfo, progressInfo) { AiringLabelState(airingInfo, progressInfo) }
 }
+
+/**
+ * 同 [rememberTmdbAiringLabelState] 里的连载信息 (按 TMDB 修正过), 只要连载状态、不要观看进度时用
+ * (平板播放页「选集」一节的标题行). null = 加载中.
+ */
+@Composable
+fun SubjectDetailsState.rememberTmdbAiringInfo(uiState: SubjectDetailsUiState): SubjectAiringInfo? =
+    rememberTmdbCorrectedAiring(uiState)?.airingInfo ?: uiState.airingInfo
 
 /**
  * 同 [rememberSubjectProgressState], 但按 [rememberTmdbAiringLabelState] 改成已开播时, 按钮的「还未开播 / x 开播」

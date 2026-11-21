@@ -94,6 +94,7 @@ import me.him188.ani.app.ui.foundation.widgets.aniPanelSubtitleStyle
 import me.him188.ani.app.ui.foundation.widgets.aniPanelTitleStyle
 import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFade
 import me.him188.ani.app.ui.foundation.widgets.fillMaxHeightAtMost
+import me.him188.ani.app.ui.foundation.widgets.windowSizeCap
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.subject_episode_close
 import org.jetbrains.compose.resources.stringResource
@@ -178,6 +179,8 @@ private fun ViewAllPanelSurface(
                 if (event.type == KeyEventType.KeyUp) backOrDismiss()
                 true
             }
+            // 不超过窗口: iOS 转屏时弹窗拿到不限的约束, 按比例定的宽高不起作用, 里面可滚的会抛异常 (见 windowSizeCap)
+            .windowSizeCap()
             .fillMaxWidth(TV_DETAILS_DIALOG_WIDTH_FRACTION)
             .fillMaxHeightAtMost(TV_DETAILS_DIALOG_HEIGHT_FRACTION),
         shape = ANI_GLASS_PANEL_SHAPE,

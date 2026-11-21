@@ -215,12 +215,13 @@ internal fun TvAllEpisodesDialog(
             // 原生网格 (长番按住往下连翻也顺): 剧照卡同详情页的选集行, 集号格自己画, 见 TvNativeEpisodeGrid
             val useOriginalTitle = tvUseOriginalTitle()
             val prefersTmdb = tvPrefersTmdbText()
-            val cards = remember(shown, stills, names, playProgress, currentEpisodeId, useOriginalTitle, prefersTmdb) {
-                shown.map { it.toNativeCard(stills, names, playProgress, currentEpisodeId, prefersTmdb, useOriginalTitle) }
+            val cards = remember(shown, stills, names, playProgress, currentEpisodeId, useOriginalTitle, prefersTmdb, touch) {
+                shown.map { it.toNativeCard(stills, names, playProgress, currentEpisodeId, prefersTmdb, useOriginalTitle, watchedCheck = touch) }
             }
             TvNativeEpisodeGrid(
                 cards = cards,
                 numbers = numberMode,
+                watchedCheck = touch,
                 selectedIndex = gridTargetIndex,
                 touchTaps = touch,
                 onFocused = { index -> shown.getOrNull(index)?.let { lastFocusedId = it.episodeId } },
@@ -347,8 +348,11 @@ private fun Modifier.tvAllEpisodesTouchNoFocus(touch: Boolean): Modifier =
 /** 全部选集的分段: 全部 / 正片 / 特别篇. */
 private enum class TvAllEpisodesTab { All, Main, Specials }
 
-/** 全部选集用「只显示集号」的样子 (见 [TvAllEpisodesViewToggle]); 记到进程结束, 换一部再开还是上次那种. */
-private var tvAllEpisodesNumberMode by mutableStateOf(false)
+/**
+ * 全部选集用「只显示集号」的样子 (见 [TvAllEpisodesViewToggle]); 记到进程结束, 换一部再开还是上次那种.
+ * 平板播放页侧边的选集面板也用这一份 (那边的切换改的也是它), 两处一起变.
+ */
+internal var tvAllEpisodesNumberMode by mutableStateOf(false)
 
 /**
  * 「剧照卡 / 只显示集号」的切换: 同分段标签的样子 (淡底胶囊里两段, 选中的垫亮一档的胶囊), 每段一个图标.
@@ -518,8 +522,11 @@ private fun EpisodeListItem.toNativeCard(
     currentEpisodeId: Int?,
     prefersTmdb: Boolean,
     useOriginalTitle: Boolean,
+    /** 触屏 (平板) 的看过样式: 看完的打勾不给满条, 进度只给看到一半且不是正在看的 (同平板的 TvPadEpisodeCard). */
+    watchedCheck: Boolean,
 ): TvNativeEpisodeCard {
     val watched = isDoneOrDropped
+    val progress = playProgress[episodeId]
     return TvNativeEpisodeCard(
         id = episodeId,
         sort = sort.toString(),
@@ -527,7 +534,11 @@ private fun EpisodeListItem.toNativeCard(
         stillUrl = stills[episodeId]?.let(::episodeStillImageUrl),
         playing = episodeId == currentEpisodeId,
         watched = watched,
-        progress = if (watched) 1f else playProgress[episodeId],
+        progress = when {
+            !watchedCheck -> if (watched) 1f else progress
+            watched || episodeId == currentEpisodeId -> null
+            else -> progress?.takeIf { it > 0f && it < 1f }
+        },
     )
 }
 

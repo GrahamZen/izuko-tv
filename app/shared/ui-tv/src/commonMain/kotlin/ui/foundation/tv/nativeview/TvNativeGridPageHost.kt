@@ -41,6 +41,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -63,6 +64,7 @@ import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
 import me.him188.ani.app.ui.foundation.tv.tvHeroContentColor
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallBackground
 import me.him188.ani.app.ui.foundation.tv.wall.tvPadBackdropTreatment
+import me.him188.ani.app.ui.subject.details.layout.tvRememberTouchBlurredBackdrop
 
 /*
  * 网格页 (追番 / 搜索) 原生海报墙在 Compose 这一侧的接线, 两页共用: 建视图、换数据、把页面的网格送焦请求 (TvGridFocusState) 转给原生、
@@ -326,6 +328,7 @@ private fun <T : Any> TvNativeGridPageHostContent(
     val composeRoot = LocalView.current
     val density = LocalDensity.current
     val touchInput = LocalTvTouchInputEnabled.current
+    val windowSize = LocalWindowInfo.current.containerSize
     // 触屏上 (平板) hero 态用平板版画法 (见 TvPadHeroGeometry)
     val padHero = heroEnabled && touchInput
     // hero 态在整页底下铺模糊背景, 按确定对焦变清晰再进详情页 (设置里的开关, 见 TvNativeGridPageView.heroBlur; 平板版画法一直铺);
@@ -466,6 +469,12 @@ private fun <T : Any> TvNativeGridPageHostContent(
                         wb.brightMaskAlpha = if (dark) TV_HERO_BLUR_BRIGHT_DIM_ALPHA else Float.NaN
                     }
                     wb.blur = blurSpec
+                    // 平板模式: 解好的模糊底给详情页、播放页接着铺 (从 hero 点进去底接得上)
+                    wb.onBlurLoaded = if (touchInput) {
+                        { url, spec, bitmap -> tvRememberTouchBlurredBackdrop(url, spec, windowSize, bitmap) }
+                    } else {
+                        null
+                    }
                     wb.coverWidthPx = style.coverWidthPx
                     wb.coverHeightPx = style.coverHeightPx
                     wb.crossfade = visualEffects.transitions

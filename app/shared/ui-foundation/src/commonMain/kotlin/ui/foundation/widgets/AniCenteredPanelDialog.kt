@@ -122,6 +122,8 @@ private fun CenteredPanel(
             // 盖在播放画面上时 (播放器的二级页/一起看/详情弹窗) 遥控器播放暂停键照常可用:
             // Dialog 是独立窗口, 按键到不了播放页的根路由, 得自己接一道. 播放页之外为空操作
             .tvOverlayWindowKeys(onDismissRequest)
+            // 不超过窗口: iOS 转屏时弹窗拿到不限的约束, 按比例定的宽高不起作用, 里面可滚的会抛异常 (见 windowSizeCap)
+            .windowSizeCap()
             .then(
                 if (maxWidth != Dp.Unspecified) {
                     Modifier.widthIn(max = maxWidth).fillMaxWidth()

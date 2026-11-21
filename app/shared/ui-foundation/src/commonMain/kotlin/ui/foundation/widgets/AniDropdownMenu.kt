@@ -97,7 +97,8 @@ fun AniDropdownMenu(
         DropdownMenu(
             expanded = expanded,
             onDismissRequest = onDismissRequest,
-            modifier = modifier,
+            // 高度上限: iOS 转屏时菜单不被量成无限高 (见 menuHeightCap)
+            modifier = modifier.menuHeightCap(),
             offset = offset,
             properties = properties,
             content = content,
@@ -108,7 +109,8 @@ fun AniDropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
         // 菜单是独立窗口: 遥控器的播放/暂停与全局长按接回主窗口 (见 tvOverlayWindowKeys)
-        modifier = modifier.tvOverlayWindowKeys(onDismissRequest),
+        // 高度上限: iOS 转屏时菜单不被量成无限高 (见 menuHeightCap)
+        modifier = modifier.menuHeightCap().tvOverlayWindowKeys(onDismissRequest),
         offset = offset,
         properties = properties,
         shape = CENTERED_PANEL_SHAPE,
@@ -170,6 +172,7 @@ private fun TvPositionedMenu(
             ProvideScrollFadeFocusMargin(MENU_SCROLL_FADE) {
                 Column(
                     modifier
+                        .menuHeightCap()
                         .padding(vertical = 8.dp)
                         .width(IntrinsicSize.Max)
                         .aniVerticalScrollFade(scroll, MENU_SCROLL_FADE)

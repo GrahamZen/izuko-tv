@@ -77,6 +77,7 @@ import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_WINDOW_DIM
 import me.him188.ani.app.ui.foundation.widgets.ModalSideSheet
 import me.him188.ani.app.ui.foundation.widgets.ProvideAniGlassPanelContent
 import me.him188.ani.app.ui.foundation.widgets.rememberModalSideSheetState
+import me.him188.ani.app.ui.foundation.widgets.windowSizeCap
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.person_details_open_full_page
 import org.jetbrains.compose.resources.stringResource
@@ -217,6 +218,8 @@ private fun PeoplePreviewSideSheet(
                 // Dialog 是独立窗口, 按键到不了播放页的根按键路由 —— 从播放器的角色/制作人员面板
                 // 点开时画面还在后面放着, 遥控器播放暂停键仍该管用. 播放页之外为空操作
                 Modifier.tvOverlayWindowKeys(onDismissRequest)
+                    // 不超过窗口: iOS 转屏时弹窗拿到不限的约束, 按比例定的宽高不起作用, 里面可滚的会抛异常 (见 windowSizeCap)
+                    .windowSizeCap()
                     .fillMaxHeight(TV_PEOPLE_PREVIEW_HEIGHT_FRACTION)
                     .width(TV_PEOPLE_PREVIEW_WIDTH),
                 shape = ANI_GLASS_PANEL_SHAPE,

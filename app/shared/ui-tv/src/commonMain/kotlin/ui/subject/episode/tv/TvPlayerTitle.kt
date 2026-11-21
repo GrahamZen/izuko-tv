@@ -24,6 +24,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
@@ -51,9 +52,15 @@ import me.him188.ani.app.ui.subject.episode.SubjectPresentation
  * 大小同列表页与详情页 (见 rememberTvTitleLogoBox); 浮出面板开着时整个标题块淡出、让给往上长的面板 (见 TvPlayerTopInfo).
  * 还不知道有没有 logo 时 (多半是直接进的播放页, 没经过详情页与列表页的预取) 先空着最多 [TV_PLAYER_TITLE_LOGO_WAIT_MILLIS],
  * 不先出文字再换成 logo.
+ *
+ * [textStyle] = 文字标题的样式, logo 框跟着它的行高走: 电视 headlineLarge, 平板全屏播放器的顶栏用 titleLarge (见 TabletTopBar).
  */
 @Composable
-internal fun TvPlayerTitle(subject: SubjectPresentation, modifier: Modifier = Modifier) {
+internal fun TvPlayerTitle(
+    subject: SubjectPresentation,
+    modifier: Modifier = Modifier,
+    textStyle: TextStyle = MaterialTheme.typography.headlineLarge,
+) {
     val lookup = if (subject.isPlaceholder) {
         TvTitleLogoLookup.None
     } else {
@@ -64,7 +71,7 @@ internal fun TvPlayerTitle(subject: SubjectPresentation, modifier: Modifier = Mo
     val tmdbTitle = if (subject.isPlaceholder) null else tvTmdbSubjectTitleFilled(subject.info.subjectId)
     val title = tmdbTitle ?: if (tvUseOriginalTitle()) subject.originalTitle else subject.title
     var logoFailed by remember(logo) { mutableStateOf(false) }
-    val box = rememberTvTitleLogoBox()
+    val box = rememberTvTitleLogoBox(titleStyle = textStyle)
     if (logo != null && box != null && !logoFailed) {
         val size = box.sizeOf(logo.aspectRatio)
         val density = LocalDensity.current
@@ -96,7 +103,7 @@ internal fun TvPlayerTitle(subject: SubjectPresentation, modifier: Modifier = Mo
         // 等 logo 那一会儿照样占着一行文字的高, 下面的集号与数据源不跳
         modifier.alpha(if (lookup.pending && !waited) 0f else 1f),
         color = Color.White,
-        style = MaterialTheme.typography.headlineLarge,
+        style = textStyle,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
     )

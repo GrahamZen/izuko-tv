@@ -58,6 +58,7 @@ import me.him188.ani.app.ui.foundation.effects.moveFocusOnEnter
 import me.him188.ani.app.ui.foundation.layout.cardVerticalPadding
 import me.him188.ani.app.ui.foundation.layout.currentWindowAdaptiveInfo1
 import me.him188.ani.app.ui.foundation.text.ProvideTextStyleContentColor
+import me.him188.ani.app.ui.foundation.widgets.menuHeightCap
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_mediasource_rss_auto_save_hint
 import me.him188.ani.app.ui.lang.settings_mediasource_selector_config_icon_url
@@ -269,7 +270,7 @@ fun <T> DropdownListItem(
                 Text(display(selected))
             }
             if (showMenu) {
-                DropdownMenu(showMenu, { showMenu = false }) {
+                DropdownMenu(showMenu, { showMenu = false }, Modifier.menuHeightCap()) {
                     for (option in options) {
                         DropdownMenuItem(
                             text = { Text(display(option)) },

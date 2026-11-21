@@ -40,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import me.him188.ani.app.ui.foundation.widgets.menuHeightCap
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.foundation_paginated_list_next_group
 import me.him188.ani.app.ui.lang.foundation_paginated_list_previous_group
@@ -176,6 +177,7 @@ private fun <T> PaginatedListNavigation(
             DropdownMenu(
                 expanded = showGroupSelector,
                 onDismissRequest = { showGroupSelector = false },
+                modifier = Modifier.menuHeightCap(),
             ) {
                 state.groups.forEachIndexed { index, group ->
                     DropdownMenuItem(

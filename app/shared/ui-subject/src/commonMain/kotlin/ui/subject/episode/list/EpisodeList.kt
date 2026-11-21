@@ -47,6 +47,7 @@ import me.him188.ani.app.ui.foundation.lists.ScrollStateVerticalScrollbar
 import me.him188.ani.app.ui.foundation.lists.hasScrollableContent
 import me.him188.ani.app.ui.foundation.theme.stronglyWeaken
 import me.him188.ani.app.ui.foundation.theme.weaken
+import me.him188.ani.app.ui.foundation.widgets.windowSizeCap
 import me.him188.ani.app.ui.lang.*
 import me.him188.ani.utils.platform.annotations.TestOnly
 import org.jetbrains.compose.resources.*
@@ -70,7 +71,7 @@ fun EpisodeListDialog(
         onEpisodeClick(it)
     }
     Dialog(onDismissRequest, properties) {
-        Card {
+        Card(Modifier.windowSizeCap()) { // iOS 转屏 (见 windowSizeCap)
             Box {
                 Column(Modifier.padding(16.dp)) {
                     Row {

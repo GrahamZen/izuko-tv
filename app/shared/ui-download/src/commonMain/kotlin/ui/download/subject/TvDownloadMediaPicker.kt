@@ -50,9 +50,36 @@ class TvDownloadMediaPickerArgs(
     val hasBt: Boolean,
     val onSelect: (Media) -> Unit,
     val onDismiss: () -> Unit,
+    /** 选集那一步 (平板注入了 [LocalDownloadEpisodePickerVariant] 且选的资源覆盖别的集时): 画在这个选源窗口里, 见 [TvDownloadEpisodeStep]. */
+    val episodeStep: TvDownloadEpisodeStep? = null,
+)
+
+/**
+ * 选源之后的选集那一步, 画在选源的同一个窗口里: 两步之间不关一个窗口再开一个, 不会露出底下的缓存页.
+ *
+ * @param onBack 回到选源 (系统返回也走这里)
+ */
+class TvDownloadEpisodeStep(
+    val onBack: () -> Unit,
+    val content: @Composable () -> Unit,
 )
 
 val LocalTvDownloadMediaPickerVariant = staticCompositionLocalOf<TvDownloadMediaPickerVariant?> { null }
+
+/**
+ * 选集步骤的另一套界面, 由平板模式 / iPad 注入 ([LocalDownloadEpisodePickerVariant]): 全屏「选择集数」. 没注入时照旧在底部弹窗里画
+ * [DownloadEpisodePicker].
+ */
+fun interface DownloadEpisodePickerVariant {
+    /**
+     * @param onBack 回到选源.
+     * @param onConfirm 确认要一并下载的集.
+     */
+    @Composable
+    fun Content(state: DownloadEpisodePickerState, onBack: () -> Unit, onConfirm: (Set<Int>) -> Unit)
+}
+
+val LocalDownloadEpisodePickerVariant = staticCompositionLocalOf<DownloadEpisodePickerVariant?> { null }
 
 /**
  * 缓存页 (单独的条目缓存页与缓存总页的右栏) 打开时调用, 参数是条目 id: 让 TV 包提前准备这一部的选源要用的东西 (选源背后的模糊背景图),
@@ -60,15 +87,43 @@ val LocalTvDownloadMediaPickerVariant = staticCompositionLocalOf<TvDownloadMedia
  */
 val LocalTvDownloadPickerPrewarm = staticCompositionLocalOf<(@Composable (subjectId: Int) -> Unit)?> { null }
 
+/**
+ * 电视 / 平板接管下载请求的弹窗 ([LocalTvDownloadMediaPickerVariant]) 时画出来并返回 true; 没接管 (手机、桌面) 返回 false, 照上游的底部弹窗.
+ * 选集那一步: 平板 ([LocalDownloadEpisodePickerVariant]) 画在选源的同一个窗口里, 电视照旧用底部弹窗.
+ */
+@Composable
+internal fun TvDownloadRequest(
+    selection: DownloadMediaPickerState,
+    episodePicker: DownloadEpisodePickerState?,
+    sourceInfoProvider: MediaSourceInfoProvider,
+    settings: Flow<MediaSelectorSettings>,
+    onDismiss: () -> Unit,
+    onSelect: (Media) -> Unit,
+    onConfirmEpisodes: (Set<Int>) -> Unit,
+    onBack: () -> Unit,
+): Boolean {
+    val variant = LocalTvDownloadMediaPickerVariant.current ?: return false
+    val episodeVariant = LocalDownloadEpisodePickerVariant.current
+    if (episodePicker != null && episodeVariant == null) return false
+    val episodeStep = if (episodePicker != null && episodeVariant != null) {
+        TvDownloadEpisodeStep(onBack) { episodeVariant.Content(episodePicker, onBack, onConfirmEpisodes) }
+    } else {
+        null
+    }
+    TvDownloadMediaPicker(variant, selection, sourceInfoProvider, settings, onDismiss, onSelect, episodeStep)
+    return true
+}
+
 /** 选源步骤交给注入的 [variant]: 选源状态的取法同底部弹窗里的 DownloadMediaPicker. */
 @Composable
-internal fun TvDownloadMediaPicker(
+private fun TvDownloadMediaPicker(
     variant: TvDownloadMediaPickerVariant,
     selection: DownloadMediaPickerState,
     sourceInfoProvider: MediaSourceInfoProvider,
     settings: Flow<MediaSelectorSettings>,
     onDismiss: () -> Unit,
     onSelect: (Media) -> Unit,
+    episodeStep: TvDownloadEpisodeStep?,
 ) {
     val scope = rememberCoroutineScope()
     val filteredResults = remember(selection, settings) {
@@ -93,6 +148,7 @@ internal fun TvDownloadMediaPicker(
             hasBt = hasBt,
             onSelect = onSelect,
             onDismiss = onDismiss,
+            episodeStep = episodeStep,
         ),
     )
 }

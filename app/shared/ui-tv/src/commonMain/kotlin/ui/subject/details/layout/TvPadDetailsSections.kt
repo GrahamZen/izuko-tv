@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -41,6 +42,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.GridView
@@ -90,6 +92,8 @@ import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
 import me.him188.ani.app.ui.foundation.theme.glassContainerColor
 import me.him188.ani.app.ui.foundation.tv.FillTvTmdbTextsFromCache
 import me.him188.ani.app.ui.foundation.tv.rememberTvTmdbTitles
+import me.him188.ani.app.ui.foundation.tv.tvGridBleed
+import me.him188.ani.app.ui.foundation.tv.tvRowPastStartDim
 import me.him188.ani.app.ui.foundation.tv.tvUseOriginalTitle
 import me.him188.ani.app.ui.foundation.widgets.AniCenteredPanelDialog
 import me.him188.ani.app.ui.foundation.widgets.aniGlassButtonColor
@@ -121,13 +125,19 @@ import me.him188.ani.app.ui.subject.details.sections.EPISODE_PROGRESS_BAR_SIDE_I
 import me.him188.ani.app.ui.subject.details.sections.EPISODE_PROGRESS_BOTTOM_INSET
 import me.him188.ani.app.ui.subject.details.sections.EPISODE_STILL_SCRIM_ALPHA
 import me.him188.ani.app.ui.subject.details.sections.EPISODE_STILL_SCRIM_START
+import me.him188.ani.app.ui.subject.details.sections.GalleryPeopleCell
 import me.him188.ani.app.ui.subject.details.sections.StaffViewAllDialog
+import me.him188.ani.app.ui.subject.details.sections.VIEW_ALL_GALLERY_COLUMN_SPACING
+import me.him188.ani.app.ui.subject.details.sections.VIEW_ALL_GALLERY_TEXT_GAP
 import me.him188.ani.app.ui.subject.details.sections.episodeStillImageUrl
 import me.him188.ani.app.ui.subject.details.sections.episodeMetaText
 import me.him188.ani.app.ui.subject.details.sections.focusEpisodeCardColors
+import me.him188.ani.app.ui.subject.details.sections.rememberCharacterGalleryItems
+import me.him188.ani.app.ui.subject.details.sections.rememberStaffGalleryItems
 import me.him188.ani.app.ui.subject.details.sections.tvEpisodeName
 import me.him188.ani.app.ui.subject.episode.list.EpisodeListItem
 import me.him188.ani.app.ui.subject.person.PeoplePreviewTarget
+import me.him188.ani.app.ui.subject.person.PeopleRowItem
 import me.him188.ani.app.ui.subject.person.rememberPeopleClickHandler
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 import kotlinx.coroutines.launch
@@ -204,6 +214,7 @@ private fun tvPadEpisodeCardWidth(rowWidth: Dp): Dp {
 /**
  * 选集区: 标题行 (标题 + 集数, 右端缓存与全部选集) + 剧照卡横滑行 (一屏正好 [TV_PAD_EPISODES_PER_ROW] 张). 进页时行滚到当前集
  * (它前面露一张), 之后不再自己动. 点卡片播放, 长按开本集详情 (剧照 + 完整简介 + 标记看过 / 取消看过).
+ * [startBleed]: 横滑行往左多伸出去的宽度 (详情页里到屏幕左缘, 滑出去的卡片从侧边栏底下出屏, 见 TvPadDetailsScaffold).
  */
 @Composable
 internal fun TvPadEpisodesSection(
@@ -220,6 +231,7 @@ internal fun TvPadEpisodesSection(
     onShowAllEpisodes: () -> Unit,
     horizontalPadding: Dp,
     modifier: Modifier = Modifier,
+    startBleed: Dp = 0.dp,
 ) {
     var detailsTarget by remember { mutableStateOf<EpisodeListItem?>(null) }
     val rowState = rememberLazyListState()
@@ -245,12 +257,16 @@ internal fun TvPadEpisodesSection(
                 },
             )
             LazyRow(
+                Modifier.tvGridBleed(start = startBleed),
                 state = rowState,
-                contentPadding = PaddingValues(horizontal = horizontalPadding),
+                contentPadding = PaddingValues(start = horizontalPadding + startBleed, end = horizontalPadding),
                 horizontalArrangement = Arrangement.spacedBy(TV_PAD_EPISODE_GAP),
             ) {
-                items(episodes, key = { it.episodeId }) { item ->
-                    Column(Modifier.width(cardWidth), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                itemsIndexed(episodes, key = { _, it -> it.episodeId }) { index, item ->
+                    Column(
+                        Modifier.width(cardWidth).tvRowPastStartDim(rowState, index),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
                         TvPadEpisodeCard(
                             item,
                             stillUrl = stills[item.episodeId],
@@ -296,8 +312,16 @@ internal fun TvPadEpisodesSection(
 }
 
 /**
- * 选集剧照卡 (同遥控器版 FocusEpisodeCard 的样子: 剧照铺满、底部压暗写集号与集名、进度条; 没剧照时是玻璃底的文字卡).
- * 当前集在集号前画声浪图标, 看过的满条. 点击 / 长按都出涟漪.
+ * 选集卡 (同遥控器版 FocusEpisodeCard 的样子: 剧照铺满、底部压暗写集号与集名; 没剧照时是玻璃底的文字卡).
+ * 平板详情页的选集、平板播放页视频下面那一排 (不传剧照) 与侧边选集面板共用. 点击 / 长按都出涟漪.
+ *
+ * 观看状态 (同 Apple TV: 看完的打勾, 进度只给看到一半的; 一排里多数集看过时不至于每张都拖一条满的进度条):
+ * - 正在看: 集号前画声浪图标, 底色是主题色那一档; 不画进度 (进度在播放器上).
+ * - 看完 (标了看过 / 抛弃): 集号后一个 ✓, 字压暗 (见 focusEpisodeCardColors); 有剧照时整张图再盖一层半透明黑. 不画进度.
+ * - 看到一半: 有剧照时图底一条细进度条; 文字卡从左往右铺一层淡淡的中性色到看到的位置 (不用主题色, 免得像「正在看」).
+ *
+ * 集号与集名平时贴卡片底部 (有剧照时压在底部的暗色渐变上); [centerText] 为 true 且没剧照时改成上下居中
+ * (视频下面那一排的矮文字卡用: 贴底时上面空出的比下面多, 看着往下坠).
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -310,17 +334,18 @@ internal fun TvPadEpisodeCard(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
+    centerText: Boolean = false,
 ) {
     val watched = item.isDoneOrDropped
     val colors = focusEpisodeCardColors(isPlaying = isCurrent, isWatched = watched, monochrome = false, glass = true)
-    val shownProgress = if (watched) 1f else progress
+    val partial = progress?.takeIf { !watched && !isCurrent && it > 0f && it < 1f }
+    val onImage = stillUrl != null
     Box(
         modifier
             .clip(RoundedCornerShape(EPISODE_CARD_CORNER))
             .background(colors.container)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     ) {
-        val onImage = stillUrl != null
         if (stillUrl != null) {
             val retry = rememberAsyncImageRetryState(stillUrl)
             AsyncImage(
@@ -340,28 +365,42 @@ internal fun TvPadEpisodeCard(
                     ),
                 ),
             )
+            if (watched && !isCurrent) {
+                Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = TV_PAD_WATCHED_STILL_DIM_ALPHA)))
+            }
+        } else if (partial != null) {
+            Box(
+                Modifier.fillMaxHeight().fillMaxWidth(partial)
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = TV_PAD_PARTIAL_FILL_ALPHA)),
+            )
         }
+        val centered = centerText && !onImage
         Column(
-            Modifier.align(Alignment.BottomStart).fillMaxWidth()
+            Modifier.align(if (centered) Alignment.CenterStart else Alignment.BottomStart).fillMaxWidth()
                 .padding(horizontal = 12.dp)
-                .padding(bottom = if ((shownProgress ?: 0f) > 0f) 14.dp else 10.dp),
+                .padding(
+                    bottom = when {
+                        centered -> 0.dp
+                        onImage && partial != null -> 14.dp
+                        else -> 10.dp
+                    },
+                ),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
+            val sortColor = if (onImage) Color.White else colors.sort
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 if (isCurrent) {
-                    Icon(
-                        Icons.Rounded.GraphicEq,
-                        contentDescription = null,
-                        Modifier.size(16.dp),
-                        tint = if (onImage) Color.White else colors.sort,
-                    )
+                    Icon(Icons.Rounded.GraphicEq, contentDescription = null, Modifier.size(16.dp), tint = sortColor)
                 }
                 Text(
                     item.sort.toString(),
                     style = MaterialTheme.typography.titleSmall,
-                    color = if (onImage) Color.White else colors.sort,
+                    color = sortColor,
                     maxLines = 1,
                 )
+                if (watched) {
+                    Icon(Icons.Rounded.Check, contentDescription = null, Modifier.size(14.dp), tint = sortColor)
+                }
             }
             Text(
                 item.tvEpisodeName(names),
@@ -371,8 +410,7 @@ internal fun TvPadEpisodeCard(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        val p = shownProgress
-        if (p != null && p > 0f) {
+        if (onImage && partial != null) {
             Box(
                 Modifier.align(Alignment.BottomStart)
                     .padding(horizontal = EPISODE_PROGRESS_BAR_SIDE_INSET)
@@ -380,13 +418,67 @@ internal fun TvPadEpisodeCard(
                     .fillMaxWidth()
                     .height(EPISODE_PROGRESS_BAR_HEIGHT)
                     .clip(CircleShape)
-                    .background(if (onImage) Color.White.copy(alpha = EPISODE_IMAGE_TRACK_ALPHA) else colors.track),
+                    .background(Color.White.copy(alpha = EPISODE_IMAGE_TRACK_ALPHA)),
             ) {
-                Box(Modifier.fillMaxWidth(p.coerceIn(0f, 1f)).fillMaxHeight().background(colors.progress))
+                Box(Modifier.fillMaxWidth(partial).fillMaxHeight().background(colors.progress))
             }
         }
     }
 }
+
+/**
+ * 只显示集号的一格 (平板播放页侧边选集面板的「集号」样子, 同全部选集弹窗的集号格): 集号居中, 观看状态同 [TvPadEpisodeCard] ——
+ * 正在看的前面画声浪图标、底色是主题色那一档; 看完的后面打勾、字压暗; 看到一半的从左铺一层淡淡的中性色到看到的位置. 点击 / 长按都出涟漪.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+internal fun TvPadEpisodeNumberCell(
+    item: EpisodeListItem,
+    isCurrent: Boolean,
+    progress: Float?,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val watched = item.isDoneOrDropped
+    val colors = focusEpisodeCardColors(isPlaying = isCurrent, isWatched = watched, monochrome = false, glass = true)
+    val partial = progress?.takeIf { !watched && !isCurrent && it > 0f && it < 1f }
+    Box(
+        modifier
+            .height(TV_PAD_EPISODE_NUMBER_HEIGHT)
+            .clip(RoundedCornerShape(TV_PAD_EPISODE_NUMBER_CORNER))
+            .background(colors.container)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (partial != null) {
+            Box(
+                Modifier.align(Alignment.CenterStart).fillMaxHeight().fillMaxWidth(partial)
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = TV_PAD_PARTIAL_FILL_ALPHA)),
+            )
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (isCurrent) {
+                Icon(Icons.Rounded.GraphicEq, contentDescription = null, Modifier.size(14.dp), tint = colors.sort)
+            }
+            Text(item.sort.toString(), style = MaterialTheme.typography.titleSmall, color = colors.sort, maxLines = 1)
+            if (watched) {
+                Icon(Icons.Rounded.Check, contentDescription = null, Modifier.size(14.dp), tint = colors.sort)
+            }
+        }
+    }
+}
+
+/** 集号格的高、圆角与最窄宽度 (同全部选集弹窗的集号格). */
+private val TV_PAD_EPISODE_NUMBER_HEIGHT = 52.dp
+private val TV_PAD_EPISODE_NUMBER_CORNER = 12.dp
+internal val TV_PAD_EPISODE_NUMBER_MIN_WIDTH = 72.dp
+
+/** 看完的剧照卡整张图上再盖的那层黑的不透明度 (正在看的那张不盖). */
+private const val TV_PAD_WATCHED_STILL_DIM_ALPHA = 0.45f
+
+/** 看到一半的文字卡从左铺到进度位置的那层中性色 (onSurface) 的不透明度. */
+private const val TV_PAD_PARTIAL_FILL_ALPHA = 0.10f
 
 /** 弹窗标题行右端的玻璃按钮 (「下载」胶囊、关闭圆钮): 高 [TV_PAD_GLASS_BUTTON_HEIGHT], 淡白底 + 细高光边, 同面板弹窗的按钮. */
 @Composable
@@ -478,27 +570,28 @@ internal fun TvPadSummaryDialog(
 // ---------------------------------------------------------------------------------------------------------------------
 
 /**
- * 角色区: 一行人物卡 ([TvPadPersonCard], 上游 PersonCard 的样子放大: 方头像 + 名字 + 「角色 · 声优」), 放得下几张就几张 (按页面宽度定列数), 不能滑;
- * 点卡开人物预览. 还有没露出来的人时标题行有「查看全部」(开全量弹窗).
+ * 角色区: 圆头像横滑行 (同「查看全部」人物画廊的格子 [GalleryPeopleCell]: 圆 + 名字 + 「配音 某某」, 主角压一枚「主角」标签),
+ * 取全部角色 [all], 滑到哪加载到哪; 点头像开人物预览. 一行放不下全部时标题行有「查看全部」(开全量弹窗). [startBleed] 同选集区 ([TvPadEpisodesSection]).
  */
 @Composable
 internal fun TvPadCharactersSection(
-    exposed: LazyPagingItems<RelatedCharacterInfo>,
     all: LazyPagingItems<RelatedCharacterInfo>,
     totalCount: Int?,
     horizontalPadding: Dp,
     modifier: Modifier = Modifier,
+    startBleed: Dp = 0.dp,
 ) {
     var showAll by rememberSaveable { mutableStateOf(false) }
     val onClickCharacter = rememberPeopleClickHandler()
     TvPadPeopleSection(
         title = stringResource(Lang.subject_details_characters),
-        count = exposed.itemCount,
+        items = rememberCharacterGalleryItems(all),
         totalCount = totalCount,
-        card = { index -> exposed[index]?.let { TvPadPersonCard(it) } },
-        onClick = { index -> exposed.peek(index)?.let { onClickCharacter(PeoplePreviewTarget.Character(it.character.id)) } },
+        onBind = { index -> all[index] },
+        onClick = { index -> all.peek(index)?.let { onClickCharacter(PeoplePreviewTarget.Character(it.character.id)) } },
         onShowAll = { showAll = true },
         horizontalPadding = horizontalPadding,
+        startBleed = startBleed,
         modifier = modifier,
     )
     if (showAll) {
@@ -506,25 +599,26 @@ internal fun TvPadCharactersSection(
     }
 }
 
-/** 制作人员区: 同 [TvPadCharactersSection], 卡上第二行是职位. */
+/** 制作人员区: 同 [TvPadCharactersSection], 名字下面写职位. */
 @Composable
 internal fun TvPadStaffSection(
-    exposed: LazyPagingItems<RelatedPersonInfo>,
     all: LazyPagingItems<RelatedPersonInfo>,
     totalCount: Int?,
     horizontalPadding: Dp,
     modifier: Modifier = Modifier,
+    startBleed: Dp = 0.dp,
 ) {
     var showAll by rememberSaveable { mutableStateOf(false) }
     val onClickPerson = rememberPeopleClickHandler()
     TvPadPeopleSection(
         title = stringResource(Lang.subject_details_staff),
-        count = exposed.itemCount,
+        items = rememberStaffGalleryItems(all),
         totalCount = totalCount,
-        card = { index -> exposed[index]?.let { TvPadPersonCard(it) } },
-        onClick = { index -> exposed.peek(index)?.let { onClickPerson(PeoplePreviewTarget.Person(it.personInfo.id)) } },
+        onBind = { index -> all[index] },
+        onClick = { index -> all.peek(index)?.let { onClickPerson(PeoplePreviewTarget.Person(it.personInfo.id)) } },
         onShowAll = { showAll = true },
         horizontalPadding = horizontalPadding,
+        startBleed = startBleed,
         modifier = modifier,
     )
     if (showAll) {
@@ -533,52 +627,51 @@ internal fun TvPadStaffSection(
 }
 
 /**
- * 一行人物卡: 最多 [TV_PAD_PERSONS_PER_ROW] 张, 窄到名字放不下 [TV_PAD_PERSON_NAME_MIN_CHARS] 个字时减 (见 [tvPadPersonMinWidth]),
- * 只放前那么多张; 格子等宽, 人少时后面空着.
- * 整格点击出涟漪 (涟漪比卡宽出 [TV_PAD_PERSON_PRESS_INSET], 行往左挪同样多, 卡的左缘仍与标题对齐).
+ * 圆头像横滑行: 格子定宽 ([tvPadPersonCellWidth]), 圆的直径 [TV_PAD_PERSON_CIRCLE], 格间距同人物画廊 ([VIEW_ALL_GALLERY_COLUMN_SPACING]),
+ * 同选集 / 关联作品那几排往两侧出血; 放不下的从右边露出一截. [onBind] 在画到第几个时调 (让分页接着取).
  */
 @Composable
 private fun TvPadPeopleSection(
     title: String,
-    count: Int,
+    items: List<PeopleRowItem?>,
     totalCount: Int?,
-    card: @Composable (index: Int) -> Unit,
+    onBind: (index: Int) -> Unit,
     onClick: (index: Int) -> Unit,
     onShowAll: () -> Unit,
     horizontalPadding: Dp,
+    startBleed: Dp,
     modifier: Modifier = Modifier,
 ) {
-    val minCell = tvPadPersonMinWidth()
+    val cellWidth = tvPadPersonCellWidth()
+    val rowState = rememberLazyListState()
     BoxWithConstraints(modifier.fillMaxWidth()) {
-        val rowWidth = maxWidth - (horizontalPadding - TV_PAD_PERSON_PRESS_INSET) * 2
-        val columns = tvPadColumns(rowWidth, minCell, TV_PAD_PERSON_GAP, TV_PAD_PERSONS_PER_ROW)
-        val shown = minOf(count, columns)
-        val remaining = (totalCount ?: count) - shown
+        val gap = VIEW_ALL_GALLERY_COLUMN_SPACING
+        // 一屏整个露出几个: 一共比这多才给「查看全部」
+        val fullyShown = ((maxWidth - horizontalPadding * 2 + gap) / (cellWidth + gap)).toInt()
         Column(verticalArrangement = Arrangement.spacedBy(TV_PAD_SECTION_CONTENT_GAP)) {
             TvPadSectionHeader(
                 title,
                 Modifier.padding(horizontal = horizontalPadding),
                 note = totalCount?.toString(),
-                actionLabel = if (remaining > 0) stringResource(Lang.subject_details_view_all) else null,
+                actionLabel = if ((totalCount ?: items.size) > fullyShown) stringResource(Lang.subject_details_view_all) else null,
                 onAction = onShowAll,
             )
-            Row(
-                Modifier.padding(horizontal = horizontalPadding - TV_PAD_PERSON_PRESS_INSET),
-                horizontalArrangement = Arrangement.spacedBy(TV_PAD_PERSON_GAP),
+            LazyRow(
+                Modifier.tvGridBleed(start = startBleed),
+                state = rowState,
+                contentPadding = PaddingValues(start = horizontalPadding + startBleed, end = horizontalPadding),
+                horizontalArrangement = Arrangement.spacedBy(gap),
             ) {
-                repeat(columns) { index ->
-                    if (index < shown) {
-                        Box(
-                            Modifier.weight(1f)
-                                .clip(RoundedCornerShape(TV_PAD_CARD_CORNER))
-                                .clickable { onClick(index) }
-                                .padding(TV_PAD_PERSON_PRESS_INSET),
-                        ) {
-                            card(index)
-                        }
-                    } else {
-                        Spacer(Modifier.weight(1f))
-                    }
+                items(items.size) { index ->
+                    onBind(index)
+                    GalleryPeopleCell(
+                        items[index],
+                        cellWidth,
+                        circleSize = TV_PAD_PERSON_CIRCLE,
+                        onClick = { onClick(index) },
+                        onLongPress = null,
+                        modifier = Modifier.tvRowPastStartDim(rowState, index),
+                    )
                 }
             }
         }
@@ -586,74 +679,24 @@ private fun TvPadPeopleSection(
 }
 
 /**
- * 人物卡一格最窄多宽: 名字那一行 (字号随界面缩放、系统字号) 写得下 [TV_PAD_PERSON_NAME_MIN_CHARS] 个汉字, 加上头像、头像与字的间距、涟漪那一圈.
- * 按实际字体量, 界面放大时每格跟着变宽、一行少放几张, 名字不至于只剩两三个字.
+ * 一格多宽: 圆两边各留 [TV_PAD_PERSON_CIRCLE_SIDE_ROOM], 且名字那一行 (字号随界面缩放、系统字号) 写得下 [TV_PAD_PERSON_NAME_MIN_CHARS] 个汉字.
+ * 按实际字体量, 界面放大时格子跟着变宽.
  */
 @Composable
-private fun tvPadPersonMinWidth(): Dp {
+private fun tvPadPersonCellWidth(): Dp {
     val measurer = rememberTextMeasurer()
-    val style = tvPadPersonNameStyle()
+    // 同 GalleryPeopleCell 名字那一行
+    val style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold)
     val density = LocalDensity.current
     val nameWidth = remember(measurer, style, density) {
         with(density) { measurer.measure(TV_PAD_PERSON_NAME_SAMPLE, style, maxLines = 1).size.width.toDp() }
     }
-    return nameWidth + TV_PAD_PERSON_AVATAR + TV_PAD_PERSON_TEXT_GAP + TV_PAD_PERSON_PRESS_INSET * 2
+    return maxOf(nameWidth, TV_PAD_PERSON_CIRCLE + TV_PAD_PERSON_CIRCLE_SIDE_ROOM * 2)
 }
-
-/** 人物卡名字那一行的字. */
-@Composable
-private fun tvPadPersonNameStyle(): TextStyle = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
 
 /** [width] 里每格至少 [minCell]、格间 [gap] 时放得下几格 (至少一格, 至多 [maxColumns] 格). */
 private fun tvPadColumns(width: Dp, minCell: Dp, gap: Dp, maxColumns: Int = Int.MAX_VALUE): Int =
     ((width + gap) / (minCell + gap)).toInt().coerceIn(1, maxColumns)
-
-/** 角色卡: 「角色 · 声优」. */
-@Composable
-private fun TvPadPersonCard(info: RelatedCharacterInfo) {
-    val actor = remember(info) { info.character.actors.firstOrNull()?.displayName }
-    TvPadPersonCard(
-        avatarUrl = info.character.imageMedium,
-        name = info.character.displayName,
-        relation = if (actor == null) info.role.nameCn else "${info.role.nameCn} · $actor",
-    )
-}
-
-/** 制作人员卡: 第二行是职位. */
-@Composable
-private fun TvPadPersonCard(info: RelatedPersonInfo) {
-    TvPadPersonCard(info.personInfo.imageMedium, info.personInfo.displayName, info.position.nameCn.orEmpty())
-}
-
-/**
- * 人物卡: 上游人物卡 (PersonCard) 的样子放大到平板上 —— 左边圆角方头像 ([TV_PAD_PERSON_AVATAR], 立绘顶部对齐露脸), 右边名字与一行关系,
- * 放不下省略.
- */
-@Composable
-private fun TvPadPersonCard(avatarUrl: String?, name: String, relation: String) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(TV_PAD_PERSON_TEXT_GAP)) {
-        AvatarImage(
-            avatarUrl,
-            Modifier.size(TV_PAD_PERSON_AVATAR).clip(RoundedCornerShape(TV_PAD_PERSON_AVATAR_CORNER)),
-            alignment = Alignment.TopCenter,
-        )
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(
-                name,
-                style = tvPadPersonNameStyle(),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                relation,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-    }
-}
 
 // ---------------------------------------------------------------------------------------------------------------------
 // 评价
@@ -753,12 +796,16 @@ private fun UIRichText.plainText(): String =
 // 关联作品
 // ---------------------------------------------------------------------------------------------------------------------
 
-/** 关联作品区: 海报卡横滑行 (海报 + 标题 + 关系), 点卡进那一部的详情页. NSFW 打码同各页 (见 NsfwPolicy). */
+/**
+ * 关联作品区: 海报卡横滑行 (海报 + 标题 + 关系), 点卡进那一部的详情页. NSFW 打码同各页 (见 NsfwPolicy).
+ * [startBleed] 同选集区 ([TvPadEpisodesSection]).
+ */
 @Composable
 internal fun TvPadRelatedSection(
     related: LazyPagingItems<RelatedSubjectInfo>,
     horizontalPadding: Dp,
     modifier: Modifier = Modifier,
+    startBleed: Dp = 0.dp,
 ) {
     val navigateToRelated = rememberNavigateToRelatedSubject()
     val useOriginalTitle = tvUseOriginalTitle()
@@ -767,16 +814,20 @@ internal fun TvPadRelatedSection(
     val snapshot = related.itemSnapshotList
     FillTvTmdbTextsFromCache(remember(snapshot) { snapshot.mapNotNull { it?.subjectId } })
     val nsfw = rememberNsfwPolicy()
+    val rowState = rememberLazyListState()
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(TV_PAD_SECTION_CONTENT_GAP)) {
         TvPadSectionHeader(stringResource(Lang.subject_details_related_subjects), Modifier.padding(horizontal = horizontalPadding))
         LazyRow(
-            contentPadding = PaddingValues(horizontal = horizontalPadding),
+            Modifier.tvGridBleed(start = startBleed),
+            state = rowState,
+            contentPadding = PaddingValues(start = horizontalPadding + startBleed, end = horizontalPadding),
             horizontalArrangement = Arrangement.spacedBy(TV_PAD_POSTER_GAP),
         ) {
             items(related.itemCount) { index ->
                 val info = related[index] ?: return@items
                 Column(
                     Modifier.width(TV_PAD_POSTER_WIDTH)
+                        .tvRowPastStartDim(rowState, index)
                         .clip(RoundedCornerShape(TV_PAD_CARD_CORNER))
                         .clickable { navigateToRelated(info) },
                     verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -840,29 +891,36 @@ internal fun TvPadEpisodesSkeleton(horizontalPadding: Dp, modifier: Modifier = M
     }
 }
 
-/** 角色 / 制作人员区的占位: 标题 + 一行人物卡大小的块 (方头像 + 两行字), 列数同 [TvPadPeopleSection]. */
+/** 角色 / 制作人员区的占位: 标题 + 一行圆头像大小的块 (圆 + 两行字), 大小与出血同 [TvPadPeopleSection], 铺满一行. */
 @Composable
-internal fun TvPadPeopleSkeleton(title: String, horizontalPadding: Dp, modifier: Modifier = Modifier) {
-    val minCell = tvPadPersonMinWidth()
+internal fun TvPadPeopleSkeleton(title: String, horizontalPadding: Dp, modifier: Modifier = Modifier, startBleed: Dp = 0.dp) {
+    val cellWidth = tvPadPersonCellWidth()
     BoxWithConstraints(modifier.fillMaxWidth()) {
-        val rowWidth = maxWidth - (horizontalPadding - TV_PAD_PERSON_PRESS_INSET) * 2
-        val columns = tvPadColumns(rowWidth, minCell, TV_PAD_PERSON_GAP, TV_PAD_PERSONS_PER_ROW)
+        val gap = VIEW_ALL_GALLERY_COLUMN_SPACING
+        // 多画一个, 右边同真的那行一样露出一截
+        val count = ((maxWidth - horizontalPadding * 2 + gap) / (cellWidth + gap)).toInt() + 1
         Column(verticalArrangement = Arrangement.spacedBy(TV_PAD_SECTION_CONTENT_GAP)) {
             TvPadSectionHeader(title, Modifier.padding(horizontal = horizontalPadding))
-            Row(
-                Modifier.padding(horizontal = horizontalPadding - TV_PAD_PERSON_PRESS_INSET),
-                horizontalArrangement = Arrangement.spacedBy(TV_PAD_PERSON_GAP),
+            LazyRow(
+                Modifier.tvGridBleed(start = startBleed),
+                contentPadding = PaddingValues(start = horizontalPadding + startBleed, end = horizontalPadding),
+                horizontalArrangement = Arrangement.spacedBy(gap),
+                userScrollEnabled = false,
             ) {
-                repeat(columns) {
-                    Row(
-                        Modifier.weight(1f).padding(TV_PAD_PERSON_PRESS_INSET),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(TV_PAD_PERSON_TEXT_GAP),
+                items(count) {
+                    Column(
+                        Modifier.width(cellWidth),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(VIEW_ALL_GALLERY_TEXT_GAP),
                     ) {
-                        TvPadSkeletonBlock(Modifier.size(TV_PAD_PERSON_AVATAR), RoundedCornerShape(TV_PAD_PERSON_AVATAR_CORNER))
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            TvPadSkeletonLine(MaterialTheme.typography.titleMedium, Modifier.fillMaxWidth(TV_PAD_SKELETON_LONG_LINE))
-                            TvPadSkeletonLine(MaterialTheme.typography.bodyMedium, Modifier.fillMaxWidth(TV_PAD_SKELETON_SHORT_LINE))
+                        TvPadSkeletonBlock(Modifier.size(TV_PAD_PERSON_CIRCLE), CircleShape)
+                        Column(
+                            Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            TvPadSkeletonLine(MaterialTheme.typography.titleSmall, Modifier.fillMaxWidth(TV_PAD_SKELETON_LONG_LINE))
+                            TvPadSkeletonLine(MaterialTheme.typography.bodySmall, Modifier.fillMaxWidth(TV_PAD_SKELETON_SHORT_LINE))
                         }
                     }
                 }
@@ -950,9 +1008,9 @@ private val TV_PAD_EPISODE_WIDTH = 256.dp
 private val TV_PAD_EPISODE_HEIGHT = 144.dp
 private val TV_PAD_EPISODE_GAP = 16.dp
 
-/** 选集行一屏最多放几张整卡、每张至少多宽 (窄屏时少放几张, 见 tvPadEpisodeCardWidth). */
+/** 选集行一屏最多放几张整卡、每张至少多宽 (窄屏时少放几张, 见 tvPadEpisodeCardWidth; 播放页选集面板的剧照卡也按这个宽度排). */
 private const val TV_PAD_EPISODES_PER_ROW = 4
-private val TV_PAD_EPISODE_MIN_WIDTH = 220.dp
+internal val TV_PAD_EPISODE_MIN_WIDTH = 220.dp
 
 /** 弹窗标题行玻璃按钮的高 (关闭钮是同大的圆). */
 private val TV_PAD_GLASS_BUTTON_HEIGHT = 44.dp
@@ -965,17 +1023,13 @@ private val TV_PAD_SUMMARY_DIALOG_TAG_GAP = 8.dp
 private val TV_PAD_SUMMARY_EXTRA_BLANK_LINES = Regex("\n\\s*\n(\\s*\n)+")
 
 /**
- * 人物卡: 一行最多几张、名字至少写得下几个字 (写不下就少放一张, 见 [tvPadPersonMinWidth]) 与量字宽用的样字、头像边长与圆角、头像与字的间距、
- * 格间距、涟漪比卡宽出多少.
+ * 角色 / 制作人员的圆头像: 直径取常见平板应用演职员圆头像 (80~100dp) 的中间; 圆两边至少各留多少; 名字至少写得下几个字
+ * (格宽按它量, 见 [tvPadPersonCellWidth]) 与量字宽用的样字.
  */
-private const val TV_PAD_PERSONS_PER_ROW = 5
-private const val TV_PAD_PERSON_NAME_MIN_CHARS = 5
+private val TV_PAD_PERSON_CIRCLE = 88.dp
+private val TV_PAD_PERSON_CIRCLE_SIDE_ROOM = 8.dp
+private const val TV_PAD_PERSON_NAME_MIN_CHARS = 6
 private val TV_PAD_PERSON_NAME_SAMPLE = "国".repeat(TV_PAD_PERSON_NAME_MIN_CHARS)
-private val TV_PAD_PERSON_AVATAR = 72.dp
-private val TV_PAD_PERSON_AVATAR_CORNER = 10.dp
-private val TV_PAD_PERSON_TEXT_GAP = 14.dp
-private val TV_PAD_PERSON_GAP = 12.dp
-private val TV_PAD_PERSON_PRESS_INSET = 8.dp
 
 /** 评论卡: 每张最窄多宽、高、圆角、间距. */
 private val TV_PAD_REVIEW_MIN_WIDTH = 320.dp

@@ -9,7 +9,6 @@
 
 package me.him188.ani.app.ui.subject.details.layout
 
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -42,6 +41,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Feedback
+import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.ripple.RippleAlpha
 import androidx.compose.material3.Button
@@ -99,6 +99,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.paging.compose.collectAsLazyPagingItemsWithLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import me.him188.ani.app.data.models.preference.TvBackdropBlurLevel
 import me.him188.ani.app.data.models.subject.SubjectCollectionStats
 import me.him188.ani.app.data.models.subject.SubjectInfo
 import me.him188.ani.app.data.models.subject.Tag
@@ -117,7 +118,7 @@ import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.theme.glassContainerColor
 import me.him188.ani.app.ui.foundation.tv.SyncTvTmdbSubjectText
-import me.him188.ani.app.ui.foundation.tv.nativeview.TV_WALL_BACKDROP_CROSSFADE_MILLIS
+import me.him188.ani.app.ui.foundation.tv.nativeview.tvBackdropBlurSpec
 import me.him188.ani.app.ui.foundation.tv.tvTitle
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.showLoadError
@@ -154,6 +155,7 @@ import me.him188.ani.app.ui.subject.details.state.rememberTmdbSubjectProgressSta
 import me.him188.ani.app.ui.subject.episode.list.EpisodeListItem
 import me.him188.ani.app.ui.subject.episode.list.arrangeSpecials
 import me.him188.ani.app.ui.subject.episode.list.gridSpecialEpisodes
+import me.him188.ani.app.ui.subject.episode.tv.tablet.TabletEpisodeStills
 import me.him188.ani.app.ui.subject.rememberSubjectStatusStrings
 import me.him188.ani.app.ui.subject.renderSubjectSeason
 import me.him188.ani.app.ui.user.SelfInfoUiState
@@ -220,6 +222,8 @@ fun SubjectDetailsPadPage(
     val relatedState = tvPadPagedState(related.itemCount, related.loadState.refresh)
 
     val stills by state.tmdbEpisodeStillsFlow.collectAsStateWithLifecycle(emptyMap())
+    // 点进播放页时视频框先放的剧照从这份表里取 (见 TabletEpisodeStill)
+    LaunchedEffect(state.subjectId, stills) { TabletEpisodeStills.put(state.subjectId, stills) }
     val playProgress by state.playProgressFlow.collectAsStateWithLifecycle(emptyMap())
     val runtimes by state.tmdbEpisodeRuntimesFlow.collectAsStateWithLifecycle(emptyMap())
     val overviews by state.tmdbEpisodeOverviewsFlow.collectAsStateWithLifecycle(emptyMap())
@@ -241,12 +245,12 @@ fun SubjectDetailsPadPage(
         onEpisodeCollectionUpdate(SetEpisodeCollectionTypeRequest(state.subjectId, item.episodeId, type))
     }
 
-    TvPadDetailsScaffold(backdropUrl, windowInsets, modifier) { topPadding ->
+    TvPadDetailsScaffold(backdropUrl, windowInsets, modifier) { topPadding, startInset ->
         val pad = TV_PAD_DETAILS_PADDING
         LazyColumn(
             Modifier.fillMaxSize(),
             state = rememberLazyListState(),
-            contentPadding = PaddingValues(top = topPadding, bottom = TV_PAD_DETAILS_BOTTOM_PADDING),
+            contentPadding = PaddingValues(start = startInset, top = topPadding, bottom = TV_PAD_DETAILS_BOTTOM_PADDING),
             verticalArrangement = Arrangement.spacedBy(TV_PAD_DETAILS_SECTION_GAP),
         ) {
             item(key = "header") {
@@ -280,19 +284,24 @@ fun SubjectDetailsPadPage(
                     onClickCache = onClickCache,
                     onShowAllEpisodes = { showAllEpisodes = true },
                     horizontalPadding = pad,
+                    startBleed = startInset,
                 )
             }
-            tvPadSection("characters", charactersState, skeleton = { TvPadPeopleSkeleton(stringResource(Lang.subject_details_characters), pad) }) {
-                TvPadCharactersSection(exposedCharacters, allCharacters, uiState.totalCharactersCount, horizontalPadding = pad)
+            tvPadSection("characters", charactersState, skeleton = {
+                TvPadPeopleSkeleton(stringResource(Lang.subject_details_characters), pad, startBleed = startInset)
+            }) {
+                TvPadCharactersSection(allCharacters, uiState.totalCharactersCount, horizontalPadding = pad, startBleed = startInset)
             }
-            tvPadSection("staff", staffState, skeleton = { TvPadPeopleSkeleton(stringResource(Lang.subject_details_staff), pad) }) {
-                TvPadStaffSection(exposedStaff, allStaff, uiState.totalStaffCount, horizontalPadding = pad)
+            tvPadSection("staff", staffState, skeleton = {
+                TvPadPeopleSkeleton(stringResource(Lang.subject_details_staff), pad, startBleed = startInset)
+            }) {
+                TvPadStaffSection(allStaff, uiState.totalStaffCount, horizontalPadding = pad, startBleed = startInset)
             }
             tvPadSection("reviews", reviewsState, skeleton = { TvPadReviewsSkeleton(pad) }) {
                 TvPadReviewsSection(comments, state.subjectCommentState.count, onShowComments, horizontalPadding = pad)
             }
             tvPadSection("related", relatedState, skeleton = { TvPadRelatedSkeleton(pad) }) {
-                TvPadRelatedSection(related, horizontalPadding = pad)
+                TvPadRelatedSection(related, horizontalPadding = pad, startBleed = startInset)
             }
         }
     }
@@ -335,8 +344,11 @@ fun SubjectDetailsPadLoadingPlaceholder(
         delay(TV_PAD_SLOW_LOAD_SPINNER_DELAY)
         slowLoad = true
     }
-    TvPadDetailsScaffold(backdropUrl, windowInsets, modifier) { topPadding ->
-        BoxWithConstraints(Modifier.fillMaxSize().padding(top = topPadding).padding(horizontal = TV_PAD_DETAILS_PADDING)) {
+    TvPadDetailsScaffold(backdropUrl, windowInsets, modifier) { topPadding, startInset ->
+        BoxWithConstraints(
+            Modifier.fillMaxSize().padding(top = topPadding)
+                .padding(start = startInset + TV_PAD_DETAILS_PADDING, end = TV_PAD_DETAILS_PADDING),
+        ) {
             val coverWidth = tvPadCoverWidth(maxWidth)
             Row(horizontalArrangement = Arrangement.spacedBy(TV_PAD_HEADER_GAP)) {
                 TvPadCover(subjectInfo?.imageLarge, subjectInfo?.subjectId, coverWidth, onSuccess = {})
@@ -377,8 +389,9 @@ private fun LazyListScope.tvPadSection(
 }
 
 /**
- * 页面与占位共用的骨架: 页面底色 + 模糊底, 左边侧边栏 (栏顶返回), 右边是内容 ([content] 收到内容顶部该留的距离, 已含状态栏).
- * 内容区从侧边栏右缘起, 横滑行滑出去的卡片在那里裁掉, 不从侧边栏底下穿过.
+ * 页面与占位共用的骨架: 页面底色 + 模糊底, 内容从屏幕左缘铺起, 侧边栏 (栏顶返回) 浮在左边 (同探索页).
+ * [content] 收到内容顶部该留的距离 (已含状态栏) 与侧边栏占的宽度 (内容的左留白从它之后算); 横滑行往左出血到屏幕左缘,
+ * 滑出去的卡片从侧边栏底下出屏, 不在侧边栏右缘被硬切.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -386,7 +399,7 @@ private fun TvPadDetailsScaffold(
     backdropUrl: String?,
     windowInsets: WindowInsets,
     modifier: Modifier = Modifier,
-    content: @Composable (topPadding: Dp) -> Unit,
+    content: @Composable (topPadding: Dp, startInset: Dp) -> Unit,
 ) {
     val pageColor = AniThemeDefaults.pageContentBackgroundColor
     CompositionLocalProvider(
@@ -394,14 +407,17 @@ private fun TvPadDetailsScaffold(
         LocalContentColor provides contentColorFor(pageColor),
     ) {
         Box(modifier.fillMaxSize().background(pageColor)) {
-            backdropUrl?.let { TvPadDetailsBackdrop(it) }
+            backdropUrl?.let { TvPadDetailsBackdrop(it, companion = tvPadPlayerBackdropBlur()) }
             val navigator = LocalNavigator.current
             val topInset = windowInsets.only(WindowInsetsSides.Top).asPaddingValues().calculateTopPadding()
             // 页面自己的落点: 内容区整块, 什么都不画. 进页送到这里; 焦点兜底 (页面没焦点时往页面里送, 落点是最左的侧边栏) 进侧边栏也改送到这里 ——
             // 侧边栏条目持焦会画高亮, 触屏上没人按方向键, 它就一直亮着. 点侧边栏不需要焦点, 照常跳转
             val pageFocus = remember { FocusRequester() }
             LaunchedEffect(Unit) { runCatching { pageFocus.requestFocus() } }
-            Row(Modifier.fillMaxSize().windowInsetsPadding(windowInsets.only(WindowInsetsSides.Horizontal))) {
+            Box(Modifier.fillMaxSize().windowInsetsPadding(windowInsets.only(WindowInsetsSides.Horizontal))) {
+                Box(Modifier.fillMaxSize().focusRequester(pageFocus).focusable()) {
+                    content(topInset + TV_PAD_DETAILS_TOP_PADDING, TV_PAD_DETAILS_RAIL_WIDTH)
+                }
                 Box(
                     Modifier.width(TV_PAD_DETAILS_RAIL_WIDTH).fillMaxHeight().padding(top = topInset)
                         .focusProperties { onEnter = { runCatching { pageFocus.requestFocus() } } }
@@ -409,25 +425,33 @@ private fun TvPadDetailsScaffold(
                 ) {
                     TvDetailsSideRail(onExitToHero = {}, onBack = { navigator.popBackStack() })
                 }
-                Box(Modifier.weight(1f).fillMaxHeight().focusRequester(pageFocus).focusable()) {
-                    content(topInset + TV_PAD_DETAILS_TOP_PADDING)
-                }
             }
         }
     }
 }
 
 /**
- * 整页的模糊底 ([TvDetailsBlurredBackdrop], 同遥控器版翻离首屏那一层). 解好就淡进来.
+ * 整页的模糊底 ([TvDetailsBlurredBackdrop], 同遥控器版翻离首屏那一层), 糊到 [level] 这一档 (默认详情页那一档). 解好就淡进来;
+ * 与上一页铺的是同一张图时接得上: 同一档第一帧就满, 另一档从那一档渐变过来 (见 TvTouchBlurredBackdrop).
+ * [companion]: 接不上时先铺的那一档, 同时提前备好 (详情页给播放页那一档: 它就是海报墙 hero 铺的那一档, 从 hero 点进来时底接得上,
+ * 再点进播放页时也已经在手). 平板播放页分栏时也铺这一层, 糊得更重 (见 TabletPlayerFrame).
  */
 @Composable
-private fun TvPadDetailsBackdrop(url: String) {
-    val shown = remember(url) { Animatable(0f) }
-    var loaded by remember(url) { mutableStateOf(false) }
-    LaunchedEffect(shown, loaded) {
-        if (loaded) shown.animateTo(1f, tween(TV_WALL_BACKDROP_CROSSFADE_MILLIS))
-    }
-    TvDetailsBlurredBackdrop(url, alpha = { shown.value }, load = true, onLoaded = { loaded = true })
+internal fun TvPadDetailsBackdrop(
+    url: String,
+    level: TvBackdropBlurLevel = LocalThemeSettings.current.tvDetailsBackdropBlur,
+    companion: TvBackdropBlurLevel? = null,
+) {
+    TvTouchBlurredBackdrop(url, tvBackdropBlurSpec(level), companion?.let { tvBackdropBlurSpec(it) })
+}
+
+/**
+ * 平板播放页分栏时的模糊底糊到哪一档: 同海报墙 (默认重, 只剩颜色; 播放页信息多, 底要安静。hero 态铺过的那张参数相同, 直接复用);
+ * 海报墙选了不铺时同详情页那一档。压暗的算法与详情页相同。
+ */
+@Composable
+internal fun tvPadPlayerBackdropBlur(): TvBackdropBlurLevel = LocalThemeSettings.current.let {
+    if (it.tvWallBackdropBlur != TvBackdropBlurLevel.None) it.tvWallBackdropBlur else it.tvDetailsBackdropBlur
 }
 
 /**
@@ -1062,7 +1086,7 @@ private fun TvPadActions(
                 Text(stringResource(Lang.subject_details_login_to_collect), Modifier.padding(start = 8.dp))
             }
         } else {
-            TvPadCollectionButton(uiState.collectionTypeEdit, state, tonalColors)
+            TvPadCollectionButton(uiState.collectionTypeEdit, state, info.subjectId, tonalColors)
         }
 
         FilledTonalIconButton(onClick = onClickOpenExternal, colors = tonalIconColors) {
@@ -1084,21 +1108,33 @@ private fun TvPadActions(
 private fun TvPadCollectionButton(
     presentation: EditableSubjectCollectionTypeState.Presentation,
     actions: SubjectCollectionTypeEditActions,
+    subjectId: Int,
     colors: ButtonColors,
 ) {
     EditableSubjectCollectionTypeDialogsHost(presentation, actions)
     var expanded by remember { mutableStateOf(false) }
     val type = presentation.selfCollectionType
     val action = remember(type) { SubjectCollectionActionsForCollect.find { it.type == type } }
+    // 同电视详情页的收藏胶囊: 看过的番菜单末尾有「重温」; 重温中显示「重温中」, 菜单里不勾在看 (见 TvSubjectRewatch)
+    val rewatch = rememberTvSubjectRewatch(subjectId)
     Box {
         FilledTonalButton(
             onClick = { if (!presentation.isPlaceholder && !presentation.isSetSelfCollectionTypeWorking) expanded = true },
             colors = colors,
             contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
         ) {
-            action?.icon?.invoke()
+            // 没收藏时用播放页那颗的空心心形 (TabletCollectionButton), 收藏了是那一态自己的图标
+            if (rewatch.rewatching) {
+                TvRewatchIcon()
+            } else if (type == UnifiedCollectionType.NOT_COLLECTED) {
+                Icon(Icons.Rounded.FavoriteBorder, contentDescription = null)
+            } else {
+                action?.icon?.invoke()
+            }
             Box(Modifier.padding(start = 8.dp)) {
-                if (type == UnifiedCollectionType.NOT_COLLECTED) {
+                if (rewatch.rewatching) {
+                    TvRewatchingLabel()
+                } else if (type == UnifiedCollectionType.NOT_COLLECTED) {
                     action?.title?.invoke()
                 } else {
                     Text(renderCollectionTypeAsCurrent(type))
@@ -1110,12 +1146,13 @@ private fun TvPadCollectionButton(
         // 菜单用上游平板的样子 (M3 菜单, 当前值是主题色字): 电视那套是「聚焦项铺色」, 触屏上菜单一打开第一项就拿到焦点, 一直亮着
         CompositionLocalProvider(LocalAniUiBehavior provides LocalAniUiBehavior.current.copy(focusDrivenNavigation = false)) {
             EditCollectionTypeDropDown(
-                currentType = type,
+                currentType = if (rewatch.rewatching) null else type,
                 expanded = expanded,
                 onDismissRequest = { expanded = false },
                 onClick = {
                     scope.launch { actions.setSelfCollectionType(it.type)?.let(toaster::showLoadError) }
                 },
+                trailingItems = { TvRewatchMenuItem(rewatch, type, onDismissRequest = { expanded = false }) },
             )
         }
     }

@@ -44,6 +44,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -139,6 +140,7 @@ import me.him188.ani.app.ui.subject.AiringLabelState
 import me.him188.ani.app.ui.subject.collection.rememberTvProgressNow
 import me.him188.ani.app.ui.subject.collection.rememberTvProgressStrings
 import me.him188.ani.app.ui.subject.collection.tvProgressCardLine
+import me.him188.ani.app.ui.subject.details.layout.tvRememberTouchBlurredBackdrop
 import me.him188.ani.app.ui.subject.rememberSubjectStatusStrings
 import me.him188.ani.datasources.api.toLocalDateOrNull
 import org.jetbrains.compose.resources.stringResource
@@ -385,6 +387,7 @@ internal fun TvExplorationNativeWall(
     val heroEnabled = fixedAnchor || posterConfirm == TvPosterConfirmAction.Hero
     val wallBlur = LocalThemeSettings.current.tvWallBackdropBlur
     val touchInput = LocalTvTouchInputEnabled.current
+    val windowSize = LocalWindowInfo.current.containerSize
     // 触屏上 (平板) 热门轮播与 hero 态用平板版画法 (见 TvPadHeroGeometry).
     // 平板版画法一直铺模糊底 (轮播区与 hero 态), 不看设置里关没关
     val padHero = touchInput
@@ -494,6 +497,12 @@ internal fun TvExplorationNativeWall(
                     wb.textColor = heroBlurText.toArgb()
                     wb.brightMaskAlpha = if (dark) TV_HERO_BLUR_BRIGHT_DIM_ALPHA else Float.NaN
                     wb.blur = blurSpec
+                    // 平板模式: 解好的模糊底给详情页、播放页接着铺 (从 hero 点进去底接得上)
+                    wb.onBlurLoaded = if (touchInput) {
+                        { url, spec, bitmap -> tvRememberTouchBlurredBackdrop(url, spec, windowSize, bitmap) }
+                    } else {
+                        null
+                    }
                     wb.coverWidthPx = style.coverWidthPx
                     wb.coverHeightPx = style.coverHeightPx
                     wb.crossfade = visualEffects.transitions

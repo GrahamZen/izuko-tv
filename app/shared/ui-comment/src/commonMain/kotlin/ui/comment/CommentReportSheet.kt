@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import me.him188.ani.app.ui.foundation.layout.currentWindowAdaptiveInfo1
 import me.him188.ani.app.ui.foundation.layout.isWidthCompact
+import me.him188.ani.app.ui.foundation.widgets.windowSizeCap
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.comment_report_cancel
 import me.him188.ani.app.ui.lang.comment_report_detail_hint
@@ -114,7 +115,7 @@ fun CommentReportSheet(
     if (currentWindowAdaptiveInfo1().isWidthCompact) {
         ModalBottomSheet(
             onDismissRequest = onDismissRequest,
-            modifier = modifier,
+            modifier = modifier.windowSizeCap(), // iOS 转屏 (见 windowSizeCap)
         ) {
             CommentReportSheetContent(
                 snapshotText = snapshotText,
@@ -126,7 +127,7 @@ fun CommentReportSheet(
     } else {
         Dialog(onDismissRequest = onDismissRequest) {
             Surface(
-                modifier = modifier.widthIn(max = 400.dp),
+                modifier = modifier.windowSizeCap().widthIn(max = 400.dp), // iOS 转屏 (见 windowSizeCap)
                 shape = RoundedCornerShape(28.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
             ) {
