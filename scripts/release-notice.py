@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
-"""改已发布 release 正文里的「## 通知」一节: 发版后发现问题, 告诉已经装了这一版的人.
+"""发版后的通知: 发版后发现问题, 告诉已经装了这一版的人.
 
-应用那边 (ui-tv `TvWhatsNew`, 解析在 ui-settings `ReleaseHighlights`): 装着这一版的电视每次冷启动去 GitHub 取这一版的正文,
+两种: 加密通知 (--sealed, 见下) 给带这套代码的版本 (1.0.9-alpha04 之后发的), 它们只读这一种;
+release 正文里的「## 通知」(不加 --sealed) 只给更早的旧版 (1.0.9-alpha04 及以前) 看.
+
+正文通知 (旧版的读法, ui-tv `TvWhatsNew` 当时的样子, 解析在 ui-settings `ReleaseHighlights`): 装着这一版的电视每次冷启动去 GitHub 取这一版的正文,
 「## 通知」一节的条目和上次显示过的不一样, 就盖一页只显示通知, 每台电视按内容只弹一次:
 - 加一条 / 改一条 / 删掉其中一条: 内容变了, 看过旧通知的人也会再看到一次, 显示的是整节 (不只是改动的那条);
 - 清空 (删掉整节): 什么都不弹;
@@ -17,6 +20,14 @@
   uv run --no-project python scripts/release-notice.py clear  [--tag vX]                      删掉整节
   通用: --dry-run 只打印改动, 不提交; --repo owner/name (默认 gradle.properties 的 ani.repository).
 不写 --tag = 最新的正式版 (releases/latest); 预发布版要写 --tag.
+
+加密通知 (--sealed): 只给装了应用的人看, 放在 release `notices` 的附件 notices.txt (密文,
+  钥匙同加密的应用配置: local.properties 的 ani.config.key, 见 scripts/sealed_text.py); 改了当场生效 (下一次冷启动取到).
+  每条带「给哪些版本」(--for): `*` 所有版本 (默认) / `1.0.9` 只给这一版 / `1.0.9*` 给 1.0.9 和它的各个测试版.
+  新版本的通知中心、本版新功能页、设置里那一页都只读它; 更早的版本只看正文. 要 cryptography:
+  uv run --no-project --with cryptography python scripts/release-notice.py show --sealed
+  uv run --no-project --with cryptography python scripts/release-notice.py add  --sealed [--for 1.0.9*] -f 条目.txt
+  (set / remove / clear 同上; remove 的序号是 show 里这个 --for 下面的; 没有 release notices 时第一次写会建它)
 
 条目写成「标题：说明」: 应用按第一个全角冒号 (或「: 」) 拆, 冒号在前 30 字以内时前半句醒目显示、后半句压暗; 否则整条当标题.
 Git Bash 里中文参数会变成问号: 中文写进 UTF-8 文件用 -f (一行一条, 开头的「- 」可写可不写), 或者在 PowerShell 里跑.
@@ -125,6 +136,90 @@ def read_items(args):
     return items
 
 
+SEALED_TAG = "notices"
+SEALED_ASSET = "notices.txt"
+SEALED_RELEASE_NOTES = "应用内通知 (加密): 应用读这里的 notices.txt, 不是安装包. 用 scripts/release-notice.py --sealed 维护, 别手动改."
+
+
+def sealed_load(repo, key, st):
+    """(release notices 在不在, 明文里的 [(给哪些版本, 那句话)])"""
+    r = subprocess.run(["gh", "release", "view", SEALED_TAG, "--repo", repo, "--json", "assets"], capture_output=True)
+    if r.returncode != 0:
+        return False, []
+    if SEALED_ASSET not in [a["name"] for a in json.loads(r.stdout)["assets"]]:
+        return True, []
+    with tempfile.TemporaryDirectory() as d:
+        gh("release", "download", SEALED_TAG, "--repo", repo, "-p", SEALED_ASSET, "-D", d)
+        token = open(os.path.join(d, SEALED_ASSET), encoding="utf-8").read().strip()
+    if not token:
+        return True, []
+    plain = st.open_token(token, key, st.PURPOSE_NOTICES)
+    if plain is None:
+        die("notices.txt 用 local.properties 的 ani.config.key 解不开 (钥匙换过?)")
+    return True, st.lines(plain)
+
+
+def sealed_main(args):
+    try:
+        import sealed_text as st
+    except ImportError:
+        die("加密通知要 cryptography: uv run --no-project --with cryptography python scripts/release-notice.py … --sealed")
+    key = st.read_key()
+    repo = args.repo or default_repo()
+    target = args.target
+    exists, entries = sealed_load(repo, key, st)
+    print(f"{repo} release {SEALED_TAG} (加密通知){'' if exists else ', 还没建'}")
+    mine = [text for (to, text) in entries if to == target]
+
+    if args.command == "show":
+        if not entries:
+            print("没有加密通知")
+        groups = list(dict.fromkeys(to for to, _ in entries))
+        for to in groups:
+            print(f"给 {to}:")
+            for n, text in enumerate([t for g, t in entries if g == to], 1):
+                print(f"  {n}. {text}")
+        return
+
+    if args.command == "add":
+        wanted = mine + read_items(args)
+    elif args.command == "set":
+        wanted = read_items(args)
+    elif args.command == "remove":
+        try:
+            drop = {int(x) for x in args.text}
+        except ValueError:
+            die("remove 后面跟序号 (从 1 起, 见 show --sealed 里这个 --for 下面的)")
+        if not drop or not drop <= set(range(1, len(mine) + 1)):
+            die(f"序号要在 1~{len(mine)} 之间 (给 {target} 的现在 {len(mine)} 条)")
+        wanted = [x for n, x in enumerate(mine, 1) if n not in drop]
+    else:
+        wanted = []
+
+    new_entries = [(to, text) for (to, text) in entries if to != target] + [(target, x) for x in wanted]
+    if new_entries == entries:
+        print("没有变化, 不用改")
+        return
+    sys.stdout.writelines(difflib.unified_diff(
+        [f"{to}={text}\n" for to, text in entries], [f"{to}={text}\n" for to, text in new_entries], "改之前", "改之后", n=1))
+    if args.dry_run:
+        print("--dry-run: 没有提交")
+        return
+
+    token = st.seal("".join(f"{to}={text}\n" for to, text in new_entries), key, st.PURPOSE_NOTICES)
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, SEALED_ASSET)
+        open(path, "w", encoding="utf-8", newline="\n").write(token + "\n")
+        if not exists:
+            # 不标成最新: tag 不是版本号, 检查更新本来就不认它 (同 installer 那个 release)
+            gh("release", "create", SEALED_TAG, "--repo", repo, "--title", "应用内通知 (加密)", "--notes", SEALED_RELEASE_NOTES,
+               "--latest=false", "--target", "lists")
+        gh("release", "upload", SEALED_TAG, path, "--repo", repo, "--clobber")
+    if sealed_load(repo, key, st)[1] != new_entries:
+        die("取回来的和要写的不一样, 去 GitHub 上看一眼 release notices")
+    print(f"已更新: 给 {target} 的 {len(wanted)} 条; 带加密通知的版本下次冷启动取到, 每台按内容只弹一次")
+
+
 def main():
     parser = argparse.ArgumentParser(description="改已发布 release 正文里的「## 通知」一节 (详见文件开头的说明)")
     parser.add_argument("command", choices=["show", "add", "set", "remove", "clear"])
@@ -134,7 +229,12 @@ def main():
     parser.add_argument("-f", "--file", help="add / set: 从 UTF-8 文件读条目, 一行一条")
     parser.add_argument("--dry-run", action="store_true", help="只打印改动, 不提交")
     parser.add_argument("--body-file", help="从本地文件读正文 (试脚本用: 只打印改动, 不碰 GitHub)")
+    parser.add_argument("--sealed", action="store_true", help="改加密通知 (release notices 的附件), 不改正文")
+    parser.add_argument("--for", dest="target", default="*", help="--sealed: 给哪些版本 (* / 1.0.9 / 1.0.9*), 默认 *")
     args = parser.parse_args()
+    if args.sealed:
+        sealed_main(args)
+        return
 
     if args.body_file:
         args.dry_run = True

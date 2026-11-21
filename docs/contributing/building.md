@@ -13,6 +13,9 @@ ani.dandanplay.app.id=aaaaaaaaa
 ani.dandanplay.app.secret=aaaaaaaaaaaaaaa
 ```
 
+这几项 (连同 `ani.tmdb.api.token`、交流群 `ani.chat.*`) 也可以不写明文: 放进加密的应用配置 (钥匙 `ani.config.key` + 密文 `ani.config.sealed`,
+用 `scripts/app-config.py` 管理, 用法见它开头的说明)。两样都配了时以密文里的为准, 密文里没有的项再看上面的明文属性。
+
 ## 打包 Android APP
 
 默认只构建 `arm64-v8a`。如果你需要完整 APK 集合，可在 `local.properties` 中加入

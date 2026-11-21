@@ -108,18 +108,23 @@ jobs:
         continue-on-error: true
         run: |-
           echo "ani.android.abis=all" >> local.properties
-          echo "ani.dandanplay.app.id=${{ secrets.DANDANPLAY_APP_ID }}" >> local.properties
-          echo "ani.dandanplay.app.secret=${{ secrets.DANDANPLAY_APP_SECRET }}" >> local.properties
-          echo "ani.tmdb.api.token=${{ secrets.TMDB_API_TOKEN }}" >> local.properties
           echo "ani.bangumi.oauth.client.id=${{ secrets.BANGUMI_OAUTH_CLIENT_ID }}" >> local.properties
           echo "ani.bangumi.oauth.client.secret=${{ secrets.BANGUMI_OAUTH_CLIENT_SECRET }}" >> local.properties
           echo "ani.bangumi.oauth.relay.client.id=${{ secrets.BANGUMI_OAUTH_RELAY_CLIENT_ID }}" >> local.properties
           echo "ani.bangumi.oauth.relay.client.secret=${{ secrets.BANGUMI_OAUTH_RELAY_CLIENT_SECRET }}" >> local.properties
           echo "ani.sentry.dsn=${{ secrets.SENTRY_DSN }}" >> local.properties
-          echo "ani.chat.qq.id=${{ secrets.CHAT_QQ_ID }}" >> local.properties
-          echo "ani.chat.qq.link=${{ secrets.CHAT_QQ_LINK }}" >> local.properties
-          echo "ani.chat.telegram.link=${{ secrets.CHAT_TELEGRAM_LINK }}" >> local.properties
           echo "kotlin.native.ignoreDisabledTargets=true" >> local.properties
+      # 加密的应用配置 (交流群、弹弹 play 凭据、TMDB token): secret 里只有解密钥匙, 配置是 lists 分支上的密文
+      # (scripts/app-config.py 写), 编包时解开 (build-logic/appConfig.kt). 缺了就不出包: 少了凭据, 弹幕与背景图都用不了.
+      - id: 'app-config'
+        shell: 'bash'
+        env:
+          APP_CONFIG_KEY: '${{ secrets.APP_CONFIG_KEY }}'
+        run: |-
+          test -n "$APP_CONFIG_KEY" || { echo "::error::secret APP_CONFIG_KEY 没设"; exit 1; }
+          git fetch --depth=1 origin lists
+          echo "ani.config.key=$APP_CONFIG_KEY" >> local.properties
+          echo "ani.config.sealed=$(git show FETCH_HEAD:app-config.txt)" >> local.properties
       - id: 'step-7'
         continue-on-error: true
         run: |-

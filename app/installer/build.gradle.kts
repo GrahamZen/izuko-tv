@@ -47,10 +47,10 @@ android {
         // 正式包与 7.1 兼容包的 minSdk: 设备低于前者装兼容包, 低于后者哪个都装不了
         buildConfigField("int", "NORMAL_MIN_SDK", getProperty("android.min.sdk"))
         buildConfigField("int", "LEGACY_MIN_SDK", LEGACY_ANDROID_MIN_SDK.toString())
-        // 交流群: 同 app-platform 的 ani.chat.*, 不写进源码; 没配就是空, 界面上不显示
-        buildConfigField("String", "CHAT_QQ_ID", "\"${getPropertyOrNull("ani.chat.qq.id").orEmpty()}\"")
-        buildConfigField("String", "CHAT_QQ_LINK", "\"${getPropertyOrNull("ani.chat.qq.link").orEmpty()}\"")
-        buildConfigField("String", "CHAT_TELEGRAM_LINK", "\"${getPropertyOrNull("ani.chat.telegram.link").orEmpty()}\"")
+        // 交流群: 同 app-platform (加密的应用配置, 见 build-logic 的 appConfig.kt); 没配就是空, 界面上不显示
+        buildConfigField("String", "CHAT_QQ_ID", "\"${appConfigValue("chat.qq.id")}\"")
+        buildConfigField("String", "CHAT_QQ_LINK", "\"${appConfigValue("chat.qq.link")}\"")
+        buildConfigField("String", "CHAT_TELEGRAM_LINK", "\"${appConfigValue("chat.telegram.link")}\"")
     }
     signingConfigs {
         // 与 app/android 同一套属性: 签名必须与正式版相同, 否则正式版装不上来
