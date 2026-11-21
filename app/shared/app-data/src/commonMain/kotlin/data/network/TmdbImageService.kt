@@ -56,7 +56,7 @@ import me.him188.ani.app.domain.foundation.HttpClientProvider
 import me.him188.ani.app.domain.foundation.get
 import me.him188.ani.app.domain.foundation.withValue
 import me.him188.ani.app.domain.settings.NetworkTroubleBeacon
-import me.him188.ani.app.platform.currentAniBuildConfig
+import me.him188.ani.app.platform.RemoteAppConfig
 import me.him188.ani.datasources.bangumi.BangumiApiProvider
 import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.logging.info
@@ -377,7 +377,7 @@ class TmdbImageService(
      * 测试, 能导日志的场合就不必再来第二轮 (见 [logApiOutcome]).
      */
     suspend fun testApiConnection(): Boolean = withContext(ioDispatcher) {
-        val token = currentAniBuildConfig.tmdbApiToken
+        val token = RemoteAppConfig.tmdbApiToken
         if (token.isBlank()) {
             // 不打这条的话, "这个包没配 token" 和 "网络不通" 在日志里长得一模一样 (都是静默失败)
             logger.warn { "TMDB API test: FAILED — no API token in this build" }
@@ -629,7 +629,7 @@ class TmdbImageService(
         // 表里没有: 这次运行里搜过没找到的不再搜 (见 [localBackdropMisses])
         val missHadHints = synchronized(resolvedLock) { localBackdropMisses[subjectId] }
         if (missHadHints != null && (missHadHints || hints == TmdbMatchHints.Empty)) return null
-        if (currentAniBuildConfig.tmdbApiToken.isBlank() || originalName.isBlank()) return null
+        if (RemoteAppConfig.tmdbApiToken.isBlank() || originalName.isBlank()) return null
         val task = backdropInFlightLock.withLock {
             backdropInFlight[subjectId] ?: resolveScope.async {
                 try {
@@ -656,7 +656,7 @@ class TmdbImageService(
             entry.backdropPath != null -> MapBackdrop("$IMAGE_BASE_URL${entry.backdropPath}")
             ref == null -> MapBackdrop(null)
             // 人工修正只给了条目没给图: 要请求一次那个条目的图片列表
-            currentAniBuildConfig.tmdbApiToken.isBlank() -> return null
+            RemoteAppConfig.tmdbApiToken.isBlank() -> return null
             else -> try {
                 MapBackdrop(heroBackdropPathOf(TmdbMediaRef(ref.type, ref.id))?.let { "$IMAGE_BASE_URL$it" })
             } catch (e: CancellationException) {
@@ -676,7 +676,7 @@ class TmdbImageService(
     /** 选图规则同 [heroBackdropPath]: 票数最高的无字幕那张; 一张无字幕的都没有就取第一张. */
     private suspend fun heroBackdropPathOf(ref: TmdbMediaRef): String? = client.use {
         val body = getApi("/${ref.type}/${ref.id}/images") {
-            bearerAuth(currentAniBuildConfig.tmdbApiToken)
+            bearerAuth(RemoteAppConfig.tmdbApiToken)
             shortConnectTimeout()
         }.bodyAsText()
         val backdrops = json.decodeFromString(TmdbImagesResponse.serializer(), body).backdrops
@@ -797,7 +797,7 @@ class TmdbImageService(
             synchronized(resolvedLock) { allBackdropsFromMap[subjectId] }?.let { return@withContext it }
             // 表里确认没有对应: 不要 token 也知道没有
             val ref = mapEntry.backdrop ?: return@withContext emptyList()
-            if (currentAniBuildConfig.tmdbApiToken.isBlank()) return@withContext emptyList()
+            if (RemoteAppConfig.tmdbApiToken.isBlank()) return@withContext emptyList()
             val urls = try {
                 fetchAllBackdropUrls(TmdbMediaRef(ref.type, ref.id))
             } catch (e: CancellationException) {
@@ -811,7 +811,7 @@ class TmdbImageService(
             return@withContext urls
         }
 
-        if (currentAniBuildConfig.tmdbApiToken.isBlank() || originalName.isBlank()) return@withContext emptyList()
+        if (RemoteAppConfig.tmdbApiToken.isBlank() || originalName.isBlank()) return@withContext emptyList()
         // 表里没有: 本机只存找到的; 这次运行里搜过没找到的不再搜 (见 [localBackdropMisses])
         readCache().allBackdrops[subjectId]?.takeIf { it.isNotEmpty() }?.let { return@withContext it }
         if (synchronized(resolvedLock) { subjectId in localAllBackdropsMisses }) return@withContext emptyList()
@@ -966,7 +966,7 @@ class TmdbImageService(
                 return@withContext cached.logo
             }
         }
-        if (currentAniBuildConfig.tmdbApiToken.isBlank()) {
+        if (RemoteAppConfig.tmdbApiToken.isBlank()) {
             // 没有 token 查不了: 记成「没有」(只在本次运行里), 页面不必等它
             resolvedTitleLogos[key] = null
             return@withContext null
@@ -1005,7 +1005,7 @@ class TmdbImageService(
         activeAsOfDate: String? = null,
         hints: TmdbMatchHints = TmdbMatchHints.Empty,
     ): TmdbTitleLogoCandidates? = withContext(ioDispatcher) {
-        if (disabledByUser || currentAniBuildConfig.tmdbApiToken.isBlank()) return@withContext null
+        if (disabledByUser || RemoteAppConfig.tmdbApiToken.isBlank()) return@withContext null
         try {
             val (mapEntry, mapRef) = titleLogoMapRef(subjectId)
             if (mapEntry != null && mapRef == null) return@withContext null
@@ -1059,7 +1059,7 @@ class TmdbImageService(
         allLanguages: Boolean = false,
     ): Pair<String, List<TmdbLogoCandidate>> =
         client.use {
-            val token = currentAniBuildConfig.tmdbApiToken
+            val token = RemoteAppConfig.tmdbApiToken
             val lang = language ?: run {
                 val detail = getApi("/${ref.type}/${ref.id}") {
                     bearerAuth(token)
@@ -1089,7 +1089,7 @@ class TmdbImageService(
     /** `/{type}/{id}/images` 的全部 backdrop 路径 (TMDB 已按投票排序). */
     private suspend fun fetchBackdropPaths(ref: TmdbMediaRef): List<String> = client.use {
         val body = getApi("/${ref.type}/${ref.id}/images") {
-            bearerAuth(currentAniBuildConfig.tmdbApiToken)
+            bearerAuth(RemoteAppConfig.tmdbApiToken)
             shortConnectTimeout()
         }.bodyAsText()
         json.decodeFromString(TmdbImagesResponse.serializer(), body).backdrops.mapNotNull { it.filePath }
@@ -1133,7 +1133,7 @@ class TmdbImageService(
         hints: TmdbMatchHints = TmdbMatchHints.Empty,
         refreshAiring: Boolean = false,
     ): TmdbEpisodeStills? {
-        if (disabledByUser || currentAniBuildConfig.tmdbApiToken.isBlank() || originalName.isBlank()) {
+        if (disabledByUser || RemoteAppConfig.tmdbApiToken.isBlank() || originalName.isBlank()) {
             return TmdbEpisodeStills()
         }
         // 同 (subjectId, language) 的并发调用合流到同一个任务上, 见 [episodeStillsInFlight].
@@ -1272,7 +1272,7 @@ class TmdbImageService(
             TmdbMovieDetail.serializer(),
             getApi("/movie/$movieId") {
                 parameter("language", language)
-                bearerAuth(currentAniBuildConfig.tmdbApiToken)
+                bearerAuth(RemoteAppConfig.tmdbApiToken)
                 shortConnectTimeout()
             }.bodyAsText(),
         )
@@ -1325,7 +1325,7 @@ class TmdbImageService(
         return runCatching {
             client.use {
                 val body = getApi("/$type/$id/images") {
-                    bearerAuth(currentAniBuildConfig.tmdbApiToken)
+                    bearerAuth(RemoteAppConfig.tmdbApiToken)
                     shortConnectTimeout()
                 }.bodyAsText()
                 json.decodeFromString(TmdbImagesResponse.serializer(), body).backdrops
@@ -1422,7 +1422,7 @@ class TmdbImageService(
         hints: TmdbMatchHints,
         mapEntry: TmdbSubjectMapEntry?,
     ): TmdbEpisodeStills = client.use {
-        val token = currentAniBuildConfig.tmdbApiToken
+        val token = RemoteAppConfig.tmdbApiToken
         if (mapEntry != null) {
             stillsFromMap(subjectId, originalName, language, token, subjectYear, subjectAirDate, hints, mapEntry)
                 ?.let { return@use it }
@@ -2513,7 +2513,7 @@ class TmdbImageService(
             // alternative_titles 里 (见 [searchChineseBackdrop]). 其余搜索一律不传,
             // 保持 name/title 为 en-US —— 现有的逐字同名判据依赖这个口径.
             language?.let { parameter("language", it) }
-            bearerAuth(currentAniBuildConfig.tmdbApiToken)
+            bearerAuth(RemoteAppConfig.tmdbApiToken)
             shortConnectTimeout()
         }.bodyAsText()
         json.decodeFromString(TmdbSearchResponse.serializer(), body).results
@@ -2578,7 +2578,7 @@ class TmdbImageService(
 
     private suspend fun fetchAlternativeTitles(id: Int, type: String): List<String> = client.use {
         val body = getApi("/$type/$id/alternative_titles") {
-            bearerAuth(currentAniBuildConfig.tmdbApiToken)
+            bearerAuth(RemoteAppConfig.tmdbApiToken)
             shortConnectTimeout()
         }.bodyAsText()
         val parsed = json.decodeFromString(TmdbAlternativeTitles.serializer(), body)
@@ -2614,7 +2614,7 @@ class TmdbImageService(
                 getApi("/search/collection") {
                     parameter("query", query)
                     parameter("language", CHINESE_LANGUAGE)
-                    bearerAuth(currentAniBuildConfig.tmdbApiToken)
+                    bearerAuth(RemoteAppConfig.tmdbApiToken)
                     shortConnectTimeout()
                 }.bodyAsText(),
             )
@@ -2626,7 +2626,7 @@ class TmdbImageService(
                     TmdbCollectionDetail.serializer(),
                     getApi("/collection/$id") {
                         parameter("language", language)
-                        bearerAuth(currentAniBuildConfig.tmdbApiToken)
+                        bearerAuth(RemoteAppConfig.tmdbApiToken)
                         shortConnectTimeout()
                     }.bodyAsText(),
                 )
@@ -2717,7 +2717,7 @@ class TmdbImageService(
                 getApi("/search/collection") {
                     parameter("query", query)
                     parameter("language", "ja-JP")
-                    bearerAuth(currentAniBuildConfig.tmdbApiToken)
+                    bearerAuth(RemoteAppConfig.tmdbApiToken)
                     shortConnectTimeout()
                 }.bodyAsText(),
             )
@@ -2729,7 +2729,7 @@ class TmdbImageService(
                     TmdbCollectionDetail.serializer(),
                     getApi("/collection/$id") {
                         parameter("language", language)
-                        bearerAuth(currentAniBuildConfig.tmdbApiToken)
+                        bearerAuth(RemoteAppConfig.tmdbApiToken)
                         shortConnectTimeout()
                     }.bodyAsText(),
                 )

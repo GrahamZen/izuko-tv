@@ -54,7 +54,7 @@ import kotlin.time.TimeSource
  * 「本版新功能」页显示的内容.
  *
  * @param releases 列出的各版 (见 [me.him188.ani.app.ui.update.releasesToShow]), 新的在前; 只有通知时为空
- * @param notice 当前版本的通知 (见 [ReleaseHighlights.notice])
+ * @param notice 当前版本的通知 (加密的应用内通知里给这一版的几句, 见 [TvSealedNotices])
  * @param full 设置里打开的: 小改动与修复逐条列出. 启动时那一页只写一共几条
  */
 @Immutable
@@ -81,11 +81,12 @@ sealed interface WhatsNewLoad {
  * - **介绍新功能**: 当前版本比记下的「介绍过的版本」新时出现一次. 列哪几版只看当前版本 (见
  *   [me.him188.ani.app.ui.update.releasesToShow]): 正式版只列它自己, 测试版列同一版本号从 alpha01 起的全部测试版; 与从哪一版升上来无关.
  *   首次引导要出现 (新装) 时不介绍, 直接记下.
- *   说明的来源: 先 GitHub (一次取到那几版, 也带着发版后补的通知); 首屏好了、且开始等了 [INTRODUCE_WAIT] 还没取到 (或 GitHub 连不上),
+ *   说明的来源: 先 GitHub (一次取到那几版); 首屏好了、且开始等了 [INTRODUCE_WAIT] 还没取到 (或 GitHub 连不上),
  *   就用存下的那几版 (下载安装包时存的、以前取到的); 连当前版本都没存就这次不出现, 下次打开再试 ([MAX_FAILED_LAUNCHES] 次后放弃).
- * - **通知**: 已经介绍过的版本, 每次冷启动去 GitHub 取一次这一版的说明, 「## 通知」一节的几句交给应用内通知 ([releaseNotice],
- *   见 TvReleaseNotice: 有新的就在进应用时的通知弹窗里, 不另盖一页). 不为它多等: 首屏好了还没取到就看存下的那份 (上次取到的).
- *   介绍新功能那一页上的通知卡片照旧, 显示过的几句在通知里记成看过.
+ * - **通知**: 只读加密的应用内通知 ([TvSealedNotices], release `notices` 的附件, 只给装了应用的人看): 每次冷启动取一次 (取不到用上次存下的),
+ *   给这一版的几句交给应用内通知 ([releaseNotice], 见 TvReleaseNotice: 有新的就在进应用时的通知弹窗里, 不另盖一页; 没赶上那个弹窗的下次进应用弹).
+ *   介绍新功能那一页上的通知卡片也是它, 显示过的几句在通知里记成看过.
+ *   release 正文里的「## 通知」只给没有这套代码的旧版 (1.0.9-alpha04 及以前), 这里不读.
  *
  * 与首次引导一样不露出主页: 冷启动时说明一到就盖在启动页上 ([showOnLaunch]), 首屏在它与启动页背后接着加载;
  * 启动页等首屏好了才撤 (这一页先关掉的话露出来的是还在走进度条的启动页).
@@ -113,7 +114,7 @@ object TvWhatsNew {
     /** 启动时盖着的那一页; 非 null = 正显示. TV 根部的 [TvWhatsNewHost] 画它. */
     val launchContent = MutableStateFlow<WhatsNewContent?>(null)
 
-    /** 当前版本发版后补的通知 (「## 通知」那几句); 这次启动还没取到为 null. 应用内通知照它列 (见 TvReleaseNotice). */
+    /** 当前版本的通知 (加密的应用内通知里给这一版的几句); 这次启动还没取到为 null. 应用内通知照它列 (见 TvReleaseNotice). */
     val releaseNotice = MutableStateFlow<ReleaseNotice?>(null)
 
     class ReleaseNotice(val version: String, val items: List<ReleaseNoteItem>)
@@ -125,15 +126,17 @@ object TvWhatsNew {
     private var prepared = false
 
     /**
-     * @param introduce 要介绍新功能; false = 只看有没有新的通知
+     * @param introduce 要介绍新功能; false = 只发通知
      * @param cached 存下的那几版说明 (没存当前版本时为 null)
-     * @param answer 网上取的结果
+     * @param answer 网上取的说明 (只在介绍新功能时取)
+     * @param sealed 加密的应用内通知里给这一版的几句 (见 [TvSealedNotices])
      */
     private class LaunchCheck(
         val version: String,
         val introduce: Boolean,
         val cached: Deferred<List<ReleaseHighlights>?>,
         val answer: Deferred<ReleaseNotesAnswer>,
+        val sealed: Deferred<List<ReleaseNoteItem>>,
     )
 
     /**
@@ -161,10 +164,13 @@ object TvWhatsNew {
             introduce = introduce,
             cached = scope.async { store.forRelease(version)?.let(::parseAll) },
             answer = scope.async {
-                val answer = if (introduce) fetcher.forRelease(version) else fetcher.of(version, withMirrors = false)
+                // 只发通知时用不着说明 (通知是加密的那份), 不去问 GitHub
+                if (!introduce) return@async ReleaseNotesAnswer.Missing
+                val answer = fetcher.forRelease(version)
                 if (answer is ReleaseNotesAnswer.Found) store.save(answer, version)
                 answer
             },
+            sealed = scope.async { TvSealedNotices.forVersion(version) },
         )
     }
 
@@ -186,12 +192,10 @@ object TvWhatsNew {
         val check = launchCheck ?: return false
         launchCheck = null
         TvUserProfilePicker.visible.first { !it }
+        publishNotice(check)
+        if (!check.introduce) return false
         val answer = awaitAnswer(check, firstScreenReady)
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        if (!check.introduce) {
-            releaseNotice.value = ReleaseNotice(check.version, notice(check, answer))
-            return false
-        }
         val content = introduction(check, answer, prefs) ?: return false
         if (!onHomePage()) {
             logger.info { "Not on the home page, showing it next launch" }
@@ -202,7 +206,6 @@ object TvWhatsNew {
             .remove(KEY_FAILED_VERSION)
             .remove(KEY_FAILED_COUNT)
         editor.apply()
-        releaseNotice.value = ReleaseNotice(check.version, content.notice)
         scope.launch { TvReleaseNotice.markShownOnPage(check.version, content.notice) }
         logger.info { "Showing ${content.releases.map { it.version }}, notice=${content.notice.size}" }
         covered = CompletableDeferred()
@@ -246,7 +249,7 @@ object TvWhatsNew {
             }
             return null
         }
-        val notice = releases.firstOrNull { it.version == check.version }?.notice.orEmpty()
+        val notice = check.sealed.ifDone()
         if (releases.none { it.features.isNotEmpty() } && notice.isEmpty()) {
             logger.info { "No new features in ${releases.map { it.version }}" }
             prefs.edit().putString(KEY_SEEN_VERSION, check.version).apply()
@@ -255,12 +258,13 @@ object TvWhatsNew {
         return WhatsNewContent(check.version, releases, notice, full = false)
     }
 
-    /** 当前版本的「## 通知」: 这次取到的, 没取到用存下的. */
-    private suspend fun notice(check: LaunchCheck, answer: ReleaseNotesAnswer?): List<ReleaseNoteItem> {
-        val fetched = (answer as? ReleaseNotesAnswer.Found)?.notes?.firstOrNull { it.first == check.version }
-            ?.let { (v, body) -> parseReleaseHighlights(v, body) }
-        return (fetched ?: check.cached.await()?.firstOrNull { it.version == check.version })?.notice.orEmpty()
+    /** 加密通知取到了 (取不到是上次存下的) 就交给应用内通知 (不盖页): 赶在启动时的通知弹窗之前到的, 这次进应用就弹. */
+    private fun publishNotice(check: LaunchCheck) {
+        scope.launch { releaseNotice.value = ReleaseNotice(check.version, check.sealed.await()) }
     }
+
+    /** 已经取到就是结果, 还在取就当没有 (不为它多等). */
+    private suspend fun Deferred<List<ReleaseNoteItem>>.ifDone(): List<ReleaseNoteItem> = if (isCompleted) await() else emptyList()
 
     private fun recordFailure(version: String, prefs: SharedPreferences) {
         val count = if (prefs.getString(KEY_FAILED_VERSION, null) == version) prefs.getInt(KEY_FAILED_COUNT, 0) + 1 else 1
@@ -291,21 +295,23 @@ object TvWhatsNew {
         val version = currentAniBuildConfig.versionName
         val koin = KoinPlatform.getKoin()
         val store: ReleaseNotesStore = koin.get<UpdateManager>().releaseNotesStore()
-        fun content(releases: List<ReleaseHighlights>) = WhatsNewContent(
-            version, releases, notice = releases.firstOrNull { it.version == version }?.notice.orEmpty(), full = true,
-        )
+        val sealed = scope.async { TvSealedNotices.forVersion(version) }
+        fun content(releases: List<ReleaseHighlights>, notice: List<ReleaseNoteItem>) = WhatsNewContent(version, releases, notice, full = true)
 
         val cached = store.forRelease(version)?.let(::parseAll)?.takeIf { it.isNotEmpty() }
-        if (cached != null) emit(WhatsNewLoad.Ready(content(cached)))
+        if (cached != null) emit(WhatsNewLoad.Ready(content(cached, emptyList())))
         when (val answer = ReleaseNotesFetcher(koin.get<HttpClientProvider>().get()).forRelease(version)) {
             is ReleaseNotesAnswer.Found -> {
                 store.save(answer, version)
                 val fresh = parseAll(answer.notes)
-                emit(if (fresh.isNotEmpty()) WhatsNewLoad.Ready(content(fresh)) else WhatsNewLoad.Missing)
+                emit(if (fresh.isNotEmpty()) WhatsNewLoad.Ready(content(fresh, sealed.await())) else WhatsNewLoad.Missing)
             }
 
-            ReleaseNotesAnswer.Missing -> if (cached == null) emit(WhatsNewLoad.Missing)
-            ReleaseNotesAnswer.Unreachable -> if (cached == null) emit(WhatsNewLoad.Unreachable)
+            ReleaseNotesAnswer.Missing, ReleaseNotesAnswer.Unreachable -> when {
+                cached == null -> emit(if (answer == ReleaseNotesAnswer.Missing) WhatsNewLoad.Missing else WhatsNewLoad.Unreachable)
+                // 说明取不到, 已经显示着存下的那份: 加密通知到了再补上
+                else -> sealed.await().takeIf { it.isNotEmpty() }?.let { emit(WhatsNewLoad.Ready(content(cached, it))) }
+            }
         }
     }.flowOn(Dispatchers.IO)
 }
