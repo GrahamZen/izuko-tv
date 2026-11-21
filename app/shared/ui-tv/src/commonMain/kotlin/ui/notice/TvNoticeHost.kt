@@ -53,7 +53,7 @@ import kotlin.time.Duration.Companion.seconds
 @Composable
 fun TvNoticeHost(navigator: AniNavigator, onMainPage: () -> Boolean) {
     LaunchedEffect(Unit) { TvNotices.install() }
-    PrewarmTvNoticeView { onMainPage() && nothingCovering() && TvNotices.dialog.value == null }
+    PrewarmTvNoticePlatform { onMainPage() && nothingCovering() && TvNotices.dialog.value == null }
     val currentOnMainPage by rememberUpdatedState(onMainPage)
 
     // 从后台回到前台 (第一次 ON_START 是启动, 进应用的弹窗走完后由 TvNotices.startBubbles 管)

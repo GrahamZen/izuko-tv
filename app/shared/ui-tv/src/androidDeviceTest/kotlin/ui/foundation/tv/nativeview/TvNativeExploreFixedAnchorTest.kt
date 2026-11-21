@@ -10,11 +10,11 @@
 package me.him188.ani.app.ui.foundation.tv.nativeview
 
 import android.graphics.Color
-import android.graphics.Rect
 import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import androidx.compose.ui.geometry.Rect
 import androidx.recyclerview.widget.RecyclerView
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel

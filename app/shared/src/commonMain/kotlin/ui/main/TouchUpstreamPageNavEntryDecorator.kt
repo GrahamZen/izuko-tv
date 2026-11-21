@@ -16,15 +16,15 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.runtime.NavEntryDecorator
 import me.him188.ani.app.navigation.NavRoutes
-import me.him188.ani.app.ui.foundation.AniUiBehavior
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.LocalTouchShellUiBehavior
 import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
+import me.him188.ani.app.ui.subject.episode.forTouchUpstreamUi
 
 /**
- * 平板模式 (触屏设备上的电视界面, 见 [LocalTvTouchInputEnabled]) 里没有电视版的页面 ([isTouchUpstreamPage]: 缓存、人物、
+ * 触屏设备上的电视界面 (平板装电视包、iPad, 见 [LocalTvTouchInputEnabled]) 里没有电视版的页面 ([isTouchUpstreamPage]: 缓存、人物、
  * 观看记录、数据源编辑等) 照上游的指针设备写法: 页面子树换回指针设备的界面行为 ([forTouchUpstreamUi]), 不画电视焦点框、不抢初始焦点.
- * 有电视版的页面与遥控器形态原样不动.
+ * 有电视版的页面与遥控器形态原样不动; 播放页自己换 (见 ProvideTouchPlayerUiBehavior).
  *
  * 条目只带 contentKey, 路由对象从 [backStack] 里按同一个 contentKey 找回来 (同 [rememberPageForegroundNavEntryDecorator]),
  * 条目第一次组合时定下, 之后出栈途中 (返回栈里已经没有它) 也不变.
@@ -75,15 +75,3 @@ internal fun NavRoutes.isTouchUpstreamPage(): Boolean = when (this) {
 
     else -> false
 }
-
-/**
- * 上游页面 (没有电视版的页面) 在触屏上的界面行为: 不按焦点驱动导航 (不画电视焦点框、不抢初始焦点)、弹窗带关闭按钮、侧边栏不改成居中弹窗、
- * 选中态与底部弹窗宽度用默认的. 外壳那几项 (沉浸式系统栏、退出后保留播放会话等) 照电视界面的.
- */
-fun AniUiBehavior.forTouchUpstreamUi(): AniUiBehavior = copy(
-    focusDrivenNavigation = AniUiBehavior.Default.focusDrivenNavigation,
-    showDismissButtons = AniUiBehavior.Default.showDismissButtons,
-    panelsAsCenteredDialogs = AniUiBehavior.Default.panelsAsCenteredDialogs,
-    strongSelectionColors = AniUiBehavior.Default.strongSelectionColors,
-    sheetMaxWidthFraction = AniUiBehavior.Default.sheetMaxWidthFraction,
-)

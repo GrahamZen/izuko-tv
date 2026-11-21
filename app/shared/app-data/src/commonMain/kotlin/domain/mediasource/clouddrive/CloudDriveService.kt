@@ -635,7 +635,7 @@ class CloudDriveService internal constructor(
      * 省掉转存的等待, 也不占网盘空间 (空间满了转存会失败). 取不到时转存到自己网盘的 [SAVE_FOLDER_NAME] 再取地址.
      * 视频旁边的外挂字幕与视频一起取 (一起转存). 同一个文件只转存一次; 网盘放不下时先删掉文件夹里最早转存的副本 (见 [makeRoom]).
      */
-    suspend fun resolveSharePlayback(ref: DriveShareFileRef): CloudDrivePlayback {
+    suspend fun resolveSharePlayback(ref: DriveShareFileRef, preferTranscoded: Boolean = false): CloudDrivePlayback {
         requireLoggedIn()
         val sidecars = shareSidecars(ref)
         if (api.supportsShareDownload && currentAccount().playbackMode == CloudDrivePlaybackMode.ORIGINAL) {
@@ -662,7 +662,7 @@ class CloudDriveService internal constructor(
         // 转存的副本被删了会重新转存成另一个文件, 内容不变: 按分享里的文件标识存本机数据
         val cacheKey = "$driveId-share:${ref.key}"
         val playback = try {
-            resolvePlayback(fileId, subtitles, shareSubtitleKey(ref), cacheKey)
+            resolvePlayback(fileId, subtitles, shareSubtitleKey(ref), cacheKey, preferTranscoded)
         } catch (e: CancellationException) {
             throw e
         } catch (e: CloudDriveAuthException) {
@@ -674,7 +674,7 @@ class CloudDriveService internal constructor(
                 savedFiles.remove(ref.key)
                 sidecarFiles.forEach { savedFiles.remove(shareKey(ref.shareId, it.fid)) }
             }
-            resolvePlayback(saveShareFile(ref, sidecarFiles), subtitles, shareSubtitleKey(ref), cacheKey)
+            resolvePlayback(saveShareFile(ref, sidecarFiles), subtitles, shareSubtitleKey(ref), cacheKey, preferTranscoded)
         }
         return playback
     }
@@ -1036,23 +1036,25 @@ class CloudDriveService internal constructor(
     /**
      * 按当前的播放方式取一个文件的播放地址, 连同视频旁边的外挂字幕. 播放器请求这些地址时必须带上 [CloudDrivePlayback.headers].
      */
-    suspend fun resolvePlayback(fileId: String): CloudDrivePlayback =
-        resolvePlayback(fileId, SubtitleLookup.InFolder, fileSubtitleKey(fileId), "$driveId:$fileId")
+    suspend fun resolvePlayback(fileId: String, preferTranscoded: Boolean = false): CloudDrivePlayback =
+        resolvePlayback(fileId, SubtitleLookup.InFolder, fileSubtitleKey(fileId), "$driveId:$fileId", preferTranscoded)
 
     /**
      * @param subtitleKey 手动挂字幕的键 (见 [subtitleKeyOf])
      * @param cacheKey 原文件内容的固定标识, 播放器按它把下过的数据存在本机 (见 [PlaybackRequestHints.CACHE_KEY_HEADER])
+     * @param preferTranscoded 这台设备放不了原文件 (见 isContainerUnplayableOnThisPlatform): 设成播原文件时也先试转码流
      */
     private suspend fun resolvePlayback(
         fileId: String,
         subtitleLookup: SubtitleLookup,
         subtitleKey: String,
         cacheKey: String,
+        preferTranscoded: Boolean = false,
     ): CloudDrivePlayback {
         requireLoggedIn()
         val account = currentAccount()
         val transcoded = when (account.playbackMode) {
-            CloudDrivePlaybackMode.ORIGINAL -> null
+            CloudDrivePlaybackMode.ORIGINAL -> if (preferTranscoded) transcodedUrlOrNull(fileId) else null
             CloudDrivePlaybackMode.TRANSCODED -> if (protocol.supportsTranscoded) bestTranscodedUrl(api.transcodedVideos(fileId)) else null
         }
         val download = if (transcoded == null) api.download(fileId) else null
@@ -1080,6 +1082,19 @@ class CloudDriveService internal constructor(
             PlaybackRequestHints.CACHE_KEY_HEADER to cacheKey,
         )
         return CloudDrivePlayback(url, headers, subtitles)
+    }
+
+    /** 原文件放不了时退到的转码流: 网盘不支持转码、取不到 (如还在转码) 时为 null, 照旧播原文件. */
+    private suspend fun transcodedUrlOrNull(fileId: String): String? {
+        if (!protocol.supportsTranscoded) return null
+        return try {
+            bestTranscodedUrl(api.transcodedVideos(fileId))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.warn { "Cloud drive $driveId has no transcoded stream for $fileId, playing the original: ${e.message}" }
+            null
+        }
     }
 
     /** 账号档位 [tier] 播放原文件时并发几个连接 (见 [CloudDriveProtocol.tiers]). */

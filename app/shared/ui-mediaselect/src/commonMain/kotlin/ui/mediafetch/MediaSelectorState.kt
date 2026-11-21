@@ -223,6 +223,13 @@ class MediaSelectorState(
         ),
     )
 
+    /** 选择器的全部候选, 含属于别的集的 (调试控制台查「为什么这一集没有」用; 界面用 [presentationFlow]). */
+    val allCandidates: Flow<List<MaybeExcludedMedia>> get() = mediaSelector.filteredCandidates
+
+    /** 自动匹配页 (触屏) 在 [Presentation.webSources] 之外要补的, 见 [AutoMatchExtras]. */
+    val autoMatchExtras: StateFlow<AutoMatchExtras> = autoMatchExtrasFlow(mediaSourceFetchResults, mediaSelector.filteredCandidates)
+        .stateIn(backgroundScope, started = SharingStarted.WhileSubscribed(), AutoMatchExtras.Empty)
+
     /**
      * BT 页列表. 在 state 内 combine 八个流后交给纯函数 [projectBtList]:
      * `filteredCandidates, subjectCandidates, selected, alliance/resolution/subtitleLanguageId.presentationFlow,

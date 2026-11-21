@@ -12,6 +12,7 @@ package me.him188.ani.app.ui.subject.details.layout
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -26,9 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.FilterQuality
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
@@ -40,14 +39,15 @@ import com.github.panpf.sketch.PlatformContext
 import com.github.panpf.sketch.Sketch
 import me.him188.ani.app.ui.foundation.LocalSketch
 import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
-import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.TV_FULLSCREEN_BACKDROP_DIM_ALPHA
+import me.him188.ani.app.ui.foundation.tv.TvModulateAlphaCompositing
 import me.him188.ani.app.ui.foundation.tv.nativeview.TV_WALL_BACKDROP_CROSSFADE_MILLIS
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvBackdropBlurSpec
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvBlurredBackdropEntry
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvBlurredBackdropImage
-import me.him188.ani.app.ui.foundation.tv.nativeview.tvBackdropBlurSpec
 import me.him188.ani.app.ui.foundation.tv.nativeview.tvBackdropMaskAlpha
+import me.him188.ani.app.ui.foundation.tv.nativeview.tvDetailsBackdropBlurSpec
 import me.him188.ani.app.ui.foundation.tv.nativeview.tvFetchBlurredBackdrop
 import me.him188.ani.app.ui.foundation.tv.nativeview.tvRelativeLuminance
 import kotlin.math.roundToInt
@@ -56,8 +56,9 @@ import kotlin.time.TimeMark
 import kotlin.time.TimeSource
 
 /**
- * 详情页翻离首屏后的整屏底: 这部背景图的模糊版 (同海报墙 hero 态底下铺的那张, 解法与参数相同就是同一个内存缓存键, 海报墙上铺过的直接命中).
- * 一张小图拉伸铺满 (多大、糊多少按设置里详情页那一档, 见 tvBackdropBlurSpec), 不做实时模糊; 透明度不变时不重画. 换了程度先留着旧图, 新图解好再换.
+ * 详情页翻离首屏后的整屏底: 这部背景图的模糊版. 一张小图拉伸铺满 (多大、糊多少按 [spec], 默认设置里详情页那一档, 见 tvDetailsBackdropBlurSpec),
+ * 不做实时模糊; 透明度不变时不重画. 换了程度先留着旧图, 新图解好再换.
+ * 平板模式 (平板 / iPad) 刚解过同一张同一档就第一帧画出来, 不再解一遍; 换页时底怎么接上见 [TvTouchBlurredBackdrop].
  * 按页面底色压暗, 深浅照次要文字 (`onSurfaceVariant`) 最难看清那一处的对比度定 (见 tvBackdropMaskAlpha, 同新番时间表的模糊底).
  *
  * @param alpha 不透明度, 绘制里读 (首屏 0, 翻页时与清晰图交叉)
@@ -74,7 +75,7 @@ internal fun TvDetailsBlurredBackdrop(
     load: Boolean,
     onLoaded: () -> Unit,
     modifier: Modifier = Modifier,
-    spec: TvBackdropBlurSpec = tvBackdropBlurSpec(LocalThemeSettings.current.tvDetailsBackdropBlur),
+    spec: TvBackdropBlurSpec = tvDetailsBackdropBlurSpec(),
 ) {
     val sketch = LocalSketch.current
     val context = LocalPlatformContext.current
@@ -104,13 +105,10 @@ internal fun TvDetailsBlurredBackdrop(
         if (touch) TvRecentBlurredBackdrops.put(url, spec, windowSize, image)
         loaded()
     }
-    TvBlurredBackdropImage(
-        blurred,
-        alpha = alpha,
-        maskColor = maskColor,
-        textColor = textColor,
-        modifier = modifier.onSizeChanged { size = it },
-    )
+    // 量尺寸挂在外面这一层: 还没有图时也要量出来, 才知道按多大解
+    Box(modifier.fillMaxSize().onSizeChanged { size = it }) {
+        blurred?.let { TvDetailsBlurredImage(it, maskColor, textColor, alpha = alpha) }
+    }
 }
 
 /**
@@ -175,15 +173,15 @@ private object TvRecentBlurredBackdrops {
     private class Shown(val key: Key, val from: TvBackdropBlurSpec?, val start: TimeMark)
 
     /** 新挂上的那一层从哪一张 ([from], null = 页面底色) 渐变过来, 起点进度 [progress] (0..1). */
-    class Start(val from: BlurredBackdrop?, val progress: Float)
+    class Start(val from: TvBlurredBackdropEntry?, val progress: Float)
 
     private const val CAPACITY = 4
-    private val entries = LinkedHashMap<Key, BlurredBackdrop>()
+    private val entries = LinkedHashMap<Key, TvBlurredBackdropEntry>()
     private var shown: Shown? = null
 
-    fun get(url: String, spec: TvBackdropBlurSpec, size: IntSize): BlurredBackdrop? = entries[Key(url, spec, size)]
+    fun get(url: String, spec: TvBackdropBlurSpec, size: IntSize): TvBlurredBackdropEntry? = entries[Key(url, spec, size)]
 
-    fun put(url: String, spec: TvBackdropBlurSpec, size: IntSize, image: BlurredBackdrop) {
+    fun put(url: String, spec: TvBackdropBlurSpec, size: IntSize, image: TvBlurredBackdropEntry) {
         val key = Key(url, spec, size)
         entries.remove(key)
         entries[key] = image
@@ -251,11 +249,12 @@ private object TvRecentBlurredBackdrops {
 
 /**
  * 海报墙 (hero 态) 已经解好的一张整屏模糊小图 (量好了亮度) 放进平板模式的最近几张里 (见 TvRecentBlurredBackdrops): 从 hero 点进详情页时
- * 第一帧就铺得上它、再渐变到详情页那一档, 不先露出页面底色. [size] 是铺满的那一块 (窗口) 的大小. 安卓的海报墙交来的是位图, 见同名的安卓版.
+ * 第一帧就铺得上它、再渐变到详情页那一档, 不先露出页面底色. [size] 是铺满的那一块 (窗口) 的大小.
+ * iPad 的 Compose 海报墙 (TvWallHero) 直接调这个; 安卓的原生海报墙交来的是位图, 见同名的安卓版.
  */
 internal fun tvRememberTouchBlurredBackdrop(url: String, spec: TvBackdropBlurSpec, size: IntSize, image: TvBlurredBackdropImage) {
     if (TvRecentBlurredBackdrops.get(url, spec, size) == null) {
-        TvRecentBlurredBackdrops.put(url, spec, size, BlurredBackdrop(image.bitmap, spec, image.worstForLightText, image.worstForDarkText))
+        TvRecentBlurredBackdrops.put(url, spec, size, TvBlurredBackdropEntry(image.bitmap, spec, image.worstForLightText, image.worstForDarkText))
     }
 }
 
@@ -269,9 +268,9 @@ internal suspend fun loadTvBlurredBackdrop(
     url: String,
     size: IntSize,
     spec: TvBackdropBlurSpec,
-): BlurredBackdrop? {
+): TvBlurredBackdropEntry? {
     val image = tvFetchBlurredBackdrop(sketch, context, url, size.width, size.height, spec) ?: return null
-    return BlurredBackdrop(image.bitmap, spec, image.worstForLightText, image.worstForDarkText)
+    return TvBlurredBackdropEntry(image.bitmap, spec, image.worstForLightText, image.worstForDarkText)
 }
 
 /**
@@ -282,46 +281,46 @@ internal suspend fun loadTvBlurredBackdrop(
  */
 @Composable
 internal fun TvBlurredBackdropImage(
-    image: BlurredBackdrop?,
+    image: TvBlurredBackdropEntry?,
     alpha: () -> Float,
     maskColor: Color,
     textColor: Color,
     modifier: Modifier = Modifier,
 ) {
-    val maskAlpha = remember(image, maskColor, textColor) { image?.maskAlpha(maskColor, textColor) ?: 0f }
+    if (image != null) TvDetailsBlurredImage(image, maskColor, textColor, modifier, alpha)
+}
+
+/** 一张模糊小图拉伸铺满, 按 [entry] 量好的亮度压暗 (压暗画在同一次绘制里, 只盖有图处); [alpha] 在绘制里读. */
+@Composable
+private fun TvDetailsBlurredImage(
+    entry: TvBlurredBackdropEntry,
+    maskColor: Color,
+    textColor: Color,
+    modifier: Modifier = Modifier,
+    alpha: () -> Float,
+) {
+    val maskAlpha = remember(entry, maskColor, textColor) { entry.maskAlpha(maskColor, textColor) }
     Image(
-        image?.bitmap ?: EMPTY_BITMAP,
+        entry.bitmap,
         contentDescription = null,
         modifier = modifier
             .fillMaxSize()
             .graphicsLayer {
-                this.alpha = if (image == null) 0f else alpha()
+                this.alpha = alpha()
                 // 只有一张图, 透明度逐笔乘就够, 不开离屏层
-                compositingStrategy = CompositingStrategy.ModulateAlpha
+                compositingStrategy = TvModulateAlphaCompositing
             },
         contentScale = ContentScale.Crop,
-        // 压暗画在同一次绘制里 (只盖有图处), 不另开一层
         colorFilter = if (maskAlpha > 0f) ColorFilter.tint(maskColor.copy(alpha = maskAlpha), BlendMode.SrcAtop) else null,
         // 模糊后的图没有细节, 双线性放大就看不出是小图
         filterQuality = FilterQuality.Low,
     )
 }
 
-/** 解好的模糊小图 (按 [spec] 解的) 与量好的亮度 (浅色字 / 深色字各自最难看清那一处, 见 tvBackdropWorstLuminance). */
-internal class BlurredBackdrop(
-    val bitmap: ImageBitmap,
-    val spec: TvBackdropBlurSpec,
-    private val worstForLightText: Float,
-    private val worstForDarkText: Float,
-) {
-    /** 压暗色 [mask] 压多深上面的 [text] 才看得清 (0..1), 判法同海报墙的模糊层. */
-    fun maskAlpha(mask: Color, text: Color): Float {
-        val maskLuminance = tvRelativeLuminance(mask.toArgb())
-        val textLuminance = tvRelativeLuminance(text.toArgb())
-        val lightText = textLuminance >= maskLuminance
-        return tvBackdropMaskAlpha(if (lightText) worstForLightText else worstForDarkText, maskLuminance, textLuminance, mask.alpha)
-    }
+/** 压暗色 [mask] 压多深上面的 [text] 才看得清 (0..1), 判法同海报墙的模糊层. */
+private fun TvBlurredBackdropEntry.maskAlpha(mask: Color, text: Color): Float {
+    val maskLuminance = tvRelativeLuminance(mask.toArgb())
+    val textLuminance = tvRelativeLuminance(text.toArgb())
+    val lightText = textLuminance >= maskLuminance
+    return tvBackdropMaskAlpha(if (lightText) worstForLightText else worstForDarkText, maskLuminance, textLuminance, mask.alpha)
 }
-
-/** 还没解好时占位 (透明度恒 0, 不画). */
-private val EMPTY_BITMAP = ImageBitmap(1, 1)

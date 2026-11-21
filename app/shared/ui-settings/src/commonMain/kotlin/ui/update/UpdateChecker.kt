@@ -128,6 +128,7 @@ internal fun isUpdateCandidate(
  *
  * @param abis 设备的完整 ABI 列表, 见 [pickInstallableApks]; `null` = 非 Android, 不按 ABI 挑
  * @param legacy 低于正式包 minSdk 的设备只能装兼容包, 见 [LEGACY_APK_MARKER]
+ * @param ios iPad 上只认 IPA (`<前缀>-….ipa`), 没有 IPA 的版本不算: 安卓包在 iPad 上装不了, 提示了也没有东西可装
  */
 internal fun selectUsableRelease(
     releases: List<GitHubRelease>,
@@ -136,6 +137,7 @@ internal fun selectUsableRelease(
     assetPrefix: String,
     abis: List<String>?,
     legacy: Boolean = false,
+    ios: Boolean = false,
     isNewer: (candidate: String, current: String) -> Boolean,
     onSkip: (GitHubRelease) -> Unit = {},
 ): Pair<GitHubRelease, List<GitHubAsset>>? = releases
@@ -150,6 +152,14 @@ internal fun selectUsableRelease(
     .mapNotNull { release ->
         val candidate = release.tagName.removePrefix("v")
         if (!isUpdateCandidate(candidate, currentVersion, isNewer)) return@mapNotNull null
+        if (ios) {
+            val ipas = release.assets.filter { it.name.endsWith(".ipa") && it.name.startsWith("$assetPrefix-") }
+            if (ipas.isEmpty()) {
+                onSkip(release)
+                return@mapNotNull null
+            }
+            return@mapNotNull release to ipas
+        }
         val apks = release.assets.filter { it.name.endsWith(".apk") && it.name.startsWith("$assetPrefix-") }
         if (abis == null) return@mapNotNull release to apks
         val installable = apks.pickInstallableApks(abis, legacy)
@@ -303,6 +313,7 @@ class UpdateChecker(
             assetPrefix = currentAniBuildConfig.updateAssetPrefix,
             abis = android?.supportedAbis,
             legacy = android?.sdkInt?.let { it < NORMAL_APK_MIN_SDK } ?: false,
+            ios = currentPlatform() is Platform.Ios,
             isNewer = ::isNewerThan,
             onSkip = { logger.info { "Release ${it.tagName} has no package installable on this device, skipping" } },
         ) ?: return null
@@ -385,6 +396,8 @@ class UpdateChecker(
     }
 
     private fun newVersionFromMirror(release: MirrorRelease, currentVersion: String): NewVersion? {
+        // 镜像只给版本号, 安装包按安卓包的命名拼出来; iPad 包 (IPA) 有没有只有 GitHub 接口说得准 (见 selectUsableRelease 的 ios)
+        if (currentPlatform() is Platform.Ios) return null
         val versionName = release.version
         if (!isUpdateCandidate(versionName, currentVersion, ::isNewerThan)) {
             return null

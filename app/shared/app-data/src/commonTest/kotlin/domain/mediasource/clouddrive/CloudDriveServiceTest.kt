@@ -219,6 +219,29 @@ class CloudDriveServiceTest {
     }
 
     @Test
+    fun `original mode tries the transcoded stream when the device cannot play the file`() = runTest {
+        val (service, _) = service { request ->
+            when (request.url.encodedPath) {
+                "/api/files/play" -> reply("""{"code":0,"data":{"streams":[{"quality":"low","available":true,"url":"https://v.drive.test/low","height":270}]}}""")
+                else -> reply(downloadF1)
+            }
+        }
+        assertEquals("https://v.drive.test/low", service.resolvePlayback("f1", preferTranscoded = true).url)
+        assertEquals("https://dl.drive.test/f1", service.resolvePlayback("f1").url)
+    }
+
+    @Test
+    fun `plays the original file when there is no transcoded stream to fall back to`() = runTest {
+        val (service, _) = service { request ->
+            when (request.url.encodedPath) {
+                "/api/files/play" -> reply("""{"code":0,"data":{"streams":[]}}""")
+                else -> reply(downloadF1)
+            }
+        }
+        assertEquals("https://dl.drive.test/f1", service.resolvePlayback("f1", preferTranscoded = true).url)
+    }
+
+    @Test
     fun `qr login saves cookies from every step`() = runTest {
         var polls = 0
         val (service, settings) = service(CloudDriveAccount.Default) { request ->
@@ -646,6 +669,25 @@ class CloudDriveServiceTest {
         assertEquals(
             mapOf("sid" to "x=y", "b" to ""),
             CloudDriveApi.parseSetCookieHeaders(listOf("sid=x=y; Path=/", "b=; Max-Age=0", "=bad")),
+        )
+    }
+
+    @Test
+    fun `set-cookie headers joined into one line are split back`() {
+        assertEquals(
+            mapOf("a" to "1", "b" to "2", "c" to "x=y"),
+            CloudDriveApi.parseSetCookieHeaders(
+                listOf("a=1; Expires=Wed, 21 Oct 2026 07:28:00 GMT; Path=/, b=2; HttpOnly,c=x=y; Domain=example.com"),
+                joined = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `a comma inside a set-cookie header stays when the platform does not join headers`() {
+        assertEquals(
+            mapOf("a" to "1,b=2"),
+            CloudDriveApi.parseSetCookieHeaders(listOf("a=1,b=2; Path=/"), joined = false),
         )
     }
 }

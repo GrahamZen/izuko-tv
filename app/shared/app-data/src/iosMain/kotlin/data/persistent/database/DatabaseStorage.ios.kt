@@ -26,4 +26,7 @@ actual fun Context.createDatabaseBuilder(fileName: String): RoomDatabase.Builder
     }
 }
 
-actual fun Context.databaseFile(fileName: String): SystemPath = files.dataDir.resolve(fileName)
+actual fun Context.databaseFile(fileName: String): SystemPath {
+    this.asIosContext()
+    return files.dataDir.resolve(fileName)
+}

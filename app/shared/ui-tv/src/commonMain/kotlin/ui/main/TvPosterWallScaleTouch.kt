@@ -27,7 +27,7 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /*
- * 「海报墙大小」页 (TvPosterWallScalePage) 的触屏操作 (平板模式): 滑块上点一下或上下拖, 换到离手指最近的那一档;
+ * 「海报墙大小」页 (TvPosterWallScalePage) 的触屏操作 (平板 / iPad): 滑块上点一下或上下拖, 换到离手指最近的那一档;
  * 说明换成触屏的一句, 下面一个「完成」离开本页 —— 触屏没有返回键, 这页是盖在页面上的窗口, 只能靠它出去.
  */
 

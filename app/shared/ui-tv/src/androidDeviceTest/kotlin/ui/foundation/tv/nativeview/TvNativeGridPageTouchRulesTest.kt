@@ -27,7 +27,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * 网格页 (追番 / 搜索 / 新番时间表) 在触屏设备上照触屏的规矩走 ([TvNativeGridPageView.touchInput], 规则见
+ * 网格页 (追番 / 搜索 / 新番时间表) 在触屏设备上照触屏的规矩走 ([TvNativeGridPageView.touchInput], 同 iPad 的 Compose 海报墙, 规则见
  * tvWallTouchTap): 按下不动焦点, 卡片墙上点一下聚焦并进 hero 态, 没有 hero 态的页面点一下就进, 长按弹菜单, hero 态里点 hero 区进聚焦那张;
  * 卡片墙上不画聚焦效果; 网格由手指自由滚 (不就近停), 手指一拖焦点就停放在网格页自己身上 (hero 态里原地退回卡片墙), 之后按方向键落到屏上
  * 中间那一行. 触摸经 Instrumentation.sendPointerSync 走窗口的输入派发.

@@ -31,9 +31,12 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
@@ -53,6 +56,9 @@ import me.him188.ani.app.tools.update.DownloadPackage
 import me.him188.ani.app.tools.update.SourceOutcome
 import me.him188.ani.app.tools.update.FileDownloadStage
 import me.him188.ani.app.tools.update.formatTransferProgress
+import me.him188.ani.app.ui.feedback.FeedbackApkInstall
+import me.him188.ani.app.ui.feedback.FeedbackApkInstaller
+import me.him188.ani.app.ui.feedback.FeedbackApkStatus
 import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.foundation.lan.LanHttpRequest
 import me.him188.ani.app.ui.foundation.lan.LanHttpServer
@@ -109,7 +115,7 @@ import java.util.UUID
  * 最后更新时间核对装没装上. 装另一个包 (另一个 Izuko TV) 先在网页上问一句; Android 11 起本应用看不到别的应用装没装
  * (包可见性), 它的签名由系统核对, 对不上时系统拒装、原因照常回传. 下载只装本应用自己的更新.
  */
-internal object RemoteAppUpdate {
+internal actual object RemoteAppUpdate {
     private val logger = logger<RemoteAppUpdate>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + CoroutineName("RemoteAppUpdate"))
     private val lock = Any()
@@ -155,10 +161,10 @@ internal object RemoteAppUpdate {
     private val _status = MutableStateFlow(AppInstallStatus.Idle)
 
     /** 这一次下载并安装走到哪了 (见本文件开头): 手机控制台与电视读同一份. */
-    val status: StateFlow<AppInstallStatus> = _status.asStateFlow()
+    actual val status: StateFlow<AppInstallStatus> = _status.asStateFlow()
 
     /** 电视上正在播放 (TvAppUpdateHost 报): 电视上发起的安装下好了等退出播放再弹安装确认. */
-    val playerShowing = MutableStateFlow(false)
+    actual val playerShowing: MutableStateFlow<Boolean> = MutableStateFlow(false)
 
     /** 正在下载、核对的那一次, [cancel] 停它 */
     @Volatile
@@ -599,7 +605,7 @@ internal object RemoteAppUpdate {
      * (焦点在下载安装那一格). 还没有「安装未知应用」的授权时打开授权页、提示允许后回来再按一次 (Android 11 起授权时本应用会被关掉);
      * 正在装别的时提示等它完成. 下好时在播放的话退出播放再弹安装确认. 提示经 [toaster].
      */
-    suspend fun installTestPackage(url: String, sha256: String?, issue: Int, toaster: Toaster) {
+    actual suspend fun installTestPackage(url: String, sha256: String?, issue: Int, toaster: Toaster) {
         val ctx = context ?: run {
             toaster.toast(getStringOffMain(Lang.tv_app_install_not_ready))
             return
@@ -616,6 +622,27 @@ internal object RemoteAppUpdate {
         }
         TvNotices.close()
         TvActionPanelRequests.showTasks("installing the test package of ticket #$issue")
+    }
+
+    /**
+     * 应用内 (触屏的反馈弹窗, 见 TouchFeedbackDialog) 装工单测试包: 同手机上「装到电视」那条路 ([offer] 再 [startOffer]), 人就在设备前,
+     * 没有「安装未知应用」授权时直接打开授权页. 状态行 ([FeedbackApkStatus]) 只报这一个测试包的, 跟 [status] 同一份.
+     */
+    val inApp: FeedbackApkInstaller = object : FeedbackApkInstaller {
+        override val status: StateFlow<FeedbackApkStatus?> = _status
+            .map { offered?.url?.let { url -> phaseText(state).takeIf { it.isNotEmpty() }?.let { FeedbackApkStatus(url, it) } } }
+            .stateIn(scope, SharingStarted.Eagerly, null)
+
+        override fun install(url: String, sha256: String?, issue: Int): FeedbackApkInstall {
+            val ctx = context ?: return FeedbackApkInstall.NOT_READY
+            offer(url, sha256, issue)
+            if (!canInstall(ctx)) {
+                launchPermission(ctx)
+                return FeedbackApkInstall.NEED_PERMISSION
+            }
+            val o = offered ?: return FeedbackApkInstall.NOT_READY
+            return if (startOffer(ctx, o, onTv = false)) FeedbackApkInstall.STARTED else FeedbackApkInstall.BUSY
+        }
     }
 
     /**
@@ -668,7 +695,7 @@ internal object RemoteAppUpdate {
      * 电视上动作面板里那一格的 ✕: 下载、核对、等退出播放时停下; 等确认时作废这次安装会话;
      * 没装上、装上了的关掉这一格. 正在写入安装会话时停不了 (几秒就写完).
      */
-    fun cancel() {
+    actual fun cancel() {
         val ctx = context
         val running = synchronized(lock) {
             if (state.phase == Phase.IDLE || state.phase == Phase.PREPARING) return
@@ -683,7 +710,7 @@ internal object RemoteAppUpdate {
     }
 
     /** 电视上动作面板里「再装一次」: 用刚才没装上的安装包 (测试包或上传的) 再装, 不重新下载; 安装包不在了或正在装别的时不动, 返回 false. */
-    fun retryInstall(): Boolean {
+    actual fun retryInstall(): Boolean {
         val ctx = context ?: return false
         val r = synchronized(lock) {
             val r = retry?.takeIf { it.file.exists() } ?: return false

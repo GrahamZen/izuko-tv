@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.foundation.tv.nativeview
 
+import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.ImageBitmap
 import com.github.panpf.sketch.PlatformContext
 import com.github.panpf.sketch.Sketch
@@ -16,6 +17,15 @@ import com.github.panpf.sketch.Sketch
 /** 整屏模糊背景那张小图 (见 [tvBackdropBlurSpec]) 与量好的亮度: 浅色字 / 深色字各自最难看清那一处 (见 tvBackdropWorstLuminance). */
 internal class TvBlurredBackdropImage(
     val bitmap: ImageBitmap,
+    val worstForLightText: Float,
+    val worstForDarkText: Float,
+)
+
+/** 一张解好的模糊小图 (按 [spec] 解) 与量好的亮度 (浅色字 / 深色字各自最难看清那一处, 见 tvBackdropWorstLuminance). */
+@Immutable
+internal class TvBlurredBackdropEntry(
+    val bitmap: ImageBitmap,
+    val spec: TvBackdropBlurSpec,
     val worstForLightText: Float,
     val worstForDarkText: Float,
 )

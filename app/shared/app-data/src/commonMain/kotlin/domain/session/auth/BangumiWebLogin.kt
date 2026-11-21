@@ -38,6 +38,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import me.him188.ani.app.data.models.preference.BangumiMirrorHosts
 import me.him188.ani.app.data.models.preference.ProxyConfig
+import me.him188.ani.app.data.network.setCookieHeaders
 import me.him188.ani.app.domain.foundation.BangumiEchTransport
 import me.him188.ani.app.domain.foundation.BangumiLoginPath
 import me.him188.ani.app.domain.foundation.BangumiRoute
@@ -329,7 +330,7 @@ class BangumiWebLogin(
 
     /** 记下 `Set-Cookie`; 网站用 `deleted` / `Max-Age=0` 删 cookie. */
     private fun Session.absorbCookies(response: HttpResponse) {
-        for (header in response.headers.getAll(HttpHeaders.SetCookie).orEmpty()) {
+        for (header in response.setCookieHeaders()) {
             val parts = header.split(';')
             val name = parts.first().substringBefore('=').trim()
             val value = parts.first().substringAfter('=', "").trim()
@@ -361,7 +362,7 @@ class BangumiWebLogin(
         private val FORMHASH = Regex("""name="formhash"\s+value="([^"]+)"""")
 
         /** 出错页上的那句话 (`<p class="text">验证码错误，请返回重试。</p>`). */
-        private val MESSAGE = Regex("""<p class="text"[^>]*>(.*?)</p>""", RegexOption.DOT_MATCHES_ALL)
+        private val MESSAGE = Regex("""<p class="text"[^>]*>([\s\S]*?)</p>""")
 
         private val TOKEN = Regex("[A-Za-z0-9]+")
 

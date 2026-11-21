@@ -96,7 +96,7 @@ fun TvSettingsPage(
 ) {
     // 触屏设备 (平板装了 TV 包): 同一份清单画成触屏的样子, 浅色下的底色与底板同详情页 (电视那套浅灰, 见 TvDetailsTheme); 电视上没有触摸屏, 不走这里
     if (LocalTvTouchInputEnabled.current) {
-        return TvDetailsTheme { TouchSettingsPage(vm, initialTab, legacy, loadOpenSourceLibrariesJsons, TvSettingsTvPlatform, modifier) }
+        return TvDetailsTheme { TouchSettingsPage(vm, initialTab, legacy, loadOpenSourceLibrariesJsons, remember { TvSettingsTvPlatform }, modifier) }
     }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
