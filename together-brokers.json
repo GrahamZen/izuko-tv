@@ -1,0 +1,8 @@
+{
+  "_comment": "一起看连的公共 MQTT 代理 (见 TogetherBrokerList). 应用里不带代理地址, 全靠这个文件: 每天拉一次, 同时连清单里的每一家, 消息每家都发一遍; 某家被封、下线, 或要补大陆连得上的代理时改这里, 不用发版 (改完推到 main 才生效). 每条是 MQTT over WebSocket 的 wss:// 地址, 不用注册就能连. 同一个房间的人要连着至少一家相同的代理: 1.0.9-alpha04 及以前的版本只认包里带的 broker.emqx.io / broker.hivemq.com / test.mosquitto.org 三家, 清单里一直留着其中至少一家 (TogetherBrokersFileTest 守着). 清单不能为空: 空的清单应用不认, 用上次拉到的.",
+  "brokers": [
+    "wss://broker.emqx.io:8084/mqtt",
+    "wss://broker.hivemq.com:8884/mqtt",
+    "wss://test.mosquitto.org:8081/mqtt"
+  ]
+}
