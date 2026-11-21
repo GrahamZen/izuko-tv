@@ -40,7 +40,7 @@ import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import kotlin.math.abs
 
 /*
- * 选集卡与选集行 (Compose 版) 在触屏上的手势, 同原生选集行 (TvNativeEpisodeRowView /
+ * 选集卡与选集行 (Compose 版, iOS 上与安卓的调试开关 tvComposeWalls 下用) 在触屏上的手势, 同原生选集行 (TvNativeEpisodeRowView /
  * TvNativeEpisodeCardView) 的触摸. 开关 LocalTvTouchInputEnabled 关着 (电视) 时一律原样返回, 一个节点都不多.
  */
 

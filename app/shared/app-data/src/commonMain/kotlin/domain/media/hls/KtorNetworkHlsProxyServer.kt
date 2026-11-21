@@ -29,6 +29,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import me.him188.ani.app.domain.foundation.ForegroundListenerRefresh
 import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
@@ -45,6 +46,7 @@ import kotlin.time.Duration.Companion.seconds
  *
  * iOS 会在应用被挂起期间回收 socket (见 Apple TN2277). 播放器手里的播放列表和分片地址都带着端口号,
  * 所以监听失败时在**同一个端口**上重新监听, 回到前台后播放器的后续请求仍然能连上.
+ * 被回收的监听上 accept 不一定报错醒来, 所以回到前台时还会主动关掉当前监听 (见 [ForegroundListenerRefresh]).
  */
 internal class KtorNetworkHlsProxyServer private constructor(
     private val selector: SelectorManager,
@@ -58,6 +60,7 @@ internal class KtorNetworkHlsProxyServer private constructor(
     override val port: Int = (serverSocket.localAddress as InetSocketAddress).port
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO_ + CoroutineName("HlsProxy-$port"))
+    private val foregroundRefresh = ForegroundListenerRefresh.register { this.serverSocket.close() }
 
     override fun start(handler: HlsProxyRequestHandler) {
         scope.launch {
@@ -107,6 +110,8 @@ internal class KtorNetworkHlsProxyServer private constructor(
         serverSocket.close()
     }
 
+    internal val listenerForTest: ServerSocket get() = serverSocket
+
     private suspend fun handleConnection(socket: Socket, handler: HlsProxyRequestHandler) {
         val input = socket.openReadChannel()
         val output = socket.openWriteChannel(autoFlush = false)
@@ -141,6 +146,7 @@ internal class KtorNetworkHlsProxyServer private constructor(
 
     override fun close() {
         if (closed.compareAndSet(expect = false, update = true)) {
+            foregroundRefresh.close()
             scope.cancel()
             runCatching { serverSocket.close() }
             runCatching { selector.close() }

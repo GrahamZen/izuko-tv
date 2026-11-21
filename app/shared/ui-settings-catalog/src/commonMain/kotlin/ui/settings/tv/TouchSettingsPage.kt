@@ -23,7 +23,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -45,10 +47,13 @@ import me.him188.ani.app.ui.foundation.navigation.BackHandler
 import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
 import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
 import me.him188.ani.app.ui.foundation.widgets.AniTextButton
+import me.him188.ani.app.ui.foundation.widgets.BackNavigationIconButton
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_media_source_done
 import me.him188.ani.app.ui.lang.settings_mediasource_cancel
+import me.him188.ani.app.ui.settings.LegacySettingsSection
+import me.him188.ani.app.ui.settings.LegacySettingsSectionContent
 import me.him188.ani.app.ui.settings.SettingsViewModel
 import me.him188.ani.app.ui.settings.UiScaleSyncEffect
 import me.him188.ani.app.ui.settings.account.ProfileViewModel
@@ -63,7 +68,8 @@ import org.jetbrains.compose.resources.stringResource
  * 触屏设备的设置页: 分类与设置项同电视版 (画的是同一份清单 [TvSettingsCatalogEntries], 状态是 [TvSettingsState]), 样子照原来的设置页 ——
  * 左栏分类, 右栏设置项 (开关、单选进一层、动作), 说明写在每一项下面. 窄屏一次只显示一栏.
  *
- * 电视上要扫码到手机控制台去设的项 (要打字), 这里换成打开原来的设置页的那一类 ([legacy]), 盖在上面, 返回就关.
+ * 电视上要扫码到手机控制台去设的项 (要打字) 就地改: 代理、BT、观看偏好、设置备份这几类的右栏换成原来设置页的那一块 ([LegacySettingsSection]),
+ * 弹幕屏蔽词接在「播放器」底下, 网盘账号与导入规则用表单. 这一类一项都没有时给打开原来设置页 ([legacy]) 的入口, 盖在上面, 返回就关.
  * [platform] 是这一端独有的东西 (见 [TvSettingsPlatform]): 电视包装在平板上时给电视版那一份, 用到的项照常显示.
  */
 @Composable
@@ -94,7 +100,8 @@ fun TouchSettingsPage(
             deps = deps,
             initialCategory = initialTab?.name ?: TouchSettingsLastPosition.categoryId,
             scope = scope,
-            extraKeys = listOf(TvSettingKeys.debug),
+            // 平台与控制台地址: 控制台的二维码与只能在控制台做的项按它们画 (见 consoleQr)
+            extraKeys = listOf(TvSettingKeys.debug, TvSettingKeys.platform, TvSettingKeys.consoleUrl),
             loadTemplate = { getStringOffMain(TouchSettingsTextOverrides[it] ?: it) },
         )
     }
@@ -125,11 +132,38 @@ fun TouchSettingsPage(
         )
     }
 
-    val content by state.content.collectAsStateWithLifecycle()
+    // 要打字的那几类: 右栏换成 (或接上) 原来设置页的那一块, 就地改
+    val legacySections = remember(vm) {
+        fun section(section: LegacySettingsSection, belowRows: Boolean = false, replacesRows: Boolean = true) = TouchSettingsEmbedded(
+            content = { LegacySettingsSectionContent(vm, section) },
+            belowRows = belowRows,
+            replacesRows = replacesRows,
+        )
+        mapOf(
+            SettingsTab.PROXY.name to section(LegacySettingsSection.NETWORK),
+            SettingsTab.BT.name to section(LegacySettingsSection.TORRENT),
+            SettingsTab.MEDIA_SELECTOR.name to section(LegacySettingsSection.MEDIA_SELECTION),
+            SettingsTab.PLAYER.name to section(LegacySettingsSection.DANMAKU_FILTER, belowRows = true, replacesRows = false),
+            SettingsTab.SETTINGS_BACKUP.name to section(LegacySettingsSection.BACKUP),
+            SettingsTab.LOG.name to section(LegacySettingsSection.LOG, replacesRows = false),
+        )
+    }
+
+    // 换到一类时它的文案要现读 (iOS 上读得慢), 读齐之前整页是 null: 先接着画上一页, 不然左栏右栏一起没了, 看着整页闪一下
+    val built by state.content.collectAsStateWithLifecycle()
+    val lastBuilt = remember { mutableStateOf<TvSettingsContent?>(null) }
+    SideEffect { built?.let { lastBuilt.value = it } }
+    val content = built ?: lastBuilt.value
     val overlay by state.overlay.collectAsStateWithLifecycle()
     Box(modifier.fillMaxSize().background(AniThemeDefaults.pageContentBackgroundColor)) {
-        content?.let {
-            TouchSettingsLayout(it, state, initialTab != null, embedded = { id -> mediaSourcesEmbedded.takeIf { id == SettingsTab.MEDIA_SOURCE.name } })
+        if (content != null) {
+            TouchSettingsLayout(
+                content, state, initialTab != null,
+                embedded = { id -> if (id == SettingsTab.MEDIA_SOURCE.name) mediaSourcesEmbedded else legacySections[id] },
+            )
+        } else {
+            // 第一次进来、文案还没读齐: 没有返回键的设备上先给一颗返回, 不然只能对着空页等
+            BackNavigationIconButton(navigator::popBackStack, Modifier.windowInsetsPadding(WindowInsets.safeDrawing).padding(8.dp))
         }
         when (val current = overlay) {
             is TvSettingsOverlay.Legacy -> TouchLegacySettingsCover(onClose = state::dismissOverlay) { legacy(current.tab) }

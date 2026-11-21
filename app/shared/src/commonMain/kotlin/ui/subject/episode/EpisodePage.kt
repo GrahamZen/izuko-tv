@@ -118,7 +118,6 @@ import me.him188.ani.app.ui.foundation.LocalPlatform
 import me.him188.ani.app.ui.foundation.LocalSubjectAppearanceSettings
 import me.him188.ani.app.ui.foundation.ProvideCompositionLocalsForPreview
 import me.him188.ani.app.ui.foundation.WindowDropHandlerEffect
-import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
 import me.him188.ani.app.ui.foundation.effects.DarkStatusBarAppearance
 import me.him188.ani.app.ui.foundation.effects.OnLifecycleEvent
 import me.him188.ani.app.ui.foundation.effects.OverrideCaptionButtonAppearance
@@ -135,6 +134,7 @@ import me.him188.ani.app.ui.foundation.layout.isHeightCompact
 import me.him188.ani.app.ui.foundation.layout.isWidthAtLeastExpanded
 import me.him188.ani.app.ui.foundation.layout.isWidthAtLeastMedium
 import me.him188.ani.app.ui.foundation.layout.isWidthCompact
+import me.him188.ani.app.ui.foundation.layout.rememberFullscreenStatusBarReserve
 import me.him188.ani.app.ui.foundation.layout.setRequestFullScreen
 import me.him188.ani.app.ui.foundation.layout.setSystemBarVisible
 import me.him188.ani.app.ui.foundation.layout.setSystemBarsVisible
@@ -167,6 +167,7 @@ import me.him188.ani.app.ui.subject.episode.comments.EpisodeCommentColumn
 import me.him188.ani.app.ui.subject.episode.comments.EpisodeEditCommentSheet
 import me.him188.ani.app.ui.subject.episode.details.EpisodeDetails
 import me.him188.ani.app.ui.subject.episode.notif.VideoNotifEffect
+import me.him188.ani.app.ui.subject.episode.video.EpisodeSkipOpEdTip
 import me.him188.ani.app.ui.subject.episode.video.components.EpisodeVideoSideSheetPage
 import me.him188.ani.app.ui.subject.episode.video.components.EpisodeVideoSideSheets
 import me.him188.ani.app.ui.subject.episode.video.components.FloatingFullscreenSwitchButton
@@ -366,6 +367,7 @@ private fun EpisodeScreenContent(
         when (val page = pageState.value) {
             null -> {
                 // TODO: EpisodePage loading
+                EpisodePageLoadingExit()
             }
 
             else -> {
@@ -419,6 +421,7 @@ private fun EpisodeScreenContent(
                     LocalImageViewerHandler provides imageViewer,
                     LocalPictureInPictureController provides pictureInPictureController,
                 ) {
+                    LocalEpisodePageAttachment.current?.Content(vm, page)
                     val screenVariant = LocalEpisodeScreenVariant.current
                     if (screenVariant != null) {
                         // 播放页变体 (如遥控器形态的全屏播放器: 统一按键路由/浮出面板/详情页覆盖层)
@@ -675,12 +678,16 @@ private fun EpisodeScreenSidebar(
                                 page.loadError?.let { vm.retryLoad(it) }
                             },
                             danmakuListState = vm.danmakuListState.collectAsStateWithLifecycle().value,
-                            hideSelectorOnSelect = vm.videoScaffoldConfig.hideSelectorOnSelect,
+                            hideSelectorOnSelect = vm.videoScaffoldConfig.hideSelectorOnSelectForCurrentUi(),
                             onBeforeOpenMediaSelector = {
                                 if (vm.mediaSelectorMode == null && !page.isLoading) {
                                     vm.mediaSelectorMode = page.initialMediaSelectorMode
                                 }
                             },
+                            onMediaSelectorShown = { vm.onMediaSelectorShown() },
+                            onMediaSelectorHidden = { vm.onMediaSelectorHidden() },
+                            fullSearch = vm.fullMediaSearch.collectAsStateWithLifecycle().value,
+                            onFullSearchChange = { vm.setFullMediaSearch(it) },
                         )
                     }
                 }
@@ -837,7 +844,7 @@ private fun EpisodeScreenPhoneDetails(
                             vm.mediaSelectorMode = page.initialMediaSelectorMode
                         }
                     },
-                    hideSelectorOnSelect = vm.videoScaffoldConfig.hideSelectorOnSelect,
+                    hideSelectorOnSelect = vm.videoScaffoldConfig.hideSelectorOnSelectForCurrentUi(),
                     onMediaSelectorShown = { vm.onMediaSelectorShown() },
                     onMediaSelectorHidden = { vm.onMediaSelectorHidden() },
                     fullSearch = vm.fullMediaSearch.collectAsStateWithLifecycle().value,
@@ -988,14 +995,15 @@ fun EpisodeScreenContentPhoneScaffold(
  *
  * iOS 横屏下 [WindowInsets.systemBars] 在左右两侧对称地报告 safe area, 这个值同时为刘海和屏幕圆角预留,
  * 只避开刘海一侧会让对侧的按钮压进圆角而难以点中, 所以水平方向照系统的值用.
- * 顶部和 home indicator 的高度不需要, 带上会让控件离上下边缘过远.
+ * 顶部只留状态栏的高度 (iPad 上控件唤出时状态栏跟着出来, 见 [rememberFullscreenStatusBarReserve]),
+ * 不带刘海与 home indicator 的高度, 带上会让控件离上下边缘过远.
  *
  * 其他平台保持 [default] 不变.
  */
 @Composable
 private fun fullscreenVideoWindowInsets(default: WindowInsets): WindowInsets {
     return if (LocalPlatform.current.isIos()) {
-        WindowInsets.systemBars.only(WindowInsetsSides.Horizontal)
+        WindowInsets.systemBars.only(WindowInsetsSides.Horizontal).union(rememberFullscreenStatusBarReserve())
     } else {
         default
     }
@@ -1200,17 +1208,7 @@ private fun EpisodeVideo(
             vm.player.features[VideoAspectRatio]?.let { VideoAspectRatioControllerState(it, scope = scope) }
         },
         videoEnhancement = vm.videoEnhancement,
-        leftBottomTips = {
-            AniAnimatedVisibility(
-                visible = vm.playerSkipOpEdState.showSkipTips,
-            ) {
-                PlayerControllerDefaults.LeftBottomTips(
-                    onClick = {
-                        vm.playerSkipOpEdState.cancelSkipOpEd()
-                    },
-                )
-            }
-        },
+        leftBottomTips = { EpisodeSkipOpEdTip(vm.playerSkipOpEdState) },
         fullscreenSwitchButton = {
             EpisodeVideoDefaults.FloatingFullscreenSwitchButton(
                 vm.videoScaffoldConfig.fullscreenSwitchMode,
@@ -1261,6 +1259,7 @@ private fun EpisodeVideo(
                                 }
                             }
                             val mode = vm.mediaSelectorMode ?: page.initialMediaSelectorMode
+                            MediaSelectorShownEffect(vm::onMediaSelectorShown, vm::onMediaSelectorHidden)
                             // 侧边栏太矮时, 手动查找 / BT 资源 (下拉切换、救援按钮或 preferKind = BT 直接落 BT 页) 关掉侧边栏, 改开容器.
                             // 加载中 (page.mediaSelectorState 是含假资源的占位 state) 不弹容器, 停留在侧边栏; 加载完成后 key 变化再弹.
                             LaunchedEffect(mode, page.isLoading, sheetHeight) {
@@ -1280,7 +1279,9 @@ private fun EpisodeVideo(
                                 fetchRequest = page.fetchRequest,
                                 onFetchRequestChange = { vm.updateFetchRequest(it) },
                                 manualBrowseState = vm.manualBrowseState,
-                                hideOnSelect = vm.videoScaffoldConfig.hideSelectorOnSelect,
+                                hideOnSelect = vm.videoScaffoldConfig.hideSelectorOnSelectForCurrentUi(),
+                                fullSearch = vm.fullMediaSearch.collectAsStateWithLifecycle().value,
+                                onFullSearchChange = { vm.setFullMediaSearch(it) },
                             )
                         }
                     },
@@ -1342,6 +1343,7 @@ private fun FullscreenMediaSelectorContainer(
         if (page.isLoading) vm.fullscreenSelectorVisible = false
     }
     if (!vm.fullscreenSelectorVisible || page.isLoading) return
+    MediaSelectorShownEffect(vm::onMediaSelectorShown, vm::onMediaSelectorHidden)
     val mode = vm.mediaSelectorMode ?: page.initialMediaSelectorMode
     val backToSheet = { sheetMode: MediaSelectorMode ->
         vm.fullscreenSelectorVisible = false
@@ -1548,6 +1550,7 @@ private fun PictureInPicturePolicyEffect(
     val backgroundBehavior = vm.videoScaffoldConfig.backgroundBehavior
     val playerState by vm.player.state.collectAsStateWithLifecycle()
     val mediaProperties by vm.player.mediaProperties.collectAsStateWithLifecycle(null)
+    val armOwner = remember { Any() }
 
     LaunchedEffect(
         pictureInPictureController,
@@ -1556,11 +1559,10 @@ private fun PictureInPicturePolicyEffect(
         mediaProperties?.videoWidth,
         mediaProperties?.videoHeight,
     ) {
+        val autoEnter = shouldAutoEnterPictureInPicture(backgroundBehavior, playWhenReady = playerState.playWhenReady)
+        vm.setAutoPictureInPictureArmed(armOwner, autoEnter)
         pictureInPictureController.updatePolicy(
-            autoEnterEnabled = shouldAutoEnterPictureInPicture(
-                backgroundBehavior,
-                playWhenReady = playerState.playWhenReady,
-            ),
+            autoEnterEnabled = autoEnter,
             aspectWidth = mediaProperties?.videoWidth,
             aspectHeight = mediaProperties?.videoHeight,
         )
@@ -1568,6 +1570,7 @@ private fun PictureInPicturePolicyEffect(
 
     DisposableEffect(pictureInPictureController) {
         onDispose {
+            vm.setAutoPictureInPictureArmed(armOwner, false)
             pictureInPictureController.updatePolicy(
                 autoEnterEnabled = false,
                 aspectWidth = null,

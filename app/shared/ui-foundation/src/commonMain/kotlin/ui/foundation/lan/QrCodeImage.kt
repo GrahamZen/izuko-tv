@@ -39,7 +39,7 @@ class QrCodeMatrix(val size: Int, private val bits: BooleanArray) {
 
 /**
  * 把 [content] 编成二维码矩阵; 该平台没有编码器时返回 null (调用方退化为只显示文字).
- * JVM/Android 用 zxing; iOS 目前不做 (那边总有浏览器, 没有需要扫码的场景).
+ * JVM/Android 用 zxing; iOS 用系统的 CoreImage.
  */
 expect fun encodeQrCode(content: String): QrCodeMatrix?
 

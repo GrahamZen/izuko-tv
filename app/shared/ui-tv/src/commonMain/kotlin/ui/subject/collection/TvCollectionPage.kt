@@ -9,7 +9,6 @@
 
 package me.him188.ani.app.ui.subject.collection
 
-import me.him188.ani.app.ui.foundation.tv.tvCollectionProgressAvailable
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
@@ -1333,7 +1332,7 @@ internal fun <T> TvCollectionGlassRailTab(
     // 焦点按 onFocusChanged 记 (见 FocusHighlight.kt 开头: 收集交互事件会丢掉进页那一次 Focus)
     var focused by remember { mutableStateOf(false) }
     val selected by remember(selection, item) { derivedStateOf { selection.selected == item } }
-    // 触屏 (平板模式) 上不画聚焦的样子, 只画选中: 点了别的标签 / 左右滑换了标签之后焦点还停在原来那枚, 画出来就是两枚同时有颜色
+    // 触屏 (平板 / iPad) 上不画聚焦的样子, 只画选中: 点了别的标签 / 左右滑换了标签之后焦点还停在原来那枚, 画出来就是两枚同时有颜色
     val touchInput = LocalTvTouchInputEnabled.current
     TvCollectionGlassTab(
         label = label,
@@ -1378,8 +1377,7 @@ internal fun rememberTvCollectionTabOrder(): List<UnifiedCollectionType> {
 internal fun rememberTvCollectionRailTabs(): List<UnifiedCollectionType?> {
     val tabOrder = rememberTvCollectionTabOrder()
     val progressIndex = LocalThemeSettings.current.tvCollectionProgressTabIndex
-    // 没有「追更」的端 (见 tvCollectionProgressAvailable) 只列分类
-    return remember(tabOrder, progressIndex) { if (tvCollectionProgressAvailable) tvCollectionRailTabs(tabOrder, progressIndex) else tabOrder }
+    return remember(tabOrder, progressIndex) { tvCollectionRailTabs(tabOrder, progressIndex) }
 }
 
 /** 分类 [tabOrder] 中间插上「追更」(null), 排第 [progressIndex] 个 (见 ThemeSettings.tvCollectionProgressTabIndex; 超出两头按排在两头). */

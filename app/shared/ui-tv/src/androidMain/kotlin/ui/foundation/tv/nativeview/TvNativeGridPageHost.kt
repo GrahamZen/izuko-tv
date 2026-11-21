@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.paging.compose.LazyPagingItems
 import me.him188.ani.app.data.models.preference.TvBackdropBlurLevel
 import me.him188.ani.app.data.models.preference.TvPosterConfirmAction
+import me.him188.ani.app.platform.DevSwitches
 import me.him188.ani.app.ui.foundation.LocalSketch
 import me.him188.ani.app.ui.foundation.focus.NativeSendFocusEffect
 import me.him188.ani.app.ui.foundation.focus.TvGridFocusState
@@ -63,6 +64,7 @@ import me.him188.ani.app.ui.foundation.tv.TvBackdropTreatment
 import me.him188.ani.app.ui.foundation.tv.TvHeroZoomHandoff
 import me.him188.ani.app.ui.foundation.tv.tvHeroContentColor
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallBackground
+import me.him188.ani.app.ui.foundation.tv.wall.TvWallGridPage
 import me.him188.ani.app.ui.foundation.tv.wall.tvPadBackdropTreatment
 
 /*
@@ -80,7 +82,8 @@ internal val TvNativeGridPageState.view: TvNativeGridPageView? get() = surface a
 internal class TvNativeGridPageRowsSpec(
     override val key: Int,
     val style: TvNativeWallStyle,
-    val metrics: TvNativeExploreMetrics,
+    override val metrics: TvNativeExploreMetrics,
+    override val cardWidth: Dp,
     val headerStyle: TvNativeTextStyle,
 ) : TvNativeGridPageRows
 
@@ -115,18 +118,29 @@ internal actual fun <T : Any> TvNativeGridPageHostContent(
     rows: TvNativeGridPageRows?,
     emptyContent: @Composable BoxScope.() -> Unit,
 ) {
+    // 调试开关: 换成 Compose 版 (iOS 上画的那一套) 对照
+    if (DevSwitches.tvComposeWalls.value) {
+        TvWallGridPage(
+            state, metrics, cardWidth, gridKey, slideDirection, cards, itemAt, itemCount, onBind, heroEnabled, badge, source, fadeColor,
+            treatment, gridFocus, farJump, onFarJumpConsumed, callbacks, menuFor, wallBackdrop, modifier, landingIndex, topBarScrollAwayPx,
+            columnSpacing, cardHeight, rows, emptyContent,
+        )
+        return
+    }
     val sketch = LocalSketch.current
     val scope = rememberCoroutineScope()
     val composeRoot = LocalView.current
     val density = LocalDensity.current
     val touchInput = LocalTvTouchInputEnabled.current
-    // 触屏上 (平板) hero 态用平板版画法 (见 TvPadHeroGeometry)
+    // 触屏上 (平板) hero 态用平板版画法 (同 iPad 的 Compose 海报墙, 见 TvPadHeroGeometry)
     val padHero = heroEnabled && touchInput
     // hero 态在整页底下铺模糊背景, 按确定对焦变清晰再进详情页 (设置里的开关, 见 TvNativeGridPageView.heroBlur; 平板版画法一直铺);
     // 没有 hero 态的新番时间表不管它
     val heroBlur = heroEnabled && (padHero || LocalThemeSettings.current.tvWallBackdropBlur != TvBackdropBlurLevel.None)
     // 新番时间表的模糊背景恒铺, 海报墙选了不模糊时按中 (见 ThemeSettings.tvScheduleBlurLevel); 开着 hero 模糊时两者同一档
     val blurSpec = tvBackdropBlurSpec(LocalThemeSettings.current.tvScheduleBlurLevel)
+    // 平板版: 停在一部上时把详情页那一档也解好 (见 TvNativeWallBackdropView.detailsBlur)
+    val detailsBlurSpec = tvDetailsBackdropBlurSpec().takeIf { padHero }
     // 铺着模糊背景时卡片的字也照 vibrancy 画 (深色主题, 见 TvNativeWallStyle.labelVibrancy)
     val style = rememberTvNativeWallStyle(cardWidth, metrics.grid.columns, badge, columnSpacing, cardHeight, labelVibrancy || heroBlur)
     val textStyle = rememberTvNativeHeroTextStyle(titleMaxLines = 2, lineSpacing = 8.dp)
@@ -260,6 +274,7 @@ internal actual fun <T : Any> TvNativeGridPageHostContent(
                         wb.brightMaskAlpha = if (dark) TV_HERO_BLUR_BRIGHT_DIM_ALPHA else Float.NaN
                     }
                     wb.blur = blurSpec
+                    wb.detailsBlur = detailsBlurSpec
                     wb.coverWidthPx = style.coverWidthPx
                     wb.coverHeightPx = style.coverHeightPx
                     wb.crossfade = visualEffects.transitions

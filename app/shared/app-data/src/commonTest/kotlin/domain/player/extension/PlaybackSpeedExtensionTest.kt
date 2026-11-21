@@ -104,4 +104,35 @@ class PlaybackSpeedExtensionTest : AbstractPlayerExtensionTest() {
         }
     }
 
+    /**
+     * 长按倍速撞上缓冲再松手: 还原成 1x 时播放器不在播, mediamp 只记下不下发, 恢复播放时又因为是 1x 不补发.
+     * 扩展要在恢复播放时补上, 否则播放器实际一直停在长按的倍速.
+     */
+    @Test
+    fun `restores the native rate when playback resumes after a speed change during buffering`() = runTest {
+        val speed = MutableStateFlow(1f)
+        val (testScope, suite, _) = createCase(speed)
+        try {
+            suite.player.loadMedia(100_000L)
+            suite.setMediaDuration(100_000L)
+            suite.player.play()
+            advanceUntilIdle()
+
+            val playbackSpeed = suite.player.features[PlaybackSpeed]!!
+            playbackSpeed.set(2.5f)
+            advanceUntilIdle()
+            assertEquals(2.5f, suite.player.nativePlaybackRate)
+
+            suite.player.injectStall(true)
+            advanceUntilIdle()
+            playbackSpeed.set(1f)
+            advanceUntilIdle()
+            suite.player.injectStall(false)
+            advanceUntilIdle()
+
+            assertEquals(1f, suite.player.nativePlaybackRate)
+        } finally {
+            testScope.cancel()
+        }
+    }
 }

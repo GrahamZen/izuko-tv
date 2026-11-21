@@ -485,11 +485,11 @@ class RecommendationRepository(
 
         // 攒到够挑一批: 上次挑剩的先用, 不够再往后翻页; 一次最多发 [ROW_MORE_REQUESTS_PER_STEP] 个请求, 免得接一次就是十几个
         val pool = LinkedHashMap<Int, Candidate>()
-        cursor.leftovers.filter(::usable).forEach { pool.putIfAbsent(it.info.bangumiId, it) }
+        cursor.leftovers.filter(::usable).forEach { pool.getOrPut(it.info.bangumiId) { it } }
         val fetched = atomic(0)
         while (pool.size < needed && fetched.value < ROW_MORE_REQUESTS_PER_STEP && cursor.sourceIndex < plan.sources.size) {
             val page = plan.sources[cursor.sourceIndex].page(cursor.nextPage, fetched) ?: break
-            page.items.filter(::usable).forEach { pool.putIfAbsent(it.info.bangumiId, it) }
+            page.items.filter(::usable).forEach { pool.getOrPut(it.info.bangumiId) { it } }
             if (page.last) {
                 // 这一路翻完了: 换下一路从头翻 (前几页多半是刚才那些, 已在页面上的会被滤掉)
                 cursor.sourceIndex++
@@ -600,7 +600,7 @@ class RecommendationRepository(
                     if (picked.size >= limit) break
                     val series = seriesKeyOf(candidate.info.nameCn)
                     if (series.isNotEmpty() && !takenSeries.add(series)) continue
-                    picked.putIfAbsent(candidate.info.bangumiId, candidate.info)
+                    if (candidate.info.bangumiId !in picked) picked[candidate.info.bangumiId] = candidate.info
                 }
             }
             logger.info { "bgm-direct: recommendations 和《$name》相似 ${picked.size}/$limit 部 (标签 ${interest.take(SEED_SIMILAR_TAGS)})" }

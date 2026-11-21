@@ -20,7 +20,7 @@ import me.him188.ani.app.ui.foundation.tv.ProvideTvScrollActivity
 import me.him188.ani.app.ui.foundation.tv.TvPosterWallTheme
 
 /**
- * 新番时间表插槽 ([SchedulePageVariant]) 的电视版: 海报墙版式, 换上海报墙那套灰阶底色.
+ * 新番时间表插槽 ([SchedulePageVariant]) 的电视版, 电视包与 iPad 两套外壳共用: 海报墙版式, 换上海报墙那套灰阶底色.
  *
  * 时间表是单独一页 (从探索页进来), 电视版没有侧边栏也没有返回: 触屏上 ([LocalTvTouchInputEnabled]) 左上角补一颗 ([onBack], 同侧边栏上的返回).
  */

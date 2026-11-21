@@ -60,6 +60,7 @@ import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
 import me.him188.ani.app.data.models.subject.preferredDisplayName
 import me.him188.ani.app.data.models.subject.subjectInfo
 import me.him188.ani.app.data.recommendation.RecommendationGroup
+import me.him188.ani.app.platform.DevSwitches
 import me.him188.ani.app.tools.WeekFormatter
 import me.him188.ani.app.ui.foundation.LocalSketch
 import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
@@ -101,6 +102,7 @@ import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativePadHeroButt
 import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativeWallStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.toTvNativeTextStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.tvBackdropBlurSpec
+import me.him188.ani.app.ui.foundation.tv.nativeview.tvDetailsBackdropBlurSpec
 import me.him188.ani.app.ui.foundation.tv.nativeview.tvNativeWriteSnapshot
 import me.him188.ani.app.ui.foundation.tv.nativeview.withNsfw
 import me.him188.ani.app.ui.foundation.tv.nativeview.withNsfwCards
@@ -161,6 +163,14 @@ internal actual fun TvExplorationNativeWall(
     modifier: Modifier,
     rowsRestart: TvRecRowsRestart?,
 ) {
+    // 调试开关: 换成 Compose 版 (iOS 上画的那一套) 对照
+    if (DevSwitches.tvComposeWalls.value) {
+        TvExplorationComposeWall(
+            state, metrics, cardWidth, items, carouselCount, carouselIndex, fadeColor, geometry, splitGate, listener,
+            cardFocusRequest, heroFocusRequest, farJumpRow, focusedRowKey, focusedCardIndex, menuFor, modifier, rowsRestart,
+        )
+        return
+    }
     val sketch = LocalSketch.current
     val scope = rememberCoroutineScope()
     val composeRoot = LocalView.current
@@ -173,11 +183,13 @@ internal actual fun TvExplorationNativeWall(
     val heroEnabled = fixedAnchor || posterConfirm == TvPosterConfirmAction.Hero
     val wallBlur = LocalThemeSettings.current.tvWallBackdropBlur
     val touchInput = LocalTvTouchInputEnabled.current
-    // 触屏上 (平板) 热门轮播与 hero 态用平板版画法 (见 TvPadHeroGeometry).
+    // 触屏上 (平板) 热门轮播与 hero 态用平板版画法 (同 iPad 的 Compose 海报墙, 见 TvPadHeroGeometry).
     // 平板版画法一直铺模糊底 (轮播区与 hero 态), 不看设置里关没关
     val padHero = touchInput
     val heroBlur = padHero || heroEnabled && wallBlur != TvBackdropBlurLevel.None
     val blurSpec = tvBackdropBlurSpec(if (wallBlur == TvBackdropBlurLevel.None) TvBackdropBlurLevel.Strong else wallBlur)
+    // 平板版: 停在一部上时把详情页那一档也解好 (见 TvNativeWallBackdropView.detailsBlur)
+    val detailsBlurSpec = tvDetailsBackdropBlurSpec().takeIf { padHero }
     // 铺着模糊背景时卡片的字照 vibrancy 画 (深色主题, 见 TvNativeWallStyle.labelVibrancy); 继续观看的卡画没看几集的角标 (见 tvProgressCardLine)
     val style = rememberTvNativeWallStyle(
         cardWidth,
@@ -282,12 +294,13 @@ internal actual fun TvExplorationNativeWall(
                     wb.textColor = heroBlurText.toArgb()
                     wb.brightMaskAlpha = if (dark) TV_HERO_BLUR_BRIGHT_DIM_ALPHA else Float.NaN
                     wb.blur = blurSpec
+                    wb.detailsBlur = detailsBlurSpec
                     wb.coverWidthPx = style.coverWidthPx
                     wb.coverHeightPx = style.coverHeightPx
                     wb.crossfade = visualEffects.transitions
                 }
                 view.update(style, metrics, textStyle, buttonStyle)
-                // 平板版画法的按钮只有字
+                // 平板版画法的按钮只有字 (同 iPad)
                 view.setButtons(watchNow, playIcon.takeUnless { padHero }, schedule, scheduleIcon.takeUnless { padHero })
                 view.setItems(items)
                 // 推荐换了一批 (见 TvExplorationPage): 新内容交给视图之后再让各行回到第一张, 淡入的是新的那批

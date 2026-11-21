@@ -343,7 +343,7 @@ internal class TmdbSubjectMapIndex private constructor(
     val size: Int get() = ids.size
 
     operator fun get(subjectId: Int): TmdbSubjectMapEntry? {
-        val index = ids.binarySearch(subjectId)
+        val index = ids.asList().binarySearch(subjectId)
         if (index < 0) return null
         val start = lineStarts[index]
         var end = start

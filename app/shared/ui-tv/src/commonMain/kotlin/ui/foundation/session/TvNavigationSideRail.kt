@@ -535,7 +535,7 @@ fun TvNavigationSideRail(
 /**
  * 触屏上左上角的「返回」(没有返回键; 侧边栏的 onBack、没有侧边栏的页面自己摆): 与侧边栏条目同一个图标方块, 点了有涟漪, 不拿焦点.
  * 钉在左上角 (安全区之下 [TV_RAIL_BACK_TOP], 左边与侧边栏图标同一条线), 不放进侧边栏居中的那一列: 返回在哪一页都在同一个地方,
- * 放在铺满的 Box 里时按左上角对齐.
+ * 与 iPad 上各应用的返回一致. 放在铺满的 Box 里时按左上角对齐.
  */
 @Composable
 internal fun TvTouchBackButton(onBack: () -> Unit, modifier: Modifier = Modifier) {

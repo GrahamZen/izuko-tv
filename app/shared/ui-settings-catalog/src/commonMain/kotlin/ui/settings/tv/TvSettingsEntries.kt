@@ -76,6 +76,11 @@ import me.him188.ani.app.ui.lang.settings_player
 import me.him188.ani.app.ui.lang.settings_player_audio_time_stretch
 import me.him188.ani.app.ui.lang.settings_player_audio_time_stretch_description
 import me.him188.ani.app.ui.lang.settings_player_auto_mark_done
+import me.him188.ani.app.ui.lang.settings_player_background_behavior
+import me.him188.ani.app.ui.lang.settings_player_background_behavior_auto_pip
+import me.him188.ani.app.ui.lang.settings_player_background_behavior_background_playback
+import me.him188.ani.app.ui.lang.settings_player_background_behavior_description
+import me.him188.ani.app.ui.lang.settings_player_background_behavior_pause
 import me.him188.ani.app.ui.lang.settings_player_auto_play_next
 import me.him188.ani.app.ui.lang.settings_player_background_behavior
 import me.him188.ani.app.ui.lang.settings_player_background_behavior_auto_pip
@@ -153,6 +158,7 @@ import me.him188.ani.app.ui.lang.settings_tab_media_selector
 import me.him188.ani.app.ui.lang.settings_tab_media_source
 import me.him188.ani.app.ui.lang.settings_tab_player
 import me.him188.ani.app.ui.lang.settings_tab_proxy
+import me.him188.ani.app.ui.lang.settings_tab_settings_backup
 import me.him188.ani.app.ui.lang.settings_tab_storage
 import me.him188.ani.app.ui.lang.settings_tab_theme
 import me.him188.ani.app.ui.lang.settings_tab_update
@@ -249,6 +255,8 @@ import me.him188.ani.app.videoplayer.audio.AudioPassthroughMode
 import me.him188.ani.app.utils.formatSpeedValue
 import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.seconds
+import me.him188.ani.utils.platform.currentPlatform
+import me.him188.ani.utils.platform.isIos
 
 /** 电视设置页用到的几份设置. */
 object TvSettingKeys {
@@ -290,11 +298,16 @@ data class TvConsoleUrl(val url: String?)
  * 说明栏里打开 Web 控制台的二维码, 带上 [fragment] 让网页直接停在相关的那一页 (如 `#settings/network`、`#sources`).
  * 控制台没在运行 (没连局域网) 时只写一句不可用. [legacy] 见 [TvQr.legacy].
  */
-internal fun consoleQr(values: TvSettingsValues, fragment: String, legacy: Boolean = false): TvQr {
+internal fun consoleQr(values: TvSettingsValues, fragment: String, legacy: Boolean = false): TvQr? {
+    // 没有 Web 控制台的端 (iOS): 换成别的入口的 ([legacy], 触屏版是「打开这一类的设置」) 照建, 别的不画
+    if (!legacy && !hasConsole(values)) return null
     val url = values[TvSettingKeys.consoleUrl]?.url
         ?: return TvQr(null, status = tvText(Lang.search_tv_remote_unavailable), console = fragment, legacy = legacy)
     return TvQr("$url$fragment", caption = tvText(Lang.tv_settings_qr_console), console = fragment, legacy = legacy)
 }
+
+/** 这一端有没有 Web 控制台 (见 [TvSettingsPlatform.hasConsole]); 没读平台的页面 (电视版设置页) 当有. */
+internal fun hasConsole(values: TvSettingsValues): Boolean = values[TvSettingKeys.platform]?.hasConsole != false
 
 /** 一个显示模式: [id] = 0 表示「自动」(不指定). */
 data class TvDisplayMode(val id: Int, val refreshRate: Int)
@@ -304,7 +317,7 @@ private val FOLLOW_CONTENT_MODE = TvDisplayMode(DISPLAY_MODE_FOLLOW_CONTENT, 0)
 
 /**
  * 电视设置页的全部设置. 加一项就在对应分类里加一行. 分类与先后同原来的设置页 (左栏分组一样); 要打字才能设的 (地址、账号密码、规则文本)
- * 不放这里, 在手机 Web 控制台里改. 设置备份 (剪贴板复制 / 导入) 在电视上用不了, 不列 (控制台里能导出导入文件).
+ * 不放这里, 在手机 Web 控制台里改. 设置备份 (剪贴板复制 / 导入) 在电视上用不了, 只在触屏版列 (电视在控制台里导出导入文件).
  */
 val TvSettingsCatalogEntries: List<TvSettingsCategory> = tvSettingsCatalog {
     category(SettingsTab.PROFILE, Lang.settings_tab_account) { accountItems() }
@@ -320,7 +333,8 @@ val TvSettingsCatalogEntries: List<TvSettingsCategory> = tvSettingsCatalog {
 
     section(Lang.settings_category_network_storage)
     category(SettingsTab.PROXY, Lang.settings_tab_proxy) { networkItems() }
-    category(SettingsTab.BT, Lang.settings_tab_bt) { btItems() }
+    // iOS 上不查 BT 源 (见 MediaSourceManager): 本机 BT 引擎与 PikPak 都用不上, 整类不列
+    category(SettingsTab.BT, Lang.settings_tab_bt, visible = { !currentPlatform().isIos() }) { btItems() }
     category(SettingsTab.STORAGE, Lang.settings_tab_storage) { storageItems() }
 
     section(Lang.settings_category_others)
@@ -328,6 +342,8 @@ val TvSettingsCatalogEntries: List<TvSettingsCategory> = tvSettingsCatalog {
     category(SettingsTab.LOG, Lang.settings_tab_log) { logItems() }
     category(SettingsTab.ABOUT, Lang.settings_tab_about) { aboutItems() }
     category(SettingsTab.DEBUG, Lang.settings_tab_debug, visible = { it[TvSettingKeys.debug]?.enabled == true }) { debugItems() }
+    // 设置备份走剪贴板, 电视上用不了 (控制台里导出导入文件); 触屏版的右栏是原来设置页的那一块 (见 TouchSettingsPage)
+    category(SettingsTab.SETTINGS_BACKUP, Lang.settings_tab_settings_backup, visible = { it[TvSettingKeys.touchPage] == true }) {}
 }
 
 private fun TvSettingsItemsBuilder.appearanceItems() {
@@ -369,10 +385,10 @@ private fun TvSettingsItemsBuilder.appearanceItems() {
         },
     )
     toggleOf(
-        listOf(theme, TvSettingKeys.touchscreen), Lang.settings_theme_tv_hide_navigation_bar,
+        listOf(theme, TvSettingKeys.touchscreen, TvSettingKeys.interfaceMode), Lang.settings_theme_tv_hide_navigation_bar,
         description = { tvText(Lang.settings_theme_tv_hide_navigation_bar_description) },
-        // 只在平板模式下起作用 (电视模式不碰系统栏)
-        visible = { it[TvSettingKeys.touchscreen] == true && it[TvSettingKeys.interfaceMode] != true },
+        // 只在平板模式下起作用 (电视模式不碰系统栏); 没有模式可选的端 (iOS) 系统栏不归它管, 不列
+        visible = { it[TvSettingKeys.touchscreen] == true && it[TvSettingKeys.interfaceMode] == false },
         read = { it[theme]?.tvHideNavigationBar == true },
         write = { on -> listOf(TvSettingsEdit.Update(theme) { it.copy(tvHideNavigationBar = on) }) },
     )
@@ -391,27 +407,34 @@ private fun TvSettingsItemsBuilder.appearanceItems() {
         read = { it.exitBehavior },
         // 写 tvExitBehavior 而不是老的布尔: 一旦显式选过, 读取就不再看那个布尔 (见 exitBehavior)
         write = { copy(tvExitBehavior = it) },
+        // iOS 没有系统返回, 应用也不自己退出
+        visible = { !currentPlatform().isIos() },
     )
-    choice(
-        theme, Lang.settings_theme_tv_back_long_press, Lang.settings_theme_tv_back_long_press_description,
-        // 返回键是精简遥控器唯一够得到面板的入口, 所以三档全给 (含「不做任何事」)
-        options = { TvLongPressAction.entries },
-        label = { tvText(longPressLabel(it)) },
-        read = { it.tvBackLongPress },
-        write = { copy(tvBackLongPress = it) },
-    )
-    choice(
-        theme, Lang.settings_theme_tv_play_long_press, Lang.settings_theme_tv_play_long_press_description,
-        // 播放键不给「不做任何事」: 那样这个手势就彻底空了
-        options = { TvLongPressAction.entries.filter { it != TvLongPressAction.None } },
-        label = { tvText(longPressLabel(it)) },
-        read = { it.tvPlayLongPress },
-        write = { copy(tvPlayLongPress = it) },
-    )
-    toggle(
-        theme, Lang.settings_theme_tv_remote_show_on_launch, Lang.settings_theme_tv_remote_show_on_launch_description,
-        read = { it.tvRemoteShowOnLaunch },
-        write = { copy(tvRemoteShowOnLaunch = it) },
+    remoteOnly {
+        choice(
+            theme, Lang.settings_theme_tv_back_long_press, Lang.settings_theme_tv_back_long_press_description,
+            // 返回键是精简遥控器唯一够得到面板的入口, 所以三档全给 (含「不做任何事」)
+            options = { TvLongPressAction.entries },
+            label = { tvText(longPressLabel(it)) },
+            read = { it.tvBackLongPress },
+            write = { copy(tvBackLongPress = it) },
+        )
+        choice(
+            theme, Lang.settings_theme_tv_play_long_press, Lang.settings_theme_tv_play_long_press_description,
+            // 播放键不给「不做任何事」: 那样这个手势就彻底空了
+            options = { TvLongPressAction.entries.filter { it != TvLongPressAction.None } },
+            label = { tvText(longPressLabel(it)) },
+            read = { it.tvPlayLongPress },
+            write = { copy(tvPlayLongPress = it) },
+        )
+    }
+    toggleOf(
+        listOf(theme), Lang.settings_theme_tv_remote_show_on_launch,
+        description = { tvText(Lang.settings_theme_tv_remote_show_on_launch_description) },
+        // 没有 Web 控制台的端不列
+        visible = ::hasConsole,
+        read = { it[theme]?.tvRemoteShowOnLaunch ?: false },
+        write = { on -> listOf(TvSettingsEdit.Update(theme) { it.copy(tvRemoteShowOnLaunch = on) }) },
     )
     toggle(
         theme, Lang.settings_theme_tv_notices_on_launch, Lang.settings_theme_tv_notices_on_launch_description,
@@ -558,35 +581,41 @@ private fun TvSettingsItemsBuilder.themeItems() {
         read = { it.tvPosterConfirm },
         write = { copy(tvPosterConfirm = it) },
     )
-    choice(
-        theme, Lang.settings_theme_tv_explore_layout, Lang.settings_theme_tv_explore_layout_description,
-        options = { TvExploreLayout.entries },
-        label = {
-            tvText(
-                when (it) {
-                    TvExploreLayout.PosterWall -> Lang.settings_theme_tv_explore_layout_poster_wall
-                    TvExploreLayout.FixedFocus -> Lang.settings_theme_tv_explore_layout_fixed_focus
-                },
-            )
-        },
-        read = { it.tvExploreLayout },
-        write = { copy(tvExploreLayout = it) },
-    )
-    toggle(
-        theme, Lang.settings_theme_tv_poster_idle_dim, Lang.settings_theme_tv_poster_idle_dim_description,
-        read = { it.tvPosterIdleDim },
-        write = { copy(tvPosterIdleDim = it) },
-    )
-    // 海报墙与详情页两处按搭配一起选; 存着的搭配不在预设里 (以前分开选过) 时也列在最后, 不改它就一直是它
-    choice(
-        theme, Lang.settings_theme_tv_backdrop_blur, Lang.settings_theme_tv_backdrop_blur_description,
-        options = { settings ->
-            val current = settings.backdropBlurCombo()
-            if (current in TV_BACKDROP_BLUR_COMBOS) TV_BACKDROP_BLUR_COMBOS else TV_BACKDROP_BLUR_COMBOS + current
+    remoteOnly {
+        choice(
+            theme, Lang.settings_theme_tv_explore_layout, Lang.settings_theme_tv_explore_layout_description,
+            options = { TvExploreLayout.entries },
+            label = {
+                tvText(
+                    when (it) {
+                        TvExploreLayout.PosterWall -> Lang.settings_theme_tv_explore_layout_poster_wall
+                        TvExploreLayout.FixedFocus -> Lang.settings_theme_tv_explore_layout_fixed_focus
+                    },
+                )
+            },
+            read = { it.tvExploreLayout },
+            write = { copy(tvExploreLayout = it) },
+        )
+        toggle(
+            theme, Lang.settings_theme_tv_poster_idle_dim, Lang.settings_theme_tv_poster_idle_dim_description,
+            read = { it.tvPosterIdleDim },
+            write = { copy(tvPosterIdleDim = it) },
+        )
+    }
+    // 海报墙与详情页两处按搭配一起选; 存着的搭配不在预设里 (以前分开选过) 时也列在最后, 不改它就一直是它.
+    // 触屏版设置页不给带「不模糊」的搭配: 平板版的 hero 与详情页一直铺模糊底, 选了不模糊也按中 / 强档画
+    choiceOf(
+        listOf(theme, TvSettingKeys.touchPage), Lang.settings_theme_tv_backdrop_blur, Lang.settings_theme_tv_backdrop_blur_description,
+        options = { values ->
+            val combos = if (values[TvSettingKeys.touchPage] == true) TV_BACKDROP_BLUR_COMBOS.filter { it.blursBoth() } else TV_BACKDROP_BLUR_COMBOS
+            val current = values[theme]?.backdropBlurCombo()
+            if (current == null || current in combos) combos else combos + current
         },
         label = { it.label() },
-        read = { it.backdropBlurCombo() },
-        write = { copy(tvWallBackdropBlur = it.wall, tvDetailsBackdropBlur = it.details) },
+        read = { it[theme]?.backdropBlurCombo() },
+        write = { combo ->
+            listOf(TvSettingsEdit.Update(theme) { it.copy(tvWallBackdropBlur = combo.wall, tvDetailsBackdropBlur = combo.details) })
+        },
     )
     choice(
         theme, Lang.settings_theme_tv_title_logo, Lang.settings_theme_tv_title_logo_description,
@@ -704,24 +733,24 @@ private fun TvSettingsItemsBuilder.playerItems() {
         write = { copy(hideSelectorOnSelect = it) },
     )
     toggle(player, Lang.settings_player_auto_play_next, read = { it.autoPlayNext }, write = { copy(autoPlayNext = it) })
-    // 切到别的应用时小窗接着播还是暂停: 只有平板模式的播放页接了系统小窗, 电视与电视模式一律暂停, 不列
-    choiceOf(
-        listOf(player, TvSettingKeys.touchscreen, TvSettingKeys.interfaceMode),
-        Lang.settings_player_background_behavior, Lang.settings_player_background_behavior_description,
-        options = { listOf(BackgroundBehavior.AUTO_PICTURE_IN_PICTURE, BackgroundBehavior.PAUSE) },
-        label = {
-            tvText(
-                if (it == BackgroundBehavior.AUTO_PICTURE_IN_PICTURE) {
-                    Lang.settings_player_background_behavior_auto_pip
-                } else {
-                    Lang.settings_player_background_behavior_pause
-                },
-            )
-        },
-        read = { it[player]?.backgroundBehavior },
-        write = { behavior -> listOf(TvSettingsEdit.Update(player) { it.copy(backgroundBehavior = behavior) }) },
-        visible = { it[TvSettingKeys.touchscreen] == true && it[TvSettingKeys.interfaceMode] == false },
-    )
+    // 离开应用时进系统小窗接着播, 还是暂停: 只有触屏 (平板模式与 iPad) 的播放页接了系统小窗, 电视一律暂停; 「后台只听声音」那一档没实现, 不列
+    touchPlayerOnly {
+        choice(
+            player, Lang.settings_player_background_behavior, Lang.settings_player_background_behavior_description,
+            options = { listOf(BackgroundBehavior.AUTO_PICTURE_IN_PICTURE, BackgroundBehavior.PAUSE) },
+            label = {
+                tvText(
+                    when (it) {
+                        BackgroundBehavior.AUTO_PICTURE_IN_PICTURE -> Lang.settings_player_background_behavior_auto_pip
+                        BackgroundBehavior.PAUSE -> Lang.settings_player_background_behavior_pause
+                        BackgroundBehavior.BACKGROUND_PLAYBACK -> Lang.settings_player_background_behavior_background_playback
+                    },
+                )
+            },
+            read = { it.backgroundBehavior },
+            write = { copy(backgroundBehavior = it) },
+        )
+    }
     // 最左一档 = 不显示, 往右依次 2~8dp; 写的时候顺手把旧开关置真 (从此这一项说了算)
     choice(
         player, Lang.settings_player_idle_progress_bar, Lang.settings_player_idle_progress_bar_description,
@@ -915,6 +944,17 @@ private fun TvSettingsItemsBuilder.playerItems() {
     danmakuRuleItems()
 }
 
+/** 只在触屏版设置页 (平板模式与 iPad) 列的播放器项 (系统小窗只接在触屏的播放页上). */
+private fun TvSettingsItemsBuilder.touchPlayerOnly(block: TvSettingsItemsBuilder.() -> Unit) =
+    showWhen(listOf(TvSettingKeys.touchPage), { it[TvSettingKeys.touchPage] == true }, block)
+
+/**
+ * 只在用遥控器时起作用的项 (长按键、探索页固定焦点、停手压暗): 触屏版设置页 (平板模式与 iPad) 不列 ——
+ * 平板上手指按不出长按键, 海报墙按触屏的规矩走 (探索页一直是海报墙版式, 停手计时只由按键触发).
+ */
+private fun TvSettingsItemsBuilder.remoteOnly(block: TvSettingsItemsBuilder.() -> Unit) =
+    showWhen(listOf(TvSettingKeys.touchPage), { it[TvSettingKeys.touchPage] != true }, block)
+
 // ---- 档位与选项名 ----
 
 private const val UI_SCALE_STEP_PERCENT = 10
@@ -964,6 +1004,9 @@ private val PALETTE: List<ULong> get() = AniThemeDefaults.themeColorOptions.map 
 
 /** 模糊背景的一种搭配: 海报墙 (连新番时间表) 那一档 [wall] 与详情页那一档 [details]. */
 private data class TvBackdropBlurCombo(val wall: TvBackdropBlurLevel, val details: TvBackdropBlurLevel) {
+    /** 两处都铺模糊 (哪处都没选不模糊). */
+    fun blursBoth(): Boolean = wall != TvBackdropBlurLevel.None && details != TvBackdropBlurLevel.None
+
     fun label(): TvText = when {
         wall == TvBackdropBlurLevel.None && details == TvBackdropBlurLevel.None -> tvText(Lang.settings_theme_tv_backdrop_blur_none)
         wall == details -> tvText(Lang.settings_theme_tv_backdrop_blur_both, tvText(wall.labelRes))

@@ -95,7 +95,7 @@ interface CaptchaBrowser : AutoCloseable {
 
     /**
      * 清掉 [urls] 各自可见的 cookies. 浏览器的 cookie 是整机共用的 (所有实例一份), 所以清的是全局状态.
-     * 默认不做 (只有 Android 用得到: 多人共用电视时, 登录页不能还登着上一个人的账号).
+     * 默认不做. Android 上多人共用电视时用 (登录页不能还登着上一个人的账号); iOS 上调试控制台用 (查站点是不是按存下的 cookie 拦人).
      */
     suspend fun clearCookies(urls: List<String>) {}
 

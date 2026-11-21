@@ -170,7 +170,7 @@ class TvNativeHeroTextView(
 
     /**
      * 平板版 hero 的排法 (见 TvPadHeroGeometry): 文字贴着本视图底边往上排 (块高给多少都贴底), 简介分段换行压成一段、最多 [summaryCapLines] 行;
-     * 评分照设计稿写成信息行字号的「★ 7.4」(星是字, 主要文字色). false = 电视版: 从顶上排起, 简介占满剩余高度, 评分「7.4/10」配主题色的星.
+     * 评分照 iPad 写成信息行字号的「★ 7.4」(星是字, 主要文字色). false = 电视版: 从顶上排起, 简介占满剩余高度, 评分「7.4/10」配主题色的星.
      */
     var padLayout: Boolean = false
         set(value) {

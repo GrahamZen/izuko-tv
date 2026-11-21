@@ -145,6 +145,9 @@ class AniApplication : Application() {
         HttpPhaseLog.enabled = { DevSwitches.playDiagnostics.value }
         if (DevSwitches.playDiagnostics.value) MainThreadStallWatch.install()
 
+        // 调试开关的状态先在这里建好: 组合与 Web 控制台的线程第一次同时访问时, 状态会建在组合拿的快照之后, 组合一读就抛
+        DevSwitches.all
+
         // 本进程属于哪个用户: 必须在建数据库与配置 (startKoin) 之前定下来, 见 UserProfiles
         UserProfiles.install(
             UserProfileRegistry.load(filesDir.resolve(UserProfileRegistry.FILE_NAME).toKtPath().inSystem),

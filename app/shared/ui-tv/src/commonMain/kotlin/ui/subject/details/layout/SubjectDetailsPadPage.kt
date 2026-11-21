@@ -163,7 +163,7 @@ import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
- * 触屏 (平板模式) 的条目详情页 (版式见设计稿方案 A): 整页铺着这部背景图的模糊版 (同遥控器版翻离首屏后那一层), 没有首屏大图,
+ * 触屏 (平板 / iPad) 的条目详情页 (版式见设计稿方案 A): 整页铺着这部背景图的模糊版 (同遥控器版翻离首屏后那一层), 没有首屏大图,
  * 内容一整页往下滚 ——
  * - 头部 ([TvPadDetailsHeader]): 封面在左; 右边标题 / 另一个名字 / 季度与连载 (右端评分), 两行简介 (「展开」开全文), 标签,
  *   最下一行操作 (播放, 收藏, Bangumi, 反馈) 与收藏统计;
@@ -418,11 +418,13 @@ private fun TvPadDetailsScaffold(
 }
 
 /**
- * 整页的模糊底 ([TvDetailsBlurredBackdrop], 同遥控器版翻离首屏那一层). 解好就淡进来.
+ * 整页的模糊底 ([TvDetailsBlurredBackdrop], 同遥控器版翻离首屏那一层; 设置里选了不模糊时用中等那一档). 解好就淡进来;
+ * 刚组合时就已经解好 (占位页换成真页、返回本页) 直接显示.
  */
 @Composable
 private fun TvPadDetailsBackdrop(url: String) {
-    val shown = remember(url) { Animatable(0f) }
+    val ready = tvDetailsBlurredBackdropReady(url)
+    val shown = remember(url) { Animatable(if (ready) 1f else 0f) }
     var loaded by remember(url) { mutableStateOf(false) }
     LaunchedEffect(shown, loaded) {
         if (loaded) shown.animateTo(1f, tween(TV_WALL_BACKDROP_CROSSFADE_MILLIS))

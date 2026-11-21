@@ -106,8 +106,8 @@ object TvHeroZoomHandoff {
     var detailsUrlProvider: ((Int) -> String?)? = null
 
     /**
-     * 详情页首屏有没有那张整屏背景图, 由 TV 壳注册. 触屏 (平板模式) 的详情页一直铺模糊底、没有首屏大图: 点卡片不放大 ([willZoom]),
-     * 海报墙的模糊底也不先对焦变清晰 (TvNativeWallFocus), 直接进.
+     * 详情页首屏有没有那张整屏背景图, 由 TV 壳注册. 触屏 (平板 / iPad) 的详情页一直铺模糊底、没有首屏大图: 点卡片不放大 ([willZoom]),
+     * 海报墙的模糊底也不先对焦变清晰 (TvNativeWallFocus / TvWallOpen), 直接进.
      */
     @Volatile
     var detailsHasHero: Boolean = true

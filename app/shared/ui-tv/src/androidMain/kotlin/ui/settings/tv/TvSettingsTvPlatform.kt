@@ -32,6 +32,8 @@ import me.him188.ani.app.ui.whatsnew.TvWhatsNewSettingsPage
 internal object TvSettingsTvPlatform : TvSettingsPlatform {
     override val consoleUrl: Flow<String?> get() = TvRemoteControl.url
 
+    override val hasConsole: Boolean get() = true
+
     override val resetOnboarding: (Context) -> Unit get() = TvOnboardingGate::reset
 
     /** 录制时每半秒更新剩余秒数. */
