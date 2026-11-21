@@ -81,6 +81,14 @@ class TvNativeWallBackdropViewTest {
     }
 
     @Test
+    fun `the first image right after the page appears shows at once instead of fading in from the page color`() {
+        host.onMain { backdrop.show(solid("entry-red", Color.RED, 1)) }
+        // 解好挂上的那一刻就是满的 (从底色淡入的话这时还是半透明, 换页那一下整屏先黑)
+        host.waitUntil("第一张解好") { blurred().singleOrNull()?.drawable != null }
+        assertEquals(1f, host.onMain { blurred().single().alpha })
+    }
+
+    @Test
     fun `a bright image is masked deeper than a dark one`() {
         host.onMain { backdrop.show(TvNativeWallBackdropTarget(host.testImage("dark", left = Color.rgb(30, 30, 30), right = Color.BLACK), subjectId = 1, sharp = false)) }
         host.waitUntil("暗图淡满") { blurred().singleOrNull()?.alpha == 1f }
