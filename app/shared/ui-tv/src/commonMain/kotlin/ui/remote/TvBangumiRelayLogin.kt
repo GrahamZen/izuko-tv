@@ -9,10 +9,10 @@
 
 package me.him188.ani.app.ui.remote
 
+import io.ktor.http.Url
 import me.him188.ani.app.domain.session.auth.BangumiOAuthManager
 import me.him188.ani.app.domain.session.auth.BangumiOAuthRelay
 import me.him188.ani.app.domain.usecase.GlobalKoin
-import java.net.URI
 
 /**
  * 电视上直接给一个「用手机扫码登录 Bangumi」的码 (设置的账号页、首次引导的登录那一步): 发起一次经 Worker 中转的授权 (同 Web 控制台
@@ -35,7 +35,7 @@ object TvBangumiRelayLogin {
     fun start(): Start {
         val manager = GlobalKoin.get<BangumiOAuthManager>()
         if (!manager.relaySupported) return Start.Unsupported
-        val host = TvRemoteControl.url.value?.let { runCatching { URI(it) }.getOrNull() }
+        val host = TvRemoteControl.url.value?.let { runCatching { Url(it) }.getOrNull() }
             ?.let { "${it.host}:${it.port}" }
             ?.takeIf { BangumiOAuthRelay.isPrivateLanHost(it) }
             ?: return Start.NoLan

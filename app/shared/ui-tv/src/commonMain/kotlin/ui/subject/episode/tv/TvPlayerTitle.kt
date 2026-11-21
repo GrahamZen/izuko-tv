@@ -32,11 +32,11 @@ import me.him188.ani.app.data.models.preference.TvTitleLogoDisplay
 import me.him188.ani.app.ui.foundation.AsyncImage
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tv.SyncTvTmdbSubjectText
-import me.him188.ani.app.ui.foundation.tv.TvTitleLogoFlip
 import me.him188.ani.app.ui.foundation.tv.TvTitleLogoLookup
 import me.him188.ani.app.ui.foundation.tv.rememberTvTitleLogoBox
 import me.him188.ani.app.ui.foundation.tv.rememberTvTitleLogoLookup
 import me.him188.ani.app.ui.foundation.tv.tvPrefersTmdbText
+import me.him188.ani.app.ui.foundation.tv.tvTitleLogoLightTransformation
 import me.him188.ani.app.ui.foundation.tv.tvTmdbSubjectTitleFilled
 import me.him188.ani.app.ui.foundation.tv.tvUseOriginalTitle
 import me.him188.ani.app.ui.subject.details.SubjectDetailsLoadState
@@ -77,7 +77,7 @@ internal fun TvPlayerTitle(subject: SubjectPresentation, modifier: Modifier = Mo
             contentScale = ContentScale.Fit,
             crossfade = false,
             transformations = if (LocalThemeSettings.current.tvTitleLogoDisplay == TvTitleLogoDisplay.Auto) {
-                listOf(TvTitleLogoFlip(lightText = true))
+                listOfNotNull(tvTitleLogoLightTransformation())
             } else {
                 emptyList()
             },

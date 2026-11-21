@@ -26,22 +26,25 @@ plugins {
 apply(plugin = "de.mannodermaus.android-junit5")
 
 /*
- * Android TV (遥控器) 专属界面.
+ * 电视版界面 (遥控器与平板触屏两种输入), Android TV 包与 iOS 共用.
  *
- * 与其它 ui-* 模块不同, 本模块**只有 android 一个 target**, 因此故意不套用
- * `ani.kmp-compose` (那个约定会同时配出 desktop 与 ios).
- * 桌面端和 iOS 既不需要遥控器界面, 也不该为它付编译代价 —— 这是把 TV 适配做成独立
- * target 的全部意义.
+ * 目标只有 android 与 iOS (打开 `ani.enable.ios` 时), 没有 desktop, 因此不套用 `ani.kmp-compose`
+ * (那个约定会配出 desktop). 页面的「大脑」(数据、落点、返回分层、菜单) 与 Compose 画面在 commonMain;
+ * 只有安卓才有的东西在 androidMain: 原生 View 画面 (leanback 卡片墙、横滑行), Web 控制台, 播放器, 性能诊断等.
+ * 两边分开的地方用 expect/actual 接 (安卓给原生 View, iOS 给 Compose 版).
  *
- * 代价是 android target 的那部分配置 (compileSdk / 测试源集) 只能在这里重复一遍:
+ * android target 的那部分配置 (compileSdk / 测试源集) 只能在这里重复一遍:
  * `ani.base` 的测试配置对所有含 android target 的模块都要求 androidHostTest 与
  * androidDeviceTest 存在.
  *
- * 依赖方向: ui-tv -> 各共享界面模块, 共享模块不得反向依赖本模块. 因为本模块只有 android
- * target, 多 target 模块的 commonMain 根本无法依赖它 —— 这正是需要的约束: TV 页面只能由
- * android 应用入口装配, 控件级差异只能靠 AniUiBehavior 这类数据开关表达.
+ * 依赖方向: ui-tv -> 各共享界面模块, 共享模块不得反向依赖本模块: 电视版页面只能由应用入口
+ * (Android 的 tv 变体、iOS 入口) 装配, 控件级差异只能靠 AniUiBehavior 这类数据开关表达.
  */
 kotlin {
+    if (enableIos) {
+        iosArm64()
+        iosSimulatorArm64()
+    }
     android {
         namespace = "me.him188.ani.app.tv"
         compileSdk = getIntProperty("android.compile.sdk")
@@ -87,7 +90,7 @@ kotlin {
         implementation(projects.utils.platform)
         implementation(libs.kotlinx.serialization.json) // Web 控制台的 JSON 接口 (ui/remote)
         // app:shared 是顶层界面聚合模块 (播放页 ViewModel / 主页导航), TV 页面直接复用它的状态层.
-        // 方向是 ui-tv -> app:shared, 反向由"本模块只有 android target"从物理上阻止.
+        // 方向是 ui-tv -> app:shared, 不得反向.
         api(projects.app.shared)
         api(projects.app.shared.uiFoundation)
         api(projects.app.shared.uiSubject)
@@ -101,6 +104,9 @@ kotlin {
         api(projects.app.shared.videoPlayer)
         api(projects.danmaku.danmakuUi)
         implementation(libs.koin.core)
+        implementation(libs.atomicfu)
+    }
+    sourceSets.androidMain.dependencies {
         // 进度条缩略图取帧 (见 TvFramePreviewSource): media3 的 ExperimentalFrameExtractor,
         // 用来替代 mediamp 那份打不开 HLS 的 MediaMetadataRetriever 实现
         implementation(libs.androidx.media3.transformer)

@@ -13,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import kotlinx.coroutines.flow.filterNotNull
 import me.him188.ani.app.domain.player.tracks.AudioTrackSupport
+import me.him188.ani.app.ui.foundation.tv.tvFormat
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.video_player_audio_all_unplayable_toast
@@ -32,7 +33,7 @@ internal fun TvUnplayableAudioNotice(player: MediampPlayer) {
     val unknown = stringResource(Lang.video_player_audio_all_unplayable_toast_unknown)
     LaunchedEffect(support) {
         support.allAudioUnplayable.filterNotNull().collect { formats ->
-            toaster.toast(if (formats.isEmpty()) unknown else withFormats.format(formats.joinToString(" / ")))
+            toaster.toast(if (formats.isEmpty()) unknown else withFormats.tvFormat(formats.joinToString(" / ")))
         }
     }
 }

@@ -9,11 +9,11 @@
 
 package me.him188.ani.app.ui.subject.collection
 
-import android.graphics.Rect
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvRowWallSurface
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,7 +40,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.datetime.TimeZone
 import me.him188.ani.app.data.models.player.EpisodeHistory
-import me.him188.ani.app.data.models.preference.TvBackdropBlurLevel
 import me.him188.ani.app.data.models.preference.TvPosterConfirmAction
 import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
 import me.him188.ani.app.data.models.subject.preferredDisplayName
@@ -67,16 +66,12 @@ import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeExploreItem
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeExploreMetrics
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGridPageRows
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeRowWallListener
-import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeRowWallView
-import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativeWallStyle
-import me.him188.ani.app.ui.foundation.tv.nativeview.toTvNativeTextStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.withNsfwCards
 import me.him188.ani.app.ui.foundation.tv.rememberTvScrollActivityReporter
 import me.him188.ani.app.ui.foundation.tv.rememberTvTmdbTitles
 import me.him188.ani.app.ui.foundation.tv.tvGridPageWallContentWidth
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallEndMargin
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallGrid
-import me.him188.ani.app.ui.foundation.tv.tvPosterWallHeaderStyle
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallLabelHeight
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallSecondaryLabelAlpha
 import me.him188.ani.app.ui.foundation.tv.tvUseOriginalTitle
@@ -106,11 +101,11 @@ internal class TvCollectionProgressPaneState(
     returnToCards: Boolean,
 ) {
     /** 接着线的那份内容 (网格页建的, 见 TvNativeGridPageState.rows); 「追更」没选中时 null. */
-    var view: TvNativeRowWallView? by mutableStateOf(null)
+    var view: TvRowWallSurface? by mutableStateOf(null)
         internal set
 
     /** 已按本状态恢复过的那份内容: 换回本标签时它还停在原处, 不再恢复; 网格页重建换了新的才再恢复一次. */
-    internal var restoredView: TvNativeRowWallView? = null
+    internal var restoredView: TvRowWallSurface? = null
     internal val errorFocusRequester = FocusRequester()
 
     var focusedRowKey: String? by mutableStateOf(focusedRowKey)
@@ -137,7 +132,7 @@ internal class TvCollectionProgressPaneState(
     fun focusCards(nearY: Int? = null, row: Int? = null, fromLeft: Boolean = false): Boolean {
         val v = view ?: return false
         if (row != null) v.enterRow(row, fromLeft) else if (nearY != null) v.enterNearRow(nearY, fromLeft)
-        return v.requestFocus()
+        return v.requestCardsFocus()
     }
 
     /** 空页时把焦点送进出错卡片 (登录 / 重试). */
@@ -194,18 +189,12 @@ private val TvCollectionProgressPaneStateSaver = Saver<TvCollectionProgressPaneS
     },
 )
 
-/** 「追更」在网格页里那份内容的卡片、几何与组标题 (见 [TvNativeGridPageRows]), 占网格页的 [key]. */
+/**
+ * 「追更」在网格页里那份内容的卡片、几何与组标题 (见 [TvNativeGridPageRows]), 占网格页的 [key];
+ * 没有「追更」的端 (见 tvCollectionProgressAvailable) 给 null.
+ */
 @Composable
-internal fun rememberTvCollectionProgressRows(key: Int): TvNativeGridPageRows {
-    val density = LocalDensity.current
-    val layout = tvCollectionProgressLayout()
-    val settings = LocalThemeSettings.current
-    // 铺着模糊背景时卡片的字照 vibrancy 画 (同网格, 见 TvNativeGridPageHost); 没看几集画在封面右上角 (见 TvProgressEntry.badgeCount)
-    val heroBlur = settings.tvPosterConfirm == TvPosterConfirmAction.Hero && settings.tvWallBackdropBlur != TvBackdropBlurLevel.None
-    val style = rememberTvNativeWallStyle(layout.cardWidth, layout.metrics.columns, labelVibrancy = heroBlur, countBadge = true)
-    val headerStyle = tvPosterWallHeaderStyle().toTvNativeTextStyle(density, LocalContentColor.current)
-    return remember(key, style, layout.metrics, headerStyle) { TvNativeGridPageRows(key, style, layout.metrics, headerStyle) }
-}
+internal expect fun rememberTvCollectionProgressRows(key: Int): TvNativeGridPageRows?
 
 /**
  * 「追更」对网格页里那份内容 ([view], 见 TvNativeGridPageState.rows) 的接线: 数据、事件、焦点簿记、返回键回首卡, 外加空页与出错提示.
@@ -217,7 +206,7 @@ internal fun rememberTvCollectionProgressRows(key: Int): TvNativeGridPageRows {
 internal fun TvCollectionProgressPane(
     progress: TvCollectionProgressState,
     state: TvCollectionProgressPaneState,
-    view: TvNativeRowWallView?,
+    view: TvRowWallSurface?,
     heroActive: () -> Boolean,
     playHistories: () -> List<EpisodeHistory>,
     onPlay: (SubjectCollectionInfo) -> Unit,

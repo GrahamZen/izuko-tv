@@ -9,10 +9,8 @@
 
 package me.him188.ani.app.ui.subject.episode.tv
 
-import androidx.compose.animation.animateContentSize
 import me.him188.ani.app.ui.foundation.tv.tvTouchHorizontalSwipe
 import androidx.compose.foundation.background
-import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -21,7 +19,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -84,8 +81,6 @@ import kotlinx.coroutines.launch
 import me.him188.ani.app.domain.comment.CommentContext
 import me.him188.ani.app.domain.comment.CommentSendResult
 import me.him188.ani.app.ui.comment.CommentEditorState
-import me.him188.ani.app.ui.external.placeholder.placeholder
-import me.him188.ani.app.ui.foundation.AsyncImage
 import me.him188.ani.app.ui.foundation.focus.TvFocusKey
 import me.him188.ani.app.ui.foundation.focus.rememberTvFocusScope
 import me.him188.ani.app.ui.foundation.focus.restoreFocusAfter
@@ -102,7 +97,6 @@ import me.him188.ani.app.ui.foundation.tv.tvPageScrollKeys
 import me.him188.ani.app.ui.richtext.CommentAsyncImage
 import me.him188.ani.app.ui.foundation.widgets.AniFocusActionButton
 import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFade
-import me.him188.ani.app.ui.foundation.widgets.centeredPanelColor
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.comment_add_emoji
 import me.him188.ani.app.ui.lang.comment_ani_only_notice
@@ -112,7 +106,6 @@ import me.him188.ani.app.ui.lang.comment_new_comment
 import me.him188.ani.app.ui.lang.comment_preview
 import me.him188.ani.app.ui.lang.comment_rendering
 import me.him188.ani.app.ui.lang.comment_reply
-import me.him188.ani.app.ui.lang.comment_reply_unsupported
 import me.him188.ani.app.ui.lang.comment_send
 import me.him188.ani.app.ui.lang.comment_send_comment
 import me.him188.ani.app.ui.lang.comment_send_failed_network

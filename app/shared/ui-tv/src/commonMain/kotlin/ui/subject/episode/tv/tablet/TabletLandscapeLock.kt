@@ -9,33 +9,11 @@
 
 package me.him188.ani.app.ui.subject.episode.tv.tablet
 
-import android.app.Activity
-import android.content.Context
-import android.content.ContextWrapper
-import android.content.pm.ActivityInfo
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.ui.platform.LocalContext
 
 /**
  * 平板模式全屏时把屏幕锁成横向 (随重力在两个横向之间转): 竖着拿平板点全屏, 画面转成横的铺满, 不在竖屏里留上下两大块黑边.
- * [locked] 变 false (退出全屏、进小窗) 或离开播放页时还原成锁之前的方向.
- *
- * 只改屏幕方向, 不碰保持亮屏 (上游的 setRequestFullScreen 退出时会清掉 FLAG_KEEP_SCREEN_ON, 分栏播放时屏幕就会按系统超时熄掉).
+ * [locked] 变 false (退出全屏、进小窗) 或离开播放页时还原成锁之前的方向. iPad 上不锁, 全屏照设备当前的方向铺.
  */
 @Composable
-internal fun TabletLandscapeLock(locked: Boolean) {
-    val activity = LocalContext.current.findActivity() ?: return
-    DisposableEffect(activity, locked) {
-        if (!locked) return@DisposableEffect onDispose {}
-        val before = activity.requestedOrientation
-        activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-        onDispose { activity.requestedOrientation = before }
-    }
-}
-
-private tailrec fun Context.findActivity(): Activity? = when (this) {
-    is Activity -> this
-    is ContextWrapper -> baseContext.findActivity()
-    else -> null
-}
+internal expect fun TabletLandscapeLock(locked: Boolean)

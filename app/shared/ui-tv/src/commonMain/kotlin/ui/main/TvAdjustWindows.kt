@@ -41,7 +41,6 @@ import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.tv_wall_scale_title
 import me.him188.ani.app.ui.remote.TvRemoteControl
 import me.him188.ani.app.ui.subject.collection.TvCollectionTabOrderPage
-import me.him188.ani.app.ui.subject.episode.tv.TvPlayerChromeLayoutPage
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
 import org.jetbrains.compose.resources.stringResource
 
@@ -140,7 +139,7 @@ fun TvAdjustWindowHost(windows: TvAdjustWindows) {
                             onCommit = { committed = it },
                         )
 
-                        is TvAdjustWindow.PlayerChrome -> TvPlayerChromeLayoutPage(
+                        is TvAdjustWindow.PlayerChrome -> TvPlayerChromeLayoutWindow(
                             onNavigateBack = {
                                 windows.dismiss()
                                 window.onClosed(committed as? TvPlayerChromePresets)

@@ -25,7 +25,9 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.jsonPrimitive
+import me.him188.ani.app.ui.subject.episode.tv.tvCacheMedia
+import me.him188.ani.utils.coroutines.IO_
+import me.him188.ani.app.ui.foundation.tv.tvFormat
 import me.him188.ani.app.data.repository.user.SettingsRepository
 import me.him188.ani.app.domain.usecase.GlobalKoin
 import me.him188.ani.app.navigation.LocalNavigator
@@ -38,7 +40,6 @@ import me.him188.ani.app.ui.lang.tv_source_keywords_hint
 import me.him188.ani.app.ui.lang.tv_source_keywords_reset
 import me.him188.ani.app.ui.lang.tv_source_manual_keyword_title
 import me.him188.ani.app.ui.lang.tv_source_manual_pick_failed
-import me.him188.ani.app.ui.remote.RemoteCache
 import me.him188.ani.app.ui.subject.episode.EpisodePageState
 import me.him188.ani.app.ui.subject.episode.EpisodeViewModel
 import me.him188.ani.datasources.api.Media
@@ -133,16 +134,14 @@ internal fun TvPlayerSourcePanel(
             override fun cache(media: Media) {
                 val episodeId = vm.episodeSelectorState.current?.episodeId ?: return
                 scope.launch {
-                    // 与 Web 控制台播放页的「缓存」同一条路 (先查这一集的缓存状态再建)
-                    val result = withContext(Dispatchers.IO) { RemoteCache.cacheMedia(vm.subjectId, episodeId, media) }
-                    result["message"]?.jsonPrimitive?.content?.let { toaster.toast(it) }
+                    withContext(Dispatchers.IO_) { tvCacheMedia(vm.subjectId, episodeId, media) }?.let { toaster.toast(it) }
                 }
             }
 
             override fun excludeAlliance(alliance: String) {
                 scope.launch {
                     excludeAllianceInSettings(alliance)
-                    toaster.toast(excludedToast.format(alliance))
+                    toaster.toast(excludedToast.tvFormat(alliance))
                 }
             }
 
