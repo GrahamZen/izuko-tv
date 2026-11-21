@@ -561,6 +561,58 @@ class RecommendationRepository(
         withTimeoutOrNull(ROW_MORE_SEQUEL_WAIT) { feedDao.allFlow().first { rows -> rows.count { it.groupKey == groupKey } >= total } }
     }
 
+    /**
+     * 和《[name]》相似、用户还没收藏过的作品, 最多 [limit] 部 (播放器「相关推荐」不够时补, 见 GetSubjectRecommendationUseCase).
+     * 同种子行补齐那一路: AND 搜这一部最强的 [SEED_SIMILAR_TAGS] 个兴趣标签 (取自 [tags]), 不够再放宽到前 [SEED_ROW_RELAXED_TAGS] 个,
+     * 按种子行的权重重排; 去掉它自己与 [exclude]、收藏过的系列、名字看得出是续作的、没看过的地区与超长篇, 一个系列只留一部.
+     *
+     * 只问推荐目录, 不发请求 (播放器刚打开时 bgm 的名额留给条目与分集): 目录还没下好、或一个兴趣标签都没有时为空. 不落库, 出错也只是空.
+     */
+    suspend fun similarTo(subjectId: Int, name: String, tags: List<Tag>, exclude: Set<Int>, limit: Int): List<RecommendedSubjectInfo> {
+        val interest = interestTagsByVotes(tags)
+        if (interest.isEmpty() || limit <= 0) return emptyList()
+        return try {
+            val snapshot = lastCollections ?: collectionsDiskCache?.read()?.let { CollectionsSnapshot.from(it) }
+            val collections = snapshot?.entities ?: loadCollections()
+            val sampling = Sampling(
+                seed = sampleSeed(),
+                watchedRegions = snapshot?.watchedRegions()?.takeIf { it.isNotEmpty() } ?: DEFAULT_WATCHED_REGIONS,
+                collectedRegions = snapshot?.collectedRegions(),
+            )
+            val collected = collections.mapTo(HashSet()) { it.subjectId }
+            val takenSeries = collections.mapTo(HashSet()) { seriesKeyOf(it.nameCn.ifEmpty { it.name }) }
+            seriesKeyOf(name).takeIf { it.isNotEmpty() }?.let { takenSeries += it }
+            fun usable(candidate: Candidate): Boolean {
+                val id = candidate.info.bangumiId
+                return id != subjectId && id !in exclude && id !in collected && sequelHint(candidate.info.nameCn) == 0 &&
+                        sampling.regionAllowed(candidate) && !sampling.isLongRunning(candidate)
+            }
+            val picked = LinkedHashMap<Int, RecommendedSubjectInfo>()
+            val tagSets = listOfNotNull(
+                interest.take(SEED_SIMILAR_TAGS),
+                interest.take(SEED_ROW_RELAXED_TAGS).takeIf { interest.size > SEED_ROW_RELAXED_TAGS },
+            )
+            for (searchTags in tagSets) {
+                if (picked.size >= limit) break
+                // 与种子行补齐同一个随机源: 这一部当过种子的话, 探索页那一行与这里取的是同一批页
+                val pool = catalogSampledByTags(searchTags, sampling.random(SALT_SEED_FILL + subjectId), SEED_FILL_PAGES - 1) ?: break
+                for (candidate in sampling.ranked(pool.filter(::usable), sampling::rankGroupWeight)) {
+                    if (picked.size >= limit) break
+                    val series = seriesKeyOf(candidate.info.nameCn)
+                    if (series.isNotEmpty() && !takenSeries.add(series)) continue
+                    picked.putIfAbsent(candidate.info.bangumiId, candidate.info)
+                }
+            }
+            logger.info { "bgm-direct: recommendations 和《$name》相似 ${picked.size}/$limit 部 (标签 ${interest.take(SEED_SIMILAR_TAGS)})" }
+            picked.values.toList()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.warn(e) { "bgm-direct: recommendations 和《$name》相似的作品取不出来" }
+            emptyList()
+        }
+    }
+
     /** 拍平成一条流的推荐, 给还没按组画的界面用 (手机端竖排网格). */
     fun recommendedSubjectsPager(): Flow<PagingData<RecommendedItemInfo>> =
         Pager(
@@ -953,7 +1005,7 @@ class RecommendationRepository(
 
     /**
      * 上一次取全的收藏, 见 [fetchAllCollections]. 只在 [refreshOnce] 里读写, 而那里有 [refreshMutex]
-     * 串着 (解锁/加锁之间有 happens-before), 不用另加同步.
+     * 串着 (解锁/加锁之间有 happens-before), 不用另加同步. [similarTo] 在别的协程里只读: 读到旧的一份或还没有, 只是退回读盘.
      */
     private var lastCollections: CollectionsSnapshot? = null
 
@@ -1964,8 +2016,11 @@ class RecommendationRepository(
      * 的东西离《X》有多近); ②比两个种子的风格像不像 —— 拿所有高票标签比会被工作室、年份冲淡,
      * 明明会搜出同一批东西的两个种子反而判成不像 (2026-09-07 两个死神同时出现).
      */
-    private fun seedInterestTags(subjectId: Int, collections: List<SubjectCollectionEntity>): List<String> {
-        val tags = collections.firstOrNull { it.subjectId == subjectId }?.tags.orEmpty()
+    private fun seedInterestTags(subjectId: Int, collections: List<SubjectCollectionEntity>): List<String> =
+        interestTagsByVotes(collections.firstOrNull { it.subjectId == subjectId }?.tags.orEmpty())
+
+    /** 一部作品的高票**兴趣**标签, 票数从高到低 (种子行与 [similarTo] 拿前几个 AND 搜). */
+    private fun interestTagsByVotes(tags: List<Tag>): List<String> {
         val confident = confidentTagsOf(tags)
         return tags.asSequence()
             .filter { it.name in confident && isInterestTag(it.name) }
@@ -2136,6 +2191,20 @@ class RecommendationRepository(
         }.forEach { (page, items) -> if (items != null) pages[page] = items }
         if (cache != null && fresh.isNotEmpty()) poolsDirty.value = true
         return pages.keys.sorted().flatMap { pages.getValue(it) }
+    }
+
+    /**
+     * 同 [searchSampledByTags] 的头一页 + 随机 [randomPages] 页, 只问推荐目录, 不发请求: 目录用不了或这一问答不了时为 `null`.
+     */
+    private suspend fun catalogSampledByTags(tags: List<String>, random: Random, randomPages: Int): List<Candidate>? {
+        val catalog = usableCatalog() ?: return null
+        val filters = rankedFilters(tags, ratings = null)
+        val today = todayText()
+        fun page(index: Int) = catalog.search("", filters, SearchSort.RANK, index * SEARCH_PAGE_SIZE, SEARCH_PAGE_SIZE, today)
+        val first = page(0) ?: return null
+        val restPages = (first.total - 1) / SEARCH_PAGE_SIZE
+        val rest = (1..restPages).shuffled(random).take(randomPages).sorted().mapNotNull(::page)
+        return (listOf(first) + rest).flatMap { it.items.map { item -> item.toCandidate() } }
     }
 
     /** 按排名取的那几路的搜索条件: 有排名、[MIN_RATING_COUNT] 人以上评分, 带 [tags] (多个是「且」, 空 = 不限), 在分数线 [ratings] 以上 (null = 不限). */

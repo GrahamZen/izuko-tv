@@ -125,7 +125,7 @@ fun KoinApplication.useCaseModules() = module {
     single<GetEpisodeTypeFiltersUseCase> { GetEpisodeTypeFiltersUseCaseImpl(get()) }
     single<GetMediaSelectorSettingsUseCase> { GetMediaSelectorSettingsUseCaseImpl(get()) }
     single<GetMediaSourceInstancesUseCase> { GetMediaSourceInstancesUseCaseImpl(get()) }
-    single<GetSubjectRecommendationUseCase> { GetSubjectRecommendationUseCaseImpl(get()) }
+    single<GetSubjectRecommendationUseCase> { GetSubjectRecommendationUseCaseImpl(get(), get()) }
     single<GetMediaCacheUseCase> { GetMediaCacheUseCaseImpl(get()) }
     single<DeleteCacheUseCase> { DeleteCacheUseCaseImpl(get(), get()) }
     single<AddDownloadUseCase> {
