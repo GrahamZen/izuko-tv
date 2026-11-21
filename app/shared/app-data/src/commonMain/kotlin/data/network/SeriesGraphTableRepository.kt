@@ -10,17 +10,9 @@
 package me.him188.ani.app.data.network
 
 import androidx.datastore.core.DataStore
-import io.ktor.client.plugins.expectSuccess
-import io.ktor.client.request.get
-import io.ktor.client.request.header
-import io.ktor.client.statement.readRawBytes
-import io.ktor.http.HttpHeaders
-import io.ktor.http.HttpStatusCode
-import io.ktor.http.isSuccess
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -28,6 +20,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.Serializable
 import me.him188.ani.app.domain.foundation.GitHubFileSources
+import me.him188.ani.app.domain.foundation.RemoteFetch
+import me.him188.ani.app.domain.foundation.RemoteRefresh
 import me.him188.ani.app.domain.mediasource.search.AnimeNames
 import me.him188.ani.datasources.api.PackedDate
 import me.him188.ani.utils.coroutines.IO_
@@ -43,7 +37,6 @@ import me.him188.ani.utils.ktor.ScopedHttpClient
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.platform.currentTimeMillis
-import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.seconds
 
@@ -72,8 +65,19 @@ class SeriesGraphTableRepository(
     private val table = MutableStateFlow<SeriesGraphTable?>(null)
     private val localLoaded = CompletableDeferred<Unit>()
 
-    /** 第一轮检查 (下载或确认不用下载) 结束. 本地还没有表时 [current] 等它一小会儿. */
-    private val firstCheckDone = CompletableDeferred<Unit>()
+    /** 什么时候问一次 (多数时候是 304); 本地没有表就不管上次什么时候问过, 下整份. */
+    private val refresh = RemoteRefresh(
+        name = "series graph table",
+        scope = scope,
+        staleAfter = REFRESH_INTERVAL,
+        checkEvery = CHECK_INTERVAL,
+        refreshOnNetworkCheck = false,
+        lastFetchedAt = {
+            localLoaded.await()
+            cache.data.first().checkedAt.takeIf { table.value != null }
+        },
+        fetch = ::fetch,
+    )
 
     init {
         scope.launch {
@@ -82,15 +86,9 @@ class SeriesGraphTableRepository(
             localLoaded.complete(Unit)
             if (loaded != null) {
                 logger.info { "series graph table loaded: ${loaded.size} entries (${loaded.dump})" }
-                firstCheckDone.complete(Unit)
                 AnimeNames.prewarm(loaded)
             }
             withContext(Dispatchers.IO_) { obsoleteFiles.forEach { it.delete() } }
-            while (true) {
-                refreshIfStale()
-                firstCheckDone.complete(Unit)
-                delay(CHECK_INTERVAL)
-            }
         }
     }
 
@@ -99,8 +97,8 @@ class SeriesGraphTableRepository(
      */
     suspend fun current(): SeriesGraphTable? {
         localLoaded.await()
-        if (table.value == null && !firstCheckDone.isCompleted) {
-            withTimeoutOrNull(FIRST_DOWNLOAD_WAIT) { firstCheckDone.await() }
+        if (table.value == null) {
+            withTimeoutOrNull(FIRST_DOWNLOAD_WAIT) { refresh.awaitFirstCheck() }
         }
         return table.value
     }
@@ -119,77 +117,37 @@ class SeriesGraphTableRepository(
         temp.moveTo(tableFile)
     }
 
-    private suspend fun refreshIfStale() {
+    /** 问一次; 没变或换上了新的返回 true. */
+    private suspend fun fetch(): Boolean {
         val cached = cache.data.first()
         val current = table.value
-        if (current != null && currentTimeMillis() - cached.checkedAt < REFRESH_INTERVAL.inWholeMilliseconds) {
-            return
-        }
-        val failures = mutableListOf<String>()
-        for (url in TABLE_URLS) {
-            val fetched = try {
-                client().use {
-                    val response = get(url) {
-                        expectSuccess = false
-                        // ETag 各个 CDN 各算各的, 只对上次成功的那个入口带; 本地没有表时要整份, 不带
-                        if (current != null && cached.etag != null && cached.source == url) {
-                            header(HttpHeaders.IfNoneMatch, cached.etag)
-                        }
-                    }
-                    when {
-                        response.status == HttpStatusCode.NotModified -> Fetched.NotModified
-                        response.status.isSuccess() -> Fetched.Body(response.readRawBytes(), response.headers[HttpHeaders.ETag])
-                        else -> Fetched.Failed(response.status.toString())
-                    }
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Fetched.Failed(e::class.simpleName.orEmpty())
-            }
-            val (bytes, etag) = when (fetched) {
-                is Fetched.Failed -> {
-                    failures += "$url: ${fetched.reason}"
-                    continue
-                }
-
-                Fetched.NotModified -> {
-                    cache.updateData { it.copy(checkedAt = currentTimeMillis()) }
-                    return
-                }
-
-                is Fetched.Body -> fetched.bytes to fetched.etag
-            }
+        val fetched = RemoteFetch.firstChanged(
+            "series graph table",
+            TABLE_URLS,
+            client,
+            // 本地没有表时要整份, 不带 ETag
+            previous = RemoteFetch.Revision(cached.source, cached.etag).takeIf { current != null },
+        ) { _, bytes ->
             // 远程内容, 认不出格式就不用 (例如 CDN 回了一张错误页)
-            val parsed = SeriesGraphTable.parse(bytes)
-            if (parsed == null || parsed.size == 0) {
-                failures += "$url: not a table file"
-                continue
-            }
+            val parsed = SeriesGraphTable.parse(bytes)?.takeIf { it.size > 0 } ?: RemoteFetch.reject("not a table file")
             // CDN 的边缘缓存可能还是更早的一版 (见 GitHubFileSources): 覆盖到的条目比本机这份还少就换下一个入口
-            if (current != null && parsed.maxId < current.maxId) {
-                failures += "$url: stale (max_id ${parsed.maxId} < ${current.maxId})"
-                continue
-            }
+            if (current != null && parsed.maxId < current.maxId) RemoteFetch.reject("stale (max_id ${parsed.maxId} < ${current.maxId})")
             // 全部动画的表取不到、退到只有系列关系的那张时, 不拿它换掉本机已有的全部动画的表
-            if (current != null && current.allAnime && !parsed.allAnime) {
-                failures += "$url: series graph only"
-                continue
+            if (current != null && current.allAnime && !parsed.allAnime) RemoteFetch.reject("series graph only")
+            bytes to parsed
+        } ?: return false
+        when (fetched) {
+            is RemoteFetch.Conditional.NotModified -> cache.updateData { it.copy(checkedAt = currentTimeMillis()) }
+            is RemoteFetch.Conditional.Changed -> {
+                val (bytes, parsed) = fetched.value
+                writeTableFile(bytes)
+                cache.updateData { SeriesGraphTableCache(etag = fetched.etag, source = fetched.source, checkedAt = currentTimeMillis()) }
+                table.value = parsed
+                logger.info { "series graph table updated from ${fetched.source}: ${parsed.size} entries (${parsed.dump})" }
+                AnimeNames.prewarm(parsed)
             }
-            writeTableFile(bytes)
-            cache.updateData { SeriesGraphTableCache(etag = etag, source = url, checkedAt = currentTimeMillis()) }
-            table.value = parsed
-            logger.info { "series graph table updated from $url: ${parsed.size} entries (${parsed.dump})" }
-            AnimeNames.prewarm(parsed)
-            return
         }
-        logger.info { "series graph table: no usable source (${failures.joinToString()}), keeping ${table.value?.size ?: 0} entries" }
-    }
-
-    private sealed interface Fetched {
-        data object NotModified : Fetched
-        class Body(val bytes: ByteArray, val etag: String?) : Fetched
-        class Failed(val reason: String) : Fetched
+        return true
     }
 
     private companion object {

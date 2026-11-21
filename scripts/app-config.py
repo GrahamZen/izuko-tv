@@ -21,9 +21,9 @@ import os
 import subprocess
 import sys
 
+from lists_branch import commit_files, git
 from sealed_text import PURPOSE_APP_CONFIG, ROOT, b64e, open_token as open_sealed, read_props, seal as seal_text, write_prop
 
-BRANCH = "lists"
 FILE = "app-config.txt"
 REPO = "GrahamZen/izuko-tv"
 SECRET = "APP_CONFIG_KEY"
@@ -40,29 +40,9 @@ def open_token(token: str, key: str):
     return None if plain is None else dict(line.split("=", 1) for line in plain.splitlines() if "=" in line)
 
 
-def git(*args, input: bytes = None) -> str:
-    r = subprocess.run(["git", *args], cwd=ROOT, input=input, capture_output=True)
-    if r.returncode != 0:
-        raise SystemExit(f"git {' '.join(args)} 失败: {r.stderr.decode(errors='replace').strip()}")
-    return r.stdout.decode().strip()
-
-
-def ref_exists(ref: str) -> bool:
-    return subprocess.run(["git", "rev-parse", "--verify", "-q", ref], cwd=ROOT, capture_output=True).returncode == 0
-
-
 def commit_to_branch(token: str, message: str) -> str:
-    """把 app-config.txt 写进本地 lists 分支 (没有就建一条只放清单的孤立分支), 不碰工作区."""
-    blob = git("hash-object", "-w", "--stdin", input=(token + "\n").encode())
-    parent = git("rev-parse", f"refs/heads/{BRANCH}") if ref_exists(f"refs/heads/{BRANCH}") else None
-    entries = [l for l in (git("ls-tree", parent).splitlines() if parent else []) if not l.endswith(f"\t{FILE}")]
-    entries.append(f"100644 blob {blob}\t{FILE}")
-    tree = git("mktree", input=("\n".join(entries) + "\n").encode())
-    if parent and git("rev-parse", f"{parent}^{{tree}}") == tree:
-        return parent
-    commit = git("commit-tree", tree, *(["-p", parent] if parent else []), input=message.encode())
-    git("update-ref", f"refs/heads/{BRANCH}", commit, *([parent] if parent else []))
-    return commit
+    """把 app-config.txt 写进本地 lists 分支 (scripts/lists_branch.py), 不碰工作区."""
+    return commit_files({FILE: (token + "\n").encode()}, message)
 
 
 def mask(value: str) -> str:

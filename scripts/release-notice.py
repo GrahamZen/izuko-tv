@@ -22,7 +22,8 @@ release 正文里的「## 通知」(不加 --sealed) 只给更早的旧版 (1.0.
 不写 --tag = 最新的正式版 (releases/latest); 预发布版要写 --tag.
 
 加密通知 (--sealed): 只给装了应用的人看, 放在 release `notices` 的附件 notices.txt (密文,
-  钥匙同加密的应用配置: local.properties 的 ani.config.key, 见 scripts/sealed_text.py); 改了当场生效 (下一次冷启动取到).
+  钥匙同加密的应用配置: local.properties 的 ani.config.key, 见 scripts/sealed_text.py). 改了不用发版, 应用这样取到:
+  离上次取超过 1 小时就取 (开着时每 10 分钟看一眼, 回到前台、冷启动时也看), 网络体检也取 (上传后 GitHub 的下载地址要几十秒才指向新附件).
   每条带「给哪些版本」(--for): `*` 所有版本 (默认) / `1.0.9` 只给这一版 / `1.0.9*` 给 1.0.9 和它的各个测试版.
   新版本的通知中心、本版新功能页、设置里那一页都只读它; 更早的版本只看正文. 要 cryptography:
   uv run --no-project --with cryptography python scripts/release-notice.py show --sealed
@@ -217,7 +218,7 @@ def sealed_main(args):
         gh("release", "upload", SEALED_TAG, path, "--repo", repo, "--clobber")
     if sealed_load(repo, key, st)[1] != new_entries:
         die("取回来的和要写的不一样, 去 GitHub 上看一眼 release notices")
-    print(f"已更新: 给 {target} 的 {len(wanted)} 条; 带加密通知的版本下次冷启动取到, 每台按内容只弹一次")
+    print(f"已更新: 给 {target} 的 {len(wanted)} 条; 带加密通知的版本一小时左右取到, 每台按内容只弹一次")
 
 
 def main():
