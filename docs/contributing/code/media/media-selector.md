@@ -227,6 +227,11 @@ WEB 的条目名检查还额外要求条目名去掉季号后与资源的条目�
 `SubjectSeriesInfo.sortsSpanSeries` 判断本条目正片第一集的 `sort` 是否接在系列主线上前面各条目的正片之后（集数取系列关系图），
 判为否时不以系列内序号认领。播放页的选源上下文 (`PlaybackSeriesInfo`) 与 `SubjectRelationsRepository.subjectSeriesInfoFlow` 都带上这一项。
 
+接在本篇后面编号的 OVA、特别篇（`SubjectSeriesInfo.hostWork`，见[数据源搜索](media-search.md#认集)）放在本篇的页上时，
+资源的条目名是本篇的名字。WEB 资源的条目名是本篇的某个名字、且按本条目的 `sort`（与 `ep` 不同）认领了这一集时（`claimsAsHostWorkEpisode`），
+数据源已经只留下本条目的集，上面两类排除与条目名检查都不适用；匹配程度照常按名字算，是模糊匹配，站点给本条目单独开的页优先。
+本篇页上只按 `ep` 对上的（本篇自己的第 1 集）不收。
+
 **字幕类型**：资源的字幕类型（`Media.properties.subtitleKind`）在当前平台被设为隐藏（`MediaSelectorSubtitlePreferences.forPlatform`）时，
 以 `MediaExclusionReason.UnsupportedByPlatformPlayer` 排除。标题写着「外挂」的资源（`SubtitleKind.EXTERNAL_DISCOVER`，
 字幕是视频旁边的单独文件）在安卓与桌面上隐藏，但应用自己找得到字幕的不藏（`SidecarSubtitleSources`）：

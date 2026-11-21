@@ -10,6 +10,7 @@
 package me.him188.ani.app.data.models.subject
 
 import me.him188.ani.app.domain.mediasource.MediaListFilters
+import me.him188.ani.datasources.api.source.MediaFetchHostWork
 
 data class SubjectSeriesInfo(
 //    val subjectId: Int,
@@ -44,6 +45,8 @@ data class SubjectSeriesInfo(
     val sortsSpanSeries: Boolean? = null,
     /** 系列关系推出的本条目的「系列名 第N季」, 算作条目的别名 (见 `withSeasonNames`); 推不出时为空. */
     val seasonAliases: List<String> = emptyList(),
+    /** 本条目接在后面编号的本篇 (见 `findHostWork`); 不是这种 OVA、特别篇时为 `null`. */
+    val hostWork: MediaFetchHostWork? = null,
 ) {
     companion object {
         fun compute(
