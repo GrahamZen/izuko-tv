@@ -9,6 +9,8 @@
 
 package me.him188.ani.app.domain.episode
 
+import me.him188.ani.app.data.models.subject.SubjectInfo
+import me.him188.ani.app.data.network.RecommendationRepository
 import me.him188.ani.app.data.network.SubjectService
 import me.him188.ani.app.data.models.subject.preferredDisplayName as subjectPreferredDisplayName
 import me.him188.ani.app.domain.usecase.UseCase
@@ -39,12 +41,19 @@ fun SubjectRecommendation.preferredDisplayName(useOriginalTitle: Boolean): Strin
     }
 
 fun interface GetSubjectRecommendationUseCase : UseCase {
-    suspend operator fun invoke(subjectId: Int): List<SubjectRecommendation>
+    suspend operator fun invoke(subject: SubjectInfo): List<SubjectRecommendation>
 }
 
-class GetSubjectRecommendationUseCaseImpl(private val service: SubjectService) : GetSubjectRecommendationUseCase {
-    override suspend fun invoke(subjectId: Int): List<SubjectRecommendation> {
-        return service.getSubjectRecommendations(subjectId, 15).map {
+/**
+ * Bangumi 的「看过这部的人也看过」在前; 不到 [RELATED_TARGET] 部时拿推荐系统里「和《X》相似的作品」补齐 ([RecommendationRepository.similarTo]).
+ * Bangumi 这份数据停在 2023 年上半年, 之后开播的条目一部都没有, 老番去掉非动画后也常不到 10 部.
+ */
+class GetSubjectRecommendationUseCaseImpl(
+    private val service: SubjectService,
+    private val recommendationRepository: RecommendationRepository,
+) : GetSubjectRecommendationUseCase {
+    override suspend fun invoke(subject: SubjectInfo): List<SubjectRecommendation> {
+        val related = service.getSubjectRecommendations(subject.subjectId, 15).map {
             SubjectRecommendation(
                 subjectId = it.subjectId.toLong(),
                 name = it.name,
@@ -56,5 +65,27 @@ class GetSubjectRecommendationUseCaseImpl(private val service: SubjectService) :
                 uri = null,
             )
         }
+        if (related.size >= RELATED_TARGET) return related
+        val similar = recommendationRepository.similarTo(
+            subject.subjectId,
+            subject.nameCn.ifEmpty { subject.name },
+            subject.tags,
+            exclude = related.mapNotNullTo(HashSet()) { it.subjectId?.toInt() },
+            limit = RELATED_TARGET - related.size,
+        )
+        return related + similar.map {
+            SubjectRecommendation(
+                subjectId = it.bangumiId.toLong(),
+                name = it.name,
+                nameCn = it.nameCn,
+                desc1 = "",
+                desc2 = "",
+                imageUrl = it.imageLarge,
+                uri = null,
+            )
+        }
     }
 }
+
+/** 相关推荐凑到几部: Bangumi 的 `/recs` 一次最多给 10 部. */
+private const val RELATED_TARGET = 10
