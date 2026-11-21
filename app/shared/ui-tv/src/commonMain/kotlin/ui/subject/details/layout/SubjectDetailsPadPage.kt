@@ -9,7 +9,6 @@
 
 package me.him188.ani.app.ui.subject.details.layout
 
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -99,6 +98,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.paging.compose.collectAsLazyPagingItemsWithLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import me.him188.ani.app.data.models.preference.TvBackdropBlurLevel
 import me.him188.ani.app.data.models.subject.SubjectCollectionStats
 import me.him188.ani.app.data.models.subject.SubjectInfo
 import me.him188.ani.app.data.models.subject.Tag
@@ -117,7 +117,7 @@ import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.theme.glassContainerColor
 import me.him188.ani.app.ui.foundation.tv.SyncTvTmdbSubjectText
-import me.him188.ani.app.ui.foundation.tv.nativeview.TV_WALL_BACKDROP_CROSSFADE_MILLIS
+import me.him188.ani.app.ui.foundation.tv.nativeview.tvBackdropBlurSpec
 import me.him188.ani.app.ui.foundation.tv.tvTitle
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.showLoadError
@@ -154,6 +154,7 @@ import me.him188.ani.app.ui.subject.details.state.rememberTmdbSubjectProgressSta
 import me.him188.ani.app.ui.subject.episode.list.EpisodeListItem
 import me.him188.ani.app.ui.subject.episode.list.arrangeSpecials
 import me.him188.ani.app.ui.subject.episode.list.gridSpecialEpisodes
+import me.him188.ani.app.ui.subject.episode.tv.tablet.TabletEpisodeStills
 import me.him188.ani.app.ui.subject.rememberSubjectStatusStrings
 import me.him188.ani.app.ui.subject.renderSubjectSeason
 import me.him188.ani.app.ui.user.SelfInfoUiState
@@ -220,6 +221,8 @@ fun SubjectDetailsPadPage(
     val relatedState = tvPadPagedState(related.itemCount, related.loadState.refresh)
 
     val stills by state.tmdbEpisodeStillsFlow.collectAsStateWithLifecycle(emptyMap())
+    // 点进播放页时视频框先放的剧照从这份表里取 (见 TabletEpisodeStill)
+    LaunchedEffect(state.subjectId, stills) { TabletEpisodeStills.put(state.subjectId, stills) }
     val playProgress by state.playProgressFlow.collectAsStateWithLifecycle(emptyMap())
     val runtimes by state.tmdbEpisodeRuntimesFlow.collectAsStateWithLifecycle(emptyMap())
     val overviews by state.tmdbEpisodeOverviewsFlow.collectAsStateWithLifecycle(emptyMap())
@@ -394,7 +397,7 @@ private fun TvPadDetailsScaffold(
         LocalContentColor provides contentColorFor(pageColor),
     ) {
         Box(modifier.fillMaxSize().background(pageColor)) {
-            backdropUrl?.let { TvPadDetailsBackdrop(it) }
+            backdropUrl?.let { TvPadDetailsBackdrop(it, companion = tvPadPlayerBackdropBlur()) }
             val navigator = LocalNavigator.current
             val topInset = windowInsets.only(WindowInsetsSides.Top).asPaddingValues().calculateTopPadding()
             // 页面自己的落点: 内容区整块, 什么都不画. 进页送到这里; 焦点兜底 (页面没焦点时往页面里送, 落点是最左的侧边栏) 进侧边栏也改送到这里 ——
@@ -418,16 +421,27 @@ private fun TvPadDetailsScaffold(
 }
 
 /**
- * 整页的模糊底 ([TvDetailsBlurredBackdrop], 同遥控器版翻离首屏那一层). 解好就淡进来.
+ * 整页的模糊底 ([TvDetailsBlurredBackdrop], 同遥控器版翻离首屏那一层), 糊到 [level] 这一档 (默认详情页那一档). 解好就淡进来;
+ * 与上一页铺的是同一张图时接得上: 同一档第一帧就满, 另一档从那一档渐变过来 (见 TvTouchBlurredBackdrop).
+ * [companion]: 接不上时先铺的那一档, 同时提前备好 (详情页给播放页那一档: 它就是海报墙 hero 铺的那一档, 从 hero 点进来时底接得上,
+ * 再点进播放页时也已经在手). 平板播放页分栏时也铺这一层, 糊得更重 (见 TabletPlayerFrame).
  */
 @Composable
-private fun TvPadDetailsBackdrop(url: String) {
-    val shown = remember(url) { Animatable(0f) }
-    var loaded by remember(url) { mutableStateOf(false) }
-    LaunchedEffect(shown, loaded) {
-        if (loaded) shown.animateTo(1f, tween(TV_WALL_BACKDROP_CROSSFADE_MILLIS))
-    }
-    TvDetailsBlurredBackdrop(url, alpha = { shown.value }, load = true, onLoaded = { loaded = true })
+internal fun TvPadDetailsBackdrop(
+    url: String,
+    level: TvBackdropBlurLevel = LocalThemeSettings.current.tvDetailsBackdropBlur,
+    companion: TvBackdropBlurLevel? = null,
+) {
+    TvTouchBlurredBackdrop(url, tvBackdropBlurSpec(level), companion?.let { tvBackdropBlurSpec(it) })
+}
+
+/**
+ * 平板播放页分栏时的模糊底糊到哪一档: 同海报墙 (默认重, 只剩颜色; 播放页信息多, 底要安静。hero 态铺过的那张参数相同, 直接复用);
+ * 海报墙选了不铺时同详情页那一档。压暗的算法与详情页相同。
+ */
+@Composable
+internal fun tvPadPlayerBackdropBlur(): TvBackdropBlurLevel = LocalThemeSettings.current.let {
+    if (it.tvWallBackdropBlur != TvBackdropBlurLevel.None) it.tvWallBackdropBlur else it.tvDetailsBackdropBlur
 }
 
 /**

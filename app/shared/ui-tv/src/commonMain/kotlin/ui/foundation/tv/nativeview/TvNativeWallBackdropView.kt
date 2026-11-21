@@ -157,6 +157,9 @@ class TvNativeWallBackdropView(
     var coverWidthPx: Int = 0
     var coverHeightPx: Int = 0
 
+    /** 模糊层解好一张就交出来 (地址、这一档、模糊小图); 平板模式拿去给详情页、播放页接着铺 (见 tvRememberTouchBlurredBackdrop). */
+    internal var onBlurLoaded: ((url: String, spec: TvBackdropBlurSpec, bitmap: Bitmap) -> Unit)? = null
+
     /** 模糊层换图交叉淡入; false (流畅档) = 解好当场换. */
     var crossfade: Boolean = true
 
@@ -467,6 +470,7 @@ class TvNativeWallBackdropView(
             }
             // 先压好再露面 (淡入从透明度 0 起, 没压过的图不会闪一下); 清晰层起步压的那份跟着这张走
             measure(bitmap)
+            onBlurLoaded?.invoke(target.url, spec, bitmap)
             applyMask()
             sharpMaskAlpha = -1
             applySharpMask()

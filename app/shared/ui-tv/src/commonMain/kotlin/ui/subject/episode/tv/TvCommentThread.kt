@@ -151,6 +151,8 @@ internal fun TvCommentThreadContent(
     onNavigate: ((delta: Int) -> Unit)?,
     modifier: Modifier = Modifier,
     topPadding: Dp = TV_THREAD_TOP_PADDING,
+    /** 打开时把焦点送进来 (遥控器要); 平板模式的回复面板传 false: 触屏上不该冒出焦点框. */
+    requestFocusOnOpen: Boolean = true,
 ) {
     val focus = rememberTvFocusScope()
     val focusManager = LocalFocusManager.current
@@ -163,6 +165,10 @@ internal fun TvCommentThreadContent(
     }
     // 打开 / 左右翻到别的楼: 焦点落在主楼 (回到顶上), 点的是回复就落在那条回复上
     LaunchedEffect(openKey) {
+        if (!requestFocusOnOpen) {
+            scrollState.scrollTo(0)
+            return@LaunchedEffect
+        }
         if (focusReply in replies.indices) {
             focus.request(TvThreadFocus.Reply(focusReply))
         } else {

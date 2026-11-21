@@ -1306,7 +1306,7 @@ internal val TV_ICON_SIZE_VISUAL_COMPENSATED = 18.dp
  * 拖拽预览态 (根路由的 scrubStep) 下圆点脱离播放位置, 上方浮出预览画面 + 目标时间 (见 [TvProgressTrack]).
  */
 @Composable
-private fun TvPlayerProgressRow(
+internal fun TvPlayerProgressRow(
     vm: EpisodeViewModel,
     progressSliderState: PlayerProgressSliderState,
     framePreview: MediaProgressFramePreviewState?,
