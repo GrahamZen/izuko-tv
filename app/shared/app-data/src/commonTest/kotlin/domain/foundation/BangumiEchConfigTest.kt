@@ -203,4 +203,10 @@ class BangumiEchConfigTest {
         assertNull(BangumiEchAddressList.normalizeAddress("1.2.3"))
         assertNull(BangumiEchAddressList.normalizeAddress(""))
     }
+
+    @Test
+    fun `bundled addresses all pass the address check and are unique`() {
+        assertTrue(BangumiEchAddressList.BUNDLED.all { BangumiEchAddressList.normalizeAddress(it) == it })
+        assertEquals(BangumiEchAddressList.BUNDLED.size, BangumiEchAddressList.BUNDLED.toSet().size)
+    }
 }
