@@ -246,7 +246,7 @@ fun viewAllGalleryCircleSize(cellWidth: Dp, compact: Boolean): Dp =
     if (compact) cellWidth * VIEW_ALL_GALLERY_COMPACT_CIRCLE_FRACTION else cellWidth
 
 /**
- * 触屏 (平板模式) 上人物画廊照稿缩小圆: 直径是相邻两格间距 (格宽 + 格间距) 的这么多 (稿里一排 6 个时圆 118、间距 212),
+ * 触屏 (平板 / iPad) 上人物画廊照稿缩小圆: 直径是相邻两格间距 (格宽 + 格间距) 的这么多 (稿里一排 6 个时圆 118、间距 212),
  * 名字与副标题仍按格宽排, 圆在格里居中. 遥控器上圆 = 格宽: 聚焦放大的那一圈要这么大才看得清. 两套实现共用 (见 [viewAllGalleryTouchCircle]).
  */
 const val VIEW_ALL_GALLERY_TOUCH_CIRCLE_TO_STEP = 118f / 212f

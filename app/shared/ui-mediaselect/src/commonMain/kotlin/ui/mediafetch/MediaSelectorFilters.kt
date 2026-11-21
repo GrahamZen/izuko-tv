@@ -124,7 +124,7 @@ fun MediaSelectorFilters(
  * @param label 选中时显示
  */
 @Composable
-private fun MediaSelectorFilterChip(
+internal fun MediaSelectorFilterChip(
     selected: String?,
     allValues: List<String>,
     onSelect: (String) -> Unit,

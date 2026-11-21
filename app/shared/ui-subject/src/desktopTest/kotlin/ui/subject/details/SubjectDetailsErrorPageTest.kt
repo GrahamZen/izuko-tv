@@ -41,7 +41,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * 电视界面 (immersiveShell) 的条目加载失败页: 遥控器上只有一句「按返回键」; 触屏 (平板模式) 没有返回键, 要有能点的返回与重试.
+ * 电视界面 (immersiveShell) 的条目加载失败页: 遥控器上只有一句「按返回键」; 触屏 (平板 / iPad) 没有返回键, 要有能点的返回与重试.
  */
 @OptIn(TestOnly::class, ExperimentalTestApi::class)
 class SubjectDetailsErrorPageTest {

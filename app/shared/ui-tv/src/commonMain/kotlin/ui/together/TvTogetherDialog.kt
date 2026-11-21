@@ -88,6 +88,7 @@ import me.him188.ani.app.ui.foundation.focus.tvWindowInitialFocus
 import me.him188.ani.app.ui.foundation.setClipEntryText
 import me.him188.ani.app.ui.foundation.tv.AniOutlinedTextField
 import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
+import me.him188.ani.app.ui.foundation.tv.tvWebConsoleAvailable
 import me.him188.ani.app.ui.foundation.widgets.AniCenteredPanelDialog
 import me.him188.ani.app.ui.foundation.widgets.AniFocusActionButton
 import me.him188.ani.app.ui.foundation.widgets.AniFocusChip
@@ -705,6 +706,7 @@ private fun Modifier.longPressCopyInvite(room: TogetherRoomId): Modifier {
  */
 @Composable
 private fun ConsoleQrCode(caption: String) {
+    if (!tvWebConsoleAvailable) return // 没有 Web 控制台的端 (iPad): 邀请只在设备上复制、粘贴
     val url by TvRemoteControl.url.collectAsState()
     LaunchedEffect(Unit) { TvRemoteControl.refreshAddress() }
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {

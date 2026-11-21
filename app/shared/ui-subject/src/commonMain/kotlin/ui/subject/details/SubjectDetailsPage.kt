@@ -760,7 +760,7 @@ private fun ErrorSubjectDetailsPage(
  *
  * 遥控器上不放重试按钮 —— 这里的失败要么重试也没用 ([LoadError.SubjectNotAccessible]), 要么退出去重新进来
  * 就是一次重试, 而多一个可聚焦元素就要多担一份"焦点框看不见 / 落点被抢"的风险。
- * 平板模式 ([AniUiBehavior.showBackNavigationButton]) 没有返回键: 左上角放调用方给的返回 / 主页按钮 ([navigationIcon]),
+ * 触屏 (平板 / iPad 跑电视界面, [AniUiBehavior.showBackNavigationButton]) 没有返回键: 左上角放调用方给的返回 / 主页按钮 ([navigationIcon]),
  * 说明下面放重试, 不提「按返回键」。
  */
 @Composable

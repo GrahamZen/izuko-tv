@@ -42,7 +42,7 @@ class DriveShareLinks(protocol: CloudDriveProtocol) {
             val passcode = match.groupValues.getOrNull(2)?.takeIf { it.isNotEmpty() }
                 ?: TEXT_PASSCODE.find(tail)?.groupValues?.get(1)
                 ?: ""
-            links.putIfAbsent(shareId, DriveShareLink(shareId, passcode))
+            links.getOrPut(shareId) { DriveShareLink(shareId, passcode) }
         }
         return links.values.toList()
     }

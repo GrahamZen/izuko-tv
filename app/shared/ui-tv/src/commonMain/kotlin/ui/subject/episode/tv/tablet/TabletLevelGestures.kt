@@ -30,7 +30,7 @@ import kotlin.math.roundToInt
  * 拖过一整个画面高 = 从最小到最大.
  * 调的时候画面上方居中出现指示 ([indicator], 上游播放器的 GestureIndicator), 松手半秒后消失.
  *
- * 亮度只改本窗口 (不改系统设置), 离开播放页还原成跟随系统 ([rememberTabletLevelGestures]).
+ * 离开播放页时还原亮度 ([rememberTabletLevelGestures]): 安卓只改了本窗口, 还原成跟随系统; iOS 改的是整块屏幕, 还原成第一次调之前的亮度.
  * 起手判方向、分左右由手势层 (TvEpisodeScreen 的 TvPlayerTouchLayer) 做, 这里只管从起手那一刻的值往上加减.
  */
 @Stable
@@ -47,6 +47,7 @@ internal class TabletLevelGestures(
     private var startLevel = 0f
     private var lastSet = Float.NaN
     private var brightnessChanged = false
+    private var brightnessBefore = Float.NaN
 
     /** 起手: [left] 为真调亮度, 否则调音量. 这台设备调不了那一样时返回 false (手势层放弃这次拖动). */
     fun start(left: Boolean): Boolean {
@@ -73,7 +74,10 @@ internal class TabletLevelGestures(
         controller.setLevel(level.coerceIn(range))
         val ratio = ((level - range.start) / span).coerceIn(0f, 1f)
         val isBrightness = targetIsBrightness
-        if (isBrightness) brightnessChanged = true
+        if (isBrightness && !brightnessChanged) {
+            brightnessChanged = true
+            brightnessBefore = startLevel
+        }
         scope.launch {
             if (isBrightness) indicator.showBrightnessRange(ratio) else indicator.showVolumeRange(ratio)
         }
@@ -83,15 +87,15 @@ internal class TabletLevelGestures(
         target = null
     }
 
-    /** 调过亮度就还原成跟随系统. */
+    /** 调过亮度就还原 (见 [tabletBrightnessRestoreLevel]). */
     fun restoreBrightness() {
         if (!brightnessChanged) return
         brightnessChanged = false
-        brightnessManager?.setBrightness(TABLET_BRIGHTNESS_FOLLOW_SYSTEM)
+        brightnessManager?.setBrightness(tabletBrightnessRestoreLevel(brightnessBefore))
     }
 }
 
-/** 平板模式播放页的亮度 / 音量拖动; 离开播放页 (这一段组合销毁) 时把亮度还原成跟随系统. */
+/** 平板模式播放页的亮度 / 音量拖动; 离开播放页 (这一段组合销毁) 时把亮度还原. */
 @Composable
 internal fun rememberTabletLevelGestures(): TabletLevelGestures {
     val context = LocalContext.current
@@ -110,8 +114,11 @@ internal fun rememberTabletLevelGestures(): TabletLevelGestures {
     return gestures
 }
 
-/** 窗口亮度「不覆盖, 跟随系统」(安卓 `WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE`; ui-tv 只编安卓). */
-private const val TABLET_BRIGHTNESS_FOLLOW_SYSTEM = -1f
+/**
+ * 离开播放页时把亮度设回多少, [before] = 第一次调之前的亮度. 安卓: 窗口亮度「不覆盖, 跟随系统」
+ * (`WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE`); iOS: 改的是整块屏幕, 设回 [before].
+ */
+internal expect fun tabletBrightnessRestoreLevel(before: Float): Float
 
 /** 控制器没给最小档时按百分之一调. */
 private const val TABLET_LEVEL_MIN_STEP = 0.01f

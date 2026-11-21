@@ -9,9 +9,32 @@
 
 package me.him188.ani.app.ui.notice
 
+import androidx.compose.runtime.Composable
 import me.him188.ani.app.ui.whatsnew.TvWhatsNew
 
 internal actual val tvPlatformNoticeKinds: List<TvNoticeKind>
     get() = listOf(TvPendingCollectionsNotice, TvReleaseNotice)
 
 internal actual fun tvPlatformLayerCovering(): Boolean = TvWhatsNew.launchContent.value != null
+
+@Composable
+internal actual fun TvNoticePlatformBody(
+    items: List<TvShownNotice>,
+    state: TvNoticeDialogState,
+    tabs: List<TvNoticeTab>,
+    onAction: (index: Int, item: TvNoticeColumnItem, action: TvNoticeAction) -> Unit,
+    onSeen: (key: String) -> Unit,
+    onSelectTab: (id: String, intoList: Boolean, focusKey: String?) -> Unit,
+    onDismiss: () -> Unit,
+    refreshUi: @Composable () -> TvNoticeRefreshUi,
+    onRefresh: () -> Unit,
+) {
+    TvNoticeNativeBody(items, state, tabs, onAction, onSeen, onSelectTab, refreshUi = refreshUi, onRefresh = onRefresh)
+}
+
+@Composable
+internal actual fun PrewarmTvNoticePlatform(canPrewarmNow: () -> Boolean) {
+    PrewarmTvNoticeView(canPrewarmNow)
+}
+
+internal actual val tvNoticeHasConsole: Boolean get() = true

@@ -18,7 +18,9 @@ import me.him188.ani.utils.platform.currentPlatform
  * 不是 Android 时取第一个.
  */
 fun pickTestPackageUrl(urls: List<String>): String? {
-    val android = currentPlatform() as? Platform.Android ?: return urls.firstOrNull()
+    val platform = currentPlatform()
+    if (platform == Platform.Ios) return null // 测试包是 APK, iPad 上装不了
+    val android = platform as? Platform.Android ?: return urls.firstOrNull()
     return pickTestPackageUrl(urls, android.supportedAbis, legacy = android.sdkInt?.let { it < NORMAL_APK_MIN_SDK } ?: false)
 }
 

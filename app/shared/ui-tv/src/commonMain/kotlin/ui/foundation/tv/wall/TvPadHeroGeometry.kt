@@ -15,8 +15,8 @@ import me.him188.ani.app.ui.foundation.tv.TvBackdropFade
 import me.him188.ani.app.ui.foundation.tv.TvBackdropTreatment
 
 /*
- * 平板版 hero (探索页的热门轮播与各海报墙的 hero 态) 的摆法, 平板模式的原生海报墙
- * (TvNativePadHero) 用: 一块铺到卡片区 (轮播区底边 / 聚焦行的组标题、行顶) 为止, 右上角一张清晰的横版图 (高度铺满这一块, 左缘与下缘
+ * 平板版 hero (探索页的热门轮播与各海报墙的 hero 态) 的摆法, iPad 的 Compose 海报墙 (TvPadHeroLayer) 与安卓平板模式的原生海报墙
+ * (TvNativePadHero) 共用: 一块铺到卡片区 (轮播区底边 / 聚焦行的组标题、行顶) 为止, 右上角一张清晰的横版图 (高度铺满这一块, 左缘与下缘
  * 羽化进底下的模糊底), 文字贴左下往上长.
  */
 

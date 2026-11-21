@@ -57,14 +57,14 @@ internal fun tvProgressCardLine(
     val last = mains.last()
     val premiere = resolveEpisodeAirTime(first.episodeInfo.airDate, info.recurrence)
     if (premiere != null && now < premiere.instant) {
-        return TvProgressCardLine(strings.premiere.format(premiere.dayAndClock(timeZone, dayLabel)), null)
+        return TvProgressCardLine(strings.premiere.fill(premiere.dayAndClock(timeZone, dayLabel)), null)
     }
     val watched = mains.indexOfLast {
         it.collectionType == UnifiedCollectionType.DONE || it.collectionType == UnifiedCollectionType.DROPPED
     }
     val next = mains.getOrNull(watched + 1)
-        ?: return TvProgressCardLine(strings.completed.format(last.episodeInfo.sort.compact()), null)
-    return TvProgressCardLine(strings.resume.format(next.episodeInfo.sort.compact(), last.episodeInfo.sort.compact()), null)
+        ?: return TvProgressCardLine(strings.completed.fill(last.episodeInfo.sort.compact()), null)
+    return TvProgressCardLine(strings.resume.fill(next.episodeInfo.sort.compact(), last.episodeInfo.sort.compact()), null)
 }
 
 /** 每分钟一次的当前时刻: 卡片上的「今天 / 明天」、某一集到点播出 (变成「有新集」) 跟着时间变. */
@@ -84,10 +84,10 @@ internal fun tvProgressPreviewLines(strings: TvProgressStrings, now: Instant, ti
     val today = now.toLocalDateTime(timeZone).date
     fun day(offset: Int) = WeekFormatter.System.format(today.plus(offset, DateTimeUnit.DAY))
     return listOf(
-        TvProgressCardLine(strings.updatesAt.format(day(1), "23:00"), 2),
-        TvProgressCardLine(strings.next.format("${day(3)} 23:30", "7"), null),
-        TvProgressCardLine(strings.resume.format("8", "24"), null),
-        TvProgressCardLine(strings.finaleDay.format(day(5)), 1),
+        TvProgressCardLine(strings.updatesAt.fill(day(1), "23:00"), 2),
+        TvProgressCardLine(strings.next.fill("${day(3)} 23:30", "7"), null),
+        TvProgressCardLine(strings.resume.fill("8", "24"), null),
+        TvProgressCardLine(strings.finaleDay.fill(day(5)), 1),
     )
 }
 

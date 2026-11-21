@@ -143,7 +143,8 @@ internal object TvFeedbackTab : TvNoticeTab {
     override fun rememberItems(): List<TvNoticeColumnItem>? {
         val records by remember { repository?.records ?: flowOf(emptyList()) }.collectAsState(null)
         val install by RemoteAppUpdate.status.collectAsState()
-        val newItem = newFeedbackItem()
+        // 触屏上最上面那行在应用里写 (见 TvFeedbackTabTouch), 电视上扫码去控制台写
+        val newItem = touchFeedbackWriteItem() ?: newFeedbackItem()
         return records?.let { list -> listOf(newItem) + feedbackOrder(list).map { feedbackItem(it, install) } }
     }
 
@@ -270,7 +271,10 @@ private fun feedbackItem(record: FeedbackRecord, install: AppInstallStatus): TvN
             )
         }
         if (record.kind == FeedbackKind.TICKET) {
-            add(TvNoticeAction(supplementLabel, TvNoticeDestination.Dialog { onDismiss -> TvFeedbackSupplementDialog(record, onDismiss) }))
+            add(
+                touchFeedbackSupplementAction(record)
+                    ?: TvNoticeAction(supplementLabel, TvNoticeDestination.Dialog { onDismiss -> TvFeedbackSupplementDialog(record, onDismiss) }),
+            )
         }
     }
     return TvNoticeColumnItem(

@@ -23,7 +23,7 @@ import me.him188.ani.app.ui.subject.details.state.SubjectDetailsState
 import me.him188.ani.app.ui.user.SelfInfoUiState
 
 /**
- * 平板模式 (触屏) 下电视界面的条目详情页: [SubjectDetailsPadPage]. 没有首屏大图, 也就没有放大进来 / 缩回去那两层
+ * 触屏 (平板装了电视包 / iPad) 上电视界面的条目详情页: [SubjectDetailsPadPage]. 没有首屏大图, 也就没有放大进来 / 缩回去那两层
  * (壳里关掉了, 见 TvHeroZoomHandoff.detailsHasHero). 播放器内嵌的介绍页 (videoBackground) 仍用遥控器版 [remote].
  * 底色与遥控器版同一套 ([TvDetailsTheme]).
  */

@@ -61,6 +61,7 @@ import me.him188.ani.app.data.models.subject.SubjectCollectionInfo
 import me.him188.ani.app.data.models.subject.preferredDisplayName
 import me.him188.ani.app.data.models.subject.subjectInfo
 import me.him188.ani.app.data.recommendation.RecommendationGroup
+import me.him188.ani.app.platform.DevSwitches
 import me.him188.ani.app.tools.WeekFormatter
 import me.him188.ani.app.ui.foundation.LocalSketch
 import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
@@ -163,6 +164,14 @@ internal actual fun TvExplorationNativeWall(
     modifier: Modifier,
     rowsRestart: TvRecRowsRestart?,
 ) {
+    // 调试开关: 换成 Compose 版 (iOS 上画的那一套) 对照
+    if (DevSwitches.tvComposeWalls.value) {
+        TvExplorationComposeWall(
+            state, metrics, cardWidth, items, carouselCount, carouselIndex, fadeColor, geometry, splitGate, listener,
+            cardFocusRequest, heroFocusRequest, farJumpRow, focusedRowKey, focusedCardIndex, menuFor, modifier, rowsRestart,
+        )
+        return
+    }
     val sketch = LocalSketch.current
     val scope = rememberCoroutineScope()
     val composeRoot = LocalView.current
@@ -176,7 +185,7 @@ internal actual fun TvExplorationNativeWall(
     val wallBlur = LocalThemeSettings.current.tvWallBackdropBlur
     val touchInput = LocalTvTouchInputEnabled.current
     val windowSize = LocalWindowInfo.current.containerSize
-    // 触屏上 (平板) 热门轮播与 hero 态用平板版画法 (见 TvPadHeroGeometry).
+    // 触屏上 (平板) 热门轮播与 hero 态用平板版画法 (同 iPad 的 Compose 海报墙, 见 TvPadHeroGeometry).
     // 平板版画法一直铺模糊底 (轮播区与 hero 态), 不看设置里关没关
     val padHero = touchInput
     val heroBlur = padHero || heroEnabled && wallBlur != TvBackdropBlurLevel.None
@@ -296,7 +305,7 @@ internal actual fun TvExplorationNativeWall(
                     wb.crossfade = visualEffects.transitions
                 }
                 view.update(style, metrics, textStyle, buttonStyle)
-                // 平板版画法的按钮只有字
+                // 平板版画法的按钮只有字 (同 iPad)
                 view.setButtons(watchNow, playIcon.takeUnless { padHero }, schedule, scheduleIcon.takeUnless { padHero })
                 view.setItems(items)
                 // 推荐换了一批 (见 TvExplorationPage): 新内容交给视图之后再让各行回到第一张, 淡入的是新的那批

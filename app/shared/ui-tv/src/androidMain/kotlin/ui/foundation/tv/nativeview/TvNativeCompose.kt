@@ -296,7 +296,7 @@ fun rememberTvNativeHeroTextStyle(
 }
 
 /**
- * 平板版画法的轮播按钮: 胶囊、只有字 (labelLarge 加粗), 主按钮正文色实底配底色字, 次按钮正文色淡底, 不描边;
+ * 平板版画法的轮播按钮 (同 iPad 的 TvPadCarouselButtons): 胶囊、只有字 (labelLarge 加粗), 主按钮正文色实底配底色字, 次按钮正文色淡底, 不描边;
  * 聚焦 (平板接着键盘 / 遥控器时) 同电视版.
  */
 @Composable

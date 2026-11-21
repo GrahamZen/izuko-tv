@@ -137,14 +137,20 @@ object AniThemeDefaults {
         @Composable get() = MaterialTheme.colorScheme.surfaceContainerLowest
 
     /**
-     * 沉浸式外壳的全屏背景色 (外壳统一背景与侧边栏展开面板底色共用, 两处必须一致):
-     * 深色主题用页面背景色 [pageContentBackgroundColor]; 浅色主题用 surface, 带主题色而非死白.
+     * 沉浸式外壳的全屏背景色 (外壳统一背景、侧边栏展开面板、启动页, 以及外壳里页面自己铺的不透明顶栏共用, 必须一致):
+     * 深色主题用页面背景色 [pageContentBackgroundColor]; 浅色主题用 [ShellBackgroundLight].
      */
     val shellBackgroundColor: Color
         @Composable get() {
             val surface = MaterialTheme.colorScheme.surface
-            return if (surface.luminance() < 0.5f) pageContentBackgroundColor else surface
+            return if (surface.luminance() < 0.5f) pageContentBackgroundColor else ShellBackgroundLight
         }
+
+    /**
+     * 浅色主题下沉浸式外壳的底色 (191, 196, 199), 海报墙页面同一档 (出处见 ui-tv 的 `TV_POSTER_WALL_BACKGROUND_LIGHT`).
+     * 不用 surface: 那是种子色调出来的, 浅色下偏紫.
+     */
+    val ShellBackgroundLight: Color = Color(0xFFBFC4C7)
 
     /**
      * 默认的 [TopAppBarColors], 期望用于 [pageContentBackgroundColor] 的容器之内.

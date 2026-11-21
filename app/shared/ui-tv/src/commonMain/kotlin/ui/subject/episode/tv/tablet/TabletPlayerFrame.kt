@@ -155,7 +155,7 @@ internal fun tabletPlayerGeometry(
 @Composable
 internal fun TabletPlayerFrame(
     state: TabletPlayerState,
-    /** 在系统小窗里: 只摆视频 (按全屏摆, 侧边不开). */
+    /** 应用窗口缩进了系统小窗 (安卓, 见 TabletPictureInPicture.occupiesWindow): 只摆视频 (按全屏摆, 侧边不开). */
     pictureInPicture: Boolean,
     pageTheme: ThemeSettings,
     /** 分栏时铺的模糊底用的图 (见 rememberTabletBackdropUrl); null = 还没有, 只铺页面底色. */

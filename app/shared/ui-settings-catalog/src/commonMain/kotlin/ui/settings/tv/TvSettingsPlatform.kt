@@ -22,6 +22,9 @@ interface TvSettingsPlatform {
     /** Web 控制台的地址; 没有控制台或没连局域网时为 null. */
     val consoleUrl: Flow<String?> get() = flowOf(null)
 
+    /** 这一端有 Web 控制台 (电视版). 没有的端 (iOS) 不列只能在控制台里做的项, 也不画控制台的二维码 (见 consoleQr). */
+    val hasConsole: Boolean get() = false
+
     /** 清掉「做过首次引导」的标记 (重启后重走引导); null = 没有首次引导. */
     val resetOnboarding: ((Context) -> Unit)? get() = null
 
@@ -43,6 +46,10 @@ interface TvSettingsPlatform {
     /** 有触摸屏时界面用平板模式还是电视模式 (见 [TvInterfaceModeSwitch]); null = 没有这个选择. */
     val interfaceMode: TvInterfaceModeSwitch? get() = null
 
+
+    /** debug 包的调试接口 (开发机经局域网连进来测这一端): 「调试」里列出它的地址, 点一下复制; null = 没有. */
+    val debugConsole: TvDebugConsoleEntry? get() = null
+
     /** 都不给: 没有这些功能的端. */
     object None : TvSettingsPlatform
 }
@@ -53,6 +60,14 @@ interface TvInterfaceModeSwitch {
 
     /** 写下新的模式 (同步写盘: 调用方紧接着重启). */
     fun setTvMode(context: Context, tvMode: Boolean)
+}
+
+/** 调试接口的地址与复制 (见 [TvSettingsPlatform.debugConsole]). */
+interface TvDebugConsoleEntry {
+    /** 没在监听或还没拿到本机地址时为 null. */
+    val url: Flow<String?>
+
+    fun copy(url: String)
 }
 
 /** 经 Worker 中转发起授权的结果 (见 [TvSettingsPlatform.startRelayLogin]). */

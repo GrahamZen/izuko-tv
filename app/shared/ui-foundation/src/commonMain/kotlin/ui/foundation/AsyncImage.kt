@@ -79,7 +79,6 @@ import me.him188.ani.utils.ktor.ScopedHttpClient
 import me.him188.ani.utils.platform.currentPlatform
 import me.him188.ani.utils.platform.isDesktop
 import me.him188.ani.utils.platform.isIos
-import okio.FileSystem
 import okio.Path
 import okio.Path.Companion.toPath
 import com.github.panpf.sketch.AsyncImage as SketchAsyncImage
@@ -620,7 +619,7 @@ internal fun createDefaultSketch(
         downloadCache {
             AniImageDiskCache(
                 context = context,
-                fileSystem = FileSystem.SYSTEM,
+                fileSystem = okioSystemFileSystem,
                 maxSize = IMAGE_DOWNLOAD_CACHE_SIZE,
                 directory = cacheDirectory.resolve("download"),
             )
