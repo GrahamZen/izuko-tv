@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.subject.episode.tv.source
 
+import kotlin.concurrent.Volatile
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember

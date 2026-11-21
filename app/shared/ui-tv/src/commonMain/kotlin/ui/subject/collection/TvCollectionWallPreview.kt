@@ -98,8 +98,8 @@ internal fun TvCollectionWallPreview(
     val source = focusedIndex.takeIf { it >= 0 }?.let {
         samples.heroSource(tvWallPreviewSubjectId(it), samples.titleAt(it), secondary, onSurface)
     }
-    val view = nativeState.view
-    SideEffect { if (source != null) view?.setSource(source) }
+    val surface = nativeState.surface
+    SideEffect { if (source != null) surface?.setSource(source) }
 
     // 整屏底色 (预览页根画, 见 TvPosterWallScalePage): 黑度由原生视图逐帧写进来, 同真页面
     val wallTone = LocalTvPosterWallTone.current

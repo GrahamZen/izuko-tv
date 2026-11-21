@@ -52,7 +52,6 @@ import me.him188.ani.app.navigation.LocalNavigator
 import me.him188.ani.app.ui.foundation.animation.AniAnimatedVisibility
 import me.him188.ani.app.ui.foundation.animation.LocalAniMotionScheme
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
-import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeEpisodeRow
 import me.him188.ani.app.ui.foundation.widgets.LocalToaster
 import me.him188.ani.app.ui.foundation.widgets.showLoadError
 import me.him188.ani.app.ui.lang.Lang
@@ -406,7 +405,7 @@ internal fun TvPlayerEpisodeStrip(
                 monochrome = true,
                 rowFocusModifier = rowFocusModifier,
                 // 卡片行换原生 View (同详情页选集轮播)
-                rowContent = { TvNativeEpisodeRow(it) },
+                rowContent = { TvPlayerEpisodeStripRow(it) },
             )
         }
     }

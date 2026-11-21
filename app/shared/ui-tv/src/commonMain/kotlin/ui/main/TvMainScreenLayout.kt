@@ -13,14 +13,13 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.graphicsLayer
-import me.him188.ani.app.ui.notice.TvNotices
-import me.him188.ani.app.ui.notice.rememberTvNoticesFresh
 import me.him188.ani.app.ui.foundation.NSFW_OBSCURED_COVER_LONG_EDGE_PX
 import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
 import me.him188.ani.app.ui.foundation.dialogs.DialogWindowDimAmount
 import me.him188.ani.app.ui.foundation.layout.LocalShellContentStartInset
 import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallTone
 import me.him188.ani.app.ui.foundation.tv.rememberTvPosterWallTone
+import me.him188.ani.app.ui.foundation.tv.tvNoFontPadding
 import me.him188.ani.app.ui.foundation.tv.tvPosterWallHeroBackground
 import me.him188.ani.app.ui.foundation.tv.tvTmdbSubjectTitleFilled
 import me.him188.ani.app.ui.foundation.tv.tvTouchFocusOnTap
@@ -82,7 +81,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.intl.Locale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -311,11 +309,14 @@ fun TvMainScreenLayout(
         }
         // 头像关联动作 (焦点在头像上时于其上方浮现): 只放常用的播放记录与通知. 登录 / 退出登录、编辑资料、切换用户都低频,
         // 在点头像进的设置账号页里
-        val noticesFresh = rememberTvNoticesFresh()
-        val avatarActions = listOf(
+        val noticesFresh = rememberTvPlatformNoticesFresh()
+        val noticesLabel = stringResource(Lang.notification_title)
+        val avatarActions = listOfNotNull(
             TvRailAvatarAction(Icons.Outlined.History, stringResource(Lang.playback_history_title)) { navigator.navigatePlaybackHistory() },
-            // 通知 (见 TvNotices): 紧挨头像 (从头像按一下上就到), 有新的时同头像一起带红点
-            TvRailAvatarAction(Icons.Outlined.Notifications, stringResource(Lang.notification_title), badge = noticesFresh) { TvNotices.open() },
+            // 通知 (这一端有才放, 见 TvPlatformNotices): 紧挨头像 (从头像按一下上就到), 有新的时同头像一起带红点
+            if (tvPlatformHasNotices) {
+                TvRailAvatarAction(Icons.Outlined.Notifications, noticesLabel, badge = noticesFresh) { openTvPlatformNotices() }
+            } else null,
         )
         TvNavigationSideRail(
             selfInfo = selfInfo,
@@ -386,7 +387,7 @@ private fun BoxScope.TvExitHintToast(state: MutableTransitionState<Boolean>, tex
                 // 而条高又决定 pill 的半径 —— 差 4dp 就会让圆角看起来"不太一样"
                 style = MaterialTheme.typography.bodyMedium.copy(
                     lineHeight = TV_EXIT_HINT_LINE_HEIGHT,
-                    platformStyle = PlatformTextStyle(includeFontPadding = false),
+                    platformStyle = tvNoFontPadding,
                 ),
                 maxLines = 1,
             )

@@ -32,7 +32,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.isImeVisible
+import me.him188.ani.app.ui.foundation.interaction.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -125,7 +125,6 @@ import me.him188.ani.app.ui.foundation.tv.ProvideRingOnlyFocus
 import me.him188.ani.app.ui.foundation.tv.nativeview.TV_NATIVE_COMMENT_ENTRY_NEAREST_BOTTOM
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeComment
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeCommentEdge
-import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeCommentList
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeCommentListController
 import me.him188.ani.app.ui.foundation.tv.TV_PILL_ICON_SIZE
 import me.him188.ani.app.ui.foundation.tv.TvPillFailedIcon
@@ -146,7 +145,6 @@ import me.him188.ani.app.ui.subject.details.SubjectDetailsLoadState
 import me.him188.ani.app.ui.subject.details.sections.CharactersViewAllDialog
 import me.him188.ani.app.ui.subject.details.sections.PosterGalleryDialog
 import me.him188.ani.app.ui.subject.details.sections.StaffViewAllDialog
-import me.him188.ani.app.ui.subject.details.layout.rememberTvPlayerCommentStyle
 import me.him188.ani.app.ui.subject.episode.EpisodePageState
 import me.him188.ani.app.ui.subject.episode.EpisodeViewModel
 import me.him188.ani.app.ui.subject.person.PosterRowItem
@@ -986,10 +984,8 @@ private fun TvCommentsPanel(
     DisposableEffect(listFocus) {
         onDispose { itemFocus.unregister(listFocus) }
     }
-    TvNativeCommentList(
+    TvPlayerCommentsList(
         items = items,
-        style = rememberTvPlayerCommentStyle(),
-        initialFocusIndex = 0,
         touchTaps = LocalTvTouchInputEnabled.current,
         onClick = { openCommentAt(it) },
         // 读一次以保住 paging 的预取 / append 触发 (面板里的顺序与 pager 不同)
@@ -1172,7 +1168,7 @@ internal fun TvDanmakuSendEntry(
     // 键盘被收起 (输入法多半自己吃掉返回键) 就收回胶囊, 不然光标还留在输入框里, 要再按一次返回.
     // 只认「先看见它弹出、再看见它消失」, 拿不到 IME insets 的形态下静默不生效
     @OptIn(ExperimentalLayoutApi::class)
-    val imeVisible = rememberUpdatedState(WindowInsets.isImeVisible)
+    val imeVisible = rememberUpdatedState(isImeVisible())
     LaunchedEffect(expanded) {
         if (!expanded) return@LaunchedEffect
         snapshotFlow { imeVisible.value }.first { it }

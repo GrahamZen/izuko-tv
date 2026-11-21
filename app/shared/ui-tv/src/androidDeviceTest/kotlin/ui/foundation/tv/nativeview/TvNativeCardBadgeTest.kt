@@ -16,6 +16,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.ImageView
+import androidx.compose.ui.graphics.asImageBitmap
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -29,7 +30,7 @@ class TvNativeCardBadgeTest {
     private val host = TvNativeTestHost()
     private lateinit var grid: TvNativeGridView
     private val badge = TvNativeCardBadgeStyle(
-        icon = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.WHITE) },
+        icon = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.WHITE) }.asImageBitmap(),
         sizePx = 40f,
         insetPx = 10f,
         backgroundColor = Color.RED,

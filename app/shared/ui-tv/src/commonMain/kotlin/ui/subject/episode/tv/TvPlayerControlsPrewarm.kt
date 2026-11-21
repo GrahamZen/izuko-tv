@@ -16,6 +16,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.comment_reply_to
@@ -77,7 +78,7 @@ internal fun PrewarmTvPlayerControls(
 ) {
     val environment = rememberResourceEnvironment()
     LaunchedEffect(environment) {
-        withContext(Dispatchers.IO) {
+        withContext(Dispatchers.IO_) {
             for (resource in TV_PLAYER_CONTROLS_STRING_RESOURCES) getStringOffMain(environment, resource)
         }
     }
