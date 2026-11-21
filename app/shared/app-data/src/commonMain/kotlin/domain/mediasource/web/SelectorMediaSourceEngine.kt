@@ -60,6 +60,7 @@ import me.him188.ani.datasources.api.MediaProperties
 import me.him188.ani.datasources.api.SubtitleKind
 import me.him188.ani.datasources.api.matcher.WebVideo
 import me.him188.ani.datasources.api.matcher.WebVideoMatcher
+import me.him188.ani.datasources.api.source.MediaFetchHostWork
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.datasources.api.source.MediaSourceLocation
@@ -113,6 +114,8 @@ data class SelectorSearchQuery(
     val subjectEpisodeCount: Int? = null,
     /** 条目本身是 OVA: 条目页上只有「OVA01」这样编号的集时, 按正片第几集认 (见 [asEpisodesOf]) */
     val ovaSubject: Boolean = false,
+    /** 条目所依附的本篇: 本篇的页上只留本条目的集 (见 [asEpisodesOf]) */
+    val hostWork: MediaFetchHostWork? = null,
 )
 
 /**
@@ -282,7 +285,7 @@ abstract class SelectorMediaSourceEngine {
         val bySortOnly = config.autoMatch.filterByEpisodeSort && query.episodeSort is EpisodeSort.Normal
         // 只在按集号过滤时才谈得上"放宽到整个条目": 不按集号过滤时本来就全部产出
         val wholeSubject = query.subjectEpisodeSorts?.takeIf { bySortOnly }
-        val mediaList = createMedia(episodes.asEpisodesOf(query), config, query, mediaSourceId, subjectName) { episodeSort ->
+        val mediaList = createMedia(episodes.asEpisodesOf(query, subjectName), config, query, mediaSourceId, subjectName) { episodeSort ->
             when {
                 !bySortOnly -> true
                 // 整个条目的集号都留下, 见 [SelectorSearchQuery.subjectEpisodeSorts]. 特别篇 (OVA、SP) 与解析不出集号的

@@ -30,6 +30,7 @@ internal fun fetchNameHintsOf(subject: SubjectInfo, seriesInfo: SubjectSeriesInf
         seriesNames = computeFallbackSearchKeywords(names, series).filter { it !in names },
         otherWorkNames = series.toList(),
         splitSeason = seriesInfo?.splitSeason != null,
+        hostWork = seriesInfo?.hostWork,
     )
 }
 
