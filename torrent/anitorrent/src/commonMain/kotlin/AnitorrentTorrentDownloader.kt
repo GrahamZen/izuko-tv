@@ -19,6 +19,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.onStart
@@ -26,6 +27,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.io.files.Path
 import me.him188.ani.app.torrent.anitorrent.session.AnitorrentDownloadSession
 import me.him188.ani.app.torrent.anitorrent.session.TorrentAddInfo
@@ -58,6 +60,7 @@ import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 import kotlin.concurrent.Volatile
 import kotlin.coroutines.CoroutineContext
+import kotlin.time.Duration.Companion.seconds
 
 internal expect fun createAnitorrentTorrentDownloader(
     rootDataDirectory: SystemPath,
@@ -99,6 +102,9 @@ abstract class AnitorrentTorrentDownloader<THandle : TorrentHandle, TAddInfo : T
 
     companion object {
         private const val FAST_RESUME_FILENAME = "fastresume"
+
+        /** 再开同一个种子时等上一个会话关完最多等多久 (关会话自己最多等 7.5 秒删除事件) */
+        private val PREVIOUS_SESSION_CLOSE_WAIT = 15.seconds
 
         /**
          * `internal` since used by [createAnitorrentTorrentDownloader]
@@ -188,6 +194,20 @@ abstract class AnitorrentTorrentDownloader<THandle : TorrentHandle, TAddInfo : T
         } catch (e: Exception) {
             logger.error(e) { "Error while handling event" }
         }
+    }
+
+    /**
+     * 种子删掉以后原生事件里的句柄已经失效 (编号给 0) 时, 按名字找被删的是哪个会话; 同名的几个里先挑正在关的那个.
+     * 在原生事件的线程上调, 不能等: 只看已经拿到种子信息的会话 ([AnitorrentDownloadSession.nameIfKnown]). 还没拿到的
+     * (没人做种的磁力链接) 可能一直拿不到, 等它会把事件循环卡住, 之后所有种子的进度、种子信息、删除都收不到.
+     */
+    fun sessionRemovedByName(torrentName: String): AnitorrentDownloadSession? {
+        val sessions = openSessions.value.values
+        val named = sessions.filter { it.nameIfKnown() == torrentName }
+        named.firstOrNull { it.isClosing }?.let { return it }
+        named.firstOrNull()?.let { return it }
+        // 没拿到种子信息的会话不知道名字: 正在关的这种只有一个时就是它 (不然关会话要等满超时才收尾, 再开同一个种子也要等)
+        return sessions.filter { it.isClosing && it.nameIfKnown() == null }.singleOrNull()
     }
 
     @OptIn(ExperimentalStdlibApi::class)
@@ -292,13 +312,29 @@ abstract class AnitorrentTorrentDownloader<THandle : TorrentHandle, TAddInfo : T
         data: EncodedTorrentInfo,
         saveDir: SystemPath,
         parentCoroutineContext: CoroutineContext,
+    ): TorrentSession {
+        // 同一个种子的上一个会话正在关 (删除、没人再等它的种子信息): 等它从会话表里出去再开 (锁外等, 不挡别的种子).
+        // 拿正在关的那个会得到一个原生种子已经移除的会话: 没信息的永远等种子信息, 有信息的句柄失效、一直不动
+        val key = data.data.contentHashCode().toString()
+        if (openSessions.value[key]?.isClosing == true) {
+            withTimeoutOrNull(PREVIOUS_SESSION_CLOSE_WAIT) { openSessions.first { it[key]?.isClosing != true } }
+        }
+        return startDownloadLocked(key, data, saveDir, parentCoroutineContext)
+    }
+
+    private suspend fun startDownloadLocked(
+        key: String,
+        data: EncodedTorrentInfo,
+        saveDir: SystemPath,
+        parentCoroutineContext: CoroutineContext,
     ): TorrentSession = withHandleTaskQueue {
         // 这个函数的 native 部分跑得也都很快, 整个函数十几毫秒就可以跑完, 所以 lock 也不会影响性能 (刚启动时需要尽快恢复 resume)
 
         val info = AnitorrentAddTorrentInfo.decodeFrom(data)
         val fastResumeFile = saveDir.resolve(FAST_RESUME_FILENAME)
 
-        openSessions.value[data.data.contentHashCode().toString()]?.let {
+        openSessions.value[key]?.let {
+            check(!it.isClosing) { "The previous session of this torrent is still closing" }
             logger.info { "Found existing session" }
             return@withHandleTaskQueue it
         }

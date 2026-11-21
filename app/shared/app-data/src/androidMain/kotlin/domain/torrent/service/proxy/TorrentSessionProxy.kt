@@ -14,6 +14,7 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.domain.torrent.IDisposableHandle
 import me.him188.ani.app.domain.torrent.IRemoteTorrentSession
 import me.him188.ani.app.domain.torrent.callback.ITorrentSessionStatsCallback
@@ -63,8 +64,12 @@ class TorrentSessionProxy(
         return DisposableHandleProxy { job.cancel() }
     }
 
+    /**
+     * 种子名要等拿到种子信息才知道 (没人做种的磁力链接一直不知道). 这是同步的跨进程调用, 占着服务的 binder 线程等,
+     * 所以只等 [NAME_WAIT_MILLIS]: 到时还不知道就给空字符串, 不把 binder 线程一个个耗在这里.
+     */
     override fun getName(): String {
-        return runBlocking { delegate.getName() }
+        return runBlocking { withTimeoutOrNull(NAME_WAIT_MILLIS) { delegate.getName() } } ?: ""
     }
 
     override fun getFiles(cont: ContTorrentSessionGetFiles?): IDisposableHandle? {
@@ -123,3 +128,6 @@ class TorrentSessionProxy(
         return runBlocking { delegate.discardFilesExcept(filesInUse.orEmpty().toSet()) }
     }
 }
+
+/** [TorrentSessionProxy.getName] 等种子名最多等多久 */
+private const val NAME_WAIT_MILLIS = 5_000L

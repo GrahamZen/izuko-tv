@@ -865,6 +865,35 @@ class TorrentMediaCacheStorageTest : AbstractTorrentMediaCacheEngineTest() {
         )
     }
 
+    @Test
+    fun `a download deleted while waiting for torrent info closes its session`() = runTest {
+        val sessions = CopyOnWriteArrayList<AnitorrentDownloadSession>()
+        val storage = createStorage(createEngine(onDownloadStarted = { sessions += it }))
+        val cache = storage.cache(testMedia, mediaCacheMetadata(), resume = true)
+
+        assertEquals(true, storage.delete(cache))
+        advanceUntilIdle()
+        // 不关的话它一直挂在 BT 服务里找节点, 直到应用重启
+        assertTrue(sessions.single().isClosing, "the session nobody waits for is still open")
+    }
+
+    @Test
+    fun `a pack session stays open while another episode still waits for its torrent info`() = runTest {
+        val sessions = CopyOnWriteArrayList<AnitorrentDownloadSession>()
+        val storage = createStorage(createEngine(onDownloadStarted = { sessions += it }))
+        val ep1 = storage.cache(testMedia, mediaCacheMetadata(episodeId = "1"), resume = true)
+        val ep2 = storage.cache(testMedia, mediaCacheMetadata(episodeId = "2"), resume = true)
+        val session = sessions.distinct().single()
+
+        assertEquals(true, storage.delete(ep1))
+        advanceUntilIdle()
+        assertFalse(session.isClosing, "the other episode still waits for this torrent")
+
+        assertEquals(true, storage.delete(ep2))
+        advanceUntilIdle()
+        assertTrue(session.isClosing)
+    }
+
     ///////////////////////////////////////////////////////////////////////////
     // simple create, restore, find
     ///////////////////////////////////////////////////////////////////////////

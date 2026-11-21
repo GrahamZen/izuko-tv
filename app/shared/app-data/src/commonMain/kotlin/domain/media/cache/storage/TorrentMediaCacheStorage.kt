@@ -308,6 +308,8 @@ class TorrentMediaCacheStorage(
     ): TorrentMediaCacheEngine.TorrentMediaCache {
         var promoting = false
         val key = MediaCacheKey(media.mediaId, metadata)
+        // 要新建的: 先在锁外等 BT 服务连上 (见 awaitServiceForNewCache); 已经有这一份的直接复用, 不等
+        if (listFlow.value.none { isSameMediaAndEpisode(it, media, metadata) }) torrentEngine.awaitServiceForNewCache(media.mediaId)
         return (lock.withLock {
             // 这一集正在恢复 (启动恢复不持锁, 见 init; 排着还没轮到的也算): 等它恢复出来再复用, 不另开一份下载
             if (claims.isRestoring(key)) return@withLock null

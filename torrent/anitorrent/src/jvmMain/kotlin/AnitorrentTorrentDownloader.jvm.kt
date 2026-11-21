@@ -13,7 +13,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import me.him188.ani.app.torrent.anitorrent.session.SwigPeerInfo
 import me.him188.ani.app.torrent.anitorrent.session.SwigTorrentAddInfo
 import me.him188.ani.app.torrent.anitorrent.session.SwigTorrentHandle
@@ -183,14 +182,8 @@ internal class SwigAnitorrentTorrentDownloader(
                     it.onTorrentRemoved()
                 }
             } else {
-                // torrent_removed_alerts 事件处理时其 handle 可能已经无效
-                // 但是它的 torrent_name 还是有效的
-                // 在这里 runBlocking 是没问题的, 因为 on_torrent_removed 一定只会在 actualTorrentInfo 之后调用
-                runBlocking(Dispatchers.IO) {
-                    openSessions.value.values.firstOrNull { session ->
-                        session.getName() == torrentName
-                    }
-                }?.onTorrentRemoved()
+                // torrent_removed_alerts 事件处理时其 handle 可能已经无效, 但它的 torrent_name 还是有效的: 按名字找, 不能等 (见 sessionRemovedByName)
+                sessionRemovedByName(torrentName)?.onTorrentRemoved()
             }
         }
     }

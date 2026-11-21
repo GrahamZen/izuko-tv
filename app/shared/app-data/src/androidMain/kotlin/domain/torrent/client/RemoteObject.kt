@@ -40,11 +40,13 @@ interface RemoteObject<I : IInterface> {
  */
 class RetryRemoteObject<I : IInterface>(
     private val scope: CoroutineScope,
-    private val getRemote: suspend () -> I
+    /** 已经拿到的那个 (调用方在自己的协程里取好的, 可取消); 断了以后照 [getRemote] 重取 */
+    initial: I? = null,
+    private val getRemote: suspend () -> I,
 ) : RemoteObject<I> {
     private val logger = logger<RetryRemoteObject<*>>()
 
-    private val remote: MutableStateFlow<I?> = MutableStateFlow(null)
+    private val remote: MutableStateFlow<I?> = MutableStateFlow(initial)
     private val lock = Mutex()
 
     private fun setRemote(): Deferred<I> = scope.async {

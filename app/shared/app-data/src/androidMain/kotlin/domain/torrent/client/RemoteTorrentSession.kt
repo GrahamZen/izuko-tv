@@ -68,25 +68,30 @@ class RemoteTorrentSession(
         return withContext(Dispatchers.IO_) { remote.call { name } }
     }
 
+    /**
+     * 种子信息到了才有文件列表 (磁力链接要等元数据, 没人做种时一直等). 在调用方自己的协程里等, 可以取消:
+     * 第一次读列表时才在 [RetryRemoteObject.call] 的 runBlocking 里等的话, 那条线程取消不掉, 会话关了、服务死了也一直卡着.
+     */
     override suspend fun getFiles(): List<TorrentFileEntry> {
+        val list = fetchFiles()
         return RemoteTorrentFileEntryList(
             fetchRemoteScope,
-            RetryRemoteObject(fetchRemoteScope) {
-                remote.callSuspendCancellable { cont ->
-                    getFiles(
-                        object : ContTorrentSessionGetFiles.Stub() {
-                            override fun resume(value: IRemoteTorrentFileEntryList?) {
-                                cont.resume(value)
-                            }
+            RetryRemoteObject(fetchRemoteScope, initial = list) { fetchFiles() },
+            connectivityAware,
+        )
+    }
 
-                            override fun resumeWithException(exception: RemoteContinuationException?) {
-                                cont.resumeWithException(exception)
-                            }
-                        },
-                    )
+    private suspend fun fetchFiles(): IRemoteTorrentFileEntryList = remote.callSuspendCancellable { cont ->
+        getFiles(
+            object : ContTorrentSessionGetFiles.Stub() {
+                override fun resume(value: IRemoteTorrentFileEntryList?) {
+                    cont.resume(value)
+                }
+
+                override fun resumeWithException(exception: RemoteContinuationException?) {
+                    cont.resumeWithException(exception)
                 }
             },
-            connectivityAware,
         )
     }
 

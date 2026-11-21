@@ -148,12 +148,32 @@ class TorrentMediaCacheEngine(
      */
     private val createsAwaitingService = MutableStateFlow(0)
 
+    /** 各个种子有几份缓存在等种子信息; 没人等了就关掉没信息的会话 */
+    private val sessionWaiters = TorrentSessionWaiters()
+
     /**
      * 有建缓存请求停在等 BT 服务连上 (冷启动要十几秒). 缓存页据此说明按了下载之后在等什么.
      */
     val isCreateAwaitingService: Flow<Boolean> =
         combine(createsAwaitingService, isServiceConnected) { waiting, connected -> waiting > 0 && !connected }
             .distinctUntilChanged()
+
+    /**
+     * 要着 BT 服务等它连上 (计入 [isCreateAwaitingService]). 存储新建缓存前在它自己的锁外调 ([createCache] 里也要服务):
+     * 应用在后台时服务不一定拉得起来, 持着存储的锁等会挡住别的新建、删除与刷新.
+     */
+    suspend fun awaitServiceForNewCache(mediaId: String) {
+        if (isServiceConnected.first()) return
+        @OptIn(EnsureTorrentEngineIsAccessible::class)
+        engineAccess.withServiceRequest("TorrentMediaCacheEngine#$this-awaitService:$mediaId") {
+            createsAwaitingService.update { it + 1 }
+            try {
+                isServiceConnected.first { it }
+            } finally {
+                createsAwaitingService.update { it - 1 }
+            }
+        }
+    }
 
     /**
      * 缓存要下的那个文件. 种子信息晚到时 [state] 先是 null, 拿到后才给 (见 [TorrentFileStartup]); 取 `first()` 得到的是此刻的, 不等.
@@ -794,8 +814,11 @@ class TorrentMediaCacheEngine(
         // The record already knows which file is this episode's; re-deriving it from the title can pick
         // another one after the torrent's file list changes.
         val recordedPath = dao.getEpisode(mediaId, metadata.episodeId)?.pathInTorrent?.takeIf { it.isNotEmpty() }
-        val downloader = torrentEngine.getDownloader()
         val startup = TorrentFileStartup()
+        // 同一个种子同一个键 (同下载器的会话表); 没人再等它的种子信息时关掉会话, 见 TorrentSessionWaiters
+        val torrentKey = encoded.data.contentHashCode().toString()
+        sessionWaiters.begin(torrentKey)
+        startup.onWaitEnded = { abandoned -> sessionWaiters.end(torrentKey, abandoned)?.closeIfNotInUse() }
         // 种子的元数据迟迟不来时这一段停在读文件列表上: 安卓上列表是 BT 服务那边的对象, 读它是阻塞着等, 取消不掉.
         // 放进单独的协程, 等一阵还没等到就先返回 (不然建缓存的调用一直不返回, 存储的锁被它占着), 它在后台接着等.
         // 阻塞着等的那条线程放在 IO 上 (测试里给了调度器的照它, 超时走的是它的虚拟时间)
@@ -804,7 +827,9 @@ class TorrentMediaCacheEngine(
         val starting = CoroutineScope(parentContext + blocking).launch {
             val result = try {
                 TorrentFileStartup.Phase.Started(
-                    startFile(downloader, encoded, metadata, recordedPath, parentContext, saveDir),
+                    startFile(encoded, metadata, recordedPath, parentContext, saveDir) { session ->
+                        sessionWaiters.sessionStarted(torrentKey, session)
+                    },
                 )
             } catch (e: CancellationException) {
                 throw e
@@ -817,7 +842,8 @@ class TorrentMediaCacheEngine(
         val finished = try {
             withTimeoutOrNull(TORRENT_FILES_TIMEOUT_MILLIS) { starting.join() } != null
         } catch (e: CancellationException) {
-            starting.cancel()
+            // 建缓存的调用自己被取消了: 这一份不会交出去, 照不要了关掉 (没人再等这个种子时会话一起关)
+            withContext(NonCancellable) { startup.close() }
             throw e
         }
 
@@ -828,25 +854,37 @@ class TorrentMediaCacheEngine(
         when (val phase = startup.phase.value) {
             is TorrentFileStartup.Phase.Failed -> throw phase.cause ?: IllegalStateException("Failed to start the torrent")
             // 父协程取消了 (存储关掉)
-            TorrentFileStartup.Phase.AwaitingMetadata -> throw CancellationException("Starting the torrent was cancelled")
+            TorrentFileStartup.Phase.AwaitingMetadata -> {
+                withContext(NonCancellable) { startup.close() }
+                throw CancellationException("Starting the torrent was cancelled")
+            }
             is TorrentFileStartup.Phase.Started -> Unit
         }
         return FileHandle(startup)
     }
 
-    /** 开始下载种子, 等到文件列表后选出这一集的文件并打开 (选不出时句柄为 null). 种子信息不来时一直等 */
+    /**
+     * 等 BT 服务连上、开始下载种子, 等到文件列表后选出这一集的文件并打开 (选不出时句柄为 null). 服务没连上、种子信息不来时一直等
+     * (在 [getFileHandle] 限时的那一段里: 恢复、刷新缓存列表持着存储的锁, 不能跟着一直等服务; 应用在后台时服务不一定会被拉起).
+     * 会话开好时交给 [onSessionStarted]; 它说已经没人在等 (返回 false) 时关掉会话, 不再往下走.
+     */
     private suspend fun startFile(
-        downloader: TorrentDownloader,
         encoded: EncodedTorrentInfo,
         metadata: MediaCacheMetadata,
         recordedPath: String?,
         parentContext: CoroutineContext,
         saveDir: SystemPath?,
+        onSessionStarted: suspend (TorrentSession) -> Boolean,
     ): FileHandle.State {
+        val downloader = torrentEngine.getDownloader()
         val session = if (saveDir == null) {
             downloader.startDownload(encoded, parentContext)
         } else {
             downloader.startDownloadAt(encoded, saveDir, parentContext)
+        }
+        if (!onSessionStarted(session)) {
+            withContext(NonCancellable) { session.closeIfNotInUse() }
+            throw CancellationException("The cache was closed while the torrent was starting")
         }
         logger.info { "$mediaSourceId: waiting for files" }
         onDownloadStarted(session)

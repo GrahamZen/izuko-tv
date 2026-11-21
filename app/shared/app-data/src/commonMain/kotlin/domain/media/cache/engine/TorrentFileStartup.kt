@@ -26,7 +26,7 @@ import me.him188.ani.utils.logging.warn
  * 要先拿到种子信息 (文件列表) 才知道下哪个文件. 建缓存、恢复缓存时最多等 [TORRENT_FILES_TIMEOUT_MILLIS] 就返回 (不然缓存存储的锁
  * 被占着); 没等到的不算失败: 停在 [Phase.AwaitingMetadata], 后台接着等 —— 磁力链接在节点少的网络里常要几分钟.
  * 等到以后照最后一次 [resume] / [pause] 办 (存储建好缓存当场就调了 resume, 那时还没有文件可下); 等的时候 [close] 了
- * (删除、刷新替换), 等到也不再打开文件.
+ * (删除、刷新替换), 等到也不再打开文件, 没有别的缓存在等这个种子时连下载会话一起关掉 ([onWaitEnded], [TorrentSessionWaiters]).
  */
 internal class TorrentFileStartup(initial: Phase = Phase.AwaitingMetadata) {
     sealed interface Phase {
@@ -55,6 +55,15 @@ internal class TorrentFileStartup(initial: Phase = Phase.AwaitingMetadata) {
     /** 后台在等种子信息的那一段; [close] 时取消 */
     var waiting: Job? = null
 
+    /**
+     * 等种子信息的这一段结束时调一次: 等到了 (或启动出错, 参数 false), 或还没等到就 [close] 了 (true). 见 [TorrentSessionWaiters]:
+     * 没人再等的种子会话要关掉.
+     */
+    var onWaitEnded: (suspend (abandoned: Boolean) -> Unit)? = null
+
+    /** [onWaitEnded] 调过了 (或一开始就不在等) */
+    private var waitEnded = initial !is Phase.AwaitingMetadata
+
     suspend fun resume() = lock.withLock {
         wantsRunning = true
         started?.handle?.resume(FilePriority.NORMAL)
@@ -66,11 +75,26 @@ internal class TorrentFileStartup(initial: Phase = Phase.AwaitingMetadata) {
     }
 
     suspend fun close() {
+        var abandoned = false
         val state = lock.withLock {
             closed = true
             waiting?.cancel()
+            if (!waitEnded) {
+                waitEnded = true
+                abandoned = true
+            }
             started
-        } ?: return
+        }
+        if (abandoned) {
+            try {
+                onWaitEnded?.invoke(true)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.warn(e) { "Failed to release the torrent session nobody waits for" }
+            }
+        }
+        state ?: return
         state.sidecars?.close()
         state.handle?.close()
     }
@@ -81,7 +105,12 @@ internal class TorrentFileStartup(initial: Phase = Phase.AwaitingMetadata) {
      */
     suspend fun settle(result: Phase) {
         try {
+            var ended = false
             val discard = lock.withLock {
+                if (!waitEnded) {
+                    waitEnded = true
+                    ended = true
+                }
                 if (closed) return@withLock (result as? Phase.Started)?.state
                 _phase.value = result
                 val handle = (result as? Phase.Started)?.state?.handle
@@ -91,7 +120,9 @@ internal class TorrentFileStartup(initial: Phase = Phase.AwaitingMetadata) {
                     null -> Unit
                 }
                 null
-            } ?: return
+            }
+            if (ended) onWaitEnded?.invoke(false)
+            discard ?: return
             discard.sidecars?.close()
             discard.handle?.close() ?: discard.session.closeIfNotInUse()
         } catch (e: CancellationException) {

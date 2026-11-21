@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import me.him188.ani.app.torrent.anitorrent.DisposableTaskQueue
@@ -347,6 +348,18 @@ class AnitorrentDownloadSession(
 
     private val actualTorrentInfo = CompletableDeferred<TorrentInfo>()
 
+    /**
+     * 会话关完了 (见 [close]). 等种子信息的 ([getName] / [getFiles]) 同时等它: 会话关了种子信息就再也不会来,
+     * 不能让调用方一直等 (安卓上那是 BT 服务里一个挂着的回调, 应用那边一条线程跟着等).
+     */
+    private val sessionClosed = CompletableDeferred<Unit>()
+
+    /** 等种子信息; 会话先关了就抛 [TorrentSessionClosedException] */
+    private suspend fun awaitTorrentInfo(): TorrentInfo = select {
+        actualTorrentInfo.onAwait { it }
+        sessionClosed.onAwait { throw TorrentSessionClosedException("Session $handleId closed before its torrent info arrived") }
+    }
+
     @TestOnly
     val isActualTorrentInfoCompleted get() = actualTorrentInfo.isCompleted
 
@@ -615,9 +628,15 @@ class AnitorrentDownloadSession(
         }
     }
 
-    override suspend fun getName(): String = this.actualTorrentInfo.await().name
+    override suspend fun getName(): String = awaitTorrentInfo().name
 
-    override suspend fun getFiles(): List<TorrentFileEntry> = this.actualTorrentInfo.await().entries
+    /** 种子名; 还没拿到种子信息时为 null, 不等 (磁力链接没人做种时一直拿不到). 原生事件的线程上用它, 不用 [getName] */
+    fun nameIfKnown(): String? = actualTorrentInfo.takeIf { it.isCompleted }?.getCompleted()?.name
+
+    /** 已经开始关了 (见 [close]) */
+    val isClosing: Boolean get() = closed
+
+    override suspend fun getFiles(): List<TorrentFileEntry> = awaitTorrentInfo().entries
 
     override fun getPeers() = handle.getPeers()
 
@@ -653,6 +672,7 @@ class AnitorrentDownloadSession(
             closingDeferred.complete(Unit)
         }
         scope.cancel()
+        sessionClosed.complete(Unit)
         onPostClose(this)
     }
 
@@ -831,3 +851,6 @@ private fun TorrentHandleState.isMetadataReady(): Boolean {
         TorrentHandleState.CHECKING_RESUME_DATA -> false
     }
 }
+
+/** 会话在种子信息到之前就关了 (见 [AnitorrentDownloadSession.close]), 种子信息不会再来 */
+class TorrentSessionClosedException(message: String) : IllegalStateException(message)

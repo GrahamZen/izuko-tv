@@ -96,6 +96,62 @@ class TorrentFileStartupTest {
         assertFalse(session.closedIfNotInUse)
     }
 
+    @Test
+    fun `the wait ends once as abandoned when closed before the torrent info arrives`() = runTest {
+        val startup = TorrentFileStartup()
+        val ends = mutableListOf<Boolean>()
+        startup.onWaitEnded = { ends += it }
+        startup.close()
+        startup.close()
+        startup.settle(started(RecordingHandle()))
+        assertEquals(listOf(true), ends)
+    }
+
+    @Test
+    fun `the wait ends once as settled when the torrent info arrives first`() = runTest {
+        val startup = TorrentFileStartup()
+        val ends = mutableListOf<Boolean>()
+        startup.onWaitEnded = { ends += it }
+        startup.settle(started(RecordingHandle()))
+        startup.close()
+        assertEquals(listOf(false), ends)
+    }
+
+    @Test
+    fun `a startup that never waited does not report the wait`() = runTest {
+        val startup = TorrentFileStartup(TorrentFileStartup.Phase.Failed(null))
+        val ends = mutableListOf<Boolean>()
+        startup.onWaitEnded = { ends += it }
+        startup.close()
+        assertEquals(emptyList(), ends)
+    }
+
+    @Test
+    fun `the last abandoned waiter of a torrent gets its session to close`() = runTest {
+        val waiters = TorrentSessionWaiters()
+        waiters.begin("t")
+        waiters.begin("t")
+        assertTrue(waiters.sessionStarted("t", session))
+        assertNull(waiters.end("t", abandoned = true), "another cache still waits")
+        assertSame(session, waiters.end("t", abandoned = true))
+    }
+
+    @Test
+    fun `a torrent whose info arrived is not closed by the waiters`() = runTest {
+        val waiters = TorrentSessionWaiters()
+        waiters.begin("t")
+        assertTrue(waiters.sessionStarted("t", session))
+        assertNull(waiters.end("t", abandoned = false))
+    }
+
+    @Test
+    fun `a session that starts after its only waiter gave up is closed by the caller`() = runTest {
+        val waiters = TorrentSessionWaiters()
+        waiters.begin("t")
+        assertNull(waiters.end("t", abandoned = true))
+        assertFalse(waiters.sessionStarted("t", session))
+    }
+
     private fun started(handle: TorrentFileHandle) =
         TorrentFileStartup.Phase.Started(TorrentMediaCacheEngine.FileHandle.State(session, null, handle))
 
