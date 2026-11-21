@@ -132,7 +132,8 @@ internal object RemotePerfDiagnostics {
     }
 
     private fun networkStepText(step: NetworkDiagnosis.Step?): String = when (step) {
-        null, NetworkDiagnosis.Step.ENVIRONMENT -> tr("读取网络环境")
+        null, NetworkDiagnosis.Step.LISTS -> tr("更新清单")
+        NetworkDiagnosis.Step.ENVIRONMENT -> tr("读取网络环境")
         NetworkDiagnosis.Step.DNS -> tr("解析域名")
         NetworkDiagnosis.Step.ROUTES -> tr("测 Bangumi 各条线路")
         NetworkDiagnosis.Step.SERVICES -> tr("测其他服务")
