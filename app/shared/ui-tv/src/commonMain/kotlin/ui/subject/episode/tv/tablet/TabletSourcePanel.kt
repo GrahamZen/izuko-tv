@@ -92,7 +92,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.jsonPrimitive
+import me.him188.ani.app.ui.subject.episode.tv.tvCanCacheMedia
+import me.him188.ani.app.ui.subject.episode.tv.tvCacheMedia
+import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.app.domain.media.selector.MatchMetadata
 import me.him188.ani.app.domain.media.selector.MaybeExcludedMedia
 import me.him188.ani.app.domain.media.selector.MediaExclusionReason
@@ -167,7 +169,6 @@ import me.him188.ani.app.ui.lang.tv_source_show_excluded
 import me.him188.ani.app.ui.media.rememberMediaDetailsStrings
 import me.him188.ani.app.ui.media.renderSubtitleLanguage
 import me.him188.ani.app.ui.mediafetch.MediaSourceResultPresentation
-import me.him188.ani.app.ui.remote.RemoteCache
 import me.him188.ani.app.ui.subject.episode.EpisodePageState
 import me.him188.ani.app.ui.subject.episode.EpisodeViewModel
 import me.him188.ani.app.ui.subject.episode.tv.source.TvDriveLoginDialog
@@ -1337,7 +1338,7 @@ private val TABLET_SECTION_GAP = 16.dp
 /** 一条候选长按出的菜单: (这一条, 开着没有, 关掉). */
 internal typealias TabletSourceItemMenu = @Composable (media: Media, expanded: Boolean, onDismiss: () -> Unit) -> Unit
 
-/** 长按一条: 下载这一条 (同控制台的「缓存」, 本地缓存那一组不给)、打开它在数据源上的链接 (只认 http(s)). */
+/** 长按一条: 下载这一条 (同控制台的「缓存」; 本地缓存那一组、不能下载的一端不给)、打开它在数据源上的链接 (只认 http(s)). */
 @Composable
 private fun TabletSourceItemMenu(vm: EpisodeViewModel, media: Media, expanded: Boolean, onDismiss: () -> Unit) {
     val scope = rememberCoroutineScope()
@@ -1345,7 +1346,7 @@ private fun TabletSourceItemMenu(vm: EpisodeViewModel, media: Media, expanded: B
     val uriHandler = LocalUriHandler.current
     val link = media.originalUrl.takeIf { it.startsWith("https://", ignoreCase = true) || it.startsWith("http://", ignoreCase = true) }
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss, modifier = Modifier.menuHeightCap()) {
-        if (media.kind != MediaSourceKind.LocalCache) {
+        if (tvCanCacheMedia && media.kind != MediaSourceKind.LocalCache) {
             DropdownMenuItem(
                 text = { Text(stringResource(Lang.tv_source_menu_cache)) },
                 leadingIcon = { Icon(Icons.Rounded.Download, contentDescription = null) },
@@ -1353,8 +1354,7 @@ private fun TabletSourceItemMenu(vm: EpisodeViewModel, media: Media, expanded: B
                     onDismiss()
                     val episodeId = vm.episodeSelectorState.current?.episodeId ?: return@DropdownMenuItem
                     scope.launch {
-                        val result = withContext(Dispatchers.IO) { RemoteCache.cacheMedia(vm.subjectId, episodeId, media) }
-                        result["message"]?.jsonPrimitive?.content?.let { toaster.toast(it) }
+                        withContext(Dispatchers.IO_) { tvCacheMedia(vm.subjectId, episodeId, media) }?.let { toaster.toast(it) }
                     }
                 },
             )

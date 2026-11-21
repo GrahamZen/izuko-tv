@@ -30,6 +30,7 @@ import me.him188.ani.app.domain.mediasource.rss.RssMediaSource
 import me.him188.ani.app.domain.mediasource.rule.RuleMediaSource
 import me.him188.ani.app.domain.mediasource.rule.SiteIpBlockedException
 import me.him188.ani.app.domain.mediasource.web.SelectorMediaSource
+import me.him188.ani.app.ui.foundation.tv.tvFormat
 import me.him188.ani.app.ui.media.MediaDetailsRenderer
 import me.him188.ani.app.ui.media.MediaDetailsStrings
 import me.him188.ani.app.ui.media.renderSubtitleLanguage
@@ -875,7 +876,7 @@ fun buildTvSourcePanel(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvS
                     TvSourceRow(
                         id = TvSourceRailKeys.EMPTY_SOURCES,
                         style = TvSourceRowStyle.Rail,
-                        title = (if (nav.showEmptySources) strings.hideEmptySources else strings.emptySources).format(empty.size),
+                        title = (if (nav.showEmptySources) strings.hideEmptySources else strings.emptySources).tvFormat(empty.size),
                         dimmed = true,
                         action = TvSourceAction.ToggleEmptySources,
                     ),
@@ -950,10 +951,10 @@ fun buildTvSourcePanel(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvS
     }
 
     val status = when {
-        input.sources.anyLoading -> strings.searching.format(input.sources.finishedSourceCount, input.sources.enabledSourceCount)
+        input.sources.anyLoading -> strings.searching.tvFormat(input.sources.finishedSourceCount, input.sources.enabledSourceCount)
         // 开播后暂停的 (设置「完整搜索」不是始终): 别写成「已查询」, 看着像全查完了
-        input.sources.pausedSourceCount > 0 -> strings.searchPaused.format(input.sources.finishedSourceCount, input.sources.enabledSourceCount)
-        else -> strings.searched.format(input.sources.enabledSourceCount)
+        input.sources.pausedSourceCount > 0 -> strings.searchPaused.tvFormat(input.sources.finishedSourceCount, input.sources.enabledSourceCount)
+        else -> strings.searched.tvFormat(input.sources.enabledSourceCount)
     }
     return TvSourcePanelContent(
         status = status,
@@ -1136,10 +1137,10 @@ private fun webRailRow(source: WebSource, playing: Boolean, input: TvSourcePanel
         source.isCaptchaRequired -> strings.captchaRequired to TvSourceAccent.Attention
         paused -> "" to TvSourceAccent.None
         source.channels.isEmpty() && !source.isLoading && !source.isRateLimited ->
-            others.size.takeIf { it > 0 }?.let { strings.railOthers.format(it) to TvSourceAccent.None }
+            others.size.takeIf { it > 0 }?.let { strings.railOthers.tvFormat(it) to TvSourceAccent.None }
                 ?: (MISSING_VALUE to TvSourceAccent.None)
         source.isRateLimitExpired(nowMillis) -> strings.rateLimitedExpired to TvSourceAccent.None
-        source.isRateLimited -> strings.rateLimited.format(rateLimitSeconds(source.rateLimitedUntilMillis, nowMillis)) to TvSourceAccent.None
+        source.isRateLimited -> strings.rateLimited.tvFormat(rateLimitSeconds(source.rateLimitedUntilMillis, nowMillis)) to TvSourceAccent.None
         loadingEmpty -> "" to TvSourceAccent.None
         else -> webFilesOf(source, input, strings)
             ?.let {
@@ -1177,12 +1178,12 @@ private fun webSourceDetails(source: WebSource, input: TvSourcePanelInput, strin
         driveLogin != null -> strings.driveLoginHint
         source.isCaptchaRequired -> strings.captchaRequired
         source.isRateLimitExpired(input.nowMillis) -> strings.rateLimitedExpiredHint
-        source.isRateLimited -> strings.rateLimitedHint.format(rateLimitSeconds(source.rateLimitedUntilMillis, input.nowMillis))
+        source.isRateLimited -> strings.rateLimitedHint.tvFormat(rateLimitSeconds(source.rateLimitedUntilMillis, input.nowMillis))
         source.isLoading -> strings.statusSearching
         else -> strings.statusDone
     }
     val lines = source.channels.mapIndexed { index, channel ->
-        val name = channel.name.ifBlank { strings.line.format(index + 1) }
+        val name = channel.name.ifBlank { strings.line.tvFormat(index + 1) }
         val meta = channel.original?.let { lineMeta(it, strings) }.orEmpty()
         if (meta.isEmpty()) name else "$name ($meta)"
     }
@@ -1283,7 +1284,7 @@ private fun webPane(
             )
 
             source.isRateLimited -> add(
-                status("rate-limited", strings.rateLimitedHint.format(rateLimitSeconds(source.rateLimitedUntilMillis, nowMillis))),
+                status("rate-limited", strings.rateLimitedHint.tvFormat(rateLimitSeconds(source.rateLimitedUntilMillis, nowMillis))),
             )
 
             paused -> add(
@@ -1316,7 +1317,7 @@ private fun webPane(
                 TvSourceRow(
                     id = "line:$index:${channel.name}",
                     style = TvSourceRowStyle.Line,
-                    title = channel.name.ifBlank { strings.line.format(index + 1) },
+                    title = channel.name.ifBlank { strings.line.tvFormat(index + 1) },
                     meta = media?.let { lineMeta(it, strings) }.orEmpty(),
                     trailing = if (playing) strings.playing else "",
                     accent = if (playing) TvSourceAccent.Attention else TvSourceAccent.None,
@@ -1324,7 +1325,7 @@ private fun webPane(
                     selected = playing,
                     playing = playing,
                     action = media?.let { TvSourceAction.Play(it) },
-                    details = media?.let { lineDetails(source, channel.name.ifBlank { strings.line.format(index + 1) }, it, input, strings) },
+                    details = media?.let { lineDetails(source, channel.name.ifBlank { strings.line.tvFormat(index + 1) }, it, input, strings) },
                 ),
             )
         }
@@ -1349,7 +1350,7 @@ private fun webPane(
                     TvSourceRow(
                         id = "web:others-toggle",
                         style = TvSourceRowStyle.Option,
-                        title = (if (nav.showExcluded) strings.hideOthers else strings.showOthers).format(others.size),
+                        title = (if (nav.showExcluded) strings.hideOthers else strings.showOthers).tvFormat(others.size),
                         dividerAbove = true,
                         action = TvSourceAction.ToggleExcluded,
                     ),
@@ -1572,7 +1573,7 @@ private const val MISSING_VALUE = "—"
  */
 internal fun renderEpisodeRange(range: EpisodeRange, strings: TvSourceStrings): String = when {
     range.isEmpty() -> ""
-    range is EpisodeRange.Season -> range.numberOrNull?.let { strings.episodesSeason.format(it) } ?: strings.episodesWholeSeason
+    range is EpisodeRange.Season -> range.numberOrNull?.let { strings.episodesSeason.tvFormat(it) } ?: strings.episodesWholeSeason
     range.isSingleEpisode() -> range.knownSorts.first().toString()
     range is EpisodeRange.Combined ->
         listOf(range.first, range.second).map { renderEpisodeRange(it, strings) }.filter { it.isNotEmpty() }.joinToString("、")
@@ -1617,7 +1618,7 @@ private fun btPane(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvSourc
                 TvSourceRow(
                     id = "bt:hidden-by-filter",
                     style = TvSourceRowStyle.Option,
-                    title = strings.hiddenByFilter.format(hidden.size),
+                    title = strings.hiddenByFilter.tvFormat(hidden.size),
                     dividerAbove = included.isNotEmpty(),
                     // 只有字幕组在筛: 它的胶囊在本页顶上; 分辨率 / 字幕在筛选弹窗里
                     action = if (bt.resolution == null && bt.subtitleLanguageId == null && bt.alliance != null) {
@@ -1633,7 +1634,7 @@ private fun btPane(input: TvSourcePanelInput, nav: TvSourceNav, strings: TvSourc
                 TvSourceRow(
                     id = "bt:excluded-toggle",
                     style = TvSourceRowStyle.Option,
-                    title = (if (nav.showExcluded) strings.hideExcluded else strings.showExcluded).format(excluded.size),
+                    title = (if (nav.showExcluded) strings.hideExcluded else strings.showExcluded).tvFormat(excluded.size),
                     dividerAbove = included.isNotEmpty() && hidden.isEmpty(),
                     action = TvSourceAction.ToggleExcluded,
                 ),
@@ -1697,7 +1698,7 @@ private fun downloadRow(item: TvSourceCacheItem, input: TvSourcePanelInput, stri
     }
     val selected = playable != null && input.selector.selected?.mediaId == playable.mediaId
     val source = sourceName(origin.mediaSourceId, input.sources)
-    val status = if (item.finished) strings.cached else strings.downloadCaching.format("${item.percent}%")
+    val status = if (item.finished) strings.cached else strings.downloadCaching.tvFormat("${item.percent}%")
     val meta = buildList {
         add(status)
         origin.properties.resolution.takeIf { it.isNotBlank() }?.let { add(it) }
@@ -1741,7 +1742,7 @@ private fun btRow(group: TvBtGroup, input: TvSourcePanelInput, strings: TvSource
         if (media.episodeRange?.isSingleEpisode() == false) add(strings.pack)
         val sources = group.sourceIds
         if (sources.size > 1) {
-            add(strings.sourcesCount.format(sources.size))
+            add(strings.sourcesCount.tvFormat(sources.size))
         } else if (media.kind != MediaSourceKind.LocalCache) {
             add(sourceName(media.mediaSourceId, input.sources))
         }
@@ -1785,7 +1786,7 @@ private fun btRow(group: TvBtGroup, input: TvSourcePanelInput, strings: TvSource
             secondary = buildList {
                 if (!row.isCached) downloadButton(media, input, strings)?.let { add(it) }
                 media.properties.alliance.takeIf { it.isNotBlank() }?.let { alliance ->
-                    add(TvSourceButton(strings.menuExclude.format(alliance), TvSourceAction.ExcludeAlliance(alliance), TvSourceRowIcon.Block))
+                    add(TvSourceButton(strings.menuExclude.tvFormat(alliance), TvSourceAction.ExcludeAlliance(alliance), TvSourceRowIcon.Block))
                 }
             },
             badges = badges,
@@ -1876,7 +1877,7 @@ private fun failedPane(failed: List<MediaSourceResultPresentation>, strings: TvS
     rows = failed.map { source ->
         // 站点拉黑了这个网络: 写明几点前不再查 (重试也只是直接失败), 不写「按确定重试」
         val ipBlocked = ((source.state as? MediaSourceFetchState.Failed)?.cause as? SiteIpBlockedException)
-            ?.let { strings.siteIpBlocked.format(formatClock(it.untilMillis, strings.timeZone)) }
+            ?.let { strings.siteIpBlocked.tvFormat(formatClock(it.untilMillis, strings.timeZone)) }
         TvSourceRow(
             id = "failed:" + source.instanceId,
             style = TvSourceRowStyle.Line,
@@ -1921,7 +1922,7 @@ private fun manualPane(manual: ManualBrowsePresentation, nav: TvSourceNav, strin
             }
             return TvSourceRight(
                 key = TvSourceRailKeys.MANUAL + "/sources",
-                title = strings.manualSource.format("").trimEnd(' ', '·', ':', '：'),
+                title = strings.manualSource.tvFormat("").trimEnd(' ', '·', ':', '：'),
                 rows = rows,
                 focusId = rows.firstOrNull { it.selected }?.id,
             )
@@ -1934,7 +1935,7 @@ private fun manualPane(manual: ManualBrowsePresentation, nav: TvSourceNav, strin
                 TvSourceRow(
                     id = "mch:$index",
                     style = TvSourceRowStyle.Option,
-                    title = channel.label?.takeIf { it.isNotBlank() } ?: strings.line.format(index + 1),
+                    title = channel.label?.takeIf { it.isNotBlank() } ?: strings.line.tvFormat(index + 1),
                     trailing = channel.episodes.size.toString(),
                     icon = if (current) TvSourceRowIcon.Check else TvSourceRowIcon.None,
                     selected = current,
@@ -1943,7 +1944,7 @@ private fun manualPane(manual: ManualBrowsePresentation, nav: TvSourceNav, strin
             }
             return TvSourceRight(
                 key = TvSourceRailKeys.MANUAL + "/channels",
-                title = strings.manualChannel.format("").trimEnd(' ', '·', ':', '：'),
+                title = strings.manualChannel.tvFormat("").trimEnd(' ', '·', ':', '：'),
                 rows = rows,
                 focusId = rows.firstOrNull { it.selected }?.id,
             )
@@ -1957,13 +1958,13 @@ private fun manualPane(manual: ManualBrowsePresentation, nav: TvSourceNav, strin
             TvSourceRow(
                 id = "mpill:source",
                 style = TvSourceRowStyle.Pill,
-                title = strings.manualSource.format(manual.selectedSource?.info?.displayName.orEmpty()),
+                title = strings.manualSource.tvFormat(manual.selectedSource?.info?.displayName.orEmpty()),
                 action = TvSourceAction.Open(TvSourceDrill.ManualSources),
             ),
             TvSourceRow(
                 id = "mpill:keyword",
                 style = TvSourceRowStyle.Pill,
-                title = strings.manualKeyword.format(manual.keyword),
+                title = strings.manualKeyword.tvFormat(manual.keyword),
                 action = TvSourceAction.ManualEditKeyword,
             ),
         )
@@ -2018,7 +2019,7 @@ private fun manualPane(manual: ManualBrowsePresentation, nav: TvSourceNav, strin
                 TvSourceRow(
                     id = "mpill:channel",
                     style = TvSourceRowStyle.Pill,
-                    title = strings.manualChannel.format(channel?.label?.takeIf { it.isNotBlank() } ?: strings.line.format(manual.selectedChannelIndex + 1)),
+                    title = strings.manualChannel.tvFormat(channel?.label?.takeIf { it.isNotBlank() } ?: strings.line.tvFormat(manual.selectedChannelIndex + 1)),
                     action = TvSourceAction.Open(TvSourceDrill.ManualChannels),
                 ),
             )
@@ -2058,7 +2059,7 @@ private fun manualPane(manual: ManualBrowsePresentation, nav: TvSourceNav, strin
                             title = episode.name.ifBlank { (index + 1).toString() },
                             subtitle = opened.name,
                             fields = buildList {
-                                val line = channel?.label?.takeIf { it.isNotBlank() } ?: strings.line.format(manual.selectedChannelIndex + 1)
+                                val line = channel?.label?.takeIf { it.isNotBlank() } ?: strings.line.tvFormat(manual.selectedChannelIndex + 1)
                                 add(TvSourceDetailField(strings.labelLines, line, short = true))
                                 episode.episodeSort?.let { add(TvSourceDetailField(strings.labelEpisode, it.toString(), short = true)) }
                                 add(TvSourceDetailField(strings.labelLink, episode.url, maxLines = 1))
@@ -2090,7 +2091,7 @@ private fun formatSize(size: FileSize): String =
 /** 时刻 `HH:mm`. */
 private fun formatClock(millis: Long, timeZone: TimeZone): String {
     val time = Instant.fromEpochMilliseconds(millis).toLocalDateTime(timeZone)
-    return "%02d:%02d".format(time.hour, time.minute)
+    return "%02d:%02d".tvFormat(time.hour, time.minute)
 }
 
 /**
@@ -2099,9 +2100,12 @@ private fun formatClock(millis: Long, timeZone: TimeZone): String {
 internal fun formatPublishedDate(millis: Long, timeZone: TimeZone, currentYear: Int): String {
     if (millis == 0L) return ""
     val date = Instant.fromEpochMilliseconds(millis).toLocalDateTime(timeZone)
-    val monthDay = "%02d-%02d".format(date.month.ordinal + 1, date.day)
+    val monthDay = "%02d-%02d".tvFormat(date.month.ordinal + 1, date.day)
     return if (date.year == currentYear) monthDay else "${date.year}-$monthDay"
 }
 
 private fun optionRow(id: String, title: String, icon: TvSourceRowIcon, action: TvSourceAction) =
     TvSourceRow(id = "option:$id", style = TvSourceRowStyle.Option, title = title, icon = icon, action = action)
+
+/** 内容里 rail 的这一项在表头 (命令按钮), 不在胶囊行: 「筛选」与几个操作. */
+internal fun isCommandKey(key: String): Boolean = key == TvSourceRailKeys.FILTER || key.startsWith(TvSourceRailKeys.ACTION_PREFIX)

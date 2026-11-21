@@ -9,8 +9,6 @@
 
 package me.him188.ani.app.ui.subject.details.layout
 
-import android.content.Context
-import android.graphics.Bitmap
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
@@ -31,29 +29,26 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.IntSize
+import com.github.panpf.sketch.LocalPlatformContext
+import com.github.panpf.sketch.PlatformContext
 import com.github.panpf.sketch.Sketch
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import me.him188.ani.app.ui.foundation.LocalSketch
-import me.him188.ani.app.ui.foundation.TvNativeImages
 import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
 import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
 import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.TV_FULLSCREEN_BACKDROP_DIM_ALPHA
 import me.him188.ani.app.ui.foundation.tv.nativeview.TV_WALL_BACKDROP_CROSSFADE_MILLIS
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvBackdropBlurSpec
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvBlurredBackdropImage
 import me.him188.ani.app.ui.foundation.tv.nativeview.tvBackdropBlurSpec
 import me.him188.ani.app.ui.foundation.tv.nativeview.tvBackdropMaskAlpha
-import me.him188.ani.app.ui.foundation.tv.nativeview.tvBackdropMeasurePixels
-import me.him188.ani.app.ui.foundation.tv.nativeview.tvBackdropWorstLuminance
+import me.him188.ani.app.ui.foundation.tv.nativeview.tvFetchBlurredBackdrop
 import me.him188.ani.app.ui.foundation.tv.nativeview.tvRelativeLuminance
 import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.milliseconds
@@ -82,7 +77,7 @@ internal fun TvDetailsBlurredBackdrop(
     spec: TvBackdropBlurSpec = tvBackdropBlurSpec(LocalThemeSettings.current.tvDetailsBackdropBlur),
 ) {
     val sketch = LocalSketch.current
-    val context = LocalContext.current
+    val context = LocalPlatformContext.current
     val maskColor = AniThemeDefaults.pageContentBackgroundColor.copy(alpha = TV_FULLSCREEN_BACKDROP_DIM_ALPHA)
     val textColor = MaterialTheme.colorScheme.onSurfaceVariant
     val loaded by rememberUpdatedState(onLoaded)
@@ -146,7 +141,7 @@ internal fun TvTouchBlurredBackdrop(url: String, spec: TvBackdropBlurSpec, compa
     }
     // [companion] 那一档: 不在最近几张里就取一张 (从 hero 进来时是内存命中) 放进去; 自己这一档还没好、底下也还没东西时先铺它
     val sketch = LocalSketch.current
-    val context = LocalContext.current
+    val context = LocalPlatformContext.current
     LaunchedEffect(start, companionSpec) {
         if (companionSpec == null || TvRecentBlurredBackdrops.get(url, companionSpec, windowSize) != null) return@LaunchedEffect
         val image = loadTvBlurredBackdrop(sketch, context, url, windowSize, companionSpec) ?: return@LaunchedEffect
@@ -255,12 +250,12 @@ private object TvRecentBlurredBackdrops {
 }
 
 /**
- * 海报墙 (hero 态) 已经解好的一张整屏模糊小图放进平板模式的最近几张里 (见 TvRecentBlurredBackdrops): 从 hero 点进详情页时
- * 第一帧就铺得上它、再渐变到详情页那一档, 不先露出页面底色. [size] 是铺满的那一块 (窗口) 的大小.
+ * 海报墙 (hero 态) 已经解好的一张整屏模糊小图 (量好了亮度) 放进平板模式的最近几张里 (见 TvRecentBlurredBackdrops): 从 hero 点进详情页时
+ * 第一帧就铺得上它、再渐变到详情页那一档, 不先露出页面底色. [size] 是铺满的那一块 (窗口) 的大小. 安卓的海报墙交来的是位图, 见同名的安卓版.
  */
-internal fun tvRememberTouchBlurredBackdrop(url: String, spec: TvBackdropBlurSpec, size: IntSize, bitmap: Bitmap) {
+internal fun tvRememberTouchBlurredBackdrop(url: String, spec: TvBackdropBlurSpec, size: IntSize, image: TvBlurredBackdropImage) {
     if (TvRecentBlurredBackdrops.get(url, spec, size) == null) {
-        TvRecentBlurredBackdrops.put(url, spec, size, BlurredBackdrop.of(bitmap, spec))
+        TvRecentBlurredBackdrops.put(url, spec, size, BlurredBackdrop(image.bitmap, spec, image.worstForLightText, image.worstForDarkText))
     }
 }
 
@@ -270,19 +265,13 @@ internal fun tvRememberTouchBlurredBackdrop(url: String, spec: TvBackdropBlurSpe
  */
 internal suspend fun loadTvBlurredBackdrop(
     sketch: Sketch,
-    context: Context,
+    context: PlatformContext,
     url: String,
     size: IntSize,
     spec: TvBackdropBlurSpec,
 ): BlurredBackdrop? {
-    val bitmap = TvNativeImages.fetchBlurredBackdrop(
-        sketch, context, url, size.width, size.height,
-        longEdgePx = spec.longEdgePx,
-        blurRadiusPx = spec.radiusPx,
-        coverWidthPx = 0,
-        coverHeightPx = 0,
-    ) ?: return null
-    return withContext(Dispatchers.Default) { BlurredBackdrop.of(bitmap, spec) }
+    val image = tvFetchBlurredBackdrop(sketch, context, url, size.width, size.height, spec) ?: return null
+    return BlurredBackdrop(image.bitmap, spec, image.worstForLightText, image.worstForDarkText)
 }
 
 /**
@@ -331,19 +320,6 @@ internal class BlurredBackdrop(
         val textLuminance = tvRelativeLuminance(text.toArgb())
         val lightText = textLuminance >= maskLuminance
         return tvBackdropMaskAlpha(if (lightText) worstForLightText else worstForDarkText, maskLuminance, textLuminance, mask.alpha)
-    }
-
-    companion object {
-        fun of(bitmap: Bitmap, spec: TvBackdropBlurSpec): BlurredBackdrop {
-            // 同海报墙的模糊层量法: 同一张图两边压得一样深
-            val pixels = tvBackdropMeasurePixels(bitmap)
-            return BlurredBackdrop(
-                bitmap.asImageBitmap(),
-                spec,
-                worstForLightText = tvBackdropWorstLuminance(pixels, lightText = true),
-                worstForDarkText = tvBackdropWorstLuminance(pixels, lightText = false),
-            )
-        }
     }
 }
 

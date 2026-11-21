@@ -185,7 +185,7 @@ internal class TvPlayerDetailLayersState {
     internal fun galleryReady(panel: TvPlayerPanel) {
         if (gallery != panel || shownGallery == panel) return
         // 正跨过来、这张没有内容 (没排出格): 焦点先交给这颗胶囊, 再换下旧画廊 —— 焦点还在旧画廊的格里, 先拆掉它焦点就没了
-        if (crossing && (gridHandle(panel).view?.childCount ?: 0) == 0) focusPillOf(panel)
+        if (crossing && (gridHandle(panel).view?.laidOutCount() ?: 0) == 0) focusPillOf(panel)
         shownGalleryFadeIn = shownGallery == null
         shownGallery = panel
     }
@@ -259,7 +259,7 @@ internal class TvPlayerDetailLayersState {
     private var lastCross: TvGalleryCross? = null
 
     /** [panel] 的画廊停在哪一格: 网格还在就是它选中的那格, 拆了就是拆时记下的那格 (重建时落回去); -1 = 没有. */
-    private fun keptSelection(panel: TvPlayerPanel): Int = gridHandle(panel).let { it.view?.selectedPosition ?: it.savedSelection }
+    private fun keptSelection(panel: TvPlayerPanel): Int = gridHandle(panel).let { it.view?.currentSelection() ?: it.savedSelection }
 
     /**
      * 焦点在 [from] 那颗胶囊的画廊 (或叠在它上面的人物页里「查看全部」的画廊) 最左列按左 / 最右边按右: 相邻那颗胶囊也是画廊时换过去,
@@ -297,11 +297,11 @@ internal class TvPlayerDetailLayersState {
             val handle = gridHandle(neighbor)
             // 排出格来, 或者已经报了排好 (没有内容, 见 galleryReady) 就不再等
             withTimeoutOrNull(TV_GALLERY_CROSS_WAIT_MILLIS) {
-                while ((handle.view?.childCount ?: 0) == 0 && shownGallery != neighbor) delay(16)
+                while ((handle.view?.laidOutCount() ?: 0) == 0 && shownGallery != neighbor) delay(16)
             }
             if (gallery != neighbor) return
             val enter = galleryEnterSide[neighbor]
-            val ready = enter != null && (handle.view?.childCount ?: 0) > 0
+            val ready = enter != null && (handle.view?.laidOutCount() ?: 0) > 0
             if (fromPages) {
                 // 人物页清掉后底下的画廊露出来, 自己把焦点还进选中那格 (TvLayerSlot), 这里先选好
                 if (ready) handle.selectEdgeNearest(!toRight, windowY)
@@ -674,7 +674,7 @@ private fun TvGalleryLayer(
     LaunchedEffect(Unit) {
         withTimeoutOrNull(TV_GALLERY_READY_WAIT_MILLIS) {
             var frames = 0
-            while ((grid.view?.childCount ?: 0) == 0 && !(frames >= TV_GALLERY_EMPTY_FRAMES && host.shown == null)) {
+            while ((grid.view?.laidOutCount() ?: 0) == 0 && !(frames >= TV_GALLERY_EMPTY_FRAMES && host.shown == null)) {
                 withFrameNanos { }
                 frames++
             }
@@ -719,7 +719,7 @@ private fun TvGalleryLayer(
     LaunchedEffect(layers.galleryFocusRequest) {
         if (layers.galleryFocusRequest == 0) return@LaunchedEffect
         withTimeoutOrNull(TV_GALLERY_FOCUS_WAIT_MILLIS) {
-            while ((grid.view?.childCount ?: 0) == 0) delay(100)
+            while ((grid.view?.laidOutCount() ?: 0) == 0) delay(100)
             currentEnter(false)
         }
     }

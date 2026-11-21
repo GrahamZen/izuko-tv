@@ -14,21 +14,14 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.positionInWindow
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.distinctUntilChanged
 import me.him188.ani.app.domain.media.player.MediaCacheProgressInfo
 import me.him188.ani.app.videoplayer.ui.progress.MediaProgressFramePreviewState
 import me.him188.ani.app.videoplayer.ui.progress.MediaProgressSliderColors
@@ -38,7 +31,7 @@ import me.him188.ani.app.videoplayer.ui.progress.ProgressSliderPreviewStyle
 import kotlin.math.roundToInt
 
 /**
- * 播放器进度条行中间的那一段: 原生自绘的进度条 ([TvProgressTrackView]) + 拖动预览时圆点上方的浮窗.
+ * 播放器进度条行中间的那一段: 进度条本体 ([TvProgressTrackBar]: 安卓是原生自绘视图, iOS 是 Canvas) + 拖动预览时圆点上方的浮窗.
  *
  * 遥控器拖动时每挪一步, 进度条只重画自己 (位置直接推给视图, 不经组合); 浮窗画在本窗口里, 位置读在摆放阶段,
  * 挪一步只重新摆放, 不像弹出窗口那样要系统搬窗口、主线程再把它重排重画一遍.
@@ -57,41 +50,8 @@ internal fun TvProgressTrack(
     framePreview: MediaProgressFramePreviewState?,
     modifier: Modifier = Modifier,
 ) {
-    val context = LocalContext.current
-    val view = remember(context) { TvProgressTrackView(context) }
-    Box(modifier.fillMaxWidth().height(TvProgressTrackView.HEIGHT_DP.dp)) {
-        AndroidView(
-            factory = { view },
-            modifier = Modifier.matchParentSize(),
-            update = {
-                it.setColors(
-                    trackBackground = colors.trackBackgroundColor.toArgb(),
-                    trackProgress = colors.trackProgressColor.toArgb(),
-                    cached = colors.cachedProgressColor.toArgb(),
-                    downloading = colors.downloadingColor.toArgb(),
-                    notAvailable = colors.notAvailableColor.toArgb(),
-                    chapter = colors.chapterColor.toArgb(),
-                    thumb = colors.thumbColor.toArgb(),
-                )
-                it.setThumbVisible(thumbVisible)
-            },
-        )
-        if (live) {
-            LaunchedEffect(view, state) {
-                snapshotFlow { state.trackPositionRatio to state.displayPositionRatio }
-                    .collect { (play, thumb) -> view.setPositions(play, thumb) }
-            }
-            LaunchedEffect(view, state) {
-                snapshotFlow { chapterRatios(state) }
-                    .distinctUntilChanged { a, b -> a.contentEquals(b) }
-                    .collect { view.setChapterRatios(it) }
-            }
-        }
-        if (cacheProgress != null) {
-            LaunchedEffect(view, cacheProgress) {
-                cacheProgress.collect { view.setCacheProgress(it) }
-            }
-        }
+    Box(modifier.fillMaxWidth().height(TV_PROGRESS_TRACK_HEIGHT_DP.dp)) {
+        TvProgressTrackBar(state, cacheProgress, colors, thumbVisible, live, Modifier.matchParentSize())
         if (state.isPreviewing) {
             TvProgressPreviewBubble(state, framePreview, colors)
         }
@@ -108,7 +68,7 @@ private fun BoxScope.TvProgressPreviewBubble(
     framePreview: MediaProgressFramePreviewState?,
     colors: MediaProgressSliderColors,
 ) {
-    val rootView = LocalView.current.rootView
+    val windowWidth = LocalWindowInfo.current.containerSize.width
     ProgressSliderPreviewBubble(
         state = state,
         framePreview = framePreview,
@@ -124,7 +84,7 @@ private fun BoxScope.TvProgressPreviewBubble(
                 layout(constraints.maxWidth, constraints.maxHeight) {
                     val anchorX = (constraints.maxWidth - thumbSlot) * state.displayPositionRatio
                     val origin = coordinates?.positionInWindow() ?: Offset.Zero
-                    val maxWindowX = (rootView.width - bubble.width).coerceAtLeast(0).toFloat()
+                    val maxWindowX = (windowWidth - bubble.width).coerceAtLeast(0).toFloat()
                     val windowX = (origin.x + anchorX - bubble.width / 2f).coerceIn(0f, maxWindowX)
                     bubble.place((windowX - origin.x).roundToInt(), -gap - bubble.height)
                 }
@@ -133,7 +93,7 @@ private fun BoxScope.TvProgressPreviewBubble(
 }
 
 /** 章节起止点在进度条上的比例 (起点; 终点不是另一章起点时也画). */
-private fun chapterRatios(state: PlayerProgressSliderState): FloatArray {
+internal fun tvChapterRatios(state: PlayerProgressSliderState): FloatArray {
     val total = state.totalDurationMillis
     if (total <= 0L) return FloatArray(0)
     val chapters = state.chapters
@@ -145,3 +105,21 @@ private fun chapterRatios(state: PlayerProgressSliderState): FloatArray {
     }
     return points.toFloatArray()
 }
+
+/** 进度条这一行的高度 (轨道 6dp 居中, 圆点半径 8dp). */
+internal const val TV_PROGRESS_TRACK_HEIGHT_DP = 24
+
+/**
+ * 进度条本体: 底轨、缓存段 (下载中 / 已缓存 / 不可用)、已播放段、章节点、圆点. 不接焦点也不接触摸.
+ * 安卓是原生自绘视图 (遥控器拖动时每挪一步只重画自己, 不经组合), iOS 用 Canvas 画同样的东西.
+ * [live] 为 false 时停在最后一次的位置; [cacheProgress] 为 null 时不画缓存段.
+ */
+@Composable
+internal expect fun TvProgressTrackBar(
+    state: PlayerProgressSliderState,
+    cacheProgress: Flow<MediaCacheProgressInfo>?,
+    colors: MediaProgressSliderColors,
+    thumbVisible: Boolean,
+    live: Boolean,
+    modifier: Modifier,
+)

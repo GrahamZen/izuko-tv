@@ -55,6 +55,7 @@ import me.him188.ani.app.ui.lang.video_player_tv_episodes
 import me.him188.ani.app.ui.lang.video_player_tv_restart
 import me.him188.ani.app.ui.lang.video_player_tv_up_next_in
 import me.him188.ani.app.ui.lang.watch_together_title
+import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import org.jetbrains.compose.resources.StringResource
@@ -77,7 +78,7 @@ internal fun PrewarmTvPlayerControls(
 ) {
     val environment = rememberResourceEnvironment()
     LaunchedEffect(environment) {
-        withContext(Dispatchers.IO) {
+        withContext(Dispatchers.IO_) {
             for (resource in TV_PLAYER_CONTROLS_STRING_RESOURCES) getStringOffMain(environment, resource)
         }
     }
