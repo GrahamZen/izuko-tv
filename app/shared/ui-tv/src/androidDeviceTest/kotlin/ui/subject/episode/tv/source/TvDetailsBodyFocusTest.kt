@@ -11,7 +11,9 @@ package me.him188.ani.app.ui.subject.episode.tv.source
 
 import android.view.KeyEvent
 import android.widget.FrameLayout
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
@@ -20,6 +22,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.node.RootForTest
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
@@ -52,18 +55,21 @@ class TvDetailsBodyFocusTest {
             compose = ComposeView(host.activity)
             host.root.addView(compose, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
             compose.setContent {
+                // 同应用里: 按钮外面有一圈 48dp 的最小可点区域, 没按钮的一条要照它留高
                 MaterialTheme {
-                    TvDetailsBody(
-                        title = "item $item",
-                        position = "${item + 1} / ${ITEMS.size}",
-                        subtitle = "",
-                        badges = emptyList(),
-                        fields = if (item == 0) TALL_FIELDS else emptyList(),
-                        note = "",
-                        buttons = buttonsOf(item),
-                        onNavigate = { item = (item + it).coerceIn(0, ITEMS.lastIndex) },
-                        modifier = Modifier.onSizeChanged { bodyHeight = it.height },
-                    )
+                    CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 48.dp) {
+                        TvDetailsBody(
+                            title = "item $item",
+                            position = "${item + 1} / ${ITEMS.size}",
+                            subtitle = "",
+                            badges = emptyList(),
+                            fields = if (item == 0) TALL_FIELDS else emptyList(),
+                            note = "",
+                            buttons = buttonsOf(item),
+                            onNavigate = { item = (item + it).coerceIn(0, ITEMS.lastIndex) },
+                            modifier = Modifier.onSizeChanged { bodyHeight = it.height },
+                        )
+                    }
                 }
             }
         }

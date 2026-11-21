@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -300,7 +301,11 @@ private fun TvDetailsButtonRow(buttons: List<TvDetailsButton>) {
     val initial = focusedKey == null
     Row(horizontalArrangement = Arrangement.spacedBy(TV_DETAILS_BUTTON_GAP), verticalAlignment = Alignment.CenterVertically) {
         if (buttons.isEmpty()) {
-            Box(Modifier.size(1.dp).slot(TV_DETAILS_NO_BUTTON_KEY).tvWindowInitialFocus(initial).focusable())
+            // 占一颗按钮的高 (连同按钮外面那圈最小可点区域, 同 [AniFocusActionButton] 里的 Surface): 有没有按钮这一行一样高
+            Box(
+                Modifier.minimumInteractiveComponentSize().size(1.dp, TV_DETAILS_BUTTON_HEIGHT)
+                    .slot(TV_DETAILS_NO_BUTTON_KEY).tvWindowInitialFocus(initial).focusable(),
+            )
         }
         buttons.forEachIndexed { i, button ->
             key(button.key) {
@@ -368,9 +373,9 @@ private const val TV_SOURCE_DETAILS_TABLE_COLUMNS = 4
 private const val TV_SOURCE_DETAILS_SECONDARY_ALPHA = 0.7f
 
 /**
- * 标题与信息那一块至少多高: 一条完整的信息 (两行标题、副标题、两行四列的表格、两行长短不定的) 放得下 (同系列简介那样定高, 换一条、信息后补上时不变形状)
+ * 标题与信息那一块至少多高: 一条完整的信息 (三行标题、副标题、两行四列的表格、两行长短不定的) 放得下 (同系列简介那样定高, 换一条、信息后补上时不变形状)
  */
-private val TV_DETAILS_INFO_MIN_HEIGHT = 260.dp
+private val TV_DETAILS_INFO_MIN_HEIGHT = 280.dp
 
 /** 按钮的高 ([AniFocusActionButton]: 上下内边距 10 + 一行按钮字) */
 private val TV_DETAILS_BUTTON_HEIGHT = 40.dp
