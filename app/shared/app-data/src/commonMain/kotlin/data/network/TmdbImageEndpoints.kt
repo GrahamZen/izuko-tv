@@ -24,6 +24,8 @@ import me.him188.ani.utils.ktor.ScopedHttpClient
  * 原站 `image.tmdb.org` 在中国移动的网络上 TLS 握手即被重置 (按 SNI 域名拦; 2026-09 全国拨测, 移动 31 个点只通 3 个),
  * 电信、联通正常. `images.tmdb.org` 是同一个 CDN 拉取区 (BunnyCDN) 挂的另一个官方域名, 有自己的证书, 同一轮拨测移动
  * 通 29 个, 图片与原站逐字节一致. 所以默认先用它, 连不上再用原站.
+ * 同一个拉取区还挂着官方的 `image-bunny.tmdb.org` 与 Bunny 给它的默认域名 `tmdb-image-prod.b-cdn.net` (图片也逐字节一致),
+ * 排在最后当替补.
  *
  * 清单在仓库根目录的 `tmdb-image-hosts.json`: 哪天这两个都不行了, 往里加能用的入口 (把路径放在参数里的代理写成模板,
  * 见 [EndpointUrls]), 不用发版.
@@ -56,7 +58,7 @@ class TmdbImageEndpoints(
         private val LIST = RepoHostedList.Spec(
             fileName = "tmdb-image-hosts.json",
             field = "hosts",
-            bundled = listOf("https://images.tmdb.org", "https://image.tmdb.org"),
+            bundled = listOf("https://images.tmdb.org", "https://image.tmdb.org", "https://image-bunny.tmdb.org", "https://tmdb-image-prod.b-cdn.net"),
             normalize = EndpointUrls::normalizeBaseUrl,
         )
     }
