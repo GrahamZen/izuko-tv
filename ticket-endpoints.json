@@ -1,0 +1,6 @@
+{
+  "_comment": "工单服务 (tools/ticket-worker) 的根地址, 按顺序试; 应用见 FeedbackTicketEndpoints",
+  "endpoints": [
+    "https://izuko-tickets.grahamzen.workers.dev"
+  ]
+}
