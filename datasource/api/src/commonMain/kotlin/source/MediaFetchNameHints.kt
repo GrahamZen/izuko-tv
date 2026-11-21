@@ -31,8 +31,25 @@ data class MediaFetchNameHints(
     val otherWorkNames: List<String> = emptyList(),
     /** 本条目是拆分季的一段: 站点可能用别的段或整季的名字给本季起名, 名字对不上的条目也可能是这一部. */
     val splitSeason: Boolean = false,
+    /** 本条目接在这部本篇后面编号 (见 [MediaFetchHostWork]): 站点常把它放在本篇的页里. */
+    val hostWork: MediaFetchHostWork? = null,
 ) {
     companion object {
         val Empty = MediaFetchNameHints()
     }
 }
+
+/**
+ * 本条目所依附的本篇: Bangumi 上本条目的「主线故事」, 本条目的集号接着它的正片往下编 (TV 13 集之后的 OVA 是第 14 集).
+ * 站点常不给这种 OVA、特别篇单独开页, 而是放在本篇的页里, 写成「OVA」或接着编的集号.
+ *
+ * @property names 本篇的全部名字 (原名、中文名与别名), 认站点上本篇的页用
+ * @property firstSort 本篇正片第一集的 sort
+ * @property episodeCount 本篇的正片集数; 本条目正片第一集的 sort 是 [firstSort] + [episodeCount]
+ */
+@Serializable
+data class MediaFetchHostWork(
+    val names: List<String>,
+    val firstSort: Int,
+    val episodeCount: Int,
+)

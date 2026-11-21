@@ -40,4 +40,5 @@ internal fun MediaFetchRequest.selectorSearchQuery(name: String) = SelectorSearc
     subjectEpisodeSorts = wholeSubjectEpisodeSortsOrNull(),
     subjectEpisodeCount = mainEpisodeCountOrNull(),
     ovaSubject = isOvaSubject(),
+    hostWork = nameHints.hostWork,
 )

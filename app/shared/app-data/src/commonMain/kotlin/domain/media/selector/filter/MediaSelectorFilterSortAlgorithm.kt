@@ -269,6 +269,8 @@ class MediaSelectorFilterSortAlgorithm {
         val matchedAsSeasonlessSeries = matchedBySeriesEpisodeSort
                 && seasonlessSubjectNames.isNotEmpty()
                 && MediaListFilters.nameForSeasonlessCompare(mediaSubjectNameOrOriginalTitle) in seasonlessSubjectNames
+        // 本篇的页上按本条目的 sort 认领的资源 (TV 后面接着编号的 OVA), 见 claimsAsHostWorkEpisode
+        val matchedAsHostWork = context.claimsAsHostWorkEpisode(media)
 
         // 由下面实现调用, 方便创建 MaybeExcludedMedia
         fun include(): MaybeExcludedMedia {
@@ -358,7 +360,7 @@ class MediaSelectorFilterSortAlgorithm {
             // 只有在条目名称不相同的情况下, 才可以考虑续集, 因为续集可能只比前传多一个特殊字符, 能通过 specialEquals.
             if (subjectNames.anyEquals(normalizedMediaSubjectName)) {
                 // contextSubjectNames 与条目名称相同, 肯定不能排除它
-            } else if (!matchedAsSeasonlessSeries) {
+            } else if (!matchedAsSeasonlessSeries && !matchedAsHostWork) {
                 if (media.kind == MediaSourceKind.WEB && SeasonNumberConflict.of(context)?.let { it.isOtherSeason(mediaSubjectName) || it.isSeasonlessEarlierSeason(mediaSubjectName) } == true) {
                     return exclude(MediaExclusionReason.FromSeriesSeason)
                 }
@@ -435,7 +437,7 @@ class MediaSelectorFilterSortAlgorithm {
                             baseContains
                         }
                     }
-                    nameMatches || matchedAsSeasonlessSeries
+                    nameMatches || matchedAsSeasonlessSeries || matchedAsHostWork
                 }
 
                 MediaSourceKind.BitTorrent -> true
