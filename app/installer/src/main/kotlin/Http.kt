@@ -47,4 +47,12 @@ internal object Http {
 /** 去掉协议与路径, 只留域名, 用在界面上说「从哪下的」. */
 internal fun hostOf(url: String): String = url.substringAfter("://").substringBefore('/')
 
+/** 本仓库放清单类文件的分支 (同应用的 GitHubFileSources.LISTS_BRANCH). */
+internal const val LISTS_BRANCH = "lists"
+
+/** 仓库里一个文件的下载入口, 按顺序试: jsDelivr 三个节点, 再 raw 兜底 (同应用的 GitHubFileSources.urls). */
+internal fun repoFileUrls(repository: String, branch: String, path: String): List<String> =
+    listOf("testingcf.jsdelivr.net", "gcore.jsdelivr.net", "cdn.jsdelivr.net").map { "https://$it/gh/$repository@$branch/$path" } +
+        "https://raw.githubusercontent.com/$repository/$branch/$path"
+
 class HttpStatusException(val code: Int) : IOException("HTTP $code")

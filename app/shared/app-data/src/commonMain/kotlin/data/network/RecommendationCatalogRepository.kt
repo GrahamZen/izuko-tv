@@ -9,17 +9,9 @@
 
 package me.him188.ani.app.data.network
 
-import io.ktor.client.plugins.expectSuccess
-import io.ktor.client.request.get
-import io.ktor.client.request.header
-import io.ktor.client.statement.readRawBytes
-import io.ktor.http.HttpHeaders
-import io.ktor.http.HttpStatusCode
-import io.ktor.http.isSuccess
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -30,6 +22,8 @@ import me.him188.ani.app.data.persistent.JsonFileCache
 import me.him188.ani.app.data.recommendation.RecommendationCatalog
 import me.him188.ani.app.data.recommendation.RecommendationCatalogManifest
 import me.him188.ani.app.domain.foundation.GitHubFileSources
+import me.him188.ani.app.domain.foundation.RemoteFetch
+import me.him188.ani.app.domain.foundation.RemoteRefresh
 import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.io.DigestAlgorithm
 import me.him188.ani.utils.io.SystemPath
@@ -72,6 +66,20 @@ class RecommendationCatalogRepository(
     private val localLoaded = CompletableDeferred<Unit>()
     private val download = JsonFileCache(dir.resolve(DOWNLOAD_FILE), RecommendationCatalogDownload.serializer())
 
+    /** 什么时候问一次清单 (多数时候是 304); 本地没有目录就不管上次什么时候问过. */
+    private val refresh = RemoteRefresh(
+        name = "recommendation catalog",
+        scope = scope,
+        staleAfter = REFRESH_INTERVAL,
+        checkEvery = CHECK_INTERVAL,
+        refreshOnNetworkCheck = false,
+        lastFetchedAt = {
+            localLoaded.await()
+            download.read()?.checkedAt?.takeIf { catalog.value != null }
+        },
+        fetch = ::fetch,
+    )
+
     init {
         scope.launch {
             catalog.value = runCatching { loadLocal() }
@@ -79,11 +87,6 @@ class RecommendationCatalogRepository(
                 .getOrNull()
             localLoaded.complete(Unit)
             catalog.value?.let { logger.info { "recommendation catalog loaded: ${it.size} entries (${it.manifest.generated})" } }
-            while (true) {
-                runCatching { refreshIfStale() }
-                    .onFailure { if (it is CancellationException) throw it else logger.warn(it) { "recommendation catalog: refresh failed" } }
-                delay(CHECK_INTERVAL)
-            }
         }
     }
 
@@ -116,53 +119,42 @@ class RecommendationCatalogRepository(
         }
     }
 
-    private suspend fun refreshIfStale() {
+    /** 问一次清单; 没变或换上了新的返回 true. */
+    private suspend fun fetch(): Boolean {
         val saved = download.read() ?: RecommendationCatalogDownload()
         val current = catalog.value
-        if (current != null && currentTimeMillis() - saved.checkedAt < REFRESH_INTERVAL.inWholeMilliseconds) return
-        val failures = mutableListOf<String>()
-        for (url in MANIFEST_URLS) {
-            val fetched = fetch(url, etag = saved.etag.takeIf { current != null && saved.source == url })
-            val (bytes, etag) = when (fetched) {
-                is Fetched.Failed -> {
-                    failures += "$url: ${fetched.reason}"
-                    continue
-                }
-
-                Fetched.NotModified -> {
-                    download.write(saved.copy(checkedAt = currentTimeMillis()))
-                    return
-                }
-
-                is Fetched.Body -> fetched.bytes to fetched.etag
-            }
+        val fetched = RemoteFetch.firstChanged(
+            "recommendation catalog",
+            MANIFEST_URLS,
+            client,
+            previous = RemoteFetch.Revision(saved.source, saved.etag).takeIf { current != null },
+        ) { source, bytes ->
             val manifest = runCatching { json.decodeFromString(RecommendationCatalogManifest.serializer(), bytes.decodeToString()) }.getOrNull()
-            if (manifest == null || manifest.format != FORMAT) {
-                failures += "$url: not a manifest"
-                continue
-            }
+            if (manifest == null || manifest.format != FORMAT) RemoteFetch.reject("not a manifest")
             // CDN 的边缘缓存可能还是更早的一版 (见 GitHubFileSources): 比本机这份旧就换下一个入口
             if (current != null && manifest.generated < current.manifest.generated) {
-                failures += "$url: stale (${manifest.generated} < ${current.manifest.generated})"
-                continue
+                RemoteFetch.reject("stale (${manifest.generated} < ${current.manifest.generated})")
             }
-            if (!downloadFiles(manifest, preferred = url)) {
-                failures += "$url: files unavailable"
-                continue
+            if (!downloadFiles(manifest, preferred = source)) RemoteFetch.reject("files unavailable")
+            manifest to bytes
+        } ?: return false
+        when (fetched) {
+            is RemoteFetch.Conditional.NotModified -> download.write(saved.copy(checkedAt = currentTimeMillis()))
+            is RemoteFetch.Conditional.Changed -> {
+                val (manifest, bytes) = fetched.value
+                withContext(Dispatchers.IO_) {
+                    val temp = dir.resolve("$MANIFEST_FILE.tmp")
+                    temp.writeBytes(bytes)
+                    temp.moveTo(dir.resolve(MANIFEST_FILE))
+                }
+                download.write(RecommendationCatalogDownload(etag = fetched.etag, source = fetched.source, checkedAt = currentTimeMillis()))
+                val built = build(manifest)
+                catalog.value = built
+                removeUnreferenced(manifest)
+                logger.info { "recommendation catalog updated from ${fetched.source}: ${built.size} entries (${manifest.generated})" }
             }
-            withContext(Dispatchers.IO_) {
-                val temp = dir.resolve("$MANIFEST_FILE.tmp")
-                temp.writeBytes(bytes)
-                temp.moveTo(dir.resolve(MANIFEST_FILE))
-            }
-            download.write(RecommendationCatalogDownload(etag = etag, source = url, checkedAt = currentTimeMillis()))
-            val built = build(manifest)
-            catalog.value = built
-            removeUnreferenced(manifest)
-            logger.info { "recommendation catalog updated from $url: ${built.size} entries (${manifest.generated})" }
-            return
         }
-        logger.info { "recommendation catalog: no usable source (${failures.joinToString()}), keeping ${current?.size ?: 0} entries" }
+        return true
     }
 
     /** 清单引用的文件本地没有的都下下来 (先试清单所在的入口, 再试别的), 核对 sha256; 有一份下不全就算失败. */
@@ -172,22 +164,16 @@ class RecommendationCatalogRepository(
             val target = dir.resolve(fileName(entry))
             if (withContext(Dispatchers.IO_) { target.exists() }) continue
             val urls = GitHubFileSources.urls(REPOSITORY, entry.path).sortedBy { !sameSource(it, preferred) }
-            var ok = false
-            for (url in urls) {
-                val body = fetch(url, etag = null) as? Fetched.Body ?: continue
-                if (sha256Hex(body.bytes) != entry.sha256) {
-                    logger.info { "recommendation catalog: $url sha256 mismatch" }
-                    continue
-                }
-                withContext(Dispatchers.IO_) {
-                    val temp = target.resolveSibling(target.name + ".tmp")
-                    temp.writeBytes(body.bytes)
-                    temp.moveTo(target)
-                }
-                ok = true
-                break
+            val fetched = RemoteFetch.firstChanged("recommendation catalog ${entry.path}", urls, client, previous = null) { _, bytes ->
+                if (sha256Hex(bytes) != entry.sha256) RemoteFetch.reject("sha256 mismatch")
+                bytes
             }
-            if (!ok) return false
+            if (fetched !is RemoteFetch.Conditional.Changed) return false
+            withContext(Dispatchers.IO_) {
+                val temp = target.resolveSibling(target.name + ".tmp")
+                temp.writeBytes(fetched.value)
+                temp.moveTo(target)
+            }
         }
         return true
     }
@@ -195,30 +181,6 @@ class RecommendationCatalogRepository(
     private suspend fun removeUnreferenced(manifest: RecommendationCatalogManifest) = withContext(Dispatchers.IO_) {
         val keep = manifest.files.mapTo(HashSet()) { fileName(it) } + MANIFEST_FILE + DOWNLOAD_FILE
         dir.list().map { it.name }.filter { it !in keep }.forEach { runCatching { dir.resolve(it).delete() } }
-    }
-
-    private suspend fun fetch(url: String, etag: String?): Fetched = try {
-        client().use {
-            val response = get(url) {
-                expectSuccess = false
-                if (etag != null) header(HttpHeaders.IfNoneMatch, etag)
-            }
-            when {
-                response.status == HttpStatusCode.NotModified -> Fetched.NotModified
-                response.status.isSuccess() -> Fetched.Body(response.readRawBytes(), response.headers[HttpHeaders.ETag])
-                else -> Fetched.Failed(response.status.toString())
-            }
-        }
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        Fetched.Failed(e::class.simpleName.orEmpty())
-    }
-
-    private sealed interface Fetched {
-        data object NotModified : Fetched
-        class Body(val bytes: ByteArray, val etag: String?) : Fetched
-        class Failed(val reason: String) : Fetched
     }
 
     private companion object {

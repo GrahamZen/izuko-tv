@@ -39,6 +39,7 @@ import me.him188.ani.app.domain.foundation.BangumiRouteStats
 import me.him188.ani.app.domain.foundation.BangumiRouting
 import me.him188.ani.app.domain.foundation.ConscryptEchTransport
 import me.him188.ani.app.domain.foundation.GitHubFileSources
+import me.him188.ani.app.domain.foundation.RemoteRefresh
 import me.him188.ani.app.domain.foundation.RepoHostedList
 import me.him188.ani.app.domain.foundation.summarizeForLog
 import me.him188.ani.app.domain.session.auth.BangumiOAuthRelay
@@ -88,6 +89,8 @@ class NetworkDiagnosis(
     private val echConfig: BangumiEchConfig,
     private val echAddresses: BangumiEchAddressList,
     private val stats: BangumiRouteStats,
+    /** 工单服务的地址 (清单里的, 见 FeedbackTicketEndpoints), 测第一个. */
+    private val ticketEndpoints: List<String> = FeedbackTicketService.OFFICIAL_ENDPOINTS,
     /** 登录着时的 Bangumi 令牌; 没登录为 `null`. */
     private val bangumiToken: suspend () -> String?,
 ) {
@@ -101,13 +104,15 @@ class NetworkDiagnosis(
 
     suspend fun run(onStep: (Step) -> Unit = {}): NetworkReport {
         val started = System.currentTimeMillis()
-        // 先把仓库里的清单 (镜像、加密直连地址、TMDB 入口…) 都拉一遍, 不管多久前拉过: 下面测的就是最新的, 出了问题的人也马上用上
+        // 先把远程文件 (仓库里的清单、加密配置、通知…) 都取一遍, 不管多久前取过: 下面测的就是最新的, 出了问题的人也马上用上.
+        // 报告里只列清单 (镜像、加密直连地址、TMDB 入口…)
         onStep(Step.LISTS)
-        val lists = coroutineScope {
-            RepoHostedList.created.map { list -> async { list to (withTimeoutOrNull(LISTS_TIMEOUT) { list.refreshNow() } == true) } }.awaitAll()
-        }.map { (list, refreshed) ->
+        val refreshed = coroutineScope {
+            RemoteRefresh.created.filter { it.refreshOnNetworkCheck }.map { file -> async { file.name to (withTimeoutOrNull(LISTS_TIMEOUT) { file.refreshNow() } == true) } }.awaitAll()
+        }.toMap()
+        val lists = RepoHostedList.created.map { list ->
             val state = list.state()
-            ListCheck(state.fileName, state.entries, state.bundled, state.updatedAgoMillis?.div(1000), refreshed)
+            ListCheck(state.fileName, state.entries, state.bundled, state.updatedAgoMillis?.div(1000), refreshed[list.fileName] == true)
         }.sortedBy { it.file }
 
         onStep(Step.ENVIRONMENT)
@@ -246,7 +251,7 @@ class NetworkDiagnosis(
         addAll(listOf("api.bgm.tv", "next.bgm.tv", "lain.bgm.tv", "bgm.tv"))
         knownRoutes.filter { it is BangumiRoute.Mirror || it is BangumiRoute.Custom }
             .mapNotNullTo(this) { it.hostFor("api.bgm.tv") }
-        add(hostOf(FeedbackTicketService.OFFICIAL_ENDPOINTS.first()))
+        ticketEndpoints.firstOrNull()?.let { add(hostOf(it)) }
         add(hostOf(BangumiOAuthRelay.CALLBACK_URL))
         addAll(listOf("crypto.cloudflare.com", "testingcf.jsdelivr.net", "api.github.com", "api.themoviedb.org", "api.tmdb.org"))
         addAll(TMDB_IMAGE_HOSTS)
@@ -310,9 +315,9 @@ class NetworkDiagnosis(
     private data class ServiceTarget(val name: String, val url: String, val onCloudflare: Boolean)
 
     private fun serviceTargets(): List<ServiceTarget> = buildList {
-        add(ServiceTarget("tickets", FeedbackTicketService.OFFICIAL_ENDPOINTS.first() + "/", onCloudflare = true))
+        ticketEndpoints.firstOrNull()?.let { add(ServiceTarget("tickets", "$it/", onCloudflare = true)) }
         add(ServiceTarget("relay", "https://${hostOf(BangumiOAuthRelay.CALLBACK_URL)}/", onCloudflare = true))
-        GitHubFileSources.urls(currentAniBuildConfig.projectRepository, "bangumi-mirrors.json").forEach { url ->
+        GitHubFileSources.urls(currentAniBuildConfig.projectRepository, "bangumi-mirrors.json", GitHubFileSources.LISTS_BRANCH).forEach { url ->
             add(ServiceTarget("list:" + hostOf(url), url, onCloudflare = false))
         }
         add(ServiceTarget("github", "https://api.github.com/repos/${currentAniBuildConfig.updateRepository}/releases?per_page=1", onCloudflare = false))

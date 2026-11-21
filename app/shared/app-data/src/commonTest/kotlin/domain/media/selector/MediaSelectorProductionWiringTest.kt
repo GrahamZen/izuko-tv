@@ -219,6 +219,7 @@ class MediaSelectorProductionWiringTest {
             override val tmdbImageHostCache get() = error("not used")
             override val githubDownloadMirrorCache get() = error("not used")
             override val feedbackEndpointCache get() = error("not used")
+            override val ticketEndpointCache get() = error("not used")
             override val feedbackRecords get() = error("not used")
             override val notices get() = error("not used")
             override val danmakuConfig get() = error("not used")

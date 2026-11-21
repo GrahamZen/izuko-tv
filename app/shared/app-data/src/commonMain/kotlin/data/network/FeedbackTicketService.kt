@@ -315,14 +315,17 @@ class FeedbackTicketService(
         const val MAX_STATUS = 10
 
         /**
-         * 正式的工单服务地址, 按顺序试; 空 = 工单没开放 (控制台的提交按钮置灰).
+         * 包里内置的工单服务地址, 按顺序试; 正式用的是清单 [FeedbackTicketEndpoints], 从没拉到过清单时用这份.
          * workers.dev 在大陆多半直连不通, 由 [CloudflareServiceTransport] 走加密直连.
          */
         val OFFICIAL_ENDPOINTS: List<String> = listOf("https://izuko-tickets.grahamzen.workers.dev")
 
-        /** 现在用的地址: 正式的, 或 debug 包调试开关「故障工单服务」选的本机 (电脑上的 wrangler dev, 经 adb reverse). */
-        fun configuredEndpoints(): List<String> =
-            if (DevSwitches.ticketService.value == DevSwitches.ticketService.default) OFFICIAL_ENDPOINTS else listOf("http://127.0.0.1:8787")
+        /**
+         * 现在用的地址: 正式的 [official] (清单里的), 或 debug 包调试开关「故障工单服务」选的本机 (电脑上的 wrangler dev, 经 adb reverse).
+         * 空 = 工单没开放 (控制台的提交按钮置灰).
+         */
+        fun configuredEndpoints(official: List<String>): List<String> =
+            if (DevSwitches.ticketService.value == DevSwitches.ticketService.default) official else listOf("http://127.0.0.1:8787")
 
         private const val TICKET_HEADER = "X-Izuko-Ticket"
         private val CREATE_TIMEOUT = 20.seconds
