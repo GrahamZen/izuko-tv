@@ -39,6 +39,7 @@ import me.him188.ani.app.domain.foundation.BangumiRouteStats
 import me.him188.ani.app.domain.foundation.BangumiRouting
 import me.him188.ani.app.domain.foundation.ConscryptEchTransport
 import me.him188.ani.app.domain.foundation.GitHubFileSources
+import me.him188.ani.app.domain.foundation.RepoHostedList
 import me.him188.ani.app.domain.foundation.summarizeForLog
 import me.him188.ani.app.domain.session.auth.BangumiOAuthRelay
 import me.him188.ani.app.domain.settings.ProxyProvider
@@ -93,13 +94,22 @@ class NetworkDiagnosis(
     private val logger = logger<NetworkDiagnosis>()
 
     /** 跑在哪一步, 给界面显示. */
-    enum class Step { ENVIRONMENT, DNS, ROUTES, SERVICES }
+    enum class Step { LISTS, ENVIRONMENT, DNS, ROUTES, SERVICES }
 
     /** 系统 DNS 的查询不能中断, 超时后让它在这里自己跑完, 不拖住体检. */
     private val dnsScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     suspend fun run(onStep: (Step) -> Unit = {}): NetworkReport {
         val started = System.currentTimeMillis()
+        // 先把仓库里的清单 (镜像、加密直连地址、TMDB 入口…) 都拉一遍, 不管多久前拉过: 下面测的就是最新的, 出了问题的人也马上用上
+        onStep(Step.LISTS)
+        val lists = coroutineScope {
+            RepoHostedList.created.map { list -> async { list to (withTimeoutOrNull(LISTS_TIMEOUT) { list.refreshNow() } == true) } }.awaitAll()
+        }.map { (list, refreshed) ->
+            val state = list.state()
+            ListCheck(state.fileName, state.entries, state.bundled, state.updatedAgoMillis?.div(1000), refreshed)
+        }.sortedBy { it.file }
+
         onStep(Step.ENVIRONMENT)
         val proxyConfig = proxyProvider.proxy.first()
         val proxy = proxyConfig?.let { parseProxy(it.url) }
@@ -128,6 +138,16 @@ class NetworkDiagnosis(
             }.awaitAll()
         }
 
+        // 加密直连的每个 Cloudflare 地址单独握手一次: 整条线路按清单顺序试, 只看得出最后连上的那个
+        val echAddressChecks = if (ech == null) emptyList() else coroutineScope {
+            echAddresses.addresses.value.map { address ->
+                async {
+                    val probed = prober.get("ech-address", ECH_ADDRESS_PROBE_URL, viaEch = true, keepBody = true, echAddress = address)
+                    EchAddressCheck(address, probed.result, probed.body?.let(::parseTrace)?.get("sni"))
+                }
+            }.awaitAll()
+        }
+
         onStep(Step.SERVICES)
         val services = coroutineScope {
             serviceTargets().flatMap { (name, url, cloudflare) ->
@@ -144,6 +164,8 @@ class NetworkDiagnosis(
             environment = environment,
             dns = dns,
             routes = routes.map { it.check },
+            echAddressChecks = echAddressChecks,
+            lists = lists,
             services = services.map { it.result },
             app = appState(),
             durationMs = System.currentTimeMillis() - started,
@@ -328,8 +350,8 @@ class NetworkDiagnosis(
         }
 
         /** 每个请求一个新的连接池: 各自从解析、连接、握手走一遍, 量到的是这条路本身. */
-        private fun client(viaEch: Boolean, listener: EventListener): OkHttpClient {
-            val base = if (viaEch) checkNotNull(ech).diagnosticClient(listener) else directBase.newBuilder().eventListener(listener).build()
+        private fun client(viaEch: Boolean, listener: EventListener, echAddress: String?): OkHttpClient {
+            val base = if (viaEch) checkNotNull(ech).diagnosticClient(listener, echAddress) else directBase.newBuilder().eventListener(listener).build()
             return base.newBuilder()
                 .connectionPool(ConnectionPool())
                 .connectTimeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
@@ -345,18 +367,20 @@ class NetworkDiagnosis(
             viaEch: Boolean,
             headers: Map<String, String> = emptyMap(),
             keepBody: Boolean = false,
+            /** 加密直连只连这个地址 (见 [ConscryptEchTransport.diagnosticClient]). */
+            echAddress: String? = null,
         ): Probed {
-            val first = once(name, url, viaEch, headers, keepBody)
+            val first = once(name, url, viaEch, headers, keepBody, echAddress)
             // 加密直连的配置过期时握手被拒: 同应用一样换一份再试一次
             val failure = first.failure
             if (viaEch && failure != null && echTransport?.recover(failure) == true) {
-                val retried = once(name, url, viaEch, headers, keepBody)
+                val retried = once(name, url, viaEch, headers, keepBody, echAddress)
                 return Probed(retried.probed.result.copy(echRetried = true), retried.probed.body, retried.probed.serverDate)
             }
             return first.probed
         }
 
-        private suspend fun once(name: String, url: String, viaEch: Boolean, headers: Map<String, String>, keepBody: Boolean): Once {
+        private suspend fun once(name: String, url: String, viaEch: Boolean, headers: Map<String, String>, keepBody: Boolean, echAddress: String?): Once {
             val via = if (viaEch) "ech" else directVia
             val timing = Timing()
             val request = Request.Builder().url(url)
@@ -364,7 +388,7 @@ class NetworkDiagnosis(
                 .apply { headers.forEach { (k, v) -> header(k, v) } }
                 .build()
             val client = try {
-                client(viaEch, timing)
+                client(viaEch, timing, echAddress)
             } catch (e: Exception) {
                 return Once(Probed(ProbeResult(name, url, via, error = e.summarizeForLog(), failedAt = "setup")), e)
             }
@@ -540,11 +564,17 @@ class NetworkDiagnosis(
         /**
          * `/cdn-cgi/trace` 里留哪些: 是否加密握手、国家 / 地区、Cloudflare 机房、协议. 不留 `ip` (用户的公网地址, 报告会附到工单里).
          */
+        /** 拉清单最多等多久 (各清单并行; 每个入口自己 10 秒超时, 四个入口都卡住时到点放弃, 用缓存的). */
+        private val LISTS_TIMEOUT = 25.seconds
+
         private val TRACE_KEYS = setOf("sni", "loc", "colo", "http", "tls", "warp", "gateway", "kex")
 
+        /** 逐个测加密直连地址时请求的地址: Cloudflare 的检测页, 回答里的 `sni` 说明握手加没加密. */
+        private const val ECH_ADDRESS_PROBE_URL = "https://api.bgm.tv/cdn-cgi/trace"
+
         /**
-         * TMDB 图片的各个域名, 都是同一个 BunnyCDN 拉取区 (775336), 图片逐字节一样: 清单里在用的两个, 加上官方的 `image-bunny.tmdb.org`
-         * 与 Bunny 给这个拉取区的默认域名. 后两个还没进清单, 测它们看在用户的网络里能不能替补.
+         * TMDB 图片的各个域名, 都是同一个 BunnyCDN 拉取区 (775336), 图片逐字节一样, 同 `tmdb-image-hosts.json` 的顺序:
+         * 在用的两个, 加上替补的官方 `image-bunny.tmdb.org` 与 Bunny 给这个拉取区的默认域名. 用户的清单可能是旧的, 所以这里写死都测.
          */
         private val TMDB_IMAGE_HOSTS = listOf("images.tmdb.org", "image.tmdb.org", "image-bunny.tmdb.org", "tmdb-image-prod.b-cdn.net")
 

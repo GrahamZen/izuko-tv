@@ -11,6 +11,8 @@ package me.him188.ani.app.ui.diagnostics
 
 import me.him188.ani.app.domain.foundation.diagnosis.AppNetworkState
 import me.him188.ani.app.domain.foundation.diagnosis.DnsCheck
+import me.him188.ani.app.domain.foundation.diagnosis.EchAddressCheck
+import me.him188.ani.app.domain.foundation.diagnosis.ListCheck
 import me.him188.ani.app.domain.foundation.diagnosis.NetworkEnvironment
 import me.him188.ani.app.domain.foundation.diagnosis.NetworkReport
 import me.him188.ani.app.domain.foundation.diagnosis.ProbeResult
@@ -164,6 +166,40 @@ class NetworkAnalysisTest {
         )
         assertTrue(findings.first().level == PerfFinding.Level.OK && findings.first().text.startsWith("网络正常"), findings.joinToString { it.text })
         assertTrue(findings.any { it.level == PerfFinding.Level.INFO && "bangumi.vip" in it.text })
+    }
+
+    private fun echCheck(address: String, up: Boolean, sni: String? = if (up) "encrypted" else null) =
+        EchAddressCheck(address, if (up) ok("ech-address") else timeout("ech-address"), sni)
+
+    @Test
+    fun `ech addresses - the first one being down is a warning`() {
+        val r = report(listOf(route("ech", "ech", true, names.map { ok(it) }, trace = mapOf("sni" to "encrypted"))))
+            .copy(echAddressChecks = listOf(echCheck("172.67.134.140", up = false), echCheck("104.21.6.61", up = true), echCheck("104.26.8.23", up = true)))
+        val findings = texts(r)
+        assertTrue(findings.any { it.level == PerfFinding.Level.WARN && "排在第一的地址 172.67.134.140 连不上" in it.text && "104.21.6.61" in it.text }, findings.joinToString { it.text })
+    }
+
+    @Test
+    fun `ech addresses - a later one being down is a note and plaintext handshakes are warned`() {
+        val r = report(listOf(route("ech", "ech", true, names.map { ok(it) }, trace = mapOf("sni" to "encrypted"))))
+            .copy(echAddressChecks = listOf(echCheck("172.67.134.140", up = true), echCheck("104.21.6.61", up = false), echCheck("104.26.8.23", up = true, sni = "plaintext")))
+        val findings = texts(r)
+        assertTrue(findings.any { it.level == PerfFinding.Level.INFO && "有的地址连不上：104.21.6.61" in it.text }, findings.joinToString { it.text })
+        assertTrue(findings.any { it.level == PerfFinding.Level.WARN && "104.26.8.23" in it.text && "sni=plaintext" in it.text })
+        assertTrue(findings.none { "排在第一" in it.text })
+    }
+
+    @Test
+    fun `lists that could not be refreshed are noted`() {
+        val r = report(listOf(route("origin", "origin", true, names.map { ok(it) }))).copy(
+            lists = listOf(
+                ListCheck("bangumi-ech-addresses.json", entries = 12, bundled = false, updatedAgoSeconds = 30, refreshed = true),
+                ListCheck("bangumi-mirrors.json", entries = 2, bundled = false, updatedAgoSeconds = 90_000, refreshed = false),
+            ),
+        )
+        val findings = texts(r)
+        assertTrue(findings.any { it.level == PerfFinding.Level.INFO && "bangumi-mirrors.json" in it.text && "bangumi-ech-addresses.json" !in it.text }, findings.joinToString { it.text })
+        assertEquals(PerfFinding.Level.OK, findings.first().level)
     }
 
     @Test
