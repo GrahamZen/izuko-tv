@@ -44,6 +44,8 @@ import me.him188.ani.app.data.network.BangumiSummaryService
 import me.him188.ani.app.data.network.EpisodeService
 import me.him188.ani.app.data.network.EpisodeServiceImpl
 import me.him188.ani.app.data.network.GitHubDownloadMirrors
+import me.him188.ani.app.data.network.RemoteAppConfigRepository
+import me.him188.ani.app.data.network.SealedNoticesRepository
 import me.him188.ani.app.data.network.RemoteSubjectService
 import me.him188.ani.app.data.network.RecommendationCatalogRepository
 import me.him188.ani.app.data.network.SeriesGraphTableRepository
@@ -562,6 +564,22 @@ private fun KoinApplication.otherModules(
             client = { get<HttpClientProvider>().get() },
             seriesGraph = { get<SeriesGraphTableRepository>().current() },
             scope = coroutineScope,
+        )
+    }
+    // 加密的应用配置 (交流群、弹弹 play 凭据、TMDB token): 取仓库 lists 分支上的密文, 用包里的钥匙解开 (换掉不用发版); 启动就建
+    single<RemoteAppConfigRepository>(createdAtStart = true) {
+        RemoteAppConfigRepository(
+            file = getContext().files.cacheDir.resolve("app-config.json"),
+            client = { get<HttpClientProvider>().get() },
+            scope = coroutineScope,
+        )
+    }
+    // 加密的应用内通知 (release notices 的附件), 冷启动时「本版新功能」那边取
+    single<SealedNoticesRepository> {
+        SealedNoticesRepository(
+            file = getContext().files.cacheDir.resolve("sealed-notices.json"),
+            mirrors = get(),
+            client = { get<HttpClientProvider>().get() },
         )
     }
     single<TmdbSubjectMapRepository> {

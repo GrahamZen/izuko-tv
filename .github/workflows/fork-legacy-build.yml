@@ -50,11 +50,18 @@ jobs:
         continue-on-error: true
         run: |-
           echo "ani.android.abis=all" >> local.properties
-          echo "ani.dandanplay.app.id=${{ secrets.DANDANPLAY_APP_ID }}" >> local.properties
-          echo "ani.dandanplay.app.secret=${{ secrets.DANDANPLAY_APP_SECRET }}" >> local.properties
-          echo "ani.tmdb.api.token=${{ secrets.TMDB_API_TOKEN }}" >> local.properties
           echo "ani.sentry.dsn=${{ secrets.SENTRY_DSN }}" >> local.properties
           echo "kotlin.native.ignoreDisabledTargets=true" >> local.properties
+      # 加密的应用配置: 同 fork-release.yml 的同名步骤 (secret 里只有解密钥匙, 配置是 lists 分支上的密文); 缺了就不出包
+      - id: 'app-config'
+        shell: 'bash'
+        env:
+          APP_CONFIG_KEY: '${{ secrets.APP_CONFIG_KEY }}'
+        run: |-
+          test -n "$APP_CONFIG_KEY" || { echo "::error::secret APP_CONFIG_KEY 没设"; exit 1; }
+          git fetch --depth=1 origin lists
+          echo "ani.config.key=$APP_CONFIG_KEY" >> local.properties
+          echo "ani.config.sealed=$(git show FETCH_HEAD:app-config.txt)" >> local.properties
       - id: 'step-5'
         continue-on-error: true
         run: |-
