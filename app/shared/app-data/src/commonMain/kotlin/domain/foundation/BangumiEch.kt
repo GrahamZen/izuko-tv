@@ -274,8 +274,15 @@ class BangumiEchAddressList(
     val addresses: StateFlow<List<String>> = entries.stateIn(scope, SharingStarted.Eagerly, SPEC.bundled)
 
     companion object {
-        /** 2026-10-13 实测都能加密直连到 bangumi; 后两个是 bangumi 自己的. */
-        val BUNDLED = listOf("172.67.134.140", "104.21.6.61", "172.67.73.67", "104.26.8.23")
+        /**
+         * 同仓库根目录的 `bangumi-ech-addresses.json`, 拉不到它时用. 前四个是一直在用的 (第三、四个是 bangumi 自己的);
+         * 后面是不同网段的替补 (运营商常按网段限速), 最后两个是 bangumi 自己的 IPv6, 给有 IPv6 的网络.
+         */
+        val BUNDLED = listOf(
+            "172.67.134.140", "104.21.6.61", "172.67.73.67", "104.26.8.23",
+            "188.114.97.3", "104.18.6.137", "172.66.40.1", "190.93.244.1", "141.101.120.1", "104.24.0.1",
+            "2606:4700:20::681a:817", "2606:4700:20::ac43:4943",
+        )
 
         private val IPV4 = Regex("""(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})""")
 
