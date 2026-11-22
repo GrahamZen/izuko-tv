@@ -31,7 +31,7 @@ object TvSettingsEntryGroup {
 
     /**
      * 下一次打开设置页时焦点落在锚点为 [anchor] 的那一行上 (分类最外一层的行, 见 TvSettingItem.anchor), 跳过去由调用方做:
-     * 如有没看过的通知时点主页头像, 落在账号页「通知」那一行. 设置页组合起来时取走 ([takeRow]).
+     * 如通知里的应用内链接 `ani://settings/about/chat-groups` 落在关于页交流群那一行. 设置页组合起来时取走 ([takeRow]).
      */
     fun focusRow(anchor: String) {
         pendingRow.value = anchor

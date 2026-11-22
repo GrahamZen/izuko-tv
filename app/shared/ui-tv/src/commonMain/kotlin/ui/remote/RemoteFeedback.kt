@@ -737,6 +737,16 @@ internal val FEEDBACK_SCRIPT = """
     // 有行左滑开着 / 正在拖时先不重画列表 (上传中、录制中每 4 秒读一次), 不然行被弹回去
     var changed = window.swBusy(box) ? false : window.setHtml(box, mainHtml(d));
     window.swPeek(box, 'feedback', '.sw-acts.r + .sw-row');
+    // 从 #settings/feedback/<种类>-<单号> 进来 (电视上「在手机上补充」的二维码): 第一次读到时直接打开这张单
+    if (window.pendingFeedback) {
+      var want = window.pendingFeedback.split('-');
+      window.pendingFeedback = null;
+      if (find(d, want[0], want[1])) {
+        detail = { kind: want[0], issue: want[1] };
+        window.sheets.open(sheet);
+        sheetBody.scrollTop = 0;
+      }
+    }
     if (detail) {
       var x = find(d, detail.kind, detail.issue);
       if (x) {

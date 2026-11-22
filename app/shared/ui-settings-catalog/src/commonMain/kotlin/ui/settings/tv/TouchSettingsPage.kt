@@ -57,6 +57,7 @@ import me.him188.ani.app.ui.settings.tabs.media.MediaSourceSubscriptionSettingsP
 import me.him188.ani.app.ui.settings.tabs.media.SelectionBar
 import me.him188.ani.app.ui.settings.tabs.media.rememberMediaSourceSettingsSection
 import me.him188.ani.app.ui.update.AppUpdateViewModel
+import me.him188.ani.app.ui.update.LocalAppUpdateViewModel
 import org.jetbrains.compose.resources.stringResource
 
 /**
@@ -77,7 +78,8 @@ fun TouchSettingsPage(
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    val appUpdate = viewModel { AppUpdateViewModel() }
+    // 界面最外层那一份 (离开设置也接着下, 见 LocalAppUpdateViewModel)
+    val appUpdate = LocalAppUpdateViewModel.current ?: viewModel { AppUpdateViewModel() }
     val profile = viewModel { ProfileViewModel() }
     val sketch = LocalSketch.current
     val navigator = LocalNavigator.current
@@ -138,7 +140,6 @@ fun TouchSettingsPage(
         }
     }
 
-    TvSettingsUpdateHost(appUpdate)
     TvPikPakLegacyNoticeHost(vm)
 
     val pending by state.pendingConfirm.collectAsStateWithLifecycle()

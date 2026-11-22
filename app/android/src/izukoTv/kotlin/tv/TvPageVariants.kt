@@ -49,6 +49,7 @@ import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.tv.withTouchNavigation
 import me.him188.ani.app.ui.foundation.tv.TvActionPanelRequests
 import me.him188.ani.app.ui.notice.TvNoticeHost
+import me.him188.ani.app.ui.notice.TvAppUpdateHost
 import me.him188.ani.app.ui.notice.TvNotices
 import me.him188.ani.app.ui.subject.details.layout.TvViewAllCommentsList
 import me.him188.ani.app.ui.subject.details.layout.TvViewAllGalleries
@@ -162,6 +163,8 @@ import me.him188.ani.app.ui.remote.TrackTvRemoteForeground
 import me.him188.ani.app.ui.remote.TvRemoteControl
 import me.him188.ani.app.ui.remote.TvRemoteControlDialogHost
 import me.him188.ani.app.ui.together.TvTogetherHost
+import me.him188.ani.app.ui.update.AppUpdateViewModel
+import me.him188.ani.app.ui.update.LocalAppUpdateViewModel
 import me.him188.ani.app.ui.whatsnew.TvWhatsNew
 import me.him188.ani.app.ui.whatsnew.TvWhatsNewHost
 import me.him188.ani.app.ui.remote.TvRemoteLoginCard
@@ -538,7 +541,10 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
             snapshotFlow { aniNavigator.backStack.lastOrNull() is NavRoutes.Main }
                 .drop(1).filter { it }.collect { TvWhatsNew.refreshNoticesOnReturnHome() }
         }
-        if (showQuickMenu) {
+        // 应用更新的那一份状态 (查新版本、下载、安装): 挂在这一层, 走到哪一页都不停; 设置页与动作面板顶上的下载那一格经
+        // LocalAppUpdateViewModel 读它 (见 TvAppUpdateHost)
+        val appUpdate = viewModel { AppUpdateViewModel() }
+        if (showQuickMenu) CompositionLocalProvider(LocalAppUpdateViewModel provides appUpdate) {
             val context = LocalContext.current
             val appTerminator = remember { KoinPlatform.getKoin().get<AppTerminator>() }
             TvQuickActionMenu(
@@ -583,7 +589,8 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
                 .tvTouchKeyboardMode(),
         ) {
             // 引导的欢迎页据此报图标位置, 启动页交接给它 (见 TvStartupLogoState.handOffToWelcome)
-            CompositionLocalProvider(LocalTvStartupLogo provides startupLogo) {
+            // 应用更新挂在这一层 (见 TvAppUpdateHost), 首页据 LocalAppUpdateViewModel 不再挂一份
+            CompositionLocalProvider(LocalTvStartupLogo provides startupLogo, LocalAppUpdateViewModel provides appUpdate) {
                 if (touchInput) {
                     // 触屏设备上动作面板的入口 (侧边栏条目读它), 与两个长按走同一道"本页可认领"判据.
                     // 电视上不包这一层, content 原样组合
@@ -593,6 +600,13 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
                     content()
                 }
             }
+            // 播放时下好了也等退出播放再装 (见 TvAppUpdateHost)
+            var inPlayer by remember { mutableStateOf(false) }
+            LaunchedEffect(Unit) {
+                aniNavigator.awaitBackStack()
+                snapshotFlow { aniNavigator.backStack.lastOrNull() is NavRoutes.EpisodeDetail }.collect { inPlayer = it }
+            }
+            TvAppUpdateHost(appUpdate, inPlayer)
             if (startupLogo != null) {
                 LaunchedEffect(Unit) {
                     // 返回栈要等应用状态读出来才有 (见 AniAppContent), 在那之前下面是空的, 先盖着.

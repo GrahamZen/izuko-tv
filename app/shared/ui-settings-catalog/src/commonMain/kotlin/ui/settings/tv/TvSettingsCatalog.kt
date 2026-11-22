@@ -568,7 +568,7 @@ class TvSettingsItemsBuilder(private val prefix: String) {
         block: suspend (TvSettingsEnv) -> Unit,
     ) = action(title, description, keys, value, null, confirm, chevron, visible, qr, anchor = anchor) { listOf(TvSettingsEdit.Run(block)) }
 
-    /** 进一层的一组设置项 (见 [TvSettingItem.Group]), 里面的项照分类里的写法写. [hideWhenEmpty]: 里面一行能显示的都没有时这一组不显示. */
+    /** 进一层的一组设置项 (见 [TvSettingItem.Group]), 里面的项照分类里的写法写. */
     fun group(
         title: StringResource,
         description: StringResource? = null,
@@ -578,23 +578,17 @@ class TvSettingsItemsBuilder(private val prefix: String) {
         qr: ((TvSettingsValues) -> TvQr?)? = null,
         onOpen: ((TvSettingsEnv) -> Unit)? = null,
         anchor: String? = null,
-        hideWhenEmpty: Boolean = false,
         items: TvSettingsItemsBuilder.() -> Unit,
     ) {
         val id = nextId()
-        val children = TvSettingsItemsBuilder(id).apply(items).build()
         this.items += TvSettingItem.Group(
             id = id,
             title = tvText(title),
             description = staticText(description),
             value = value ?: { null },
-            items = children,
+            items = TvSettingsItemsBuilder(id).apply(items).build(),
             onOpen = onOpen,
-            visible = if (hideWhenEmpty) {
-                { values -> visible(values) && children.any { it !is TvSettingItem.Header && it.shown(values) } }
-            } else {
-                visible
-            },
+            visible = visible,
             whileFocused = whileFocused,
             qr = qr,
             anchor = anchor,

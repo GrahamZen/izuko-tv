@@ -11,8 +11,6 @@ package me.him188.ani.app.ui.settings.tv
 
 import me.him188.ani.app.data.models.danmaku.DanmakuFilterConfig
 import me.him188.ani.app.data.models.danmaku.DanmakuRegexFilter
-import me.him188.ani.app.data.models.feedback.FeedbackKind
-import me.him188.ani.app.data.models.feedback.FeedbackRecord
 import me.him188.ani.app.data.models.preference.AnitorrentConfig
 import me.him188.ani.app.data.models.preference.BangumiEndpointSettings
 import me.him188.ani.app.data.models.preference.DebugSettings
@@ -298,22 +296,6 @@ class TvSettingsModelTest {
     }
 
     @Test
-    fun `a group that hides when empty shows only while one of its rows does`() {
-        val catalog = tvSettingsCatalog {
-            category(SettingsTab.ABOUT, Lang.settings_tab_about) {
-                group(Lang.settings_theme_title, hideWhenEmpty = true) {
-                    header(Lang.settings_theme_title)
-                    action(Lang.settings_theme_title, keys = listOf(fake), visible = { it[fake]?.enabled == true }) { emptyList() }
-                }
-            }
-        }
-        fun items(enabled: Boolean) = buildTvSettingsPage(catalog, values(Fake(enabled = enabled)), TvSettingsNav(), resolver)
-            .right.rows.filter { it.kind == TvSettingsRowKind.Item }
-        assertEquals(1, items(enabled = true).size)
-        assertTrue(items(enabled = false).isEmpty(), "只剩组标题时整组不显示")
-    }
-
-    @Test
     fun `rows are found by their anchor`() {
         val catalog = tvSettingsCatalog {
             category(SettingsTab.ABOUT, Lang.settings_tab_about) {
@@ -323,8 +305,6 @@ class TvSettingsModelTest {
         }
         assertEquals("ABOUT" to "ABOUT.1", findTvSettingRow(catalog, "target"))
         assertNull(findTvSettingRow(catalog, "missing"))
-        // 账号页的「通知」那一行: 有新通知时点主页头像落在它上面
-        assertEquals("PROFILE", findTvSettingRow(TvSettingsCatalogEntries, TV_SETTINGS_NOTICES_ROW)?.first)
     }
 
     @Test
@@ -360,9 +340,6 @@ class TvSettingsModelTest {
                 TvAppSettingKeys.metered to false,
                 TvAppSettingKeys.perfStatus to TvOptionalText(null),
                 TvAppSettingKeys.perfLatest to TvOptionalText(null),
-                TvFeedbackRecordsKey to TvFeedbackList(
-                    listOf(FeedbackRecord(FeedbackKind.TICKET, issue = 3, summary = "黑屏", submittedAt = 0, unread = true)),
-                ),
                 TvSourceSettingKeys.selector to MediaSelectorSettings.Default,
                 TvSourceSettingKeys.preference to MediaPreference.PlatformDefault,
                 TvSourceSettingKeys.resolver to VideoResolverSettings.Default,

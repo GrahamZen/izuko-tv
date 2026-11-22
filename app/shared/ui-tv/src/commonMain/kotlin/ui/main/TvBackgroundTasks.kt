@@ -100,6 +100,7 @@ import kotlin.time.Duration.Companion.milliseconds
  * @property hint 任务本身聚焦时面板底下的标签行写的 (说长按去哪)
  * @property resume 右端「继续」: 停在半路、等着什么的任务让它接着跑; `null` = 不画 (没在等, 或此刻接不上)
  * @property resumeLabel 「继续」聚焦时标签行写的
+ * @property resumeIcon 「继续」的图标: 默认文件夹里一个箭头 (读作「移动」, 搬缓存); 别的任务按它做的事换 (重新下载、安装)
  * @property stop 右端 ✕ 停下 (取消) 它; `null` = 不画 ✕ (功能本身停不了, 或此刻停不了)
  * @property stopLabel ✕ 聚焦时标签行写的
  */
@@ -113,12 +114,13 @@ internal class TvBackgroundTask(
     val hint: String? = null,
     val resume: (() -> Unit)? = null,
     val resumeLabel: String? = null,
+    val resumeIcon: ImageVector = Icons.AutoMirrored.Rounded.DriveFileMove,
     val stop: (() -> Unit)? = null,
     val stopLabel: String? = null,
 )
 
 /**
- * 正在后台跑的任务 (把缓存搬到别的盘、下完的缓存放入片库、导入收藏、换电视): 各功能自己跑、自己出进度, 这里汇成一个列表给动作面板顶上显示,
+ * 正在后台跑的任务 (下载新版本、把缓存搬到别的盘、下完的缓存放入片库、导入收藏、换电视): 各功能自己跑、自己出进度, 这里汇成一个列表给动作面板顶上显示,
  * 用户离开那一页也看得到还在不在跑、跑到哪了. 结束时各功能照旧弹提示. 加一种任务: 在这里加一个来源.
  * 能停的给 ✕ (搬缓存; 换电视在下载阶段), 停的结果同那个功能自己停下时一样提示; 导入收藏停不了, 不给.
  *
@@ -144,6 +146,10 @@ internal fun rememberTvBackgroundTasks(closePlayer: (() -> Unit)?): List<TvBackg
 
     val internalName = stringResource(Lang.settings_storage_cache_location_internal)
     val tasks = mutableListOf<TvBackgroundTask>()
+    // 下载新版本排最前: 开始下载时弹出的面板先显示它 (见 rememberTvAppUpdateTask)
+    rememberTvAppUpdateTask()?.let { tasks += it }
+    // 下载并安装 (电视上按的「安装测试包」与手机控制台发起的), 同排在前面
+    rememberTvAppInstallTask()?.let { tasks += it }
     fun driveName(id: String?): String = id?.let {
         GlobalKoin.getOrNull<MediaCacheLocations>()?.locations?.value?.firstOrNull { it.id == id }?.label?.takeIf { it.isNotBlank() }
     } ?: internalName
@@ -219,7 +225,7 @@ internal fun rememberTvBackgroundTasks(closePlayer: (() -> Unit)?): List<TvBackg
  * 至多每 [period] 给一个值 (中间的只留最新的), 但隔了一阵之后的第一个值马上给: 任务开始、搬缓存从「等停播」变回进度时不晚半拍,
  * 否则那一下两样都没有, 整格消失再出现, 焦点被交回卡片.
  */
-private fun <T> Flow<T>.atMostEvery(period: Duration): Flow<T> = conflate().transform {
+internal fun <T> Flow<T>.atMostEvery(period: Duration): Flow<T> = conflate().transform {
     emit(it)
     delay(period)
 }
@@ -390,7 +396,7 @@ internal fun TvBackgroundTaskSlot(
         }
         if (resumeColumn) {
             TvBackgroundTaskButton(
-                Icons.AutoMirrored.Rounded.DriveFileMove,
+                task.resumeIcon,
                 contentDescription = task.resumeLabel,
                 focused = focusedPart == TvBackgroundTaskPart.Resume,
                 enabled = TvBackgroundTaskPart.Resume in parts,

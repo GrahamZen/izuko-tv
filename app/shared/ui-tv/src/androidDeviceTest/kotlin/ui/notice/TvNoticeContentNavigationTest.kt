@@ -40,8 +40,8 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * 通知弹窗的列表与右栏 ([TvNoticeContent]): 只有一个操作的在列表里按确定键直接做、右栏不画按钮; 几个操作的按确定键或右键进右栏第一颗,
- * 两颗横排 (左右键在两颗之间走), 在最左一颗按左键或在右栏按返回键回到那一条 (返回键不关弹窗); 一个操作或没有操作的按右键不动.
+ * 通知弹窗的列表与右栏 ([TvNoticeContent]): 只有一个操作的在列表里按确定键直接做、右栏不画按钮; 几个操作的按确定键进右栏第一颗
+ * (没有别的签时按右键也进), 两颗横排 (左右键在两颗之间走), 在最左一颗按左键或在右栏按返回键回到那一条 (返回键不关弹窗).
  * 资源名这类长串 ([TvNoticeParagraph.longName]) 触屏上截到三行, 电视上写全.
  */
 class TvNoticeContentNavigationTest {
@@ -98,13 +98,16 @@ class TvNoticeContentNavigationTest {
     }
 
     @Test
-    fun `ok or right on a notice with several actions moves to the first action`() {
+    fun `ok or right on a notice with several actions moves to the first action and left goes back`() {
         press(KeyEvent.KEYCODE_DPAD_DOWN, expect = MANY)
         host.waitUntil("右栏画出两颗操作") { actionButtons() == 2 }
+        press(KeyEvent.KEYCODE_DPAD_RIGHT, expect = FIRST)
+        assertEquals(emptyList(), host.onMain { done.toList() }, "没有别的签: 右键同确定键只是进右栏")
+        press(KeyEvent.KEYCODE_DPAD_LEFT, expect = MANY)
         press(KeyEvent.KEYCODE_DPAD_CENTER, expect = FIRST)
         assertEquals(emptyList(), host.onMain { done.toList() }, "按确定键只是进右栏, 不做操作")
         press(KeyEvent.KEYCODE_DPAD_LEFT, expect = MANY)
-        press(KeyEvent.KEYCODE_DPAD_RIGHT, expect = FIRST)
+        press(KeyEvent.KEYCODE_DPAD_CENTER, expect = FIRST)
         press(KeyEvent.KEYCODE_DPAD_RIGHT, expect = SECOND)
         host.press(KeyEvent.KEYCODE_DPAD_RIGHT)
         assertEquals(SECOND, host.onMain { focusedText() }, "最右一颗按右不动")
@@ -117,7 +120,7 @@ class TvNoticeContentNavigationTest {
     @Test
     fun `back in the actions returns to the notice without closing`() {
         press(KeyEvent.KEYCODE_DPAD_DOWN, expect = MANY)
-        press(KeyEvent.KEYCODE_DPAD_RIGHT, expect = FIRST)
+        press(KeyEvent.KEYCODE_DPAD_CENTER, expect = FIRST)
         press(KeyEvent.KEYCODE_BACK, expect = MANY)
         assertFalse(host.onMain { dismissed }, "返回键回到列表, 不关弹窗")
     }
@@ -138,7 +141,7 @@ class TvNoticeContentNavigationTest {
     fun `handling a notice with several actions from elsewhere opens on its first action once`() {
         host.onMain { dialogState = TvNoticeDialogState(fresh = emptySet(), focusKey = MANY, focusIndex = 1, focusAction = 0) }
         host.waitUntil("焦点在那一条的第一个操作上 (现在在 ${focusedText()})") { focusedText() == FIRST }
-        press(KeyEvent.KEYCODE_DPAD_LEFT, expect = MANY)
+        press(KeyEvent.KEYCODE_BACK, expect = MANY)
         press(KeyEvent.KEYCODE_DPAD_UP, expect = ONE)
         press(KeyEvent.KEYCODE_DPAD_DOWN, expect = MANY)
         assertEquals(MANY, host.onMain { focusedText() }, "回到这一条时照常落在行上, 不再跳进右栏")

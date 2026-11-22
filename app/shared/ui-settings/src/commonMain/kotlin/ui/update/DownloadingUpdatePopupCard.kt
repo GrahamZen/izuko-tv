@@ -71,10 +71,6 @@ fun DownloadingUpdatePopupCard(
     onCancelClick: () -> Unit,
     onRetryClick: () -> Unit,
     modifier: Modifier = Modifier,
-    /** "安装"按钮的附加 modifier (TV 上挂焦点锚点, 下载完成后把焦点送过去). */
-    installButtonModifier: Modifier = Modifier,
-    /** "重试"按钮的附加 modifier (TV 上挂焦点锚点, 下载失败后把焦点送过去). */
-    retryButtonModifier: Modifier = Modifier,
 ) {
     var showConfirmCancel by rememberSaveable { mutableStateOf(false) }
     val onRequestCancel = {
@@ -144,7 +140,6 @@ fun DownloadingUpdatePopupCard(
             if (!isInstalling && fileDownloaderStats.state is FileDownloaderState.Succeed) {
                 AniButton(
                     onClick = onInstallClick,
-                    modifier = installButtonModifier,
                 ) {
                     Text(stringResource(Lang.settings_update_popup_restart_update))
                 }
@@ -173,7 +168,6 @@ fun DownloadingUpdatePopupCard(
                     error,
                     onRetry = onRetryClick,
                     elevation = CardDefaults.cardElevation(),
-                    retryButtonModifier = retryButtonModifier,
                 )
 //                ListItem(
 //                    headlineContent = {
@@ -240,9 +234,12 @@ fun DownloadingUpdatePopupCard(
     }
 }
 
-/** 下载卡片进度条下面那行字: 「挑选下载线路 3/5」「38/79 MB · 2.1 MB/s」「上一条线路失败，换第 2 条线路」「正在校验…」. */
+/**
+ * 下载卡片进度条下面那行字: 「挑选下载线路 3/5」「38/79 MB · 2.1 MB/s」「上一条线路失败，换第 2 条线路」「正在校验…」.
+ * 电视上动作面板顶上下载那一格的说明也用它.
+ */
 @Composable
-private fun downloadStageText(stage: FileDownloadStage): String = when (stage) {
+fun downloadStageText(stage: FileDownloadStage): String = when (stage) {
     is FileDownloadStage.Probing -> stringResource(Lang.settings_update_download_probing, stage.finished, stage.total)
     is FileDownloadStage.Transferring -> formatTransferProgress(stage.downloadedBytes, stage.totalBytes, stage.bytesPerSecond)
     is FileDownloadStage.Switching -> stringResource(Lang.settings_update_download_switching, stage.line)

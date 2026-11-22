@@ -10,9 +10,11 @@
 package me.him188.ani.app.ui.settings.tv
 
 import androidx.compose.ui.platform.UriHandler
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import me.him188.ani.app.data.models.preference.ProxyConfig
 import me.him188.ani.app.data.network.protocol.ReleaseClass
 import me.him188.ani.app.data.repository.player.DanmakuRegexFilterRepository
@@ -102,9 +104,6 @@ import me.him188.ani.app.ui.lang.tv_perf_diag_none
 import me.him188.ani.app.ui.lang.tv_perf_diag_title
 import me.him188.ani.app.ui.lang.tv_profile_switch
 import me.him188.ani.app.ui.lang.tv_settings_account_bangumi
-import me.him188.ani.app.ui.lang.tv_settings_account_mine_header
-import me.him188.ani.app.ui.lang.tv_settings_account_settings
-import me.him188.ani.app.ui.lang.tv_settings_account_settings_description
 import me.him188.ani.app.ui.lang.tv_settings_bangumi_account_header
 import me.him188.ani.app.ui.lang.tv_settings_danmaku_rule_delete_confirm
 import me.him188.ani.app.ui.lang.tv_settings_danmaku_rule_hint
@@ -130,9 +129,6 @@ import me.him188.ani.app.ui.lang.tv_settings_login_qr_caption
 import me.him188.ani.app.ui.lang.tv_settings_login_qr_description
 import me.him188.ani.app.ui.lang.tv_settings_login_relay_unsupported
 import me.him188.ani.app.ui.lang.tv_settings_login_success
-import me.him188.ani.app.ui.lang.tv_settings_notices
-import me.him188.ani.app.ui.lang.tv_settings_notices_description
-import me.him188.ani.app.ui.lang.tv_settings_notices_fresh
 import me.him188.ani.app.ui.lang.tv_settings_on_phone
 import me.him188.ani.app.ui.lang.tv_settings_paragraphs
 import me.him188.ani.app.ui.lang.tv_settings_profile_header
@@ -140,8 +136,9 @@ import me.him188.ani.app.ui.lang.tv_settings_qr_preparing
 import me.him188.ani.app.ui.lang.tv_settings_switch_profile_description
 import me.him188.ani.app.ui.lang.tv_settings_update_download_failed
 import me.him188.ani.app.ui.lang.tv_settings_update_downloaded
-import me.him188.ani.app.ui.lang.tv_settings_update_downloading
 import me.him188.ani.app.ui.lang.tv_settings_update_new_hint
+import me.him188.ani.app.ui.lang.settings_update_popup_downloading
+import me.him188.ani.app.ui.lang.settings_update_popup_installing
 import me.him188.ani.app.ui.lang.tv_settings_update_type_stable_description
 import me.him188.ani.app.ui.lang.tv_settings_update_type_test
 import me.him188.ani.app.ui.lang.tv_settings_update_type_test_description
@@ -154,7 +151,8 @@ import me.him188.ani.app.ui.settings.tabs.log.LogLanShareState
 import me.him188.ani.app.ui.update.AppUpdatePresentation
 import me.him188.ani.app.ui.update.AppUpdateState
 import me.him188.ani.app.ui.update.UpdateCheckProgress
-import kotlin.math.roundToInt
+import me.him188.ani.app.ui.update.UpdatePromptState
+import kotlin.time.Duration.Companion.milliseconds
 
 /** 账号、更新、日志、关于、调试用到的几份值. */
 internal object TvAppSettingKeys {
@@ -169,6 +167,7 @@ internal object TvAppSettingKeys {
     val loginPath = TvSettingKey.Live("loginPath") { GlobalKoin.get<BangumiEndpointProvider>().loginPath }
     val update = TvSettingKey.Stored("update") { it.updateSettings }
     val updatePresentation = TvSettingKey.Live("updatePresentation") { deps -> deps.appUpdate.presentationFlow }
+    val updateChecked = TvSettingKey.Live("updateChecked") { deps -> deps.updateChecked }
     val metered = TvSettingKey.Live("metered") { GlobalKoin.get<MeteredNetworkDetector>().isMeteredNetworkFlow }
 
     /** 「扫码传到手机」的服务此刻的样子 (焦点在那一行时才起). */
@@ -181,9 +180,6 @@ internal object TvAppSettingKeys {
 
     /** 性能诊断此刻在做什么 (录制时每半秒更新剩余秒数). */
     val perfStatus = TvSettingKey.Live("perfStatus") { deps -> deps.platform.perfStatus?.map { TvOptionalText(it) } ?: emptyFlow() }
-
-    /** 没看过的通知有几条. 没有应用内通知的端上一直没有值 (账号页「通知」那一行不显示). */
-    val notices = TvSettingKey.Live("notices") { deps -> deps.platform.notices?.fresh ?: emptyFlow() }
 }
 
 /** 可能没有的一段字 (实时值不能是 null). */
@@ -194,13 +190,10 @@ internal data class TvLogShare(val state: LogLanShareState?)
 
 // ---- 账号 ----
 
-/** 账号页「通知」那一行的锚点: 有没看过的通知时从主页点头像进来落在它上面 (见 TvSettingsState.rowOf). */
-const val TV_SETTINGS_NOTICES_ROW = "notices"
-
 /**
- * 账号 (主页点头像就到这一页), 从上到下: Bangumi 登录 (没登录或登录失效时是登录入口: 扫码登录、在电视上登录; 头像这时写「登录」,
- * 点进来就是它) → 通知 (开通知弹窗, 见 [noticesItem]) → 我的反馈 (见 feedbackItems) → 账号设置 (账号本身的设置收成一组: 用户、
- * Bangumi 账号是谁与退出登录; 一行都没有时不显示) → 注册与登录的常见问题 (没登录时, 在最下面). 多用户的增删改在选人页与手机控制台里.
+ * 账号 (主页点头像就到这一页), 从上到下: 用户 (切换用户、改成本地 / Bangumi 用户这些, 放最前面免得被下面的长列表挤到看不到) →
+ * Bangumi 登录 (没登录或登录失效时是登录入口: 扫码登录、在电视上登录; 登录着是你是谁、退出登录) →
+ * 注册与登录的常见问题 (没登录时, 在最下面). 多用户的增删改在选人页与手机控制台里. 通知与我的反馈在侧边栏的「通知」里.
  */
 internal fun TvSettingsItemsBuilder.accountItems() {
     val account = TvAppSettingKeys.account
@@ -209,106 +202,83 @@ internal fun TvSettingsItemsBuilder.accountItems() {
     fun TvSettingsValues.nickname() = this[account]?.selfInfo?.selfInfo?.nickname?.takeIf { it.isNotBlank() }?.let { tvText(it) }
         ?: tvText(Lang.settings_account_profile_not_set)
 
+    // ---- 用户 ----
+    header(Lang.tv_settings_profile_header, visible = { it[account]?.canSwitchProfile == true })
+    // 打开选人页 (同主页头像浮出的「切换用户」); 平板模式不给
+    run(
+        Lang.tv_profile_switch, Lang.tv_settings_switch_profile_description, keys = keys + TvSettingKeys.platform + TvSettingKeys.touchPage,
+        visible = { it[account]?.canSwitchProfile == true && it[TvSettingKeys.platform]?.showProfilePicker != null && it[TvSettingKeys.touchPage] != true },
+    ) { env -> env.deps.platform.showProfilePicker?.invoke() }
+    // 本地用户的名字 (个人资料用名字当昵称)
+    action(Lang.settings_account_profile_nickname, keys = keys, visible = { it.isLocal() }, value = { it.nickname() }) { emptyList() }
+    action(
+        Lang.settings_account_local_title, Lang.settings_account_local_description, keys = keys,
+        visible = { it.isLocal() },
+    ) { emptyList() }
+    run(
+        Lang.settings_account_convert_bangumi, Lang.settings_account_convert_bangumi_description, keys = keys,
+        visible = { it.isLocal() && it[account]?.canConvertToBangumi == true },
+    ) { env -> env.show(TvSettingsOverlay.Dialog { dismiss -> TvConvertToBangumiDialog(env.deps.profile, dismiss) }) }
+    run(
+        Lang.settings_account_convert_local, Lang.settings_account_convert_local_description, keys = keys,
+        visible = { !it.isLocal() && it[account]?.canConvertToLocal == true },
+    ) { env -> env.show(TvSettingsOverlay.Dialog { dismiss -> TvConvertToLocalDialog(env.deps.profile, dismiss) }) }
+    // 本地用户改成 Bangumi 用户后还没登录: 之前的本地收藏还在, 登录后再选合并还是删除
+    action(
+        Lang.settings_account_pending_local, keys = keys,
+        value = { v -> tvText(Lang.settings_account_pending_local_value, v[account]?.pendingLocalCollections ?: 0) },
+        details = { v -> tvText(Lang.profile_pending_hint, v[account]?.pendingLocalCollections ?: 0) },
+        visible = { (it[account]?.pendingLocalCollections ?: 0) > 0 },
+    ) { emptyList() }
+    run(
+        Lang.settings_account_clear_records, Lang.settings_account_clear_records_description, keys = keys,
+        visible = { it.isLocal() },
+    ) { env -> env.show(TvSettingsOverlay.Dialog { dismiss -> TvClearRecordsDialog(env.deps.profile, dismiss) }) }
+    // 本地用户导出成文件 / 从文件导入 (见 TouchProfileArchive): 电视上在 Web 控制台里做, 触屏版在这里
+    run(
+        Lang.touch_profile_export, Lang.touch_profile_export_description, keys = listOf(account, TvSettingKeys.touchPage),
+        visible = { it.isLocal() && it[TvSettingKeys.touchPage] == true },
+    ) { env -> exportCurrentProfileToFile(env.toast) }
+    run(
+        Lang.touch_profile_import, Lang.touch_profile_import_description, keys = listOf(account, TvSettingKeys.touchPage), chevron = true,
+        visible = { it.isLocal() && it[TvSettingKeys.touchPage] == true },
+    ) { env -> env.show(TvSettingsOverlay.Dialog { dismiss -> TouchProfileImportDialog(dismiss) }) }
+    // 整台电视一份, 不跟着当前用户; 两个以上用户时才有. 触屏版不给多用户的设置
+    toggleOf(
+        keys + TvSettingKeys.touchPage, Lang.settings_account_choose_profile_on_launch,
+        description = { tvText(Lang.settings_account_choose_profile_on_launch_description) },
+        visible = { it[account]?.chooseProfileOnLaunch != null && it[TvSettingKeys.touchPage] != true },
+        read = { it[account]?.chooseProfileOnLaunch == true },
+        write = { on -> listOf(TvSettingsEdit.Run { env -> env.deps.profile.setChooseProfileOnLaunch(on) }) },
+    )
+
     // ---- Bangumi 登录 ----
     loginItems()
-
-    // ---- 通知、我的反馈 (登录那一节在上面时加一行组标题隔开) ----
-    header(Lang.tv_settings_account_mine_header, visible = { it.needsLogin() })
-    noticesItem()
-    feedbackItems()
-
-    // ---- 账号设置 ----
-    group(
-        Lang.tv_settings_account_settings, Lang.tv_settings_account_settings_description,
-        value = { v -> v[account]?.selfInfo?.selfInfo?.nickname?.takeIf { it.isNotBlank() }?.let { tvText(it) } },
-        hideWhenEmpty = true,
-    ) {
-        // ---- 用户 ----
-        header(Lang.tv_settings_profile_header, visible = { it[account]?.canSwitchProfile == true })
-        // 打开选人页 (同主页头像浮出的「切换用户」); 平板模式不给
-        run(
-            Lang.tv_profile_switch, Lang.tv_settings_switch_profile_description, keys = keys + TvSettingKeys.platform + TvSettingKeys.touchPage,
-            visible = { it[account]?.canSwitchProfile == true && it[TvSettingKeys.platform]?.showProfilePicker != null && it[TvSettingKeys.touchPage] != true },
-        ) { env -> env.deps.platform.showProfilePicker?.invoke() }
-        // 本地用户的名字 (个人资料用名字当昵称)
-        action(Lang.settings_account_profile_nickname, keys = keys, visible = { it.isLocal() }, value = { it.nickname() }) { emptyList() }
-        action(
-            Lang.settings_account_local_title, Lang.settings_account_local_description, keys = keys,
-            visible = { it.isLocal() },
-        ) { emptyList() }
-        run(
-            Lang.settings_account_convert_bangumi, Lang.settings_account_convert_bangumi_description, keys = keys,
-            visible = { it.isLocal() && it[account]?.canConvertToBangumi == true },
-        ) { env -> env.show(TvSettingsOverlay.Dialog { dismiss -> TvConvertToBangumiDialog(env.deps.profile, dismiss) }) }
-        run(
-            Lang.settings_account_convert_local, Lang.settings_account_convert_local_description, keys = keys,
-            visible = { !it.isLocal() && it[account]?.canConvertToLocal == true },
-        ) { env -> env.show(TvSettingsOverlay.Dialog { dismiss -> TvConvertToLocalDialog(env.deps.profile, dismiss) }) }
-        // 本地用户改成 Bangumi 用户后还没登录: 之前的本地收藏还在, 登录后再选合并还是删除
-        action(
-            Lang.settings_account_pending_local, keys = keys,
-            value = { v -> tvText(Lang.settings_account_pending_local_value, v[account]?.pendingLocalCollections ?: 0) },
-            details = { v -> tvText(Lang.profile_pending_hint, v[account]?.pendingLocalCollections ?: 0) },
-            visible = { (it[account]?.pendingLocalCollections ?: 0) > 0 },
-        ) { emptyList() }
-        run(
-            Lang.settings_account_clear_records, Lang.settings_account_clear_records_description, keys = keys,
-            visible = { it.isLocal() },
-        ) { env -> env.show(TvSettingsOverlay.Dialog { dismiss -> TvClearRecordsDialog(env.deps.profile, dismiss) }) }
-        // 本地用户导出成文件 / 从文件导入 (见 TouchProfileArchive): 电视上在 Web 控制台里做, 触屏版在这里
-        run(
-            Lang.touch_profile_export, Lang.touch_profile_export_description, keys = listOf(account, TvSettingKeys.touchPage),
-            visible = { it.isLocal() && it[TvSettingKeys.touchPage] == true },
-        ) { env -> exportCurrentProfileToFile(env.toast) }
-        run(
-            Lang.touch_profile_import, Lang.touch_profile_import_description, keys = listOf(account, TvSettingKeys.touchPage), chevron = true,
-            visible = { it.isLocal() && it[TvSettingKeys.touchPage] == true },
-        ) { env -> env.show(TvSettingsOverlay.Dialog { dismiss -> TouchProfileImportDialog(dismiss) }) }
-        // 整台电视一份, 不跟着当前用户; 两个以上用户时才有. 触屏版不给多用户的设置
-        toggleOf(
-            keys + TvSettingKeys.touchPage, Lang.settings_account_choose_profile_on_launch,
-            description = { tvText(Lang.settings_account_choose_profile_on_launch_description) },
-            visible = { it[account]?.chooseProfileOnLaunch != null && it[TvSettingKeys.touchPage] != true },
-            read = { it[account]?.chooseProfileOnLaunch == true },
-            write = { on -> listOf(TvSettingsEdit.Run { env -> env.deps.profile.setChooseProfileOnLaunch(on) }) },
-        )
-
-        header(Lang.tv_settings_bangumi_account_header, visible = { !it.isLocal() && !it.needsLogin() })
-        action(
-            Lang.settings_account_profile_nickname, keys = keys,
-            visible = { !it.isLocal() && !it.needsLogin() },
-            value = { it.nickname() },
-        ) { emptyList() }
-        action(
-            Lang.tv_settings_account_bangumi, keys = keys,
-            value = { v ->
-                v[account]?.selfInfo?.selfInfo?.bangumiUsername?.let { tvText(it) } ?: tvText(Lang.settings_account_profile_not_set)
-            },
-            visible = { !it.isLocal() && !it.needsLogin() },
-        ) { emptyList() }
-        action(
-            Lang.settings_account_profile_user_id, keys = keys,
-            value = { v -> v[account]?.selfInfo?.selfInfo?.id?.let { tvText(it.toString()) } ?: tvText(Lang.settings_account_profile_not_set) },
-            visible = { !it.isLocal() && !it.needsLogin() },
-        ) { emptyList() }
-        run(
-            Lang.settings_account_logout, keys = keys,
-            visible = { !it.isLocal() && it[account]?.selfInfo?.isSessionValid == true },
-        ) { env -> env.show(TvSettingsOverlay.Dialog { dismiss -> TvLogoutDialog(env.deps.profile, dismiss) }) }
-    }
+    header(Lang.tv_settings_bangumi_account_header, visible = { !it.isLocal() && !it.needsLogin() })
+    action(
+        Lang.settings_account_profile_nickname, keys = keys,
+        visible = { !it.isLocal() && !it.needsLogin() },
+        value = { it.nickname() },
+    ) { emptyList() }
+    action(
+        Lang.tv_settings_account_bangumi, keys = keys,
+        value = { v ->
+            v[account]?.selfInfo?.selfInfo?.bangumiUsername?.let { tvText(it) } ?: tvText(Lang.settings_account_profile_not_set)
+        },
+        visible = { !it.isLocal() && !it.needsLogin() },
+    ) { emptyList() }
+    action(
+        Lang.settings_account_profile_user_id, keys = keys,
+        value = { v -> v[account]?.selfInfo?.selfInfo?.id?.let { tvText(it.toString()) } ?: tvText(Lang.settings_account_profile_not_set) },
+        visible = { !it.isLocal() && !it.needsLogin() },
+    ) { emptyList() }
+    run(
+        Lang.settings_account_logout, keys = keys,
+        visible = { !it.isLocal() && it[account]?.selfInfo?.isSessionValid == true },
+    ) { env -> env.show(TvSettingsOverlay.Dialog { dismiss -> TvLogoutDialog(env.deps.profile, dismiss) }) }
 
     // ---- 注册与登录的常见问题 (没登录时, 最下面) ----
     loginHelpItems()
-}
-
-/** 「通知」: 行尾写几条没看过的, 确定打开通知弹窗 (叠在设置页上, 关掉回到这一行). 没有应用内通知的端不显示. */
-private fun TvSettingsItemsBuilder.noticesItem() {
-    val notices = TvAppSettingKeys.notices
-    run(
-        Lang.tv_settings_notices, Lang.tv_settings_notices_description, keys = listOf(notices), chevron = true,
-        value = { v -> v[notices]?.takeIf { it > 0 }?.let { tvText(Lang.tv_settings_notices_fresh, it) } },
-        anchor = TV_SETTINGS_NOTICES_ROW,
-    ) { env -> env.deps.platform.notices?.open() }
 }
 
 /** 是 Bangumi 用户 (不是本地用户) 而且没登录 / 登录失效了. */
@@ -489,8 +459,10 @@ internal fun TvSettingsItemsBuilder.danmakuRuleItems() {
 // ---- 更新 ----
 
 /**
- * 软件更新. 新版本的提示、下载进度、装不装都在「检查更新」那一行上 (行尾写状态, 确定做下一步); 下载总在应用内 (电视上没有浏览器,
- * 「应用内下载」不列), 下完自动安装 (见 TvSettingsUpdateHost).
+ * 软件更新. 「检查更新」那一行: 按确定先查 (不管之前查到过什么, 见 [tvUpdateRowStep]), 结果写在行尾; 查到了再按一下同通知里的「自动更新」
+ * (交给界面最外层那一份: 开始下载、看进度或安装, 见 UpdatePromptState.requestDownload).
+ * 下载总在应用内 (电视上没有浏览器, 「应用内下载」不列), 下完自动安装.
+ * 下载的进度、取消、重试与安装在动作面板顶上 (开始下载时弹一次), 这一行只写「正在下载更新」, 按确定打开动作面板, 不重复进度.
  */
 internal fun TvSettingsItemsBuilder.updateItems() {
     val update = TvAppSettingKeys.update
@@ -504,14 +476,18 @@ internal fun TvSettingsItemsBuilder.updateItems() {
         val page = env.deps.platform.whatsNewPage ?: return@run
         env.show(TvSettingsOverlay.Dialog { dismiss -> page(dismiss) })
     }
+    val checked = TvAppSettingKeys.updateChecked
+    fun TvSettingsValues.checked() = this[checked]?.isFor(this[update]?.releaseClass) == true
     action(
-        Lang.settings_update_check, keys = listOf(presentation),
-        value = { v -> v[presentation]?.let(::updateStatus) },
-        details = { v -> v[presentation]?.let(::updateDetails) },
+        Lang.settings_update_check, keys = listOf(presentation, update, checked),
+        value = { v -> v[presentation]?.let { updateStatus(it, v.checked()) } },
+        details = { v -> v[presentation]?.let { updateDetails(it, v.checked()) } },
     ) { v ->
         val p = v[presentation] ?: return@action emptyList()
-        if (p.isCheckingUpdate || p.state is AppUpdateState.Downloading || p.state is AppUpdateState.Installing) return@action emptyList()
-        listOf(TvSettingsEdit.Run { env -> onUpdateRowClicked(env, p) })
+        val step = tvUpdateRowStep(p, v.checked())
+        if (step == TvUpdateRowStep.None) return@action emptyList()
+        val releaseClass = v[update]?.releaseClass
+        listOf(TvSettingsEdit.Run { env -> onUpdateRowClicked(env, p, step, releaseClass) })
     }
     toggle(
         update, Lang.settings_update_auto_check, Lang.settings_update_auto_check_description,
@@ -538,38 +514,50 @@ internal fun TvSettingsItemsBuilder.updateItems() {
     link(Lang.settings_update_view_changelog) { AniHelperDestination.RELEASE_PREFIX + currentAniBuildConfig.versionName }
 }
 
-private fun updateStatus(p: AppUpdatePresentation): TvText? {
+/** [checked]: 这次进设置后按此刻的更新类型查成过; 没有时不写查到什么 (那是别的时候、也许是另一个更新类型查到的). */
+private fun updateStatus(p: AppUpdatePresentation, checked: Boolean): TvText? {
     val state = p.state
     return when {
         p.isCheckingUpdate -> (p.checkProgress as? UpdateCheckProgress.Mirror)
             ?.let { tvText(Lang.settings_update_checking_mirror, it.index, it.total) }
             ?: tvText(Lang.settings_update_checking)
 
-        state is AppUpdateState.Downloading -> tvText(Lang.tv_settings_update_downloading, (state.progress * 100).roundToInt())
+        state is AppUpdateState.Downloading -> tvText(Lang.settings_update_popup_downloading)
+        state is AppUpdateState.Installing -> tvText(Lang.settings_update_popup_installing)
+        p.checkUpdateError != null -> tvText(Lang.settings_update_check_failed)
+        !checked -> null
         state is AppUpdateState.Downloaded -> tvText(Lang.tv_settings_update_downloaded)
         state is AppUpdateState.DownloadFailed -> tvText(Lang.tv_settings_update_download_failed)
         state is AppUpdateState.HasNewVersion -> tvText(Lang.settings_update_new_version, state.version.name)
-        p.checkUpdateError != null -> tvText(Lang.settings_update_check_failed)
         state is AppUpdateState.AlreadyUpToDate -> tvText(Lang.settings_update_up_to_date)
         else -> null
     }
 }
 
 /** 有新版本时说明栏写它的主要改动. */
-private fun updateDetails(p: AppUpdatePresentation): TvText? {
+private fun updateDetails(p: AppUpdatePresentation, checked: Boolean): TvText? {
+    if (!checked) return null
     val version = (p.state as? AppUpdateState.HasNewVersion)?.version ?: return null
     val changes = version.majorChanges.joinToString("\n") { "· $it" }
     return tvText(Lang.tv_settings_update_new_hint, changes)
 }
 
-private fun onUpdateRowClicked(env: TvSettingsEnv, p: AppUpdatePresentation) {
+private fun onUpdateRowClicked(env: TvSettingsEnv, p: AppUpdatePresentation, step: TvUpdateRowStep, releaseClass: ReleaseClass?) {
     val viewModel = env.deps.appUpdate
-    val uriHandler = env.uriHandler()
-    when (val state = p.state) {
-        is AppUpdateState.Downloaded -> viewModel.install(env.context)
-        is AppUpdateState.DownloadFailed -> viewModel.restartDownload(uriHandler)
-        is AppUpdateState.HasUpdate -> viewModel.startDownload(state.version, uriHandler)
-        else -> viewModel.startCheckLatestVersion(uriHandler, manual = true)
+    when (step) {
+        TvUpdateRowStep.None -> {}
+        TvUpdateRowStep.Update -> p.newVersion?.let { UpdatePromptState.requestDownload(it.name) }
+        TvUpdateRowStep.Check -> {
+            val checked = env.deps.updateChecked
+            checked.value = TvUpdateChecked(null)
+            viewModel.startCheckLatestVersion(env.uriHandler(), manual = true)
+            // 查完 (呈现也换成了这次的结果) 才算查过, 免得查的这会儿拿上一次的结果当下一步. 另起协程等: 设置里的操作一个做完才做下一个
+            tvSettingsWriteScope.launch {
+                do delay(100.milliseconds) while (viewModel.isChecking)
+                val result = viewModel.presentationFlow.first { !it.isCheckingUpdate }
+                if (result.checkUpdateError == null) checked.value = TvUpdateChecked(releaseClass)
+            }
+        }
     }
 }
 

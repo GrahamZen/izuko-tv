@@ -20,6 +20,8 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.datetime.TimeZone
+import kotlinx.datetime.number
+import kotlinx.datetime.toLocalDateTime
 import me.him188.ani.app.data.models.preference.CloudDriveAccount
 import me.him188.ani.app.data.models.preference.FullSearchMode
 import me.him188.ani.app.data.models.preference.LowRamDevice
@@ -153,6 +155,7 @@ import me.him188.ani.datasources.api.topic.Resolution
 import me.him188.ani.datasources.api.topic.SubtitleLanguage
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.days
+import kotlin.time.Instant
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
@@ -643,3 +646,11 @@ private fun cacheTtlLabel(duration: Duration): TvText = when (duration) {
     1.days -> tvText(Lang.settings_media_cache_ttl_1d)
     else -> tvText(duration.toString())
 }
+
+/** 「月-日 时:分」(`MM-dd HH:mm`), 按 [zone] 的当地时间. */
+internal fun monthDayTime(millis: Long, zone: TimeZone): String {
+    val t = Instant.fromEpochMilliseconds(millis).toLocalDateTime(zone)
+    return "${pad2(t.month.number)}-${pad2(t.day)} ${pad2(t.hour)}:${pad2(t.minute)}"
+}
+
+private fun pad2(value: Int): String = value.toString().padStart(2, '0')

@@ -22,6 +22,7 @@ import kotlinx.serialization.json.putJsonObject
 import me.him188.ani.app.navigation.AniNavigator
 import me.him188.ani.app.ui.foundation.lan.LanHttpRequest
 import me.him188.ani.app.ui.notice.TvNotices
+import me.him188.ani.app.ui.notice.listed
 
 /**
  * 手机控制台上的通知 (见 docs/contributing/code/notices.md「手机控制台」): 与电视上同一份列表.
@@ -54,7 +55,8 @@ internal object RemoteNotices {
 
     private fun list(): JsonObject = buildJsonObject {
         putJsonArray("items") {
-            for (n in TvNotices.shown.value.orEmpty()) {
+            // 在别的签里看的那几类 (反馈回复) 不列: 控制台有它们自己的页面
+            for (n in TvNotices.shown.value.orEmpty().filter { it.kind.listed }) {
                 addJsonObject {
                     put("key", n.key)
                     put("text", n.title)
@@ -95,7 +97,7 @@ internal object RemoteNotices {
 
     /** 网页每 2 秒的 `api/notice` 里带上: 有几条新的, 最新几条的键与那句话 (网页据此亮红点、弹一条提示). */
     fun putPoll(builder: JsonObjectBuilder) {
-        val fresh = TvNotices.shown.value.orEmpty().filter { !it.entry.seen }
+        val fresh = TvNotices.shown.value.orEmpty().filter { it.kind.listed && !it.entry.seen }
         builder.putJsonObject("notices") {
             put("fresh", fresh.size)
             putJsonArray("items") {

@@ -51,7 +51,7 @@ internal object TvReleaseNotice : TvNoticeKind {
         return TvNoticeDetail(
             body = parsed.paragraphs.map { TvNoticeParagraph(it) },
             actions = parsed.links.mapNotNull { link -> destinationOf(link.target)?.let { TvNoticeAction(link.label, it) } }.take(MAX_ACTIONS),
-            qr = parsed.links.firstNotNullOfOrNull { link -> (link.target as? TvNoticeLinkTarget.Web)?.let { TvNoticeQr(it.url, link.label) } },
+            qr = parsed.links.firstNotNullOfOrNull { link -> (link.target as? TvNoticeLinkTarget.Web)?.let { TvNoticeQr(it.url, link.label, openOnTouch = true) } },
         )
     }
 
