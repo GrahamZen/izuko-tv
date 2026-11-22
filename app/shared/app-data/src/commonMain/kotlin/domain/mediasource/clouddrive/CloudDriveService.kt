@@ -561,12 +561,27 @@ class CloudDriveService internal constructor(
      *
      * 调用前刚列过自己网盘的转存文件夹, 登录是好的: 两次都被拒时按「这条分享转存不了」报 [CloudDriveShareUnavailableException], 不算没登录.
      */
-    private suspend fun saveFromShare(ref: DriveShareFileRef, files: List<DriveFile>, folder: String): List<String> {
+    private suspend fun saveFromShare(ref: DriveShareFileRef, files: List<DriveFile>, folder: String): List<String> = try {
+        withShareTokens(ref, files, "Saving") { token, paired -> api.saveFromShare(ref.shareId, ref.passcode, token, paired, folder) }
+    } catch (e: CloudDriveAuthException) {
+        throw CloudDriveShareUnavailableException(e.code, "网盘拒绝转存 ${ref.fileName}: ${e.message}", saveRefused = true, displayMessage = "拒绝转存：${e.displayMessage}")
+    }
+
+    /**
+     * 拿分享令牌与配对的文件凭证做 [block] (转存、取直链): 先用当前令牌与配对的凭证; 被拒时换新令牌、重新列这些文件所在的文件夹再做一次.
+     * 第二次仍被拒时抛出 [CloudDriveAuthException].
+     */
+    private suspend fun <T> withShareTokens(
+        ref: DriveShareFileRef,
+        files: List<DriveFile>,
+        action: String,
+        block: suspend (token: String, files: List<DriveFile>) -> T,
+    ): T {
         val token = shareToken(ref.shareId, ref.passcode)
         try {
-            return api.saveFromShare(ref.shareId, ref.passcode, token.token, withPairedFileTokens(ref.shareId, token.token, files), folder)
+            return block(token.token, withPairedFileTokens(ref.shareId, token.token, files))
         } catch (e: CloudDriveAuthException) {
-            logger.warn { "Saving $driveId share ${ref.key} was rejected, refreshing share tokens: ${e.message}" }
+            logger.warn { "$action $driveId share ${ref.key} was rejected, refreshing share tokens: ${e.message}" }
         }
         shareToken(ref.shareId, ref.passcode, refresh = true)
         if (shareBrowser.needsFileToken) {
@@ -580,11 +595,7 @@ class CloudDriveService internal constructor(
         }
         // 重新列文件夹时令牌可能又换过一次, 取缓存里最新的
         val refreshed = shareToken(ref.shareId, ref.passcode)
-        return try {
-            api.saveFromShare(ref.shareId, ref.passcode, refreshed.token, withPairedFileTokens(ref.shareId, refreshed.token, files), folder)
-        } catch (e: CloudDriveAuthException) {
-            throw CloudDriveShareUnavailableException(e.code, "网盘拒绝转存 ${ref.fileName}: ${e.message}", saveRefused = true, displayMessage = "拒绝转存：${e.displayMessage}")
-        }
+        return block(refreshed.token, withPairedFileTokens(ref.shareId, refreshed.token, files))
     }
 
     private val saveLock = Mutex()
@@ -620,13 +631,17 @@ class CloudDriveService internal constructor(
     }
 
     /**
-     * 播放分享里的一个文件: 转存到自己网盘的 [SAVE_FOLDER_NAME] 再取地址 (分享里的文件不能直接取直链).
-     * 视频旁边的外挂字幕在同一次转存里一起存过去. 同一个文件只转存一次; 文件夹里的视频超过 [MAX_SAVED_FILES] 个、
+     * 播放分享里的一个文件. 网盘能直接取分享里文件的直链 ([DriveApiConfig.downloadFromShare]) 且播原文件时先这样取 ([sharePlaybackWithoutSaving]):
+     * 省掉转存的等待, 也不占网盘空间 (空间满了转存会失败). 取不到时转存到自己网盘的 [SAVE_FOLDER_NAME] 再取地址.
+     * 视频旁边的外挂字幕与视频一起取 (一起转存). 同一个文件只转存一次; 文件夹里的视频超过 [MAX_SAVED_FILES] 个、
      * 字幕超过 [MAX_SAVED_SUBTITLES] 个时删掉最早转存的.
      */
     suspend fun resolveSharePlayback(ref: DriveShareFileRef): CloudDrivePlayback {
         requireLoggedIn()
         val sidecars = shareSidecars(ref)
+        if (api.supportsShareDownload && currentAccount().playbackMode == CloudDrivePlaybackMode.ORIGINAL) {
+            sharePlaybackWithoutSaving(ref, sidecars)?.let { return it }
+        }
         val sidecarFiles = sidecars.orEmpty().map { it.file }
         val fileId = saveLock.withLock {
             savedFiles[ref.key]?.takeIf { sidecarFiles.all { savedFiles.containsKey(shareKey(ref.shareId, it.fid)) } }
@@ -663,6 +678,42 @@ class CloudDriveService internal constructor(
             resolvePlayback(saveShareFile(ref, sidecarFiles), subtitles, shareSubtitleKey(ref), cacheKey)
         }
         return playback
+    }
+
+    /**
+     * 不转存, 直接取分享里视频 [ref] 与它的外挂字幕 [sidecars] 的直链来播. 网盘拒绝或没给出视频的直链时返回 null (只记日志), 由调用方转存再播.
+     * 分享里没法找字幕 ([sidecars] 为 null) 时只带手动挂上的字幕.
+     */
+    private suspend fun sharePlaybackWithoutSaving(
+        ref: DriveShareFileRef,
+        sidecars: List<DriveSidecarSubtitles.Match<DriveFile>>?,
+    ): CloudDrivePlayback? {
+        val video = DriveFile(fid = ref.fid, fileName = ref.fileName, size = ref.size, isVideo = true, shareToken = ref.shareToken)
+        val files = listOf(video) + sidecars.orEmpty().map { it.file }
+        val links = try {
+            withShareTokens(ref, files, "Getting links of") { token, paired ->
+                api.downloadsFromShare(ref.shareId, ref.passcode, token, paired)
+            }.associate { it.fid to it.url }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            logger.warn { "Getting links of $driveId share ${ref.key} without saving failed, saving it instead: $e" }
+            return null
+        }
+        val url = links[ref.fid] ?: run {
+            logger.warn { "$driveId gave no link of share ${ref.key} without saving, saving it instead" }
+            return null
+        }
+        val found = sidecars.orEmpty().mapNotNull { match ->
+            match.takeIf { links.containsKey(it.file.fid) }?.let { DriveSidecarSubtitles.Match(it.file.fid, it.mimeType, it.label, it.language) }
+        }
+        val subtitles = subtitlesOf(ref.fid, null, SubtitleLookup.Known { found }, shareSubtitleKey(ref), knownUrls = links)
+        val account = currentAccount()
+        logger.info {
+            "Cloud drive $driveId playback of share ${ref.key} without saving: tier=${account.tier.ifBlank { "unknown" }}, " +
+                    "original, ${parallelConnectionsFor(account.tier)} connections"
+        }
+        return originalPlayback(url, subtitles, "$driveId-share:${ref.key}", account)
     }
 
     /**
@@ -1038,28 +1089,30 @@ class CloudDriveService internal constructor(
             CloudDrivePlaybackMode.TRANSCODED -> if (protocol.supportsTranscoded) bestTranscodedUrl(api.transcodedVideos(fileId)) else null
         }
         val download = if (transcoded == null) api.download(fileId) else null
-        val url = transcoded ?: download!!.url
-        val headers = playbackHeaders(currentAccount())
         val subtitles = subtitlesOf(fileId, download, subtitleLookup, subtitleKey)
-        // 原文件直链每个连接常有速度上限, 一个连接跟不上码率时让播放器 (与缓存下载) 并发分块取, 路数按账号档位 (见 parallelConnectionsFor);
-        // 转码流本来就是一段段小分片, 不用. 档位每次都记: 设置里的值只在变了时才进日志, 用户发来的日志里要看得出是哪种账号
-        val connections = parallelConnectionsFor(account.tier)
+        // 档位每次都记: 设置里的值只在变了时才进日志, 用户发来的日志里要看得出是哪种账号
         logger.info {
-            val mode = if (transcoded == null) "original, $connections connections" else "transcoded"
+            val mode = if (transcoded == null) "original, ${parallelConnectionsFor(account.tier)} connections" else "transcoded"
             "Cloud drive $driveId playback of $fileId: tier=${account.tier.ifBlank { "unknown" }}, $mode"
         }
-        return CloudDrivePlayback(
-            url,
-            if (transcoded == null) {
-                headers + listOfNotNull(
-                    connections.takeIf { it > 1 }?.let { PlaybackRequestHints.PARALLEL_RANGE_HEADER to it.toString() },
-                    PlaybackRequestHints.CACHE_KEY_HEADER to cacheKey,
-                )
-            } else {
-                headers
-            },
-            subtitles,
+        return if (transcoded == null) {
+            originalPlayback(download!!.url, subtitles, cacheKey, currentAccount())
+        } else {
+            CloudDrivePlayback(transcoded, playbackHeaders(currentAccount()), subtitles)
+        }
+    }
+
+    /**
+     * 原文件直链 [url] 的播放. 原文件直链每个连接常有速度上限, 一个连接跟不上码率时让播放器 (与缓存下载) 并发分块取,
+     * 路数按账号档位 (见 [parallelConnectionsFor]); 播放器按 [cacheKey] 把下过的数据存在本机. 转码流本来就是一段段小分片, 不走这里.
+     */
+    private fun originalPlayback(url: String, subtitles: List<CloudDriveSubtitle>, cacheKey: String, account: CloudDriveAccount): CloudDrivePlayback {
+        val connections = parallelConnectionsFor(account.tier)
+        val headers = playbackHeaders(account) + listOfNotNull(
+            connections.takeIf { it > 1 }?.let { PlaybackRequestHints.PARALLEL_RANGE_HEADER to it.toString() },
+            PlaybackRequestHints.CACHE_KEY_HEADER to cacheKey,
         )
+        return CloudDrivePlayback(url, headers, subtitles)
     }
 
     /** 账号档位 [tier] 播放原文件时并发几个连接 (见 [CloudDriveProtocol.tiers]). */
@@ -1091,8 +1144,15 @@ class CloudDriveService internal constructor(
      * 视频 [fileId] 的外挂字幕及其直链: 手动挂上的 (键 [subtitleKey]) 在前, 然后是自动找到的. 出错或超时就当没有, 不影响播放.
      *
      * @param video 已经取过的视频直链 (带着所在文件夹), 转码播放时没有
+     * @param knownUrls 已经取到直链的字幕文件 (文件 id → 直链), 不再去取
      */
-    private suspend fun subtitlesOf(fileId: String, video: DriveDownload?, lookup: SubtitleLookup, subtitleKey: String): List<CloudDriveSubtitle> {
+    private suspend fun subtitlesOf(
+        fileId: String,
+        video: DriveDownload?,
+        lookup: SubtitleLookup,
+        subtitleKey: String,
+        knownUrls: Map<String, String> = emptyMap(),
+    ): List<CloudDriveSubtitle> {
         val picked = pickedSubtitlesOf(subtitleKey).mapNotNull { DriveSidecarSubtitles.picked(it.fid, it.fileName) }
         val found = withSubtitleTimeout(fileId, "look for subtitles") {
             when (lookup) {
@@ -1102,9 +1162,13 @@ class CloudDriveService internal constructor(
         }.orEmpty()
         val matches = DriveSidecarSubtitles.numbered(picked + found.filter { match -> picked.none { it.file == match.file } })
         if (matches.isEmpty()) return emptyList()
-        val urls = withSubtitleTimeout(fileId, "get subtitle links") {
-            api.downloads(matches.map { it.file }).associate { it.fid to it.url }
-        } ?: return emptyList()
+        val missing = matches.map { it.file }.filter { it !in knownUrls }
+        val fetched = if (missing.isEmpty()) {
+            emptyMap()
+        } else {
+            withSubtitleTimeout(fileId, "get subtitle links") { api.downloads(missing).associate { it.fid to it.url } }.orEmpty()
+        }
+        val urls = knownUrls + fetched
         return matches.mapNotNull { match -> urls[match.file]?.let { CloudDriveSubtitle(it, match.mimeType, match.label, match.language) } }
             .also { subtitles -> logger.info { "Found ${subtitles.size} subtitles for $driveId file $fileId: ${subtitles.map { it.label }}" } }
     }

@@ -37,7 +37,7 @@ interface MediaSource {
 
 网盘数据源（`domain/mediasource/clouddrive`）的代码里没有任何具体的网盘：某个网盘的地址、请求参数、响应字段、状态码、
 扫码登录的步骤、分享链接的格式都写在一份协议 JSON（`CloudDriveProtocol`）里，作为 `cloud-drive` 数据源的参数随订阅或导入下发。
-`CloudDriveApi` 按协议解释执行一组固定的操作（搜索、列目录、取直链、转码地址、建文件夹、删除、任务轮询、打开分享、列分享、转存、扫码），
+`CloudDriveApi` 按协议解释执行一组固定的操作（搜索、列目录、取直链、转码地址、建文件夹、删除、任务轮询、打开分享、列分享、转存、取分享里的直链、扫码），
 各操作是请求模板加上从响应里取值的路径（路径语法同直链 API 数据源）。
 
 每个网盘（按协议 `id`）有一个 `CloudDriveService`，由 `CloudDriveRegistry` 从保存的数据源实例里读出全部协议后建立；
@@ -45,7 +45,11 @@ interface MediaSource {
 
 - `cloud-drive`：在用户自己的网盘里按条目名搜视频；
 - `cloud-drive-added-shares`：用户在 Web 控制台给条目添加的分享链接；
-- `cloud-drive-share-search`：从固定的分享合集（按文件夹名对番名）或站点的搜索接口里找别人的分享，播放时转存到自己的网盘。
+- `cloud-drive-share-search`：从固定的分享合集（按文件夹名对番名）或站点的搜索接口里找别人的分享，播放时取分享里文件的直链。
+
+播放分享里的原文件（`CloudDriveService.resolveSharePlayback`）：协议有 `downloadFromShare` 时先不转存、直接取分享里视频与外挂字幕的直链，
+不占自己网盘的空间；网盘拒绝或没给出视频的直链时，转存到自己网盘的「Izuko 转存」文件夹再取（同一个文件只转存一次，文件夹里只留最近的几个）。
+转码播放要用自己网盘里的文件 id，一律转存。两种直链都带登录 Cookie，按账号档位并发分块取。
 
 固定的分享合集（`DriveShareSearchEngine.searchFixedShares`）给每个分享列前几层文件夹建索引（存进 `DriveShareIndexStore`，应用重启后还在），
 按文件夹名对番名。各个分享分开找：哪个分享先有索引就先在里面找、读对上的文件夹并交出剧集，不等合集里别的分享列完（同时只列两个分享，
