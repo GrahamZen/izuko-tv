@@ -48,7 +48,8 @@ interface MediaSource {
 - `cloud-drive-share-search`：从固定的分享合集（按文件夹名对番名）或站点的搜索接口里找别人的分享，播放时取分享里文件的直链。
 
 播放分享里的原文件（`CloudDriveService.resolveSharePlayback`）：协议有 `downloadFromShare` 时先不转存、直接取分享里视频与外挂字幕的直链，
-不占自己网盘的空间；网盘拒绝或没给出视频的直链时，转存到自己网盘的「Izuko 转存」文件夹再取（同一个文件只转存一次，文件夹里只留最近的几个）。
+不占自己网盘的空间；网盘拒绝或没给出视频的直链时，转存到自己网盘的「Izuko 转存」文件夹再取（同一个文件只转存一次）。
+转存前先按网盘的剩余空间算：放不下时，这次用不到的副本全删掉也放不下就一个不删、报空间不够；放得下就从最早转存的删起，删到放得下为止，视频连同它的字幕一起删。
 转码播放要用自己网盘里的文件 id，一律转存。两种直链都带登录 Cookie，按账号档位并发分块取。
 
 固定的分享合集（`DriveShareSearchEngine.searchFixedShares`）给每个分享列前几层文件夹建索引（存进 `DriveShareIndexStore`，应用重启后还在），

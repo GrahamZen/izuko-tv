@@ -42,6 +42,15 @@ internal object DriveSidecarSubtitles {
 
     fun isSubtitle(fileName: String): Boolean = mimeTypeOf(fileName) != null
 
+    /**
+     * 字幕 [subtitleName] 按名字归 [videoNames] 里的哪个视频: 去掉扩展名后与视频同名, 或以视频名加点开头 (`视频.sc.ass`);
+     * 几个都对得上时取名字最长的. 没有为 null.
+     */
+    fun ownerOf(subtitleName: String, videoNames: List<String>): String? {
+        val base = stemOf(subtitleName)
+        return videoNames.filter { stemOf(it).let { stem -> base == stem || base.startsWith("$stem.") } }.maxByOrNull { stemOf(it).length }
+    }
+
     /** 专放字幕的子文件夹 (`Subs`, `字幕`, `外挂字幕`): 视频旁边一条都没有时到这里面找. */
     fun isSubtitleFolder(name: String): Boolean = SUBTITLE_FOLDER.matches(name.trim())
 
