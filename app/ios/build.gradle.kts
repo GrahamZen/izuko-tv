@@ -73,6 +73,8 @@ tasks.register("podInstall", Exec::class) {
     description = "Builds the iOS framework"
     dependsOn(
         ":app:shared:application:podspec",
+        // Podfile 从本地目录装 onnxruntime-c (见 app/shared/application/onnxruntime-pods/README.md)
+        ":app:shared:application:fetchOnnxruntimeC",
         patchInfoPlist,
     )
 
