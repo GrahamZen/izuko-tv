@@ -57,7 +57,8 @@ import me.him188.ani.datasources.api.source.serializeArguments
  * 接口 (都带公共参数 `client=tv` 与请求头 `Referer`):
  * - 文件: `GET /api/files/search` `GET /api/files/list` `POST /api/files/download` `POST /api/files/play`
  *   `POST /api/files/folder` `POST /api/files/delete`, 后台任务 `GET /api/tasks/{taskId}`
- * - 分享 (不带登录 Cookie): `POST /api/share/open` `GET /api/share/list` `POST /api/share/search`; 转存 `POST /api/share/save`
+ * - 分享 (不带登录 Cookie): `POST /api/share/open` `GET /api/share/list` `POST /api/share/search`; 转存 `POST /api/share/save`;
+ *   不转存直接取直链 `POST /api/share/download` (只在 [TestDrive.shareDownloadProtocol] 里)
  * - 账号: `GET /api/account/tier` `GET /api/account/profile`
  * - 扫码 (另一个域名, 不带公共参数): `/qr/start` → `/qr/poll` → `/qr/exchange`
  *
@@ -226,6 +227,17 @@ internal object TestDrive {
         tiers = listOf(
             DriveTier(match = "^PRO(_TRIAL)?$", label = "专业版", labels = mapOf("en" to "Pro"), parallelConnections = PRO_CONNECTIONS),
             DriveTier(match = "^BASIC$", label = "基础版", labels = mapOf("en" to "Basic")),
+        ),
+    )
+
+    /** 能不转存、直接取分享里文件直链的同一个网盘: `POST /api/share/download`, 要登录. */
+    val shareDownloadProtocol = protocol.copy(
+        api = protocol.api.copy(
+            downloadFromShare = DriveDownloadOp(
+                post("/api/share/download", "share" to "{shareId}", "token" to "{shareToken}", "ids" to "{fileIds}", "fileTokens" to "{fileTokens}"),
+                items = "data",
+                url = "url",
+            ),
         ),
     )
 
