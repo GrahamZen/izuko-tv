@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import me.him188.ani.app.ui.foundation.LocalTvPlayPauseHandler
+import me.him188.ani.app.ui.foundation.dialogs.LocalStackedDialog
 
 /**
  * 「轻透玻璃」: 居中面板弹窗 ([AniCenteredPanelDialog]) 与里面按钮 ([AniFocusActionButton]) 的样子, 照 tvOS 的弹窗 (tvOS 18 设计模板的
@@ -44,12 +45,17 @@ val ANI_GLASS_PANEL_SHAPE: Shape = RoundedCornerShape(ANI_GLASS_PANEL_CORNER)
  * 玻璃面板的底色, 不取主题色 (种子色调出来的面板色偏紫). 面板底下不模糊 (见上), 透多了后面的字会直接透上来, 所以接近实底,
  * 颜色取 tvOS 中档材质 (深色 #1E1E1E、浅色 #FEFDFF 的一半透明) 在常见底上合出来的那个: 浅色是一半 #FEFDFF 叠在压暗 40% 的浅色底
  * (#F2F2F7) 上 ≈ #C8C7CA 的浅灰 —— 直接用 #FEFDFF 是一块白板, 比 tvOS 亮得多; 深色同理 ≈ #19191A. 盖在播放器上时同 [centeredPanelColor] 那一档.
+ * 叠在另一个面板弹窗上面的 ([LocalStackedDialog]) 是实底: 底下是那个弹窗的字, 透上来会叠成一团.
  */
 @Composable
 fun aniGlassPanelColor(): Color {
     val light = MaterialTheme.colorScheme.surface.luminance() > 0.5f
     return (if (light) GLASS_PANEL_LIGHT else GLASS_PANEL_DARK).copy(
-        alpha = if (LocalTvPlayPauseHandler.current != null) GLASS_PANEL_ALPHA_OVER_PLAYER else GLASS_PANEL_ALPHA,
+        alpha = when {
+            LocalStackedDialog.current -> 1f
+            LocalTvPlayPauseHandler.current != null -> GLASS_PANEL_ALPHA_OVER_PLAYER
+            else -> GLASS_PANEL_ALPHA
+        },
     )
 }
 

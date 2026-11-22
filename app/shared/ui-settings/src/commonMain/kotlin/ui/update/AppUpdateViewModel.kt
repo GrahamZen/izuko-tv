@@ -133,19 +133,13 @@ open class AppUpdateViewModel(
             else -> {
                 when (fileDownloaderStats.state) {
                     FileDownloaderState.Idle -> AppUpdateState.HasUpdate(latestVersion)
-                    is FileDownloaderState.Failed ->
-                        AppUpdateState.DownloadFailed(latestVersion, fileDownloaderStats.state.throwable)
-
                     FileDownloaderState.Downloading ->
                         AppUpdateState.Downloading(latestVersion, fileDownloaderStats)
 
-                    is FileDownloaderState.Succeed ->
-                        AppUpdateState.Downloaded(latestVersion, fileDownloaderStats.state.file)
-
-                    is FileDownloaderState.Cancelled -> {
-                        // 用户取消, 则不算失败, ClickToCheck 可以隐藏 UI 弹窗
-                        AppUpdateState.ClickToCheck
-                    }
+                    is FileDownloaderState.Completed -> settledUpdateState(
+                        latestVersion, fileDownloaderStats.state,
+                        updateInstaller.getUpdatePreparationUrls(latestVersion.downloadUrlAlternatives),
+                    )
                 }
             }
         }
@@ -167,6 +161,9 @@ open class AppUpdateViewModel(
     )
 
     val isChecking get() = autoCheckTasker.isRunning.value
+
+    /** 正在检查新版本 (通知中心「刷新」等它查完) */
+    val checking: StateFlow<Boolean> get() = autoCheckTasker.isRunning
     private val downloadTasker = MonoTasker(backgroundScope)
 
     // 一小时内只会检查一次

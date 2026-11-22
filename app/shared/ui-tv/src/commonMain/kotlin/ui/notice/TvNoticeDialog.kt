@@ -9,33 +9,44 @@
 
 package me.him188.ani.app.ui.notice
 
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,6 +54,8 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -51,12 +64,20 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
+import kotlin.time.Clock
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Instant
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
@@ -65,10 +86,16 @@ import kotlinx.datetime.number
 import kotlinx.datetime.toLocalDateTime
 import me.him188.ani.app.ui.foundation.focus.tvWindowInitialFocus
 import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
+import me.him188.ani.app.ui.foundation.tv.ProvideRingOnlyFocus
 import me.him188.ani.app.ui.foundation.tvOverlayWindowKeys
 import me.him188.ani.app.ui.foundation.widgets.AniCenteredPanelDialog
 import me.him188.ani.app.ui.foundation.widgets.AniFocusSelectableSurface
+import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_TITLE_GAP
 import me.him188.ani.app.ui.foundation.widgets.ProvideScrollFadeFocusMargin
+import me.him188.ani.app.ui.foundation.widgets.aniFocusContainerColor
+import me.him188.ani.app.ui.foundation.widgets.aniFocusContentColor
+import me.him188.ani.app.ui.foundation.widgets.aniPanelItemColor
+import me.him188.ani.app.ui.foundation.widgets.aniPanelTitleStyle
 import me.him188.ani.app.ui.foundation.widgets.aniVerticalScrollFade
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.notification_empty
@@ -79,209 +106,618 @@ import me.him188.ani.app.ui.lang.notification_time_minutes_ago
 import me.him188.ani.app.ui.lang.notification_time_month_day
 import me.him188.ani.app.ui.lang.notification_time_yesterday
 import me.him188.ani.app.ui.lang.notification_title
-import me.him188.ani.app.ui.lang.tv_notice_footer
-import me.him188.ani.app.ui.lang.tv_notice_hint_back
-import me.him188.ani.app.ui.lang.tv_notice_hint_choose_action
-import me.him188.ani.app.ui.lang.tv_notice_hint_press_ok
 import me.him188.ani.app.ui.lang.tv_notice_section_earlier
 import me.him188.ani.app.ui.lang.tv_notice_section_new
+import me.him188.ani.app.ui.remote.CONNECTED_GREEN_DARK
+import me.him188.ani.app.ui.remote.CONNECTED_GREEN_LIGHT
 import me.him188.ani.app.ui.remote.RemoteQrCode
 import org.jetbrains.compose.resources.stringResource
-import kotlin.math.roundToInt
-import kotlin.time.Clock
-import kotlin.time.Instant
 
 /**
- * 通知弹窗 (见 docs/contributing/code/notices.md): 左边一条一行 —— 类别图标 (没看过的图标右上角一个红点)、标题与时间、标题下面一行摘要;
- * 右栏写焦点所在那一条: 类别签与时间、标题、说明与操作 ([TvShownNotice.detail] / [TvShownNotice.actions]). 两栏一样高, 高固定 (焦点换一条时弹窗不变高变矮),
- * 列表在上面、末行提示钉在下面, 正文放不下时自己滚.
- *
- * - 只有一个操作: 右栏不画按钮, 最后一行写「按确定键」接这个操作; 在列表里按确定键直接交给 [onAction].
- * - 几个操作: 两颗横排 (主操作在左)、三颗以上一颗一行竖排; 在列表里按确定键或右键焦点到第一颗, 列表里那一条铺浅底表示右栏说的是它;
- *   在右栏按左键 (最左一颗) 或返回键回到那一条.
- * - 触屏上 (平板) 一个操作也画按钮, 不写按键提示.
- *
- * 一打开焦点在 [state] 指定的那条 (没有就第一条); 指定了操作 ([TvNoticeDialogState.focusAction]) 且那一条有几个操作时在右栏那颗按钮上. 按返回 [onDismiss].
- * 一行在屏幕上露出一半以上时报 [onSeen] (每条一次): 显示到屏幕上的才算看过, 一页放不下的翻到才算.
+ * 通知弹窗 (见 docs/contributing/code/notices.md): 顶栏左边是签 (有别的签 [tabs] 时, 「通知」在最前, 见 [TvNoticeTabRow]) 或标题,
+ * 右边是刷新 (TvNoticeRefresh: 左边一行小字、按钮). 签里是左右两栏 ([TvNoticeColumns]): 「通知」签列通知 ([TvNoticeContent]),
+ * 别的签列它给的 ([TvNoticeTab.rememberItems]). 换签由 [onSelectTab] 交给 [TvNotices] (记在 [TvNoticeDialogState.tab] 里,
+ * 叠在上面的弹窗关掉、从页面回来都还在那个签).
  */
 @Composable
 internal fun TvNoticeDialog(
     items: List<TvShownNotice>,
     state: TvNoticeDialogState,
-    onAction: (index: Int, item: TvShownNotice, action: TvNoticeAction) -> Unit,
+    tabs: List<TvNoticeTab>,
+    onAction: (index: Int, item: TvNoticeColumnItem, action: TvNoticeAction) -> Unit,
     onSeen: (key: String) -> Unit,
+    onSelectTab: (id: String, intoList: Boolean, focusKey: String?) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val refresh = rememberTvNoticeRefresh()
     AniCenteredPanelDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(Lang.notification_title)) },
+        // 标题 (或签) 与刷新同在内容最上面一行
+        title = null,
         heightFraction = null,
         maxWidth = TV_NOTICE_DIALOG_MAX_WIDTH,
     ) {
-        TvNoticeContent(items, state, onAction, onSeen, onDismiss)
+        // 安卓 (电视与平板) 上是原生视图; Compose 画法 TvNoticeDialogBody 照同一份数据画, 给没有原生视图的平台
+        TvNoticeNativeBody(items, state, tabs, onAction, onSeen, onSelectTab, refreshUi = { rememberTvNoticeRefreshUi() }, onRefresh = refresh)
     }
 }
 
-/** 通知弹窗里的内容: 左边列表、右栏的说明与操作 (见 [TvNoticeDialog]). */
+/**
+ * 通知弹窗里的内容 (见 [TvNoticeDialog]): 顶栏 (签或标题, 右边刷新), 下面是选中那个签的两栏.
+ * [refreshUi] 给刷新按钮的样子 (在顶栏里组合, 它每秒变时只重画顶栏); null = 不放刷新.
+ *
+ * 焦点: 列表里按左右键换签, 焦点直接进那个签的列表, 落在那个签上次看的那一行 (没看过的落在第一行), 到头不绕回, 只有「通知」一个签时不动;
+ * 签那一排只显示选中的是哪个, 焦点不落上去 (触屏上点签换签); 列表第一行按上键到刷新, 刷新上按下键回到列表, 左右键不动
+ * (这个签一行都没有时左右键换签). 换签由 [onSelectTab] 交出去: intoList = 从列表换的 (焦点进新签的列表, 落在 focusKey 那一行),
+ * 否则是触屏上点的签, 焦点不挪.
+ */
+@Composable
+internal fun TvNoticeDialogBody(
+    items: List<TvShownNotice>,
+    state: TvNoticeDialogState,
+    tabs: List<TvNoticeTab>,
+    onAction: (index: Int, item: TvNoticeColumnItem, action: TvNoticeAction) -> Unit,
+    onSeen: (key: String) -> Unit,
+    onSelectTab: (id: String, intoList: Boolean, focusKey: String?) -> Unit,
+    onDismiss: () -> Unit,
+    refreshUi: (@Composable () -> TvNoticeRefreshUi)? = null,
+    onRefresh: () -> Unit = {},
+) {
+    val selected = tabs.firstOrNull { it.id == state.tab }?.id ?: TvNoticeTab.NOTICES
+    val refreshFocus = remember { FocusRequester() }
+    // 从列表换签、新签的两栏还没画出来时焦点停的地方 (看不见): 旧签的列表马上拿掉, 不停的话焦点丢到弹窗里第一个能聚焦的地方
+    val parkFocus = remember { FocusRequester() }
+    val columnsFocus = remember { TvNoticeColumnsFocus() }
+    // 刚按左右键换的签 (还没重组出那个签的两栏时就按了下键的, 不进旧签的列表)
+    val selectedNow = remember { arrayOf(selected) }
+    selectedNow[0] = selected
+    // 各签上次看的那一行 (右栏说的那一行): 从列表左右换签时焦点落回它
+    val lastRow = remember { HashMap<String, String>() }
+    // 画着的签一行都没有 (在下面两栏那里算, 顶栏的刷新读)
+    val shownEmptyNow = remember { booleanArrayOf(false) }
+    val tabIds = listOf(TvNoticeTab.NOTICES) + tabs.map { it.id }
+    // 返回有没有换成: 那一头没有签了 (最左 / 最右) 为 false
+    val switchFromList: ((Int) -> Boolean)? = if (tabs.isEmpty()) {
+        null
+    } else {
+        { direction ->
+            val next = tabIds.getOrNull(tabIds.indexOf(selectedNow[0]) + direction)
+            if (next != null) {
+                selectedNow[0] = next
+                onSelectTab(next, true, lastRow[next])
+            }
+            next != null
+        }
+    }
+    Column {
+        Row(
+            Modifier.fillMaxWidth().padding(bottom = if (tabs.isEmpty()) CENTERED_PANEL_TITLE_GAP else TV_NOTICE_TABS_GAP),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            if (tabs.isNotEmpty()) {
+                val labels = listOf(TvNoticeTabLabel(TvNoticeTab.NOTICES, stringResource(Lang.notification_title), items.any { it.kind.listed && !it.entry.seen })) +
+                    tabs.map { extra ->
+                        val fresh by remember(extra.id) { extra.hasFresh }.collectAsState(false)
+                        TvNoticeTabLabel(extra.id, stringResource(extra.label), fresh)
+                    }
+                TvNoticeTabRow(
+                    labels,
+                    selected = selected,
+                    onSelect = { id ->
+                        selectedNow[0] = id
+                        onSelectTab(id, false, null)
+                    },
+                )
+            } else {
+                Text(stringResource(Lang.notification_title), style = aniPanelTitleStyle)
+            }
+            Spacer(Modifier.weight(1f))
+            Box(
+                Modifier
+                    .size(1.dp)
+                    .focusRequester(parkFocus)
+                    .focusProperties {
+                        up = FocusRequester.Cancel
+                        down = FocusRequester.Cancel
+                        left = FocusRequester.Cancel
+                        right = FocusRequester.Cancel
+                    }
+                    .focusable(),
+            )
+            if (refreshUi != null) {
+                TvNoticeRefreshHeader(
+                    refreshUi,
+                    onRefresh,
+                    focusRequester = refreshFocus,
+                    onDown = { columnsFocus.enterList(selectedNow[0]) },
+                    // 这个签一行都没有时 (焦点没有别处可去) 左右键照列表里一样换签
+                    onSideways = { direction -> if (shownEmptyNow[0]) switchFromList?.invoke(direction) },
+                )
+            }
+        }
+        // 各签的行都在这里取 (位置固定, 换签时不从头取): 弹窗开着时各签的行一直备着, 换过去时多半已经在了
+        val tabItems = tabs.map { tab -> key(tab.id) { tab.rememberItems() } }
+        // 选中了哪个签 (换签、打开时就在它) 告诉那个签
+        LaunchedEffect(selected) { tabs.firstOrNull { it.id == selected }?.onTabShown() }
+        fun ready(id: String): Boolean = id == TvNoticeTab.NOTICES || tabs.indexOfFirst { it.id == id }.let { it >= 0 && tabItems[it] != null }
+        // 换签: 从列表换的先把焦点停在看不见的 parkFocus 上, 新签的行取到了 (下一帧起) 再换两栏.
+        // 焦点在旧签的列表里时直接换的话, 聚焦的那一行随旧签的两栏一起拿掉, 焦点丢到弹窗里第一个能聚焦的地方, 新签那一行的初始焦点也可能被它盖掉;
+        // 新签的行还没取到就换的话, 两栏先空一下
+        var shownTab by remember { mutableStateOf(selected) }
+        val lastShown = remember { arrayOf(state) }
+        if (selected == shownTab) lastShown[0] = state
+        if (selected != shownTab) {
+            LaunchedEffect(selected) {
+                if (!state.focusOnTabs) runCatching { parkFocus.requestFocus() }
+            }
+            if (ready(selected)) {
+                LaunchedEffect(selected) { shownTab = selected }
+            }
+        }
+        val shownState = lastShown[0]
+        // 右键进不进右栏: 右边没有签可换时进
+        val rightEnters = tabIds.indexOf(shownTab) >= tabIds.lastIndex
+        // 画着的签一行都没有: 焦点在刷新上 (见 TvNoticeColumns), 刷新上左右键换签
+        shownEmptyNow[0] = tabs.indexOfFirst { it.id == shownTab }.let { if (it < 0) items.none { n -> n.kind.listed } else tabItems[it].isNullOrEmpty() }
+        // 列表第一行上面是刷新
+        val up = if (refreshUi != null) refreshFocus else null
+        key(shownTab) {
+            val shownIndex = tabs.indexOfFirst { it.id == shownTab }
+            if (shownIndex < 0) {
+                TvNoticeContent(
+                    items,
+                    shownState,
+                    onAction,
+                    onSeen,
+                    onDismiss,
+                    tabFocus = up,
+                    columnsFocus = columnsFocus,
+                    onSwitchTab = switchFromList,
+                    rightEnters = rightEnters,
+                    onShown = { lastRow[TvNoticeTab.NOTICES] = it },
+                )
+            } else {
+                TvNoticeTabContent(
+                    tabs[shownIndex],
+                    tabItems[shownIndex],
+                    shownState,
+                    onAction,
+                    onDismiss,
+                    tabFocus = up,
+                    columnsFocus = columnsFocus,
+                    onSwitchTab = switchFromList,
+                    rightEnters = rightEnters,
+                    onShown = { lastRow[tabs[shownIndex].id] = it },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 顶栏右边: 一行小字 ([TvNoticeRefreshUi.status], 刷完有新通知时用主色) 与刷新按钮. 按钮上按下键 [onDown] (回列表), 左右键交给 [onSideways]
+ * (只在画着的签一行都没有时换签), 上键不动.
+ */
+@Composable
+private fun TvNoticeRefreshHeader(
+    refreshUi: @Composable () -> TvNoticeRefreshUi,
+    onRefresh: () -> Unit,
+    focusRequester: FocusRequester,
+    onDown: () -> Unit,
+    onSideways: (direction: Int) -> Unit,
+) {
+    val ui = refreshUi()
+    ui.status?.let {
+        Text(
+            it,
+            Modifier.padding(end = TV_NOTICE_REFRESH_STATUS_GAP, bottom = 8.dp),
+            style = MaterialTheme.typography.labelMedium,
+            color = if (ui.statusHighlight) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+    TvNoticeRefreshButton(
+        ui,
+        onRefresh,
+        Modifier
+            .focusRequester(focusRequester)
+            .focusProperties {
+                left = FocusRequester.Cancel
+                up = FocusRequester.Cancel
+                right = FocusRequester.Cancel
+                down = FocusRequester.Cancel
+            }
+            .onPreviewKeyEvent { event ->
+                val down = event.type == KeyEventType.KeyDown
+                when (event.key) {
+                    Key.DirectionDown -> if (down) onDown()
+                    Key.DirectionLeft -> if (down) onSideways(-1)
+                    Key.DirectionRight -> if (down) onSideways(1)
+                    else -> return@onPreviewKeyEvent false
+                }
+                true
+            }
+    )
+}
+
+/**
+ * 「通知」签: 一条通知一行 —— 类别图标 (没看过的图标右上角一个红点)、标题与时间、标题下面一行摘要; 右栏写焦点所在那一条:
+ * 类别签与时间、标题、说明与操作 ([TvShownNotice.detail] / [TvShownNotice.actions]). 新的与看过的都有时分两段.
+ * 只有一个操作的在列表里按确定键直接做、右栏不画按钮 (触屏上画). 一行在屏幕上露出一半以上时报 [onSeen] (每条一次).
+ * 焦点与按键见 [TvNoticeColumns].
+ */
 @Composable
 internal fun TvNoticeContent(
     items: List<TvShownNotice>,
     state: TvNoticeDialogState,
-    onAction: (index: Int, item: TvShownNotice, action: TvNoticeAction) -> Unit,
+    onAction: (index: Int, item: TvNoticeColumnItem, action: TvNoticeAction) -> Unit,
     onSeen: (key: String) -> Unit,
     onDismiss: () -> Unit,
+    tabFocus: FocusRequester? = null,
+    columnsFocus: TvNoticeColumnsFocus? = null,
+    onSwitchTab: ((direction: Int) -> Boolean)? = null,
+    rightEnters: Boolean = true,
+    onShown: (key: String) -> Unit = {},
 ) {
-    // 照打开那一刻排: 打开就算看过, 照此刻的「新不新」排的话, 列表一打开就重排一遍、行在焦点底下跳
-    val items = remember(items, state) {
-        items.sortedWith(
-            compareBy<TvShownNotice> { it.key !in state.fresh }
+    val columnItems = rememberTvNoticeColumnItems(items, state)
+    TvNoticeColumns(
+        columnItems,
+        opening = state,
+        focusKey = state.focusKey,
+        focusIndex = state.focusIndex,
+        focusAction = state.focusAction,
+        takeInitialFocus = !state.focusOnTabs,
+        emptyText = stringResource(Lang.notification_empty),
+        onAction = onAction,
+        onDismiss = onDismiss,
+        tabFocus = tabFocus,
+        columnsFocus = columnsFocus,
+        onSwitchTab = onSwitchTab,
+        rightEnters = rightEnters,
+        onSeen = onSeen,
+        onShown = onShown,
+    )
+}
+
+/**
+ * 「通知」签列的行: 一条通知一行 (在别的签里看的那几类不列, 见 [TvNoticeKind.tab]), 照打开 ([state]) 那一刻排 —— 打开就算看过, 照此刻的「新不新」排的话, 列表一打开就重排一遍、行在焦点底下跳.
+ * 新的与看过的都有时分两段, 各一行小标题 (同常见的「新 / 更早」); 只有一种时不写. 没有说明的种类正文写摘要, 外部链接 (码) 在正文后面.
+ */
+@Composable
+internal fun rememberTvNoticeColumnItems(items: List<TvShownNotice>, state: TvNoticeDialogState): List<TvNoticeColumnItem> {
+    // 只看打开那一刻新的几条 (换签时不重排)
+    val fresh = state.fresh
+    val sorted = remember(items, fresh) {
+        items.filter { it.kind.listed }.sortedWith(
+            compareBy<TvShownNotice> { it.key !in fresh }
                 .thenBy { !it.entry.pending }
                 .thenByDescending { it.notice.atMillis },
         )
     }
-    val initialKey = remember(state) {
-        items.firstOrNull { it.key == state.focusKey }?.key
-            ?: items.getOrNull(state.focusIndex.coerceAtMost(items.lastIndex))?.key
+    val sectioned = sorted.any { it.key in fresh } && sorted.any { it.key !in fresh }
+    val newLabel = stringResource(Lang.tv_notice_section_new)
+    val earlierLabel = stringResource(Lang.tv_notice_section_earlier)
+    val categories = TvNoticeCategory.entries.associateWith { stringResource(it.label) }
+    return remember(sorted, fresh, newLabel, earlierLabel, categories) {
+        sorted.map { item ->
+            val isFresh = item.key in fresh
+            val category = categories.getValue(item.kind.category)
+            val detail = item.detail
+            TvNoticeColumnItem(
+                key = item.key,
+                icon = item.kind.category.icon,
+                iconLabel = category,
+                title = item.title,
+                atMillis = item.notice.atMillis,
+                summary = item.summary,
+                fresh = isFresh,
+                section = if (!sectioned) null else if (isFresh) newLabel else earlierLabel,
+                chips = listOf(TvNoticeChip(category)),
+                subject = detail?.subject,
+                actions = item.actions,
+                blocks = (detail?.body ?: listOfNotNull(item.summary).map { TvNoticeParagraph(it) }) + listOfNotNull(detail?.qr),
+            )
+        }
+    }
+}
+
+/** 别的签 ([TvNoticeTab]) 里的两栏: 列它给的那几行 [items] (见 [TvNoticeTab.rememberItems]), 还在取 (null) 时空着. */
+@Composable
+private fun TvNoticeTabContent(
+    tab: TvNoticeTab,
+    items: List<TvNoticeColumnItem>?,
+    state: TvNoticeDialogState,
+    onAction: (index: Int, item: TvNoticeColumnItem, action: TvNoticeAction) -> Unit,
+    onDismiss: () -> Unit,
+    tabFocus: FocusRequester?,
+    columnsFocus: TvNoticeColumnsFocus?,
+    onSwitchTab: ((direction: Int) -> Boolean)?,
+    rightEnters: Boolean,
+    onShown: (key: String) -> Unit,
+) {
+    if (items == null) {
+        // 还在取: 先占住两栏的高, 取到了再列 (这时才定焦点落在哪一行)
+        TvNoticeColumnsLayout(Modifier.tvOverlayWindowKeys(onDismiss), list = {}, pane = {})
+        return
+    }
+    TvNoticeColumns(
+        items,
+        opening = state,
+        focusKey = state.focusKey,
+        focusIndex = state.focusIndex,
+        focusAction = state.focusAction,
+        takeInitialFocus = !state.focusOnTabs,
+        emptyText = tab.emptyText(),
+        onAction = onAction,
+        onDismiss = onDismiss,
+        tabFocus = tabFocus,
+        columnsFocus = columnsFocus,
+        tabId = tab.id,
+        onSwitchTab = onSwitchTab,
+        rightEnters = rightEnters,
+        bodyStartsAtEnd = tab.bodyStartsAtEnd,
+        buttonsForSingleAction = tab.buttonsForSingleAction,
+        onShown = { key ->
+            onShown(key)
+            tab.onShown(key)
+        },
+    )
+}
+
+/**
+ * 签与两栏之间的焦点: 签上按下键时进列表 ([enterList]: 落在右栏正在说的那一行). 由此刻画着的那个签的 [TvNoticeColumns] 登记 ([register]);
+ * 刚换了签、新签的两栏还没画出来时按的下键不做 (不然焦点进了马上要拿掉的旧签列表, 丢到弹窗第一个能聚焦的地方).
+ */
+internal class TvNoticeColumnsFocus {
+    private var tab: String? = null
+    private var enter: () -> Unit = {}
+
+    internal fun register(tab: String, enter: () -> Unit) {
+        this.tab = tab
+        this.enter = enter
+    }
+
+    internal fun enterList(tab: String) {
+        if (tab == this.tab) enter()
+    }
+}
+
+/**
+ * 左边列表、右栏说明与操作的两栏 (通知弹窗里每个签都是它). 两栏一样高, 高固定 (焦点换一行时弹窗不变高变矮).
+ * 右栏写焦点所在那一行 ([TvNoticeColumnItem]): 签与时间、大标题、[TvNoticeColumnItem.subject]、正文 (放不下时自己滚)、操作与最后一行按键提示.
+ *
+ * - 操作画不画成按钮: 几个操作的画; 只有一个的触屏上 (平板) 或 [buttonsForSingleAction] 时画, 否则不画, 最后一行写「按确定键」接这个操作,
+ *   在列表里按确定键直接交给 [onAction]. 没有操作的只是告知.
+ * - 画了按钮的: 在列表里按确定键焦点到第一颗, 列表里那一行铺浅底表示右栏说的是它; 进了右栏左右键在按钮之间走,
+ *   最左一颗按左键 (竖排时每一颗) 或按返回键回到那一行. 两颗横排 (主操作在左) 时上下键翻右栏正文、按钮钉在底部不动; 三颗以上一颗一行竖排, 上下键在按钮之间走.
+ * - 列表里左右键交给 [onSwitchTab] (换签). 右边没有签可换时 ([rightEnters]: 最右的签, 或没有别的签) 右键同确定键进右栏 (画了按钮的行);
+ *   左边没有签时左键不动.
+ * - [bodyStartsAtEnd]: 右栏正文一打开停在末尾 (最新的写在最下面).
+ * - 有签 ([tabFocus]) 时列表第一行按上键到签上; 签上按下键回到列表 ([columnsFocus], 这一栏是签 [tabId] 的).
+ *
+ * 一打开 ([opening] 换了就是重新打开) 焦点在 [focusKey] 那一行 (没有就原来位置 [focusIndex] 上那一行, 再没有第一行); [takeInitialFocus] = false 时不抢焦点 (焦点在签上).
+ * 指定了操作 ([focusAction]) 且那一行画了按钮时落在那颗按钮上. 一行在屏幕上露出一半以上时报 [onSeen] (每行一次); 右栏换成哪一行报 [onShown].
+ */
+@Composable
+internal fun TvNoticeColumns(
+    items: List<TvNoticeColumnItem>,
+    opening: Any,
+    focusKey: String?,
+    focusIndex: Int,
+    focusAction: Int?,
+    takeInitialFocus: Boolean,
+    emptyText: String,
+    onAction: (index: Int, item: TvNoticeColumnItem, action: TvNoticeAction) -> Unit,
+    onDismiss: () -> Unit,
+    tabFocus: FocusRequester? = null,
+    columnsFocus: TvNoticeColumnsFocus? = null,
+    tabId: String = TvNoticeTab.NOTICES,
+    onSwitchTab: ((direction: Int) -> Boolean)? = null,
+    rightEnters: Boolean = true,
+    bodyStartsAtEnd: Boolean = false,
+    buttonsForSingleAction: Boolean = false,
+    onSeen: (key: String) -> Unit = {},
+    onShown: (key: String) -> Unit = {},
+) {
+    val touch = LocalTvTouchInputEnabled.current
+    fun hasButtons(item: TvNoticeColumnItem) =
+        item.rowAction == null && (item.actions.size > 1 || ((touch || buttonsForSingleAction) && item.actions.isNotEmpty()))
+    val initialKey = remember(opening) {
+        items.firstOrNull { it.key == focusKey }?.key
+            ?: items.getOrNull(focusIndex.coerceAtMost(items.lastIndex))?.key
             ?: items.firstOrNull()?.key
     }
-    val now = remember(state) { Clock.System.now().toEpochMilliseconds() }
-    // 已经报过看过的 (同一次打开里每条只报一次)
-    val reported = remember(state) { HashSet<String>() }
-    // 指定了操作 (state.focusAction: 从别处处理一条、叠在上面的弹窗关掉): 一打开焦点在右栏那颗按钮上, 不在行上. 只这一次: 之后回到这一条照常落在行上
-    val focusActionIndex = remember(state) {
-        val count = items.firstOrNull { it.key == initialKey }?.actions?.size ?: 0
-        state.focusAction?.takeIf { count > 1 }?.coerceIn(0, count - 1)
+    val now = remember(opening) { Clock.System.now().toEpochMilliseconds() }
+    // 已经报过看过的 (同一次打开里每行只报一次)
+    val reported = remember(opening) { HashSet<String>() }
+    // 指定了操作 (从别处处理一条、叠在列表上的弹窗关掉): 一打开焦点在右栏那颗按钮上, 不在行上. 只这一次: 之后回到这一行照常落在行上
+    val focusActionIndex = remember(opening) {
+        val item = items.firstOrNull { it.key == initialKey }
+        val count = item?.actions?.size ?: 0
+        focusAction?.takeIf { item != null && hasButtons(item) }?.coerceIn(0, count - 1)
     }
-    val actionFirst = focusActionIndex != null
-    var actionFocusPending by remember(state) { mutableStateOf(actionFirst) }
-    // 右栏说的是哪一条: 最近聚焦的那一行; 焦点在右栏时 [inPane], 那一行铺浅底
-    var activeKey by remember(state) { mutableStateOf(initialKey) }
-    var inPane by remember(state) { mutableStateOf(actionFirst) }
+    val actionFirst = focusActionIndex != null && takeInitialFocus
+    var actionFocusPending by remember(opening) { mutableStateOf(actionFirst) }
+    // 右栏说的是哪一行: 最近聚焦的那一行; 焦点在右栏时 [inPane], 那一行铺浅底
+    var activeKey by remember(opening) { mutableStateOf(initialKey) }
+    var inPane by remember(opening) { mutableStateOf(actionFirst) }
+    // 一打开 (含换签) 焦点要落的那一行: 焦点真落上之前 (初始焦点要等一两帧才送到) 先画成聚焦的样子,
+    // 免得新的两栏刚出来那一两帧哪一行都没亮, 看着像闪一下. 焦点落进这两栏、或过了 [TV_NOTICE_PENDING_FOCUS_LOOK] 就不再这样画
+    var focusLanded by remember(opening) { mutableStateOf(!takeInitialFocus || actionFirst) }
+    if (!focusLanded) {
+        LaunchedEffect(opening) {
+            delay(TV_NOTICE_PENDING_FOCUS_LOOK)
+            focusLanded = true
+        }
+    }
     val rowFocus = remember { HashMap<String, FocusRequester>() }
     val firstAction = remember { FocusRequester() }
-    val touch = LocalTvTouchInputEnabled.current
+    // 没有操作的行正文放不下时进正文翻 (见 TvNoticePane): 正文的焦点与它此刻放不放得下
+    val bodyFocus = remember { FocusRequester() }
+    val bodyScrollable = remember { booleanArrayOf(false) }
+    fun canEnterBody(item: TvNoticeColumnItem) = !touch && item.actions.isEmpty() && item.rowAction == null && bodyScrollable[0]
     val scrollState = rememberScrollState()
     val activeIndex = items.indexOfFirst { it.key == activeKey }
     val active = items.getOrNull(activeIndex)
     val lastIndex = remember { intArrayOf(0) }
     if (activeIndex >= 0) lastIndex[0] = activeIndex
-    // 右栏说的那条处理掉了 (当场做完的操作、别处处理的): 焦点落到原来位置上的那一条
-    LaunchedEffect(items) {
-        if (activeKey == null || items.any { it.key == activeKey }) return@LaunchedEffect
+    val currentOnShown by rememberUpdatedState(onShown)
+    LaunchedEffect(active?.key) { active?.key?.let { currentOnShown(it) } }
+    val currentItems by rememberUpdatedState(items)
+    SideEffect {
+        columnsFocus?.register(tabId) {
+            (activeKey ?: currentItems.firstOrNull()?.key)?.let { rowFocus[it] }?.let { runCatching { it.requestFocus() } }
+        }
+    }
+    // 右栏说的那一行没了 (当场做完的操作、别处处理的): 焦点落到原来位置上的那一行
+    val keys = items.map { it.key }
+    LaunchedEffect(keys) {
+        if (activeKey == null || keys.contains(activeKey)) return@LaunchedEffect
         val next = items.getOrNull(lastIndex[0].coerceAtMost(items.lastIndex)) ?: return@LaunchedEffect
         activeKey = next.key
         inPane = false
         rowFocus[next.key]?.let { runCatching { it.requestFocus() } }
     }
-    ProvideScrollFadeFocusMargin {
-        TvNoticeColumns(
-            Modifier.tvOverlayWindowKeys(onDismiss),
-            list = {
-                Column(Modifier.fillMaxSize()) {
-                    Column(
-                        Modifier
-                            .weight(1f)
-                            .aniVerticalScrollFade(scrollState)
-                            .verticalScroll(scrollState),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        if (items.isEmpty()) {
-                            Text(
-                                stringResource(Lang.notification_empty),
-                                Modifier.padding(vertical = 16.dp),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        // 新的与看过的都有时分两段, 各一行小标题 (同常见的「新 / 更早」); 只有一种时不写
-                        val sectioned = items.any { it.key in state.fresh } && items.any { it.key !in state.fresh }
-                        items.forEachIndexed { index, item ->
-                            if (sectioned && (index == 0 || (item.key !in state.fresh && items[index - 1].key in state.fresh))) {
-                                TvNoticeSectionHeader(
-                                    stringResource(if (item.key in state.fresh) Lang.tv_notice_section_new else Lang.tv_notice_section_earlier),
-                                    first = index == 0,
+    // 一行都没有: 有签时焦点在签上 (弹窗里没有别的能聚焦的)
+    if (items.isEmpty() && takeInitialFocus && tabFocus != null) {
+        LaunchedEffect(opening) { runCatching { tabFocus.requestFocus() } }
+    }
+    // 焦点导航形态下行与按钮不叠 M3 的焦点态层: 它在焦点到达后淡入 45ms、离开后淡出 150ms, 底色却是同一帧换的 ——
+    // 焦点在左右两栏之间挪时, 刚离开的那一行 (按钮) 还罩着一层渐隐的浅色, 看着闪一下. 示焦只靠聚焦实底 (同 ProvideRingOnlyFocus 的其他用处)
+    ProvideRingOnlyFocus {
+        ProvideScrollFadeFocusMargin {
+            TvNoticeColumnsLayout(
+                Modifier.tvOverlayWindowKeys(onDismiss),
+                list = {
+                    Column(Modifier.fillMaxSize()) {
+                        Column(
+                            Modifier
+                                .weight(1f)
+                                .aniVerticalScrollFade(scrollState)
+                                .verticalScroll(scrollState),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            if (items.isEmpty()) {
+                                Text(
+                                    emptyText,
+                                    Modifier.padding(vertical = 16.dp),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
-                            key(item.key) {
-                                val requester = rowFocus.getOrPut(item.key) { FocusRequester() }
-                                val many = item.actions.size > 1
-                                TvNoticeRow(
-                                    item,
-                                    fresh = item.key in state.fresh,
-                                    now = now,
-                                    selected = inPane && item.key == activeKey,
-                                    onClick = {
-                                        activeKey = item.key
-                                        when {
-                                            many -> runCatching { firstAction.requestFocus() }
-                                            else -> item.actions.singleOrNull()?.let { onAction(index, item, it) }
-                                        }
-                                    },
-                                    modifier = (if (item.key == initialKey && !actionFirst) Modifier.tvWindowInitialFocus() else Modifier)
-                                        .focusRequester(requester)
-                                        // 右键: 几个操作的进右栏第一颗, 别的不动 (右栏没有能聚焦的)
-                                        .focusProperties { right = if (many) firstAction else FocusRequester.Cancel }
-                                        .onFocusChanged {
-                                            if (it.isFocused) {
-                                                activeKey = item.key
-                                                inPane = false
-                                                actionFocusPending = false
-                                            }
-                                        }
-                                        .onGloballyPositioned { coordinates ->
-                                            // 滚动区之外被裁掉的部分不算: 窗口里的边界已按各层父节点裁过
-                                            if (item.key in reported || coordinates.size.height <= 0) return@onGloballyPositioned
-                                            if (coordinates.boundsInWindow().height >= coordinates.size.height * TV_NOTICE_SEEN_FRACTION) {
-                                                reported += item.key
-                                                onSeen(item.key)
+                            items.forEachIndexed { index, item ->
+                                val section = item.section
+                                if (section != null && (index == 0 || items[index - 1].section != section)) {
+                                    TvNoticeSectionHeader(section, first = index == 0)
+                                }
+                                key(item.key) {
+                                    val requester = rowFocus.getOrPut(item.key) { FocusRequester() }
+                                    val buttons = hasButtons(item)
+                                    TvNoticeRow(
+                                        item,
+                                        now = now,
+                                        selected = (inPane || touch) && item.key == activeKey,
+                                        focusLook = !focusLanded && !touch && item.key == initialKey,
+                                        onClick = {
+                                            activeKey = item.key
+                                            val rowAction = item.rowAction
+                                            when {
+                                                rowAction != null -> onAction(index, item, rowAction)
+                                                buttons -> runCatching { firstAction.requestFocus() }
+                                                item.actions.isEmpty() -> if (canEnterBody(item)) runCatching { bodyFocus.requestFocus() }
+                                                else -> item.actions.singleOrNull()?.let { onAction(index, item, it) }
                                             }
                                         },
-                                )
+                                        modifier = Modifier
+                                            .tvWindowInitialFocus(enabled = takeInitialFocus && item.key == initialKey && !actionFirst)
+                                            .focusRequester(requester)
+                                            // 左右键换签; 右边没有签可换时右键进右栏 (同确定键); 第一行按上键到签上
+                                            .focusProperties {
+                                                left = FocusRequester.Cancel
+                                                right = FocusRequester.Cancel
+                                                if (index == 0 && tabFocus != null) up = tabFocus
+                                            }
+                                            .onPreviewKeyEvent { event ->
+                                                val direction = when (event.key) {
+                                                    Key.DirectionLeft -> -1
+                                                    Key.DirectionRight -> 1
+                                                    else -> return@onPreviewKeyEvent false
+                                                }
+                                                if (event.type == KeyEventType.KeyDown) {
+                                                    val switched = onSwitchTab?.invoke(direction) == true
+                                                    if (!switched && direction > 0 && rightEnters) {
+                                                        activeKey = item.key
+                                                        when {
+                                                            buttons -> runCatching { firstAction.requestFocus() }
+                                                            canEnterBody(item) -> runCatching { bodyFocus.requestFocus() }
+                                                        }
+                                                    }
+                                                }
+                                                true
+                                            }
+                                            .onFocusChanged {
+                                                if (it.isFocused) {
+                                                    focusLanded = true
+                                                    activeKey = item.key
+                                                    inPane = false
+                                                    actionFocusPending = false
+                                                }
+                                            }
+                                            .onGloballyPositioned { coordinates ->
+                                                // 滚动区之外被裁掉的部分不算: 窗口里的边界已按各层父节点裁过
+                                                if (item.key in reported || coordinates.size.height <= 0) return@onGloballyPositioned
+                                                if (coordinates.boundsInWindow().height >= coordinates.size.height * TV_NOTICE_SEEN_FRACTION) {
+                                                    reported += item.key
+                                                    onSeen(item.key)
+                                                }
+                                            },
+                                    )
+                                }
                             }
                         }
                     }
-                    if (items.isNotEmpty()) {
-                        Text(
-                            stringResource(Lang.tv_notice_footer),
-                            Modifier.padding(top = 8.dp, start = 4.dp),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
+                },
+                pane = {
+                    if (active != null) {
+                        key(active.key) {
+                            TvNoticePane(
+                                active,
+                                now = now,
+                                touch = touch,
+                                buttons = hasButtons(active),
+                                bodyStartsAtEnd = active.bodyStartsAtEnd ?: bodyStartsAtEnd,
+                                firstAction = firstAction,
+                                bodyFocus = bodyFocus,
+                                onBodyScrollable = { bodyScrollable[0] = it },
+                                initialFocusAction = focusActionIndex?.takeIf { actionFocusPending && active.key == initialKey },
+                                rowFocus = rowFocus[active.key],
+                                onPaneFocus = { focused ->
+                                    if (focused) focusLanded = true
+                                    inPane = focused
+                                    if (focused) actionFocusPending = false
+                                },
+                                onAction = { action ->
+                                    // 当场做完的留在列表: 焦点先回那一行 (按钮可能随它处理掉一起没了). 一个操作也画按钮的签里那一行留着, 焦点留在按钮上
+                                    if (action.destination is TvNoticeDestination.Run && !buttonsForSingleAction) {
+                                        rowFocus[active.key]?.let { runCatching { it.requestFocus() } }
+                                    }
+                                    onAction(activeIndex, active, action)
+                                },
+                            )
+                        }
                     }
-                }
-            },
-            pane = {
-                if (active != null) {
-                    key(active.key) {
-                        TvNoticePane(
-                            active,
-                            now = now,
-                            touch = touch,
-                            firstAction = firstAction,
-                            initialFocusAction = focusActionIndex?.takeIf { actionFocusPending && active.key == initialKey },
-                            rowFocus = rowFocus[active.key],
-                            onPaneFocus = { focused ->
-                                inPane = focused
-                                if (focused) actionFocusPending = false
-                            },
-                            onAction = { action ->
-                                // 当场做完的留在列表: 焦点先回那一条 (按钮可能随它处理掉一起没了)
-                                if (action.destination is TvNoticeDestination.Run) rowFocus[active.key]?.let { runCatching { it.requestFocus() } }
-                                onAction(activeIndex, active, action)
-                            },
-                        )
-                    }
-                }
-            },
-        )
+                },
+            )
+        }
     }
 }
 
 /**
- * 左边列表、右边一栏, 中间一条竖线: 两栏一样高, 高固定 [TV_NOTICE_BODY_HEIGHT] (焦点换一条时弹窗不跟着变高变矮), 超出的各自滚.
+ * 左边列表、右边一栏, 中间一条竖线: 两栏一样高, 高固定 [TV_NOTICE_BODY_HEIGHT] (焦点换一行时弹窗不跟着变高变矮), 超出的各自滚.
  * 列表宽 [TV_NOTICE_LIST_WIDTH], 窗口窄时按 [TV_NOTICE_LIST_MAX_FRACTION] 收窄, 右栏占剩下的.
  */
 @Composable
-private fun TvNoticeColumns(
+private fun TvNoticeColumnsLayout(
     modifier: Modifier,
     list: @Composable () -> Unit,
     pane: @Composable () -> Unit,
@@ -313,35 +749,55 @@ private fun TvNoticeColumns(
 }
 
 /**
- * 右栏: 类别签与时间、标题、哪一个 (作品、反馈)、正文几段 (放不下时自己滚) 与外部链接, 再是操作与最后一行按键提示. 没有说明的种类正文写摘要.
- * 焦点进出按钮这一栏报 [onPaneFocus]; 在按钮上按左键 (最左一颗) 或返回键回到 [rowFocus] (列表里那一条).
+ * 右栏: 签与时间 (或 [TvNoticeColumnItem.meta])、大标题、哪一个、正文 (放不下时自己滚; [bodyStartsAtEnd] 时一打开停在末尾), 再是操作.
+ * 焦点进出按钮这一栏报 [onPaneFocus]; 在最左一颗按左键或按返回键回到 [rowFocus] (列表里那一行); 横排时上下键翻正文.
+ * 正文能拿焦点 ([bodyFocus]; 没有操作的行正文放不下时列表那边送进来): 上下键翻, 左键或返回键回到那一行; 放不放得下报 [onBodyScrollable].
  */
 @Composable
 private fun TvNoticePane(
-    item: TvShownNotice,
+    item: TvNoticeColumnItem,
     now: Long,
     touch: Boolean,
+    buttons: Boolean,
+    bodyStartsAtEnd: Boolean,
     firstAction: FocusRequester,
+    bodyFocus: FocusRequester,
+    onBodyScrollable: (Boolean) -> Unit,
     initialFocusAction: Int?,
     rowFocus: FocusRequester?,
     onPaneFocus: (Boolean) -> Unit,
     onAction: (TvNoticeAction) -> Unit,
 ) {
-    val detail = item.detail
     val actions = item.actions
-    val buttons = actions.size > 1 || (touch && actions.isNotEmpty())
-    var focusedAction by remember { mutableIntStateOf(-1) }
-    var buttonsFocused by remember { mutableStateOf(false) }
-    val bodyScroll = rememberScrollState()
+    // 停在末尾的: 从最大值起, 第一次量出正文高时就落在末尾 (ScrollState 量出最大值时把超出的收回去), 第一帧就到位, 不先在顶上画一帧
+    val bodyScroll = rememberScrollState(if (bodyStartsAtEnd) Int.MAX_VALUE else 0)
+    var bodyHeight by remember { mutableIntStateOf(0) }
+    val scope = rememberCoroutineScope()
+    // 翻页: 一下翻正文可见高度的 [TV_NOTICE_PAGE_FRACTION]; 连按时接着上一下的目标往下算, 不从动画半路算
+    var pageTarget by remember { mutableIntStateOf(0) }
+    val page: (Int) -> Unit = { direction ->
+        val from = if (bodyScroll.isScrollInProgress) pageTarget else bodyScroll.value
+        val target = (from + direction * (bodyHeight * TV_NOTICE_PAGE_FRACTION).roundToInt()).coerceIn(0, bodyScroll.maxValue)
+        if (target != bodyScroll.value) {
+            pageTarget = target
+            scope.launch { bodyScroll.animateScrollTo(target) }
+        }
+    }
+    val scrollable = bodyScroll.maxValue in 1 until Int.MAX_VALUE
+    SideEffect { onBodyScrollable(scrollable) }
     Column(Modifier.fillMaxSize().testTag(TV_NOTICE_PANE_TAG)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            TvNoticeCategoryChip(item.kind.category)
-            Text(
-                noticeTimeText(item.notice.atMillis, now),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-            )
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            item.chips.forEach { TvNoticeChipText(it) }
+            (item.meta ?: item.atMillis?.let { noticeTimeText(it, now) })?.let { meta ->
+                Text(
+                    meta,
+                    Modifier.padding(start = 2.dp),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
         Text(
             item.title,
@@ -350,7 +806,7 @@ private fun TvNoticePane(
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
-        detail?.subject?.let {
+        item.subject?.let {
             Text(
                 it,
                 Modifier.padding(top = 2.dp),
@@ -364,13 +820,34 @@ private fun TvNoticePane(
             Modifier
                 .padding(top = 12.dp)
                 .weight(1f)
+                .onSizeChanged { bodyHeight = it.height }
+                .focusRequester(bodyFocus)
+                .focusProperties {
+                    canFocus = !touch
+                    left = rowFocus ?: FocusRequester.Cancel
+                    up = FocusRequester.Cancel
+                    down = FocusRequester.Cancel
+                    right = FocusRequester.Cancel
+                }
+                .onFocusChanged { onPaneFocus(it.isFocused) }
+                .onPreviewKeyEvent { event ->
+                    val down = event.type == KeyEventType.KeyDown
+                    when (event.key) {
+                        Key.DirectionUp -> if (down) page(-1)
+                        Key.DirectionDown -> if (down) page(1)
+                        // 返回键回到列表里那一行, 不关弹窗 (按下与抬起都吃掉)
+                        Key.Back, Key.Escape -> if (!down) rowFocus?.let { runCatching { it.requestFocus() } }
+                        else -> return@onPreviewKeyEvent false
+                    }
+                    true
+                }
+                .focusable()
                 .aniVerticalScrollFade(bodyScroll)
-                .verticalScroll(bodyScroll),
+                .verticalScroll(bodyScroll)
+                .testTag(TV_NOTICE_BODY_TAG),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            val paragraphs = detail?.body ?: listOfNotNull(item.summary).map { TvNoticeParagraph(it) }
-            paragraphs.forEach { TvNoticeParagraphText(it, touch) }
-            detail?.qr?.let { TvNoticeExternalLink(it, touch) }
+            TvNoticeBlocks(item.blocks, touch)
         }
         if (buttons) {
             TvNoticeActions(
@@ -378,62 +855,52 @@ private fun TvNoticePane(
                 firstAction = firstAction,
                 initialFocusAction = initialFocusAction,
                 rowFocus = rowFocus,
-                onFocusIndex = { focusedAction = it },
+                onPage = page,
                 onAction = onAction,
                 modifier = Modifier
                     .padding(top = 12.dp)
-                    .onFocusChanged {
-                        buttonsFocused = it.hasFocus
-                        onPaneFocus(it.hasFocus)
-                    }
+                    .onFocusChanged { onPaneFocus(it.hasFocus) }
                     .onPreviewKeyEvent { event ->
                         if (event.key != Key.Back && event.key != Key.Escape) return@onPreviewKeyEvent false
-                        // 返回键回到列表里那一条, 不关弹窗 (按下与抬起都吃掉)
+                        // 返回键回到列表里那一行, 不关弹窗 (按下与抬起都吃掉)
                         if (event.type == KeyEventType.KeyUp) rowFocus?.let { runCatching { it.requestFocus() } }
                         true
                     },
             )
         }
-        if (!touch && actions.isNotEmpty()) {
-            val focused = actions.getOrNull(focusedAction)?.takeIf { buttonsFocused }
-            val hint = when {
-                actions.size == 1 -> stringResource(Lang.tv_notice_hint_press_ok, actions.single().label)
-                focused != null -> stringResource(Lang.tv_notice_hint_back, focused.label)
-                else -> stringResource(Lang.tv_notice_hint_choose_action)
-            }
-            Text(
-                hint,
-                Modifier.padding(top = 8.dp),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
     }
 }
 
-/** 右栏标题上面的类别签. */
+/** 右栏大标题上面的一个签 ([TvNoticeChip]). */
 @Composable
-private fun TvNoticeCategoryChip(category: TvNoticeCategory) {
+internal fun TvNoticeChipText(chip: TvNoticeChip) {
+    val accent = chip.accent
     Text(
-        stringResource(category.label),
+        chip.text,
         Modifier
-            .background(LocalContentColor.current.copy(alpha = TV_NOTICE_CHIP_ALPHA), RoundedCornerShape(7.dp))
+            .background(
+                if (accent) MaterialTheme.colorScheme.primary.copy(alpha = TV_NOTICE_ACCENT_CHIP_ALPHA) else LocalContentColor.current.copy(alpha = TV_NOTICE_CHIP_ALPHA),
+                RoundedCornerShape(7.dp),
+            )
             .padding(horizontal = 9.dp, vertical = 2.dp),
         style = MaterialTheme.typography.labelMedium,
+        maxLines = 1,
     )
 }
 
 /** 正文的一段: 有小标题的小标题在上、说明在下 (要点前面画一个点), 没有小标题的就是一段话. */
 @Composable
-private fun TvNoticeParagraphText(paragraph: TvNoticeParagraph, touch: Boolean) {
+internal fun TvNoticeParagraphText(paragraph: TvNoticeParagraph, touch: Boolean) {
     // 触屏上操作画成按钮, 资源名这类长串写全会把按钮挤出右栏: 截到几行; 电视上只有一行按键提示, 照常写全.
     // 摘要类的说明 (maxLines) 两边都截
     val nameLines = if (touch && paragraph.longName) TV_NOTICE_TOUCH_NAME_LINES else Int.MAX_VALUE
     val maxLines = minOf(nameLines, paragraph.maxLines)
     val overflow = if (maxLines != Int.MAX_VALUE) TextOverflow.Ellipsis else TextOverflow.Clip
     val plain = paragraph.title == null && !paragraph.bullet
+    val color = when (paragraph.tone) {
+        TvNoticeTone.Normal -> if (plain) LocalContentColor.current else MaterialTheme.colorScheme.onSurfaceVariant
+        else -> paragraph.tone.statusColor()
+    }
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         if (paragraph.bullet) {
             Box(Modifier.padding(top = 9.dp).size(6.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
@@ -445,7 +912,7 @@ private fun TvNoticeParagraphText(paragraph: TvNoticeParagraph, touch: Boolean) 
             Text(
                 paragraph.text,
                 style = if (plain) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.bodyMedium,
-                color = if (plain) LocalContentColor.current else MaterialTheme.colorScheme.onSurfaceVariant,
+                color = color,
                 maxLines = maxLines,
                 overflow = overflow,
             )
@@ -454,8 +921,8 @@ private fun TvNoticeParagraphText(paragraph: TvNoticeParagraph, touch: Boolean) 
 }
 
 /**
- * 右栏的操作按钮: 至多 [TV_NOTICE_ROW_ACTIONS] 颗横排 (主操作在左: 从列表按右键进来先到最左一颗), 更多的一颗一行竖着排.
- * 左键从最左一颗 (竖排时每一颗) 回到 [rowFocus]; [initialFocusAction] 是一打开就有焦点的那一颗.
+ * 右栏的操作按钮: 至多 [TV_NOTICE_ROW_ACTIONS] 颗横排 (主操作在左: 从列表按确定键进来先到最左一颗; 上下键交给 [onPage] 翻正文),
+ * 更多的一颗一行竖着排. 左键从最左一颗 (竖排时每一颗) 回到 [rowFocus]; [initialFocusAction] 是一打开就有焦点的那一颗.
  */
 @Composable
 private fun TvNoticeActions(
@@ -463,7 +930,7 @@ private fun TvNoticeActions(
     firstAction: FocusRequester,
     initialFocusAction: Int?,
     rowFocus: FocusRequester?,
-    onFocusIndex: (Int) -> Unit,
+    onPage: (direction: Int) -> Unit,
     onAction: (TvNoticeAction) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -475,21 +942,32 @@ private fun TvNoticeActions(
         .then(if (index == 0) Modifier.focusRequester(firstAction) else Modifier)
         .focusProperties {
             if (inRow) {
-                if (index == 0) rowFocus?.let { left = it }
+                if (index == 0) left = rowFocus ?: FocusRequester.Cancel
                 if (index == actions.lastIndex) right = FocusRequester.Cancel
                 up = FocusRequester.Cancel
                 down = FocusRequester.Cancel
             } else {
-                rowFocus?.let { left = it }
+                left = rowFocus ?: FocusRequester.Cancel
                 if (index == 0) up = FocusRequester.Cancel
                 if (index == actions.lastIndex) down = FocusRequester.Cancel
                 right = FocusRequester.Cancel
             }
         }
-        .onFocusChanged { if (it.isFocused) onFocusIndex(index) }
         .testTag(TV_NOTICE_ACTION_TAG)
     if (inRow) {
-        Row(modifier, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            modifier.onPreviewKeyEvent { event ->
+                // 横排: 上下键翻正文, 焦点不动
+                val direction = when (event.key) {
+                    Key.DirectionUp -> -1
+                    Key.DirectionDown -> 1
+                    else -> return@onPreviewKeyEvent false
+                }
+                if (event.type == KeyEventType.KeyDown) onPage(direction)
+                true
+            },
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
             actions.forEachIndexed { index, action ->
                 TvNoticeActionButton(action.label, center = true, { onAction(action) }, Modifier.weight(1f, fill = false).then(buttonModifier(index)))
             }
@@ -520,30 +998,151 @@ private fun TvNoticeActionButton(label: String, center: Boolean, onClick: () -> 
     }
 }
 
-/** 说明里的外部链接 (见 [TvNoticeQr]): 电视上画二维码, 码下写链接上的字; 触屏上是一颗在浏览器里打开的按钮. */
+/**
+ * 右栏正文 [blocks] 的 Compose 画法 (iPad 用; 安卓上电视与平板都是原生视图照同一份数据画, 见 TvNoticeView): 一块一块往下排,
+ * 外面那一栏竖排、间距 10dp, 放不下时自己滚.
+ */
 @Composable
-private fun TvNoticeExternalLink(qr: TvNoticeQr, touch: Boolean) {
-    if (touch) {
+internal fun TvNoticeBlocks(blocks: List<TvNoticeBlock>, touch: Boolean) {
+    blocks.forEach { block ->
+        when (block) {
+            is TvNoticeParagraph -> TvNoticeParagraphText(block, touch)
+            is TvNoticeMessage -> TvNoticeMessageBubble(block)
+            is TvNoticeCard -> TvNoticeCardBlock(block)
+            is TvNoticeQr -> TvNoticeQrBlock(block, touch)
+        }
+    }
+}
+
+/** 来往记录里的一条 ([TvNoticeMessage]): 自己的靠右、主色淡底, 别人的靠左、中性淡底; 最宽占栏宽的 [TV_NOTICE_BUBBLE_MAX_FRACTION]. */
+@Composable
+private fun TvNoticeMessageBubble(message: TvNoticeMessage) {
+    Box(Modifier.fillMaxWidth(), contentAlignment = if (message.mine) Alignment.CenterEnd else Alignment.CenterStart) {
+        Column(
+            Modifier
+                .fillMaxWidth(TV_NOTICE_BUBBLE_MAX_FRACTION)
+                .wrapContentWidth(if (message.mine) Alignment.End else Alignment.Start)
+                .background(
+                    if (message.mine) MaterialTheme.colorScheme.primary.copy(alpha = TV_NOTICE_MINE_BUBBLE_ALPHA) else LocalContentColor.current.copy(alpha = TV_NOTICE_CHIP_ALPHA),
+                    RoundedCornerShape(12.dp),
+                )
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(message.meta, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                if (message.fresh) Box(Modifier.size(TV_NOTICE_DOT_SIZE).background(MaterialTheme.colorScheme.error, CircleShape))
+            }
+            message.text?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+        }
+    }
+}
+
+/** 一张卡片 ([TvNoticeCard]): 图标、标题 (长的截到两行)、状态一行, 有进度时标题行最右写百分比、下面一条进度. */
+@Composable
+private fun TvNoticeCardBlock(card: TvNoticeCard) {
+    val scheme = MaterialTheme.colorScheme
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(scheme.onSurface.copy(alpha = TV_NOTICE_CARD_ALPHA), RoundedCornerShape(12.dp))
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        val progress = card.progress?.coerceIn(0f, 1f)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Icon(card.icon, contentDescription = null, Modifier.size(22.dp), tint = scheme.primary)
+            Column(Modifier.weight(1f)) {
+                Text(card.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                card.status?.let {
+                    Text(it, style = MaterialTheme.typography.labelMedium, color = card.statusTone.statusColor(), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            if (progress != null) {
+                Text(noticePercentText(progress), style = MaterialTheme.typography.titleSmall, color = scheme.primary)
+            }
+        }
+        when {
+            progress != null -> LinearProgressIndicator(progress = { progress }, Modifier.fillMaxWidth().height(4.dp))
+            card.indeterminate -> LinearProgressIndicator(Modifier.fillMaxWidth().height(4.dp))
+        }
+    }
+}
+
+/**
+ * 正文里的二维码 ([TvNoticeQr]): 有标题的码在左、字在右; 没标题的码下写一行. 外部链接 ([TvNoticeQr.openOnTouch]) 在触屏上是一颗在浏览器里打开的按钮.
+ * 还没有码 (url 为 null) 时只写字.
+ */
+@Composable
+private fun TvNoticeQrBlock(qr: TvNoticeQr, touch: Boolean) {
+    val url = qr.url
+    if (touch && qr.openOnTouch && url != null) {
         val uriHandler = LocalUriHandler.current
         AniFocusSelectableSurface(
-            onClick = { runCatching { uriHandler.openUri(qr.url) } },
+            onClick = { runCatching { uriHandler.openUri(url) } },
             selected = false,
             shape = RoundedCornerShape(12.dp),
             modifier = Modifier.fillMaxWidth().heightIn(min = TV_NOTICE_ACTION_HEIGHT).testTag(TV_NOTICE_LINK_TAG),
         ) {
             Box(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), contentAlignment = Alignment.CenterStart) {
-                Text(qr.caption, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(qr.caption ?: url, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
-    } else {
+        return
+    }
+    if (qr.title == null) {
         Column(Modifier.padding(top = 8.dp).testTag(TV_NOTICE_LINK_TAG), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            RemoteQrCode(qr.url, TV_NOTICE_QR_SIZE, TV_NOTICE_QR_QUIET_ZONE)
-            Text(qr.caption, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+            if (url != null) RemoteQrCode(url, TV_NOTICE_LINK_QR_SIZE, TV_NOTICE_LINK_QR_QUIET_ZONE, openOnTap = false)
+            qr.caption?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2) }
+            qr.status?.let { TvNoticeStatusLine(it, qr.statusTone) }
+        }
+        return
+    }
+    Row(Modifier.testTag(TV_NOTICE_LINK_TAG), verticalAlignment = Alignment.CenterVertically) {
+        RemoteQrCode(url, TV_NOTICE_QR_SIZE, TV_NOTICE_QR_QUIET_ZONE, openOnTap = false)
+        Spacer(Modifier.width(20.dp))
+        Column(Modifier.weight(1f)) {
+            Text(qr.title, style = MaterialTheme.typography.titleMedium)
+            qr.caption?.let {
+                Spacer(Modifier.height(4.dp))
+                Text(it, style = MaterialTheme.typography.bodyMedium)
+            }
+            qr.status?.let {
+                Spacer(Modifier.height(10.dp))
+                TvNoticeStatusLine(it, qr.statusTone)
+            }
         }
     }
 }
 
-/** 一段的小标题: 「新通知」「之前的」. 不能聚焦. */
+/** 码旁的状态: 点 + 字, 颜色照 [tone] (平常的点用 outline、字淡一档). */
+@Composable
+private fun TvNoticeStatusLine(text: String, tone: TvNoticeTone) {
+    val color = tone.statusColor()
+    val plain = tone == TvNoticeTone.Normal || tone == TvNoticeTone.Secondary
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(8.dp).background(if (plain) MaterialTheme.colorScheme.outline else color, CircleShape))
+        Spacer(Modifier.width(6.dp))
+        Text(text, style = MaterialTheme.typography.labelLarge, color = color)
+    }
+}
+
+/** 状态行与非平常色调的一段话的颜色 (见 [TvNoticeTone]). */
+@Composable
+internal fun TvNoticeTone.statusColor(): Color {
+    val scheme = MaterialTheme.colorScheme
+    return when (this) {
+        TvNoticeTone.Normal, TvNoticeTone.Secondary -> scheme.onSurfaceVariant
+        TvNoticeTone.Emphasis -> scheme.primary
+        TvNoticeTone.Ok -> if (scheme.surface.luminance() < 0.5f) CONNECTED_GREEN_DARK else CONNECTED_GREEN_LIGHT
+        TvNoticeTone.Error -> scheme.error
+    }
+}
+
+/** 进度的百分比 (卡片标题行最右那个字). */
+internal fun noticePercentText(progress: Float): String = "${(progress.coerceIn(0f, 1f) * 100).roundToInt()}%"
+
+/** 一段的小标题: 「新通知」「之前的」「处理中」. 不能聚焦. */
 @Composable
 private fun TvNoticeSectionHeader(text: String, first: Boolean) {
     Text(
@@ -556,18 +1155,21 @@ private fun TvNoticeSectionHeader(text: String, first: Boolean) {
 
 @Composable
 private fun TvNoticeRow(
-    item: TvShownNotice,
-    fresh: Boolean,
+    item: TvNoticeColumnItem,
     now: Long,
     selected: Boolean,
+    focusLook: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // [focusLook]: 焦点还没送到、马上要落在这一行, 先照聚焦的样子画 (同 AniFocusSelectableSurface 聚焦时的底色与字色)
     AniFocusSelectableSurface(
         onClick = onClick,
         selected = selected,
         shape = RoundedCornerShape(12.dp),
         modifier = modifier.fillMaxWidth().testTag(TV_NOTICE_ROW_TAG),
+        unselectedColor = if (focusLook) aniFocusContainerColor() else aniPanelItemColor(MaterialTheme.colorScheme.surfaceContainerHighest),
+        unselectedContentColor = if (focusLook) aniFocusContentColor() else MaterialTheme.colorScheme.onSurface,
     ) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
@@ -575,9 +1177,9 @@ private fun TvNoticeRow(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Box(Modifier.size(TV_NOTICE_ICON_SIZE)) {
-                Icon(item.kind.category.icon, contentDescription = stringResource(item.kind.category.label), Modifier.size(TV_NOTICE_ICON_SIZE))
-                // 没看过的: 图标右上角一个红点 (同侧边栏头像上的)
-                if (fresh) {
+                Icon(item.icon, contentDescription = item.iconLabel, Modifier.size(TV_NOTICE_ICON_SIZE))
+                // 没看过的: 图标右上角一个红点 (同侧边栏「通知」上的)
+                if (item.fresh) {
                     Box(
                         Modifier
                             .align(Alignment.TopEnd)
@@ -596,13 +1198,15 @@ private fun TvNoticeRow(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    Text(
-                        noticeTimeText(item.notice.atMillis, now),
-                        style = MaterialTheme.typography.labelMedium,
-                        // 跟着行的内容色压淡: 聚焦时行铺主色, 固定的灰字在上面看不清
-                        color = LocalContentColor.current.copy(alpha = TV_NOTICE_TIME_ALPHA),
-                        maxLines = 1,
-                    )
+                    item.atMillis?.let { at ->
+                        Text(
+                            noticeTimeText(at, now),
+                            style = MaterialTheme.typography.labelMedium,
+                            // 跟着行的内容色压淡: 聚焦时行铺主色, 固定的灰字在上面看不清
+                            color = LocalContentColor.current.copy(alpha = TV_NOTICE_TIME_ALPHA),
+                            maxLines = 1,
+                        )
+                    }
                 }
                 item.summary?.let {
                     Text(
@@ -618,31 +1222,67 @@ private fun TvNoticeRow(
     }
 }
 
-/** 今天的写「刚刚 / N 分钟前 / N 小时前」, 昨天写「昨天」, 今年的写月日, 更早的写年月日. */
+/** 今天的写「刚刚 / N 分钟前 / N 小时前」, 昨天写「昨天」, 今年的写月日, 更早的写年月日 (见 [formatNoticeTime]). */
 @Composable
-private fun noticeTimeText(atMillis: Long, nowMillis: Long): String {
+internal fun noticeTimeText(atMillis: Long, nowMillis: Long): String = formatNoticeTime(atMillis, nowMillis, rememberTvNoticeTimeTexts())
+
+/** 年、月、日与月份的英文缩写 (英文的格式写「Nov 20, 2026」用第 4 个参数, 中文的用前 3 个); [sameYear] 时不写年. */
+@Composable
+internal fun noticeDateText(date: LocalDate, sameYear: Boolean): String = formatNoticeDate(date, sameYear, rememberTvNoticeTimeTexts())
+
+/** 时间那几种写法的文案模板 (还没填参数的 `%1$s`), 由 [rememberTvNoticeTimeTexts] 取; 填参数见 [fillNoticeTemplate]. */
+@Immutable
+internal class TvNoticeTimeTexts(
+    val justNow: String,
+    val minutesAgo: String,
+    val hoursAgo: String,
+    val yesterday: String,
+    val monthDay: String,
+    val date: String,
+)
+
+@Composable
+internal fun rememberTvNoticeTimeTexts(): TvNoticeTimeTexts {
+    val justNow = stringResource(Lang.notification_time_just_now)
+    val minutesAgo = stringResource(Lang.notification_time_minutes_ago)
+    val hoursAgo = stringResource(Lang.notification_time_hours_ago)
+    val yesterday = stringResource(Lang.notification_time_yesterday)
+    val monthDay = stringResource(Lang.notification_time_month_day)
+    val date = stringResource(Lang.notification_time_date)
+    return remember(justNow, minutesAgo, hoursAgo, yesterday, monthDay, date) {
+        TvNoticeTimeTexts(justNow, minutesAgo, hoursAgo, yesterday, monthDay, date)
+    }
+}
+
+/** 见 [noticeTimeText]; [atMillis] ≤ 0 (没有时间) 为空字. 不在组合里 (原生视图的行在组合外换字时用). */
+internal fun formatNoticeTime(atMillis: Long, nowMillis: Long, texts: TvNoticeTimeTexts): String {
+    if (atMillis <= 0) return ""
     val zone = TimeZone.currentSystemDefault()
     val at = Instant.fromEpochMilliseconds(atMillis).toLocalDateTime(zone)
     val today = Instant.fromEpochMilliseconds(nowMillis).toLocalDateTime(zone).date
     val diff = (nowMillis - atMillis).coerceAtLeast(0)
     return when {
-        diff < MINUTE -> stringResource(Lang.notification_time_just_now)
-        diff < HOUR -> stringResource(Lang.notification_time_minutes_ago, (diff / MINUTE).toString())
-        at.date == today -> stringResource(Lang.notification_time_hours_ago, (diff / HOUR).toString())
-        at.date == today.minus(1, DateTimeUnit.DAY) -> stringResource(Lang.notification_time_yesterday)
-        else -> dateText(at.date, sameYear = at.date.year == today.year)
+        diff < MINUTE -> texts.justNow
+        diff < HOUR -> fillNoticeTemplate(texts.minutesAgo, (diff / MINUTE).toString())
+        at.date == today -> fillNoticeTemplate(texts.hoursAgo, (diff / HOUR).toString())
+        at.date == today.minus(1, DateTimeUnit.DAY) -> texts.yesterday
+        else -> formatNoticeDate(at.date, sameYear = at.date.year == today.year, texts)
     }
 }
 
-/** 年、月、日与月份的英文缩写 (英文的格式写「Nov 20, 2026」用第 4 个参数, 中文的用前 3 个). */
-@Composable
-private fun dateText(date: LocalDate, sameYear: Boolean): String {
-    val y = date.year.toString()
-    val m = date.month.number.toString()
-    val d = date.day.toString()
+private fun formatNoticeDate(date: LocalDate, sameYear: Boolean, texts: TvNoticeTimeTexts): String {
     val month = MONTH_ABBREVIATIONS[date.month.number - 1]
-    return if (sameYear) stringResource(Lang.notification_time_month_day, y, m, d, month) else stringResource(Lang.notification_time_date, y, m, d, month)
+    return fillNoticeTemplate(
+        if (sameYear) texts.monthDay else texts.date,
+        date.year.toString(), date.month.number.toString(), date.day.toString(), month,
+    )
 }
+
+/** 文案模板按位置填参数 (`%1$s` / `%1$d`), 同 Compose 资源带参数取字的格式. */
+internal fun fillNoticeTemplate(template: String, vararg args: String): String =
+    NOTICE_TEMPLATE_ARG.replace(template) { match -> args.getOrNull(match.groupValues[1].toInt() - 1) ?: match.value }
+
+private val NOTICE_TEMPLATE_ARG = Regex("""%(\d+)\$[ds]""")
 
 private val MONTH_ABBREVIATIONS = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
@@ -651,44 +1291,63 @@ private const val HOUR = 3_600_000L
 
 internal const val TV_NOTICE_ROW_TAG = "tv-notice-row"
 internal const val TV_NOTICE_PANE_TAG = "tv-notice-pane"
+internal const val TV_NOTICE_BODY_TAG = "tv-notice-body"
 internal const val TV_NOTICE_ACTION_TAG = "tv-notice-action"
 internal const val TV_NOTICE_LINK_TAG = "tv-notice-link"
 
+internal val TV_NOTICE_ICON_SIZE = 24.dp
+internal val TV_NOTICE_DOT_SIZE = 8.dp
 
-
-private val TV_NOTICE_ICON_SIZE = 24.dp
-private val TV_NOTICE_DOT_SIZE = 8.dp
+/** 一打开焦点要落的那一行先画成聚焦样子的最长时间 (焦点一般一两帧就送到; 被别处拿走了也不一直这么画). */
+internal val TV_NOTICE_PENDING_FOCUS_LOOK = 600.milliseconds
 
 /** 一行露出多少算显示到屏幕上了 (算看过). */
-private const val TV_NOTICE_SEEN_FRACTION = 0.5f
+internal const val TV_NOTICE_SEEN_FRACTION = 0.5f
 
 /** 行里的时间与摘要那几个字相对行的内容色的不透明度. */
-private const val TV_NOTICE_TIME_ALPHA = 0.75f
+internal const val TV_NOTICE_TIME_ALPHA = 0.75f
 
 /** 弹窗宽: 列表 + 竖线 + 右栏. */
-private val TV_NOTICE_DIALOG_MAX_WIDTH = 880.dp
+internal val TV_NOTICE_DIALOG_MAX_WIDTH = 880.dp
+
+/** 签那一排与下面两栏之间的空 (签的字下面还有一条横线, 比标题与正文之间的空小一点). */
+internal val TV_NOTICE_TABS_GAP = 8.dp
+
+/** 刷新左边那行小字与按钮之间的空 (按钮聚焦时放大, 不压到字). */
+internal val TV_NOTICE_REFRESH_STATUS_GAP = 16.dp
 
 /** 两栏的高 (固定), 列表宽与它占弹窗内容宽的上限 (窄窗口按比例收), 两栏之间竖线两边的空. */
-private val TV_NOTICE_BODY_HEIGHT = 396.dp
-private val TV_NOTICE_LIST_WIDTH = 340.dp
-private const val TV_NOTICE_LIST_MAX_FRACTION = 0.42f
-private val TV_NOTICE_COLUMN_GAP = 20.dp
+internal val TV_NOTICE_BODY_HEIGHT = 396.dp
+internal val TV_NOTICE_LIST_WIDTH = 340.dp
+internal const val TV_NOTICE_LIST_MAX_FRACTION = 0.42f
+internal val TV_NOTICE_COLUMN_GAP = 20.dp
 
-/** 竖线与右栏类别签的底, 相对内容色的不透明度; 竖线宽. */
-private const val TV_NOTICE_DIVIDER_ALPHA = 0.14f
-private const val TV_NOTICE_CHIP_ALPHA = 0.10f
-private val TV_NOTICE_DIVIDER_WIDTH = 1.dp
+/** 来往记录的气泡最宽占栏宽多少; 自己那条的主色底、卡片的底相对颜色的不透明度. */
+internal const val TV_NOTICE_BUBBLE_MAX_FRACTION = 0.86f
+internal const val TV_NOTICE_MINE_BUBBLE_ALPHA = 0.18f
+internal const val TV_NOTICE_CARD_ALPHA = 0.06f
+
+/** 竖线与右栏签的底, 相对内容色 (主色签相对主色) 的不透明度; 竖线宽. */
+internal const val TV_NOTICE_DIVIDER_ALPHA = 0.14f
+internal const val TV_NOTICE_CHIP_ALPHA = 0.10f
+internal const val TV_NOTICE_ACCENT_CHIP_ALPHA = 0.22f
+internal val TV_NOTICE_DIVIDER_WIDTH = 1.dp
 
 /** 至多几颗操作横排; 竖排时一颗的宽. */
-private const val TV_NOTICE_ROW_ACTIONS = 2
-private val TV_NOTICE_ACTIONS_COLUMN_WIDTH = 260.dp
+internal const val TV_NOTICE_ROW_ACTIONS = 2
+internal val TV_NOTICE_ACTIONS_COLUMN_WIDTH = 260.dp
 
 /** 右栏一颗操作的高. */
-private val TV_NOTICE_ACTION_HEIGHT = 40.dp
+internal val TV_NOTICE_ACTION_HEIGHT = 40.dp
+
+/** 横排按钮上按一下上下键, 正文翻可见高度的几分之几. */
+internal const val TV_NOTICE_PAGE_FRACTION = 0.66f
 
 /** 触屏上右栏里资源名这类长串 ([TvNoticeParagraph.longName]) 最多几行. */
-private const val TV_NOTICE_TOUCH_NAME_LINES = 3
+internal const val TV_NOTICE_TOUCH_NAME_LINES = 3
 
-/** 说明里外部链接的二维码 (边长与静区). */
-private val TV_NOTICE_QR_SIZE = 112.dp
-private val TV_NOTICE_QR_QUIET_ZONE = 10.dp
+/** 正文里的二维码 (边长与静区): 有标题的 (码在左、字在右) 与外部链接那种 (码下写字). */
+internal val TV_NOTICE_QR_SIZE = 160.dp
+internal val TV_NOTICE_QR_QUIET_ZONE = 12.dp
+internal val TV_NOTICE_LINK_QR_SIZE = 112.dp
+internal val TV_NOTICE_LINK_QR_QUIET_ZONE = 10.dp

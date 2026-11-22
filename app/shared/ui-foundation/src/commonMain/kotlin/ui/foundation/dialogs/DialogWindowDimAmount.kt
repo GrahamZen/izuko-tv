@@ -10,6 +10,7 @@
 package me.him188.ani.app.ui.foundation.dialogs
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
 
 /**
  * 把当前弹窗**窗口外**那层系统压暗调成 [dimAmount] (0 = 不压暗, 1 = 全黑). 在
@@ -23,3 +24,9 @@ import androidx.compose.runtime.Composable
  */
 @Composable
 expect fun DialogWindowDimAmount(dimAmount: Float)
+
+/**
+ * 这个弹窗叠在另一个面板弹窗上面 (如通知弹窗里一条的操作开的小窗): 下面那层已经压暗过一次, [DialogWindowDimAmount] 一律不再压暗;
+ * 玻璃面板换成实底 ([me.him188.ani.app.ui.foundation.widgets.aniGlassPanelColor]), 下面那个弹窗的字不透上来.
+ */
+val LocalStackedDialog = staticCompositionLocalOf { false }

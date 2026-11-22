@@ -19,6 +19,7 @@ import androidx.compose.ui.window.DialogWindowProvider
 
 @Composable
 actual fun DialogWindowDimAmount(dimAmount: Float) {
+    val amount = if (LocalStackedDialog.current) 0f else dimAmount
     val view = LocalView.current
     // 弹窗内容视图的某级祖先实现了 DialogWindowProvider (compose 的 DialogLayout).
     // 沿链向上找而不是写死 view.parent: 层级由 compose 内部决定, 找不到就放弃 (保持系统默认压暗),
@@ -37,6 +38,6 @@ actual fun DialogWindowDimAmount(dimAmount: Float) {
         window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
         // 不用 Window.setDimAmount: 它是 API 33 才有的, 而 TV 盒子普遍停在更早的版本.
         // 改 attributes 各版本通用 —— 赋值这一步会触发 WindowManager 重新应用参数
-        window.attributes = window.attributes.also { it.dimAmount = dimAmount }
+        window.attributes = window.attributes.also { it.dimAmount = amount }
     }
 }

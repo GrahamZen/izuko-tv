@@ -71,6 +71,7 @@ import me.him188.ani.app.ui.remote.TvRemoteControl
 import me.him188.ani.app.ui.settings.account.ProfileViewModel
 import me.him188.ani.app.ui.subject.details.layout.TvDetailsTheme
 import me.him188.ani.app.ui.update.AppUpdateViewModel
+import me.him188.ani.app.ui.update.LocalAppUpdateViewModel
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
 import org.jetbrains.compose.resources.DrawableResource
@@ -99,7 +100,8 @@ fun TvSettingsPage(
     }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    val appUpdate = viewModel { AppUpdateViewModel() }
+    // 界面最外层那一份 (离开设置也接着下, 与动作面板看到的是同一份进度, 见 LocalAppUpdateViewModel)
+    val appUpdate = LocalAppUpdateViewModel.current ?: viewModel { AppUpdateViewModel() }
     val profile = viewModel { ProfileViewModel() }
     val sketch = LocalSketch.current
     val last = TvSettingsLastPosition
@@ -178,7 +180,7 @@ fun TvSettingsPage(
                         // 从别处直接跳到某一类 (如「去登录」到账号): 焦点直接进中栏, 说明栏 (登录二维码) 当场就有
                         view.enterListOnOpen = true
                     }
-                    // 从别处要求落在某一行 (如有新通知时点头像 → 账号页「通知」, 见 TvSettingsEntryGroup.focusRow)
+                    // 从别处要求落在某一行 (如通知里的设置链接, 见 TvSettingsEntryGroup.focusRow)
                     TvSettingsEntryGroup.takeRow()?.let(state::rowOf)?.let { view.resumeRow = it }
                     view.requestEntryFocus()
                 }
@@ -210,7 +212,6 @@ fun TvSettingsPage(
         }
     }
 
-    TvSettingsUpdateHost(appUpdate)
     TvPikPakLegacyNoticeHost(vm)
 
     val pending by state.pendingConfirm.collectAsState()

@@ -15,7 +15,7 @@ import kotlinx.coroutines.flow.flowOf
 import me.him188.ani.app.platform.Context
 
 /**
- * 设置清单里只有电视版才有的东西: Web 控制台、首次引导、性能诊断、经 Worker 扫码登录 Bangumi、「本版新功能」页、选人页、应用内通知.
+ * 设置清单里只有电视版才有的东西: Web 控制台、首次引导、性能诊断、经 Worker 扫码登录 Bangumi、「本版新功能」页、选人页.
  * 电视版 (ui-tv) 全给; 别的端没有的留默认 (null / 空), 用到它的项不显示 (控制台的二维码照样建, 由那一端换成自己的入口, 见 [TvQr.console]).
  */
 interface TvSettingsPlatform {
@@ -43,9 +43,6 @@ interface TvSettingsPlatform {
     /** 有触摸屏时界面用平板模式还是电视模式 (见 [TvInterfaceModeSwitch]); null = 没有这个选择. */
     val interfaceMode: TvInterfaceModeSwitch? get() = null
 
-    /** 应用内通知 (账号页「通知」那一行, 见 [TvSettingsNotices]); null = 没有. */
-    val notices: TvSettingsNotices? get() = null
-
     /** 都不给: 没有这些功能的端. */
     object None : TvSettingsPlatform
 }
@@ -56,15 +53,6 @@ interface TvInterfaceModeSwitch {
 
     /** 写下新的模式 (同步写盘: 调用方紧接着重启). */
     fun setTvMode(context: Context, tvMode: Boolean)
-}
-
-/** 应用内通知 (见 [TvSettingsPlatform.notices] 与 docs/contributing/code/notices.md). */
-interface TvSettingsNotices {
-    /** 还没看过的有几条. */
-    val fresh: Flow<Int>
-
-    /** 打开通知弹窗 (叠在当时的页面上, 关掉回到原处). */
-    fun open()
 }
 
 /** 经 Worker 中转发起授权的结果 (见 [TvSettingsPlatform.startRelayLogin]). */

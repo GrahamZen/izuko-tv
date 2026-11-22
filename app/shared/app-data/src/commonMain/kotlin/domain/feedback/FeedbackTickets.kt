@@ -13,7 +13,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.getAndUpdate
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
@@ -38,6 +40,7 @@ import me.him188.ani.app.data.network.FeedbackTicketService.Outcome
 import me.him188.ani.app.data.network.SubjectFeedbackService.IssueStatus
 import me.him188.ani.app.data.network.TmdbSubjectMapEntry
 import me.him188.ani.app.data.repository.feedback.FeedbackRecordRepository
+import me.him188.ani.app.domain.notice.Notices
 import me.him188.ani.app.platform.currentAniBuildConfig
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
@@ -59,7 +62,7 @@ import kotlin.time.Instant
  * - 新工单必须带现场录制 ([submit]); 补充 ([reply]) 可以只有文字或照片. 附了录制或报告就带一份日志 (`log.gz`: 报告原文在前, 录制那段的日志在后).
  * - 附件的字节由调用方给 ([Sources], 平台相关): 开单 / 补充时先向服务声明, 之后在后台逐个传 ([uploading]);
  *   没传上去 (限频、连不上) 隔一会儿自动再试 ([UPLOAD_ATTEMPTS]), 还不行留在 [FeedbackRecord.uploads], 用户在控制台点重传 ([retryUploads]).
- * - 处理结果每天查一次 ([start] 起的后台循环, 只查开着的单); 有新的维护者回复、单关了时标成未读, 控制台上提示.
+ * - 处理结果每天查一次 ([start] 起的后台循环, 只查开着的单); 有新的维护者回复、单关了时标成未读, 控制台上提示, 并发一条通知 ([FeedbackNotices]).
  *   用户在控制台点「检查回复」时也查 ([syncNow], 一分钟内只查一次).
  */
 class FeedbackTickets(
@@ -73,6 +76,8 @@ class FeedbackTickets(
     private val subjectStatus: (suspend (List<Int>) -> List<IssueStatus>?)? = null,
     /** 对应表里一个条目 (TmdbSubjectMapRepository.lookup); 跟着别人提的修正请求看它推断结果 (见 [JoinedCorrectionOutcome]). `null` = 不推断, 都去查. */
     private val subjectMap: (suspend (subjectId: Int) -> TmdbSubjectMapEntry?)? = null,
+    /** 有新回复或结果的单发成通知 (见 [FeedbackNotices]); `null` = 不发. */
+    private val notices: Notices? = null,
 ) {
     /** 有工单服务可用 (见 [FeedbackTicketService.available]). */
     val available: Boolean get() = service.available
@@ -382,9 +387,24 @@ class FeedbackTickets(
         return deleted
     }
 
-    /** 看过了 (控制台的「反馈」页、电视设置里的「我的反馈」): 清掉未读. */
-    suspend fun markRead() = records.edit {
-        if (items.none { it.unread }) this else copy(items = items.map { if (it.unread) it.copy(unread = false) else it })
+    /** 看过了 (控制台的「反馈」页): 清掉全部未读, 这些单的通知也算看过 (见 [markReadWhere]). */
+    suspend fun markRead() = markReadWhere { true }
+
+    /** 看过了这一张 (电视「我的反馈」的右栏写过它): 只清它的未读, 它的通知也算看过. */
+    suspend fun markRead(kind: FeedbackKind, issue: Int) = markReadWhere { it.kind == kind && it.issue == issue }
+
+    /**
+     * 清掉 [which] 里未读的单, 同时把它们的通知 ([FeedbackNotices]) 标成看过: 通知在电视「我的反馈」签里看, 在哪一边看过这张单,
+     * 签上与侧边栏「通知」的红点就不再为它亮, 也不再为它弹气泡.
+     */
+    private suspend fun markReadWhere(which: (FeedbackRecord) -> Boolean) {
+        val read = records.current().items.filter { it.unread && which(it) }
+        if (read.isEmpty()) return
+        records.edit {
+            val hit: (FeedbackRecord) -> Boolean = { it.unread && which(it) }
+            if (items.none(hit)) this else copy(items = items.map { if (hit(it)) it.copy(unread = false) else it })
+        }
+        notices?.markSeen(read.map(FeedbackNotices::noticeOf))
     }
 
     /** 用户点「检查回复」: 一分钟内点多次只查一次. 查到了 (或刚查过) 回 `true`. */
@@ -516,8 +536,21 @@ class FeedbackTickets(
         )
     }
 
-    /** 启动每天查一次的后台循环. */
+    /** 启动每天查一次的后台循环; 有未读的单 (查到了新回复或结果) 一直发成通知. */
     fun start() {
+        notices?.let { notices ->
+            scope.launch {
+                records.records.map { list -> list.filter { it.unread } }.distinctUntilChanged().collect { unread ->
+                    try {
+                        FeedbackNotices.postUnread(notices, unread)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        logger.warn(e) { "posting feedback notices failed" }
+                    }
+                }
+            }
+        }
         scope.launch {
             delay(STARTUP_DELAY)
             while (true) {

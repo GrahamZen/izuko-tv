@@ -34,7 +34,7 @@ import org.koin.mp.KoinPlatform
  * - `POST api/debug/notices/post` `kind=<种类> [key=<键>] [arg.<名>=<值> …]`: 发一条消息 (键不给时用种类 + 此刻);
  * - `POST api/debug/notices/release` `title=<一句> [title=<另一句> …]`: 当前版本的「## 通知」换成这几句 (同发版后补了通知);
  * - `POST api/debug/notices/clear`: 撤回全部消息, 「## 通知」清空 (看过的记录留着);
- * - `POST api/debug/notices/open`: 打开通知弹窗 (同设置账号页的「通知」那一行);
+ * - `POST api/debug/notices/open`: 打开通知弹窗 (同点侧边栏的「通知」);
  * - `POST api/debug/notices/foreground`: 当作刚从后台回到前台 (有新的就等到首页自动打开).
  */
 internal object RemoteDebugNotices {

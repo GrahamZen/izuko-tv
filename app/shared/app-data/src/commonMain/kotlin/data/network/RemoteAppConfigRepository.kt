@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.data.network
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
@@ -47,24 +48,32 @@ class RemoteAppConfigRepository(
 ) {
     private val logger = logger<RemoteAppConfigRepository>()
     private val cache = JsonFileCache(file, SavedAppConfig.serializer())
+    private val refresh = CompletableDeferred<RemoteRefresh?>()
 
     init {
         if (key.isNotEmpty()) {
             scope.launch {
                 // 先交出存下的那份, 再开始取: 反过来的话新取到的可能被后交的旧的盖掉
                 cache.read()?.let { publish(it.token) }
-                RemoteRefresh(
-                    name = PATH,
-                    scope = scope,
-                    staleAfter = REFRESH_INTERVAL,
-                    checkEvery = CHECK_INTERVAL,
-                    foregroundAfter = FOREGROUND_INTERVAL,
-                    lastFetchedAt = { cache.read()?.fetchedAt },
-                    fetch = ::fetch,
+                refresh.complete(
+                    RemoteRefresh(
+                        name = PATH,
+                        scope = scope,
+                        staleAfter = REFRESH_INTERVAL,
+                        checkEvery = CHECK_INTERVAL,
+                        foregroundAfter = FOREGROUND_INTERVAL,
+                        lastFetchedAt = { cache.read()?.fetchedAt },
+                        fetch = ::fetch,
+                    ),
                 )
             }
+        } else {
+            refresh.complete(null)
         }
     }
+
+    /** 现在就取一份 (通知中心的「刷新」); 取到了 (或这个构建没有钥匙、不用取) 为 true. */
+    suspend fun refreshNow(): Boolean = refresh.await()?.refreshNow() ?: true
 
     private fun publish(token: String) {
         val config = SealedAppConfig.open(token, key)
