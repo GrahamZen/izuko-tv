@@ -15,6 +15,7 @@ import me.him188.ani.datasources.api.source.MediaFetchNameHints
 import me.him188.ani.datasources.api.source.MediaFetchRequest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /**
  * 搜索计划 ([SubjectSearchPlan]): 搜什么词、站点上的条目是不是这一部. 名字取自 Bangumi 与系列关系图 (「继 怪怪守护神」276792 与第一季 192428),
@@ -212,6 +213,24 @@ class SubjectSearchPlanTest {
         // 第一个副标题、最长的系列名、其余副标题
         assertEquals(listOf("诀别谭", "死神 千年血战篇", "訣別譚"), keywords.wider.map { it.keyword })
         assertEquals(listOf(KeywordKind.SUBTITLE, KeywordKind.SERIES, KeywordKind.SUBTITLE), keywords.wider.map { it.kind })
+    }
+
+    @Test
+    fun `literal keywords also try the leading segment of a name`() {
+        // 分享上把两段的顺序换过来写 (「JOJO的奇妙冒险 飙马野郎」), 整个名字原样搜不到
+        val sbr = request(names = listOf("飙马野郎 JOJO的奇妙冒险 第一赛段", "JoJo's Bizarre Adventure Part 7: Steel Ball Run 1st STAGE"))
+        val keywords = SubjectSearchPlan.of(sbr).keywords(KeywordStyle.literal(2))
+        assertEquals(
+            listOf("飙马野郎 JOJO的奇妙冒险第一赛段", "飙马野郎"),
+            keywords.writingsOf(keywords.primary.first()).map { it.keyword },
+        )
+        // 英文名的第一个词不单独搜
+        assertEquals(emptyList(), keywords.writingsOf(keywords.primary[1]).map { it.keyword })
+
+        // 第一段是系列名的不当写法搜 (系列名另外搜)
+        val spy = request(names = listOf("间谍过家家 代号：白"), seriesNames = listOf("间谍过家家"))
+        val spyKeywords = SubjectSearchPlan.of(spy).keywords(KeywordStyle.literal(1))
+        assertTrue(spyKeywords.writingsOf(spyKeywords.primary.first()).none { it.keyword == "间谍过家家" })
     }
 
     @Test
