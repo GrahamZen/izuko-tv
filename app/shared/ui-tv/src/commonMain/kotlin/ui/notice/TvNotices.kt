@@ -67,8 +67,10 @@ class TvShownNotice(
  *
  * @param fresh 打开时还是新的那几条 (前面画点); 打开就算看过了, 这里留着打开那一刻的样子
  * @param focusKey 一打开焦点落在哪条; 那条没了 (处理掉了) 落在原来的位置 [focusIndex] 上
- * @param focusAction 一打开焦点落在 [focusKey] 那一条的第几个操作上 (有几个操作时): 从别处处理一条 ([TvNotices.handle]) 是第一个,
- *   叠在列表上的弹窗关掉时是开它的那一个; 没给落在那一行上
+ * @param focusAction 一打开焦点落在 [focusKey] 那一条的第几个操作上 (那一条画了按钮时): 从别处处理一条 ([TvNotices.handle]) 是第一个;
+ *   没给落在那一行上
+ * @param tab 开在哪个签上 ([TvNoticeTab.NOTICES] 或 [TvNotices.tabs] 里一个的 id); [focusKey] 是这个签里的一行
+ * @param focusOnTabs 焦点不挪进列表 (触屏上点签换的签)
  */
 @Immutable
 class TvNoticeDialogState(
@@ -76,11 +78,13 @@ class TvNoticeDialogState(
     val focusKey: String?,
     val focusIndex: Int,
     val focusAction: Int? = null,
+    val tab: String = TvNoticeTab.NOTICES,
+    val focusOnTabs: Boolean = false,
 )
 
 /**
  * 电视上的通知 (见 docs/contributing/code/notices.md): 种类表、列出来的通知、通知弹窗开没开、通知气泡弹过哪一批.
- * 弹窗与气泡由 TV 根部的 [TvNoticeHost] 管; 设置账号页的「通知」那一行与气泡上的「查看」调 [open].
+ * 弹窗与气泡由 TV 根部的 [TvNoticeHost] 管; 点侧边栏的「通知」与气泡上的「查看」调 [open].
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 object TvNotices {
@@ -91,6 +95,9 @@ object TvNotices {
         TvReleaseNotice,
         TvUpdateNotice,
     )
+
+    /** 通知弹窗顶上「通知」之后的签 (见 [TvNoticeTab]): 加一个签在这里登记一行. 一个都没有时不画签, 照旧写标题. */
+    internal val tabs: List<TvNoticeTab> = listOf(TvFeedbackTab)
 
     private val logger = logger<TvNotices>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -105,7 +112,7 @@ object TvNotices {
     /** 列出来的通知, 排好先后 (见 [Notices.all]); 还没算出来为 null. */
     val shown: StateFlow<List<TvShownNotice>?> = _shown.asStateFlow()
 
-    /** 有新的 (没看过的) 通知: 主页头像上的红点. */
+    /** 有新的 (没看过的) 通知: 侧边栏「通知」上的红点. */
     val hasFresh: Flow<Boolean> = shown.map { list -> list.orEmpty().any { !it.entry.seen } }.distinctUntilChanged()
 
     private val _dialog = MutableStateFlow<TvNoticeDialogState?>(null)
@@ -125,7 +132,7 @@ object TvNotices {
         if (settings == null) emit(true) else emitAll(settings.themeSettings.flow.map { it.tvNoticesOnLaunch })
     }.distinctUntilChanged()
 
-    /** 跳去处页面时记下的那条: 从那页回到打开通知时的那一页 (首页或设置的账号页) 时重新打开、焦点落回它. */
+    /** 跳去处页面时记下的那条: 从那页回到打开通知时的那一页 (一般是首页) 时重新打开、焦点落回它. */
     internal val returnTo = MutableStateFlow<TvNoticeDialogState?>(null)
 
     fun kindOf(id: String): TvNoticeKind? = kinds.firstOrNull { it.id == id }
@@ -167,17 +174,35 @@ object TvNotices {
     }
 
     /**
-     * 打开通知弹窗. 显示到屏幕上的才算看过 (由弹窗报, 见 [markSeenKeys]): 一页放不下的, 翻到才算.
-     * [fresh] 给了时照它画「新的」那个点 (从去处页面回来时接着用第一次打开那一刻的), 否则照此刻没看过的.
+     * 打开通知弹窗, 开在签 [tab] 上 (没登记的照「通知」签开), 焦点在 [focusKey] 那一行 (不在列表里的落在第 [focusIndex] 行).
+     * 弹窗已经开着时就是换到那个签、那一行. 显示到屏幕上的才算看过 (由弹窗报, 见 [markSeenKeys]): 一页放不下的, 翻到才算.
+     * [fresh] 给了时照它画「新的」那个点 (从去处页面回来时接着用第一次打开那一刻的); 没给时弹窗开着照开着时的, 否则照此刻没看过的.
      */
-    fun open(focusKey: String? = null, focusIndex: Int = 0, fresh: Set<String>? = null, focusAction: Int? = null) {
+    fun open(
+        focusKey: String? = null,
+        focusIndex: Int = 0,
+        fresh: Set<String>? = null,
+        focusAction: Int? = null,
+        tab: String = TvNoticeTab.NOTICES,
+    ) {
         val list = _shown.value.orEmpty()
         _dialog.value = TvNoticeDialogState(
-            fresh = fresh ?: list.filter { !it.entry.seen }.map { it.key }.toSet(),
+            fresh = fresh ?: _dialog.value?.fresh ?: list.filter { !it.entry.seen }.map { it.key }.toSet(),
             focusKey = focusKey,
             focusIndex = focusIndex,
             focusAction = focusAction,
+            tab = tab.takeIf { id -> tabs.any { it.id == id } } ?: TvNoticeTab.NOTICES,
         )
+    }
+
+    /**
+     * 在通知弹窗里换到签 [tab], 两栏换成那个签的. [intoList] = 从列表里按左右键换的: 焦点进那个签的列表, 落在 [focusKey] 那一行
+     * (没有就第一行); 否则 (在顶上的签上换的) 焦点留在签上.
+     */
+    internal fun selectTab(tab: String, intoList: Boolean = false, focusKey: String? = null) {
+        _dialog.value = _dialog.value?.let {
+            TvNoticeDialogState(it.fresh, focusKey = focusKey, focusIndex = 0, tab = tab, focusOnTabs = !intoList)
+        }
     }
 
     /** 等 [TvNoticeHost] 处理的那一条 (见 [handle]). */
@@ -191,13 +216,13 @@ object TvNotices {
         handleRequest.value = key
     }
 
-    /** 弹窗开着时把焦点落到 [focusKey] 那一条 (给了 [focusAction] 落在它的那个操作上; 叠在上面的去处弹窗关掉, 回到列表时). */
-    internal fun refocus(focusKey: String, focusIndex: Int, focusAction: Int? = null) {
-        _dialog.value = _dialog.value?.let { TvNoticeDialogState(it.fresh, focusKey, focusIndex, focusAction) }
-    }
-
     fun close() {
         _dialog.value = null
+    }
+
+    /** 收起通知气泡, 这一批算弹过了: 在通知里做了一件要看右下角的事 (开始下载新版本), 关掉通知弹窗后气泡不再回来挡着. */
+    internal fun dismissBubble() {
+        bubbled.value += _shown.value.orEmpty().map(::tvNoticeBubbleKey)
     }
 
     /** 这几条显示到屏幕上了 (通知弹窗里一行露出一半以上, 见 TvNoticeDialog). */
@@ -239,6 +264,6 @@ internal fun tvNoticesToBubble(shown: List<TvShownNotice>, bubbled: Set<String>)
     return if (fresh.any { tvNoticeBubbleKey(it) !in bubbled }) fresh else emptyList()
 }
 
-/** 主页头像上的红点 (有没看过的通知时). */
+/** 侧边栏「通知」上的红点 (有没看过的通知时, 见 buildTvRailItems). */
 @Composable
 fun rememberTvNoticesFresh(): Boolean = remember { TvNotices.hasFresh }.collectAsState(false).value

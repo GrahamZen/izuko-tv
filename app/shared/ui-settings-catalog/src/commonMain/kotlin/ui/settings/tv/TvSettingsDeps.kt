@@ -62,6 +62,9 @@ class TvSettingsDeps(
     val sourceTests = TvSourceTests(scope)
     val proxyTest = TvProxyTest(scope)
 
+    /** 「检查更新」这次进设置后最近一次查成的是哪个更新类型 (见 tvUpdateRowStep). */
+    val updateChecked = MutableStateFlow(TvUpdateChecked(null))
+
     /** 清理图片缓存后加一, 占用量跟着重新统计. */
     val imageCacheRefresh = MutableStateFlow(0)
 

@@ -1085,6 +1085,7 @@ private fun part8() = listOf(
     RemoteText("安装时电视上会弹出确认框，用遥控器点「安装」或「更新」；装不上时这里会显示原因。", "The TV shows a confirmation when installing; press “Install” or “Update” with the remote. If it fails, the reason shows here.", "安裝時電視上會彈出確認框，用遙控器點「安裝」或「更新」；裝不上時這裡會顯示原因。", "安裝時電視上會彈出確認框，用遙控器點「安裝」或「更新」；裝不上時這裡會顯示原因。"),
     RemoteText("正在下载 {0}", "Downloading {0}", "正在下載 {0}", "正在下載 {0}"),
     RemoteText("正在核对安装包…", "Checking the installer…", "正在核對安裝包…", "正在核對安裝包…"),
+    RemoteText("已下好，电视上退出播放后安装。", "Downloaded. It installs once playback stops on the TV.", "已下載好，電視上退出播放後安裝。", "已下載好，電視上退出播放後安裝。"),
     RemoteText("正在准备安装…", "Preparing to install…", "正在準備安裝…", "正在準備安裝…"),
     RemoteText("请在电视上确认安装。确认后 Izuko TV 会关闭并完成更新，之后在电视上重新打开。", "Confirm the installation on the TV. Izuko TV then closes to finish updating; open it again afterwards.", "請在電視上確認安裝。確認後 Izuko TV 會關閉並完成更新，之後在電視上重新打開。", "請在電視上確認安裝。確認後 Izuko TV 會關閉並完成更新，之後在電視上重新開啟。"),
     RemoteText("回到电视上的 Izuko TV 后会弹出安装确认。", "The install confirmation appears once Izuko TV is back on the TV screen.", "回到電視上的 Izuko TV 後會彈出安裝確認。", "回到電視上的 Izuko TV 後會彈出安裝確認。"),

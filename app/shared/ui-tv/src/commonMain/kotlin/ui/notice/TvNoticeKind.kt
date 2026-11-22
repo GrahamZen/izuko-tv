@@ -49,7 +49,17 @@ interface TvNoticeKind {
 
     /** 控制台上的去处 (控制台页面的地址, 如 `#settings/feedback`); null = 控制台上只能「在电视上打开」. */
     fun consoleHref(notice: Notice): String? = null
+
+    /**
+     * 这一类在哪个签里看: null = 「通知」签里列一行. 别的签的 id ([TvNoticeTab.id]; 通知的键就是那个签里那一行的键, 如反馈回复在「我的反馈」签)
+     * = 不在「通知」签与手机控制台的通知列表里列, 由那个签自己提醒 (签上的红点) 与标看过; 照样算侧边栏「通知」的红点与通知气泡,
+     * 气泡上按「查看」开到那个签的那一行.
+     */
+    val tab: String? get() = null
 }
+
+/** 在「通知」签里列 (见 [TvNoticeKind.tab]). */
+internal val TvNoticeKind.listed: Boolean get() = tab == null
 
 /**
  * 右栏 (标题是 [TvNoticeKind.title]): 标题下面一行是哪一个 [subject] (作品、反馈; 不关哪一个的为 null)、正文 [body] (一项一段),
@@ -72,27 +82,45 @@ class TvNoticeDetail(
  * @param bullet 前面画一个点 (列成一条条的要点)
  * @param maxLines 至多几行 (电视、触屏都是): 摘要类的说明截掉的去操作里看全; 默认写全
  * @param longName 资源名这类长串: 触屏上操作画成按钮, 右栏放不下, 截到三行; 电视上照常写全
+ * @param tone 这一段的颜色 (见 [TvNoticeTone])
  */
 @Immutable
-class TvNoticeParagraph(
+data class TvNoticeParagraph(
     val text: AnnotatedString,
     val title: String? = null,
     val bullet: Boolean = false,
     val maxLines: Int = Int.MAX_VALUE,
     val longName: Boolean = false,
-) {
+    val tone: TvNoticeTone = TvNoticeTone.Normal,
+) : TvNoticeBlock {
     constructor(
         text: String,
         title: String? = null,
         bullet: Boolean = false,
         maxLines: Int = Int.MAX_VALUE,
         longName: Boolean = false,
-    ) : this(AnnotatedString(text), title, bullet, maxLines, longName)
+        tone: TvNoticeTone = TvNoticeTone.Normal,
+    ) : this(AnnotatedString(text), title, bullet, maxLines, longName, tone)
 }
 
-/** 说明里的一个外部链接: 电视上画 [url] 的二维码, 码下面写 [caption]; 触屏上是一颗打开链接的按钮; 控制台上是一个链接. */
+/**
+ * 正文里的一个二维码, 画 [url] 的码 ([url] 为 null = 还没有码, 只写字). 两种排法:
+ * - 有 [title]: 码在左, 右边竖排 [title] (大字)、[caption]、[status] (点 + 字, 颜色见 [statusTone]), 整块与码垂直居中;
+ * - 没有 [title]: 码下面写 [caption] (如外部链接上的字).
+ *
+ * [openOnTouch] = 这是一个外部链接: 触屏上不画码, 画一颗在浏览器里打开的按钮 (控制台上是一个链接); false 的码在触屏上照样画 (给另一台手机扫).
+ * [console] = 这是控制台的码 (扫了打开这台设备的控制台): 没有控制台的平台不画这一块.
+ */
 @Immutable
-class TvNoticeQr(val url: String, val caption: String)
+data class TvNoticeQr(
+    val url: String?,
+    val caption: String?,
+    val title: String? = null,
+    val status: String? = null,
+    val statusTone: TvNoticeTone = TvNoticeTone.Normal,
+    val openOnTouch: Boolean = false,
+    val console: Boolean = false,
+) : TvNoticeBlock
 
 /** 一个操作: 按钮上的字 [label] (只写动作, 如「更换资源」) 与按了去哪. */
 @Immutable

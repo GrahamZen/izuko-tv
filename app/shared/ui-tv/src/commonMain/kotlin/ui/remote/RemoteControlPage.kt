@@ -3302,6 +3302,9 @@ private val SCRIPT = """
     if (SRC_TABS.indexOf(h0.slice(8)) >= 0) srcTab = h0.slice(8);
     h0 = 'sources';
   }
+  // #settings/feedback/<种类>-<单号> (电视「我的反馈」里「在手机上补充」的二维码): 停在反馈那一组, 读完打开这张单 (见 FEEDBACK_SCRIPT)
+  var fb0 = /^settings\/feedback\/([A-Z]+-\d+)$/.exec(h0);
+  if (fb0) { window.pendingFeedback = fb0[1]; h0 = 'settings/feedback'; }
   // #settings/组名 (在某一组里刷新了页面): 停在那一组. 这条记录是进组时压的 (state 对得上) 就照旧, 底下本来就垫着列表;
   // 否则 (书签、手打的地址) 先把这条换成列表再压一条组, 按返回键回到列表. 旧组名照 GROUP_ALIAS 认
   if (h0.indexOf('settings/') === 0) {

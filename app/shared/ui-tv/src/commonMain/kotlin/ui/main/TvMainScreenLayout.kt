@@ -13,9 +13,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.graphicsLayer
-import me.him188.ani.app.ui.notice.rememberTvNoticesFresh
-import me.him188.ani.app.ui.settings.tv.TV_SETTINGS_NOTICES_ROW
-import me.him188.ani.app.ui.settings.tv.TvSettingsEntryGroup
+import me.him188.ani.app.ui.notice.TvNoticeBubbleHost
 import me.him188.ani.app.ui.foundation.NSFW_OBSCURED_COVER_LONG_EDGE_PX
 import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
 import me.him188.ani.app.ui.foundation.dialogs.DialogWindowDimAmount
@@ -307,22 +305,19 @@ fun TvMainScreenLayout(
             ) {
                 pageContent()
             }
+            // 右下角的通知气泡 (内容由 TvNoticeHost 定)
+            TvNoticeBubbleHost()
         }
         // 头像关联动作 (焦点在头像上时于其上方浮现): 只放常用的播放记录. 登录 / 退出登录、编辑资料、切换用户都低频,
-        // 在点头像进的设置账号页里; 通知也在那一页 (见 TvNotices): 有没看过的通知时头像带红点, 点头像落在「通知」那一行
-        val noticesFresh = rememberTvNoticesFresh()
+        // 在点头像进的设置账号页里. 通知是侧边栏单独一项 (见 buildTvRailItems)
         val avatarActions = listOf(
             TvRailAvatarAction(Icons.Outlined.History, stringResource(Lang.playback_history_title)) { navigator.navigatePlaybackHistory() },
         )
         TvNavigationSideRail(
             selfInfo = selfInfo,
             avatarActions = avatarActions,
-            avatarBadge = noticesFresh,
-            // 点头像一律进设置的账号页, 不管登没登录、是不是本地用户: 没登录时那里就是登录页; 切换用户在浮出按钮里
-            onAvatarClick = {
-                if (noticesFresh) TvSettingsEntryGroup.focusRow(TV_SETTINGS_NOTICES_ROW)
-                onNavigateToSettings(SettingsTab.PROFILE)
-            },
+            // 点头像一律进设置的账号页, 不管登没登录、是不是本地用户: 没登录时那里就是登录页
+            onAvatarClick = { onNavigateToSettings(SettingsTab.PROFILE) },
             // 返回/右键: 还原回进入侧边栏之前内容区最后聚焦的元素 (经内容区 enter, 页面
             // 自己的 onEnter 改道会把焦点送回原处, 如探索页的 focusRestorer 链)
             onExitFocus = { runCatching { contentFocus.requestFocus() } },

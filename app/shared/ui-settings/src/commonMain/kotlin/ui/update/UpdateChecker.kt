@@ -176,7 +176,7 @@ private const val LEGACY_APK_MARKER = "-legacy-"
  * 正式包的 minSdk (gradle.properties 的 `android.min.sdk`). 低于它的设备只能装兼容包
  * (`-Pani.android.legacy=true` 构建, minSdk 25), 装正式包会 `INSTALL_FAILED_OLDER_SDK`.
  */
-private const val NORMAL_APK_MIN_SDK = 27
+internal const val NORMAL_APK_MIN_SDK = 27
 
 /**
  * 该资产是否是 [abi] 的包. release 资产名形如 `ani-<版本>-<架构>.apk`

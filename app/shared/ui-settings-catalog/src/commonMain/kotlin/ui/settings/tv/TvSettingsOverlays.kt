@@ -21,8 +21,6 @@ import kotlinx.coroutines.launch
 import me.him188.ani.app.data.models.preference.PikPakConfig
 import me.him188.ani.app.domain.profile.SelfCollectionRecords
 import me.him188.ani.app.domain.profile.UserProfiles
-import me.him188.ani.app.platform.LocalContext
-import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
 import me.him188.ani.app.ui.foundation.widgets.AniTextButton
@@ -42,43 +40,7 @@ import me.him188.ani.app.ui.settings.account.ClearSelfRecordsDialog
 import me.him188.ani.app.ui.settings.account.ConvertToBangumiProfileDialog
 import me.him188.ani.app.ui.settings.account.ConvertToLocalProfileDialog
 import me.him188.ani.app.ui.settings.account.ProfileViewModel
-import me.him188.ani.app.ui.update.AppUpdateState
-import me.him188.ani.app.ui.update.AppUpdateViewModel
-import me.him188.ani.app.ui.update.FailedToInstallDialog
-import me.him188.ani.app.ui.update.InstallPermissionDialog
 import org.jetbrains.compose.resources.stringResource
-
-/**
- * 应用更新在设置页里要弹的: 安装授权、安装失败; 下载完自动安装 (遥控器上不再要按一次). 同原来设置页里的更新卡片 (UpdateSettingsNotifier),
- * 新版本的提示与下载进度在「检查更新」那一行上.
- */
-@Composable
-fun TvSettingsUpdateHost(viewModel: AppUpdateViewModel) {
-    val context = LocalContext.current
-    val presentation by viewModel.presentationFlow.collectAsStateWithLifecycle()
-    val state = presentation.state
-    val autoInstall = LocalAniUiBehavior.current.autoInstallUpdates
-    val downloaded = state is AppUpdateState.Downloaded
-    LaunchedEffect(autoInstall, downloaded) {
-        if (autoInstall && downloaded) viewModel.autoInstall(context)
-    }
-    presentation.installationFailure?.let { failure ->
-        FailedToInstallDialog(
-            message = failure.reason.toString(),
-            onDismissRequest = { viewModel.dismissInstallationFailure() },
-            state = state,
-        )
-    }
-    val installPermissionRequest by viewModel.installPermissionRequest.collectAsStateWithLifecycle()
-    installPermissionRequest?.let { request ->
-        InstallPermissionDialog(
-            offerInstallWithoutPermission = request.offerInstallWithoutPermission,
-            onOpenSettings = { viewModel.requestInstallPermission(context) },
-            onInstallWithoutPermission = { viewModel.startDownloadWithoutPermission() },
-            onDismissRequest = { viewModel.dismissInstallPermissionRequest() },
-        )
-    }
-}
 
 /**
  * PikPak 开着、登录了、还没回答过时, 看一眼云盘上旧版留下的缓存, 有就问删不删 (同原来设置页 PikPak 那一组的弹窗).

@@ -119,6 +119,7 @@ import me.him188.ani.app.ui.settings.tabs.AniHelperDestination
 import me.him188.ani.app.ui.subject.collection.CollectionPage
 import me.him188.ani.app.ui.subject.collection.UserCollectionsViewModel
 import me.him188.ani.app.ui.update.AppUpdateViewModel
+import me.him188.ani.app.ui.update.LocalAppUpdateViewModel
 import me.him188.ani.app.ui.update.UpdateNotifier
 import me.him188.ani.app.ui.user.SelfInfoUiState
 import me.him188.ani.utils.platform.isAndroid
@@ -521,7 +522,7 @@ internal fun BottomNotifierStack(
 @Composable
 private fun BoxScope.UpdateNotifierWithVersionExpiryCheck() {
     // Force check when version expired
-    val updateVm = viewModel { AppUpdateViewModel() }
+    val updateVm = LocalAppUpdateViewModel.current ?: viewModel { AppUpdateViewModel() }
     val versionExpiryService = remember { KoinPlatform.getKoin().get<VersionExpiryService>() }
     val expired by versionExpiryService.state.collectAsStateWithLifecycle(null)
     LaunchedEffect(expired) {
@@ -593,5 +594,5 @@ private fun BoxScope.UpdateNotifierWithVersionExpiryCheck() {
             }
         }
     }
-    UpdateNotifier(viewModel = updateVm)
+    if (LocalAppUpdateViewModel.current == null) UpdateNotifier(viewModel = updateVm)
 }

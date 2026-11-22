@@ -96,6 +96,9 @@ class SealedNoticesRepository(
         refresh.await()?.refreshIfOlderThan(age)
     }
 
+    /** 现在就取一份 (通知中心的「刷新」); 取到了 (或这个构建没有钥匙、不用取) 为 true. */
+    suspend fun refreshNow(): Boolean = refresh.await()?.refreshNow() ?: true
+
     /** 给版本 [version] 的通知, 每句一行 (「标题：说明」); 有了就给, 之后取到新的再给. */
     fun noticesFor(version: String): Flow<List<String>> =
         plain.filterNotNull().map { SealedNotices.select(it, version) }.distinctUntilChanged()

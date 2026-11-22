@@ -56,6 +56,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import me.him188.ani.app.ui.lang.tv_rail_back
 import androidx.compose.material.icons.outlined.AccountCircle
+import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
@@ -102,9 +103,12 @@ import me.him188.ani.app.ui.foundation.avatar.AvatarImage
 import me.him188.ani.app.ui.foundation.playback.LocalPlaybackSessionEntry
 import me.him188.ani.app.ui.foundation.playback.PlaybackSessionStatus
 import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
+import me.him188.ani.app.ui.notice.TvNotices
+import me.him188.ani.app.ui.notice.rememberTvNoticesFresh
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.exploration_search
 import me.him188.ani.app.ui.lang.login_sign_in
+import me.him188.ani.app.ui.lang.notification_title
 import me.him188.ani.app.ui.lang.playback_session_now_playing
 import me.him188.ani.app.ui.lang.settings
 import me.him188.ani.app.ui.user.SelfInfoUiState
@@ -152,6 +156,11 @@ data class TvNavRailItem(
      * 焦点回不到本条目上.
      */
     val keepFocusOnClick: Boolean = false,
+    /**
+     * 返回 true 时图标右上角画红点 (这一项有新东西, 如「通知」有没看过的通知). 同 [iconContent], 状态读在这个 lambda 里面,
+     * 变了只重组这一项.
+     */
+    val badge: (@Composable () -> Boolean)? = null,
     val onClick: () -> Unit,
 )
 
@@ -166,13 +175,13 @@ data class TvNavRailItem(
 data class TvRailAvatarAction(
     val icon: ImageVector,
     val label: String,
-    /** 图标右上角画红点 (这一项有新东西时, 画法同头像上的那个). */
+    /** 图标右上角画红点 (这一项有新东西时, 画法同 [TvNavRailItem.badge]). */
     val badge: Boolean = false,
     val onClick: () -> Unit,
 )
 
 /**
- * 组装主页与详情页侧边栏共用的条目列表 (搜索 + 主页各 tab + 设置), 两处只差点击行为
+ * 组装主页与详情页侧边栏共用的条目列表 (通知 + 搜索 + 主页各 tab + 设置), 两处只差点击行为
  * (主页直接切 tab, 详情页先弹回主页再切). 焦点进入侧边栏时总是落到"探索"上.
  */
 @Composable
@@ -181,6 +190,17 @@ fun buildTvRailItems(
     onNavigateToPage: (MainScreenPage) -> Unit,
     onSettings: () -> Unit,
 ): List<TvNavRailItem> = buildList {
+    // 「通知」: 打开通知中心 (见 TvNotices), 有没看过的通知时带红点. 常驻在头像下、搜索上, 有没有通知位置都不变;
+    // 弹窗就地打开, 关了焦点回到这一项
+    add(
+        TvNavRailItem(
+            icon = Icons.Rounded.Notifications,
+            label = stringResource(Lang.notification_title),
+            badge = { rememberTvNoticesFresh() },
+            keepFocusOnClick = true,
+            onClick = { TvNotices.open() },
+        ),
+    )
     add(
         TvNavRailItem(
             icon = Icons.Rounded.Search,
@@ -378,8 +398,6 @@ fun TvNavigationSideRail(
     enterRequester: FocusRequester? = null,
     /** 头像关联动作 (按登录态由调用方组装); 焦点在头像簇上时于其上方浮现这些图标+文字按钮. */
     avatarActions: List<TvRailAvatarAction> = emptyList(),
-    /** 头像右上角画红点 (有新的通知, 见 TvNotices). */
-    avatarBadge: Boolean = false,
     /** 展开遮罩面板底色覆盖 (如详情页按封面调色板取色, 使遮罩跟随背景/主题); null 用默认 surface. */
     scrimColor: Color? = null,
     /** 同 [scrimColor], 在绘制阶段取, 优先于它: 页面底色逐帧在变 (海报墙进出 hero 态, 见 TvPosterWallTone) 时用. */
@@ -501,7 +519,7 @@ fun TvNavigationSideRail(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (selfInfo != null) {
-                TvRailAvatar(selfInfo, expanded, onExitFocus, onAvatarClick, avatarActions, avatarBadge)
+                TvRailAvatar(selfInfo, expanded, onExitFocus, onAvatarClick, avatarActions)
             } else {
                 // 不显示头像时保留等高占位, 使其余按钮位置不变
                 Box(Modifier.size(TV_RAIL_ITEM_SIZE))
@@ -519,6 +537,7 @@ fun TvNavigationSideRail(
                         item.focusRequester
                     },
                     keepFocusOnClick = item.keepFocusOnClick,
+                    badge = item.badge,
                     onClick = item.onClick,
                     anchor = itemAnchors[index],
                     // 本条目带着焦点消失时交给上一个条目; 它是第一个就交给默认落点 (再没有就
@@ -625,7 +644,6 @@ private fun TvRailAvatar(
     onExitFocus: (() -> Unit)?,
     onClick: () -> Unit,
     avatarActions: List<TvRailAvatarAction>,
-    badge: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val loggedIn = selfInfo.selfInfo != null && selfInfo.isSessionValid != false
@@ -636,7 +654,6 @@ private fun TvRailAvatar(
     val focusHighlight by animateColorAsState(
         if (avatarFocused) MaterialTheme.colorScheme.primary else Color.Transparent,
     )
-    val badgeColor = MaterialTheme.colorScheme.error
     Box(modifier.onFocusChanged { clusterFocused = it.hasFocus }) {
         // 头像在整列最上, 只能往上长. 触屏上点头像就进账号页、焦点停不住, 所以一直显示 (侧边栏收起时只有图标)
         TvRailFloatingActionCluster(
@@ -662,8 +679,7 @@ private fun TvRailAvatar(
                             indication = null,
                             onClick = onClick,
                         )
-                        .border(2.dp, focusHighlight, CircleShape)
-                        .railBadge(badge, badgeColor),
+                        .border(2.dp, focusHighlight, CircleShape),
                     contentAlignment = Alignment.Center,
                 ) {
                     // 照片比高亮框 (32dp) 略小并居中, 使聚焦圆环成为其外圈, 不超出高亮尺寸
@@ -684,8 +700,7 @@ private fun TvRailAvatar(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
                             onClick = onClick,
-                        )
-                        .railBadge(badge, badgeColor),
+                        ),
                 )
             }
             if (expanded) {
@@ -752,6 +767,7 @@ private fun TvRailIconItem(
     onExitFocus: (() -> Unit)?,
     focusRequester: FocusRequester?,
     keepFocusOnClick: Boolean,
+    badge: (@Composable () -> Boolean)?,
     onClick: () -> Unit,
     /** 本条目自己的落点, 供下一个条目在消失时把焦点交回来 (见 [fallbackFocus]). */
     anchor: FocusRequester,
@@ -808,7 +824,12 @@ private fun TvRailIconItem(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            TvRailGlyphBox(focused, icon, iconContent = iconContent)
+            TvRailGlyphBox(
+                focused,
+                icon,
+                Modifier.railBadge(badge?.invoke() == true, MaterialTheme.colorScheme.error),
+                iconContent = iconContent,
+            )
             if (expanded) {
                 Text(
                     label,
@@ -891,10 +912,10 @@ private val TV_RAIL_ITEM_CORNER = 6.dp
 /** 头像照片尺寸: 比高亮框 (32dp) 略小并居中, 使聚焦圆环成为其外圈, 不超出高亮尺寸. */
 private val TV_RAIL_AVATAR_IMAGE_SIZE = 24.dp
 
-/** 头像右上角红点的直径. */
+/** 图标右上角红点的直径 (见 [railBadge]). */
 private val TV_RAIL_BADGE_SIZE = 8.dp
 
-/** [show] 时在右上角画红点 (见 [TvNavigationSideRail] 的 avatarBadge): 照片 (24dp) 比框 (32dp) 小, 点落在照片圆外, 不压住脸. */
+/** [show] 时在 32dp 图标方块的右上角画红点 (见 [TvNavRailItem.badge]): 字形 (20dp) 居中, 点落在方块角上, 基本不压住字形. */
 private fun Modifier.railBadge(show: Boolean, color: Color): Modifier = if (!show) this else drawWithContent {
     drawContent()
     val radius = TV_RAIL_BADGE_SIZE.toPx() / 2

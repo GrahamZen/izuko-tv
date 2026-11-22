@@ -355,6 +355,7 @@ private fun KoinApplication.otherModules(
             // 用到时才取: 中转的服务一建好就去拉地址清单, 没有开着的修正请求的人不为它多发请求
             subjectStatus = { ids -> get<SubjectFeedbackService>().status(ids) },
             subjectMap = { id -> get<TmdbSubjectMapRepository>().lookup(id) },
+            notices = get(),
         ).also { it.start() }
     }
     // 应用自己改用户设置都经它告知或询问 (见 SettingAdjustments)

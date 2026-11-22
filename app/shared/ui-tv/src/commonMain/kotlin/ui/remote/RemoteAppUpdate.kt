@@ -27,7 +27,12 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
@@ -48,8 +53,16 @@ import me.him188.ani.app.tools.update.DownloadPackage
 import me.him188.ani.app.tools.update.SourceOutcome
 import me.him188.ani.app.tools.update.FileDownloadStage
 import me.him188.ani.app.tools.update.formatTransferProgress
+import me.him188.ani.app.ui.foundation.getStringOffMain
 import me.him188.ani.app.ui.foundation.lan.LanHttpRequest
 import me.him188.ani.app.ui.foundation.lan.LanHttpServer
+import me.him188.ani.app.ui.foundation.tv.TvActionPanelRequests
+import me.him188.ani.app.ui.foundation.widgets.Toaster
+import me.him188.ani.app.ui.lang.Lang
+import me.him188.ani.app.ui.lang.tv_app_install_busy
+import me.him188.ani.app.ui.lang.tv_app_install_need_permission
+import me.him188.ani.app.ui.lang.tv_app_install_not_ready
+import me.him188.ani.app.ui.notice.TvNotices
 import me.him188.ani.app.ui.update.NewVersion
 import me.him188.ani.app.ui.update.UpdateCheckProgress
 import me.him188.ani.app.ui.update.UpdateChecker
@@ -85,7 +98,11 @@ import java.util.UUID
  * 授权页与安装确认界面都只能在 Izuko 在前台时打开: 在后台时系统不报错、只是不打开 (日志 `Abort background activity starts`).
  * 不在前台就先叫回来 ([TvRemoteControl.bringToFrontForInstall]), 叫不回来 (没开「叫到前台」) 就等它回到前台再开 ([onTvForeground]).
  *
- * 故障工单的回复里维护者给的测试包, 在「反馈」页点「装到电视」后交到这里 ([offer]), 同样在这张卡片里下载、安装 ([startOfferInstall]).
+ * 故障工单的回复里维护者给的测试包, 在「反馈」页点「装到电视」后交到这里 ([offer]), 同样在这张卡片里下载、安装 ([startOfferInstall]);
+ * 电视上通知中心「我的反馈」里按「安装测试包」走同一条路 ([installTestPackage]).
+ *
+ * 这一次下载并安装走到哪了 ([status]) 电视上也读: 动作面板顶上那一格 (rememberTvAppInstallTask) 与「我的反馈」里测试包的进度,
+ * 手机上发起的也看得到. 电视上在那一格里可以取消 ([cancel])、没装上的再装一次 ([retryInstall]).
  *
  * 只装本项目的包 (包名以 [PROJECT_PACKAGE_PREFIX] 开头: 正式包、测试包、加后缀的对比包), 用户有时会装测试版.
  * 装自己是更新, 签名要与已装的一致; 装成功时进程会被系统结束: 提交前记下时刻, 下次启动 ([attach]) 按应用的
@@ -97,15 +114,16 @@ internal object RemoteAppUpdate {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + CoroutineName("RemoteAppUpdate"))
     private val lock = Any()
 
-    private enum class Phase { IDLE, DOWNLOADING, VERIFYING, PREPARING, CONFIRM, WAITING_FRONT, FAILED, SUCCESS }
+    private enum class Phase { IDLE, DOWNLOADING, VERIFYING, WAITING_PLAYER, PREPARING, CONFIRM, WAITING_FRONT, FAILED, SUCCESS }
 
-    /** 下载 / 核对 / 写入安装会话时不接新的安装; 等确认的那一次可以被新的替换 (旧会话作废). */
-    private val BUSY = setOf(Phase.DOWNLOADING, Phase.VERIFYING, Phase.PREPARING)
+    /** 下载 / 核对 / 等退出播放 / 写入安装会话时不接新的安装; 等确认的那一次可以被新的替换 (旧会话作废). */
+    private val BUSY = setOf(Phase.DOWNLOADING, Phase.VERIFYING, Phase.WAITING_PLAYER, Phase.PREPARING)
 
     /**
      * [pkg]: 装的是另一个包时它的包名, null = 装本应用自己.
      * [download]: 下载进行到哪一步 (挑线路 / 已下多少 / 换线路 / 校验), 只在 [Phase.DOWNLOADING] 时有;
      * [writing]: 写安装会话写到哪了, 只在 [Phase.PREPARING] 时有. 状态那一行按它们写细节, 见 [phaseText].
+     * [kind] 装的是什么, [issue] 测试包是哪张工单的; [onTv] = 电视上发起的 (见 [installTestPackage]).
      */
     private data class State(
         val phase: Phase = Phase.IDLE,
@@ -115,6 +133,9 @@ internal object RemoteAppUpdate {
         val pkg: String? = null,
         val download: FileDownloadStage? = null,
         val writing: Writing? = null,
+        val kind: AppInstallKind = AppInstallKind.Update,
+        val issue: Int? = null,
+        val onTv: Boolean = false,
     )
 
     /** 安装包往安装会话里写了 [written] / [total] 字节; [syncing] = 写完了, 在等系统把它落到存储上 (fsync). */
@@ -123,8 +144,25 @@ internal object RemoteAppUpdate {
     @Volatile
     private var context: Context? = null
 
+    /** 改它就是改 [status] (电视上读的那一份) */
     @Volatile
     private var state = State()
+        set(value) {
+            field = value
+            _status.value = statusOf(value)
+        }
+
+    private val _status = MutableStateFlow(AppInstallStatus.Idle)
+
+    /** 这一次下载并安装走到哪了 (见本文件开头): 手机控制台与电视读同一份. */
+    val status: StateFlow<AppInstallStatus> = _status.asStateFlow()
+
+    /** 电视上正在播放 (TvAppUpdateHost 报): 电视上发起的安装下好了等退出播放再弹安装确认. */
+    val playerShowing = MutableStateFlow(false)
+
+    /** 正在下载、核对的那一次, [cancel] 停它 */
+    @Volatile
+    private var job: Job? = null
 
     @Volatile
     private var sessionId = -1
@@ -201,8 +239,8 @@ internal object RemoteAppUpdate {
     @Volatile
     private var offered: Offer? = null
 
-    /** 从上传的包或测试包发起的安装; 没装成时网页可以用它再装一次 ([retryUpload]). 新的上传 / 下载安装开始、装成了都清掉 */
-    private class Retry(val file: File, val version: String?, val pkg: String?)
+    /** 从上传的包或测试包发起的安装; 没装成时网页可以用它再装一次 ([retryUpload], 电视上 [retryInstall]). 新的上传 / 下载安装开始、装成了都清掉 */
+    private class Retry(val file: File, val version: String?, val pkg: String?, val kind: AppInstallKind, val issue: Int? = null)
 
     @Volatile
     private var retry: Retry? = null
@@ -356,6 +394,7 @@ internal object RemoteAppUpdate {
         }
 
         Phase.VERIFYING -> tr("正在核对安装包…")
+        Phase.WAITING_PLAYER -> tr("已下好，电视上退出播放后安装。")
         Phase.PREPARING -> when (val w = s.writing) {
             null -> tr("正在准备安装…")
             else -> if (w.syncing) tr("正在同步到存储…") else tr("正在写入安装包：{0}", formatTransferProgress(w.written, w.total))
@@ -372,13 +411,40 @@ internal object RemoteAppUpdate {
         Phase.SUCCESS -> if (s.pkg != null) tr("已安装 {0}（{1}）", s.pkg, s.version.orEmpty()) else tr("已安装 {0}", s.version.orEmpty())
     }
 
-    private fun setState(s: State) {
+    private fun publishState(s: State) {
         synchronized(lock) { state = s }
     }
 
     private fun fail(message: String) {
-        setState(state.copy(phase = Phase.FAILED, progress = null, error = message, download = null, writing = null))
+        val failed = synchronized(lock) {
+            state.copy(phase = Phase.FAILED, progress = null, error = message, download = null, writing = null).also { state = it }
+        }
+        // 电视上发起的: 没装上时弹动作面板 (那一格里看原因、再装一次); 播放中不弹
+        if (failed.onTv && !playerShowing.value) TvActionPanelRequests.showTasks("an install started on the TV failed")
     }
+
+    private fun statusOf(s: State): AppInstallStatus = AppInstallStatus(
+        phase = when (s.phase) {
+            Phase.IDLE -> AppInstallPhase.Idle
+            Phase.DOWNLOADING -> AppInstallPhase.Downloading
+            Phase.VERIFYING -> AppInstallPhase.Verifying
+            Phase.WAITING_PLAYER -> AppInstallPhase.WaitingPlayer
+            Phase.PREPARING -> AppInstallPhase.Preparing
+            Phase.CONFIRM -> AppInstallPhase.Confirm
+            Phase.WAITING_FRONT -> AppInstallPhase.WaitingFront
+            Phase.FAILED -> AppInstallPhase.Failed
+            Phase.SUCCESS -> AppInstallPhase.Success
+        },
+        kind = s.kind,
+        issue = s.issue,
+        name = s.version,
+        otherPackage = s.pkg,
+        stage = s.download,
+        progress = s.progress,
+        error = s.error,
+        startedOnTv = s.onTv,
+        canRetry = s.phase == Phase.FAILED && retry?.file?.exists() == true,
+    )
 
     // ============================ 检查与下载 ============================
 
@@ -432,7 +498,7 @@ internal object RemoteAppUpdate {
             // 进度条等真的开始收数据再出来: 挑线路那几秒进度不动, 停在 0% 看着像卡住了
             state = State(Phase.DOWNLOADING, version = ver.name)
         }
-        scope.launch {
+        job = scope.launch {
             val file = try {
                 download(ver, line)
             } catch (e: CancellationException) {
@@ -442,12 +508,13 @@ internal object RemoteAppUpdate {
                 fail(tr("下载失败：{0}", (e as? DownloadFailure)?.text ?: updateErrorReason(e)))
                 return@launch
             }
-            setState(state.copy(phase = Phase.VERIFYING, progress = null, download = null))
+            publishState(state.copy(phase = Phase.VERIFYING, progress = null, download = null))
             val verified = verify(ctx, file, sameAppOnly = true)
             if (verified.error != null) {
                 fail(verified.error)
                 return@launch
             }
+            ensureActive()
             install(ctx, file, verified.versionName, pkg = null)
         }
         return result(true, "")
@@ -523,19 +590,51 @@ internal object RemoteAppUpdate {
         val o = offered ?: return result(false, tr("测试包已经不在了，回到「反馈」页再点一次「装到电视」"))
         val ctx = context ?: return result(false, NOT_READY)
         needPermission(ctx, request)?.let { return it }
+        if (!startOffer(ctx, o, onTv = false)) return result(false, tr("正在安装，等这次完成后再试"))
+        return result(true, "")
+    }
+
+    /**
+     * 电视上通知中心「我的反馈」里按「安装测试包」: 同手机上「装到电视」([offer] 再 [startOfferInstall]), 收起通知中心、弹动作面板
+     * (焦点在下载安装那一格). 还没有「安装未知应用」的授权时打开授权页、提示允许后回来再按一次 (Android 11 起授权时本应用会被关掉);
+     * 正在装别的时提示等它完成. 下好时在播放的话退出播放再弹安装确认. 提示经 [toaster].
+     */
+    suspend fun installTestPackage(url: String, sha256: String?, issue: Int, toaster: Toaster) {
+        val ctx = context ?: run {
+            toaster.toast(getStringOffMain(Lang.tv_app_install_not_ready))
+            return
+        }
+        if (!canInstall(ctx) && launchPermission(ctx)) {
+            toaster.toast(getStringOffMain(Lang.tv_app_install_need_permission))
+            return
+        }
+        offer(url, sha256, issue)
+        val o = offered ?: return
+        if (!startOffer(ctx, o, onTv = true)) {
+            toaster.toast(getStringOffMain(Lang.tv_app_install_busy))
+            return
+        }
+        TvNotices.close()
+        TvActionPanelRequests.showTasks("installing the test package of ticket #$issue")
+    }
+
+    /**
+     * 下载、核对并安装测试包 [o]; 正在装别的时返回 false. [onTv] = 电视上发起的: 下好时在播放就等退出播放再装, 没装上时弹动作面板.
+     */
+    private fun startOffer(ctx: Context, o: Offer, onTv: Boolean): Boolean {
         synchronized(lock) {
-            if (state.phase in BUSY) return result(false, tr("正在安装，等这次完成后再试"))
+            if (state.phase in BUSY) return false
             abandonSession(ctx)
             lastResult = null
             retry = null
             uploaded = null
-            state = State(Phase.DOWNLOADING, version = o.name)
+            state = State(Phase.DOWNLOADING, version = o.name, kind = AppInstallKind.TestPackage, issue = o.issue, onTv = onTv)
         }
-        scope.launch {
+        job = scope.launch {
             val file = try {
                 val mirrors = KoinPlatform.getKoin().get<GitHubDownloadMirrors>()
                 val sources = if (o.url.startsWith("https://github.com/")) mirrors.sourcesOf(o.url) else listOf(o.url)
-                val dir = KoinPlatform.getKoin().get<UpdateManager>().saveDir.resolve(OFFER_DIR)
+                val dir = KoinPlatform.getKoin().get<UpdateManager>().rootDir.resolve(OFFER_DIR)
                 // 只留这一个: 测试包一个几十 MB, 换过几个就不少了
                 dir.toFile().listFiles()?.filter { it.name != o.name }?.forEach { it.delete() }
                 fetch(listOf(DownloadPackage(o.name, sources, o.sha256)), dir, rememberLines = false)
@@ -546,17 +645,57 @@ internal object RemoteAppUpdate {
                 fail(tr("下载失败：{0}", (e as? DownloadFailure)?.text ?: updateErrorReason(e)))
                 return@launch
             }
-            setState(state.copy(phase = Phase.VERIFYING, progress = null, download = null))
+            publishState(state.copy(phase = Phase.VERIFYING, progress = null, download = null))
             val verified = verify(ctx, file, sameAppOnly = false)
             if (verified.error != null) {
                 fail(verified.error)
                 return@launch
             }
             val other = verified.packageName.takeIf { it != ctx.packageName }
-            retry = Retry(file, verified.versionName, other)
+            retry = Retry(file, verified.versionName, other, AppInstallKind.TestPackage, o.issue)
+            if (onTv && playerShowing.value) {
+                publishState(state.copy(phase = Phase.WAITING_PLAYER, progress = null, download = null))
+                logger.info { "Remote update: test package of ticket #${o.issue} downloaded, installing after playback" }
+                playerShowing.first { !it }
+            }
+            ensureActive()
             install(ctx, file, verified.versionName, other)
         }
-        return result(true, "")
+        return true
+    }
+
+    /**
+     * 电视上动作面板里那一格的 ✕: 下载、核对、等退出播放时停下; 等确认时作废这次安装会话;
+     * 没装上、装上了的关掉这一格. 正在写入安装会话时停不了 (几秒就写完).
+     */
+    fun cancel() {
+        val ctx = context
+        val running = synchronized(lock) {
+            if (state.phase == Phase.IDLE || state.phase == Phase.PREPARING) return
+            val j = job
+            job = null
+            state = State()
+            j
+        }
+        running?.cancel()
+        ctx?.let(::abandonSession)
+        logger.info { "Remote update: cancelled on the TV" }
+    }
+
+    /** 电视上动作面板里「再装一次」: 用刚才没装上的安装包 (测试包或上传的) 再装, 不重新下载; 安装包不在了或正在装别的时不动, 返回 false. */
+    fun retryInstall(): Boolean {
+        val ctx = context ?: return false
+        val r = synchronized(lock) {
+            val r = retry?.takeIf { it.file.exists() } ?: return false
+            if (state.phase in BUSY) return false
+            abandonSession(ctx)
+            lastResult = null
+            state = State(Phase.PREPARING, version = r.version, pkg = r.pkg, kind = r.kind, issue = r.issue, onTv = true)
+            r
+        }
+        logger.info { "Remote update: installing ${r.file.name} again from the TV" }
+        scope.launch { install(ctx, r.file, r.version, r.pkg) }
+        return true
     }
 
     /**
@@ -676,8 +815,8 @@ internal object RemoteAppUpdate {
             if (state.phase in BUSY) return result(false, tr("正在安装，等这次完成后再试"))
             abandonSession(ctx)
             lastResult = null
-            retry = Retry(u.file, verified.versionName, other)
-            state = State(Phase.PREPARING, version = verified.versionName, pkg = other)
+            retry = Retry(u.file, verified.versionName, other, AppInstallKind.Upload)
+            state = State(Phase.PREPARING, version = verified.versionName, pkg = other, kind = AppInstallKind.Upload)
         }
         scope.launch { install(ctx, u.file, verified.versionName, other) }
         return result(true, "")
@@ -695,7 +834,7 @@ internal object RemoteAppUpdate {
             if (state.phase in BUSY) return result(false, tr("正在安装，等这次完成后再试"))
             abandonSession(ctx)
             lastResult = null
-            state = State(Phase.PREPARING, version = r.version, pkg = r.pkg)
+            state = State(Phase.PREPARING, version = r.version, pkg = r.pkg, kind = r.kind, issue = r.issue)
             r
         }
         logger.info { "Remote update: installing the uploaded package again (${r.pkg ?: "this app"} ${r.version})" }
@@ -800,7 +939,7 @@ internal object RemoteAppUpdate {
 
     /** [pkg]: 要装的另一个包的包名, null = 装本应用自己 (更新) */
     private fun install(ctx: Context, file: File, version: String?, pkg: String?) {
-        setState(State(Phase.PREPARING, version = version, pkg = pkg))
+        publishState(State(Phase.PREPARING, version = version, pkg = pkg, kind = state.kind, issue = state.issue, onTv = state.onTv))
         val installer = ctx.packageManager.packageInstaller
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
             setAppPackageName(pkg ?: ctx.packageName)
@@ -891,7 +1030,7 @@ internal object RemoteAppUpdate {
                         launchConfirm(ctx, confirm)
                     } else {
                         pendingConfirm = confirm
-                        setState(state.copy(phase = Phase.WAITING_FRONT, progress = null))
+                        publishState(state.copy(phase = Phase.WAITING_FRONT, progress = null))
                     }
                 }
             }
@@ -922,7 +1061,7 @@ internal object RemoteAppUpdate {
                 logger.warn(e) { "Remote install: no confirmation screen on this TV, opening the package in the system installer" }
                 openSystemInstaller(ctx)
             }
-            setState(state.copy(phase = Phase.CONFIRM, progress = null))
+            publishState(state.copy(phase = Phase.CONFIRM, progress = null))
         } catch (e: Exception) {
             logger.warn(e) { "Remote install: cannot open the confirmation" }
             fail(tr("打不开安装确认界面：{0}", systemErrorText(e)))
@@ -1081,7 +1220,10 @@ internal object RemoteAppUpdate {
     private const val CHUNK_BYTES = 1024 * 1024
     private const val CHUNK_PATH = "api/update/upload/chunk"
 
-    /** 工单回复里的测试包下到更新目录下的这个子目录 */
+    /**
+     * 工单回复里的测试包下到更新根目录 (UpdateManager.rootDir) 下的这个子目录: 与自动更新的下载目录并排 (那个目录归自动更新独占,
+     * 开始下新版本时会清掉里面别的东西), 同在 FileProvider 共享的 updates/ 里 (确认界面打不开时交给系统安装界面).
+     */
     private const val OFFER_DIR = "tickets"
     private const val MAX_UPLOAD_BYTES = 300L * 1024 * 1024
 
