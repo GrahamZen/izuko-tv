@@ -79,6 +79,7 @@ import me.him188.ani.utils.xml.QueryParser
 import me.him188.ani.utils.xml.Html
 import me.him188.ani.utils.xml.parseSelectorOrNull
 import me.him188.ani.utils.ktor.ScopedHttpClient
+import me.him188.ani.utils.ktor.withoutCookies
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
@@ -835,6 +836,9 @@ class CloudDriveShareSearchMediaSource(
                 overrideUserAgent(userAgent)
                 // 请求头 Accept 里有 json 时苹果 CMS (ThinkPHP) 按 JSON 请求渲染网页, 搜索结果页是坏的
                 if (arguments.config.detailLinkSelector.isNotBlank()) exclude(ContentType.Application.Json)
+                // 苹果 CMS 按会话 Cookie 限制两次搜索的间隔 (常见 3~6 秒, 被挡时回「系统提示」页), 换词、连通测试紧接着搜索都会撞上;
+                // 找分享只读公开页面与接口, 不需要会话
+                withoutCookies()
             }.readRawBytes()
         }
     } catch (e: CancellationException) {
