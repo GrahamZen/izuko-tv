@@ -1332,8 +1332,6 @@
     <string name="tv_notice_hint_press_ok">按确定键%1$s</string>
     <string name="tv_notice_hint_back">按确定键%1$s，按左键返回通知列表</string>
     <string name="tv_notice_hint_choose_action">按确定键选择操作</string>
-    <string name="tv_notice_update_started">已开始下载新版本，进度在右下角</string>
-    <string name="tv_notice_update_queued">回到首页后开始下载新版本</string>
     <string name="tv_notice_bubble_title">有 %1$d 条新通知</string>
     <string name="tv_notice_bubble_more">还有 %1$d 条</string>
     <string name="tv_rail_back">返回</string>

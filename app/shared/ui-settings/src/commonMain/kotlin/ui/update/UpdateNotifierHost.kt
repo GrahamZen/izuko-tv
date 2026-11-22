@@ -74,10 +74,12 @@ private fun releaseNotesUrl(version: String) =
  * 检查到新版本不单独出卡, 交给 [UpdatePromptState.newVersion] (TV 上是一条通知); 那边按了「自动更新」([UpdatePromptState.requestDownload])
  * 走与设置页完全相同的下载流程, TV 上下载完自动安装.
  * TV: 气泡出来时焦点落在它的主按钮上, 下载完落在「安装」上, 下载失败落在「重试」上.
+ * [suspended]: 暂时不画、不自动安装 (电视上播放时: 不在片子上盖一张卡、不弹安装器; 下载照常, 退出播放再出来、再装).
  */
 @Composable
 fun BoxScope.UpdateNotifier(
     viewModel: AppUpdateViewModel = viewModel { AppUpdateViewModel() },
+    suspended: Boolean = false,
 ) {
     // 冷启动先查一次; 之后应用在前台时每隔一会儿看一眼, 回到前台也看一眼: 离上次查超过一小时才真查 (见 startAutomaticCheckLatestVersion).
     // 电视上的应用常常几天不重启, 没有这个就一直不知道有新版本. 不在前台时不看
@@ -102,17 +104,12 @@ fun BoxScope.UpdateNotifier(
     // 下载卡按「取消」后这一版不再显示
     var dismissed by rememberSaveable(newVersion?.name) { mutableStateOf(false) }
 
-    // 检查到、还没开始下载的新版本交出去 (TV 上列成一条通知); 开始下载后不列, 下载失败又列.
-    // 这张卡只在首页上: 离开首页 (组合拆掉) 时不清, 通知中心从设置里打开时这一条照样在
+    // 检查到、还没开始下载的新版本交出去 (TV 上列成一条通知); 开始下载后不列, 下载失败又列. 卡离开组合时不清
     val offered = newVersion?.takeIf { state is AppUpdateState.HasUpdate || state is AppUpdateState.DownloadFailed }
     LaunchedEffect(offered) {
         UpdatePromptState.setNewVersion(offered)
     }
-    DisposableEffect(Unit) {
-        UpdatePromptState.setNotifierActive(true)
-        onDispose { UpdatePromptState.setNotifierActive(false) }
-    }
-    // 通知里按了「自动更新」: 是此刻检查到的那一版才下; 不在首页时按的, 回到首页 (这里重新组合) 时取走
+    // 通知里按了「自动更新」: 是此刻检查到的那一版才下; 卡不在组合里时按的, 卡出来时取走
     val currentOffer by rememberUpdatedState(offered)
     LaunchedEffect(viewModel) {
         UpdatePromptState.pendingDownload.filterNotNull().collect { name ->
@@ -124,11 +121,11 @@ fun BoxScope.UpdateNotifier(
         }
     }
 
-    // TV: 下载完成后自动安装 (与设置页一致), 遥控器用户不必再按一次安装
+    // TV: 下载完成后自动安装 (与设置页一致), 遥控器用户不必再按一次安装; 暂停着 (播放时) 等恢复了再装
     val autoInstall = LocalAniUiBehavior.current.autoInstallUpdates
     val downloaded = state is AppUpdateState.Downloaded
-    LaunchedEffect(autoInstall, downloaded) {
-        if (autoInstall && downloaded) {
+    LaunchedEffect(autoInstall, downloaded, suspended) {
+        if (autoInstall && downloaded && !suspended) {
             viewModel.autoInstall(context)
         }
     }
@@ -160,7 +157,7 @@ fun BoxScope.UpdateNotifier(
         onDispose { UpdatePromptState.setCardShown(false) }
     }
     val bubble by UpdatePromptState.bubble.collectAsState()
-    val bubbleShown = !downloadCard && bubble != null
+    val bubbleShown = !downloadCard && bubble != null && !suspended
     // 气泡撤掉后的退场动画里接着画最后那一个
     val lastBubble = remember { mutableStateOf<CornerBubble?>(null) }
     bubble?.let { lastBubble.value = it }
@@ -175,14 +172,14 @@ fun BoxScope.UpdateNotifier(
     }
     // 下载完成后焦点送到"安装"按钮: 电视上这时会自动拉起系统安装器, 那边失败或被取消回来时, 按一下确定就能重来.
     // 不送的话焦点留在页面里, 遥控器很难走到右下角这张卡上 (2026-09-22 真机: 安装器 ANR 回来后只能重启应用)
-    LaunchedEffect(autoInstall, downloaded) {
-        if (autoInstall && downloaded) {
+    LaunchedEffect(autoInstall, downloaded, suspended) {
+        if (autoInstall && downloaded && !suspended) {
             focus.request(UpdateNotifierFocus.Install)
         }
     }
     // 下载失败后焦点送到"重试"按钮: 开始下载后焦点被兜底送回页面,
     // 用户不会知道要从哪一排按下去才能走到右下角的卡片 (2026-09-26 真机)
-    val downloadFailed = downloadCard && state is AppUpdateState.DownloadFailed
+    val downloadFailed = downloadCard && state is AppUpdateState.DownloadFailed && !suspended
     LaunchedEffect(autoInstall, downloadFailed) {
         if (autoInstall && downloadFailed) {
             focus.request(UpdateNotifierFocus.Retry)
@@ -214,10 +211,13 @@ fun BoxScope.UpdateNotifier(
     //
     // 触屏形态维持原判据: 那里没有焦点概念 (cardFocused 基本恒 false), 等于气泡不碰返回键 ——
     // 手机上用户按返回多半是想退出当前页, 不是关这张卡.
+    //
+    // 气泡出来时才组合这个返回处理 (不是一直挂着、只切开关): 返回处理按注册先后、后注册的先接, 卡挂在界面最外层、
+    // 比首页注册得早, 一直挂着的话首页的「连按两次退出」会抢在前面
     var cardFocused by remember { mutableStateOf(false) }
     val backClosesBubble = bubbleShown &&
             (LocalAniUiBehavior.current.focusDrivenNavigation || cardFocused)
-    BackHandler(enabled = backClosesBubble) { bubble?.onDismiss() }
+    if (backClosesBubble) BackHandler { bubble?.onDismiss() }
 
     // 焦点导航设备: 气泡在场期间焦点锁在气泡内, 方向键走到边界即取消这次焦点搜索.
     // 不锁的话气泡抢到初始焦点后用户随手一按方向键焦点就滑进下层页面, 而气泡还挡在右下角 ——
@@ -231,7 +231,7 @@ fun BoxScope.UpdateNotifier(
     val trapFocus = LocalAniUiBehavior.current.focusDrivenNavigation && bubbleShown
 
     AniAnimatedVisibility(
-        visible = downloadCard || bubbleShown,
+        visible = (downloadCard || bubbleShown) && !suspended,
         modifier = Modifier
             .align(Alignment.BottomEnd)
             .windowInsetsPadding(WindowInsets.navigationBars)

@@ -119,6 +119,7 @@ import me.him188.ani.app.ui.settings.tabs.AniHelperDestination
 import me.him188.ani.app.ui.subject.collection.CollectionPage
 import me.him188.ani.app.ui.subject.collection.UserCollectionsViewModel
 import me.him188.ani.app.ui.update.AppUpdateViewModel
+import me.him188.ani.app.ui.update.LocalUpdateNotifierAtRoot
 import me.him188.ani.app.ui.update.UpdateNotifier
 import me.him188.ani.app.ui.user.SelfInfoUiState
 import me.him188.ani.utils.platform.isAndroid
@@ -593,5 +594,5 @@ private fun BoxScope.UpdateNotifierWithVersionExpiryCheck() {
             }
         }
     }
-    UpdateNotifier(viewModel = updateVm)
+    if (!LocalUpdateNotifierAtRoot.current) UpdateNotifier(viewModel = updateVm)
 }

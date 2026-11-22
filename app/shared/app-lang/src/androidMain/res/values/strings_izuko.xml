@@ -1332,8 +1332,6 @@
     <string name="tv_notice_hint_press_ok">Press OK: %1$s</string>
     <string name="tv_notice_hint_back">Press OK: %1$s. Press Left to go back to the list</string>
     <string name="tv_notice_hint_choose_action">Press OK to choose an action</string>
-    <string name="tv_notice_update_started">Downloading the new version. Progress is shown in the bottom-right corner</string>
-    <string name="tv_notice_update_queued">Downloading the new version when you return to the home screen</string>
     <string name="tv_notice_bubble_title">New notifications: %1$d</string>
     <string name="tv_notice_bubble_more">and %1$d more</string>
     <string name="tv_rail_back">Back</string>

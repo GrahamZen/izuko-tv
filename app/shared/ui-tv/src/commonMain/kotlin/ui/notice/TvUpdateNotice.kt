@@ -19,8 +19,6 @@ import me.him188.ani.app.ui.lang.settings_update_popup_auto_update
 import me.him188.ani.app.ui.lang.settings_update_popup_feedback_group_hint
 import me.him188.ani.app.ui.lang.settings_update_popup_new_version
 import me.him188.ani.app.ui.lang.settings_update_popup_see_details
-import me.him188.ani.app.ui.lang.tv_notice_update_queued
-import me.him188.ani.app.ui.lang.tv_notice_update_started
 import me.him188.ani.app.ui.update.NewVersion
 import me.him188.ani.app.ui.update.NewVersionDetails
 import me.him188.ani.app.ui.update.UpdatePromptState
@@ -31,7 +29,8 @@ import kotlin.time.Instant
  * 有新版本 (右下角那张卡检查到、还没开始下载的那一版, [UpdatePromptState.newVersion]): 一条, 时间是这一版的发布时间.
  * 键带版本号与这次启动的时刻: 每次进应用都算新的 (弹一次气泡、头像亮红点), 看过后这次运行里不再弹, 没更新就下次进应用再提醒 (同系统设置上的更新角标: 装上之前一直提醒).
  * 开始下载后不列 (进度、安装、重试在右下角的下载卡上), 下载失败又列. 标题「新版本」接版本号, 列表里摘要写第一项改动; 右栏写主要改动
- * (一项一个小标题与一句说明)、要加群的提示; 两个操作「自动更新」(开始下载, 弹一句提示; 排在前面, 进右栏焦点先落它) 与「查看详情」(更新内容弹窗).
+ * (一项一个小标题与一句说明)、要加群的提示; 两个操作「自动更新」(开始下载; 排在前面, 进右栏焦点先落它) 与「查看详情」(更新内容弹窗).
+ * 按「自动更新」当场开始下载: 通知弹窗与气泡收起, 露出右下角的下载卡 (进度、安装、重试; 卡在界面最外层, 哪一页都在, 见 [TvUpdateCard]).
  * 控制台上去「设置 → 维护」里的应用更新.
  */
 internal object TvUpdateNotice : TvNoticeKind {
@@ -64,10 +63,11 @@ internal object TvUpdateNotice : TvNoticeKind {
             actions = listOf(
                 TvNoticeAction(
                     getStringOffMain(Lang.settings_update_popup_auto_update),
-                    TvNoticeDestination.Run { toaster ->
-                        val now = UpdatePromptState.notifierActive.value
+                    TvNoticeDestination.Run {
+                        // 先收起气泡 (这一条随开始下载从列表里消失之前), 再关通知弹窗, 不挡着右下角的下载卡 (进度就在那里, 不另弹提示)
+                        TvNotices.dismissBubble()
                         UpdatePromptState.requestDownload(version.name)
-                        toaster.toast(getStringOffMain(if (now) Lang.tv_notice_update_started else Lang.tv_notice_update_queued))
+                        TvNotices.close()
                     },
                 ),
                 TvNoticeAction(getStringOffMain(Lang.settings_update_popup_see_details), details(version)),

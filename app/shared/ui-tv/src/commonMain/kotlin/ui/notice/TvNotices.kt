@@ -200,6 +200,11 @@ object TvNotices {
         _dialog.value = null
     }
 
+    /** 收起通知气泡, 这一批算弹过了: 在通知里做了一件要看右下角的事 (开始下载新版本), 关掉通知弹窗后气泡不再回来挡着. */
+    internal fun dismissBubble() {
+        bubbled.value += _shown.value.orEmpty().map(::tvNoticeBubbleKey)
+    }
+
     /** 这几条显示到屏幕上了 (通知弹窗里一行露出一半以上, 见 TvNoticeDialog). */
     internal fun markSeenKeys(keys: Collection<String>) {
         if (keys.isEmpty()) return

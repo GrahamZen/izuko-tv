@@ -49,6 +49,7 @@ import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.tv.withTouchNavigation
 import me.him188.ani.app.ui.foundation.tv.TvActionPanelRequests
 import me.him188.ani.app.ui.notice.TvNoticeHost
+import me.him188.ani.app.ui.notice.TvUpdateCard
 import me.him188.ani.app.ui.notice.TvNotices
 import me.him188.ani.app.ui.subject.details.layout.TvViewAllCommentsList
 import me.him188.ani.app.ui.subject.details.layout.TvViewAllGalleries
@@ -158,6 +159,7 @@ import me.him188.ani.app.ui.remote.TrackTvRemoteForeground
 import me.him188.ani.app.ui.remote.TvRemoteControl
 import me.him188.ani.app.ui.remote.TvRemoteControlDialogHost
 import me.him188.ani.app.ui.together.TvTogetherHost
+import me.him188.ani.app.ui.update.LocalUpdateNotifierAtRoot
 import me.him188.ani.app.ui.whatsnew.TvWhatsNew
 import me.him188.ani.app.ui.whatsnew.TvWhatsNewHost
 import me.him188.ani.app.ui.remote.TvRemoteLoginCard
@@ -570,7 +572,8 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
                 .tvTouchKeyboardMode(),
         ) {
             // 引导的欢迎页据此报图标位置, 启动页交接给它 (见 TvStartupLogoState.handOffToWelcome)
-            CompositionLocalProvider(LocalTvStartupLogo provides startupLogo) {
+            // 右下角那张卡 (新版本的下载卡与通知气泡) 挂在这一层, 哪一页都在; 首页据 LocalUpdateNotifierAtRoot 不再挂一份
+            CompositionLocalProvider(LocalTvStartupLogo provides startupLogo, LocalUpdateNotifierAtRoot provides true) {
                 if (touchInput) {
                     // 触屏设备上动作面板的入口 (侧边栏条目读它), 与两个长按走同一道"本页可认领"判据.
                     // 电视上不包这一层, content 原样组合
@@ -580,6 +583,13 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
                     content()
                 }
             }
+            // 播放时这张卡不画、下好了也等退出播放再装 (见 TvUpdateCard)
+            var inPlayer by remember { mutableStateOf(false) }
+            LaunchedEffect(Unit) {
+                aniNavigator.awaitBackStack()
+                snapshotFlow { aniNavigator.backStack.lastOrNull() is NavRoutes.EpisodeDetail }.collect { inPlayer = it }
+            }
+            TvUpdateCard(inPlayer)
             if (startupLogo != null) {
                 LaunchedEffect(Unit) {
                     // 返回栈要等应用状态读出来才有 (见 AniAppContent), 在那之前下面是空的, 先盖着.

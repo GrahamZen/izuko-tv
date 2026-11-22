@@ -10,14 +10,21 @@
 package me.him188.ani.app.ui.update
 
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.staticCompositionLocalOf
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
+ * 右下角那张卡 ([UpdateNotifier]) 由界面最外层挂着 (电视: 哪一页都在, 在设置里按「自动更新」当场开始下载、走到哪一页都看得到进度),
+ * 首页就不再挂一份.
+ */
+val LocalUpdateNotifierAtRoot = staticCompositionLocalOf { false }
+
+/**
  * 右下角那张卡 ([UpdateNotifier]) 与外面的约定 (TV 上新版本是一条通知, 见 docs/contributing/code/notices.md):
- * - [newVersion]: 检查到、还没开始下载的新版本 (TV 的通知种类据此列一条); 没有为 null. 卡只在首页上, 离开首页时照旧留着 (通知中心在设置里也能打开);
- * - [requestDownload]: 通知里按了「自动更新」, 由 [UpdateNotifier] 开始下载 (进度、安装、重试在右下角的下载卡上); 不在首页时记下, 回到首页再下 ([notifierActive]);
+ * - [newVersion]: 检查到、还没开始下载的新版本 (TV 的通知种类据此列一条); 没有为 null. 卡不在组合里时照旧留着;
+ * - [requestDownload]: 通知里按了「自动更新」, 由 [UpdateNotifier] 开始下载 (进度、安装、重试在右下角的下载卡上); 卡不在时记下, 卡出来再下;
  * - [cardShown]: 下载卡在不在 (下载中、下好待安装、失败). 它会抢焦点, 在场时 TV 的通知气泡等它走了再出;
  * - [bubble]: 右下角要显示的提示气泡 (TV 的通知气泡), 下载卡不在时画.
  */
@@ -33,10 +40,6 @@ object UpdatePromptState {
     /** 要开始下载的版本名 (见 [requestDownload]); [UpdateNotifier] 取走 ([takeDownload]) 前一直在 */
     internal val pendingDownload: StateFlow<String?> = _pendingDownload.asStateFlow()
 
-    private val _notifierActive = MutableStateFlow(false)
-
-    /** 右下角那张卡此刻在不在组合里 (只在首页上): 不在时按了「自动更新」要回到首页才开始下载 */
-    val notifierActive: StateFlow<Boolean> = _notifierActive.asStateFlow()
 
     private val _bubble = MutableStateFlow<CornerBubble?>(null)
     val bubble: StateFlow<CornerBubble?> = _bubble.asStateFlow()
@@ -49,11 +52,7 @@ object UpdatePromptState {
         _newVersion.value = version
     }
 
-    internal fun setNotifierActive(active: Boolean) {
-        _notifierActive.value = active
-    }
-
-    /** 开始下载新版本 [version] (版本名; 不是此刻检查到的那一版时不下). 右下角那张卡不在 (不在首页) 时记下, 回到首页再下. */
+    /** 开始下载新版本 [version] (版本名; 不是此刻检查到的那一版时不下). 右下角那张卡不在组合里时记下, 卡出来再下. */
     fun requestDownload(version: String) {
         _pendingDownload.value = version
     }

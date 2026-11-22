@@ -98,7 +98,10 @@ fun TvNoticeHost(navigator: AniNavigator, onMainPage: () -> Boolean) {
         if (dialogWasOpen && !dialogOpen) bubbleRound++
         dialogWasOpen = dialogOpen
     }
-    if (bubbleItems.isNotEmpty()) {
+    // 别处收起了这一批 (TvNotices.dismissBubble): 都已经在「弹过」里, 不再画
+    val bubbleHandled = bubbleItems.isNotEmpty() && bubbleItems.all { tvNoticeBubbleKey(it) in bubbled }
+    if (bubbleHandled) LaunchedEffect(Unit) { bubbleItems = emptyList() }
+    if (bubbleItems.isNotEmpty() && !bubbleHandled) {
         val items = bubbleItems
         val title = stringResource(Lang.tv_notice_bubble_title, items.size)
         val actionLabel = stringResource(Lang.tv_notice_action_open)
