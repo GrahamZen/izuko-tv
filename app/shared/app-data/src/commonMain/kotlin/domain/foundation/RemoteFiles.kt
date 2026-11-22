@@ -258,7 +258,8 @@ class RemoteRefresh(
     /** 不管多久前取过, 现在就取一次. 取到了返回 true. */
     suspend fun refreshNow(): Boolean = fetching.withLock { fetchCatching() }
 
-    private suspend fun refreshIfOlderThan(age: Duration): Boolean = fetching.withLock {
+    /** 离上次取超过 [age] 就现在取; 没到什么都不做 (一个使用方的某个时机另有自己的间隔时用, 如回到首页). 取了且取到返回 true. */
+    suspend fun refreshIfOlderThan(age: Duration): Boolean = fetching.withLock {
         val last = lastFetchedAt()
         if (last != null && currentTimeMillis() - last < age.inWholeMilliseconds) return@withLock false
         fetchCatching()

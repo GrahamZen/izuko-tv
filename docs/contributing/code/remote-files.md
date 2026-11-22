@@ -25,7 +25,7 @@
 
 - `RemoteFetch.first` / `firstSuccessful`：按顺序试入口，每个最多等 10 秒（可改）收到回应，回应交给调用方校验（解析、解密、格式），第一份通过的就是结果；校验里 `RemoteFetch.reject(理由)` 表示这个入口给的不能用，理由写进同一行日志。被墙的入口常常连接一直挂着，不限时要等客户端自己的连接超时（还会被重试）。正文按客户端的超时读完，大文件在慢网上不会被掐断。
 - `RemoteFetch.firstChanged`：大一点、多数时候没变的文件（数据表、推荐目录）带 ETag 问。ETag 是各个 CDN 各算各的，只对本机那一份来自的入口带（`Revision`）；那个入口回 304 就是没变。本机没有那一份时不带，要整份。
-- `RemoteRefresh`：什么时候取。建出来先看一次，之后每 `checkEvery` 看一眼，离上次取到超过 `staleAfter` 才取；给了 `foregroundAfter` 的，应用回到前台（`AppForeground`，冷启动也算）离上次超过它也取；`refreshNow` 不管多久都取。取到没有、什么时候取到由使用方自己记（`lastFetchedAt`，本机没有那一份时返回 null 就会马上取），存在哪、怎么解析也由使用方管。取的时候抛异常只记日志，定期检查照常。
+- `RemoteRefresh`：什么时候取。建出来先看一次，之后每 `checkEvery` 看一眼，离上次取到超过 `staleAfter` 才取；给了 `foregroundAfter` 的，应用回到前台（`AppForeground`，冷启动也算）离上次超过它也取；`refreshIfOlderThan(时长)` 给某个时机自己定间隔（如退回首页时的通知）；`refreshNow` 不管多久都取。取到没有、什么时候取到由使用方自己记（`lastFetchedAt`，本机没有那一份时返回 null 就会马上取），存在哪、怎么解析也由使用方管。取的时候抛异常只记日志，定期检查照常。
 - 网络体检开始时把 `RemoteRefresh.created`（这个进程里建过的）里 `refreshOnNetworkCheck` 的都取一遍（数据表与推荐目录不取：体检限时，几 MB 的文件取到一半被掐掉就白下了），报告的「清单」一节列 `RepoHostedList` 那几份。
 - `RepoHostedList`：清单类 json（`{"字段": ["条目", …]}`）的现成实现：逐条归一化、存在设置里、内置兜底。
 
@@ -37,7 +37,7 @@
 | 对应表仓库的反馈入口 `report-endpoints.json` | `RepoHostedList`（`SubjectFeedbackService`，`main` 分支） | 24 小时 / 每小时 / — |
 | 工单服务地址 `ticket-endpoints.json` | `FeedbackTicketEndpoints`（内置 `FeedbackTicketService.OFFICIAL_ENDPOINTS`；网络体检测清单里的第一个） | 24 小时 / 每小时 / — |
 | 加密的应用配置 `app-config.txt` | `RemoteAppConfigRepository` | 24 小时 / 每小时 / 1 小时 |
-| 加密通知 `notices.txt` | `SealedNoticesRepository`（开着的电视一小时左右收到，同检查更新的频率） | 1 小时 / 10 分钟 / 1 小时 |
+| 加密通知 `notices.txt` | `SealedNoticesRepository`（冷启动一定取：上次取到的时刻只记在进程里；开着的电视一小时左右收到；自动检查更新也是应用在前台时每 10 分钟看一眼、离上次超过 1 小时才查、回到前台也看，冷启动一定查，见 `UpdateNotifier`） | 1 小时 / 10 分钟 / 1 小时；从别的页退回首页时离上次超过 10 分钟也取（`TvWhatsNew.refreshNoticesOnReturnHome`） |
 | BT 屏蔽规则 `peer-filter-rules.json` | `PeerFilterSubscriptionRepository`（随订阅一起更新） | 启动时 24 小时内取过就不取 |
 | 放送时刻（bangumi-data 每月一份） | `BangumiScheduleSource` | 用到时，7 天 |
 | 反馈候选（对应表核对页数据） | `SubjectFeedbackService.entryCandidates` | 用到时 |
