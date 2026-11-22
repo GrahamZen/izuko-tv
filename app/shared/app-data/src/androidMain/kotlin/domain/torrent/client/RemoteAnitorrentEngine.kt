@@ -16,6 +16,7 @@ import androidx.annotation.RequiresApi
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collectLatest
@@ -46,6 +47,7 @@ import me.him188.ani.utils.io.SystemPath
 import me.him188.ani.utils.io.absolutePath
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.logging.warn
+import java.util.concurrent.Executors
 import kotlin.coroutines.CoroutineContext
 
 /**
@@ -72,6 +74,27 @@ class RemoteAnitorrentEngine(
     private val fetchRemoteScope = parentCoroutineContext.childScope(
         CoroutineName("RemoteAnitorrentEngineFetchRemote") + Dispatchers.IO_,
     )
+
+    /**
+     * 送设置给服务时取远端对象用的线程, 不用 IO 线程池: 服务要先收到这些设置 (保存目录、代理、BT 配置) 才建好 BT 引擎, 建好之前
+     * 拿下载器等远程调用都在等; 那些调用把 IO 线程占满时 (一连上就恢复几十条缓存), 设置排不上 IO 线程就永远送不过去, 两边互相等死.
+     */
+    private val settingsRemoteScope = parentCoroutineContext.childScope(
+        CoroutineName("RemoteAnitorrentEngineSettingsRemote") +
+            Executors.newSingleThreadExecutor { Thread(it, "TorrentSettingsRemote").apply { isDaemon = true } }.asCoroutineDispatcher(),
+    )
+
+    /**
+     * 同一个下载器 (取远端对象只取一份, 断开后 [RetryRemoteObject] 自己重取): 每次都新建的话每一个都单独去服务那边取,
+     * 几十条缓存一起恢复时跨进程调用一起挂着, 占满服务的调用线程与这边的 IO 线程.
+     */
+    private val downloader by lazy {
+        RemoteTorrentDownloader(
+            fetchRemoteScope,
+            RetryRemoteObject(fetchRemoteScope) { getBinderOrFail().downlaoder },
+            connectivityAware,
+        )
+    }
 
     private val connectivityAware = DefaultConnectivityAware(
         parentCoroutineContext.childScope(),
@@ -120,11 +143,7 @@ class RemoteAnitorrentEngine(
 
     override suspend fun getDownloader(): TorrentDownloader {
         engineAccess.isServiceConnected.first { it } // await for engine access
-        return RemoteTorrentDownloader(
-            fetchRemoteScope,
-            RetryRemoteObject(fetchRemoteScope) { getBinderOrFail().downlaoder },
-            connectivityAware,
-        )
+        return downloader
     }
 
     private suspend fun getBinderOrFail(): IRemoteAniTorrentEngine {
@@ -134,6 +153,7 @@ class RemoteAnitorrentEngine(
     override fun close() {
         scope.cancel()
         fetchRemoteScope.cancel()
+        settingsRemoteScope.cancel()
     }
 
     private inline fun <I : IInterface, T> collectSettingsToRemote(
@@ -142,7 +162,7 @@ class RemoteAnitorrentEngine(
         crossinline transact: I.(T) -> Unit
     ) = scope.launch {
         val stateFlow = settingsFlow.stateIn(this)
-        val remoteCall = RetryRemoteObject(fetchRemoteScope) { getBinder() }
+        val remoteCall = RetryRemoteObject(settingsRemoteScope) { getBinder() }
 
         connection.connected.filter { it }.collectLatest {
             stateFlow.collect {

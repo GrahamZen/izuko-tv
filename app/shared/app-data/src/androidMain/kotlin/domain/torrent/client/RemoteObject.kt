@@ -49,6 +49,12 @@ class RetryRemoteObject<I : IInterface>(
     private val remote: MutableStateFlow<I?> = MutableStateFlow(initial)
     private val lock = Mutex()
 
+    /**
+     * 在协程里等到远端对象 (挂起, 不占线程). 调用方是协程时先用它: 之后的 [call] 拿到的已经是现成的, 不会在 runBlocking 里干等 ——
+     * 那样一层层嵌套的远程调用每层都占住一个线程, 服务那边慢下来时能把整个 IO 线程池占满 (连送给服务的配置都排不上, 互相等死).
+     */
+    suspend fun awaitRemote(): I = remote.value ?: setRemote().await()
+
     private fun setRemote(): Deferred<I> = scope.async {
         remote.value?.let { return@async it }
 
@@ -97,6 +103,15 @@ class RetryRemoteObject<I : IInterface>(
  * [IDisposableHandle] takes responsibility to pass cancellation to server.
  */
 suspend inline fun <I : IInterface, T : Any> RemoteObject<I>.callSuspendCancellable(
+    crossinline transact: I.(RemoteContinuation<T>) -> IDisposableHandle?,
+): T {
+    // 先挂起着等到远端对象, 下面的 call 不再阻塞线程 (见 RetryRemoteObject.awaitRemote)
+    (this as? RetryRemoteObject<I>)?.awaitRemote()
+    return callSuspendCancellableNow(transact)
+}
+
+@PublishedApi
+internal suspend inline fun <I : IInterface, T : Any> RemoteObject<I>.callSuspendCancellableNow(
     crossinline transact: I.(RemoteContinuation<T>) -> IDisposableHandle?,
 ): T = suspendCancellableCoroutine { cont ->
     val disposable = call {

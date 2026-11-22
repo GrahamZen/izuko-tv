@@ -43,6 +43,8 @@ BT 资源由 BT 引擎处理（Anitorrent），HTTP 和 HLS 资源由下载器 `
 
 原生事件（种子信息、进度、种子已删除）在一条线程上依次交给 Kotlin（`AnitorrentTorrentDownloader.jvm.kt` 的 `process_events`），回调里不能等：一个回调卡住，之后所有种子都收不到事件，上层看起来所有 BT 都不动了（libtorrent 其实还在下、在写盘）。种子删掉以后事件里的句柄已经失效时按名字找被删的会话，只看已经拿到种子信息的（`sessionRemovedByName`）——还没拿到的（没人做种的磁力链接）可能永远拿不到；名字对不上任何会话时（没拿到种子信息的种子删掉时取不到名字），交给唯一一个正在关、还没有种子信息的会话。跨进程取种子名（`TorrentSessionProxy.getName`）也只等几秒。
 
+BT 服务要先收到应用送的设置（保存目录、代理、BT 配置）才建好引擎，建好之前拿下载器等跨进程调用都在等。送设置取远端对象走单独一个线程（`RemoteAnitorrentEngine.settingsRemoteScope`），不用 IO 线程池：一连上就恢复几十条缓存时，那些等着的调用能把 IO 线程占满，设置排不上就永远送不过去、两边互相等死。为了少占线程，同一个远程引擎共用一个下载器（远端对象只取一份），挂起着的远程调用（`callSuspendCancellable`）先在协程里等到远端对象再发，不在 `runBlocking` 里卡住线程干等。
+
 同一个种子再开（删掉又建、同一个种子的另一集）时上一个会话还在关：等它关完再开新的（最多 15 秒，`AnitorrentTorrentDownloader.startDownloadIn`）。拿正在关的那个会得到一个原生种子已经移除的会话：没信息的永远等种子信息，有信息的一直不动。
 
 ## 在线源缓存的下载地址
