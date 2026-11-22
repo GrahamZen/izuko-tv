@@ -207,11 +207,11 @@ class CloudDriveShareSearchTest {
         assertEquals(2, urls.size)
         assertTrue("%EF%BC%8D" !in urls[1] && "Frieren" !in urls[1])
 
-        // 去掉符号、再去掉中日文之间的空格也搜不到时照常轮到下一个名字: 重搜的那几次不占名字的名额
+        // 去掉符号、再去掉中日文之间的空格、再只留第一段也搜不到时照常轮到下一个名字: 重搜的那几次不占名字的名额
         urls.clear()
         engine.search(request("别的番 －副标题－", "Frieren"))
         assertEquals(
-            listOf("别的番 －副标题－", "别的番 副标题", "别的番副标题", "Frieren"),
+            listOf("别的番 －副标题－", "别的番 副标题", "别的番副标题", "别的番", "Frieren"),
             urls.map { it.substringAfter("wd=").decodeURLQueryComponent() },
         )
     }
