@@ -223,6 +223,7 @@ data class DriveRequest(
  * - [searchShare]: `{shareId}` `{passcode}` `{shareToken}` `{keyword}` `{page}` `{pageSize}`
  * - [saveFromShare]: `{shareId}` `{passcode}` `{shareToken}` `{fileIds}` `{fileTokens}` (列表, 与 fileIds 一一对应) `{folderId}` (存到哪)
  *   `{shareRootId}` (分享的根, 见 [DriveShareConfig.rootFolderId])
+ * - [downloadFromShare]: 同 [saveFromShare], 没有 `{folderId}`
  *
  * @property tier 账号档位 (如会员类型), 用来显示与决定播放并发数 (见 [CloudDriveProtocol.tiers])
  * @property nickname 账号昵称
@@ -231,6 +232,8 @@ data class DriveRequest(
  * @property createFolder 取值是新文件夹的 id
  * @property deleteFiles 取值是后台任务 id (空表示已经完成)
  * @property saveFromShare 取值是后台任务 id; 任务完成时 [DriveTaskOp.resultIds] 给出新文件的 id
+ * @property downloadFromShare 不转存、直接取分享里文件的直链 (要登录). 有它时播放分享里的原文件先取这个, 不占网盘空间;
+ *   取不到时照旧转存再取 (见 CloudDriveService.resolveSharePlayback). 转码播放仍要转存
  * @property searchShare 在整个分享里 (各层) 按名字搜文件与文件夹. 有它时, 固定分享合集的目录索引过期或没有时按番名搜文件夹, 不在开播时逐层重列
  *   (见 DriveShareSearchEngine); 结果的父文件夹 id 按 [DriveFileFields.parentId] 取
  */
@@ -250,6 +253,7 @@ data class DriveApiConfig(
     val listShare: DriveListOp? = null,
     val saveFromShare: DriveValueOp? = null,
     val searchShare: DriveListOp? = null,
+    val downloadFromShare: DriveDownloadOp? = null,
 )
 
 /** 取一个值的操作. */
