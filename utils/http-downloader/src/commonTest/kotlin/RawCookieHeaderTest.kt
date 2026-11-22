@@ -11,21 +11,25 @@ package me.him188.ani.utils.httpdownloader
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.respondOk
 import io.ktor.client.plugins.cookies.HttpCookies
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
 import me.him188.ani.utils.ktor.installRawCookieHeader
 import me.him188.ani.utils.ktor.rawCookieHeader
+import me.him188.ani.utils.ktor.withoutCookies
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
 
 /**
  * 默认 client 装了 [HttpCookies], 手写的 Cookie 头会被它改写 (靠 Cookie 鉴权的网盘直链因此 412, 缓存下载一直失败);
- * [rawCookieHeader] 让它原样发出去.
+ * [rawCookieHeader] 让它原样发出去, [withoutCookies] 让这个请求不带 Cookie.
  */
 class RawCookieHeaderTest {
     // 网盘登录 Cookie 常见的样子: 值里有 base64 的 + / =, 也有已经百分号编码过的
@@ -52,5 +56,24 @@ class RawCookieHeaderTest {
         var sent: String? = null
         client { sent = it }.get("https://dl.drive.test/a/b?auth_key=1") { rawCookieHeader(cookie) }
         assertEquals(cookie, sent)
+    }
+
+    @Test
+    fun `requests without cookies send none even when the store has one`() = runTest {
+        val sent = mutableListOf<String?>()
+        val client = HttpClient(
+            MockEngine { request ->
+                sent += request.headers[HttpHeaders.Cookie]
+                respond("", HttpStatusCode.OK, headersOf(HttpHeaders.SetCookie, "PHPSESSID=s1; path=/"))
+            },
+        ) {
+            install(HttpCookies)
+        }.also { it.installRawCookieHeader() }
+
+        client.get("https://site.test/search/a.html")
+        client.get("https://site.test/search/b.html") { withoutCookies() }
+        client.get("https://site.test/search/c.html")
+        // 第一次的响应存下了会话; 不带 Cookie 的请求不发它, 普通请求照发
+        assertEquals(listOf(null, null, "PHPSESSID=s1"), sent)
     }
 }
