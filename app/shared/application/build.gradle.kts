@@ -47,6 +47,19 @@ kotlin {
 
 kotlin {
     if (enableIos && buildIosFramework && getOs() == Os.MacOS) {
+        // onnxruntime 的两个 pod 从本地目录装 (来源与核对见 onnxruntime-pods/README.md): ObjC 封装随仓库,
+        // C 库由 fetchOnnxruntimeC 下载、核对后解到这里
+        val onnxruntimeCDir = layout.buildDirectory.dir("onnxruntime-c").get().asFile
+        val fetchOnnxruntimeC = tasks.register<Exec>("fetchOnnxruntimeC") {
+            description = "Downloads, verifies and unpacks the onnxruntime-c pod (see onnxruntime-pods/README.md)"
+            commandLine(
+                "bash", layout.projectDirectory.file("onnxruntime-pods/fetch-onnxruntime-c.sh").asFile.absolutePath,
+                onnxruntimeCDir.absolutePath,
+                layout.buildDirectory.dir("onnxruntime-c-download").get().asFile.absolutePath,
+            )
+        }
+        tasks.matching { it.name.startsWith("podInstallSynthetic") }.configureEach { dependsOn(fetchOnnxruntimeC) }
+
         // Sentry requires cocoapods for its dependencies
         extensions.configure<CocoapodsExtension> {
             // https://kotlinlang.org/docs/native-cocoapods.html#configure-existing-project
@@ -58,7 +71,11 @@ kotlin {
                 export(projects.app.shared.appPlatform)
             }
             pod("onnxruntime-objc") {
-                version = libs.versions.onnxruntime.get()
+                source = path(layout.projectDirectory.dir("onnxruntime-pods/onnxruntime-objc").asFile)
+            }
+            pod("onnxruntime-c") {
+                source = path(onnxruntimeCDir)
+                linkOnly = true
             }
             // iOS Firebase SDKs are linked from the host Podfile
         }
@@ -81,9 +98,7 @@ kotlin {
                 "iosSimulatorArm64" -> "ios-arm64_x86_64-simulator"
                 else -> error("Unsupported Apple target: ${target.name}")
             }
-            val onnxSearchPathValue = layout.buildDirectory
-                .dir("cocoapods/synthetic/ios/Pods/onnxruntime-c/onnxruntime.xcframework/$onnxSliceName")
-                .get().asFile.absolutePath
+            val onnxSearchPathValue = onnxruntimeCDir.resolve("onnxruntime.xcframework/$onnxSliceName").absolutePath
 
             target.binaries.configureEach {
                 linkerOpts("-F$frameworkSearchPathValue", "-framework", "MediampFFmpegKit")

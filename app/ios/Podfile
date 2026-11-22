@@ -4,6 +4,9 @@ target 'Animeko' do
   use_frameworks!
   platform :ios, '16.0'
   pod 'application', :path => '../shared/application'
+  # application 依赖的 onnxruntime 两个 pod 从本地目录装 (见 ../shared/application/onnxruntime-pods/README.md)
+  pod 'onnxruntime-objc', :path => '../shared/application/onnxruntime-pods/onnxruntime-objc'
+  pod 'onnxruntime-c', :path => '../shared/application/build/onnxruntime-c'
 
   pod 'Sentry', '~> 8.49.0'
 end
