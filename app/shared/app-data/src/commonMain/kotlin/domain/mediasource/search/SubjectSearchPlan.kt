@@ -135,7 +135,8 @@ class SubjectSearchPlan private constructor(private val request: MediaFetchReque
     /**
      * 按标题原样找的站点的关键词链: 站点拿整段字符串比标题, 名字里的季号与副标题常与分享上的写法不一样, 所以
      * - 主关键词是各名字的主标题 ([TitleForms.mainTitle]: 去掉季号与副标题), 前 [count] 个, 比较写法 ([TitleForms.compact]) 相同的只留一个;
-     * - 回退关键词依次是: 主标题的另外写法 ([KeywordKind.WRITING]: 去掉装饰符号、再去掉中日文之间的空格, 原样搜不到时紧接着它试)、
+     * - 回退关键词依次是: 主标题的另外写法 ([KeywordKind.WRITING]: 去掉装饰符号、再去掉中日文之间的空格, 再只留第一段 ([leadingSegmentOf]),
+     *   原样搜不到时紧接着它试)、
      *   第一个副标题、最长的系列名 (搜出整个系列, 由数据源挑出这一部)、其余副标题 (繁体、原文的写法)、请求里的别的回退关键词 (港台译名之类) 的主标题.
      *   比较写法与某个主关键词相同的不再搜; 写法以外的都要够长 ([TitleForms.isDistinctive]): 站点按整段找, 短词搜出来的多是别的番.
      */
@@ -155,11 +156,14 @@ class SubjectSearchPlan private constructor(private val request: MediaFetchReque
             }
             fallback[keyword.keyword] = keyword
         }
+        val seriesCompacts = hints.seriesNames.mapTo(HashSet(), TitleForms::compact)
         for (name in primary) {
             val plain = TitleForms.withoutDecorations(name.keyword)
             for (writing in listOf(plain, TitleForms.withoutSpacesBetweenCjk(plain))) {
                 if (writing != name.keyword) add(SearchKeyword(writing, writing, KeywordKind.WRITING, writingOf = name.name))
             }
+            leadingSegmentOf(plain)?.takeIf { TitleForms.compact(it) !in seriesCompacts && searched.add(TitleForms.compact(it)) }
+                ?.let { add(SearchKeyword(it, it, KeywordKind.WRITING, writingOf = name.name)) }
         }
         val subtitleKeywords = subtitles.map { SearchKeyword(it, it, KeywordKind.SUBTITLE) }
         subtitleKeywords.take(1).forEach(::add)
@@ -170,6 +174,17 @@ class SubjectSearchPlan private constructor(private val request: MediaFetchReque
             if (TitleForms.compact(main).length >= MIN_LITERAL_KEYWORD_LENGTH) add(SearchKeyword(main, main, kindOf(name)))
         }
         return SearchKeywords(primary, fallback.values.toList())
+    }
+
+    /**
+     * 按标题原样找时名字 [name] 的第一段 (第一个空格之前): 站点常把几段的顺序换过来写 (条目「飙马野郎 JOJO的奇妙冒险 第一赛段」,
+     * 分享上「JOJO的奇妙冒险 飙马野郎」), 整个名字原样搜不到, 只搜第一段才搜得到. 只有一段、第一段没有中日文 (英文的第一个词多是常用词)
+     * 或不够长 ([TitleForms.isDistinctive]) 时为 null; 是系列名的由调用方去掉 (系列名另外搜).
+     */
+    private fun leadingSegmentOf(name: String): String? {
+        val segments = name.split(SPACES).filter { it.isNotBlank() }
+        if (segments.size < 2) return null
+        return segments.first().takeIf { TitleForms.containsCjk(it) && TitleForms.isDistinctive(TitleForms.compact(it)) }
     }
 
     /** 请求的回退关键词 [name] 是系列名还是这一部别的叫法. */
