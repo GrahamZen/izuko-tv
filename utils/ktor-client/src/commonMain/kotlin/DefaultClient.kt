@@ -116,15 +116,26 @@ fun createDefaultHttpClient(
 }.also { it.installRawCookieHeader() }
 
 /**
- * 让 [rawCookieHeader] 生效: [HttpCookies] 在发送管线的 State 阶段按它的存储重写 (或去掉) Cookie 头, 这里紧接着在它之后照请求属性写回.
+ * 让 [rawCookieHeader] 与 [withoutCookies] 生效: [HttpCookies] 在发送管线的 State 阶段按它的存储重写 (或去掉) Cookie 头,
+ * 这里紧接着在它之后照请求属性写回 (空值则去掉 Cookie 头).
  * (挂成 [HttpSend] 的拦截器不行: 那些在请求管线上, 发送管线在它们之后才跑.)
  */
 fun HttpClient.installRawCookieHeader() {
     val phase = PipelinePhase("AniRawCookieHeader")
     sendPipeline.insertPhaseAfter(HttpSendPipeline.State, phase)
     sendPipeline.intercept(phase) {
-        context.attributes.getOrNull(RawCookieHeaderAttribute)?.let { context.headers[HttpHeaders.Cookie] = it }
+        val raw = context.attributes.getOrNull(RawCookieHeaderAttribute) ?: return@intercept
+        if (raw.isEmpty()) context.headers.remove(HttpHeaders.Cookie) else context.headers[HttpHeaders.Cookie] = raw
     }
+}
+
+/**
+ * 这个请求不带 Cookie 头: client 存储里同站的 Cookie 也不发. 响应里的 `Set-Cookie` 照样进存储, 只是不再随这类请求发出去.
+ *
+ * 用在按会话限制访问的站点上, 如苹果 CMS 按会话 Cookie 限制两次搜索的间隔: 带着上次的会话连着搜会被挡, 每次都是新会话就不受限.
+ */
+fun HttpRequestBuilder.withoutCookies() {
+    attributes.put(RawCookieHeaderAttribute, "")
 }
 
 /**
