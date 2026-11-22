@@ -633,8 +633,7 @@ class CloudDriveService internal constructor(
     /**
      * 播放分享里的一个文件. 网盘能直接取分享里文件的直链 ([DriveApiConfig.downloadFromShare]) 且播原文件时先这样取 ([sharePlaybackWithoutSaving]):
      * 省掉转存的等待, 也不占网盘空间 (空间满了转存会失败). 取不到时转存到自己网盘的 [SAVE_FOLDER_NAME] 再取地址.
-     * 视频旁边的外挂字幕与视频一起取 (一起转存). 同一个文件只转存一次; 文件夹里的视频超过 [MAX_SAVED_FILES] 个、
-     * 字幕超过 [MAX_SAVED_SUBTITLES] 个时删掉最早转存的.
+     * 视频旁边的外挂字幕与视频一起取 (一起转存). 同一个文件只转存一次; 网盘放不下时先删掉文件夹里最早转存的副本 (见 [makeRoom]).
      */
     suspend fun resolveSharePlayback(ref: DriveShareFileRef): CloudDrivePlayback {
         requireLoggedIn()
@@ -777,30 +776,18 @@ class CloudDriveService internal constructor(
         }
         if (missing.isEmpty()) return savedFiles.getValue(ref.key)
 
+        val needed = missing.sumOf { it.size.coerceAtLeast(0) }
+        makeRoom(existing, reused, needed, ref)
         val saved = try {
-            try {
-                saveFromShare(ref, missing, folder)
-            } catch (e: CloudDriveApiException) {
-                if (!e.isCapacityLimit) throw e
-                // 网盘满了: 转存文件夹里的都是之前播放时转存的副本, 清掉这次用不到的腾出地方, 再转存一次
-                val needed = missing.sumOf { it.size.coerceAtLeast(0) }
-                freeSaveFolder(existing.filter { it.fid !in reused }, needed, ref)
-                try {
-                    saveFromShare(ref, missing, folder)
-                } catch (e: CloudDriveApiException) {
-                    if (!e.isCapacityLimit) throw e
-                    throw CloudDriveCapacityException("网盘空间不够: 清掉「$SAVE_FOLDER_NAME」里的副本后仍放不下 ${ref.fileName} (${needed / MB} MB)", needed)
-                }
-            }
+            saveFromShare(ref, missing, folder)
         } catch (e: CancellationException) {
             throw e
         } catch (e: CloudDriveAuthException) {
             throw e
         } catch (e: CloudDriveShareUnavailableException) {
             throw e
-        } catch (e: CloudDriveCapacityException) {
-            throw e
         } catch (e: CloudDriveApiException) {
+            if (e.isCapacityLimit) throw CloudDriveCapacityException("网盘空间不够, 转存不下 ${ref.fileName} (${needed / MB} MB)", needed)
             if (missing.size == 1 && video in missing) throw e
             logger.warn { "Saving ${missing.size} files of ${ref.key} failed, saving the video alone: ${e.message}" }
             if (video !in missing) return savedFiles.getValue(ref.key)
@@ -818,50 +805,30 @@ class CloudDriveService internal constructor(
             }
         }
         logger.info { "Saved ${missing.size} files of $driveId share ${ref.key} (${ref.fileName})" }
-        val newSubtitles = missing.count { DriveSidecarSubtitles.isSubtitle(it.fileName) }
-        val (reusedSubtitles, reusedVideos) = existing.filter { it.fid in reused }.partition { DriveSidecarSubtitles.isSubtitle(it.fileName) }
-        val stale = filesToPrune(
-            existing.filter { it.fid !in reused },
-            keep = MAX_SAVED_FILES - (missing.size - newSubtitles) - reusedVideos.size,
-            keepSubtitles = MAX_SAVED_SUBTITLES - newSubtitles - reusedSubtitles.size,
-        )
-        if (stale.isNotEmpty()) {
-            try {
-                api.deleteFiles(stale.map { it.fid })
-                val removed = stale.mapTo(HashSet()) { it.fid }
-                savedFiles.entries.removeAll { it.value in removed }
-                logger.info { "Removed ${stale.size} old files from $SAVE_FOLDER_NAME" }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Throwable) {
-                logger.warn(e) { "Failed to remove old files from $SAVE_FOLDER_NAME" }
-            }
-        }
         return savedFiles[ref.key] ?: throw CloudDriveApiException("转存后没找到 ${ref.fileName}")
     }
 
     /**
-     * 网盘满了转存不进去时, 删掉转存文件夹里够用的副本 (等删除完成) 腾出 [needed] 的空间, 挑哪些见 [pickSavedCopiesToFree];
-     * 删什么都没用 (空间被别的文件占着) 或算不清剩余空间时一个不删, 抛 [CloudDriveCapacityException].
+     * 转存 [needed] 之前腾地方: 网盘报的剩余空间放不下时, 删掉转存文件夹 [folder] 里够用的副本 (这次要用的 [keep] 不删),
+     * 等删除完成、剩余空间降下来再回去转存; 挑哪些见 [pickSavedCopiesToFree]. 那些副本全删掉也放不下时一个不删, 抛 [CloudDriveCapacityException].
+     * 读不到剩余空间 (协议没有这项) 或不知道文件多大时不删, 照常转存, 由转存的结果说了算.
      */
-    private suspend fun freeSaveFolder(clearable: List<DriveFile>, needed: Long, ref: DriveShareFileRef) {
-        val free = readFreeSpace()
-        val files = pickSavedCopiesToFree(clearable, needed, free)
-        val freeText = free?.let { "${it / MB} MB free" } ?: "free space unknown"
+    private suspend fun makeRoom(folder: List<DriveFile>, keep: Set<String>, needed: Long, ref: DriveShareFileRef) {
+        if (needed <= 0) return
+        val free = readFreeSpace() ?: return
+        if (free >= needed) return
+        val files = pickSavedCopiesToFree(folder, keep, needed, free)
         if (files.isEmpty()) {
-            val known = free != null && free < needed
             logger.warn {
-                "Cloud drive $driveId is full ($freeText), not removing any of the ${clearable.size} copies in $SAVE_FOLDER_NAME " +
-                    "(${clearable.sumOf { it.size } / MB} MB) to save ${ref.key} (${needed / MB} MB): " +
-                    if (known) "they would not make room" else "the free space does not tell whether they would help"
+                "Cloud drive $driveId has ${free / MB} MB free, not removing any copies in $SAVE_FOLDER_NAME " +
+                    "(${folder.sumOf { it.size } / MB} MB): they would not make room for ${ref.key} (${needed / MB} MB)"
             }
-            throw CloudDriveCapacityException(
-                if (known) "网盘空间不够, 清掉「$SAVE_FOLDER_NAME」里的副本也放不下 ${ref.fileName} (${needed / MB} MB)"
-                else "网盘空间不够, 转存不下 ${ref.fileName} (${needed / MB} MB)",
-                needed,
-            )
+            throw CloudDriveCapacityException("网盘空间不够, 清掉「$SAVE_FOLDER_NAME」里的副本也放不下 ${ref.fileName} (${needed / MB} MB)", needed)
         }
-        logger.warn { "Cloud drive $driveId is full ($freeText): removing ${files.size} of ${clearable.size} files (${files.sumOf { it.size } / MB} MB) from $SAVE_FOLDER_NAME to save ${ref.key} (${needed / MB} MB)" }
+        logger.info {
+            "Cloud drive $driveId has ${free / MB} MB free: removing ${files.size} files (${files.sumOf { it.size } / MB} MB) " +
+                "from $SAVE_FOLDER_NAME to save ${ref.key} (${needed / MB} MB)"
+        }
         api.deleteFiles(files.map { it.fid }, wait = true)
         val removed = files.mapTo(HashSet()) { it.fid }
         savedFiles.entries.removeAll { it.value in removed }
@@ -1208,12 +1175,6 @@ class CloudDriveService internal constructor(
         /** 播放分享时转存到网盘根目录下的这个文件夹. 只动这个文件夹里的东西. */
         const val SAVE_FOLDER_NAME = "Izuko 转存"
 
-        /** 转存文件夹里最多留几个视频, 多了删最早转存的. */
-        const val MAX_SAVED_FILES = 20
-
-        /** 转存文件夹里最多留几个字幕文件, 多了删最早转存的. */
-        const val MAX_SAVED_SUBTITLES = 60
-
         /** 删完转存副本后等网盘报的剩余空间降下来时多久查一次 (见 [awaitFreeSpace]). */
         private val FREE_SPACE_POLL_INTERVAL = 1.seconds
 
@@ -1246,15 +1207,6 @@ class CloudDriveService internal constructor(
         private val SHARE_TOKEN_TTL = 30.minutes
         private const val MAX_CACHED_SHARE_TOKENS = 64
         private const val MAX_LISTED_SHARE_FILES = 2000
-
-        /**
-         * 转存文件夹里还要再放文件时, [existing] 里该删掉哪些, 才能只留 [keep] 个视频与 [keepSubtitles] 个字幕: 各自先删最早的.
-         */
-        internal fun filesToPrune(existing: List<DriveFile>, keep: Int, keepSubtitles: Int): List<DriveFile> {
-            val (subtitles, others) = existing.partition { DriveSidecarSubtitles.isSubtitle(it.fileName) }
-            return others.sortedBy { it.updatedAt }.dropLast(keep.coerceAtLeast(0)) +
-                    subtitles.sortedBy { it.updatedAt }.dropLast(keepSubtitles.coerceAtLeast(0))
-        }
 
         /**
          * 把服务端下发的 Cookie 合并进现有的 Cookie 头, 保留原有顺序.
