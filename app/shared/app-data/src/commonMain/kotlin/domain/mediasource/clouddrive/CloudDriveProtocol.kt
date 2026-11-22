@@ -140,7 +140,7 @@ data class DriveHttpConfig(
  * @property status 状态的路径, 空表示不看
  * @property authStatuses 状态是这些值时算没登录或登录失效 (HTTP 401 / 403 总是算)
  * @property message 错误说明的路径
- * @property capacityLimitCodes 网盘空间不够时的错误码 (转存时据此清理转存文件夹)
+ * @property capacityLimitCodes 网盘空间不够时的错误码 (转存回这些码时报空间不够)
  */
 @Serializable
 data class DriveEnvelope(
@@ -227,7 +227,7 @@ data class DriveRequest(
  *
  * @property tier 账号档位 (如会员类型), 用来显示与决定播放并发数 (见 [CloudDriveProtocol.tiers])
  * @property nickname 账号昵称
- * @property capacity 网盘的总容量与已用 (字节). 转存时网盘满了, 据此只清转存文件夹里够用的那些; 清光也放不下就不清.
+ * @property capacity 网盘的总容量与已用 (字节). 转存前据此算放不放得下: 放不下时只清转存文件夹里够用的副本, 全清也放不下就不清; 没有这项时不清.
  *   没有这项 (或取不到) 时网盘满了也不清, 直接报空间不够
  * @property createFolder 取值是新文件夹的 id
  * @property deleteFiles 取值是后台任务 id (空表示已经完成)

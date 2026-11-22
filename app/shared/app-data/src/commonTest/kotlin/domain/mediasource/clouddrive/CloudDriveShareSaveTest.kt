@@ -23,7 +23,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * 播放分享里的文件: 转存到自己网盘的转存文件夹, 清理旧文件, 同一集不重复转存.
+ * 播放分享里的文件: 转存到自己网盘的转存文件夹, 放不下时先删旧副本, 同一集不重复转存.
  */
 class CloudDriveShareSaveTest {
     private val ref = DriveShareFileRef("share1", "", "sf1", "tok1", "S01E01.mp4", 500)
@@ -60,9 +60,9 @@ class CloudDriveShareSaveTest {
     }
 
     @Test
-    fun `creates the folder - saves - prunes the oldest and reuses the saved file`() = runTest {
+    fun `creates the folder - saves and reuses the saved file`() = runTest {
         val requests = mutableListOf<HttpRequestData>()
-        val (service, settings) = service(CloudDriveAccount(cookie = "sid=p1"), existing = CloudDriveService.MAX_SAVED_FILES, requests)
+        val (service, settings) = service(CloudDriveAccount(cookie = "sid=p1"), existing = 20, requests)
 
         val playback = service.resolveSharePlayback(ref)
         assertEquals("https://dl.drive.test/new1", playback.url)
@@ -85,11 +85,8 @@ class CloudDriveShareSaveTest {
         assertEquals("share1", save.string("share"))
         assertEquals(TestDrive.SHARE_ROOT, save.string("from"))
 
-        // 已有 20 个, 加上新的一个要删掉最早的那一个, 而且只删它
-        val delete = requests.single { it.path() == "/api/files/delete" }.jsonBody()
-        assertEquals(listOf("o1"), delete.strings("ids"))
-        // 清理旧文件不等删除完成
-        assertTrue(requests.none { it.path() == "/api/tasks/task2" })
+        // 副本不按个数删: 已有 20 个也不删
+        assertTrue(requests.none { it.path() == "/api/files/delete" })
 
         // 同一集再播: 不再转存
         requests.clear()
@@ -117,21 +114,23 @@ class CloudDriveShareSaveTest {
     }
 
     /**
-     * 网盘满了的情形: 转存文件夹里已有 o1、o2 两个副本 (o1 早); 前 [fullSaves] 次转存任务回空间不够的错误码.
-     * 删除任务的进度查询回「完成」. [free] 是 `GET /api/account/capacity` 报的剩余空间, 删除完成时加上删掉的大小;
-     * [lagReads] 大于 0 时删除完成后还要再查这么多次才加上 (网盘的已用量要过一会儿才降). 为 null 时协议没有这项.
-     * 剩余空间还没加上时转存一律回空间不够.
+     * 网盘空间不够的情形: 转存文件夹里已有 o1、o2 两个 2 GB 的副本 (o1 早) 与归 o1 的字幕 o1.sc.ass (o1s).
+     * [free] 是 `GET /api/account/capacity` 报的剩余空间, 删除任务完成时加上删掉的大小; [lagReads] 大于 0 时删除完成后还要再查这么多次才加上
+     * (网盘的已用量要过一会儿才降). 为 null 时协议没有这项. 转存的文件比报的剩余空间大时转存回空间不够;
+     * 前 [fullSaves] 次转存一律回空间不够 (网盘报的数与转存的结果对不上).
      */
     private fun fullDriveService(
-        fullSaves: Int,
         requests: MutableList<HttpRequestData>,
         free: Long? = 0,
         lagReads: Int = 0,
+        fullSaves: Int = 0,
+        saving: Long = ref.size,
     ): CloudDriveService {
-        var saveTasks = 0
-        var deleted = false
-        var readsAfterDelete = 0
+        val sizes = mapOf("o1" to 2_000_000_000L, "o1s" to 1_000L, "o2" to 2_000_000_000L)
         var reported = free ?: 0
+        var freed = 0L
+        var readsAfterDelete = 0
+        var saveTasks = 0
         val protocol = if (free == null) TestDrive.protocol else TestDrive.protocol.copy(
             api = TestDrive.protocol.api.copy(
                 capacity = DriveCapacityOp(DriveRequest("GET", "https://{host}/api/account/capacity"), total = "data.total", used = "data.used"),
@@ -142,26 +141,31 @@ class CloudDriveShareSaveTest {
             requests += request
             when (request.path()) {
                 "/api/account/capacity" -> {
-                    if (deleted && ++readsAfterDelete > lagReads) reported = (free ?: 0) + 2_000_000_000
+                    if (freed > 0 && ++readsAfterDelete > lagReads) reported += freed.also { freed = 0 }
                     reply("""{"code":0,"data":{"total":$total,"used":${total - reported}}}""")
                 }
+
                 "/api/files/list" -> reply(
                     listJson(
-                        DriveFile("o1", fileName = "o1.mkv", size = 2_000_000_000, updatedAt = 1000),
-                        DriveFile("o2", fileName = "o2.mkv", size = 2_000_000_000, updatedAt = 2000),
+                        DriveFile("o1", fileName = "o1.mkv", size = sizes.getValue("o1"), updatedAt = 1000),
+                        DriveFile("o1s", fileName = "o1.sc.ass", size = sizes.getValue("o1s"), updatedAt = 1000),
+                        DriveFile("o2", fileName = "o2.mkv", size = sizes.getValue("o2"), updatedAt = 2000),
                     ),
                 )
 
                 "/api/share/open" -> reply("""{"code":0,"data":{"token":"st1","title":"t"}}""")
                 "/api/share/save" -> reply("""{"code":0,"data":{"task":"save-task"}}""")
-                "/api/files/delete" -> reply("""{"code":0,"data":{"task":"delete-task"}}""")
+                "/api/files/delete" -> {
+                    freed += request.jsonBody().strings("ids").sumOf { sizes.getValue(it) }
+                    reply("""{"code":0,"data":{"task":"delete-task"}}""")
+                }
+
                 "/api/tasks/delete-task" -> {
-                    deleted = true
-                    if (lagReads == 0) reported = (free ?: 0) + 2_000_000_000
+                    if (lagReads == 0) reported += freed.also { freed = 0 }
                     reply("""{"code":0,"data":{"state":"done"}}""")
                 }
 
-                "/api/tasks/save-task" -> if (++saveTasks <= fullSaves || free != null && deleted && reported < ref.size) {
+                "/api/tasks/save-task" -> if (++saveTasks <= fullSaves || free != null && reported < saving) {
                     reply("""{"code":4507,"message":"quota exceeded"}""")
                 } else {
                     reply("""{"code":0,"data":{"state":"done","result":{"ids":["new1"]}}}""")
@@ -174,66 +178,89 @@ class CloudDriveShareSaveTest {
     }
 
     @Test
-    fun `drive full - clears the save folder - waits for the deletion and saves again`() = runTest {
+    fun `no room - removes the oldest copy with its subtitles before saving`() = runTest {
         val requests = mutableListOf<HttpRequestData>()
-        val service = fullDriveService(fullSaves = 1, requests)
+        val service = fullDriveService(requests)
 
         assertEquals("https://dl.drive.test/new1", service.resolveSharePlayback(ref).url)
+        // 删掉最早的一份 (视频连同它的字幕) 就够放下, o2 不动
         val delete = requests.single { it.path() == "/api/files/delete" }.jsonBody()
-        // 删掉最早的一个就够放下
-        assertEquals(listOf("o1"), delete.strings("ids"))
-        // 等删除完成之后才再转存
+        assertEquals(listOf("o1", "o1s"), delete.strings("ids"))
+        // 先删、等删除完成, 再转存一次就成
         val order = requests.map { it.path() }
-        assertTrue(order.indexOf("/api/tasks/delete-task") < order.lastIndexOf("/api/share/save"), "$order")
-        assertEquals(2, requests.count { it.path() == "/api/share/save" })
+        assertTrue(order.indexOf("/api/tasks/delete-task") < order.indexOf("/api/share/save"), "$order")
+        assertEquals(1, requests.count { it.path() == "/api/share/save" })
     }
 
     @Test
-    fun `drive full - waits until the freed space shows up before saving again`() = runTest {
+    fun `no room - waits until the freed space shows up before saving`() = runTest {
         val requests = mutableListOf<HttpRequestData>()
         // 删除完成后还要再查三次, 剩余空间才降下来; 马上转存的话照样回空间不够
-        val service = fullDriveService(fullSaves = 1, requests, lagReads = 3)
+        val service = fullDriveService(requests, lagReads = 3)
 
         assertEquals("https://dl.drive.test/new1", service.resolveSharePlayback(ref).url)
-        assertEquals(2, requests.count { it.path() == "/api/share/save" })
+        assertEquals(1, requests.count { it.path() == "/api/share/save" })
         val order = requests.map { it.path() }
         val delete = order.indexOf("/api/tasks/delete-task")
-        assertEquals(4, order.subList(delete, order.lastIndexOf("/api/share/save")).count { it == "/api/account/capacity" })
+        assertEquals(4, order.subList(delete, order.indexOf("/api/share/save")).count { it == "/api/account/capacity" })
         assertEquals(3_000L, testScheduler.currentTime)
     }
 
     @Test
-    fun `drive full - stops waiting for the freed space after a while and saves anyway`() = runTest {
+    fun `no room - stops waiting for the freed space after a while and saves anyway`() = runTest {
         val requests = mutableListOf<HttpRequestData>()
-        val service = fullDriveService(fullSaves = 1, requests, lagReads = Int.MAX_VALUE)
+        val service = fullDriveService(requests, lagReads = Int.MAX_VALUE)
 
         val error = assertFailsWith<CloudDriveCapacityException> { service.resolveSharePlayback(ref) }
         assertTrue(error.isCapacityLimit)
-        assertEquals(2, requests.count { it.path() == "/api/share/save" })
+        assertEquals(1, requests.count { it.path() == "/api/share/save" })
         assertEquals(30_000L, testScheduler.currentTime)
     }
 
     @Test
-    fun `drive still full after clearing the save folder`() = runTest {
+    fun `no room even after removing every copy - removes nothing and does not save`() = runTest {
         val requests = mutableListOf<HttpRequestData>()
-        val service = fullDriveService(fullSaves = 2, requests)
+        val big = ref.copy(size = 5_000_000_000)
+        val service = fullDriveService(requests, saving = big.size)
 
-        val error = assertFailsWith<CloudDriveCapacityException> { service.resolveSharePlayback(ref) }
+        val error = assertFailsWith<CloudDriveCapacityException> { service.resolveSharePlayback(big) }
         assertTrue(error.isCapacityLimit)
-        // 不再当成转存文件夹被删、去重找文件夹
-        assertEquals(2, requests.count { it.path() == "/api/share/save" })
-        assertTrue(requests.none { it.path() == "/api/files/folder" })
+        assertTrue(requests.none { it.path() == "/api/files/delete" })
+        assertTrue(requests.none { it.path() == "/api/share/save" })
     }
 
     @Test
-    fun `drive full with unknown free space keeps the saved copies`() = runTest {
+    fun `enough room - saves without removing copies`() = runTest {
         val requests = mutableListOf<HttpRequestData>()
-        val service = fullDriveService(fullSaves = 1, requests, free = null)
+        val service = fullDriveService(requests, free = 1_000_000)
+
+        assertEquals("https://dl.drive.test/new1", service.resolveSharePlayback(ref).url)
+        assertTrue(requests.none { it.path() == "/api/files/delete" })
+        assertEquals(1, requests.count { it.path() == "/api/share/save" })
+    }
+
+    @Test
+    fun `unknown free space keeps the copies and reports the full drive`() = runTest {
+        val requests = mutableListOf<HttpRequestData>()
+        val service = fullDriveService(requests, free = null, fullSaves = 1)
 
         val error = assertFailsWith<CloudDriveCapacityException> { service.resolveSharePlayback(ref) }
         assertTrue(error.isCapacityLimit)
         assertTrue(requests.none { it.path() == "/api/files/delete" })
         assertEquals(1, requests.count { it.path() == "/api/share/save" })
+    }
+
+    @Test
+    fun `drive full although the free space says it fits - removes nothing`() = runTest {
+        val requests = mutableListOf<HttpRequestData>()
+        val service = fullDriveService(requests, free = 1_000_000, fullSaves = 1)
+
+        val error = assertFailsWith<CloudDriveCapacityException> { service.resolveSharePlayback(ref) }
+        assertTrue(error.isCapacityLimit)
+        assertTrue(requests.none { it.path() == "/api/files/delete" })
+        assertEquals(1, requests.count { it.path() == "/api/share/save" })
+        // 不当成转存文件夹被删、去重找文件夹
+        assertTrue(requests.none { it.path() == "/api/files/folder" })
     }
 
     /**
@@ -331,20 +358,5 @@ class CloudDriveShareSaveTest {
         val files = service.browser.search("芙莉莲")
         assertEquals(listOf("a"), files.map { it.fid })
         assertEquals(1, requests.size)
-    }
-
-    @Test
-    fun `prune keeps the newest files`() {
-        val files = (1..5).map { DriveFile("f$it", fileName = "$it.mp4", updatedAt = it * 1000L) }.shuffled()
-        assertEquals(listOf("f1", "f2"), CloudDriveService.filesToPrune(files, keep = 3, keepSubtitles = 0).map { it.fid })
-        assertTrue(CloudDriveService.filesToPrune(files, keep = 5, keepSubtitles = 0).isEmpty())
-    }
-
-    @Test
-    fun `prune counts videos and subtitles separately`() {
-        val videos = (1..3).map { DriveFile("v$it", fileName = "$it.mkv", updatedAt = it * 1000L) }
-        val subtitles = (1..3).map { DriveFile("s$it", fileName = "$it.sc.ass", updatedAt = it * 1000L + 500) }
-        val stale = CloudDriveService.filesToPrune((videos + subtitles).shuffled(), keep = 2, keepSubtitles = 1)
-        assertEquals(setOf("v1", "s1", "s2"), stale.map { it.fid }.toSet())
     }
 }
