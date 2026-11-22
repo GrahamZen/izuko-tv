@@ -31,6 +31,7 @@ import me.him188.ani.utils.ktor.ScopedHttpClient
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import me.him188.ani.utils.platform.currentTimeMillis
+import kotlin.concurrent.Volatile
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
@@ -41,8 +42,8 @@ import kotlin.time.Duration.Companion.seconds
  * 用编进包里的钥匙解开. 只给装了应用的人看, 改了附件不用发版 (`scripts/release-notice.py --sealed`).
  *
  * 明文一行一条 `给哪些版本=那句话` (见 [SealedNotices.select]); 应用只读这一种通知 (ui-tv 的 `TvWhatsNew`).
- * - 启动时先读存下的那份; 什么时候取见 [RemoteRefresh]: 离上次取到超过 [REFRESH_INTERVAL] 就取 (每 [CHECK_INTERVAL] 看一眼,
- *   回到前台、冷启动时也看) —— 发了通知, 开着的电视一小时左右就收到 (同检查更新的频率);
+ * - 启动时先读存下的那份, 再取一次: 上次取到的时刻只记在这个进程里 ([fetchedAt]), 冷启动一定取 (同检查更新). 之后什么时候取见 [RemoteRefresh]:
+ *   离上次取到超过 [REFRESH_INTERVAL] 就取 (每 [CHECK_INTERVAL] 看一眼, 回到前台也看) —— 发了通知, 开着的电视一小时左右就收到, 关了重进马上收到;
  * - 附件经 [GitHubDownloadMirrors] 取 (原地址在前, 大陆连不上时走镜像), 每个入口最多等 [SOURCE_TIMEOUT];
  *   取到能解开的就存下, 都取不到用存下的; release 还没建 (原地址 404) 当没有通知. 包里没有钥匙 (没配的构建) 时一直没有.
  */
@@ -58,6 +59,10 @@ class SealedNoticesRepository(
 ) {
     private val logger = logger<SealedNoticesRepository>()
     private val cache = JsonFileCache(file, SavedSealedNotices.serializer())
+
+    /** 这个进程里上次取到的时刻; 冷启动时没有 (一启动就取). 存下的那份只在取不到时用 */
+    @Volatile
+    private var fetchedAt: Long? = null
 
     /** 解开的明文; 还没读到存下的、也还没取到时为 null; 没有通知是空串. */
     private val plain = MutableStateFlow<String?>(null)
@@ -78,12 +83,17 @@ class SealedNoticesRepository(
                         staleAfter = REFRESH_INTERVAL,
                         checkEvery = CHECK_INTERVAL,
                         foregroundAfter = REFRESH_INTERVAL,
-                        lastFetchedAt = { cache.read()?.fetchedAt },
+                        lastFetchedAt = { fetchedAt },
                         fetch = ::fetch,
                     ),
                 )
             }
         }
+    }
+
+    /** 离上次取超过 [age] 就现在取一份 (没到什么都不做). */
+    suspend fun refreshIfOlderThan(age: Duration) {
+        refresh.await()?.refreshIfOlderThan(age)
     }
 
     /** 给版本 [version] 的通知, 每句一行 (「标题：说明」); 有了就给, 之后取到新的再给. */
@@ -109,7 +119,9 @@ class SealedNoticesRepository(
                 else -> null
             }
         } ?: return false
-        cache.write(SavedSealedNotices(fetched.value, currentTimeMillis()))
+        val now = currentTimeMillis()
+        cache.write(SavedSealedNotices(fetched.value, now))
+        fetchedAt = now
         plain.value = open(fetched.value)
         logger.info { if (fetched.value.isEmpty()) "sealed notices: no release yet" else "sealed notices updated from ${fetched.source}" }
         return true

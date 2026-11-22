@@ -26,11 +26,15 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import me.him188.ani.utils.ktor.ScopedHttpClient
 import me.him188.ani.utils.ktor.asScopedHttpClient
+import me.him188.ani.utils.platform.currentTimeMillis
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
 /** [RemoteFetch.firstChanged] (带 ETag 问的取法) 与 [RemoteRefresh] 出错后的定期检查. */
@@ -131,6 +135,32 @@ class RemoteFetchTest {
         runCurrent()
         assertEquals(1, calls)
         advanceTimeBy(1.hours + 1.seconds)
+        assertEquals(2, calls)
+    }
+
+    @Test
+    fun `refreshIfOlderThan fetches only past the given age`() = runTest {
+        var calls = 0
+        var last: Long? = null
+        val refresh = RemoteRefresh(
+            name = "test",
+            scope = backgroundScope,
+            staleAfter = 1.hours,
+            checkEvery = 1.hours,
+            lastFetchedAt = { last },
+        ) {
+            calls++
+            last = currentTimeMillis()
+            true
+        }
+        runCurrent()
+        assertEquals(1, calls)
+        // 刚取过: 退回首页不取
+        assertFalse(refresh.refreshIfOlderThan(10.minutes))
+        last = currentTimeMillis() - 11.minutes.inWholeMilliseconds
+        // 没到一小时, 所以定期检查不取; 超过了这次给的间隔就取
+        assertFalse(refresh.refreshIfOlderThan(1.hours))
+        assertTrue(refresh.refreshIfOlderThan(10.minutes))
         assertEquals(2, calls)
     }
 }

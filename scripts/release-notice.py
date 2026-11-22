@@ -25,12 +25,17 @@ release 正文里的「## 通知」(不加 --sealed) 只给更早的旧版 (1.0.
   钥匙同加密的应用配置: local.properties 的 ani.config.key, 见 scripts/sealed_text.py). 改了不用发版, 应用这样取到:
   离上次取超过 1 小时就取 (开着时每 10 分钟看一眼, 回到前台、冷启动时也看), 网络体检也取 (上传后 GitHub 的下载地址要几十秒才指向新附件).
   每条带「给哪些版本」(--for): `*` 所有版本 (默认) / `1.0.9` 只给这一版 / `1.0.9*` 给 1.0.9 和它的各个测试版.
-  新版本的通知中心、本版新功能页、设置里那一页都只读它; 更早的版本只看正文. 要 cryptography:
+  新版本只在通知中心里显示它 (本版新功能页不放); 更早的版本只看正文. 要 cryptography:
   uv run --no-project --with cryptography python scripts/release-notice.py show --sealed
   uv run --no-project --with cryptography python scripts/release-notice.py add  --sealed [--for 1.0.9*] -f 条目.txt
   (set / remove / clear 同上; remove 的序号是 show 里这个 --for 下面的; 没有 release notices 时第一次写会建它)
 
 条目写成「标题：说明」: 应用按第一个全角冒号 (或「: 」) 拆, 冒号在前 30 字以内时前半句醒目显示、后半句压暗; 否则整条当标题.
+加密通知 (--sealed) 的条目还能写: `
+` 分段, `**粗体**`, 链接 `[文字](网址)` ——
+  https://… 电视上画成二维码 (一条只画第一个), 触屏上是按钮, 控制台上可点;
+  应用内地址是操作按钮 (最多三颗): ani://subjects/<条目id> / ani://settings/<分类>[/<行>] (账号写 account, 如
+  ani://settings/about/chat-groups 是关于页的交流群) / ani://whatsnew; 别的链接只留文字. 写错的会给提示.
 Git Bash 里中文参数会变成问号: 中文写进 UTF-8 文件用 -f (一行一条, 开头的「- 」可写可不写), 或者在 PowerShell 里跑.
 每次改之前把原正文备份到系统临时目录 (打印出路径), 改完再取回来核对. 需要已登录的 gh.
 """
@@ -134,7 +139,31 @@ def read_items(args):
         if not 2 <= colon <= TITLE_MAX_LENGTH:
             print(f"注意: 「{x[:24]}…」没有在前 {TITLE_MAX_LENGTH} 字里的冒号, 应用里整条当标题显示 (想要标题 + 说明就写成「标题：说明」)",
                   file=sys.stderr)
+        if args.sealed:
+            check_links(x)
     return items
+
+
+# 加密通知里的链接 (同应用的 TvNoticeMarkup): 不认识的在应用里只当文字, 这里提示一下
+LINK = re.compile(r"\[([^\]]+)\]\(([^)]*)\)")
+SETTINGS_TABS = {"account", "appearance", "theme", "update", "player", "media-source", "media-selector", "proxy", "bt", "storage",
+                 "settings-backup", "about", "log", "debug"}
+
+
+def known_link(url):
+    if re.fullmatch(r"https://\S+", url) or url == "ani://whatsnew" or re.fullmatch(r"ani://subjects/[0-9]+/?", url):
+        return True
+    settings = re.fullmatch(r"ani://settings/([a-z_-]+)(/[a-z0-9-]+)?/?", url)
+    return bool(settings) and settings.group(1).replace("_", "-") in SETTINGS_TABS
+
+
+def check_links(item):
+    for label, url in LINK.findall(item):
+        if not known_link(url.strip()):
+            print(f"注意: 链接「{label}」({url}) 应用里只当文字显示: 认得的是 https://… 与 ani://subjects/…、ani://settings/…、ani://whatsnew",
+                  file=sys.stderr)
+    if item.count("](https://") > 1:
+        print("注意: 一条里有几个 https 链接, 应用里只给第一个画二维码", file=sys.stderr)
 
 
 SEALED_TAG = "notices"
