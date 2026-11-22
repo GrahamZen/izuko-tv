@@ -134,16 +134,47 @@ internal class CloudDriveApi(
         if (p.isLocalFolder) return fileIds.map { DriveDownload(it, LocalFolderDrive.nameOf(it), LocalFolderDrive.parentIdOf(it), LocalFolderDrive.urlOf(it)) }
         val op = p.api.download ?: throw CloudDriveUnsupportedException("download")
         val root = send("download", op.request, mapOf("fileIds" to fileIds.json, "fileId" to fileIds.first().json))
-        return root.selectByPath(op.items).mapNotNull { item ->
-            val url = item.stringByPath(op.url)?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+        return downloadsIn(root, op, p)
+    }
+
+    /** 网盘能不转存、直接取分享里文件的直链 (协议有 [DriveApiConfig.downloadFromShare]). */
+    val supportsShareDownload: Boolean get() = protocol().api.downloadFromShare != null
+
+    /**
+     * 不转存, 直接取分享里 [files] 的直链 (要登录). 文件的凭证要与分享令牌 [token] 配对 (同 [saveFromShare]).
+     * 没给出地址的文件不在结果里; 条目没有 id 时按 [files] 的顺序对应.
+     */
+    suspend fun downloadsFromShare(shareId: String, passcode: String, token: String, files: List<DriveFile>): List<DriveDownload> {
+        if (files.isEmpty()) return emptyList()
+        val p = protocol()
+        val op = p.api.downloadFromShare ?: throw CloudDriveUnsupportedException("downloadFromShare")
+        val vars = mapOf(
+            "shareId" to shareId.json,
+            "passcode" to passcode.json,
+            "shareToken" to token.json,
+            "fileIds" to files.map { it.fid }.json,
+            "fileTokens" to files.map { it.shareToken }.json,
+            "shareRootId" to p.share.rootFolderId.json,
+        )
+        return downloadsIn(send("downloadFromShare", op.request, vars), op, p) { index -> files.getOrNull(index)?.fid.orEmpty() }
+    }
+
+    /** 取直链的响应 [root] 里的各条; 条目没有 id 时用 [fallbackId] (第几条) 补上. */
+    private fun downloadsIn(
+        root: DataNode,
+        op: DriveDownloadOp,
+        p: CloudDriveProtocol,
+        fallbackId: (index: Int) -> String = { "" },
+    ): List<DriveDownload> =
+        root.selectByPath(op.items).mapIndexedNotNull { index, item ->
+            val url = item.stringByPath(op.url)?.takeIf { it.isNotBlank() } ?: return@mapIndexedNotNull null
             DriveDownload(
-                fid = item.stringByPath(p.file.id).orEmpty(),
+                fid = item.stringByPath(p.file.id).orEmpty().ifEmpty { fallbackId(index) },
                 fileName = p.file.name.ifBlank { null }?.let { item.stringByPath(it) }.orEmpty(),
                 parentFid = p.file.parentId.ifBlank { null }?.let { item.stringByPath(it) }.orEmpty(),
                 url = url,
             )
         }
-    }
 
     /** 转码后的播放地址, 各档能不能用见 [DriveTranscodedVideo.accessible]. */
     suspend fun transcodedVideos(fileId: String): List<DriveTranscodedVideo> {
