@@ -9,23 +9,24 @@
 
 package me.him188.ani.app.ui.remote
 
+import io.ktor.client.request.get
+import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import me.him188.ani.app.data.repository.media.MediaSourceInstanceRepository
 import me.him188.ani.app.data.repository.media.MediaSourceSubscriptionRepository
+import me.him188.ani.app.domain.foundation.HttpClientProvider
+import me.him188.ani.app.domain.foundation.get
 import me.him188.ani.app.domain.media.fetch.MediaSourceManager
 import me.him188.ani.app.domain.media.fetch.updateMediaSourceArguments
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveAddedShareMediaSource
@@ -33,6 +34,9 @@ import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveMediaSource
 import me.him188.ani.app.domain.mediasource.clouddrive.CloudDriveShareSearchMediaSource
 import me.him188.ani.app.domain.mediasource.codec.ExportedMediaSourceData
 import me.him188.ani.app.domain.mediasource.codec.MediaSourceCodecManager
+import me.him188.ani.app.domain.mediasource.codec.MediaSourceImportFailure
+import me.him188.ani.app.domain.mediasource.codec.MediaSourceImportResult
+import me.him188.ani.app.domain.mediasource.codec.MediaSourceImporter
 import me.him188.ani.app.domain.mediasource.directapi.DirectApiMediaSource
 import me.him188.ani.app.domain.mediasource.instance.MediaSourceInstance
 import me.him188.ani.app.domain.mediasource.rule.RuleMediaSource
@@ -76,6 +80,7 @@ internal object RemoteSources {
 
     private val manager: MediaSourceManager get() = KoinPlatform.getKoin().get()
     private val codec: MediaSourceCodecManager get() = KoinPlatform.getKoin().get()
+    private val httpClientProvider: HttpClientProvider get() = KoinPlatform.getKoin().get()
     private val subscriptions: MediaSourceSubscriptionRepository get() = KoinPlatform.getKoin().get()
     private val repository: MediaSourceInstanceRepository get() = KoinPlatform.getKoin().get()
 
@@ -410,7 +415,7 @@ internal object RemoteSources {
     private fun saveJson(request: LanHttpRequest): JsonObject {
         val instance = instances().find { it.instanceId == request.field("id") } ?: return result(false, tr("数据源不存在，请刷新"))
         if (instance.config.subscriptionId != null) return result(false, tr("订阅来的源不能编辑"))
-        val list = parseExported(request.field("text")) ?: return result(false, tr("不是有效的数据源 JSON"))
+        val list = MediaSourceImporter.parse(request.field("text")) ?: return result(false, tr("不是有效的数据源 JSON"))
         val data = list.singleOrNull() ?: return result(false, tr("编辑时只能粘贴一个数据源（现在有 {0} 个）", list.size))
         if (data.factoryId != instance.factoryId) {
             return result(false, tr("类型不一致：这里是 {0}，粘贴的是 {1}", instance.factoryId.value, data.factoryId.value))
@@ -421,62 +426,35 @@ internal object RemoteSources {
     }
 
     /**
-     * 导入: 单个 / 列表 / 订阅内容都认, 每一个新建为本地源. 部分失败时照样导入其余的, 并说明失败原因.
-     * 也认 AniBaka 规则 (JSON 或地址), 转换成规则源, 见 [RemoteAniBakaImport].
+     * 导入: 单个 / 列表 / 订阅内容与 AniBaka 规则都认, 每一个新建为本地源 (见 [MediaSourceImporter], 平板设置里的导入也用它).
+     * 部分失败时照样导入其余的, 并说明失败原因.
      */
     private fun import(text: String): JsonObject {
-        val aniBaka = RemoteAniBakaImport.importOrNull(text)
-        val list = aniBaka?.sources?.map { codec.encode(it) }
-            ?: parseExported(text) ?: return result(false, tr("不是有效的数据源 JSON"))
-        if (list.isEmpty() && aniBaka == null) return result(false, tr("里面没有数据源"))
-        val existing = instances()
-        var added = 0
-        val errors = aniBaka?.failures.orEmpty().toMutableList()
-        for (data in list) {
-            runCatching {
-                val factory = factoryOf(data.factoryId) ?: error(tr("不支持的类型 {0}", data.factoryId.value))
-                if (!factory.allowMultipleInstances && existing.any { it.factoryId == data.factoryId }) {
-                    error(tr("{0} 只能有一个", factory.info.displayName))
+        val importer = MediaSourceImporter(manager, codec) { url -> httpClientProvider.get().use { get(url).bodyAsText() } }
+        return when (val imported = runBlocking { importer.import(text) }) {
+            MediaSourceImportResult.NotRecognized -> result(false, tr("不是有效的数据源 JSON"))
+            MediaSourceImportResult.Empty -> result(false, tr("里面没有数据源"))
+            is MediaSourceImportResult.Done -> {
+                val added = imported.added
+                val errors = imported.failures.map { failure ->
+                    when (failure) {
+                        is MediaSourceImportFailure.UnsupportedType -> tr("不支持的类型 {0}", failure.factoryId)
+                        is MediaSourceImportFailure.OnlyOneAllowed -> tr("{0} 只能有一个", failure.name)
+                        is MediaSourceImportFailure.Other -> failure.message
+                    }
                 }
-                val normalized = codec.encode(codec.decode(data))
-                val newId = UUID.randomUUID().toString()
-                runBlocking {
-                    manager.addInstance(newId, newId, data.factoryId, MediaSourceConfig(serializedArguments = normalized.arguments))
+                val message = buildString {
+                    append(if (added > 0) tr("已导入 {0} 个数据源", added) else tr("没有导入任何数据源"))
+                    if (errors.isNotEmpty()) append(tr("；{0} 个失败：", errors.size)).append(errors.distinct().joinToString("；"))
                 }
-                added++
-            }.onFailure { errors += (it.message ?: it::class.simpleName.orEmpty()) }
+                // added: 大文件在网页端会被拆成多次导入, 由网页把每次的数量加起来报给用户
+                buildJsonObject {
+                    put("ok", added > 0)
+                    put("message", message)
+                    put("added", added)
+                }
+            }
         }
-        logger.info { "Remote control imported $added media sources, ${errors.size} failed" }
-        val message = buildString {
-            append(if (added > 0) tr("已导入 {0} 个数据源", added) else tr("没有导入任何数据源"))
-            if (errors.isNotEmpty()) append(tr("；{0} 个失败：", errors.size)).append(errors.distinct().joinToString("；"))
-        }
-        // added: 大文件在网页端会被拆成多次导入, 由网页把每次的数量加起来报给用户
-        return buildJsonObject {
-            put("ok", added > 0)
-            put("message", message)
-            put("added", added)
-        }
-    }
-
-    /**
-     * 认三种形状: 单个 (`{factoryId, version, arguments}`)、列表 (`{mediaSources: [...]}` 或直接数组)、
-     * 订阅内容 (`{exportedMediaSourceDataList: {mediaSources: [...]}}`). 解析不了返回 null.
-     */
-    private fun parseExported(text: String): List<ExportedMediaSourceData>? {
-        val root = runCatching { MediaSourceCodecManager.json.parseToJsonElement(text.trim()) }.getOrNull() ?: return null
-        val items: List<JsonElement> = when {
-            root is JsonArray -> root
-            root is JsonObject && "factoryId" in root -> listOf(root)
-            root is JsonObject && "mediaSources" in root -> root["mediaSources"] as? JsonArray ?: return null
-            root is JsonObject && "exportedMediaSourceDataList" in root ->
-                root["exportedMediaSourceDataList"]?.jsonObject?.get("mediaSources") as? JsonArray ?: return null
-
-            else -> return null
-        }
-        return runCatching {
-            items.map { MediaSourceCodecManager.json.decodeFromJsonElement(ExportedMediaSourceData.serializer(), it) }
-        }.getOrNull()
     }
 
     // ============================ 工具 ============================

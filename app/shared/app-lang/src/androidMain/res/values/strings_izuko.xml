@@ -908,6 +908,27 @@
     <string name="settings_media_search_concurrency_at_most">Up to %1$d</string>
     <string name="settings_media_source_subscription_updating">Updating %1$d/%2$d</string>
     <string name="settings_media_source_test_progress">Done %1$d/%2$d · Failed %3$d</string>
+    <!-- 平板 / iPad 设置「添加数据源」里的导入配置 (同控制台的「导入 JSON」, 见 MediaSourceImporter) -->
+    <string name="settings_media_source_import">Import configuration (JSON)</string>
+    <string name="settings_media_source_import_description">Paste or choose a shared source configuration: a single source, a list or subscription content</string>
+    <string name="settings_media_source_import_title">Import configuration</string>
+    <string name="settings_media_source_import_hint">Paste a source configuration (JSON) copied from elsewhere, or choose a file. A single source, a list or subscription content all work; each one is added as a local source.</string>
+    <string name="settings_media_source_import_paste">Paste from clipboard</string>
+    <string name="settings_media_source_import_pick_file">Choose file</string>
+    <string name="settings_media_source_import_placeholder">Paste here</string>
+    <string name="settings_media_source_import_loaded_file">Read “%1$s”</string>
+    <string name="settings_media_source_import_loaded_clipboard">Read the clipboard</string>
+    <string name="settings_media_source_import_loaded_count">%1$s (%2$d sources)</string>
+    <string name="settings_media_source_import_clear">Clear</string>
+    <string name="settings_media_source_import_confirm">Import</string>
+    <string name="settings_media_source_import_done">Imported %1$d sources</string>
+    <string name="settings_media_source_import_none">No sources were imported</string>
+    <string name="settings_media_source_import_failures">%1$s; %2$d failed: %3$s</string>
+    <string name="settings_media_source_import_not_recognized">Not a valid source configuration</string>
+    <string name="settings_media_source_import_empty">It contains no sources</string>
+    <string name="settings_media_source_import_unsupported">Unsupported type %1$s</string>
+    <string name="settings_media_source_import_only_one">Only one %1$s is allowed</string>
+    <string name="settings_media_source_import_read_failed">Couldn’t read the file</string>
     <!-- 网盘 (设置 - 数据源), 网盘名与扫码用的 App 名来自网盘的协议 -->
     <string name="settings_media_cloud_drive_description">After signing in, the player also looks for the show in your %1$s</string>
     <string name="settings_media_cloud_drive_logged_out">Not signed in</string>

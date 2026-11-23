@@ -908,6 +908,27 @@
     <string name="settings_media_search_concurrency_at_most">最多 %1$d 个</string>
     <string name="settings_media_source_subscription_updating">更新中 %1$d/%2$d</string>
     <string name="settings_media_source_test_progress">已完成 %1$d/%2$d · 失败 %3$d</string>
+    <!-- 平板 / iPad 设置「添加数据源」里的导入配置 (同控制台的「导入 JSON」, 见 MediaSourceImporter) -->
+    <string name="settings_media_source_import">导入配置（JSON）</string>
+    <string name="settings_media_source_import_description">粘贴或选择别处分享的数据源配置，单个、一组或订阅内容都可以</string>
+    <string name="settings_media_source_import_title">导入配置</string>
+    <string name="settings_media_source_import_hint">粘贴别处复制的数据源配置（JSON），或选择文件。单个、一组或订阅内容都可以，每个都新建为本地数据源。</string>
+    <string name="settings_media_source_import_paste">从剪贴板粘贴</string>
+    <string name="settings_media_source_import_pick_file">选择文件</string>
+    <string name="settings_media_source_import_placeholder">在这里粘贴</string>
+    <string name="settings_media_source_import_loaded_file">已读取「%1$s」</string>
+    <string name="settings_media_source_import_loaded_clipboard">已读取剪贴板中的内容</string>
+    <string name="settings_media_source_import_loaded_count">%1$s（%2$d 个数据源）</string>
+    <string name="settings_media_source_import_clear">清除</string>
+    <string name="settings_media_source_import_confirm">导入</string>
+    <string name="settings_media_source_import_done">已导入 %1$d 个数据源</string>
+    <string name="settings_media_source_import_none">没有导入任何数据源</string>
+    <string name="settings_media_source_import_failures">%1$s；%2$d 个失败：%3$s</string>
+    <string name="settings_media_source_import_not_recognized">不是有效的数据源配置</string>
+    <string name="settings_media_source_import_empty">里面没有数据源</string>
+    <string name="settings_media_source_import_unsupported">不支持的类型 %1$s</string>
+    <string name="settings_media_source_import_only_one">%1$s 只能有一个</string>
+    <string name="settings_media_source_import_read_failed">读取文件失败</string>
     <!-- 网盘 (设置 - 数据源), 网盘名与扫码用的 App 名来自网盘的协议 -->
     <string name="settings_media_cloud_drive_description">登录后，播放时也会在你的%1$s里找这部番</string>
     <string name="settings_media_cloud_drive_logged_out">未登录</string>
