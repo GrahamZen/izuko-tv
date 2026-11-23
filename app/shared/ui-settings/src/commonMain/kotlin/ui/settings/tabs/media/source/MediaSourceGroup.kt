@@ -77,6 +77,8 @@ import me.him188.ani.app.navigation.LocalNavigator
 import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.interaction.onRightClickIfSupported
 import me.him188.ani.app.ui.foundation.navigation.BackHandler
+import me.him188.ani.app.ui.foundation.widgets.menuHeightCap
+import me.him188.ani.app.ui.foundation.widgets.windowSizeCap
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.settings_media_source_add
 import me.him188.ani.app.ui.lang.settings_media_source_bt
@@ -177,10 +179,13 @@ internal fun SettingsScope.MediaSourceGroup(
     val navigator = LocalNavigator.current
     val uiScope = rememberCoroutineScope()
     var showSelectTemplate by remember { mutableStateOf(false) }
+    var showImport by remember { mutableStateOf(false) }
+    if (showImport) MediaSourceImportDialog(onDismissRequest = { showImport = false })
     if (showSelectTemplate) {
         // 选一个数据源来添加
         SelectMediaSourceTemplateDialog(
-            templates = state.availableMediaSourceTemplates,
+            templates = state.availableMediaSourceTemplates.addableByHand(),
+            header = { MediaSourceImportItem(onClick = { showSelectTemplate = false; showImport = true }) },
             onClick = { template ->
                 showSelectTemplate = false
 
@@ -376,7 +381,7 @@ internal fun SettingsScope.MediaSourceGroup(
                                 )
                             }
 
-                            DropdownMenu(showMoreDropdown, onDismissRequest = { showMoreDropdown = false }) {
+                            DropdownMenu(showMoreDropdown, onDismissRequest = { showMoreDropdown = false }, modifier = Modifier.menuHeightCap()) {
                                 ToggleEnabledMenuItem(
                                     item,
                                     onEnabledChange = { edit.toggleMediaSourceEnabled(item, it) },
@@ -647,6 +652,7 @@ internal fun SelectMediaSourceTemplateDialog(
     onClick: (MediaSourceTemplate) -> Unit,
     onDismissRequest: () -> Unit,
     modifier: Modifier = Modifier,
+    header: @Composable () -> Unit = {},
 ) {
     AlertDialog(
         onDismissRequest = onDismissRequest,
@@ -668,6 +674,7 @@ internal fun SelectMediaSourceTemplateDialog(
                     Modifier.verticalScroll(scrollState),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
+                    header()
                     templates.forEach { item ->
                         MediaSourceCard(
                             onClick = { onClick(item) },
@@ -696,7 +703,7 @@ internal fun SelectMediaSourceTemplateDialog(
                 }
             }
         },
-        modifier = modifier,
+        modifier = modifier.windowSizeCap(), // iOS 转屏 (见 windowSizeCap)
     )
 }
 
