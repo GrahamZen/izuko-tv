@@ -410,6 +410,7 @@ class MediaSelectorFilterSortAlgorithm {
                     return exclude(MediaExclusionReason.FromSeriesSeason)
                 }
             }
+            if (media.kind == MediaSourceKind.BitTorrent) BtTitleRules.exclusionOf(media.originalTitle, context)?.let { return exclude(it) }
         }
 
         if (mediaListFilterContext != null) {

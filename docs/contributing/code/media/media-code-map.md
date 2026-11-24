@@ -236,6 +236,7 @@
   [MediaSelector](media-selector.md)。
 - 拆分季的页面规则：`domain/media/selector/filter/SplitSeasonPageMatcher.kt`（页名分类与按页面编号对集，
   自动选择与手动查找的预选共用）；`SplitSeasonEpisodeMatcher.kt` 是它在过滤规则里的适配，从候选列表统计各页面的集号。
+- 别季、别的类别：站点页名按 `domain/media/selector/filter/SeasonNumberConflict.kt` 与 `WebWorkKindCheck.kt`；BT 标题按同目录的 `BtTitleRules.kt`（季号在 `BtTitleSeason.kt`，播放选源用）。
 - 选择器主实现：`DefaultMediaSelector`。
 - 阶级（tier）：`MediaSelectorSourceTiers`
   （`app/shared/app-data/.../domain/media/selector/MediaSelectorContext.kt`）

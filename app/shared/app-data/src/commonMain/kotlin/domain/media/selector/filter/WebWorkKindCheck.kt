@@ -21,15 +21,19 @@ import me.him188.ani.datasources.api.EpisodeSort
  * ([me.him188.ani.app.domain.mediasource.clouddrive.DriveSubjectMatcher.matchEpisodes]):
  * 条目自己的类别不算 (名字里写着的, Bangumi 记的类型 ([WorkKinds.ofCategory], 从名字表 [AnimeNames] 取), 只在影院放映的算剧场版),
  * 只有一集的条目 (剧场版) 不查, 合集的名字 (「TV+OVA」) 不算. 只查本篇的集: 特别篇常就在「XX OVA」这种页上.
+ * BT 标题写明的类别 ([BtTitleRules.workKindsOf]) 按同一套条件否决.
  */
 internal object WebWorkKindCheck {
     private val CHECKED = setOf(WorkKind.MOVIE, WorkKind.SPIN_OFF, WorkKind.OVA)
 
-    fun rejects(pageName: String, context: MediaSelectorContext): Boolean {
+    fun rejects(pageName: String, context: MediaSelectorContext): Boolean = rejects(WorkKinds.outsideCollectionsOf(pageName), context)
+
+    /** 资源写明的作品类别 [kinds] 里有条目不是的那一类 */
+    fun rejects(kinds: Set<WorkKind>, context: MediaSelectorContext): Boolean {
         if (context.episodeInfo?.sort !is EpisodeSort.Normal) return false
         val subject = context.subjectInfo ?: return false
         if (subject.totalEpisodes == 1) return false
-        val pageKinds = WorkKinds.outsideCollectionsOf(pageName).filterTo(HashSet()) { it in CHECKED }
+        val pageKinds = kinds.filterTo(HashSet()) { it in CHECKED }
         if (pageKinds.isEmpty()) return false
         val own = subject.allNames.flatMapTo(HashSet()) { WorkKinds.of(it) }
         own += WorkKinds.ofCategory(AnimeNames.source?.invoke()?.nodeOf(subject.subjectId)?.metaTags.orEmpty())

@@ -36,10 +36,11 @@ internal class SeasonNumberConflict private constructor(
     private val otherNumbers: Set<Int>,
     private val seasonlessSelfNames: Set<String>,
 ) {
-    fun isOtherSeason(pageName: String): Boolean {
-        val numbers = seasonNumbersOf(pageName)
-        return numbers.isNotEmpty() && numbers.none { it in selfNumbers } && otherNumbers.containsAll(numbers)
-    }
+    fun isOtherSeason(pageName: String): Boolean = isOtherSeason(seasonNumbersOf(pageName))
+
+    /** 写明的季号 [numbers] (BT 标题的见 [BtTitleSeason]) 都是本系列别的季, 没有本季 */
+    fun isOtherSeason(numbers: Set<Int>): Boolean =
+        numbers.isNotEmpty() && numbers.none { it in selfNumbers } && otherNumbers.containsAll(numbers)
 
     /**
      * 页名没写季号, 去掉标点后正是本条目去掉季号后的系列名, 而本条目是第二季或之后: 页面是前面的季 (多是第一季).
