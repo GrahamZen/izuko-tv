@@ -164,11 +164,12 @@ class TorrentMediaResolver(
                 Regex("""\[OP[0-9]*\]"""),
                 Regex("""\[ED[0-9]*\]"""),
                 Regex("""\[CM[0-9]*\]"""),
-            )
+            ) + TorrentVideoOrder.EXTRA_WORDS
 
         /**
          * @param episodeSort 在系列中的集数, 例如第二季的第一集为 26
          * @param episodeEp 在当前季度中的集数, 例如第二季的第一集为 01
+         * @param getSize 文件大小, 几个文件对上同一集时先看大的 (见 [TorrentVideoOrder])
          */
         fun <T> selectVideoFileEntry(
             entries: List<T>,
@@ -178,6 +179,7 @@ class TorrentMediaResolver(
             episodeEp: EpisodeSort?,
             videoExtensions: Set<String> = DEFAULT_VIDEO_EXTENSIONS,
             listingComplete: Boolean = true,
+            getSize: (T.() -> Long)? = null,
         ): T? {
             // Filter by file extension
             val videos = entries
@@ -185,14 +187,7 @@ class TorrentMediaResolver(
                     videoExtensions.any { fileType -> it.getPath().endsWith(fileType, ignoreCase = true) }
                 }
 
-            videos.sortByDescending {
-                BLACKLIST_WORDS.forEachIndexed { index, blacklistWord ->
-                    if (it.getPath().contains(blacklistWord)) {
-                        return@sortByDescending -index // 包含黑名单词的放到最后
-                    }
-                }
-                1
-            }
+            TorrentVideoOrder.sort(videos, BLACKLIST_WORDS, getPath, getSize) // 包含黑名单词的放到最后, 同一档大的在前
 
             // Find by name match
             for (episodeTitle in episodeTitles) {
@@ -327,6 +322,7 @@ class TorrentMediaDataProvider(
                         episodeSort = episodeMetadata.sort,
                         episodeEp = episodeMetadata.ep,
                         listingComplete = listingComplete,
+                        getSize = { length },
                     )
                     selected?.also {
                         logger.info {

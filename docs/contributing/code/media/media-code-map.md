@@ -295,7 +295,7 @@
 
 ## 播放时使用的 Resolver
 
-- `TorrentMediaResolver`：解析磁力/种子资源，并在种子内选择具体视频文件。
+- `TorrentMediaResolver`：解析磁力/种子资源，并在种子内选择具体视频文件（`selectVideoFileEntry`，播放与缓存共用）。挑的先后在 `TorrentVideoOrder`：名字带 SP / OVA / PV / NCOP / NCED / OP / ED / CM、菜单、预告、特典的往后放，同一档大的在前 —— BD 合集的菜单「[menu][D1][01]」也解析成第 1 集，而且排在正片前面。
 - `HttpStreamingMediaResolver`：解析直接 HTTP 流媒体文件。
 - `ApiVideoMediaResolver`：解析 `WebVideo.isResolvedByApi` 的资源，向产生它的数据源
   （`ApiVideoResolver`，目前是 `JsonApiMediaSource`）当场签发播放地址，不打开页面。

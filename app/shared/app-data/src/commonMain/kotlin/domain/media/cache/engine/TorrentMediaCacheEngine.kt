@@ -900,6 +900,7 @@ class TorrentMediaCacheEngine(
                 episodeSort = metadata.episodeSort,
                 episodeEp = metadata.episodeEp,
                 listingComplete = (session as? PartialListing)?.listingComplete ?: true,
+                getSize = { length },
             )
 
         if (selectedFile == null) {
