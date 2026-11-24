@@ -236,6 +236,13 @@ data class TmdbSubjectMapEntry(
      */
     val stillsBuildKey: String get() = stillsKey.ifEmpty { "follow:" + (backdrop?.text() ?: "none") }
 
+    /**
+     * 照逐集对位建剧照时用的编码: 剧照出处是一部剧、且 [episodes] 认得出时才有 (同 `TmdbImageService.stillsFromMap`), 否则 null.
+     * 连载番的这一列随新播的集每天往后续; 缓存里记的 ([TmdbEpisodeStills.episodeMap]) 与它不同就重取.
+     */
+    val stillsEpisodes: String?
+        get() = episodes?.takeIf { stills.singleOrNull()?.type == "tv" && TmdbEpisodeMap.parse(it) != null }
+
     private fun TmdbSubjectMapRef.text() = "$type/$id" + (season?.let { "/season/$it" } ?: "")
 }
 

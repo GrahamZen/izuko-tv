@@ -47,6 +47,7 @@ import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.daysUntil
 import kotlinx.datetime.minus
+import kotlinx.datetime.plus
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
@@ -1115,9 +1116,9 @@ class TmdbImageService(
      *
      * @param language TMDB 语言码 (如 `zh-CN`), 决定简介语言.
      * @param newestWantedAirDate 调用方希望缓存覆盖到的最新播出日期 (`YYYY-MM-DD`).
-     *   缓存是按条目永久保存的, 连载番早先拉取的缓存不含之后新播的集; 传入此参数后,
-     *   若缓存最新日期落后于它 (超出 ±1 天匹配容差), 经 [stillsRefreshGate] 放行
-     *   (进程内每条目最多一次, 防 TMDB 自身滞后时反复空拉) 重取一次.
+     *   缓存是按条目永久保存的, 连载番早先拉取的缓存里之后新播的集没有图; 传入此参数后,
+     *   若缓存里有图的最新日期落后于它 (规则见 [TmdbEpisodeStills.stillsNeedRefresh]), 经 [stillsRefreshGate] 放行
+     *   (进程内每条目最多一次, 防 TMDB 自身滞后时反复空拉) 重取一次. 对应表里这个条目的逐集对位变了也同样重取一次.
      * @param refreshAiring 调用方要用播出情况 ([TmdbEpisodeStills.airing]): 缓存里的那份该重取时
      *   (见 [TmdbEpisodeStills.airingNeedsRefresh]) 同样经 [stillsRefreshGate] 重取一次. 详情页在 Bangumi 算出「未开播」或一集都没录时才传 true.
      */
@@ -1175,7 +1176,9 @@ class TmdbImageService(
                 ?.takeIf { mapEntry == null || it.mapRef == mapEntry.stillsBuildKey }
             if (cached != null) {
                 val refresh = stillsRefreshGate.shouldRefresh(subjectId) {
-                    (newestWantedAirDate != null && !cached.coversAirDate(newestWantedAirDate)) ||
+                    (newestWantedAirDate != null && cached.stillsNeedRefresh(newestWantedAirDate, tmdbToday())) ||
+                        // 表里的逐集对位随新播的集往后续 (`1-7:S1E1` → `1-8:S1E1`), 照旧的建的缓存对不上新播的集
+                        (mapEntry != null && cached.episodeMap != mapEntry.stillsEpisodes) ||
                         (refreshAiring && cached.airingNeedsRefresh(tmdbToday())) ||
                         // 文字部分 (本条目的简介与标题、单集名) 按旧规则建的缓存 (见 [TmdbEpisodeStills.textVersion]) 重取一次,
                         // 取不到照用旧的
@@ -3317,6 +3320,9 @@ data class TmdbEpisodeStills(
 
         /** 见 [textVersion]. */
         const val TEXT_VERSION = 3
+
+        /** 一集播出多少天后, 取的时候还没有剧照就不再为它重取, 见 [stillsNeedRefresh]. */
+        const val STILL_WAIT_DAYS = 30
     }
 
     /**
@@ -3328,16 +3334,25 @@ data class TmdbEpisodeStills(
             byEpisodeNumber.values.any { it.stillUrl != null }
 
     /**
-     * 缓存是否已覆盖到播出日期 [date] (`YYYY-MM-DD`) 的分集.
-     * 留 1 天余量 (两边日期常差一天, 匹配侧容差 ±1): 缓存最新日期 >= date-1 即视为覆盖.
-     * 无任何按日期数据 (未匹配到剧/纯老番) 视为未覆盖, 由调用方的闸门限制重取频率.
+     * 缓存该不该为播出日期 [newestAired] (`YYYY-MM-DD`, 调用方最新已播的那一集) 重取.
+     *
+     * 按**有剧照的**最新日期算, 留 1 天余量 (两边日期常差一天, 匹配侧容差 ±1): 有图的最新日期 >= newestAired-1 即不用重取.
+     * TMDB 常提前列出整季各集的播出日, 图在播出后才补, 所以缓存里最新的日期说明不了新播的集有没有图.
+     *
+     * 没覆盖到时, 这两种也不重取 (取数日见 [TmdbAiring.fetchedOn], 没记的旧缓存照常重取):
+     * - 今天已经取过;
+     * - 取的时候这一集已播出 [STILL_WAIT_DAYS] 天以上: TMDB 那时还没有图, 多半一直不会有 (冷门番、只录了集数与日期的剧).
+     *
+     * 无任何按日期数据 (未匹配到剧 / 纯老番) 同样只看这两条; 每个进程每个条目最多一次, 由调用方的闸门限制.
      */
-    fun coversAirDate(date: String): Boolean {
-        val newestCached = byAirDate.keys.maxOrNull() ?: return false
-        val wantedMinusSlack = runCatching {
-            LocalDate.parse(date).minus(1, DateTimeUnit.DAY).toString()
-        }.getOrElse { date }
-        return newestCached >= wantedMinusSlack
+    fun stillsNeedRefresh(newestAired: String, today: LocalDate): Boolean {
+        val wanted = runCatching { LocalDate.parse(newestAired) }.getOrNull() ?: return false
+        val newestWithStill = byAirDate.entries
+            .filter { (_, episodes) -> episodes.any { it.stillUrl != null } }
+            .maxOfOrNull { it.key }
+        if (newestWithStill != null && newestWithStill >= wanted.minus(1, DateTimeUnit.DAY).toString()) return false
+        val fetchedOn = airing?.fetchedOn?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: return true
+        return fetchedOn < today && fetchedOn < wanted.plus(STILL_WAIT_DAYS, DateTimeUnit.DAY)
     }
 
     /** 是否完全没有任何分集/剧集数据 (匹配失败或空剧). */
