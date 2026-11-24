@@ -13,6 +13,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.domain.media.cache.engine.MediaCacheEngine
 import me.him188.ani.app.domain.media.cache.engine.MediaCacheEngineKey
 import me.him188.ani.app.domain.media.cache.engine.TorrentMediaCacheEngine
+import me.him188.ani.app.domain.media.cache.library.LibraryEngineKey
 import me.him188.ani.app.domain.media.cache.storage.MediaCacheStorage
 import me.him188.ani.datasources.api.Media
 import me.him188.ani.datasources.api.source.MediaSourceKind
@@ -35,7 +36,8 @@ internal suspend fun selectTorrentStorage(
     playedWith: MediaCacheEngineKey? = null,
 ): MediaCacheStorage? {
     // Persisted ownership survives disabling an engine and failures to restore its records.
-    val owner = storages.firstOrNull { it.hasRecordForMedia(media.mediaId) }
+    // The library holds finished episodes of a torrent but downloads nothing, so it never owns one.
+    val owner = storages.firstOrNull { it.engine.engineKey != LibraryEngineKey && it.hasRecordForMedia(media.mediaId) }
     if (owner != null) return owner.takeIf { it.engine.supports(media) }
 
     val supported = storages.filter { it.engine.supports(media) }
