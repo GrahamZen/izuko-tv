@@ -51,6 +51,7 @@ import me.him188.ani.datasources.api.source.MediaSourceLocation
 import me.him188.ani.datasources.api.topic.EpisodeRange
 import me.him188.ani.datasources.api.topic.FileSize
 import me.him188.ani.datasources.api.topic.isSingleEpisode
+import kotlin.time.Clock
 import kotlin.time.Instant
 
 /*
@@ -628,6 +629,8 @@ data class TvSourceStrings(
     val pausedHint: String,
     val details: MediaDetailsStrings,
     val timeZone: TimeZone,
+    /** 发布日期是这一年的只写月日 ([formatPublishedDate]). */
+    val currentYear: Int = Clock.System.now().toLocalDateTime(timeZone).year,
 ) {
     fun exclusion(exclusion: BtRowExclusion): String = when (exclusion) {
         BtRowExclusion.BelowPreference -> reasonBelowPreference
@@ -1399,7 +1402,7 @@ private fun webFileRow(source: WebSource, media: Media, other: TvWebOther?, inpu
         media.properties.resolution.takeIf { it.isNotBlank() }?.let { add(it) }
         formatSize(media.properties.size).takeIf { it.isNotEmpty() }?.let { add(it) }
         DriveVideoBitrates.label(media.mediaId)?.let { add(it) }
-        formatDate(media.publishedTime, strings.timeZone).takeIf { it.isNotEmpty() }?.let { add(it) }
+        formatPublishedDate(media.publishedTime, strings.timeZone, strings.currentYear).takeIf { it.isNotEmpty() }?.let { add(it) }
         line?.let { add(it) }
         val subtitles = media.properties.subtitleLanguageIds.map { renderSubtitleLanguage(it, strings.details) }
         if (subtitles.isNotEmpty()) add(subtitles.joinToString("/"))
@@ -1553,7 +1556,7 @@ private fun mediaFields(media: Media, strings: TvSourceStrings, sourceNames: Lis
     cell(strings.resolution, media.properties.resolution)
     cell(strings.subtitle, subtitle.joinToString(" · "))
     cell(strings.labelSize, listOfNotNull(formatSize(media.properties.size).ifEmpty { null }, DriveVideoBitrates.label(media.mediaId)).joinToString(" · "))
-    cell(strings.labelDate, formatDate(media.publishedTime, strings.timeZone))
+    cell(strings.labelDate, formatPublishedDate(media.publishedTime, strings.timeZone, strings.currentYear))
     cell(strings.labelEpisodes, media.episodeRange?.let { renderEpisodeRange(it, strings) })
     media.properties.alliance.takeIf { it.isNotBlank() }?.let { add(TvSourceDetailField(strings.alliance, it)) }
     if (sourceNames.isNotEmpty()) add(TvSourceDetailField(strings.labelSources, sourceNames.joinToString("、")))
@@ -1742,7 +1745,7 @@ private fun btRow(group: TvBtGroup, input: TvSourcePanelInput, strings: TvSource
         } else if (media.kind != MediaSourceKind.LocalCache) {
             add(sourceName(media.mediaSourceId, input.sources))
         }
-        formatDate(media.publishedTime, strings.timeZone).takeIf { it.isNotEmpty() }?.let { add(it) }
+        formatPublishedDate(media.publishedTime, strings.timeZone, strings.currentYear).takeIf { it.isNotEmpty() }?.let { add(it) }
         val subtitles = media.properties.subtitleLanguageIds.map { renderSubtitleLanguage(it, strings.details) }
         if (subtitles.isNotEmpty()) add(subtitles.joinToString("/"))
         MediaDetailsRenderer.renderSubtitleKind(media.properties.subtitleKind, strings.details)?.let { add(it) }
@@ -2090,10 +2093,14 @@ private fun formatClock(millis: Long, timeZone: TimeZone): String {
     return "%02d:%02d".format(time.hour, time.minute)
 }
 
-private fun formatDate(millis: Long, timeZone: TimeZone): String {
+/**
+ * 发布日期: [currentYear] 这一年的写 `MM-dd`, 别的年份写 `yyyy-MM-dd` (搜出同名前作的资源时, 只写月日看不出早了一两年); 不知道 (0) 为空.
+ */
+internal fun formatPublishedDate(millis: Long, timeZone: TimeZone, currentYear: Int): String {
     if (millis == 0L) return ""
     val date = Instant.fromEpochMilliseconds(millis).toLocalDateTime(timeZone)
-    return "%02d-%02d".format(date.month.ordinal + 1, date.day)
+    val monthDay = "%02d-%02d".format(date.month.ordinal + 1, date.day)
+    return if (date.year == currentYear) monthDay else "${date.year}-$monthDay"
 }
 
 private fun optionRow(id: String, title: String, icon: TvSourceRowIcon, action: TvSourceAction) =
