@@ -82,6 +82,37 @@ class TorrentSessionCloseTest {
     }
 
     @Test
+    fun `a close whose caller is cancelled still frees the torrent for a new session`() = runTest {
+        val downloader = downloader()
+        val first = downloader.startDownload(magnet("cancelled"), backgroundScope.coroutineContext) as AnitorrentDownloadSession
+        val closing = launch { first.close() }
+        runCurrent()
+        assertTrue(first.isClosing)
+
+        // 删除流程在等移除事件时被取消: 关闭照样收尾, 种子移出会话表
+        closing.cancel()
+        runCurrent()
+        downloader.dispatchToSession1(first.handleId) { it.onTorrentRemoved() }
+        runCurrent()
+        val second = downloader.startDownload(magnet("cancelled"), backgroundScope.coroutineContext)
+        assertNotSame<Any>(first, second)
+        assertFalse((second as AnitorrentDownloadSession).isClosing)
+    }
+
+    @Test
+    fun `a cancelled close without a removal event still frees the torrent after the timeout`() = runTest {
+        val downloader = downloader()
+        val first = downloader.startDownload(magnet("cancelled-silent"), backgroundScope.coroutineContext) as AnitorrentDownloadSession
+        val closing = launch { first.close() }
+        runCurrent()
+        closing.cancel()
+        advanceTimeBy(8.seconds)
+        runCurrent()
+        val second = downloader.startDownload(magnet("cancelled-silent"), backgroundScope.coroutineContext)
+        assertNotSame<Any>(first, second)
+    }
+
+    @Test
     fun `a removal without a name goes to the only closing session that has no info`() = runTest {
         val downloader = downloader()
         downloader.startDownload(magnet("still-waiting"), backgroundScope.coroutineContext)

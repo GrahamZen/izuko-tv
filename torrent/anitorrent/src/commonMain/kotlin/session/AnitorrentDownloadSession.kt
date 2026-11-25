@@ -17,6 +17,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
@@ -663,17 +664,21 @@ class AnitorrentDownloadSession(
 
         logger.info { "[$handleId] closing" }
         onClose(this)
-        try {
-            withTimeout(7500L) {
-                closingDeferred.await() // 收到 on_torrent_removed 事件时返回
+        // 调用方中途被取消也要关完: 收尾 (onPostClose 把会话移出会话表) 不做的话, 这个会话一直算「正在关」,
+        // 同一个种子到进程退出前都开不了新会话 (见 AnitorrentTorrentDownloader.startDownloadIn). 最多等 7.5 秒
+        withContext(NonCancellable) {
+            try {
+                withTimeout(7500L) {
+                    closingDeferred.await() // 收到 on_torrent_removed 事件时返回
+                }
+            } catch (timeout: TimeoutCancellationException) {
+                logger.warn { "[$handleId] timeout on closing this session, force to mark as closed." }
+                closingDeferred.complete(Unit)
             }
-        } catch (timeout: TimeoutCancellationException) {
-            logger.warn { "[$handleId] timeout on closing this session, force to mark as closed." }
-            closingDeferred.complete(Unit)
+            scope.cancel()
+            sessionClosed.complete(Unit)
+            onPostClose(this@AnitorrentDownloadSession)
         }
-        scope.cancel()
-        sessionClosed.complete(Unit)
-        onPostClose(this)
     }
 
     fun onTorrentRemoved() {
