@@ -22,6 +22,8 @@ import kotlinx.serialization.Serializable
 import me.him188.ani.app.data.repository.RepositoryException
 import me.him188.ani.app.data.repository.RepositoryNetworkException
 import me.him188.ani.app.data.repository.RepositoryServiceUnavailableException
+import me.him188.ani.app.domain.foundation.DeviceBrowserUserAgentHolder
+import me.him188.ani.app.domain.foundation.overrideUserAgent
 import me.him188.ani.app.domain.mediasource.MediaListFilters
 import me.him188.ani.app.domain.mediasource.MediaSourceEngineHelpers
 import me.him188.ani.app.domain.mediasource.asCandidate
@@ -227,9 +229,11 @@ class DefaultRssMediaSourceEngine(
         mediaSourceId: String
     ): Result {
         return try {
+            // 用本机浏览器的 UA: client 自带的是写死的老版本 Chromium, 有的站点 (Cloudflare 防护) 照它拒绝, 回 403
+            val userAgent = DeviceBrowserUserAgentHolder.current()
             val document = try {
                 client.first().use {
-                    get(finalUrl).let { resp ->
+                    get(finalUrl) { overrideUserAgent(userAgent) }.let { resp ->
                         when (resp.status.value) {
                             in 500..599 -> throw RepositoryServiceUnavailableException()
                             in 200..299 -> resp.bodyAsChannel().toSource().use {
