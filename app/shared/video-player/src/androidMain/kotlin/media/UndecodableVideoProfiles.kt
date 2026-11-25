@@ -22,6 +22,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.Renderer
 import androidx.media3.exoplayer.mediacodec.MediaCodecAdapter
+import androidx.media3.exoplayer.mediacodec.MediaCodecDecoderException
 import androidx.media3.exoplayer.mediacodec.MediaCodecInfo
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.video.MediaCodecVideoRenderer
@@ -63,7 +64,8 @@ internal object UndecodableVideoProfiles {
  * 声明了支持的解码器 (少数芯片能解 10-bit H.264) 照常用. 判断能不能选这条轨 (supportsFormat) 不经过这里, 选轨不变.
  * 根本没有解码器的画面格式则在 supportsFormat 里报成超出能力照样选上, 同样在开解码器时报错 (见 [UnplayableVideoTrack]).
  *
- * 另外按 [VideoDecoderParking.MSG_PARK] 停用解码器: 画面不在眼前、内存紧时释放, 画面回来再建;
+ * 另外按 [VideoDecoderParking.MSG_PARK] 停用解码器: 画面不在眼前、内存紧时释放, 画面回来再建; 解码器离开画面就坏的设备上
+ * 画面一离开就释放, 离开画面时坏了报成 [OffScreenDecoderException] (见 [OffScreenDecoderFault]);
  * 按 [SeekPreviewDecoderRebuild.MSG_REBUILD_ON_NEXT_OUTPUT] 在下一次换输出面时重建解码器.
  */
 @OptIn(UnstableApi::class)
@@ -153,11 +155,18 @@ internal class UndecodableProfileGuardingVideoRenderer(
         logger.info { "[SeekPreview] Rebuilt video decoder $name for the new output in ${(System.nanoTime() - startedAt) / 1_000_000}ms" }
     }
 
+    // 没有真的输出面时不留解码器: 停放着, 或这台设备上解码器离开画面就坏 (见 OffScreenDecoderFault)
     override fun shouldUsePlaceholderSurface(codecInfo: MediaCodecInfo): Boolean =
-        !decoderParked && super.shouldUsePlaceholderSurface(codecInfo)
+        !decoderParked && !OffScreenDecoderFault.known && super.shouldUsePlaceholderSurface(codecInfo)
 
     override fun shouldUseDetachedSurface(codecInfo: MediaCodecInfo): Boolean =
-        !decoderParked && super.shouldUseDetachedSurface(codecInfo)
+        !decoderParked && !OffScreenDecoderFault.known && super.shouldUseDetachedSurface(codecInfo)
+
+    override fun createDecoderException(cause: Throwable, codecInfo: MediaCodecInfo?): MediaCodecDecoderException {
+        if (hasDisplaySurface) return super.createDecoderException(cause, codecInfo)
+        OffScreenDecoderFault.record(codecInfo?.name)
+        return OffScreenDecoderException(cause, codecInfo)
+    }
 
     companion object {
         private val logger = logger<UndecodableProfileGuardingVideoRenderer>()
