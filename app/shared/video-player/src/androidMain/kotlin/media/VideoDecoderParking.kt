@@ -33,6 +33,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  * ([UndecodableProfileGuardingVideoRenderer] 收到 [MSG_PARK] 后不再用占位输出面, 没有真的输出面就不建解码器).
  * 媒体与缓冲不动: 不重新搜索、不重新解析地址、不重新请求网络.
  *
+ * 解码器离开画面就坏的设备上 ([OffScreenDecoderFault]) 渲染器画面一离开就释放解码器, 这里不看内存, 只在画面回来时原地 seek.
+ *
  * 「内存快不够」只有一个判据: 可用内存低于系统杀后台进程的门槛 ([ActivityManager.MemoryInfo.threshold]) 的两倍, 或系统已判低内存.
  * 画面不在眼前时每 [POLL_MILLIS] 看一次; 画面刚离开、系统发内存告警 ([MemoryPressureSignal]) 时当场看一次.
  * 告警本身不作数: 系统只在告警等级变化时回调, 有的设备长期停在最高一级 (见过 Shield 在可用 600 MB 时就是 RUNNING_CRITICAL),
@@ -53,6 +55,9 @@ internal class VideoDecoderParking(
     private val restartFromKeyframe: () -> Unit,
 ) : MemoryPressureSignal.Listener {
     private var parked = false
+
+    /** 画面离开过、还没回来 */
+    private var away = false
     private var activityManager: ActivityManager? = null
     private val handler = Handler(Looper.getMainLooper())
     private val poll = object : Runnable {
@@ -64,6 +69,7 @@ internal class VideoDecoderParking(
 
     fun start(context: Context) {
         activityManager = context.getSystemService(ActivityManager::class.java)
+        OffScreenDecoderFault.install(context)
         MemoryPressureSignal.install(context)
         MemoryPressureSignal.addListener(this)
         handler.postDelayed(poll, POLL_MILLIS)
@@ -88,14 +94,26 @@ internal class VideoDecoderParking(
 
     /** 全屏视频画面的输出面没了. */
     fun onOutputGone() {
+        away = true
+        // 渲染器这时已经不留解码器 (没有真的输出面就释放, 见 OffScreenDecoderFault), 不用停放, 回来时同样从关键帧解起
+        if (OffScreenDecoderFault.known) {
+            logger.info { "[DecoderPark] No visible output, video decoder released: decoders on this device fail off screen" }
+            return
+        }
         checkAvailableMemory("output gone")
     }
 
     /** 全屏视频画面的输出面建好了. */
     fun onOutputAvailable() {
-        if (!parked) return
-        parked = false
-        videoRenderer()?.let { exoPlayer.createMessage(it).setType(MSG_PARK).setPayload(false).send() }
+        val wasAway = away
+        away = false
+        // 解码器离开画面就坏的设备上 (见 OffScreenDecoderFault) 离开时渲染器没留解码器 (包括离开期间才坏、原地重载的那次), 同样要从关键帧解起
+        if (!parked && !(wasAway && OffScreenDecoderFault.known)) return
+        if (parked) {
+            parked = false
+            videoRenderer()?.let { exoPlayer.createMessage(it).setType(MSG_PARK).setPayload(false).send() }
+        }
+        if (exoPlayer.playbackState == Player.STATE_IDLE) return
         logger.info { "[DecoderPark] Output is back, restarting the video decoder from the keyframe before ${exoPlayer.currentPosition} ms" }
         restartFromKeyframe()
     }

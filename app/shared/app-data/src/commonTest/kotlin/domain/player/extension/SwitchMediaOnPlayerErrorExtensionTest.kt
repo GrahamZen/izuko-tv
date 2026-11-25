@@ -47,6 +47,7 @@ import me.him188.ani.app.domain.media.resolver.ResolutionFailures
 import me.him188.ani.app.domain.media.resolver.TestMediaDataProvider
 import me.him188.ani.app.domain.media.selector.MediaSelectorSourceTiers
 import me.him188.ani.app.domain.mediasource.GetMediaSelectorSourceTiersUseCase
+import me.him188.ani.app.domain.player.DECODER_FAILED_OFF_SCREEN
 import me.him188.ani.app.domain.player.VideoLoadingState
 import me.him188.ani.app.domain.settings.GetMediaSelectorSettingsFlowUseCase
 import me.him188.ani.app.domain.settings.GetVideoScaffoldConfigUseCase
@@ -134,7 +135,7 @@ class SwitchMediaOnPlayerErrorExtensionTest : AbstractPlayerExtensionTest() {
         FakeThrowable("Source error", FakeThrowable("Failed to connect to example.com")),
     )
 
-    private fun TestScope.createCase(): Case {
+    private fun TestScope.createCase(autoSwitch: Boolean = true): Case {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val scope = childScope()
         val suite = EpisodePlayerTestSuite(this, scope)
@@ -144,7 +145,7 @@ class SwitchMediaOnPlayerErrorExtensionTest : AbstractPlayerExtensionTest() {
         suite.registerComponent<MediaResolver> { resolver }
         suite.registerComponent<NetworkStatus> { network }
         suite.registerComponent<GetVideoScaffoldConfigUseCase> {
-            GetVideoScaffoldConfigUseCase { flowOf(VideoScaffoldConfig.AllDisabled.copy(autoSwitchMediaOnPlayerError = true)) }
+            GetVideoScaffoldConfigUseCase { flowOf(VideoScaffoldConfig.AllDisabled.copy(autoSwitchMediaOnPlayerError = autoSwitch)) }
         }
         suite.registerComponent<GetMediaSelectorSettingsFlowUseCase> {
             GetMediaSelectorSettingsFlowUseCase {
@@ -435,6 +436,55 @@ class SwitchMediaOnPlayerErrorExtensionTest : AbstractPlayerExtensionTest() {
         assertEquals(0, case.switchAttempts())
         assertEquals(315_000L, case.player.currentPositionMillis.value)
         assertFalse(case.player.state.value.playWhenReady)
+        case.scope.cancel()
+    }
+
+    // 工单 #59: 暂停后进屏保, 解码器离开画面约一秒后坏了; 用户关着自动换源, 以前出错处理整个不跑, 停在报错上
+    @Test
+    fun `a decoder failing off screen with automatic switching off reloads in place and stays paused`() = runTest {
+        val case = createCase(autoSwitch = false)
+        loadAndPlay(case)
+        case.player.pause()
+        advanceUntilIdle()
+        val resolves = case.resolver.resolves
+
+        case.player.injectError(
+            PlaybackException(
+                PlaybackErrorCode.DECODING,
+                "ExoPlayer playback failed: ERROR_CODE_DECODING_FAILED (4003): MediaCodecVideoRenderer error",
+                FakeThrowable(
+                    "MediaCodecVideoRenderer error, index=0",
+                    FakeThrowable("Decoder c2.mtk.hevc.decoder $DECODER_FAILED_OFF_SCREEN", FakeThrowable("Error 0x80000000")),
+                ),
+            ),
+        )
+        advanceUntilIdle()
+
+        assertEquals(resolves + 1, case.resolver.resolves)
+        assertEquals(TestMediaList[0], case.selected())
+        assertEquals(315_000L, case.player.currentPositionMillis.value)
+        assertFalse(case.player.state.value.playWhenReady)
+        assertEquals(0, case.switchAttempts())
+        case.scope.cancel()
+    }
+
+    @Test
+    fun `an error that needs switching keeps the error with automatic switching off`() = runTest {
+        val case = createCase(autoSwitch = false)
+        loadAndPlay(case)
+        val resolves = case.resolver.resolves
+
+        case.player.injectError(
+            PlaybackException(
+                PlaybackErrorCode.DECODING,
+                "ExoPlayer playback failed: ERROR_CODE_DECODING_FAILED (4003): MediaCodecVideoRenderer error",
+            ),
+        )
+        advanceUntilIdle()
+
+        assertEquals(resolves, case.resolver.resolves)
+        assertEquals(TestMediaList[0], case.selected())
+        assertEquals(0, case.switchAttempts())
         case.scope.cancel()
     }
 }

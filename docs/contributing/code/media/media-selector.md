@@ -325,7 +325,7 @@ BT 播放时在种子里找视频旁边的字幕一起下载，这类改为低�
 - 反过来，本机正在播的地址能不能交给别的设备由 `ExternalLinkMedia.shareableOf` 判断：只交网页类数据源解析出来的公网 http(s) 地址，
   不带 Cookie / Authorization；网盘、媒体服务器、BT、本机与局域网的都不交。
 - 收别处交来的地址之前先问 `ExternalLinkMedia.accepts`（同一套：公网 http(s)、不带登录信息、大小在限度内）：不替别人去取本机、局域网里的东西。
-- 「播放失败自动换源」关着时出错处理整个不运行，交来的地址播不了也同别的资源一样留着报错。
+- 「播放失败自动换源」关着时只做不换源的处理（原地重载、等网，见[播放失败与重试](playback-recovery.md)），交来的地址播不了也同别的资源一样留着报错。
 
 播放出错换源时也先在线索上换（`PlaybackLineageSelection.switchOnError`，经 `PlayerLoadErrorHandler` 的 `switchOnLineage`）：
 手上的候选里还有线索上别的资源（没拉黑的，例如同一个种子被另一个站搜到）就换它，不直接去取、不等数据源；没有才走下文的换源。

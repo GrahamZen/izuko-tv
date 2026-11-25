@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.domain.player.extension
 
+import me.him188.ani.app.domain.player.DECODER_FAILED_OFF_SCREEN
 import me.him188.ani.app.domain.player.SecondaryDecoderActivity
 import me.him188.ani.app.domain.player.isDecoderPreempted
 import kotlin.test.AfterTest
@@ -67,6 +68,19 @@ class DecoderPreemptedErrorTest {
             FakeThrowable(
                 "Unexpected runtime error",
                 IllegalStateException("setSurface() is valid only at Executing states; currently at Uninitialized state"),
+            ),
+        )
+        assertTrue(isDecoderPreempted(error))
+    }
+
+    @Test
+    fun `a decoder failing off screen counts`() {
+        // 工单 #59: 画面离开后解码器挂在占位输出面上, 约一秒后报 CodecException; 安卓播放器把这时的错报成离开画面时坏的
+        val error = FakeThrowable(
+            "ExoPlayer playback failed: ERROR_CODE_DECODING_FAILED (4003): MediaCodecVideoRenderer error, index=0",
+            FakeThrowable(
+                "MediaCodecVideoRenderer error, index=0",
+                FakeThrowable("Decoder c2.mtk.hevc.decoder $DECODER_FAILED_OFF_SCREEN", FakeThrowable("Error 0x80000000")),
             ),
         )
         assertTrue(isDecoderPreempted(error))

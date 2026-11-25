@@ -127,8 +127,8 @@ class SwitchMediaOnPlayerErrorExtension(
                 getVideoScaffoldConfigUseCase().map { it.autoSwitchMediaOnPlayerError }
                     .collectLatest { autoSwitchMediaOnPlayerError ->
                         if (!autoSwitchMediaOnPlayerError) {
-                            // 设置关闭, 不要自动切换
-                            return@collectLatest
+                            // 设置关闭, 不要自动切换; 不换源的处理 (原地重载、重新取地址、等网) 照做
+                            return@collectLatest handler.recoverInPlaceOnly(mediaFetchSessionFlow, videoLoadingStateFlow, playerStateFlow)
                         }
 
                         coroutineScope {
@@ -306,11 +306,26 @@ class SwitchMediaOnPlayerErrorExtension(
         }
     }
 
+    /**
+     * 「播放失败时自动换源」关着时: [PlaybackFailureRecovery] 照常处理不用换源的失败 (解码器被抢、地址过期、断网等, 原地重载同一条资源),
+     * 要换源的停在报错上.
+     */
+    private suspend fun PlayerLoadErrorHandler.recoverInPlaceOnly(
+        mediaFetchSessionFlow: Flow<MediaFetchSelectBundle?>,
+        videoLoadingStateFlow: Flow<VideoLoadingState>,
+        playerStateFlow: Flow<PlayerState>,
+    ): Unit = coroutineScope {
+        val recovery = PlaybackFailureRecovery(context, network)
+        launch { recovery.trackPlayback(mediaFetchSessionFlow) }
+        observeLoadErrorAndHandle(mediaFetchSessionFlow, videoLoadingStateFlow, playerStateFlow, recovery, switchSource = false)
+    }
+
     private suspend fun PlayerLoadErrorHandler.observeLoadErrorAndHandle(
         mediaFetchSessionFlow: Flow<MediaFetchSelectBundle?>,
         videoLoadingStateFlow: Flow<VideoLoadingState>,
         playerStateFlow: Flow<PlayerState>,
         recovery: PlaybackFailureRecovery,
+        switchSource: Boolean = true,
     ) {
         mediaFetchSessionFlow.collectLatest { bundle ->
             if (bundle == null) return@collectLatest
@@ -347,7 +362,11 @@ class SwitchMediaOnPlayerErrorExtension(
             }.distinctUntilChangedBy { it != null }
                 .collectLatest { error ->
                     if (error != null && !recovery.recover(error, bundle.mediaSelector.selected.value)) {
-                        handleError(bundle.mediaFetchSession, bundle.mediaSelector, error)
+                        if (switchSource) {
+                            handleError(bundle.mediaFetchSession, bundle.mediaSelector, error)
+                        } else {
+                            logger.info { "Player errored (${error.description}), automatic switching is off, keeping the error" }
+                        }
                     } // else: cancel selection
                 }
         }
