@@ -340,7 +340,20 @@ val TvSettingsCatalogEntries: List<TvSettingsCategory> = tvSettingsCatalog {
 private fun TvSettingsItemsBuilder.appearanceItems() {
     val theme = TvSettingKeys.theme
     val ui = TvSettingKeys.ui
-    // 放在最前: 同原来的设置页 (界面缩放改了整页重排)
+    // 语言排第一, 同上游设置页「外观」的第一项
+    choiceOf(
+        listOf(TvSettingKeys.language),
+        Lang.settings_app_language,
+        options = { listOf("") + SupportedLocales.map { it.toLanguageTag() } },
+        label = { tag -> if (tag.isEmpty()) tvText(Lang.settings_app_language_system) else tvText(localeName(tag)) },
+        read = { it[TvSettingKeys.language] },
+        write = { tag ->
+            listOf(
+                TvSettingsEdit.Run { env -> setAppLanguage(env.context, tag) },
+            )
+        },
+    )
+    // 界面缩放紧跟其后 (改了整页重排)
     choice(
         theme, Lang.settings_theme_tv_ui_scale, Lang.settings_theme_tv_ui_scale_description,
         options = { UI_SCALE_PERCENTS },
@@ -434,18 +447,6 @@ private fun TvSettingsItemsBuilder.appearanceItems() {
         ),
         visible = { TvRemoteSettingsBridge.resetAddress != null },
     ) { TvRemoteSettingsBridge.resetAddress?.invoke() }
-    choiceOf(
-        listOf(TvSettingKeys.language),
-        Lang.settings_app_language,
-        options = { listOf("") + SupportedLocales.map { it.toLanguageTag() } },
-        label = { tag -> if (tag.isEmpty()) tvText(Lang.settings_app_language_system) else tvText(localeName(tag)) },
-        read = { it[TvSettingKeys.language] },
-        write = { tag ->
-            listOf(
-                TvSettingsEdit.Run { env -> setAppLanguage(env.context, tag) },
-            )
-        },
-    )
     // 管所有页面与 Web 控制台 (见 SubjectNsfw / NsfwPolicy); 存在 searchSettings 里是沿用的字段位置
     choice(
         ui, Lang.settings_app_nsfw_content, Lang.settings_app_nsfw_content_description,
