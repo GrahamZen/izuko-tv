@@ -111,6 +111,8 @@ interface TvNativeGridPageListener : TvNativeGridListener {
  *
  * 除了网格, 还能放一份一组一行的内容 ([rows], 追番页「追更」, 行式海报墙的宾客模式): 占一个 key, 与各份网格同样水平滑着换; hero 态、
  * 背景图与文字、点开对焦都是本页这一份, 跨标签时 hero 态留着, 进详情页同网格.
+ *
+ * 页面自己的原生视图经扩展挂上来 ([addExtension], 见 [TvNativeWallExtension]): 画在网格上面, 不随换标签滑动.
  */
 @SuppressLint("ViewConstructor")
 class TvNativeGridPageView(
@@ -120,7 +122,7 @@ class TvNativeGridPageView(
     style: TvNativeWallStyle,
     metrics: TvNativeGridPageMetrics,
     heroTextStyle: TvNativeHeroTextStyle,
-) : FrameLayout(context), TvNativeAmbientAnimations, TvNativeWallOpenable {
+) : FrameLayout(context), TvNativeAmbientAnimations, TvNativeWallOpenable, TvNativeWallHost {
     var listener: TvNativeGridPageListener? = null
 
     /** 第几张卡被绑定 (此刻显示的那份网格; 分页的访问提示). */
@@ -407,6 +409,8 @@ class TvNativeGridPageView(
     /** 焦点停放在本视图上的那一刻 (见 [parkFocus]), -1 = 没停放. */
     private var parkedAt = -1L
 
+    private val extensions = TvNativeWallExtensions(this, this)
+
     init {
         clipChildren = false
         clipToPadding = false
@@ -477,6 +481,13 @@ class TvNativeGridPageView(
 
     /** 此刻显示的那份网格. */
     val grid: TvNativeGridView? get() = current
+
+    /** hero 态只留聚焦那一张、挪到第一列 (见 [TvNativeGridView.heroSingleCard]); 一组一行的内容不管它. */
+    var heroSingleCard: Boolean = false
+        set(value) {
+            field = value
+            grids.forEach { it.heroSingleCard = value }
+        }
 
     /** 网格的几何: 起点加上侧边栏底下那一截 (见 [TvNativeGridPageMetrics.bleedLeftPx]). */
     private fun gridMetrics(): TvNativeGridMetrics = metrics.grid.let { it.copy(startPx = it.startPx + metrics.bleedLeftPx) }
@@ -645,6 +656,7 @@ class TvNativeGridPageView(
     private fun newGrid(): TvNativeGridView {
         val grid = TvNativeGridView(context, style, sketch, gridMetrics())
         grid.animatedScroll = animatedScroll
+        grid.heroSingleCard = heroSingleCard
         grid.listener = GridListener(grid)
         grid.onTouchDragStart = { onGridDragStart(grid) }
         grid.cards.onBind = { index -> if (grid === current) onBindCard?.invoke(index) }
@@ -677,6 +689,8 @@ class TvNativeGridPageView(
             if (heroEnabled && !timeline.active) {
                 setHeroActive(true)
             } else {
+                // hero 态里扩展接了确认键 (送焦到它自己的一块): 不进详情页
+                if (timeline.active && extensions.heroConfirm()) return
                 // 进详情页: 焦点交出去之后这张卡仍画成聚焦态, 返回后焦点交还前也不缩 (见 TvNativeGridView.focusItem)
                 grid.cards.setFocusLookHeld(grid, index)
                 // 有整屏背景 (新番时间表 / hero 态的模糊背景): 先对焦 (背景变清晰、卡片淡没) 再进, 见 TvNativeWallFocus
@@ -722,6 +736,9 @@ class TvNativeGridPageView(
         // 换下去的那份网格不再报行缘 (焦点还没交出去时的连发): 否则一路连跨标签
         override fun onRowEdge(direction: Int, row: Int): Boolean =
             if (grid !== current) true else listener?.onRowEdge(direction, row) ?: false
+
+        override fun onHeroVerticalKey(down: Boolean): Boolean =
+            grid === current && (extensions.heroVerticalKey(down) || listener?.onHeroVerticalKey(down) == true)
     }
 
     /** 送焦到此刻那份网格的第 [index] 张 (排出来之前记下, 布局完成再送). */
@@ -863,11 +880,13 @@ class TvNativeGridPageView(
         unparkFocus()
         // 一组一行的内容拿到焦点不算 (它自己报卡片区的焦点)
         setGridFocus(child === gridBox && current?.hasFocus() == true)
+        extensions.focusChanged(focused)
     }
 
     override fun clearChildFocus(child: View?) {
         super.clearChildFocus(child)
         setGridFocus(false)
+        extensions.focusChanged(null)
     }
 
     /**
@@ -879,6 +898,7 @@ class TvNativeGridPageView(
             unparkFocus()
             setGridFocus(false)
         }
+        extensions.focusChanged(newFocus)
     }
 
     /**
@@ -933,6 +953,8 @@ class TvNativeGridPageView(
             if (grid != null && target != null) grid.focusItem(target) else rowsShown()?.requestFocus()
             return true
         }
+        // 焦点在扩展的视图里: 方向键先给扩展
+        if (direction && event.action == KeyEvent.ACTION_DOWN && extensions.key(findFocus(), code)) return true
         if (!isFocused || parkedAt < 0 || !(direction || tvNativeIsConfirmKey(code))) return super.dispatchKeyEvent(event)
         if (direction && event.action == KeyEvent.ACTION_DOWN) {
             val expired = SystemClock.uptimeMillis() - parkedAt >= TV_TRANSIT_PARK_KEY_GRACE_MILLIS
@@ -959,7 +981,7 @@ class TvNativeGridPageView(
     // hero 态
     // ------------------------------------------------------------------
 
-    val heroActive: Boolean get() = timeline.active
+    override val heroActive: Boolean get() = timeline.active
 
     /**
      * 进 / 出 hero 态 (返回键在页面里, 调这里). [animated] = false 时直接到位 (返回本页时恢复). 淡入淡出 (hero 时间线) 三档都有 ——
@@ -979,6 +1001,7 @@ class TvNativeGridPageView(
         current?.setHeroActive(active, animated = animated && animatedScroll)
         rowsShown()?.onHostHeroChanged(animated)
         listener?.onHeroActiveChanged(active)
+        extensions.heroActiveChanged(active)
         // 退出途中又进来 (内容还在屏上): 退出时内容定格没跟着导航换 (见 applySource), 这里对上此刻的
         if (active) applySource()
     }
@@ -1046,6 +1069,7 @@ class TvNativeGridPageView(
             g.cards.setTitleVisibility(g, 1f - timeline.above)
         }
         rowsShown()?.onHostHeroFrame()
+        extensions.frame()
     }
 
     /**
@@ -1110,6 +1134,10 @@ class TvNativeGridPageView(
         override fun requestHeroActive(active: Boolean) = setHeroActive(active)
 
         override fun wallMatches(subjectId: Int): Boolean = wallMatchesSubject(subjectId)
+
+        override fun heroVerticalKey(down: Boolean): Boolean = extensions.heroVerticalKey(down)
+
+        override fun heroConfirm(): Boolean = extensions.heroConfirm()
     }
 
     /** 点开途中按了返回: 不进了, 倒放. */
@@ -1123,6 +1151,39 @@ class TvNativeGridPageView(
 
     /** 长按的菜单关了 (或没弹出来): 倒放. */
     fun endWallPeek() = wallFocus.endPeek()
+
+    // ------------------------------------------------------------------
+    // 扩展 (见 TvNativeWallExtension)
+    // ------------------------------------------------------------------
+
+    /** 挂上页面的扩展: 视图画在网格上面. */
+    fun addExtension(extension: TvNativeWallExtension) = extensions.add(extension)
+
+    fun removeExtension(extension: TvNativeWallExtension) = extensions.remove(extension)
+
+    override val pageLeftPx: Int get() = metrics.bleedLeftPx
+    override val pageWidthPx: Int get() = metrics.pageWidthPx
+    override val pageHeightPx: Int get() = metrics.pageHeightPx
+    override val cardsStartPx: Int get() = metrics.bleedLeftPx + metrics.grid.startPx
+    override val cardsEndPx: Int get() = metrics.bleedLeftPx + metrics.pageWidthPx - metrics.grid.endPx
+    override val heroShown: Float get() = timeline.text
+
+    override fun focusCurrentCard(): Boolean {
+        rowsShown()?.let { return it.focusCurrentCard() }
+        val g = current ?: return false
+        val count = g.cards.itemCount
+        if (count == 0) return false
+        g.focusItem(g.selectedPosition.coerceIn(0, count - 1))
+        return true
+    }
+
+    override fun exitHero() = setHeroActive(false)
+
+    override fun holdCardLook(hold: Boolean) {
+        rowsShown()?.let { return it.holdCardLook(hold) }
+        val g = current ?: return
+        if (hold) g.cards.setFocusLookHeld(g, g.selectedPosition) else if (!g.hasFocus()) g.cards.setFocusLookHeld(g, -1)
+    }
 
     // ------------------------------------------------------------------
     // 布局
@@ -1145,6 +1206,7 @@ class TvNativeGridPageView(
         val g = m.grid
         val gridHeight = m.pageHeightPx - m.gridTopPx + g.topBleedPx + g.bottomBleedPx
         gridBox.measure(exactly(m.bleedLeftPx + m.pageWidthPx), exactly(gridHeight))
+        extensions.measure()
         setMeasuredDimension(m.bleedLeftPx + m.pageWidthPx, m.pageHeightPx)
     }
 
@@ -1159,6 +1221,8 @@ class TvNativeGridPageView(
         gridBox.layout(0, gy, gridBox.measuredWidth, gy + gridBox.measuredHeight)
         gridClip.set(0, 0, gridBox.measuredWidth, gridBox.measuredHeight)
         gridBox.clipBounds = gridClip
+        extensions.layout()
+        extensions.frame()
         backdrop.publishZoom()
     }
 

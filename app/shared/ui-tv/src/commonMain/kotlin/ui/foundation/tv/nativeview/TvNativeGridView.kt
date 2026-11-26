@@ -88,6 +88,9 @@ interface TvNativeGridListener : TvNativeCardListener {
      * 按左放出去, 由外面的焦点搜索接).
      */
     fun onRowEdge(direction: Int, row: Int): Boolean = false
+
+    /** hero 态里聚焦卡上的上下键 ([down] = 下): 接走 (返回 true, 比如把焦点送到 hero 那一行下面的一块) 就不换行. */
+    fun onHeroVerticalKey(down: Boolean): Boolean = false
 }
 
 /**
@@ -173,6 +176,17 @@ class TvNativeGridView(
             cards.refreshDim(this)
         }
 
+    /**
+     * hero 态只留聚焦那一张: 别的卡 (同一行的也算) 跟着 above 淡没, 聚焦那张横移到第一列 (与行进出 hero 态的上下平移是同一个动画, 合成一段斜着走);
+     * 左右按顺序翻、不带动画 (见 flipTo), 行缘接上一行行末 / 下一行行首 (末张按右、首张按左吞掉). 页面在这张卡右边、下面放自己的内容时开 (见 TvNativeWallExtension).
+     */
+    var heroSingleCard: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            cards.refreshDim(this)
+        }
+
     /** 对焦时留着不淡的那张 (长按的那张); -1 = 全部跟着 [pullFade] 淡. */
     var pullKeepIndex: Int = -1
         set(value) {
@@ -184,6 +198,13 @@ class TvNativeGridView(
     /** hero 态整片平移 (px, 正 = 往下推). */
     private var shiftY = 0f
     private var shiftAnimator: ValueAnimator? = null
+
+    /** [heroSingleCard] 时聚焦那张横移到第一列的进度 (0..1) 与它要去的值: 跟整片平移在同一个动画里走 (见 [animateShift]). */
+    private var heroSlide = 0f
+    private var heroSlideTarget = 0f
+
+    /** 只留一张的 hero 态里翻向的那张 (焦点落上去时平移当场到位, 见 [flipTo]), -1 = 没有. */
+    private var flipTarget = -1
 
     init {
         clipChildren = false
@@ -199,7 +220,10 @@ class TvNativeGridView(
         layoutManager?.isItemPrefetchEnabled = true
         setSmoothScrollByBehavior(scroll)
         itemAnimator = null
-        cards.dimOf = { index, view -> cardDim(index, view) }
+        cards.dimOf = { index, view ->
+            view.translationX = heroCardShiftX(index)
+            cardDim(index, view)
+        }
         adapter = cards
         addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
@@ -393,6 +417,7 @@ class TvNativeGridView(
         val before = findViewHolderForAdapterPosition(index)?.itemView?.top
         heroActive = active
         applyScrollStrategy()
+        heroSlideTarget = if (active) 1f else 0f
         applyAlignment()
         val target = if (active) heroShiftFor(index) else 0f
         if (animated && before != null && index >= 0) {
@@ -443,34 +468,50 @@ class TvNativeGridView(
 
     override fun requestChildFocus(child: View?, focused: View?) {
         super.requestChildFocus(child, focused)
-        // hero 态里换行: 平移跟着新行的停位走 (首行 / 末行滚不到 hero 线的那截), 与滚动同一档 spring
+        // hero 态里换行: 平移跟着新行的停位走 (首行 / 末行滚不到 hero 线的那截), 与滚动同一档 spring; 只留一张时翻过去的那一下当场到位 (见 flipTo)
         if (heroActive && child != null) {
             val index = getChildAdapterPosition(child)
-            if (index >= 0) animateShift(heroShiftFor(index), TvScrollSpring.Step, animated = scroll.animated)
+            val flipped = index >= 0 && index == flipTarget
+            if (flipped) flipTarget = -1
+            if (index >= 0) animateShift(heroShiftFor(index), TvScrollSpring.Step, animated = scroll.animated && !flipped)
         }
     }
 
+    /**
+     * 整片平移走到 [target], 聚焦那张的横移进度同时走到 [heroSlideTarget] (同一个动画: 进出 hero 态时上下与左右合成一段). 时长按两段里走得远的那段算.
+     */
     private fun animateShift(target: Float, pace: TvScrollSpring, animated: Boolean) {
         shiftAnimator?.cancel()
-        if (!animated || abs(target - shiftY) < 0.5f) {
+        val slideTo = heroSlideTarget
+        if (!animated || abs(target - shiftY) < 0.5f && heroSlide == slideTo) {
             shiftY = target
             translationY = target
+            heroSlide = slideTo
             cards.refreshDim(this)
             return
         }
         val from = shiftY
-        val distance = abs(target - from).roundToInt()
+        val slideFrom = heroSlide
+        val distance = maxOf(abs(target - from), abs(slideTo - slideFrom) * heroSlideDistancePx()).roundToInt()
         val millis = tvSpringDurationMillis(pace, distance)
         shiftAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = millis.toLong()
             interpolator = tvSpringInterpolator(pace, millis)
             addUpdateListener {
-                shiftY = from + (target - from) * (it.animatedValue as Float)
+                val f = it.animatedValue as Float
+                shiftY = from + (target - from) * f
+                heroSlide = slideFrom + (slideTo - slideFrom) * f
                 translationY = shiftY
                 cards.refreshDim(this@TvNativeGridView)
             }
             start()
         }
+    }
+
+    /** 聚焦那张横移到第一列要走多远 (px); 没开 [heroSingleCard] 为 0. */
+    private fun heroSlideDistancePx(): Float {
+        if (!heroSingleCard || selectedPosition < 0) return 0f
+        return (selectedPosition % metrics.columns.coerceAtLeast(1)) * (style.cardWidthPx + style.columnSpacingPx).toFloat()
     }
 
     /**
@@ -645,12 +686,14 @@ class TvNativeGridView(
     /**
      * 方向键网格自己走, 不交给系统找焦点 (焦点搜索落到 Compose 那边时按整个宿主里的几何挑目标, 不可预测): 上下同一列, 左右同一行;
      * 下面没有同列的卡时落到最后一张, 末行按下吞掉 (同 Compose 版 tvGridKeyNavigation); 首行按上交给 [TvNativeGridListener.onTopRowUp],
-     * 行缘按左 / 右交给 [TvNativeGridListener.onRowEdge] (不处理时按右吞掉、按左放出去). 返回是否吞掉这一下.
+     * 行缘按左 / 右交给 [TvNativeGridListener.onRowEdge] (不处理时按右吞掉、按左放出去); hero 态里的上下先问 [TvNativeGridListener.onHeroVerticalKey].
+     * 返回是否吞掉这一下.
      */
     private fun navigate(code: Int, index: Int, repeatCount: Int): Boolean {
         // 焦点所在的卡正被换掉 (分页刷新途中): 这一下吞掉
         if (index == NO_POSITION) return true
         val vertical = code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN
+        if (vertical && heroActive && listener?.onHeroVerticalKey(code == KeyEvent.KEYCODE_DPAD_DOWN) == true) return true
         if (repeatCount > 0) {
             val now = SystemClock.uptimeMillis()
             if (vertical) {
@@ -676,12 +719,37 @@ class TvNativeGridView(
 
             else -> {
                 val left = code == KeyEvent.KEYCODE_DPAD_LEFT
+                if (heroActive && heroSingleCard) {
+                    // 只留一张的 hero 态: 按顺序翻 (行缘接上一行行末 / 下一行行首), 两头吞掉
+                    val target = if (left) index - 1 else index + 1
+                    if (target in 0 until count) flipTo(target)
+                    return true
+                }
                 val atEdge = if (left) index % cols == 0 else index % cols == cols - 1 || index == count - 1
                 if (atEdge) return listener?.onRowEdge(if (left) -1 else 1, index / cols) == true || !left
                 moveFocusTo(if (left) index - 1 else index + 1)
             }
         }
         return true
+    }
+
+    /**
+     * 只留一张的 hero 态里翻到第 [target] 张, 不带动画 (这时屏上只有这一张, 换的就是它): 先把它按住成聚焦的样子、hero 态的聚光当场亮起
+     * (焦点落上去时画面不变, 见 [TvNativeCardAdapter.setFocusLookHeld]), 再不带动画地送焦与滚动 (跨行时停掉在走的滚动, 当场对到停位;
+     * 平移见 [requestChildFocus]). 旧那张同一刻就淡没, 它缩回去的动画看不见.
+     */
+    private fun flipTo(target: Int) {
+        cards.setFocusLookHeld(this, target)
+        (findViewHolderForAdapterPosition(target)?.itemView as? TvNativeCardView)?.cues?.setIdleFocused(true, animate = false)
+        flipTarget = target
+        val animated = scroll.animated
+        scroll.animated = false
+        try {
+            stopScroll()
+            focusItem(target)
+        } finally {
+            scroll.animated = animated
+        }
     }
 
     /** 用户导航的落点: 排出来了当场给 (leanback 按窗口对齐滚过去), 没排出来 (连按超前) 平滑滚过去, 到位时 leanback 把焦点给它. */
@@ -699,9 +767,18 @@ class TvNativeGridView(
     }
 
     /**
+     * [heroSingleCard] 时聚焦那张的横移 (px): 按 [heroSlide] 从它那一列挪到第一列; 别的卡与关掉时为 0. 列距按卡宽加列间距算 (列数与卡宽本来就按放满算).
+     */
+    private fun heroCardShiftX(index: Int): Float {
+        if (!heroSingleCard || index < 0 || index != selectedPosition) return 0f
+        val column = index % metrics.columns.coerceAtLeast(1)
+        return -column * (style.cardWidthPx + style.columnSpacingPx) * heroSlide
+    }
+
+    /**
      * hero 态里一张卡的淡化: 进出途中聚焦行及以下不淡 (它们的终点在 hero 线上 / 线下, 途中却要从线上方经过, 按位置淡就是整行先暗一下再亮回来)、
      * 上面的整行跟 above 淡 (退场时它们随网格往下挪、从 hero 线上方经过, 按位置淡就在背景图还没淡完时先露出来);
-     * 停稳后按位置, 越过 hero 线 [TvNativeGridMetrics.fadeDistancePx] 内淡没.
+     * 停稳后按位置, 越过 hero 线 [TvNativeGridMetrics.fadeDistancePx] 内淡没. 开了 [heroSingleCard] 时只留聚焦那一张.
      *
      * [index] 由适配器给, 不从 [view] 反查: 绑定时新建的卡还没加进网格 (布局参数还是卡自己的), getChildAdapterPosition 会抛异常.
      */
@@ -709,6 +786,7 @@ class TvNativeGridView(
         val m = metrics
         val cols = m.columns.coerceAtLeast(1)
         val focused = selectedPosition
+        if (heroSingleCard) return if (index == focused) 1f else 0f
         return if (heroTransitioning && focused >= 0 && index >= 0) {
             if (index / cols >= focused / cols) 1f else 0f
         } else {

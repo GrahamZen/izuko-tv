@@ -50,6 +50,15 @@ class TvNativeRowWallNavigationTest {
         var exitLeft = 0
         var exitRight = 0
 
+        /** hero 态里的上下键页面接不接走; 问过的记在 [heroVertical] (true = 下). */
+        var takeHeroVertical = false
+        val heroVertical = mutableListOf<Boolean>()
+
+        override fun onHeroVerticalKey(down: Boolean): Boolean {
+            heroVertical += down
+            return takeHeroVertical
+        }
+
         override fun onCardFocused(rowKey: String, index: Int, column: Int) = Unit
 
         override fun onCardClick(rowKey: String, index: Int) {
@@ -234,6 +243,37 @@ class TvNativeRowWallNavigationTest {
         // 页面按返回退出 hero 态
         host.onMain { view.setHeroActive(false) }
         assertEquals(listOf(true, false), listener.heroActive)
+    }
+
+    @Test
+    fun `the page can take up and down in the hero state and the focus stays on the card`() {
+        listener.takeHeroVertical = true
+        press(KeyEvent.KEYCODE_DPAD_RIGHT)
+        waitCard(NEW, 1)
+        press(KeyEvent.KEYCODE_DPAD_CENTER)
+        host.waitUntil("进了 hero 态") { view.heroActive }
+        press(KeyEvent.KEYCODE_DPAD_DOWN)
+        press(KeyEvent.KEYCODE_DPAD_UP)
+        host.waitUntil("上下键交给了页面") { listener.heroVertical == listOf(true, false) }
+        assertEquals(NEW to 1, card())
+        // 卡片墙上照常换行, 不问页面
+        host.onMain { view.setHeroActive(false) }
+        host.waitUntil("退出 hero 态") { !view.heroActive }
+        press(KeyEvent.KEYCODE_DPAD_DOWN)
+        waitCard(TODAY, 1)
+        assertEquals(listOf(true, false), listener.heroVertical)
+    }
+
+    @Test
+    fun `rows below the focused row fade out with the hero state when asked`() {
+        host.onMain { view.hideRowsBelowInHero = true }
+        press(KeyEvent.KEYCODE_DPAD_DOWN)
+        waitCard(TODAY, 0)
+        press(KeyEvent.KEYCODE_DPAD_CENTER)
+        host.waitUntil("进了 hero 态, 下面的行淡没") { view.heroActive && view.rowAlphaOf(WEEK) == 0f }
+        assertEquals(1f, host.onMain { view.rowAlphaOf(TODAY) })
+        host.onMain { view.setHeroActive(false) }
+        host.waitUntil("退出 hero 态, 下面的行回来") { !view.heroActive && view.rowAlphaOf(WEEK) == 1f }
     }
 
     @Test

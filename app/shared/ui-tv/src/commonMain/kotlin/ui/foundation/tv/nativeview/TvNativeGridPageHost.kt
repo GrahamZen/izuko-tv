@@ -240,7 +240,7 @@ fun <T : Any> TvNativeGridPageHost(
         // 「海报上按确定」只有先看简介这一档有 hero 态
         heroEnabled = LocalThemeSettings.current.tvPosterConfirm == TvPosterConfirmAction.Hero, badge = null, source, fadeColor, treatment, gridFocus, farJump, onFarJumpConsumed, callbacks, menuFor,
         wallBackdrop = null, modifier, landingIndex, topBarScrollAwayPx = 0, columnSpacing = TV_POSTER_WALL_COLUMN_SPACING,
-        cardHeight = null, labelVibrancy = false, rows, emptyContent,
+        cardHeight = null, labelVibrancy = false, rows, extensions = emptyList(), heroSingleCard = false, emptyContent,
     )
 }
 
@@ -250,7 +250,9 @@ fun <T : Any> TvNativeGridPageHost(
  * ([TvNativeGridPageCallbacks.onCardClick]). [badge] 给了就按卡片的 [TvNativeCard.badge] 在封面右上角画角标.
  * [topBarScrollAwayPx] > 0 时逐帧报告网格内容往上滚了多少 ([TvNativeGridPageState.contentScroll], 夹在 0..它), 页面让顶栏跟着一起滚走.
  * [columnSpacing] = 卡格之间的距离, [cardHeight] = 卡格高 (null = 按卡宽与封面比例算), [labelVibrancy] = 番名照 tvOS 的 vibrancy 画
- * (压在模糊背景上时), 见 [rememberTvNativeWallStyle]. 其余同分页那一版.
+ * (压在模糊背景上时), 见 [rememberTvNativeWallStyle]. [source] = hero 的内容 (有 hero 态的页给). [extensions] = 页面挂在墙上的一块 (安卓上是原生视图
+ * [TvNativeWallExtension]), [heroSingleCard] = hero 态只留聚焦那一张、挪到第一列 (扩展放在它右边与下面时开, 见 TvNativeGridView.heroSingleCard). [menuFor] 为 null 时长按不弹菜单.
+ * 其余同分页那一版.
  */
 @Composable
 fun <T : Any> TvNativeGridPageHost(
@@ -270,7 +272,7 @@ fun <T : Any> TvNativeGridPageHost(
     farJump: () -> Boolean,
     onFarJumpConsumed: () -> Unit,
     callbacks: TvNativeGridPageCallbacks<T>,
-    menuFor: (T) -> @Composable (expanded: Boolean, onDismiss: () -> Unit) -> Unit,
+    menuFor: ((T) -> @Composable (expanded: Boolean, onDismiss: () -> Unit) -> Unit)?,
     wallBackdrop: TvNativeWallBackdropSpec? = null,
     modifier: Modifier = Modifier,
     landingIndex: Int = -1,
@@ -278,6 +280,9 @@ fun <T : Any> TvNativeGridPageHost(
     columnSpacing: Dp = TV_POSTER_WALL_COLUMN_SPACING,
     cardHeight: Dp? = null,
     labelVibrancy: Boolean = false,
+    source: TvNativeHeroSource? = null,
+    extensions: List<TvGridPageExtension> = emptyList(),
+    heroSingleCard: Boolean = false,
     emptyContent: @Composable BoxScope.() -> Unit = {},
 ) {
     val currentItems by rememberUpdatedState(items)
@@ -286,8 +291,9 @@ fun <T : Any> TvNativeGridPageHost(
         itemAt = { index -> currentItems.getOrNull(index) },
         itemCount = focusableCount,
         onBind = {},
-        heroEnabled = heroEnabled, badge = badge, source = null, fadeColor, treatment, gridFocus, farJump, onFarJumpConsumed, callbacks,
-        menuFor, wallBackdrop, modifier, landingIndex, topBarScrollAwayPx, columnSpacing, cardHeight, labelVibrancy, rows = null, emptyContent,
+        heroEnabled = heroEnabled, badge = badge, source = source, fadeColor, treatment, gridFocus, farJump, onFarJumpConsumed, callbacks,
+        menuFor, wallBackdrop, modifier, landingIndex, topBarScrollAwayPx, columnSpacing, cardHeight, labelVibrancy, rows = null,
+        extensions, heroSingleCard, emptyContent,
     )
 }
 
@@ -312,7 +318,7 @@ private fun <T : Any> TvNativeGridPageHostContent(
     farJump: () -> Boolean,
     onFarJumpConsumed: () -> Unit,
     callbacks: TvNativeGridPageCallbacks<T>,
-    menuFor: (T) -> @Composable (expanded: Boolean, onDismiss: () -> Unit) -> Unit,
+    menuFor: ((T) -> @Composable (expanded: Boolean, onDismiss: () -> Unit) -> Unit)?,
     wallBackdrop: TvNativeWallBackdropSpec?,
     modifier: Modifier,
     landingIndex: Int,
@@ -321,6 +327,8 @@ private fun <T : Any> TvNativeGridPageHostContent(
     cardHeight: Dp?,
     labelVibrancy: Boolean,
     rows: TvNativeGridPageRows?,
+    extensions: List<TvGridPageExtension>,
+    heroSingleCard: Boolean,
     emptyContent: @Composable BoxScope.() -> Unit,
 ) {
     val sketch = LocalSketch.current
@@ -376,6 +384,7 @@ private fun <T : Any> TvNativeGridPageHostContent(
                     // 返回本页 (重建) 时焦点要回的那张: 排出来就按住聚焦态 (见 TvNativeGridPageView.holdLandingLook)
                     if (landingIndex >= 0) view.holdLandingLook(landingIndex)
                     view.heroText.onShownSubjectChanged = { state.titleSubjectId = it }
+                    extensions.forEach { if (it is TvNativeWallExtension) view.addExtension(it) }
                     state.view = view
                 }
             },
@@ -397,7 +406,7 @@ private fun <T : Any> TvNativeGridPageHostContent(
                     override fun onLongPress(index: Int, anchor: AndroidRect) {
                         val item = currentItemAt(index)
                         // 弹不出菜单: 原生那边已经进了长按的对焦, 当场倒放
-                        if (item != null) state.menu = item to anchor else view.endWallPeek()
+                        if (item != null && menuFor != null) state.menu = item to anchor else view.endWallPeek()
                     }
 
                     override fun onTopRowUp(): Boolean = currentCallbacks.onTopRowUp()
@@ -446,6 +455,7 @@ private fun <T : Any> TvNativeGridPageHostContent(
                 }
                 view.onBindCard = { index -> currentOnBind(index) }
                 view.heroEnabled = heroEnabled
+                view.heroSingleCard = heroSingleCard
                 view.onTouchSwipe = if (touchInput && callbacks.onSwipe != null) { delta -> currentCallbacks.onSwipe?.invoke(delta) } else null
                 view.touchInput = touchInput
                 view.confirmFocusesWall = !(posterConfirm == TvPosterConfirmAction.Play && callbacks.onCardPlay != null)
@@ -487,7 +497,7 @@ private fun <T : Any> TvNativeGridPageHostContent(
         emptyContent()
         // 长按卡片的收藏菜单: 锚在那张卡的封面上 (原生视图报上来的封面框, 窗口坐标)
         // 收起时照样组合着上一次的目标, 菜单淡完才撤 (见 rememberTvMenuTarget)
-        rememberTvMenuTarget(state.menu)?.let { (item, rect) ->
+        if (menuFor != null) rememberTvMenuTarget(state.menu)?.let { (item, rect) ->
             @Suppress("UNCHECKED_CAST")
             val menu = remember(item) { menuFor(item as T) }
             Box(
