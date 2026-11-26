@@ -599,9 +599,20 @@ internal const val TV_GLASS_UNFOCUS_MILLIS = 90
 /** 聚焦抬起伸出控件外的余量 (放大多出来的那截 + 投影): 装在会裁切的容器 (LazyRow 按主轴边界裁) 里时, 两头要让出这么多. */
 internal val TV_GLASS_FOCUS_BLEED = 16.dp
 
-private val TV_GLASS_EDGE_WIDTH = 1.dp
-private const val TV_GLASS_FOCUS_SCALE = 1.08f
-private val TV_GLASS_FOCUS_ELEVATION = 10.dp
+internal val TV_GLASS_EDGE_WIDTH = 1.dp
+
+/** 玻璃标签栏 (追番页的分类、新番时间表的日期; Compose 版与原生版共用): 胶囊两头的内边距、签与签的间距 */
+internal val TV_GLASS_TAB_BAR_PADDING = 4.dp
+internal val TV_GLASS_TAB_GAP = 2.dp
+
+/** 一个签的片的内边距 (片 = 一行字 + 上下各这么多) */
+internal val TV_GLASS_TAB_PADDING_HORIZONTAL = 14.dp
+internal val TV_GLASS_TAB_PADDING_VERTICAL = 4.dp
+
+/** 玻璃标签栏的定高 (片 = 一行字 24 + 上下各 4, 胶囊比它高一截) */
+internal val TV_GLASS_TAB_ROW_HEIGHT = 39.dp
+internal const val TV_GLASS_FOCUS_SCALE = 1.08f
+internal val TV_GLASS_FOCUS_ELEVATION = 10.dp
 
 private val TV_GLASS_COLORS_DARK = TvGlassColors(
     fill = Color(0xFF1E1E1E).copy(alpha = 0.5f),

@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.foundation.tv.nativeview
 
+import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 
@@ -41,6 +42,13 @@ interface TvNativeWallExtension : TvGridPageExtension {
     /** 焦点 ([focused]) 在扩展的视图里时的方向键 ([keyCode]); 接了返回 true. */
     fun onKey(wall: TvNativeWallHost, focused: View, keyCode: Int): Boolean = false
 
+    /**
+     * 焦点 ([focused]) 在扩展的视图里时的按键事件: 方向键与确认键, 按下与抬起都给 (网格页; 行式墙只给方向键的按下). 接了返回 true.
+     * 默认只把方向键的按下交给 [onKey]; 要看连发 (`repeatCount`, 限速) 或自己判确认键 (长按) 的扩展覆盖它 (标签栏).
+     */
+    fun onKeyEvent(wall: TvNativeWallHost, focused: View, event: KeyEvent): Boolean =
+        event.action == KeyEvent.ACTION_DOWN && tvNativeIsDirectionKey(event.keyCode) && onKey(wall, focused, event.keyCode)
+
     /** hero 态里聚焦卡上的上下键 ([down] = 下); 接了返回 true. 按住的连发也问这里. */
     fun onHeroVerticalKey(wall: TvNativeWallHost, down: Boolean): Boolean = false
 
@@ -48,6 +56,12 @@ interface TvNativeWallExtension : TvGridPageExtension {
     fun onHeroConfirm(wall: TvNativeWallHost): Boolean = false
 
     fun onFocusInside(wall: TvNativeWallHost, inside: Boolean) {}
+
+    /**
+     * 焦点从外面进墙 (墙按自己的规矩落到卡上之前, 网格页) 时先问: 扩展记着页面要它拿的焦点 (那时它还没排出来, 如新进页落到选中的签上) 就照它给,
+     * 返回 true —— 不然墙先把焦点落到第一张卡上, 记着的那一下再来就抢不过 (或抢回来时卡已经报过聚焦).
+     */
+    fun onEntryFocus(wall: TvNativeWallHost): Boolean = false
 }
 
 /** 墙给扩展的那一面: 几何 (px, 墙的坐标)、hero 态、焦点. */
@@ -63,6 +77,12 @@ interface TvNativeWallHost {
 
     /** 在 hero 态 (切进去当场为 true, 不等淡入). */
     val heroActive: Boolean
+
+    /** 卡片墙在 hero 态里淡没了多少 (0..1; 进的时候先淡没, 退的时候最后淡回来). 没有 hero 态的墙恒为 0. */
+    val heroAbove: Float get() = 0f
+
+    /** 点开进详情页时页面的顶栏 (标签行、搜索栏) 跟着卡片淡没了多少 (0..1). */
+    val chromeFade: Float get() = 0f
 
     /** 聚焦卡的 hero 内容此刻显示到什么程度 (0..1, 同 hero 文字那一层; 显示的是别的内容时为 0, 如探索页的轮播). */
     val heroShown: Float
@@ -111,10 +131,19 @@ internal class TvNativeWallExtensions(private val wall: ViewGroup, private val h
 
     fun heroActiveChanged(active: Boolean) = items.forEach { it.onHeroActiveChanged(host, active) }
 
+    /** 焦点从外面进墙: 有扩展记着要焦点就给它 (见 [TvNativeWallExtension.onEntryFocus]). */
+    fun entryFocus(): Boolean = items.any { it.onEntryFocus(host) }
+
     /** 焦点 ([focused]) 在哪个扩展的视图里就把方向键 [keyCode] 给它. */
     fun key(focused: View?, keyCode: Int): Boolean {
         val view = focused ?: return false
         return ownerOf(view)?.onKey(host, view, keyCode) == true
+    }
+
+    /** 焦点 ([focused]) 在哪个扩展的视图里就把按键事件 [event] 给它 (见 [TvNativeWallExtension.onKeyEvent]). */
+    fun keyEvent(focused: View?, event: KeyEvent): Boolean {
+        val view = focused ?: return false
+        return ownerOf(view)?.onKeyEvent(host, view, event) == true
     }
 
     fun heroVerticalKey(down: Boolean): Boolean = items.any { it.onHeroVerticalKey(host, down) }
@@ -134,3 +163,8 @@ internal class TvNativeWallExtensions(private val wall: ViewGroup, private val h
     private fun ownerOf(view: View): TvNativeWallExtension? =
         items.firstOrNull { e -> e.views.any { tvNativeIsInside(view, it) } }
 }
+
+/** 方向键 (上下左右). */
+internal fun tvNativeIsDirectionKey(keyCode: Int): Boolean =
+    keyCode == KeyEvent.KEYCODE_DPAD_UP || keyCode == KeyEvent.KEYCODE_DPAD_DOWN ||
+        keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT

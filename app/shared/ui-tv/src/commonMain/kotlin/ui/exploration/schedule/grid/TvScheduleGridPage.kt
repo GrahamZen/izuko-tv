@@ -13,29 +13,20 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.BringIntoViewSpec
-import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
-import androidx.compose.foundation.gestures.scrollBy
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -47,7 +38,6 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -74,7 +64,6 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.datetime.DayOfWeek
-import kotlinx.datetime.number
 import me.him188.ani.app.data.network.TmdbImageService
 import me.him188.ani.app.data.network.TmdbMatchHints
 import me.him188.ani.app.data.repository.subject.SetSubjectCollectionTypeOrDeleteUseCase
@@ -94,14 +83,9 @@ import me.him188.ani.app.ui.foundation.tv.TvPosterWallScaled
 import me.him188.ani.app.ui.foundation.TvPageRefreshHandler
 import me.him188.ani.app.ui.foundation.consumeHeldConfirmKey
 import me.him188.ani.app.ui.foundation.ifThen
-import me.him188.ani.app.ui.foundation.focus.TvFocusKey
-import me.him188.ani.app.ui.foundation.focus.TvFocusScope
-import me.him188.ani.app.ui.foundation.focus.rememberTvFocusRail
 import me.him188.ani.app.ui.foundation.focus.rememberTvFocusScope
 import me.him188.ani.app.ui.foundation.focus.rememberTvGridFocus
-import me.him188.ani.app.ui.foundation.focus.tvFocusMoveRateLimit
 import me.him188.ani.app.ui.foundation.focus.tvFocusNavSignal
-import me.him188.ani.app.ui.foundation.focus.tvFocusRailKeys
 import me.him188.ani.app.ui.foundation.navigation.BackHandler
 import me.him188.ani.app.ui.foundation.navigation.LocalPageIsForeground
 import me.him188.ani.app.ui.foundation.navigation.OnReturnToForeground
@@ -111,7 +95,6 @@ import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.TV_CARD_FADE_DISTANCE
 import me.him188.ani.app.ui.foundation.tv.TV_CARD_HERO_BACKDROP_GEOMETRY
 import me.him188.ani.app.ui.foundation.tv.TV_FULLSCREEN_BACKDROP_DIM_ALPHA
-import me.him188.ani.app.ui.foundation.tv.TV_GLASS_FOCUS_BLEED
 import me.him188.ani.app.ui.foundation.tv.TV_GRID_TOP_BLEED
 import me.him188.ani.app.ui.foundation.tv.TV_NAV_LOCK_MILLIS
 import me.him188.ani.app.ui.foundation.tv.TV_POSTER_WALL_BOTTOM_BLEED
@@ -139,8 +122,6 @@ import me.him188.ani.app.ui.foundation.tv.prefetchTvBackdrop
 import me.him188.ani.app.ui.foundation.tv.rememberTvHeroMediaPipeline
 import me.him188.ani.app.ui.foundation.tv.rememberTvRailWallSelection
 import me.him188.ani.app.ui.foundation.tv.rememberTvSettledHeroProvider
-import me.him188.ani.app.ui.foundation.tv.tvGlassBackground
-import me.him188.ani.app.ui.foundation.tv.tvGridBleed
 import me.him188.ani.app.ui.foundation.tv.tvGridNeighborsOf
 import me.him188.ani.app.ui.foundation.tv.tvHeroBackdropUrl
 import me.him188.ani.app.ui.foundation.tv.tvHeroContentColor
@@ -171,7 +152,6 @@ import me.him188.ani.app.ui.lang.exploration_schedule_weekday_wednesday
 import me.him188.ani.app.ui.lang.exploration_tv_schedule_empty
 import me.him188.ani.app.ui.lang.exploration_tv_schedule_today
 import me.him188.ani.app.ui.search.LoadErrorCard
-import me.him188.ani.app.ui.subject.collection.TvCollectionGlassRailTab
 import me.him188.ani.app.ui.subject.collection.components.EditCollectionTypeDropDown
 import me.him188.ani.app.ui.subject.details.layout.TvRewatchMenuItem
 import me.him188.ani.app.ui.subject.details.layout.rememberTvRewatches
@@ -304,7 +284,6 @@ fun TvScheduleGridPage(
     val focus = rememberTvFocusScope()
     val gridFocus = rememberTvGridFocus(focus)
     val nativeState = rememberTvNativeGridPageState()
-    val dateListState = rememberLazyListState()
     val errorCardFocusRequester = remember { FocusRequester() }
     var anyFocusObtained by remember { mutableStateOf(false) }
     // 当前聚焦的卡片下标 (跨导航保存: 从详情页返回本页时恢复); 日期行上换天时清掉
@@ -323,16 +302,22 @@ fun TvScheduleGridPage(
             displayedDayIndex = day
         },
     )
+    // 日期行 (见 TvScheduleDateRow; 安卓上是挂在原生网格页上的玻璃签栏, 日期与海报墙之间的焦点都在原生里走)
+    val dateRow = rememberTvScheduleDateRow(dates, focus)
+    // 焦点给选中的那天 (还没排出来时日期行记下, 排好再给; 同时滚到居中)
     val focusSelectedDate: () -> Unit = {
-        val index = dates.selected
-        focus.request(ScheduleDateFocus(index))
-        // 胶囊还没组合出来: 先滚过去, 附着后请求自己送达 (聚焦时再居中, 见 TvScheduleCenterBringIntoView)
-        if (dateListState.layoutInfo.visibleItemsInfo.none { it.index == index }) {
-            scope.launch { runCatching { dateListState.scrollToItem(index) } }
-        }
+        dateRow.focusSelected()
     }
     // 进页恢复期间 (组合 → 送焦有结果): 返回键按"在海报墙里"算, 见下方返回分层
     val restoreCardIndex = remember { lastFocusedCard }
+    // 新进本页落在选中的那天: 组合当帧就记到日期行上 —— 焦点从外面进原生网格页时网格先照它给, 不先落到第一张卡上再跳上来
+    val dateEntryRegistered = remember { booleanArrayOf(false) }
+    SideEffect {
+        if (restoreCardIndex < 0 && !dateEntryRegistered[0]) {
+            dateEntryRegistered[0] = true
+            focusSelectedDate()
+        }
+    }
     var restorePending by remember { mutableStateOf(restoreCardIndex >= 0) }
 
     // ---- 整屏背景 (见类说明): 聚焦那部的图, 停下来才换 (同其余页面的 hero 背景, 连发期间一次都不换) ----
@@ -402,11 +387,6 @@ fun TvScheduleGridPage(
     OnReturnToForeground("schedule") {
         if (!anyFocusObtained) return@OnReturnToForeground
         if (lastFocusedCard >= 0) gridFocus.focusItem(lastFocusedCard) else focusSelectedDate()
-    }
-    // 日期行初始位置: 选中的那天居中 (从详情页返回时可能是跨天走到的某一天). 等一帧再算: 首帧 layoutInfo 还是空的
-    LaunchedEffect(days.size) {
-        withFrameNanos { }
-        runCatching { dateListState.scrollToCenter(dates.selected) }
     }
     // 数据到了但这一天是空的, 目标卡永远不会出现: 取消在途的送焦请求 (焦点停放在海报墙上时随之交回日期行, 见 TvNativeGridPageHost)
     LaunchedEffect(dayCards, presentation.isPlaceholder) {
@@ -500,9 +480,8 @@ fun TvScheduleGridPage(
         val target = displayedDayIndex + delta
         if (target in days.indices) {
             gridFocus.focusItem(if (toLastCard) (cardCountOf(target) - 1).coerceAtLeast(0) else 0)
+            // 日期行跟着选中滚到居中 (见 TvScheduleDateRow), 之后按上 / 返回回日期行落在它上面
             dates.select(target, fromRail = false)
-            // 日期行不含焦点, 不会自己跟着滚: 把新选中的那天带回视野, 之后按上 / 返回回日期行才落得上
-            scope.launch { runCatching { dateListState.scrollToCenter(target) } }
         }
     }
     // 下键从日期行进海报墙 (见 enterWall): 日期行上的换天还在等方向键松开就当场换; 换过天 (或这一天从没进过) 落首卡,
@@ -517,8 +496,18 @@ fun TvScheduleGridPage(
         )
     }
 
+    // 日期行往上滚走多少 (见上方 railReturn; 同下方错误横幅那一层)
+    val dateRowScrollAway: () -> Float = { if (gridHasFocus) nativeState.contentScroll.toFloat() else railReturnFrom * railReturn.value }
+    val onDateRowFocused: () -> Unit = {
+        anyFocusObtained = true
+        // 日期是本页的系统兜底落点 (同追番页的标签)
+        focus.notifyFocusFallbackSettled()
+    }
+
     // 返回键逐层往回: 海报墙非首卡 → 首卡 (远跳, 见 wallFarJump) → 日期行 → 退出本页 (最后一步不启用, 交给导航返回).
+    // 平板模式没有日期行那一层 (日期只点选、不拿焦点): 首卡上按返回就退出本页.
     // 三段接力判"在海报墙里": 组合 → 派出落点 (restorePending) → 焦点落位 (switching) → 之后 (gridHasFocus). derivedStateOf 收窄成布尔
+    val touchInput = LocalTvTouchInputEnabled.current
     var wallFarJump by remember { mutableStateOf(false) }
     LaunchedEffect(gridFocus) {
         snapshotFlow { gridFocus.switching }.collect { if (!it) wallFarJump = false }
@@ -532,7 +521,7 @@ fun TvScheduleGridPage(
         wallFarJump = true
         gridFocus.focusItem(0)
     }
-    BackHandler(enabled = !navLocked && backToDates) {
+    BackHandler(enabled = !navLocked && backToDates && !touchInput) {
         gridFocus.cancel()
         focusSelectedDate()
     }
@@ -755,6 +744,8 @@ fun TvScheduleGridPage(
                 cardHeight = cardHeight,
                 // 番名压在整屏模糊背景上: 照 tvOS 的 vibrancy 画
                 labelVibrancy = true,
+                // 日期行 (安卓上挂在网格页上, 见 TvScheduleDateRow)
+                extensions = dateRow.wallExtensions,
             ) {
                 // 空态: 这一天确实没有新番 (占位 / 出错各有自己的表现)
                 if (cards.isEmpty() && !presentation.isPlaceholder && presentation.error == null) {
@@ -772,6 +763,19 @@ fun TvScheduleGridPage(
             }
         }
 
+        // 日期行: 电视上整行从屏幕左缘起 (第一天离边留一截), 平板上从左上角「返回」右边起、滑过去的切在那里.
+        // 不放在下面那个会跟着滚走的 Column 里: 滚走与淡没由日期行自己按给它的进度做
+        dateRow.Content(
+            days = days,
+            scrollAway = dateRowScrollAway,
+            fade = { nativeState.wallFade },
+            onDown = enterGrid,
+            onFocused = onDateRowFocused,
+            modifier = Modifier.fillMaxWidth()
+                .padding(top = TV_SCHEDULE_TOP_PAD)
+                .ifThen(touchInput) { padding(start = TV_TOUCH_BACK_END + TV_SCHEDULE_TOUCH_BACK_GAP) }
+                .height(TV_SCHEDULE_DATE_RAIL_HEIGHT),
+        )
         Column(
             Modifier.fillMaxWidth()
                 // 点开时日期行跟着卡片淡没; 焦点在海报墙里时跟着内容 1:1 往上滚走 (照 tvOS 标签栏: 内容只有一个主视图时标签栏随内容滚出屏幕),
@@ -782,19 +786,8 @@ fun TvScheduleGridPage(
                 }
                 .padding(start = TV_SCHEDULE_SIDE_PAD, top = TV_SCHEDULE_TOP_PAD),
         ) {
-            TvScheduleDateRail(
-                days = days,
-                selection = dates,
-                focus = focus,
-                listState = dateListState,
-                onAnyFocused = {
-                    anyFocusObtained = true
-                    // 日期胶囊是本页的系统兜底落点 (同追番页的标签)
-                    focus.notifyFocusFallbackSettled()
-                },
-                onNavigateDown = enterGrid,
-                modifier = Modifier.fillMaxWidth().height(TV_SCHEDULE_DATE_RAIL_HEIGHT),
-            )
+            // 日期行占的地方 (签那一排是原生的, 见上方): 错误横幅排在它下面
+            Spacer(Modifier.fillMaxWidth().height(TV_SCHEDULE_DATE_RAIL_HEIGHT))
             val error = presentation.error
             if (error != null) {
                 LoadErrorCard(
@@ -818,97 +811,6 @@ fun TvScheduleGridPage(
     }
 }
 
-/**
- * 日期行: 15 天各一枚玻璃胶囊 (同追番页的标签: 选中垫浅灰片、聚焦浅色实底配黑字并抬起), 写「今天 / 周三 / 上周三」加日期; 放不下时横向滚,
- * 聚焦的那枚滚到居中 (两端夹住). **聚焦即选中**, 海报墙等方向键松开才换 (见 [TvRailWallSelection]). 左右键显式在胶囊间移动, 两端与上键
- * 都吃掉 (本行已是最上面一层, 左边没有侧边栏).
- *
- * 平板模式左上角有「返回」(TvTouchBackButton, 与本行同一高度): 本行从它右边让开 [TV_SCHEDULE_TOUCH_BACK_GAP] 起, 左缘裁在那里,
- * 滑过去的胶囊切在返回右边, 不钻到它下面; 电视上没有返回, 照旧出血到屏幕左缘.
- *
- * 各胶囊自己判断选没选中 (见 TvCollectionGlassRailTab): 换天时只有选中态变了的两枚重组, 调用方与整行都不重组.
- */
-@Composable
-private fun TvScheduleDateRail(
-    days: List<ScheduleDay>,
-    selection: TvRailWallSelection<Int>,
-    focus: TvFocusScope,
-    listState: LazyListState,
-    onAnyFocused: () -> Unit,
-    onNavigateDown: () -> Boolean,
-    modifier: Modifier = Modifier,
-) {
-    val scope = rememberCoroutineScope()
-    // 胶囊可能还没组合出来 (那时 requestFocus 是静默 no-op): 走 scope 请求 (悬挂到附着再送), 不在屏上时先滚过去
-    val rail = rememberTvFocusRail(
-        scope = focus,
-        keyAt = { index -> ScheduleDateFocus(index) },
-        onMove = { target ->
-            focus.request(ScheduleDateFocus(target))
-            if (listState.layoutInfo.visibleItemsInfo.none { it.index == target }) {
-                scope.launch { runCatching { listState.scrollToItem(target) } }
-            }
-        },
-    )
-    val touchInput = LocalTvTouchInputEnabled.current
-    CompositionLocalProvider(LocalBringIntoViewSpec provides TvScheduleCenterBringIntoView) {
-        LazyRow(
-            modifier
-                // 平板模式: 行从左上角「返回」右边起, 左缘裁在那里 (本行左边距之外再让开的那一截)
-                .ifThen(touchInput) { padding(start = TV_TOUCH_BACK_END + TV_SCHEDULE_TOUCH_BACK_GAP - TV_SCHEDULE_SIDE_PAD) }
-                // 电视: 往左出血到屏幕左缘 (行首位置不变): 滑过去的胶囊切在屏幕边上, 不切在留白线上; 聚焦的那枚放大、投影伸出胶囊外也不被裁
-                .ifThen(!touchInput) { tvGridBleed(start = TV_SCHEDULE_SIDE_PAD) }
-                // 长按方向键的移动频率上限 (全局上限, 高于系统连发; 同追番页的标签行)
-                .tvFocusMoveRateLimit()
-                .tvFocusRailKeys(
-                    state = rail,
-                    itemCount = { days.size },
-                    onNavigateDown = onNavigateDown,
-                    onNavigateUp = { true },
-                ),
-            state = listState,
-            contentPadding = PaddingValues(start = if (touchInput) 0.dp else TV_SCHEDULE_SIDE_PAD, end = TV_GLASS_FOCUS_BLEED),
-            horizontalArrangement = Arrangement.spacedBy(TV_SCHEDULE_DATE_SPACING),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            itemsIndexed(days, key = { _, day -> day.date.toString() }) { index, day ->
-                TvCollectionGlassRailTab(
-                    rail = rail,
-                    index = index,
-                    item = index,
-                    selection = selection,
-                    label = renderTvScheduleWeekday(day),
-                    detail = "${day.date.month.number}/${day.date.day}",
-                    // 胶囊照 tvOS 标签栏的高度 (见 TV_SCHEDULE_DATE_RAIL_HEIGHT), 字竖向居中
-                    modifier = Modifier.height(TV_SCHEDULE_DATE_RAIL_HEIGHT).tvGlassBackground(CircleShape),
-                    onFocusChanged = { f -> if (f) onAnyFocused() },
-                )
-            }
-        }
-    }
-}
-
-private data class ScheduleDateFocus(val index: Int) : TvFocusKey
-
-/** 日期行: 聚焦的胶囊滚到居中 (LazyRow 在两端自己夹住), 不按默认的"最小滚动到可见" —— 那样落位取决于上一次滚到哪, 观感随机. */
-private val TvScheduleCenterBringIntoView = object : BringIntoViewSpec {
-    override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float =
-        offset + size / 2f - containerSize / 2f
-}
-
-/** 把第 [index] 项滚到居中 (不在屏上先滚到它, 下一帧按实际宽度对中; 两端夹住). */
-private suspend fun LazyListState.scrollToCenter(index: Int) {
-    if (index < 0) return
-    if (layoutInfo.visibleItemsInfo.none { it.index == index }) {
-        scrollToItem(index)
-        withFrameNanos { }
-    }
-    val info = layoutInfo
-    val item = info.visibleItemsInfo.firstOrNull { it.index == index } ?: return
-    val center = (info.viewportStartOffset + info.viewportEndOffset) / 2f
-    scrollBy((item.offset + item.size / 2f - center).roundToInt().toFloat())
-}
-
 /** 番名: 非中文界面查到过的 TMDB 标题 (见 [tvTmdbSubjectTitle]), 否则原名或中文名 (见 [tvUseOriginalTitle]). */
 @Composable
 private fun AiringScheduleItemPresentation.tvTitle(): String =
@@ -928,7 +830,7 @@ private fun rememberEpisodeLabel(item: AiringScheduleItemPresentation): String {
 
 /** "上周三" / "今天" / "周三" / "下周三". */
 @Composable
-private fun renderTvScheduleWeekday(day: ScheduleDay): String {
+internal fun renderTvScheduleWeekday(day: ScheduleDay): String {
     if (day.kind == ScheduleDay.Kind.TODAY) return stringResource(Lang.exploration_tv_schedule_today)
     val weekday = when (day.dayOfWeek) {
         DayOfWeek.MONDAY -> stringResource(Lang.exploration_schedule_weekday_monday)
@@ -974,7 +876,7 @@ private val TV_SCHEDULE_FOLLOWED_TYPES = setOf(UnifiedCollectionType.DOING, Unif
  * 页面两侧留白 (到封面边): 本页没有侧边栏, 照 tvOS 安全区左右 80pt (HIG Layout; 1080p 下 1pt = 0.5dp). 日期行从这里排起, 与封面左缘对齐;
  * 滚动时两头都铺到屏幕边缘.
  */
-private val TV_SCHEDULE_SIDE_PAD = 40.dp
+internal val TV_SCHEDULE_SIDE_PAD = 40.dp
 
 /** 封面宽高比的上下限 (卡格高按首屏放下整数行现算, 见 [tvScheduleCoverHeightPx]): 最窄 2:3 (tvOS 海报), 最宽 3:4. */
 private const val TV_SCHEDULE_COVER_RATIO_NARROWEST = 2f / 3f
@@ -1013,13 +915,13 @@ internal fun tvScheduleCoverHeightPx(
 private val TV_SCHEDULE_TOP_PAD = 23.dp
 
 /** 日期行 (胶囊) 的高度: 照 tvOS 标签栏高 68pt. */
-private val TV_SCHEDULE_DATE_RAIL_HEIGHT = 34.dp
+internal val TV_SCHEDULE_DATE_RAIL_HEIGHT = 34.dp
 
 /** 日期行 (及错误横幅) 到海报墙顶线. 聚焦卡放大时顶边向上伸出 7.6~9dp, 这段要盖得住. */
 private val TV_SCHEDULE_DATES_TO_GRID_GAP = 16.dp
 
 /** 日期胶囊之间的间距. */
-private val TV_SCHEDULE_DATE_SPACING = 8.dp
+internal val TV_SCHEDULE_DATE_SPACING = 8.dp
 
 /** 平板模式日期行离左上角「返回」右缘的距离. */
 private val TV_SCHEDULE_TOUCH_BACK_GAP = 12.dp

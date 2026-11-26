@@ -111,6 +111,11 @@ import me.him188.ani.app.ui.foundation.tv.LocalTvPosterWallTone
 import me.him188.ani.app.ui.foundation.tv.TV_BACKDROP_ASPECT_RATIO
 import me.him188.ani.app.ui.foundation.tv.TV_CARD_FADE_DISTANCE
 import me.him188.ani.app.ui.foundation.tv.TV_CARD_HERO_TUNING
+import me.him188.ani.app.ui.foundation.tv.TV_GLASS_TAB_BAR_PADDING
+import me.him188.ani.app.ui.foundation.tv.TV_GLASS_TAB_GAP
+import me.him188.ani.app.ui.foundation.tv.TV_GLASS_TAB_PADDING_HORIZONTAL
+import me.him188.ani.app.ui.foundation.tv.TV_GLASS_TAB_PADDING_VERTICAL
+import me.him188.ani.app.ui.foundation.tv.TV_GLASS_TAB_ROW_HEIGHT
 import me.him188.ani.app.ui.foundation.tv.TV_GRID_START_BLEED
 import me.him188.ani.app.ui.foundation.tv.TV_GRID_TOP_BLEED
 import me.him188.ani.app.ui.foundation.tv.TV_NAV_LOCK_MILLIS
@@ -1508,16 +1513,16 @@ internal val TV_COLLECTION_START_PAD = 16.dp
 internal val TV_COLLECTION_TOP_PAD = 24.dp
 
 /** 玻璃标签栏里: 两端离胶囊边的留白、标签之间的空、每个标签的片的内边距. */
-private val TV_COLLECTION_TAB_BAR_PADDING = 4.dp
-private val TV_COLLECTION_TAB_GAP = 2.dp
-private val TV_COLLECTION_TAB_PADDING_HORIZONTAL = 14.dp
-private val TV_COLLECTION_TAB_PADDING_VERTICAL = 4.dp
+private val TV_COLLECTION_TAB_BAR_PADDING = TV_GLASS_TAB_BAR_PADDING
+private val TV_COLLECTION_TAB_GAP = TV_GLASS_TAB_GAP
+private val TV_COLLECTION_TAB_PADDING_HORIZONTAL = TV_GLASS_TAB_PADDING_HORIZONTAL
+private val TV_COLLECTION_TAB_PADDING_VERTICAL = TV_GLASS_TAB_PADDING_VERTICAL
 
 /** Tab 行到 Hero 信息块 (标题) 的间距. */
 private val TV_COLLECTION_TABS_TO_HERO_GAP = 10.dp
 
 /** 玻璃标签栏的定高 (标签的片 = 一行字 24 + 上下各 4, 胶囊比它高一截): 网格顶线与 Hero 信息块的高度由它倒推, 见 [TV_COLLECTION_WALL_HERO_INFO_HEIGHT]. */
-internal val TV_COLLECTION_TAB_ROW_HEIGHT = 39.dp
+internal val TV_COLLECTION_TAB_ROW_HEIGHT = TV_GLASS_TAB_ROW_HEIGHT
 
 /**
  * 网格上方的间距: 卡片墙是 Tab 行 (及错误横幅) 到网格顶线, hero 态是 Hero 信息块 (简介底部) 到聚焦行.

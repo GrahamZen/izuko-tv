@@ -310,6 +310,8 @@ class TvNativeGridPageView(
                 rowsShown()?.onHostHeroFrame()
                 // 点开: 背景图与 hero 文字里标题以外的几行跟着卡片淡没 (标题留着, 交给详情页的标题接着画), 顶栏由页面跟着淡
                 applyHeroAlpha()
+                if (chrome) chromeFade = fade
+                extensions.frame()
                 if (chrome) listener?.onWallFade(fade)
             }
 
@@ -865,6 +867,8 @@ class TvNativeGridPageView(
     }
 
     override fun onRequestFocusInDescendants(direction: Int, previouslyFocusedRect: Rect?): Boolean {
+        // 扩展记着页面要它拿的焦点 (新进页落到选中的签上): 照它给, 不落到卡上
+        if (extensions.entryFocus()) return true
         rowsShown()?.let { return it.requestFocus(direction, previouslyFocusedRect) }
         val g = current ?: return false
         val count = g.cards.itemCount
@@ -953,8 +957,8 @@ class TvNativeGridPageView(
             if (grid != null && target != null) grid.focusItem(target) else rowsShown()?.requestFocus()
             return true
         }
-        // 焦点在扩展的视图里: 方向键先给扩展
-        if (direction && event.action == KeyEvent.ACTION_DOWN && extensions.key(findFocus(), code)) return true
+        // 焦点在扩展的视图里 (如标签栏): 方向键与确认键先给扩展
+        if ((direction || tvNativeIsConfirmKey(code)) && extensions.keyEvent(findFocus(), event)) return true
         if (!isFocused || parkedAt < 0 || !(direction || tvNativeIsConfirmKey(code))) return super.dispatchKeyEvent(event)
         if (direction && event.action == KeyEvent.ACTION_DOWN) {
             val expired = SystemClock.uptimeMillis() - parkedAt >= TV_TRANSIT_PARK_KEY_GRACE_MILLIS
@@ -982,6 +986,13 @@ class TvNativeGridPageView(
     // ------------------------------------------------------------------
 
     override val heroActive: Boolean get() = timeline.active
+
+    /** 卡片墙在 hero 态里淡没了多少 (0..1, hero 时间线的 above: 进的时候先淡没, 退的时候最后淡回来). */
+    override val heroAbove: Float get() = timeline.above
+
+    /** 点开进详情页时顶栏跟着淡没了多少 (同报给页面的 onWallFade). */
+    override var chromeFade: Float = 0f
+        private set
 
     /**
      * 进 / 出 hero 态 (返回键在页面里, 调这里). [animated] = false 时直接到位 (返回本页时恢复). 淡入淡出 (hero 时间线) 三档都有 ——
