@@ -55,6 +55,7 @@ import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.TV_REDUCED_MARQUEE_ITERATIONS
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeHost
 import me.him188.ani.app.ui.foundation.tv.nativeview.toTvNativeTextStyle
+import me.him188.ani.app.ui.foundation.tv.nativeview.tvNativeQrColors
 import me.him188.ani.app.ui.foundation.tv.tvGlassColors
 import me.him188.ani.app.ui.foundation.widgets.AniAlertDialog
 import me.him188.ani.app.ui.foundation.widgets.AniTextButton
@@ -335,6 +336,7 @@ fun rememberTvSettingsStyle(): TvSettingsStyle {
             val onSurface = colors.onSurface
             val secondary = onSurface.copy(alpha = 0.6f)
             val darkTheme = colors.surface.luminance() < 0.5f
+            val qr = tvNativeQrColors(colors)
             TvSettingsStyle(
                 // 左边距同其他页面的内容起点
                 paddingStartPx = 48.dp.roundToPx(),
@@ -373,9 +375,9 @@ fun rememberTvSettingsStyle(): TvSettingsStyle {
                 bubbleMineBg = colors.primary.copy(alpha = if (darkTheme) 0.24f else 0.14f).toArgb(),
                 activeBg = onSurface.copy(alpha = 0.1f).toArgb(),
                 focusedBg = (if (darkTheme) focusedBg else glass.focusedPlatter).toArgb(),
-                // 浅底深码 (同 Web 控制台的二维码): 深色主题的 primary 本身是浅色, 当底、onPrimary 画码; 浅色主题换 primaryContainer
-                qrBg = (if (darkTheme) colors.primary else colors.primaryContainer).toArgb(),
-                qrFg = (if (darkTheme) colors.onPrimary else colors.onPrimaryContainer).toArgb(),
+                // 浅底深码, 见 tvNativeQrColors
+                qrBg = qr.bg,
+                qrFg = qr.fg,
                 text = onSurface.toArgb(),
                 textSecondary = secondary.toArgb(),
                 focusedText = (if (darkTheme) focusedText else glass.focusedContent).toArgb(),

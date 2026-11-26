@@ -17,6 +17,7 @@ import android.widget.FrameLayout
 import me.him188.ani.app.navigation.SettingsTab
 import me.him188.ani.app.ui.foundation.Res
 import me.him188.ani.app.ui.foundation.a
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeQrView
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeTestHost
 import me.him188.ani.app.ui.foundation.tv.nativeview.testTextStyle
 import me.him188.ani.app.ui.lang.Lang
@@ -191,8 +192,8 @@ class TvSettingsViewTest {
     }
 
     /** 说明栏的二维码视图 (在主线程上调, 如 waitUntil 的条件里). */
-    private fun qrView(): TvSettingsQrView =
-        (0 until view.childCount).map { view.getChildAt(it) }.filterIsInstance<TvSettingsQrView>().single()
+    private fun qrView(): TvNativeQrView =
+        (0 until view.childCount).map { view.getChildAt(it) }.filterIsInstance<TvNativeQrView>().single()
 
     @Test
     fun `a row with a qr code shows it in the info column`() {

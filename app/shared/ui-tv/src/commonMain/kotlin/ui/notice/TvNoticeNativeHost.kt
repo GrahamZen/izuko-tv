@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ProgressIndicatorDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -38,14 +37,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.delay
-import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeBubbleStyle
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeButtonGroupStyle
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeButtonStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativeIcon
+import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativePanelStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.toTvNativeTextStyle
 import me.him188.ani.app.ui.foundation.widgets.ANI_SCROLL_FADE
 import me.him188.ani.app.ui.foundation.widgets.CENTERED_PANEL_TITLE_GAP
-import me.him188.ani.app.ui.foundation.widgets.aniFocusContainerColor
-import me.him188.ani.app.ui.foundation.widgets.aniFocusContentColor
-import me.him188.ani.app.ui.foundation.widgets.aniPanelItemColor
 import me.him188.ani.app.ui.foundation.widgets.aniPanelTitleStyle
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.notification_empty
@@ -290,19 +289,15 @@ internal fun rememberTvNoticeStyle(): TvNoticeStyle {
     val density = LocalDensity.current
     val typography = MaterialTheme.typography
     val colors = MaterialTheme.colorScheme
-    val touch = LocalTvTouchInputEnabled.current
-    val focusBg = aniFocusContainerColor()
-    val focusFg = aniFocusContentColor()
-    val itemBg = aniPanelItemColor(colors.surfaceContainerHighest)
+    val panel = rememberTvNativePanelStyle()
     val panelTitle = aniPanelTitleStyle
-    val track = ProgressIndicatorDefaults.linearTrackColor
-    return remember(density, typography, colors, touch, focusBg, focusFg, itemBg, panelTitle, track) {
+    return remember(density, typography, colors, panel, panelTitle) {
         with(density) {
             val onSurface = colors.onSurface
             val variant = colors.onSurfaceVariant
             val dark = colors.surface.luminance() < 0.5f
             TvNoticeStyle(
-                touch = touch,
+                panel = panel,
                 tabGapPx = TV_NOTICE_TAB_GAP.roundToPx(),
                 tabPaddingPx = 4.dp.roundToPx(),
                 tabUnderlineWidthPx = TV_NOTICE_TAB_UNDERLINE_WIDTH.roundToPx(),
@@ -350,27 +345,46 @@ internal fun rememberTvNoticeStyle(): TvNoticeStyle {
                 bodyTopPx = 12.dp.roundToPx(),
                 blockGapPx = 10.dp.roundToPx(),
                 actionsTopPx = 12.dp.roundToPx(),
-                rowActions = TV_NOTICE_ROW_ACTIONS,
-                actionHeightPx = TV_NOTICE_ACTION_HEIGHT.roundToPx(),
-                actionCornerPx = 12.dp.toPx(),
-                actionPaddingCenterPx = 24.dp.roundToPx(),
-                actionPaddingStartPx = 16.dp.roundToPx(),
-                actionPaddingVPx = 10.dp.roundToPx(),
-                actionRowGapPx = 12.dp.roundToPx(),
-                actionColumnGapPx = 8.dp.roundToPx(),
-                actionColumnWidthPx = TV_NOTICE_ACTIONS_COLUMN_WIDTH.roundToPx(),
+                buttons = TvNativeButtonGroupStyle(
+                    button = TvNativeButtonStyle(
+                        label = typography.labelLarge.toTvNativeTextStyle(density, onSurface),
+                        heightPx = TV_NOTICE_ACTION_HEIGHT.roundToPx(),
+                        cornerPx = 12.dp.toPx(),
+                        paddingCenterPx = 24.dp.roundToPx(),
+                        paddingStartPx = 16.dp.roundToPx(),
+                        paddingVPx = 10.dp.roundToPx(),
+                        bg = panel.itemBg,
+                        fg = panel.onSurface,
+                        focusBg = panel.focusBg,
+                        focusFg = panel.focusFg,
+                        pressedOverlay = panel.pressedOverlay,
+                        touch = panel.touch,
+                    ),
+                    maxInRow = TV_NOTICE_ROW_ACTIONS,
+                    rowGapPx = 12.dp.roundToPx(),
+                    columnGapPx = 8.dp.roundToPx(),
+                    columnWidthPx = TV_NOTICE_ACTIONS_COLUMN_WIDTH.roundToPx(),
+                ),
                 pageFraction = TV_NOTICE_PAGE_FRACTION,
                 touchNameLines = TV_NOTICE_TOUCH_NAME_LINES,
                 bulletPx = 6.dp.roundToPx(),
                 bulletTopPx = 9.dp.roundToPx(),
                 bulletGapPx = 10.dp.roundToPx(),
                 paragraphTitleGapPx = 2.dp.roundToPx(),
-                bubbleMaxFraction = TV_NOTICE_BUBBLE_MAX_FRACTION,
-                bubblePaddingHPx = 12.dp.roundToPx(),
-                bubblePaddingVPx = 8.dp.roundToPx(),
-                bubbleCornerPx = 12.dp.toPx(),
-                bubbleLineGapPx = 2.dp.roundToPx(),
-                bubbleDotGapPx = 6.dp.roundToPx(),
+                bubble = TvNativeBubbleStyle(
+                    meta = typography.labelMedium.toTvNativeTextStyle(density, variant),
+                    text = typography.bodyMedium.toTvNativeTextStyle(density, onSurface),
+                    maxWidthFraction = TV_NOTICE_BUBBLE_MAX_FRACTION,
+                    paddingHPx = 12.dp.roundToPx(),
+                    paddingVPx = 8.dp.roundToPx(),
+                    lineGapPx = 2.dp.roundToPx(),
+                    cornerPx = 12.dp.toPx(),
+                    mineBg = colors.primary.copy(alpha = TV_NOTICE_MINE_BUBBLE_ALPHA).toArgb(),
+                    otherBg = onSurface.copy(alpha = TV_NOTICE_CHIP_ALPHA).toArgb(),
+                    dotPx = TV_NOTICE_DOT_SIZE.roundToPx(),
+                    dotGapPx = 6.dp.roundToPx(),
+                    dotColor = panel.error,
+                ),
                 cardPaddingHPx = 14.dp.roundToPx(),
                 cardPaddingVPx = 10.dp.roundToPx(),
                 cardCornerPx = 12.dp.toPx(),
@@ -408,8 +422,6 @@ internal fun rememberTvNoticeStyle(): TvNoticeStyle {
                 paragraph = typography.bodyLarge.toTvNativeTextStyle(density, onSurface),
                 paragraphSmall = typography.bodyMedium.toTvNativeTextStyle(density, variant),
                 paragraphTitle = typography.bodyLarge.copy(fontWeight = FontWeight.Medium).toTvNativeTextStyle(density, onSurface),
-                bubbleMeta = typography.labelMedium.toTvNativeTextStyle(density, variant),
-                bubbleText = typography.bodyMedium.toTvNativeTextStyle(density, onSurface),
                 cardTitle = typography.titleSmall.toTvNativeTextStyle(density, onSurface),
                 cardStatus = typography.labelMedium.toTvNativeTextStyle(density, variant),
                 cardPercent = typography.titleSmall.toTvNativeTextStyle(density, colors.primary),
@@ -418,34 +430,12 @@ internal fun rememberTvNoticeStyle(): TvNoticeStyle {
                 qrCaptionSmall = typography.labelMedium.toTvNativeTextStyle(density, variant),
                 qrUnavailable = typography.bodySmall.toTvNativeTextStyle(density, variant),
                 status = typography.labelLarge.toTvNativeTextStyle(density, variant),
-                action = typography.labelLarge.toTvNativeTextStyle(density, onSurface),
-                onSurface = onSurface.toArgb(),
-                onSurfaceVariant = variant.toArgb(),
-                primary = colors.primary.toArgb(),
-                error = colors.error.toArgb(),
-                outline = colors.outline.toArgb(),
-                outlineVariant = colors.outlineVariant.toArgb(),
                 ok = (if (dark) CONNECTED_GREEN_DARK else CONNECTED_GREEN_LIGHT).toArgb(),
-                focusBg = focusBg.toArgb(),
-                focusFg = focusFg.toArgb(),
-                itemBg = itemBg.toArgb(),
-                selectedBg = colors.secondaryContainer.toArgb(),
-                selectedFg = colors.onSecondaryContainer.toArgb(),
-                pressedOverlay = onSurface.copy(alpha = TV_NOTICE_PRESSED_ALPHA).toArgb(),
                 chipBg = onSurface.copy(alpha = TV_NOTICE_CHIP_ALPHA).toArgb(),
                 accentChipBg = colors.primary.copy(alpha = TV_NOTICE_ACCENT_CHIP_ALPHA).toArgb(),
                 dividerColor = onSurface.copy(alpha = TV_NOTICE_DIVIDER_ALPHA).toArgb(),
-                mineBubbleBg = colors.primary.copy(alpha = TV_NOTICE_MINE_BUBBLE_ALPHA).toArgb(),
-                otherBubbleBg = onSurface.copy(alpha = TV_NOTICE_CHIP_ALPHA).toArgb(),
                 cardBg = onSurface.copy(alpha = TV_NOTICE_CARD_ALPHA).toArgb(),
-                // 浅底深码 (同控制台的码): 深色主题的 primary 本身是浅色, 当底、onPrimary 画码; 浅色主题换 primaryContainer
-                qrBg = (if (dark) colors.primary else colors.primaryContainer).toArgb(),
-                qrFg = (if (dark) colors.onPrimary else colors.onPrimaryContainer).toArgb(),
-                progressTrack = track.toArgb(),
             )
         }
     }
 }
-
-/** 触屏上按住行与按钮时罩的一层 (相对正文色). */
-private const val TV_NOTICE_PRESSED_ALPHA = 0.10f

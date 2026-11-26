@@ -30,17 +30,27 @@ import android.widget.FrameLayout
 import androidx.compose.runtime.Immutable
 import androidx.leanback.widget.BaseGridView
 import androidx.leanback.widget.VerticalGridView
-import androidx.recyclerview.widget.DiffUtil
-import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import me.him188.ani.app.ui.foundation.tv.nativeview.TV_NATIVE_FAST_OUT_SLOW_IN
+import me.him188.ani.app.ui.foundation.tv.nativeview.TV_NATIVE_QR_QUIET_MODULES
+import me.him188.ani.app.ui.foundation.tv.nativeview.TV_NATIVE_UNSPECIFIED
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeBubble
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeBubbleColumnView
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeBubbleStyle
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeKeyedDiff
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeKeyedListAdapter
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeQrView
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeSpringScroll
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeTextStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeTextView
+import me.him188.ani.app.ui.foundation.tv.nativeview.drawTvNativePlate
+import me.him188.ani.app.ui.foundation.tv.nativeview.measureWithin
+import me.him188.ani.app.ui.foundation.tv.nativeview.tvNativeAtMost
+import me.him188.ani.app.ui.foundation.tv.nativeview.tvNativeExactly
 import me.him188.ani.app.ui.foundation.tv.nativeview.tvNativeIsInside
-import me.him188.ani.app.ui.foundation.lan.QrCodeMatrix
-import me.him188.ani.app.ui.foundation.lan.encodeQrCode
+import me.him188.ani.app.ui.foundation.tv.nativeview.tvNativeLayoutAt
 import me.him188.ani.app.ui.foundation.tv.nativeview.tvNativeLerpColor
+import me.him188.ani.app.ui.foundation.tv.nativeview.tvNativeText
 
 /**
  * 电视设置页 (原生) 的尺寸 (px) 与配色 (ARGB), 由 rememberTvSettingsStyle 按主题与界面缩放算好. 配色跟应用的深浅色走:
@@ -91,7 +101,7 @@ data class TvSettingsStyle(
     val bubbleMineBg: Int,
     val activeBg: Int,
     val focusedBg: Int,
-    /** 二维码的底与模块 (浅底深码, 老扫码器也认). */
+    /** 二维码的底与模块 (见 tvNativeQrColors). */
     val qrBg: Int,
     val qrFg: Int,
     val text: Int,
@@ -104,7 +114,29 @@ data class TvSettingsStyle(
     val focusInMillis: Long,
     val focusOutMillis: Long,
     val animated: Boolean,
-)
+) {
+    /** 说明栏的气泡 (公共的 [TvNativeBubbleStyle]): 内边距、间距与圆角按行的内边距、二维码的间距与行的圆角折算, 字按栏宽 AT_MOST 量. */
+    internal val bubble: TvNativeBubbleStyle = TvNativeBubbleStyle(
+        meta = bubbleMeta,
+        text = bubbleText,
+        maxWidthFraction = BUBBLE_MAX_WIDTH_FRACTION,
+        paddingHPx = rowPaddingHPx * 3 / 4,
+        paddingVPx = qrGapPx * 2 / 3,
+        lineGapPx = qrGapPx / 4,
+        cornerPx = cornerPx * 1.4f,
+        mineBg = bubbleMineBg,
+        otherBg = activeBg,
+        fitText = false,
+    )
+
+    /** 说明栏相邻两个气泡的间距. */
+    internal val bubbleGapPx: Int get() = qrGapPx * 2 / 3
+
+    private companion object {
+        /** 气泡最宽占说明栏宽的比例. */
+        const val BUBBLE_MAX_WIDTH_FRACTION = 0.88f
+    }
+}
 
 /** 视图报给宿主的事件. 都在主线程. */
 interface TvSettingsViewListener {
@@ -146,23 +178,23 @@ class TvSettingsView(
 ) : FrameLayout(context) {
     var listener: TvSettingsViewListener? = null
 
-    private val titleView = TvNativeTextView(context)
+    private val titleView = tvNativeText(context, style.pageTitle)
     private val rail = createGrid(context)
     private val railAdapter = TvSettingsRowAdapter(style)
-    private val drillTitleView = TvNativeTextView(context)
+    private val drillTitleView = tvNativeText(context, style.drillTitle)
     private val list = createGrid(context)
     private val listAdapter = TvSettingsRowAdapter(style)
-    private val infoTitleView = TvNativeTextView(context)
-    private val infoBodyView = TvNativeTextView(context)
+    private val infoTitleView = tvNativeText(context, style.infoTitle, maxLines = 2)
+    private val infoBodyView = tvNativeText(context, style.infoBody, maxLines = Int.MAX_VALUE)
 
     /** 说明下面的气泡 (见 [TvSettingsBubble]); 没有时藏起来. */
-    private val infoBubblesView = TvSettingsBubblesView(context, style)
+    private val infoBubblesView = TvNativeBubbleColumnView(context, style.bubble, style.bubbleGapPx)
     private var infoBubbles: List<TvSettingsBubble> = emptyList()
 
     /** 说明栏的二维码与它上下的字 (见 [TvSettingsQr]): 状态 (码上面) / 码 / 码下面的一行. */
-    private val infoQrStatusView = TvNativeTextView(context)
-    private val infoQrView = TvSettingsQrView(context)
-    private val infoQrCaptionView = TvNativeTextView(context)
+    private val infoQrStatusView = tvNativeText(context, style.infoBody, maxLines = 3)
+    private val infoQrView = TvNativeQrView(context)
+    private val infoQrCaptionView = tvNativeText(context, style.infoBody, maxLines = 2)
     private var infoQr: TvSettingsQr? = null
 
     /** 说明栏标题上面的图 (见 [TvImage]): 由 [imageLoader] 解码, 解完时焦点还在要它的那一行才放上. */
@@ -235,15 +267,7 @@ class TvSettingsView(
         descendantFocusability = FOCUS_AFTER_DESCENDANTS
 
         titleView.text = pageTitle
-        titleView.maxLines = 1
-        drillTitleView.maxLines = 1
-        drillTitleView.ellipsize = TextUtils.TruncateAt.END
         drillTitleView.visibility = GONE
-        infoTitleView.maxLines = 2
-        infoTitleView.ellipsize = TextUtils.TruncateAt.END
-        infoBodyView.ellipsize = TextUtils.TruncateAt.END
-        infoQrStatusView.maxLines = 3
-        infoQrCaptionView.maxLines = 2
         for (v in arrayOf(infoQrStatusView, infoQrView, infoQrCaptionView, infoImageView, infoBubblesView)) v.visibility = GONE
 
         rail.adapter = railAdapter
@@ -270,10 +294,6 @@ class TvSettingsView(
             resolvePending()
         }
 
-        // 字的框按内容定高 (WRAP_CONTENT): 默认的 MATCH_PARENT 下换字不重新测量, 说明从一行变两行时第二行被截掉
-        for (text in arrayOf(titleView, drillTitleView, infoTitleView, infoBodyView, infoQrStatusView, infoQrCaptionView)) {
-            text.layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT)
-        }
         addView(titleView)
         addView(rail)
         addView(drillTitleView)
@@ -298,8 +318,8 @@ class TvSettingsView(
         style.infoBody.applyTo(infoQrStatusView)
         infoQrStatusView.setTextColor(style.text)
         style.infoBody.applyTo(infoQrCaptionView)
-        infoQrView.setColors(style.qrBg, style.qrFg, style.cornerPx)
-        infoBubblesView.applyStyle(style)
+        infoQrView.setLook(style.qrBg, style.qrFg, style.cornerPx, quietModules = TV_NATIVE_QR_QUIET_MODULES)
+        infoBubblesView.applyStyle(style.bubble, style.bubbleGapPx)
         rail.verticalSpacing = style.rowGapPx
         list.verticalSpacing = style.rowGapPx
         val bleed = style.focusBleedPx
@@ -470,7 +490,7 @@ class TvSettingsView(
         infoTitleView.text = title
         infoBodyView.text = body
         infoBubbles = bubbles
-        infoBubblesView.setBubbles(bubbles)
+        infoBubblesView.setBubbles(bubbles.map { TvNativeBubble(it.meta, it.text.ifEmpty { null }, it.mine) })
         infoBubblesView.visibility = if (bubbles.isEmpty()) GONE else VISIBLE
         infoQr = qr
         infoQrStatusView.text = qr?.status.orEmpty()
@@ -833,44 +853,37 @@ class TvSettingsView(
         val w = MeasureSpec.getSize(widthMeasureSpec)
         val h = MeasureSpec.getSize(heightMeasureSpec)
         val s = style
-        val unspecified = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
         val contentWidth = (w - s.paddingStartPx - s.paddingEndPx).coerceAtLeast(0)
         val infoWidth = (contentWidth * s.infoWidthFraction).toInt()
         val listWidth = (contentWidth - s.railWidthPx - infoWidth - s.columnGapPx * 2).coerceAtLeast(0)
         // 说明栏的字常在布局途中换 (见 setInfo): 每次都重新量, 不用旧字的测量结果
         for (text in arrayOf(drillTitleView, infoTitleView, infoBodyView, infoQrStatusView, infoQrCaptionView)) text.forceLayout()
-        titleView.measure(MeasureSpec.makeMeasureSpec(contentWidth, MeasureSpec.AT_MOST), unspecified)
+        titleView.measure(tvNativeAtMost(contentWidth), TV_NATIVE_UNSPECIFIED)
         val top = s.paddingTopPx + titleView.measuredHeight + s.titleGapPx
         val columnHeight = (h - s.paddingBottomPx - top).coerceAtLeast(0)
         val bleed = s.focusBleedPx
-        rail.measure(
-            MeasureSpec.makeMeasureSpec(s.railWidthPx + bleed * 2, MeasureSpec.EXACTLY),
-            MeasureSpec.makeMeasureSpec(columnHeight + bleed * 2, MeasureSpec.EXACTLY),
-        )
+        rail.measure(tvNativeExactly(s.railWidthPx + bleed * 2), tvNativeExactly(columnHeight + bleed * 2))
         var listTop = 0
         if (drillTitleView.visibility != GONE) {
-            drillTitleView.measure(MeasureSpec.makeMeasureSpec(listWidth, MeasureSpec.AT_MOST), unspecified)
+            drillTitleView.measure(tvNativeAtMost(listWidth), TV_NATIVE_UNSPECIFIED)
             listTop = drillTitleTakes()
         }
-        list.measure(
-            MeasureSpec.makeMeasureSpec(listWidth + bleed * 2, MeasureSpec.EXACTLY),
-            MeasureSpec.makeMeasureSpec((columnHeight - listTop).coerceAtLeast(0) + bleed * 2, MeasureSpec.EXACTLY),
-        )
+        list.measure(tvNativeExactly(listWidth + bleed * 2), tvNativeExactly((columnHeight - listTop).coerceAtLeast(0) + bleed * 2))
         var imageTakes = 0
         if (infoImageView.visibility != GONE) {
             val side = minOf(s.infoImageSizePx, infoWidth)
-            infoImageView.measure(MeasureSpec.makeMeasureSpec(side, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(side, MeasureSpec.EXACTLY))
+            infoImageView.measure(tvNativeExactly(side), tvNativeExactly(side))
             imageTakes = side + s.qrGapPx
         }
-        infoTitleView.measure(MeasureSpec.makeMeasureSpec(infoWidth, MeasureSpec.EXACTLY), unspecified)
+        infoTitleView.measure(tvNativeExactly(infoWidth), TV_NATIVE_UNSPECIFIED)
         // 图、二维码与它上下的字先占位, 说明正文用剩下的高度
         var qrTakes = imageTakes
         if (infoQrStatusView.visibility != GONE) {
-            infoQrStatusView.measure(MeasureSpec.makeMeasureSpec(infoWidth, MeasureSpec.EXACTLY), unspecified)
+            infoQrStatusView.measure(tvNativeExactly(infoWidth), TV_NATIVE_UNSPECIFIED)
             qrTakes += infoQrStatusView.measuredHeight + s.qrGapPx
         }
         if (infoQrCaptionView.visibility != GONE) {
-            infoQrCaptionView.measure(MeasureSpec.makeMeasureSpec(infoWidth, MeasureSpec.EXACTLY), unspecified)
+            infoQrCaptionView.measure(tvNativeExactly(infoWidth), TV_NATIVE_UNSPECIFIED)
             qrTakes += infoQrCaptionView.measuredHeight + s.qrGapPx
         }
         val lineHeight = (if (s.infoBody.lineHeightPx > 0) s.infoBody.lineHeightPx else infoBodyView.lineHeight).coerceAtLeast(1)
@@ -878,24 +891,18 @@ class TvSettingsView(
             // 码照常画满; 连图带码放不下时缩小, 给说明留出 INFO_BODY_MIN_LINES 行 (至少画到原来的 2/3, 再小不好扫)
             val room = columnHeight - infoTitleView.measuredHeight - s.infoTitleGapPx - qrTakes - s.qrGapPx - INFO_BODY_MIN_LINES * lineHeight
             val side = minOf(s.qrSizePx, infoWidth, maxOf(room, s.qrSizePx * 2 / 3))
-            infoQrView.measure(MeasureSpec.makeMeasureSpec(side, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(side, MeasureSpec.EXACTLY))
+            infoQrView.measure(tvNativeExactly(side), tvNativeExactly(side))
             qrTakes += side + s.qrGapPx
         }
         val bodyHeight = (columnHeight - infoTitleView.measuredHeight - s.infoTitleGapPx - qrTakes).coerceAtLeast(0)
         // 说明放不下时按整行截断 (不露半行). 行数要在测量之前设: 测完再改会被当成下一轮的事, 这一轮按旧的行数排
         val lines = (bodyHeight / lineHeight).coerceAtLeast(1)
         if (infoBodyView.maxLines != lines) infoBodyView.maxLines = lines
-        infoBodyView.measure(
-            MeasureSpec.makeMeasureSpec(infoWidth, MeasureSpec.EXACTLY),
-            MeasureSpec.makeMeasureSpec(bodyHeight, MeasureSpec.AT_MOST),
-        )
+        infoBodyView.measure(tvNativeExactly(infoWidth), tvNativeAtMost(bodyHeight))
         if (infoBubblesView.visibility != GONE) {
             // 气泡用说明下面剩下的高度, 放不下的由它自己截
             val room = (bodyHeight - infoBodyView.measuredHeight - s.qrGapPx).coerceAtLeast(0)
-            infoBubblesView.measure(
-                MeasureSpec.makeMeasureSpec(infoWidth, MeasureSpec.EXACTLY),
-                MeasureSpec.makeMeasureSpec(room, MeasureSpec.AT_MOST),
-            )
+            infoBubblesView.measure(tvNativeExactly(infoWidth), tvNativeAtMost(room))
         }
         setMeasuredDimension(w, h)
     }
@@ -904,37 +911,34 @@ class TvSettingsView(
         val s = style
         val w = r - l
         val left = s.paddingStartPx
-        titleView.layout(left, s.paddingTopPx, left + titleView.measuredWidth, s.paddingTopPx + titleView.measuredHeight)
+        titleView.tvNativeLayoutAt(left, s.paddingTopPx)
         val top = s.paddingTopPx + titleView.measuredHeight + s.titleGapPx
         val bleed = s.focusBleedPx
-        rail.layout(left - bleed, top - bleed, left - bleed + rail.measuredWidth, top - bleed + rail.measuredHeight)
+        rail.tvNativeLayoutAt(left - bleed, top - bleed)
         val listLeft = left + s.railWidthPx + s.columnGapPx
         var listTop = top
         if (drillTitleView.visibility != GONE) {
-            drillTitleView.layout(
-                listLeft + s.rowPaddingHPx, top,
-                listLeft + s.rowPaddingHPx + drillTitleView.measuredWidth, top + drillTitleView.measuredHeight,
-            )
+            drillTitleView.tvNativeLayoutAt(listLeft + s.rowPaddingHPx, top)
             listTop += drillTitleTakes()
         }
-        list.layout(listLeft - bleed, listTop - bleed, listLeft - bleed + list.measuredWidth, listTop - bleed + list.measuredHeight)
+        list.tvNativeLayoutAt(listLeft - bleed, listTop - bleed)
         val infoLeft = w - s.paddingEndPx - infoTitleView.measuredWidth
         var infoTop = top + s.focusBleedPx / 2
         if (infoImageView.visibility != GONE) {
-            infoImageView.layout(infoLeft, infoTop, infoLeft + infoImageView.measuredWidth, infoTop + infoImageView.measuredHeight)
+            infoImageView.tvNativeLayoutAt(infoLeft, infoTop)
             infoTop += infoImageView.measuredHeight + s.qrGapPx
         }
-        infoTitleView.layout(infoLeft, infoTop, infoLeft + infoTitleView.measuredWidth, infoTop + infoTitleView.measuredHeight)
+        infoTitleView.tvNativeLayoutAt(infoLeft, infoTop)
         val bodyTop = infoTop + infoTitleView.measuredHeight + s.infoTitleGapPx
-        infoBodyView.layout(infoLeft, bodyTop, infoLeft + infoBodyView.measuredWidth, bodyTop + infoBodyView.measuredHeight)
+        infoBodyView.tvNativeLayoutAt(infoLeft, bodyTop)
         var y = bodyTop + infoBodyView.measuredHeight + s.qrGapPx
         if (infoBubblesView.visibility != GONE) {
-            infoBubblesView.layout(infoLeft, y, infoLeft + infoBubblesView.measuredWidth, y + infoBubblesView.measuredHeight)
+            infoBubblesView.tvNativeLayoutAt(infoLeft, y)
             y += infoBubblesView.measuredHeight + s.qrGapPx
         }
         for (v in arrayOf(infoQrStatusView, infoQrView, infoQrCaptionView)) {
             if (v.visibility == GONE) continue
-            v.layout(infoLeft, y, infoLeft + v.measuredWidth, y + v.measuredHeight)
+            v.tvNativeLayoutAt(infoLeft, y)
             y += v.measuredHeight + s.qrGapPx
         }
     }
@@ -979,58 +983,6 @@ class TvSettingsView(
 
         /** 说明栏有二维码时至少给说明留的行数 (不够时缩小二维码). */
         const val INFO_BODY_MIN_LINES = 5
-    }
-}
-
-/**
- * 说明栏的二维码: 圆角底上画模块, 四周留 4 个模块宽的空白 (扫码器靠它定位). 模块边长取整像素, 相邻模块之间不出灰缝.
- */
-internal class TvSettingsQrView(context: Context) : View(context) {
-    private var content: String? = null
-    private var matrix: QrCodeMatrix? = null
-    private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val modulePaint = Paint()
-    private val bgRect = RectF()
-    private var cornerPx = 0f
-
-    fun setColors(bg: Int, fg: Int, corner: Float) {
-        bgPaint.color = bg
-        modulePaint.color = fg
-        cornerPx = corner
-        invalidate()
-    }
-
-    fun setContent(text: String?) {
-        if (text == content) return
-        content = text
-        matrix = text?.let { encodeQrCode(it) }
-        invalidate()
-    }
-
-    /** 此刻画的内容 (测试用). */
-    val shownContent: String? get() = content
-
-    override fun onDraw(canvas: Canvas) {
-        val m = matrix ?: return
-        val side = minOf(width, height)
-        bgRect.set(0f, 0f, side.toFloat(), side.toFloat())
-        canvas.drawRoundRect(bgRect, cornerPx, cornerPx, bgPaint)
-        val cell = side / (m.size + QUIET_MODULES * 2)
-        if (cell <= 0) return
-        val offset = (side - cell * m.size) / 2f
-        for (y in 0 until m.size) {
-            for (x in 0 until m.size) {
-                if (!m[x, y]) continue
-                val left = offset + x * cell
-                val top = offset + y * cell
-                canvas.drawRect(left, top, left + cell, top + cell, modulePaint)
-            }
-        }
-    }
-
-    private companion object {
-        /** 四周留白的模块数 (规范至少 4). */
-        const val QUIET_MODULES = 4
     }
 }
 
@@ -1220,23 +1172,19 @@ internal class TvSettingsRowView(context: Context, var style: TvSettingsStyle) :
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val s = style
         val width = MeasureSpec.getSize(widthMeasureSpec)
-        val unspecified = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
         val row = row
         // 字常在列表布局途中换 (差异更新时重新绑定): 那时字视图要重新测量的标记会被这一轮清掉, 按旧字的宽度排就被截成省略号 —— 每次都重新量
         trailing.forceLayout()
         title.forceLayout()
         var trailingWidth = 0
         if (trailing.visibility != GONE) {
-            // 先按一行量出要多宽, 再多给一点按定宽排: 按 AT_MOST 量出的宽度有时比排版要的少零点几像素 (行尾的 › 来自回落字体),
-            // 最后一个字被挤到第二行、整行截成省略号
-            trailing.measure(unspecified, unspecified)
-            val want = (trailing.measuredWidth + TRAILING_SLACK_PX).coerceAtMost(width / 2)
-            trailing.measure(MeasureSpec.makeMeasureSpec(want, MeasureSpec.EXACTLY), unspecified)
+            // 行尾的字最宽占行宽的一半; 按内容宽多给一点 (行尾的 › 来自回落字体, 不多给时会被挤到第二行、整行截成省略号)
+            trailing.measureWithin(width / 2)
             trailingWidth = trailing.measuredWidth + s.trailingGapPx
         }
         val swatchWidth = if (row?.swatch != null) s.swatchSizePx + s.swatchGapPx else 0
         val textWidth = (width - s.rowPaddingHPx * 2 - trailingWidth - swatchWidth).coerceAtLeast(0)
-        title.measure(MeasureSpec.makeMeasureSpec(textWidth, MeasureSpec.AT_MOST), unspecified)
+        title.measure(tvNativeAtMost(textWidth), TV_NATIVE_UNSPECIFIED)
         val height = if (row?.kind == TvSettingsRowKind.Header) {
             title.measuredHeight + s.headerTopGapPx + s.headerBottomGapPx
         } else {
@@ -1256,19 +1204,14 @@ internal class TvSettingsRowView(context: Context, var style: TvSettingsStyle) :
         } else {
             (h - title.measuredHeight) / 2
         }
-        title.layout(x, ty, x + title.measuredWidth, ty + title.measuredHeight)
+        title.tvNativeLayoutAt(x, ty)
         if (trailing.visibility != GONE) {
-            val right = w - s.rowPaddingHPx
-            val vy = (h - trailing.measuredHeight) / 2
-            trailing.layout(right - trailing.measuredWidth, vy, right, vy + trailing.measuredHeight)
+            trailing.tvNativeLayoutAt(w - s.rowPaddingHPx - trailing.measuredWidth, (h - trailing.measuredHeight) / 2)
         }
     }
 
     override fun onDraw(canvas: Canvas) {
-        if (bgPaint.alpha > 0) {
-            bgRect.set(0f, 0f, width.toFloat(), height.toFloat())
-            canvas.drawRoundRect(bgRect, style.cornerPx, style.cornerPx, bgPaint)
-        }
+        canvas.drawTvNativePlate(bgRect, width, height, style.cornerPx, bgPaint.color, bgPaint)
         if (row?.swatch != null) {
             val radius = style.swatchSizePx / 2f
             canvas.drawCircle(style.rowPaddingHPx + radius, height / 2f, radius, swatchPaint)
@@ -1276,15 +1219,11 @@ internal class TvSettingsRowView(context: Context, var style: TvSettingsStyle) :
     }
 
     override fun hasOverlappingRendering(): Boolean = false
-
-    private companion object {
-        /** 行尾的字多给的宽度 (px), 见 onMeasure. */
-        const val TRAILING_SLACK_PX = 2
-    }
 }
 
-/** 两栏的列表适配器: 按行 id 做差异更新 (后台线程), 行 id 换成稳定的长整数 id. */
-internal class TvSettingsRowAdapter(var style: TvSettingsStyle) : ListAdapter<TvSettingsRow, TvSettingsRowAdapter.Holder>(Diff) {
+/** 两栏的列表适配器: 按行 id 做差异更新 (见 [TvNativeKeyedListAdapter]); 记着左栏里中栏正在显示的那一类与正拿着挪的那一行, 挂着的行跟着画. */
+internal class TvSettingsRowAdapter(var style: TvSettingsStyle) :
+    TvNativeKeyedListAdapter<TvSettingsRow, TvSettingsRowAdapter.Holder>(TvNativeKeyedDiff({ it.id }) { a, b -> a == b }) {
     var onRowFocused: ((TvSettingsRow) -> Unit)? = null
     var onRowClicked: ((TvSettingsRow) -> Unit)? = null
 
@@ -1304,25 +1243,9 @@ internal class TvSettingsRowAdapter(var style: TvSettingsStyle) : ListAdapter<Tv
             refreshActive()
         }
 
-    private var recycler: RecyclerView? = null
-    private val stableIds = HashMap<String, Long>()
-    private var nextStableId = 1L
-
-    init {
-        setHasStableIds(true)
-    }
-
     class Holder(val view: TvSettingsRowView) : RecyclerView.ViewHolder(view)
 
-    override fun onAttachedToRecyclerView(recyclerView: RecyclerView) {
-        recycler = recyclerView
-    }
-
-    override fun onDetachedFromRecyclerView(recyclerView: RecyclerView) {
-        recycler = null
-    }
-
-    override fun getItemId(position: Int): Long = stableIds.getOrPut(getItem(position).id) { nextStableId++ }
+    override fun keyOf(item: TvSettingsRow): String = item.id
 
     override fun getItemViewType(position: Int): Int = getItem(position).kind.ordinal
 
@@ -1371,10 +1294,5 @@ internal class TvSettingsRowAdapter(var style: TvSettingsStyle) : ListAdapter<Tv
     private fun syncState(view: TvSettingsRowView) {
         view.active = view.row?.id == activeId
         view.moving = view.row?.id == movingId
-    }
-
-    private object Diff : DiffUtil.ItemCallback<TvSettingsRow>() {
-        override fun areItemsTheSame(oldItem: TvSettingsRow, newItem: TvSettingsRow) = oldItem.id == newItem.id
-        override fun areContentsTheSame(oldItem: TvSettingsRow, newItem: TvSettingsRow) = oldItem == newItem
     }
 }

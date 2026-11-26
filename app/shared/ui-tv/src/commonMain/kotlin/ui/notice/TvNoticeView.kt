@@ -23,19 +23,29 @@ import android.view.ViewGroup
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.recyclerview.widget.RecyclerView
+import me.him188.ani.app.ui.foundation.tv.nativeview.TV_NATIVE_UNSPECIFIED
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeBubbleStyle
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeButtonGroupStyle
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeButtonView
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativePanelStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeTextStyle
+import me.him188.ani.app.ui.foundation.tv.nativeview.measureWithin
+import me.him188.ani.app.ui.foundation.tv.nativeview.setTextIfChanged
+import me.him188.ani.app.ui.foundation.tv.nativeview.tvNativeExactly
 import me.him188.ani.app.ui.foundation.tv.nativeview.tvNativeIsInside
+import me.him188.ani.app.ui.foundation.tv.nativeview.tvNativeLayoutAt
+import me.him188.ani.app.ui.foundation.tv.nativeview.tvNativeText
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
  * 通知弹窗 (原生, [TvNoticeView]) 的尺寸 (px)、字与配色 (ARGB), 由 rememberTvNoticeStyle 按主题、界面缩放与触屏算好. 取值同 Compose 版
- * (TvNoticeDialog.kt / TvNoticeTab.kt), 两边画出来一个样子.
+ * (TvNoticeDialog.kt / TvNoticeTab.kt), 两边画出来一个样子. 面板共用的配色与触屏在 [panel], 右栏的按钮在 [buttons], 来往记录的气泡在 [bubble].
  */
 @Immutable
 internal data class TvNoticeStyle(
-    val touch: Boolean,
+    val panel: TvNativePanelStyle,
     // 顶栏
     val tabGapPx: Int,
     val tabPaddingPx: Int,
@@ -86,15 +96,7 @@ internal data class TvNoticeStyle(
     val bodyTopPx: Int,
     val blockGapPx: Int,
     val actionsTopPx: Int,
-    val rowActions: Int,
-    val actionHeightPx: Int,
-    val actionCornerPx: Float,
-    val actionPaddingCenterPx: Int,
-    val actionPaddingStartPx: Int,
-    val actionPaddingVPx: Int,
-    val actionRowGapPx: Int,
-    val actionColumnGapPx: Int,
-    val actionColumnWidthPx: Int,
+    val buttons: TvNativeButtonGroupStyle,
     val pageFraction: Float,
     // 正文块
     val touchNameLines: Int,
@@ -102,12 +104,7 @@ internal data class TvNoticeStyle(
     val bulletTopPx: Int,
     val bulletGapPx: Int,
     val paragraphTitleGapPx: Int,
-    val bubbleMaxFraction: Float,
-    val bubblePaddingHPx: Int,
-    val bubblePaddingVPx: Int,
-    val bubbleCornerPx: Float,
-    val bubbleLineGapPx: Int,
-    val bubbleDotGapPx: Int,
+    val bubble: TvNativeBubbleStyle,
     val cardPaddingHPx: Int,
     val cardPaddingVPx: Int,
     val cardCornerPx: Float,
@@ -146,8 +143,6 @@ internal data class TvNoticeStyle(
     val paragraph: TvNativeTextStyle,
     val paragraphSmall: TvNativeTextStyle,
     val paragraphTitle: TvNativeTextStyle,
-    val bubbleMeta: TvNativeTextStyle,
-    val bubbleText: TvNativeTextStyle,
     val cardTitle: TvNativeTextStyle,
     val cardStatus: TvNativeTextStyle,
     val cardPercent: TvNativeTextStyle,
@@ -156,37 +151,19 @@ internal data class TvNoticeStyle(
     val qrCaptionSmall: TvNativeTextStyle,
     val qrUnavailable: TvNativeTextStyle,
     val status: TvNativeTextStyle,
-    val action: TvNativeTextStyle,
-    // 色
-    val onSurface: Int,
-    val onSurfaceVariant: Int,
-    val primary: Int,
-    val error: Int,
-    val outline: Int,
-    val outlineVariant: Int,
+    // 色 (面板共用的在 panel)
     val ok: Int,
-    val focusBg: Int,
-    val focusFg: Int,
-    val itemBg: Int,
-    val selectedBg: Int,
-    val selectedFg: Int,
-    val pressedOverlay: Int,
     val chipBg: Int,
     val accentChipBg: Int,
     val dividerColor: Int,
-    val mineBubbleBg: Int,
-    val otherBubbleBg: Int,
     val cardBg: Int,
-    val qrBg: Int,
-    val qrFg: Int,
-    val progressTrack: Int,
 ) {
     /** 状态行与非平常色调的一段话的颜色 (同 Compose 版的 statusColor). */
     fun toneColor(tone: TvNoticeTone): Int = when (tone) {
-        TvNoticeTone.Normal, TvNoticeTone.Secondary -> onSurfaceVariant
-        TvNoticeTone.Emphasis -> primary
+        TvNoticeTone.Normal, TvNoticeTone.Secondary -> panel.onSurfaceVariant
+        TvNoticeTone.Emphasis -> panel.primary
         TvNoticeTone.Ok -> ok
-        TvNoticeTone.Error -> error
+        TvNoticeTone.Error -> panel.error
     }
 }
 
@@ -269,11 +246,11 @@ internal interface TvNoticeViewListener {
 internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) : ViewGroup(context) {
     var listener: TvNoticeViewListener? = null
 
-    private val titleView = tvNoticeText(context, style.pageTitle)
+    private val titleView = tvNativeText(context, style.pageTitle)
     private val tabViews = ArrayList<TvNoticeTabView>()
-    private val refreshStatusView = tvNoticeText(context, style.refreshStatus)
+    private val refreshStatusView = tvNativeText(context, style.refreshStatus)
     private val refreshView = TvNoticeRefreshView(context, style)
-    private val emptyView = tvNoticeText(context, style.empty, maxLines = 3)
+    private val emptyView = tvNativeText(context, style.empty, maxLines = 3)
     private val lists = LinkedHashMap<String, TabList>()
     private val pane = TvNoticePaneView(context, style)
     private val dividerPaint = Paint()
@@ -399,7 +376,7 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
         val status = ui.status
         refreshStatusView.visibility = if (status.isNullOrEmpty()) GONE else VISIBLE
         refreshStatusView.setTextIfChanged(status.orEmpty())
-        refreshStatusView.setTextColor(if (ui.statusHighlight) style.primary else style.onSurfaceVariant)
+        refreshStatusView.setTextColor(if (ui.statusHighlight) style.panel.primary else style.panel.onSurfaceVariant)
         refreshView.bind(ui, content?.refreshIcon, style)
     }
 
@@ -559,7 +536,7 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
     }
 
     private fun hasButtons(item: TvNoticeColumnItem, tab: TvNoticeViewTab?): Boolean =
-        item.rowAction == null && (item.actions.size > 1 || ((style.touch || tab?.buttonsForSingleAction == true) && item.actions.isNotEmpty()))
+        item.rowAction == null && (item.actions.size > 1 || ((style.panel.touch || tab?.buttonsForSingleAction == true) && item.actions.isNotEmpty()))
 
     /** 右栏画 [row] (签 [tabId] 的); null = 空着. 同一行换了内容时原地换. */
     private fun bindPane(tabId: String, row: TvNoticeViewRow?) {
@@ -599,7 +576,7 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
 
     private fun syncSelectedRow() {
         for (list in lists.values) {
-            list.adapter.selectedKey = if (list.id == paneTab && (inPane || style.touch)) paneRow?.item?.key else null
+            list.adapter.selectedKey = if (list.id == paneTab && (inPane || style.panel.touch)) paneRow?.item?.key else null
         }
     }
 
@@ -639,7 +616,7 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
      * (横排按钮上下键); 只有一个操作、不画按钮的与有 [TvNoticeColumnItem.rowAction] 的按确定键直接做, 不进.
      */
     private fun canEnterBody(item: TvNoticeColumnItem): Boolean =
-        !style.touch && item.actions.isEmpty() && item.rowAction == null && pane.body.maxScroll() > 0
+        !style.panel.touch && item.actions.isEmpty() && item.rowAction == null && pane.body.maxScroll() > 0
 
     private fun focusBody() {
         pane.body.requestFocus()
@@ -705,7 +682,7 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
         val row = rows[index]
         bindPane(p.tab, row)
         if (!isAttachedToWindow) return
-        if (style.touch) {
+        if (style.panel.touch) {
             pending = null
             unpark()
             return
@@ -763,7 +740,7 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
 
     /** 两栏里没有能停的行: 落在刷新上. */
     private fun focusFallback() {
-        if (style.touch) return
+        if (style.panel.touch) return
         refreshView.requestFocus()
     }
 
@@ -908,7 +885,7 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
             Region.PANE -> {
                 val index = pane.actions.focusedIndex()
                 val count = pane.actions.buttons.size
-                if (count <= style.rowActions) {
+                if (count <= style.buttons.maxInRow) {
                     when (code) {
                         KeyEvent.KEYCODE_DPAD_LEFT -> if (index > 0) focusAction(index - 1) else focusPaneRow()
                         KeyEvent.KEYCODE_DPAD_RIGHT -> if (index < count - 1) focusAction(index + 1)
@@ -1036,7 +1013,7 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
         when {
             view === refreshView -> listener?.onRefresh()
             view is TvNoticeRowView -> view.entry?.let { rowClicked(shownTab, currentRow(shownTab, it.id) ?: it, fromKey = true) }
-            view is TvNoticeButtonView && view.parent === pane.actions -> actionClicked(view.index)
+            view is TvNativeButtonView && view.parent === pane.actions -> actionClicked(view.index)
         }
     }
 
@@ -1084,7 +1061,7 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
         val tab = lists[tabId]?.tab ?: return
         val action = row.item.actions.getOrNull(index) ?: return
         val rowIndex = tab.rows?.indexOfFirst { it.item.key == row.item.key }?.coerceAtLeast(0) ?: 0
-        if (action.destination is TvNoticeDestination.Run && !tab.buttonsForSingleAction && !style.touch) focusPaneRow()
+        if (action.destination is TvNoticeDestination.Run && !tab.buttonsForSingleAction && !style.panel.touch) focusPaneRow()
         listener?.onAction(tabId, rowIndex, row.item, action)
     }
 
@@ -1111,21 +1088,20 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val s = style
         val width = MeasureSpec.getSize(widthMeasureSpec)
-        val unspecified = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
         for (text in arrayOf(titleView, refreshStatusView, emptyView)) text.forceLayout()
-        refreshView.measure(unspecified, unspecified)
+        refreshView.measure(TV_NATIVE_UNSPECIFIED, TV_NATIVE_UNSPECIFIED)
         var headerRow = refreshView.measuredHeight
         var leftWidth = 0
         if (showTabs()) {
             tabViews.forEachIndexed { i, tab ->
-                tab.measure(unspecified, unspecified)
+                tab.measure(TV_NATIVE_UNSPECIFIED, TV_NATIVE_UNSPECIFIED)
                 leftWidth += tab.measuredWidth + if (i > 0) s.tabGapPx else 0
                 headerRow = max(headerRow, tab.measuredHeight)
             }
         } else {
             titleView.measureWithin(width - refreshView.measuredWidth)
             leftWidth = titleView.measuredWidth
-            headerRow = max(headerRow, titleView.measuredHeight + titleView.overflowPad * 2)
+            headerRow = max(headerRow, titleView.measuredHeight + titleView.fontOverflowTopPx * 2)
         }
         if (refreshStatusView.visibility != GONE) {
             refreshStatusView.measureWithin(width - leftWidth - refreshView.measuredWidth - s.refreshStatusGapPx)
@@ -1141,9 +1117,9 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
         bodyHeight = body
         listWidth = min(s.listWidthPx, (width * s.listMaxFraction).roundToInt())
         val paneWidth = (width - listWidth - s.dividerWidthPx - s.columnGapPx * 2).coerceAtLeast(0)
-        for (list in lists.values) list.grid.measure(tvNoticeExactly(listWidth), tvNoticeExactly(body))
+        for (list in lists.values) list.grid.measure(tvNativeExactly(listWidth), tvNativeExactly(body))
         if (emptyView.visibility != GONE) emptyView.measureWithin(listWidth)
-        pane.measure(tvNoticeExactly(paneWidth), tvNoticeExactly(body))
+        pane.measure(tvNativeExactly(paneWidth), tvNativeExactly(body))
         setMeasuredDimension(width, columnsTop + body)
     }
 
@@ -1154,23 +1130,23 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
         if (showTabs()) {
             var x = 0
             tabViews.forEach {
-                it.tvNoticeLayoutAt(x, rowBottom - it.measuredHeight)
+                it.tvNativeLayoutAt(x, rowBottom - it.measuredHeight)
                 x += it.measuredWidth + s.tabGapPx
             }
         } else {
-            titleView.tvNoticeLayoutAt(0, rowBottom - titleView.overflowPad - titleView.measuredHeight)
+            titleView.tvNativeLayoutAt(0, rowBottom - titleView.fontOverflowTopPx - titleView.measuredHeight)
         }
-        refreshView.tvNoticeLayoutAt(width - refreshView.measuredWidth, rowBottom - refreshView.measuredHeight)
+        refreshView.tvNativeLayoutAt(width - refreshView.measuredWidth, rowBottom - refreshView.measuredHeight)
         if (refreshStatusView.visibility != GONE) {
-            refreshStatusView.tvNoticeLayoutAt(
+            refreshStatusView.tvNativeLayoutAt(
                 refreshView.left - s.refreshStatusGapPx - refreshStatusView.measuredWidth,
                 rowBottom - s.refreshStatusBottomPx - refreshStatusView.measuredHeight,
             )
         }
         val top = columnsTop
-        for (list in lists.values) list.grid.tvNoticeLayoutAt(0, top)
-        if (emptyView.visibility != GONE) emptyView.tvNoticeLayoutAt(0, top + s.emptyPaddingVPx)
-        pane.tvNoticeLayoutAt(listWidth + s.columnGapPx * 2 + s.dividerWidthPx, top)
+        for (list in lists.values) list.grid.tvNativeLayoutAt(0, top)
+        if (emptyView.visibility != GONE) emptyView.tvNativeLayoutAt(0, top + s.emptyPaddingVPx)
+        pane.tvNativeLayoutAt(listWidth + s.columnGapPx * 2 + s.dividerWidthPx, top)
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -1185,7 +1161,7 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
     /** 此刻聚焦的东西的字 (行的标题、按钮与签上的字、刷新的「刷新」); 停在自己身上或没有焦点为 null. */
     internal fun focusedText(): String? = when (val focused = findFocus()) {
         is TvNoticeRowView -> focused.entry?.row?.item?.title
-        is TvNoticeButtonView -> focused.text
+        is TvNativeButtonView -> focused.text
         refreshView -> refreshUi?.label
         else -> null
     }

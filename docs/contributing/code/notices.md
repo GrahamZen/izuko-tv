@@ -320,7 +320,7 @@ class TvNoticeColumnItem(key, icon, iconLabel, title, atMillis, summary, fresh, 
 | ui-tv `ui/notice/TvNoticeDialog.kt` | 通知弹窗（`TvNoticeDialog`：面板里挂 `TvNoticeNativeBody`）；「通知」签怎么列（`rememberTvNoticeColumnItems`）、时间怎么写（`formatNoticeTime`）；Compose 画法（`TvNoticeDialogBody` / `TvNoticeColumns` / 正文块 `TvNoticeBlocks`），给没有原生视图的平台（iPad），规则与原生视图一样 |
 | ui-tv `ui/notice/TvNoticeNativeHost.kt` | 安卓（电视与平板）上的通知弹窗内容：各签的行在这里取好、换成字交给原生视图，视图报回来的换签、操作、看过、刷新交出去；原生视图的尺寸、字与配色（`rememberTvNoticeStyle`，数值同 Compose 版）；刷新那几个字每秒变，单独一层重组 |
 | ui-tv `ui/notice/TvNoticeView.kt` | 原生视图（`TvNoticeView`）：顶栏（签或标题、刷新）、各签一个 leanback 竖列表（同时排着，换签只换显示哪一个）、右栏；方向键、确定键、返回键全在这里判（规则同 5.2、5.4）；持焦的行没了先停在自己身上，排好落到原来位置上的那一行 |
-| ui-tv `ui/notice/TvNoticeViewParts.kt` | 原生视图的各个小视图：签、刷新按钮、列表行与段的小标题、按钮、右栏、正文块（段、气泡、卡片、二维码、进度） |
+| ui-tv `ui/notice/TvNoticeViewParts.kt` | 原生视图的各个小视图：签、刷新按钮、列表行与段的小标题、右栏、正文块（段、气泡、卡片、二维码块）；按钮、气泡、二维码、进度条用 ui-tv `foundation/tv/nativeview/` 的公共部件（TvNativeButtonView、TvNativeBubbleView、TvNativeQrView、TvNativeProgressView） |
 | ui-tv `ui/notice/TvNoticeBlock.kt` | 右栏正文的块（`TvNoticeBlock`）：气泡、卡片与颜色（`TvNoticeTone`）；段与二维码在 `TvNoticeKind.kt` |
 | ui-tv `ui/notice/TvNoticeTab.kt` | 别的签的接口（`TvNoticeTab`）、两栏里的一行（`TvNoticeColumnItem`）、顶上那一排签怎么画与左右键 |
 | ui-tv `ui/notice/Tv*Notice.kt` | 各个种类（反馈回复、待处理的本地收藏、发版后的通知） |

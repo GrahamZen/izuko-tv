@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.flowOf
 import me.him188.ani.app.data.models.notice.Notice
 import me.him188.ani.app.domain.notice.NoticeEntry
 import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeButtonView
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeTestHost
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.tv_notice_section_earlier
@@ -323,7 +324,7 @@ class TvNoticeViewTest {
         host.waitUntil("点一行右栏换成它, 不做操作") { view().shownKey == SECOND_NOTICE }
         assertEquals(emptyList(), host.onMain { done.toList() })
         assertTrue(host.onMain { view().childrenOf<TvNoticeRowView>().first { it.entry?.id == SECOND_NOTICE }.selectedLook }, "右栏说的那一行画成选中")
-        host.onMain { view().childrenOf<TvNoticeButtonView>().first { it.visibility == View.VISIBLE && it.text == OPEN_ACTION }.performClick() }
+        host.onMain { view().childrenOf<TvNativeButtonView>().first { it.visibility == View.VISIBLE && it.text == OPEN_ACTION }.performClick() }
         host.waitUntil("点按钮做这个操作") { done == listOf(OPEN_ACTION) }
         host.onMain { view().childrenOf<TvNoticeTabView>().first { it.tabId == TAB }.performClick() }
         host.waitUntil("点签换过去") { view().shownTabId == TAB && dialogState.tab == TAB }
