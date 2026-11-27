@@ -22,6 +22,8 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collectLatest
@@ -394,6 +396,32 @@ class TorrentMediaCacheEngine(
             if (isDeleted.value) return
             updateMetadata { it.copy(autoCached = false) }
             resume()
+        }
+
+        private val yielding = MutableStateFlow(false)
+
+        /**
+         * 正给播放让路 (见 [me.him188.ani.app.domain.media.download.TorrentPlaybackYield]): 文件停着. 不算暂停 —— 不写进记录, [state] 照「下载中」.
+         */
+        val yieldingForPlayback: StateFlow<Boolean> = yielding.asStateFlow()
+
+        /** 能给播放让路: 在下 (没删、没暂停、没下完), 已经选好了文件 (还在等种子信息的只取元数据, 占不了带宽, 不停) */
+        internal suspend fun canYieldForPlayback(): Boolean {
+            if (isDeleted.value || desiredState.value == MediaCacheState.PAUSED) return false
+            val handle = fileHandle.startup.started?.handle ?: return false
+            return !handle.entry.isFinished()
+        }
+
+        /** 给播放让路 ([yielding] 为 true, 只停文件) 或放开; 让路期间被暂停 (用户、空间不足) 了的, 放开时不接着下 */
+        internal suspend fun yieldForPlayback(yielding: Boolean) {
+            if (this.yielding.value == yielding) return
+            this.yielding.value = yielding
+            if (isDeleted.value) return
+            if (yielding) {
+                fileHandle.startup.pause()
+            } else if (desiredState.value != MediaCacheState.PAUSED) {
+                fileHandle.startup.resume()
+            }
         }
 
         override val isDeleted: MutableStateFlow<Boolean> = MutableStateFlow(false)

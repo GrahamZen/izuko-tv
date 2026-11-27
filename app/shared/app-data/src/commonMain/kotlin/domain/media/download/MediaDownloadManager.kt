@@ -100,6 +100,8 @@ class MediaDownloadManager(
 
     init {
         if (playbackActivity != null) yieldToPlayback(playbackActivity)
+        // 播放跟不上时别的 BT 下载停下让路
+        if (playbackActivity != null) TorrentPlaybackYield.of(loadedDownloads, playbackActivity).start(backgroundScope)
     }
 
     private fun yieldToPlayback(playbackActivity: PlaybackActivity) {
