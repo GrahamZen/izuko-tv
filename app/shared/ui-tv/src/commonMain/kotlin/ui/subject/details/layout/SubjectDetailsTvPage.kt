@@ -1655,20 +1655,17 @@ fun SubjectDetailsTvPage(
                     )
                 }
                 if (info.imageLarge.isNotBlank()) {
-                    AsyncImage(
+                    TvDetailsCoverImage(
                         info.imageLarge,
-                        contentDescription = null,
+                        info.subjectId,
                         Modifier
                             .align(Alignment.TopEnd)
                             .wrapContentHeight(align = Alignment.Top, unbounded = true)
                             .height(episodesCoverHeight)
                             .aspectRatio(COVER_WIDTH_TO_HEIGHT_RATIO)
                             .clip(RoundedCornerShape(16.dp)),
-                        contentScale = ContentScale.Crop,
                         // 选集页在首屏之下: 图一到就预传 GPU, 免得冷启动后第一次往下翻时当场上传 (同选集卡剧照)
                         onSuccess = { it.bitmap?.prepareToDraw() },
-                        // NSFW 设为模糊时打码 (见 NsfwPolicy)
-                        downsampleLongEdgePx = rememberNsfwPolicy().coverDownsample(info.subjectId),
                     )
                 }
             }
@@ -5218,17 +5215,15 @@ private fun TvHeroBlock(
                 }
             }
             if (!hasBackdrop) {
-                AsyncImage(
+                TvDetailsCoverImage(
                     info.imageLarge,
-                    contentDescription = null,
+                    info.subjectId,
                     Modifier
                         .fillMaxHeight()
                         .padding(bottom = 16.dp)
                         .aspectRatio(COVER_WIDTH_TO_HEIGHT_RATIO)
                         .clip(RoundedCornerShape(16.dp)),
-                    contentScale = ContentScale.Crop,
                     onSuccess = onCoverImageSuccess,
-                    downsampleLongEdgePx = rememberNsfwPolicy().coverDownsample(info.subjectId),
                 )
             }
         }
@@ -5421,14 +5416,12 @@ private fun TvEmbeddedHeroPage(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             if (info.imageLarge.isNotBlank()) {
-                AsyncImage(
+                TvDetailsCoverImage(
                     info.imageLarge,
-                    contentDescription = null,
+                    info.subjectId,
                     Modifier.fillMaxWidth()
                         .aspectRatio(COVER_WIDTH_TO_HEIGHT_RATIO)
                         .clip(RoundedCornerShape(16.dp)),
-                    contentScale = ContentScale.Crop,
-                    downsampleLongEdgePx = rememberNsfwPolicy().coverDownsample(info.subjectId),
                 )
             }
             // 三个统计单元均匀摊开, 首末单元与海报左右边界对齐;
