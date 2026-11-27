@@ -16,7 +16,6 @@ import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runCurrent
 import me.him188.ani.app.data.models.preference.MediaPreference
 import me.him188.ani.app.data.models.preference.MediaSelectorSettings
-import me.him188.ani.app.data.persistent.createTestPreferencesDataStore
 import me.him188.ani.app.data.repository.media.PlaybackLineageRepository
 import me.him188.ani.app.domain.media.fetch.MediaFetchSession
 import me.him188.ani.app.domain.media.selector.testFramework.FetchMediaSelectorTestSuite
@@ -75,8 +74,7 @@ class PlaybackLineageSelectionTest {
         repository: PlaybackLineageRepository,
         continuation: EpisodeContinuation,
         session: MediaFetchSession,
-        cacheRecords: EpisodeCacheRecords = HAS_CACHE_RECORD,
-    ): Boolean = PlaybackLineageSelection(repository, continuation, cacheRecords)
+    ): Boolean = PlaybackLineageSelection(repository, continuation)
         .select(SUBJECT_ID, preferenceApi.mediaSelectorContext.value.episodeInfo!!, session, selector)
 
     @AfterTest
@@ -87,7 +85,7 @@ class PlaybackLineageSelectionTest {
     @Test
     fun `the lineage candidate wins over source tiers and preferences`() = runFetchMediaSelectorTestSuite {
         initWeb()
-        val repository = PlaybackLineageRepository(createTestPreferencesDataStore()).apply { setLineage(SUBJECT_ID, lineage) }
+        val repository = createTestLineageRepository().apply { setLineage(SUBJECT_ID, lineage) }
         val (_, session, sources) = configureFetchSession {
             object {
                 val best by web { tier = 0 }
@@ -106,9 +104,10 @@ class PlaybackLineageSelectionTest {
     }
 
     @Test
-    fun `a cache on the lineage comes before the network copy`() = runFetchMediaSelectorTestSuite {
+    fun `the lineage step takes the network copy even with a cache on the lineage`() = runFetchMediaSelectorTestSuite {
+        // 缓存播不播在缓存那一步定 (EpisodeCacheSelection); 走到线索这一步说明这回不播缓存
         initWeb()
-        val repository = PlaybackLineageRepository(createTestPreferencesDataStore()).apply { setLineage(SUBJECT_ID, lineage) }
+        val repository = createTestLineageRepository().apply { setLineage(SUBJECT_ID, lineage) }
         val (_, session, sources) = configureFetchSession {
             object {
                 val drive by web()
@@ -120,117 +119,13 @@ class PlaybackLineageSelectionTest {
         testScope().runCurrent()
 
         assertTrue(select(repository, FakeContinuation(), session))
-        assertEquals(LocalCache, selector.selected.value?.kind)
-    }
-
-    @Test
-    fun `a cache of another version is left to auto select instead of the lineage`() = runFetchMediaSelectorTestSuite {
-        // 从缓存页点进来、或「有缓存时直接播」: 缓存优先, 线索不去网上取
-        initWeb()
-        val repository = PlaybackLineageRepository(createTestPreferencesDataStore()).apply { setLineage(SUBJECT_ID, lineage) }
-        val (_, session, sources) = configureFetchSession {
-            object {
-                val drive by web()
-                val cache by localCache()
-            }
-        }
-        sources.drive.complete(media(kind = WEB, subjectName = "Example Series", alliance = ON_LINEAGE))
-        sources.cache.complete(media(kind = LocalCache, subjectName = "Example Series", alliance = "别的版本"))
-        testScope().runCurrent()
-        val continuation = FakeContinuation(LineageResolution.Found(media(kind = WEB, subjectName = "Example Series", alliance = ON_LINEAGE)))
-
-        assertFalse(select(repository, continuation, session))
-        assertNull(selector.selected.value)
-        assertEquals(0, continuation.resolves)
-        assertEquals(lineage, repository.lineageOf(SUBJECT_ID))
-    }
-
-    @Test
-    fun `a cache on the lineage is chosen without waiting for the network sources`() = runFetchMediaSelectorTestSuite {
-        initWeb()
-        val repository = PlaybackLineageRepository(createTestPreferencesDataStore()).apply { setLineage(SUBJECT_ID, lineage) }
-        val (_, session, sources) = configureFetchSession {
-            object {
-                val drive by web()
-                val cache by localCache()
-            }
-        }
-        // 网盘源还在查
-        sources.cache.complete(media(kind = LocalCache, subjectName = "Example Series", alliance = ON_LINEAGE))
-        testScope().runCurrent()
-        val start = testScope().currentTime
-
-        assertTrue(select(repository, FakeContinuation(), session))
-        assertEquals(LocalCache, selector.selected.value?.kind)
-        assertTrue(testScope().currentTime - start < 10_000)
-    }
-
-    @Test
-    fun `without a cache record the lineage does not wait for the local caches`() = runFetchMediaSelectorTestSuite {
-        initWeb()
-        val repository = PlaybackLineageRepository(createTestPreferencesDataStore()).apply { setLineage(SUBJECT_ID, lineageOnDrive) }
-        val (_, session, _) = configureFetchSession {
-            object {
-                val drive by web()
-                val cache by localCache()
-            }
-        }
-        // 本地缓存源迟迟查不完 (例如在等 BT 服务), 但这一集本机没有缓存记录
-        testScope().runCurrent()
-        val resolved = media(kind = WEB, subjectName = "Example Series", alliance = ON_LINEAGE)
-        val start = testScope().currentTime
-
-        assertTrue(select(repository, FakeContinuation(LineageResolution.Found(resolved), quick = true), session, NO_CACHE_RECORD))
-        assertEquals(resolved, selector.selected.value)
-        assertTrue(testScope().currentTime - start < 2_000)
-    }
-
-    @Test
-    fun `a cache record whose cache is still loading is left to auto select`() = runFetchMediaSelectorTestSuite {
-        // 没下完的 BT 缓存要等 BT 服务连上才查得出来: 线索不能当它不存在而去选网上的
-        initWeb()
-        val repository = PlaybackLineageRepository(createTestPreferencesDataStore()).apply { setLineage(SUBJECT_ID, lineage) }
-        val (_, session, sources) = configureFetchSession {
-            object {
-                val drive by web()
-                val cache by localCache()
-            }
-        }
-        sources.drive.complete(media(kind = WEB, subjectName = "Example Series", alliance = ON_LINEAGE))
-        testScope().runCurrent()
-        val continuation = FakeContinuation(LineageResolution.Found(media(kind = WEB, subjectName = "Example Series", alliance = ON_LINEAGE)))
-
-        assertFalse(select(repository, continuation, session, HAS_CACHE_RECORD))
-        assertNull(selector.selected.value)
-        assertEquals(0, continuation.resolves)
-        assertEquals(lineage, repository.lineageOf(SUBJECT_ID))
-    }
-
-    @Test
-    fun `a cache record while the selector is not ready is left to auto select`() = runFetchMediaSelectorTestSuite {
-        initWeb()
-        val repository = PlaybackLineageRepository(createTestPreferencesDataStore()).apply { setLineage(SUBJECT_ID, lineage) }
-        val (_, session, sources) = configureFetchSession {
-            object {
-                val drive by web()
-                val cache by localCache()
-            }
-        }
-        sources.drive.complete(media(kind = WEB, subjectName = "Example Series", alliance = ON_LINEAGE))
-        sources.cache.complete(media(kind = LocalCache, subjectName = "Example Series", alliance = "别的版本"))
-        preferenceApi.mediaSelectorContext.value = preferenceApi.mediaSelectorContext.value.copy(subjectFinished = null)
-        testScope().runCurrent()
-        val continuation = FakeContinuation(LineageResolution.Found(media(kind = WEB, subjectName = "Example Series", alliance = ON_LINEAGE)))
-
-        assertFalse(select(repository, continuation, session, HAS_CACHE_RECORD))
-        assertNull(selector.selected.value)
-        assertEquals(0, continuation.resolves)
+        assertEquals(WEB, selector.selected.value?.kind)
     }
 
     @Test
     fun `not among the candidates - resolved directly from the lineage`() = runFetchMediaSelectorTestSuite {
         initWeb()
-        val repository = PlaybackLineageRepository(createTestPreferencesDataStore()).apply { setLineage(SUBJECT_ID, lineage) }
+        val repository = createTestLineageRepository().apply { setLineage(SUBJECT_ID, lineage) }
         val (_, session, sources) = configureFetchSession {
             object {
                 val other by web()
@@ -248,7 +143,7 @@ class PlaybackLineageSelectionTest {
     fun `a resolved resource the selector excludes is not selected`() = runFetchMediaSelectorTestSuite {
         // 直接取回来的不在候选里, 照样要过过滤规则 (这里是条目名对不上)
         initWeb()
-        val repository = PlaybackLineageRepository(createTestPreferencesDataStore()).apply { setLineage(SUBJECT_ID, lineage) }
+        val repository = createTestLineageRepository().apply { setLineage(SUBJECT_ID, lineage) }
         val (_, session, sources) = configureFetchSession {
             object {
                 val other by web()
@@ -266,7 +161,7 @@ class PlaybackLineageSelectionTest {
     @Test
     fun `a quick lineage is resolved without waiting for its source to finish`() = runFetchMediaSelectorTestSuite {
         initWeb()
-        val repository = PlaybackLineageRepository(createTestPreferencesDataStore()).apply { setLineage(SUBJECT_ID, lineageOnDrive) }
+        val repository = createTestLineageRepository().apply { setLineage(SUBJECT_ID, lineageOnDrive) }
         val (_, session, _) = configureFetchSession {
             object {
                 val drive by web()
@@ -285,7 +180,7 @@ class PlaybackLineageSelectionTest {
     @Test
     fun `a quick lineage that cannot be opened this time waits for its source in the session`() = runFetchMediaSelectorTestSuite {
         initWeb()
-        val repository = PlaybackLineageRepository(createTestPreferencesDataStore()).apply { setLineage(SUBJECT_ID, lineageOnDrive) }
+        val repository = createTestLineageRepository().apply { setLineage(SUBJECT_ID, lineageOnDrive) }
         val (_, session, sources) = configureFetchSession {
             object {
                 val drive by web()
@@ -304,7 +199,7 @@ class PlaybackLineageSelectionTest {
     @Test
     fun `a quick lineage whose direct lookup hangs is taken from the session as soon as its source hands it over`() = runFetchMediaSelectorTestSuite {
         initWeb()
-        val repository = PlaybackLineageRepository(createTestPreferencesDataStore()).apply { setLineage(SUBJECT_ID, lineageOnDrive) }
+        val repository = createTestLineageRepository().apply { setLineage(SUBJECT_ID, lineageOnDrive) }
         val (_, session, sources) = configureFetchSession {
             object {
                 val drive by web()
@@ -324,7 +219,7 @@ class PlaybackLineageSelectionTest {
     @Test
     fun `a quick lineage without this episode is settled at once`() = runFetchMediaSelectorTestSuite {
         initWeb()
-        val repository = PlaybackLineageRepository(createTestPreferencesDataStore()).apply { setLineage(SUBJECT_ID, lineageOnDrive) }
+        val repository = createTestLineageRepository().apply { setLineage(SUBJECT_ID, lineageOnDrive) }
         val (_, session, _) = configureFetchSession {
             object {
                 val drive by web()
@@ -343,7 +238,7 @@ class PlaybackLineageSelectionTest {
     @Test
     fun `a lineage source that finished without the episode is not searched again`() = runFetchMediaSelectorTestSuite {
         initWeb()
-        val repository = PlaybackLineageRepository(createTestPreferencesDataStore()).apply { setLineage(SUBJECT_ID, lineageOnDrive) }
+        val repository = createTestLineageRepository().apply { setLineage(SUBJECT_ID, lineageOnDrive) }
         val (_, session, sources) = configureFetchSession {
             object {
                 val drive by web()
@@ -360,7 +255,7 @@ class PlaybackLineageSelectionTest {
     @Test
     fun `a lineage source still searching after the wait is not searched again`() = runFetchMediaSelectorTestSuite {
         initWeb()
-        val repository = PlaybackLineageRepository(createTestPreferencesDataStore()).apply { setLineage(SUBJECT_ID, lineageOnDrive) }
+        val repository = createTestLineageRepository().apply { setLineage(SUBJECT_ID, lineageOnDrive) }
         val (_, session, _) = configureFetchSession {
             object {
                 val drive by web()
@@ -378,7 +273,7 @@ class PlaybackLineageSelectionTest {
     fun `a lineage resource from a source still searching is selected without waiting for it to finish`() = runFetchMediaSelectorTestSuite {
         DevSwitches.lineageWorkingResults.set("1")
         initWeb()
-        val repository = PlaybackLineageRepository(createTestPreferencesDataStore()).apply { setLineage(SUBJECT_ID, lineageOnDrive) }
+        val repository = createTestLineageRepository().apply { setLineage(SUBJECT_ID, lineageOnDrive) }
         val (_, session, sources) = configureFetchSession {
             object {
                 val drive by web()
@@ -400,7 +295,7 @@ class PlaybackLineageSelectionTest {
     fun `a lineage source still searching has to finish when the switch is off`() = runFetchMediaSelectorTestSuite {
         DevSwitches.lineageWorkingResults.set("0")
         initWeb()
-        val repository = PlaybackLineageRepository(createTestPreferencesDataStore()).apply { setLineage(SUBJECT_ID, lineageOnDrive) }
+        val repository = createTestLineageRepository().apply { setLineage(SUBJECT_ID, lineageOnDrive) }
         val (_, session, sources) = configureFetchSession {
             object {
                 val drive by web()
@@ -416,7 +311,7 @@ class PlaybackLineageSelectionTest {
     @Test
     fun `a lineage without this episode is kept - a gone one is forgotten`() = runFetchMediaSelectorTestSuite {
         initWeb()
-        val repository = PlaybackLineageRepository(createTestPreferencesDataStore()).apply { setLineage(SUBJECT_ID, lineage) }
+        val repository = createTestLineageRepository().apply { setLineage(SUBJECT_ID, lineage) }
         val (_, session, sources) = configureFetchSession {
             object {
                 val other by web()
@@ -441,7 +336,7 @@ class PlaybackLineageSelectionTest {
     @Test
     fun `a handed-over lineage is followed without replacing the own lineage`() = runFetchMediaSelectorTestSuite {
         initWeb()
-        val repository = PlaybackLineageRepository(createTestPreferencesDataStore()).apply { setLineage(SUBJECT_ID, ownLineage) }
+        val repository = createTestLineageRepository().apply { setLineage(SUBJECT_ID, ownLineage) }
         val (_, session, sources) = configureFetchSession {
             object {
                 val drive by web { tier = 3 }
@@ -453,7 +348,7 @@ class PlaybackLineageSelectionTest {
         )
         testScope().runCurrent()
         val episode = preferenceApi.mediaSelectorContext.value.episodeInfo!!
-        val selection = PlaybackLineageSelection(repository, FakeContinuation(), HAS_CACHE_RECORD)
+        val selection = PlaybackLineageSelection(repository, FakeContinuation())
 
         assertTrue(selection.selectAlong(lineage, SUBJECT_ID, episode, session, selector))
         assertEquals(ON_LINEAGE, selector.selected.value?.properties?.alliance)
@@ -465,7 +360,7 @@ class PlaybackLineageSelectionTest {
     @Test
     fun `a handed-over lineage that is gone leaves the own lineage and remembered source alone`() = runFetchMediaSelectorTestSuite {
         initWeb()
-        val repository = PlaybackLineageRepository(createTestPreferencesDataStore()).apply { setLineage(SUBJECT_ID, ownLineage) }
+        val repository = createTestLineageRepository().apply { setLineage(SUBJECT_ID, ownLineage) }
         val (_, session, sources) = configureFetchSession {
             object {
                 val other by web()
@@ -479,7 +374,7 @@ class PlaybackLineageSelectionTest {
         }
         val episode = preferenceApi.mediaSelectorContext.value.episodeInfo!!
 
-        assertFalse(PlaybackLineageSelection(repository, FakeContinuation(LineageResolution.Gone), HAS_CACHE_RECORD, forgetter).selectAlong(lineage, SUBJECT_ID, episode, session, selector))
+        assertFalse(PlaybackLineageSelection(repository, FakeContinuation(LineageResolution.Gone), forgetter).selectAlong(lineage, SUBJECT_ID, episode, session, selector))
         assertNull(selector.selected.value)
         assertEquals(ownLineage, repository.lineageOf(SUBJECT_ID))
         assertEquals(lineage.mediaSourceId, remembered[SUBJECT_ID])
@@ -488,7 +383,7 @@ class PlaybackLineageSelectionTest {
     @Test
     fun `a gone lineage takes the remembered source on the same source along`() = runFetchMediaSelectorTestSuite {
         initWeb()
-        val repository = PlaybackLineageRepository(createTestPreferencesDataStore()).apply { setLineage(SUBJECT_ID, lineage) }
+        val repository = createTestLineageRepository().apply { setLineage(SUBJECT_ID, lineage) }
         val (_, session, sources) = configureFetchSession {
             object {
                 val other by web()
@@ -503,11 +398,11 @@ class PlaybackLineageSelectionTest {
         val episode = preferenceApi.mediaSelectorContext.value.episodeInfo!!
 
         // 只是没有这一集: 线索与记住的源都留着
-        assertFalse(PlaybackLineageSelection(repository, FakeContinuation(LineageResolution.NotFound), HAS_CACHE_RECORD, forgetter).select(SUBJECT_ID, episode, session, selector))
+        assertFalse(PlaybackLineageSelection(repository, FakeContinuation(LineageResolution.NotFound), forgetter).select(SUBJECT_ID, episode, session, selector))
         assertEquals(lineage.mediaSourceId, remembered[SUBJECT_ID])
 
         // 线索失效: 记住的源就是线索所在的源, 一起忘掉
-        assertFalse(PlaybackLineageSelection(repository, FakeContinuation(LineageResolution.Gone), HAS_CACHE_RECORD, forgetter).select(SUBJECT_ID, episode, session, selector))
+        assertFalse(PlaybackLineageSelection(repository, FakeContinuation(LineageResolution.Gone), forgetter).select(SUBJECT_ID, episode, session, selector))
         assertNull(repository.lineageOf(SUBJECT_ID))
         assertNull(remembered[SUBJECT_ID])
     }
@@ -515,7 +410,7 @@ class PlaybackLineageSelectionTest {
     @Test
     fun `a gone lineage leaves a remembered source on another source alone`() = runFetchMediaSelectorTestSuite {
         initWeb()
-        val repository = PlaybackLineageRepository(createTestPreferencesDataStore()).apply { setLineage(SUBJECT_ID, lineage) }
+        val repository = createTestLineageRepository().apply { setLineage(SUBJECT_ID, lineage) }
         val (_, session, sources) = configureFetchSession {
             object {
                 val other by web()
@@ -529,7 +424,7 @@ class PlaybackLineageSelectionTest {
         }
 
         assertFalse(
-            PlaybackLineageSelection(repository, FakeContinuation(LineageResolution.Gone), HAS_CACHE_RECORD, forgetter)
+            PlaybackLineageSelection(repository, FakeContinuation(LineageResolution.Gone), forgetter)
                 .select(SUBJECT_ID, preferenceApi.mediaSelectorContext.value.episodeInfo!!, session, selector),
         )
         assertNull(repository.lineageOf(SUBJECT_ID))
@@ -539,7 +434,7 @@ class PlaybackLineageSelectionTest {
     @Test
     fun `no lineage - nothing is selected and nothing is resolved`() = runFetchMediaSelectorTestSuite {
         initWeb()
-        val repository = PlaybackLineageRepository(createTestPreferencesDataStore())
+        val repository = createTestLineageRepository()
         val (_, session, sources) = configureFetchSession {
             object {
                 val drive by web()
@@ -557,7 +452,7 @@ class PlaybackLineageSelectionTest {
     @Test
     fun `a playback error switches to another resource on the lineage first`() = runFetchMediaSelectorTestSuite {
         initWeb()
-        val repository = PlaybackLineageRepository(createTestPreferencesDataStore()).apply { setLineage(SUBJECT_ID, lineage) }
+        val repository = createTestLineageRepository().apply { setLineage(SUBJECT_ID, lineage) }
         val (_, session, sources) = configureFetchSession {
             object {
                 val best by web { tier = 0 }
@@ -569,7 +464,7 @@ class PlaybackLineageSelectionTest {
         sources.best.complete(media(kind = WEB, subjectName = "Example Series", alliance = "线路"))
         sources.drive.complete(failing, alternative)
         testScope().runCurrent()
-        val selection = PlaybackLineageSelection(repository, FakeContinuation(), HAS_CACHE_RECORD)
+        val selection = PlaybackLineageSelection(repository, FakeContinuation())
         val playing = assertNotNull(selector.filteredCandidatesMedia.first().firstOrNull { it.mediaId == failing.mediaId })
         selector.select(playing)
 
@@ -587,7 +482,5 @@ class PlaybackLineageSelectionTest {
     private companion object {
         const val SUBJECT_ID = 400602
         const val ON_LINEAGE = "线索"
-        val HAS_CACHE_RECORD = EpisodeCacheRecords { _, _ -> true }
-        val NO_CACHE_RECORD = EpisodeCacheRecords { _, _ -> false }
     }
 }

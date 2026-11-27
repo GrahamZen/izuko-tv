@@ -116,9 +116,9 @@
 4. `MediaSourceMediaFetcher` 并发调用每个启用实例的 `instance.source.fetch(...)`，
    合并进 `cumulativeResults`。
 5. `DefaultMediaSelector` 对查询到的 `Media` 过滤（先按当前剧集）、排序、选择。
-6. `AutoSelectExtension` 在同一协程里先顺着播放线索找（`PlaybackLineageSelection`，见[选源](media-selector.md#播放线索)），
-   找到就不往下走；再做本地缓存检查与浏览记忆回放：等本会话的本地缓存源完成，
-   本集已有可用缓存则跳过回放；否则调用 `ReplayBrowseMemoryUseCase`，按 `ManualBrowseMemoryRepository`
+6. `SourceSelectionExtension` 在同一协程里先看缓存（`EpisodeCacheSelection`：下完的先播，没下完的看设置），
+   再顺着播放线索找（`PlaybackLineageSelection`，见[选源](media-selector.md#播放线索)），找到就不往下走；
+   再做浏览记忆回放（缓存拿不准而缓存该先播时跳过）：调用 `ReplayBrowseMemoryUseCase`，按 `ManualBrowseMemoryRepository`
    里该条目的记忆 `browseSubject` 记住的条目、在记住的线路里按位置找目标集，`createMedia` 后 `select`，
    并更新记忆。命中则不进入第 7 步。
 7. `MediaSelectorAutoSelectUseCaseImpl` 准备配置并启用上次使用的源，调用
@@ -281,14 +281,17 @@
 - 浏览记忆（`app/shared/app-data/src/commonMain/kotlin/`）：
     - `data/repository/media/ManualBrowseMemoryRepository.kt`：按条目的记忆模型与仓库（typed DataStore，
       文件由 `data/persistent/SettingsStore.kt` 提供）。
-    - `domain/media/selector/ReplayBrowseMemoryUseCase.kt`：切集回放；由 `domain/player/extension/AutoSelectExtension.kt`
+    - `domain/media/selector/ReplayBrowseMemoryUseCase.kt`：切集回放；由 `domain/player/extension/SourceSelectionExtension.kt`
       在自动选择前调用。
     - `domain/media/selector/BrowseEpisodeIndex.kt`：线路里按位置换算剧集下标（回放与下载弹窗共用），
       以及手动查找打开线路时的默认预选。
 - 播放线索（`app/shared/app-data/src/commonMain/kotlin/`）：
     - `domain/media/continuation/PlaybackLineage.kt`：线索类型；`EpisodeContinuation.kt`：每类资源的接口与汇总；
       `PlaybackLineageSelection.kt`：切集时的第一步。
-    - `data/repository/media/PlaybackLineageRepository.kt`：按条目存线索。
+    - `data/repository/media/PlaybackLineageRepository.kt`：按条目读写线索，存在 `domain/media/continuation/SubjectSourceTable.kt`（每部番一行，整机一份，带上限；
+      文件读写见 `data/persistent/JsonUserDataFile.kt`）。
+    - `domain/media/continuation/EpisodeCacheSelection.kt`：切集时缓存那一步（下完的先播、没下完的看设置）；`domain/media/cache/CachePlayRequests.kt`：从缓存页点播放的一次性标记；
+      `domain/media/continuation/TorrentReleaseGroup.kt`：BT 单集发布按发布者归成同一个版本。
     - `domain/player/extension/PlaybackLineageExtension.kt`：开播时记下或保留线索。
     - `domain/mediasource/clouddrive/DriveEpisodeContinuation.kt`：网盘的实现（分享文件夹、自己网盘的文件夹）；
       `domain/media/continuation/SourceContinuations.kt`：BT 与其余在线类的实现。

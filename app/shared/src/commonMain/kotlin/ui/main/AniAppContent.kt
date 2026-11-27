@@ -62,6 +62,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.data.models.preference.NoticeSoundKind
 import me.him188.ani.app.data.models.subject.SubjectInfo
+import me.him188.ani.app.domain.media.cache.CachePlayRequests
 import me.him188.ani.app.domain.mediasource.jsonapi.JsonApiMediaSource
 import me.him188.ani.app.domain.mediasource.rss.RssMediaSource
 import me.him188.ani.app.domain.mediasource.web.SelectorMediaSource
@@ -737,7 +738,7 @@ private fun AniAppContentImpl(
                 entry<NavRoutes.SubjectCaches> { route ->
                     SubjectDownloadsScreen(
                         vm = viewModel(key = route.toString()) { createSubjectDownloadsViewModel(route.subjectId) },
-                        onPlay = { aniNavigator.navigateEpisodeDetails(it.subjectId, it.episodeId) },
+                        onPlay = { CachePlayRequests.mark(it.subjectId, it.episodeId); aniNavigator.navigateEpisodeDetails(it.subjectId, it.episodeId) },
                         onNavigateDownloadDetail = { aniNavigator.navigateCacheDetails(it) },
                         modifier = Modifier.fillMaxSize(),
                         windowInsets = windowInsets,

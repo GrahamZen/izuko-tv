@@ -55,12 +55,15 @@ import me.him188.ani.app.domain.media.cache.GetMediaCacheUseCaseImpl
 import me.him188.ani.app.domain.media.download.AddDownloadUseCase
 import me.him188.ani.app.domain.media.download.AddDownloadUseCaseImpl
 import me.him188.ani.app.domain.media.download.DownloadRequestSessionFactory
+import me.him188.ani.app.domain.media.download.MediaDownloadManager
+import me.him188.ani.app.domain.media.continuation.EpisodeCacheSelection
 import me.him188.ani.app.domain.media.continuation.EpisodeContinuation
 import me.him188.ani.app.domain.media.continuation.EpisodeContinuations
 import me.him188.ani.app.domain.media.continuation.PlaybackLineageSelection
 import me.him188.ani.app.domain.media.continuation.PreferencesRememberedSourceForgetter
 import me.him188.ani.app.domain.media.continuation.TorrentContinuation
 import me.him188.ani.app.domain.media.continuation.WebSourceContinuation
+import me.him188.ani.app.domain.media.continuation.finishedCacheMediaIds
 import me.him188.ani.app.domain.media.selector.GetPreferredMediaSourceSortingUseCase
 import me.him188.ani.app.domain.media.selector.GetPreferredMediaSourceSortingUseCaseImpl
 import me.him188.ani.app.domain.media.selector.MediaSelectorAutoSelectUseCase
@@ -155,7 +158,15 @@ fun KoinApplication.useCaseModules() = module {
             ),
         )
     }
-    single<PlaybackLineageSelection> { PlaybackLineageSelection(get(), get(), get(), PreferencesRememberedSourceForgetter(get())) }
+    single<PlaybackLineageSelection> { PlaybackLineageSelection(get(), get(), PreferencesRememberedSourceForgetter(get())) }
+    single<EpisodeCacheSelection> {
+        val koin = getKoin()
+        EpisodeCacheSelection(
+            get(), get(), get(),
+            finishedCaches = { subjectId, episode -> koin.get<MediaDownloadManager>().finishedCacheMediaIds(subjectId, episode) },
+            playUnfinishedFirst = { koin.get<SettingsRepository>().mediaCacheSettings.flow.first().playUnfinishedCacheFirst },
+        )
+    }
 }
 
 val GlobalKoin get() = KoinPlatform.getKoin()

@@ -62,6 +62,8 @@ import me.him188.ani.app.domain.danmaku.DanmakuRepository
 import me.him188.ani.app.domain.foundation.HttpClientProvider
 import me.him188.ani.app.domain.foundation.ScopedHttpClientUserAgent
 import me.him188.ani.app.domain.foundation.get
+import me.him188.ani.app.domain.media.continuation.SubjectSourceTable
+import me.him188.ani.app.domain.media.continuation.subjectSourceTable
 import me.him188.ani.app.domain.profile.UserProfile
 import me.him188.ani.app.domain.profile.UserProfiles
 import me.him188.ani.app.domain.session.auth.BangumiWebLogin
@@ -104,7 +106,10 @@ fun KoinApplication.repositoryModules(
         )
     }
     single<SubjectTrackChoiceRepository> { SubjectTrackChoiceRepository(getContext().dataStores.preferredAllianceStore) }
-    single<PlaybackLineageRepository> { PlaybackLineageRepository(getContext().dataStores.preferredAllianceStore) }
+    single<SubjectSourceTable> {
+        subjectSourceTable(getContext().files.dataDir.resolve(SubjectSourceTable.FILE_NAME), getContext().dataStores.preferredAllianceStore)
+    }
+    single<PlaybackLineageRepository> { PlaybackLineageRepository(get()) }
 
     single<SubjectRewatch> { SubjectRewatch(database, subjectRewatchFile(getContext(), UserProfiles.current)) }
 

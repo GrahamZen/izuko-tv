@@ -25,6 +25,7 @@ import me.him188.ani.app.domain.media.continuation.continuationTarget
 import me.him188.ani.app.domain.media.selector.SelectOrigin
 import me.him188.ani.app.domain.settings.GetMediaSelectorSettingsFlowUseCase
 import me.him188.ani.datasources.api.Media
+import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 import org.koin.core.Koin
@@ -33,10 +34,11 @@ import org.koin.core.Koin
  * 记下这部番的播放线索 ([PlaybackLineage], 切集时先顺着它找, 见 [me.him188.ani.app.domain.media.continuation.PlaybackLineageSelection]).
  * 资源真正播起来 (时钟开始走) 时判断:
  *
+ * - 播的是缓存 (自动或手动选的): 不换也不记. 缓存是提前下好的那一份, 用户在看哪个版本另算, 下一集没有缓存时照样顺着原来的找;
  * - 用户手动选的: 换成它的线索 (记不了线索的资源就清掉, 不再顺着旧的找);
  * - 还没有线索: 记下它的. 自动选上的只在是偏好类型 (选源设置的 preferKind; 没设时都算) 时记: 偏好 BT 时自动选上的在线源
  *   多半是 BT 这集还没资源才兜底选的, 记下来之后每集都会越过 BT 选它 (同「记住的源」, 见 ObserveWebMediaSourcePreferenceExtension);
- * - 自动选上的、不在线索上 (线索这一集暂时找不到而兜底选的、别的版本的缓存): 不换, 下一集照样先顺着原来的找.
+ * - 自动选上的、不在线索上 (线索这一集暂时找不到而兜底选的): 不换, 下一集照样先顺着原来的找.
  *
  * 线索彻底失效时由选源那一步忘掉 (见 [me.him188.ani.app.domain.media.continuation.LineageResolution.Gone]), 之后播起来的资源接着记下.
  */
@@ -74,12 +76,17 @@ class PlaybackLineageExtension(
     private suspend fun record(media: Media, manual: Boolean) {
         val subjectId = context.subjectId
         val current = repository.lineageOf(subjectId)
+        if (media.kind == MediaSourceKind.LocalCache) {
+            logger.info { "Playing the cache ${media.mediaId} of subject $subjectId, leaving the playback lineage alone" }
+            if (current != null) repository.markPlayed(subjectId)
+            return
+        }
         if (current != null && !manual) {
             if (!continuation.continues(current, media)) {
                 logger.info { "Playing ${media.mediaId} off the playback lineage of subject $subjectId, keeping the lineage" }
             } else {
                 // 顺着线索播的: 线索记下的位置跟着更新 (在线源补上 / 换成这一集所在的条目页)
-                continuation.updated(current, media)?.let { repository.setLineage(subjectId, it) }
+                continuation.updated(current, media)?.let { repository.setLineage(subjectId, it) } ?: repository.markPlayed(subjectId)
             }
             return
         }

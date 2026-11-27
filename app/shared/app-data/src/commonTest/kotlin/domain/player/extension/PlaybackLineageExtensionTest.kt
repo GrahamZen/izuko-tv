@@ -26,13 +26,13 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import me.him188.ani.app.data.models.preference.MediaSelectorSettings
-import me.him188.ani.app.data.persistent.createTestPreferencesDataStore
 import me.him188.ani.app.data.repository.media.PlaybackLineageRepository
 import me.him188.ani.app.domain.episode.EpisodeFetchSelectPlayState
 import me.him188.ani.app.domain.episode.EpisodePlayerTestSuite
 import me.him188.ani.app.domain.episode.UnsafeEpisodeSessionApi
 import me.him188.ani.app.domain.episode.mediaFetchSessionFlow
 import me.him188.ani.app.domain.episode.mediaSelectorFlow
+import me.him188.ani.app.domain.media.continuation.createTestLineageRepository
 import me.him188.ani.app.domain.media.continuation.EpisodeContinuation
 import me.him188.ani.app.domain.media.continuation.LineageResolution
 import me.him188.ani.app.domain.media.continuation.PlaybackLineage
@@ -52,7 +52,7 @@ import kotlin.test.assertNull
  * @see PlaybackLineageExtension
  */
 class PlaybackLineageExtensionTest : AbstractPlayerExtensionTest() {
-    private val repository = PlaybackLineageRepository(createTestPreferencesDataStore())
+    private val repository = createTestLineageRepository()
     private val mediaSelectorSettings = MutableStateFlow(MediaSelectorSettings.Default)
 
     /** 每个资源的线索就是它所在的数据源 */
@@ -116,6 +116,24 @@ class PlaybackLineageExtensionTest : AbstractPlayerExtensionTest() {
         val (case, source) = createCase("web1", MediaSourceKind.WEB)
         play(case, source, "web1", MediaSourceKind.WEB, manual = true)
         assertEquals(WebSourceLineage("web1", "条目", ""), repository.lineageOf(subjectId))
+        case.scope.cancel()
+    }
+
+    @Test
+    fun `a manually picked cache leaves the lineage alone`() = runTest {
+        val lineage = WebSourceLineage("web1", "条目", "")
+        repository.setLineage(subjectId, lineage)
+        val (case, source) = createCase("cache", MediaSourceKind.LocalCache)
+        play(case, source, "cache", MediaSourceKind.LocalCache, manual = true)
+        assertEquals(lineage, repository.lineageOf(subjectId))
+        case.scope.cancel()
+    }
+
+    @Test
+    fun `a cache played without a lineage records none`() = runTest {
+        val (case, source) = createCase("cache", MediaSourceKind.LocalCache)
+        play(case, source, "cache", MediaSourceKind.LocalCache, manual = false)
+        assertNull(repository.lineageOf(subjectId))
         case.scope.cancel()
     }
 }

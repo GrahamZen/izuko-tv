@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -35,6 +36,16 @@ import me.him188.ani.app.domain.episode.MediaFetchSelectBundle
 import me.him188.ani.app.domain.episode.UnsafeEpisodeSessionApi
 import me.him188.ani.app.domain.episode.mediaFetchSessionFlow
 import me.him188.ani.app.domain.episode.mediaSelectorFlow
+import me.him188.ani.app.domain.media.cache.CachePlayRequests
+import me.him188.ani.app.domain.media.continuation.EpisodeCacheRecords
+import me.him188.ani.app.domain.media.continuation.EpisodeCacheSelection
+import me.him188.ani.app.domain.media.continuation.EpisodeContinuation
+import me.him188.ani.app.domain.media.continuation.EpisodeContinuations
+import me.him188.ani.app.domain.media.continuation.LineageResolution
+import me.him188.ani.app.domain.media.continuation.PlaybackLineage
+import me.him188.ani.app.domain.media.continuation.PlaybackLineageSelection
+import me.him188.ani.app.domain.media.continuation.WebSourceLineage
+import me.him188.ani.app.domain.media.continuation.createTestLineageRepository
 import me.him188.ani.app.domain.media.fetch.MediaFetchSession
 import me.him188.ani.app.domain.media.resolver.MediaResolver
 import me.him188.ani.app.domain.media.selector.MediaSelector
@@ -49,6 +60,7 @@ import me.him188.ani.app.domain.mediasource.GetPreferredWebMediaSourceUseCase
 import me.him188.ani.app.domain.settings.GetMediaSelectorSettingsFlowUseCase
 import me.him188.ani.datasources.api.CachedMedia
 import me.him188.ani.datasources.api.Media
+import me.him188.ani.datasources.api.source.MediaFetchRequest
 import me.him188.ani.datasources.api.source.MediaSourceKind
 import me.him188.ani.utils.coroutines.childScope
 import org.openani.mediamp.source.UriMediaData
@@ -59,7 +71,10 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 
-class AutoSelectExtensionTest : AbstractPlayerExtensionTest() {
+/**
+ * @see SourceSelectionExtension
+ */
+class SourceSelectionExtensionTest : AbstractPlayerExtensionTest() {
     private val defaultSettings = MediaSelectorSettings.AllVisible.copy(
         preferKind = null,
         hideSingleEpisodeForCompleted = false,
@@ -77,6 +92,28 @@ class AutoSelectExtensionTest : AbstractPlayerExtensionTest() {
      * 自动选择被启动的次数. 回放命中后必须为 0: 真实 use case 在已有选择时本来就立即返回, 只看 `selected` 分辨不出扩展有没有跳过它.
      */
     private var autoSelectCalls = 0
+
+    /** 设置「没下完的 BT 缓存先边下边播」 */
+    private var playUnfinishedFirst = true
+
+    /** 这一集下完的缓存 (选源器里的 mediaId) */
+    private var finishedCaches = emptySet<String>()
+
+    /** 这部番的播放线索; 线索上的是同一个数据源的网上资源 ([sameSourceContinuation]) */
+    private var lineage: PlaybackLineage? = null
+
+    /** 按线索直接取 (快取) 时取到的资源; 没有时不快取 */
+    private var resolvedOnLineage: Media? = null
+
+    private fun sameSourceContinuation() = object : EpisodeContinuation {
+        override fun owns(media: Media): Boolean = media.kind == MediaSourceKind.WEB
+        override suspend fun lineageOf(media: Media): PlaybackLineage? = null
+        override fun continues(lineage: PlaybackLineage, candidate: Media): Boolean = candidate.mediaSourceId == lineage.mediaSourceId
+        override suspend fun resolve(lineage: PlaybackLineage, request: MediaFetchRequest): LineageResolution =
+            resolvedOnLineage?.let { LineageResolution.Found(it) } ?: LineageResolution.NotFound
+
+        override fun isQuickToResolve(lineage: PlaybackLineage): Boolean = resolvedOnLineage != null
+    }
 
     data class Context(
         val scope: CoroutineScope,
@@ -100,9 +137,9 @@ class AutoSelectExtensionTest : AbstractPlayerExtensionTest() {
         suite.registerComponent<MediaSelectorAutoSelectUseCase> {
             val impl = MediaSelectorAutoSelectUseCaseImpl(koin)
             object : MediaSelectorAutoSelectUseCase {
-                override suspend fun invoke(session: MediaFetchSession, mediaSelector: MediaSelector) {
+                override suspend fun invoke(session: MediaFetchSession, mediaSelector: MediaSelector, selectCache: Boolean) {
                     autoSelectCalls++
-                    impl(session, mediaSelector)
+                    impl(session, mediaSelector, selectCache)
                 }
             }
         }
@@ -120,6 +157,17 @@ class AutoSelectExtensionTest : AbstractPlayerExtensionTest() {
         suite.registerComponent<ReplayBrowseMemoryUseCase> {
             ReplayBrowseMemoryUseCase { _, _, _ -> ReplayResult.NOT_FOUND }
         }
+        // 播放线索看 lineage (默认没有); 缓存记录覆盖本集, 有没有下完看 finishedCaches
+        val lineages = createTestLineageRepository()
+        val continuation = EpisodeContinuations(listOf(sameSourceContinuation()))
+        lineage = null
+        resolvedOnLineage = null
+        suite.registerComponent<PlaybackLineageSelection> { PlaybackLineageSelection(lineages, continuation) }
+        playUnfinishedFirst = true
+        finishedCaches = emptySet()
+        suite.registerComponent<EpisodeCacheSelection> {
+            EpisodeCacheSelection(lineages, continuation, EpisodeCacheRecords { _, _ -> true }, { _, _ -> finishedCaches }, { playUnfinishedFirst })
+        }
         // 与生产的 CreateMediaFetchSelectBundleFlowUseCaseImpl 同形: bundle 由 infoBundleFlow 派生,
         // 因此扩展拿到 bundle 时 infoBundleFlow.replayCache 已有本集信息, 回放才会被调用.
         suite.registerComponent<CreateMediaFetchSelectBundleFlowUseCase> {
@@ -134,11 +182,12 @@ class AutoSelectExtensionTest : AbstractPlayerExtensionTest() {
         // set null by default
         preferredWebMediaSource.value = null
         config(testScope, suite)
+        lineage?.let { launch { lineages.setLineage(subjectId, it) } }
 
 
         val state = suite.createState(
             listOf(
-                AutoSelectExtension,
+                SourceSelectionExtension,
             ),
         )
         state.onUIReady()
@@ -432,6 +481,154 @@ class AutoSelectExtensionTest : AbstractPlayerExtensionTest() {
         testScope.cancel()
     }
 
+    @Test
+    fun `an unfinished cache waits for the network when the setting says so`() = runTest {
+        val web1: CompletableDeferred<List<Media>>
+        val context = createCase { _, suite ->
+            unfinishedCache(suite)
+            web1 = suite.mediaSelectorTestBuilder.delayedMediaSource("web1")
+            playUnfinishedFirst = false
+        }
+        val (testScope, suite, state) = context
+
+        initializeTest(suite)
+        startMediaFetcher(state, testScope)
+        val myMedia = suite.mediaSelectorTestBuilder.createMedia("web1")
+        web1.complete(listOf(myMedia))
+        advanceUntilIdle()
+
+        state.assertSelected(myMedia, suite)
+
+        testScope.cancel()
+    }
+
+    @Test
+    fun `an unfinished cache is played when nothing else turns up`() = runTest {
+        val web1: CompletableDeferred<List<Media>>
+        val cachedMedia: CachedMedia
+        val context = createCase { _, suite ->
+            cachedMedia = unfinishedCache(suite)
+            web1 = suite.mediaSelectorTestBuilder.delayedMediaSource("web1")
+            playUnfinishedFirst = false
+        }
+        val (testScope, suite, state) = context
+
+        initializeTest(suite)
+        startMediaFetcher(state, testScope)
+        web1.complete(emptyList())
+        advanceUntilIdle()
+
+        state.assertSelected(cachedMedia, suite)
+
+        testScope.cancel()
+    }
+
+    @Test
+    fun `a remembered source is replayed when an unsure cache may not go first`() = runTest {
+        val web1: CompletableDeferred<List<Media>>
+        val memoryMedia: Media
+        val context = createCase { _, suite ->
+            // 本地缓存源迟迟没查完 (BT 服务还没连上), 不知道有下完的, 设置不让没下完的先播: 缓存本来也不能先选
+            suite.mediaSelectorTestBuilder.delayedMediaSource("cache", kind = MediaSourceKind.LocalCache)
+            web1 = suite.mediaSelectorTestBuilder.delayedMediaSource("web1")
+            playUnfinishedFirst = false
+            suite.mediaSelectorTestBuilder.savedUserPreference.value = MediaPreference.Any
+            memoryMedia = suite.mediaSelectorTestBuilder.createMedia("web-memory")
+            suite.registerComponent<ReplayBrowseMemoryUseCase> {
+                ReplayBrowseMemoryUseCase { _, _, mediaSelector ->
+                    mediaSelector.select(memoryMedia)
+                    ReplayResult.SELECTED
+                }
+            }
+        }
+        val (testScope, suite, state) = context
+
+        startMediaFetcher(state, testScope)
+        web1.complete(listOf(suite.mediaSelectorTestBuilder.createMedia("web1")))
+        advanceUntilIdle()
+
+        state.assertSelected(memoryMedia, suite)
+        assertEquals(0, autoSelectCalls, "回放命中时不启动自动选择")
+
+        testScope.cancel()
+    }
+
+    @Test
+    fun `a finished cache is played whatever the setting`() = runTest {
+        val web1: CompletableDeferred<List<Media>>
+        val cachedMedia: CachedMedia
+        val context = createCase { _, suite ->
+            cachedMedia = unfinishedCache(suite)
+            web1 = suite.mediaSelectorTestBuilder.delayedMediaSource("web1")
+            playUnfinishedFirst = false
+            suite.mediaSelectorTestBuilder.savedUserPreference.value = MediaPreference.Any
+            finishedCaches = setOf(cachedMedia.mediaId)
+        }
+        val (testScope, suite, state) = context
+
+        // 缓存在会话启动时就选上了, 不等网上的结果
+        startMediaFetcher(state, testScope)
+        web1.complete(listOf(suite.mediaSelectorTestBuilder.createMedia("web1")))
+        advanceUntilIdle()
+
+        state.assertSelected(cachedMedia, suite)
+
+        testScope.cancel()
+    }
+
+    @Test
+    fun `a finished cache that is slow to show up is not overridden by the lineage`() = runTest {
+        val cache: CompletableDeferred<List<Media>>
+        val web1: CompletableDeferred<List<Media>>
+        val cachedMedia: CachedMedia
+        val context = createCase { _, suite ->
+            cache = suite.mediaSelectorTestBuilder.delayedMediaSource("cache", kind = MediaSourceKind.LocalCache)
+            web1 = suite.mediaSelectorTestBuilder.delayedMediaSource("web1")
+            suite.mediaSelectorTestBuilder.savedUserPreference.value = MediaPreference.Any
+            val origin = suite.mediaSelectorTestBuilder.createMedia("cache", kind = MediaSourceKind.WEB)
+            cachedMedia = CachedMedia(origin, cacheMediaSourceId = "cache", download = origin.download)
+            finishedCaches = setOf(cachedMedia.mediaId)
+            lineage = WebSourceLineage("web1", "subject", "channel")
+            // 本地缓存源迟迟没查完 (冷启动时连 BT 服务慢), 线索上的网上资源直接取得到
+            resolvedOnLineage = suite.mediaSelectorTestBuilder.createMedia("web1")
+        }
+        val (testScope, suite, state) = context
+
+        startMediaFetcher(state, testScope)
+        web1.complete(listOf(suite.mediaSelectorTestBuilder.createMedia("web1")))
+        cache.complete(listOf(cachedMedia))
+        advanceUntilIdle()
+
+        state.assertSelected(cachedMedia, suite)
+
+        testScope.cancel()
+    }
+
+    @Test
+    fun `from the cache page an unfinished cache is played`() = runTest {
+        val web1: CompletableDeferred<List<Media>>
+        val cachedMedia: CachedMedia
+        val context = createCase { _, suite ->
+            cachedMedia = unfinishedCache(suite)
+            web1 = suite.mediaSelectorTestBuilder.delayedMediaSource("web1")
+            playUnfinishedFirst = false
+            suite.mediaSelectorTestBuilder.savedUserPreference.value = MediaPreference.Any
+            CachePlayRequests.mark(subjectId, initialEpisodeId)
+        }
+        val (testScope, suite, state) = context
+
+        // 缓存在会话启动时就选上了, 不等网上的结果
+        startMediaFetcher(state, testScope)
+        web1.complete(listOf(suite.mediaSelectorTestBuilder.createMedia("web1")))
+        advanceUntilIdle()
+
+        state.assertSelected(cachedMedia, suite)
+        // 只管这一次
+        assertEquals(false, CachePlayRequests.take(subjectId, initialEpisodeId))
+
+        testScope.cancel()
+    }
+
     private suspend fun EpisodeFetchSelectPlayState.assertSelected(
         expected: Media?,
         suite: EpisodePlayerTestSuite
@@ -444,6 +641,13 @@ class AutoSelectExtensionTest : AbstractPlayerExtensionTest() {
             assertIs<UriMediaData>(suite.player.mediaData.filterNotNull().first()) // Player is playing
             assertEquals(0, suite.player.currentPositionMillis.value) // State is reset
         }
+    }
+
+    /** 本集的一条缓存, 会话启动前就查完 (同真实的本地缓存源); 下没下完看 [finishedCaches]. */
+    private fun unfinishedCache(suite: EpisodePlayerTestSuite): CachedMedia {
+        val cache = suite.mediaSelectorTestBuilder.delayedMediaSource("cache", kind = MediaSourceKind.LocalCache)
+        val origin = suite.mediaSelectorTestBuilder.createMedia("cache", kind = MediaSourceKind.WEB)
+        return CachedMedia(origin, cacheMediaSourceId = "cache", download = origin.download).also { cache.complete(listOf(it)) }
     }
 
     private fun startMediaFetcher(
@@ -460,7 +664,7 @@ class AutoSelectExtensionTest : AbstractPlayerExtensionTest() {
             defaultSettings.copy(preferKind = null),
         preference: MediaPreference = MediaPreference.Any,
     ) {
-        this@AutoSelectExtensionTest.mediaSelectorSettings.value = mediaSelectorSettings
+        this@SourceSelectionExtensionTest.mediaSelectorSettings.value = mediaSelectorSettings
         suite.mediaSelectorTestBuilder.savedUserPreference.value = preference
 
         // Initialize

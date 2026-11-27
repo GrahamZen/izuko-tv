@@ -132,7 +132,6 @@ import me.him188.ani.app.domain.mediasource.instance.GetMediaSourceInstancesUseC
 import me.him188.ani.app.domain.mediasource.web.captcha.WebSessionManager
 import me.him188.ani.app.domain.player.CacheProgressProvider
 import me.him188.ani.app.domain.player.extension.AnalyticsExtension
-import me.him188.ani.app.domain.player.extension.AutoSelectExtension
 import me.him188.ani.app.domain.player.extension.CacheOnBtPlayExtension
 import me.him188.ani.app.domain.player.extension.EpisodeExitAnalyticsExtension
 import me.him188.ani.app.domain.player.extension.MarkAsWatchedExtension
@@ -152,6 +151,7 @@ import me.him188.ani.app.domain.player.extension.PlaybackPerfTraceExtension
 import me.him188.ani.app.domain.player.extension.PlayTimelineExtension
 import me.him188.ani.app.domain.player.extension.SeekPreviewDecoderFaultExtension
 import me.him188.ani.app.domain.player.extension.SourceProfileExtension
+import me.him188.ani.app.domain.player.extension.SourceSelectionExtension
 import me.him188.ani.app.domain.player.extension.WebViewDeferralExtension
 import me.him188.ani.app.domain.player.extension.SwitchMediaOnPlayerErrorExtension
 import me.him188.ani.app.domain.player.extension.SwitchNextEpisodeExtension
@@ -503,7 +503,7 @@ open class EpisodeViewModel(
             WebViewDeferralExtension,
             // 有下载完的缓存时直接播, 不搜索 (设置 - 存储); 排在自动选源前面, 暂停赶在数据源开查之前
             PlayCacheWithoutSearchingExtension.Factory(canHold = { !selectorKeepsSearching() }),
-            AutoSelectExtension,
+            SourceSelectionExtension,
             PauseMediaFetchWhilePlayingExtension.Factory(
                 canPause = { !selectorKeepsSearching() && !searchesToCompletion() },
                 selectorOpened = { it === selectorOpenedFetchSession },

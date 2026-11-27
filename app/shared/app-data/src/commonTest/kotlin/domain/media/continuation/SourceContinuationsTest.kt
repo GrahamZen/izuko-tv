@@ -203,6 +203,22 @@ class SourceContinuationsTest {
     }
 
     @Test
+    fun `single torrents without a group tag continue with the title apart from the episode number`() = runTest {
+        val continuation = TorrentContinuation(flowOf(emptyList()))
+        fun ramparts(episode: Int, season: Int = 2) = torrent(
+            "s${season}e$episode", EpisodeRange.single(EpisodeSort(episode)),
+            alliance = "冰之城墙「氷の城壁」The Ramparts of Ice S0${season}E0$episode 1080p 日英双语-多国字幕",
+        )
+        val lineage = assertIs<TorrentLineage>(continuation.lineageOf(ramparts(5)))
+        // 各集是同一个版本
+        assertEquals(lineage.encodedKey(), continuation.lineageOf(ramparts(6))?.encodedKey())
+        assertTrue(continuation.continues(lineage, ramparts(6)))
+        assertFalse(continuation.continues(lineage, ramparts(6, season = 1)))
+        // 记下时带着集号的线索也顺得下去
+        assertTrue(continuation.continues(lineage.copy(alliance = ramparts(5).properties.alliance), ramparts(6)))
+    }
+
+    @Test
     fun `a season pack continues in the same torrent`() = runTest {
         val continuation = TorrentContinuation(flowOf(emptyList()))
         val pack = torrent("pack", EpisodeRange.range(EpisodeSort(1), EpisodeSort(12)))

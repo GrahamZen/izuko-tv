@@ -26,15 +26,13 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import me.him188.ani.app.data.models.preference.MediaSelectorSettings
 import me.him188.ani.app.data.models.preference.VideoScaffoldConfig
-import me.him188.ani.app.data.persistent.createTestPreferencesDataStore
-import me.him188.ani.app.data.repository.media.PlaybackLineageRepository
 import me.him188.ani.app.domain.episode.EpisodeFetchSelectPlayState
 import me.him188.ani.app.domain.episode.EpisodePlayerTestSuite
 import me.him188.ani.app.domain.episode.UnsafeEpisodeSessionApi
 import me.him188.ani.app.domain.episode.mediaSelectorFlow
 import me.him188.ani.app.domain.episode.player
 import me.him188.ani.app.domain.media.TestMediaList
-import me.him188.ani.app.domain.media.continuation.EpisodeCacheRecords
+import me.him188.ani.app.domain.media.continuation.createTestLineageRepository
 import me.him188.ani.app.domain.media.continuation.EpisodeContinuation
 import me.him188.ani.app.domain.media.continuation.LineageResolution
 import me.him188.ani.app.domain.media.continuation.PlaybackLineageSelection
@@ -157,7 +155,7 @@ class SwitchMediaOnPlayerErrorExtensionTest : AbstractPlayerExtensionTest() {
             GetMediaSelectorSourceTiersUseCase { flowOf(MediaSelectorSourceTiers(emptyMap())) }
         }
         suite.registerComponent<PlaybackLineageSelection> {
-            PlaybackLineageSelection(PlaybackLineageRepository(createTestPreferencesDataStore()), NoContinuation(), EpisodeCacheRecords { _, _ -> false })
+            PlaybackLineageSelection(createTestLineageRepository(), NoContinuation())
         }
         val loadingStatesAtStop = mutableListOf<VideoLoadingState>()
         lateinit var state: EpisodeFetchSelectPlayState

@@ -22,7 +22,8 @@ import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 
 interface MediaSelectorAutoSelectUseCase : UseCase {
-    suspend operator fun invoke(session: MediaFetchSession, mediaSelector: MediaSelector)
+    /** @param selectCache 先选缓存; false 时缓存不抢开播, 别的都没有才可能选它 (见 [MediaAutoSelector.Config.selectCache]) */
+    suspend operator fun invoke(session: MediaFetchSession, mediaSelector: MediaSelector, selectCache: Boolean = true)
 }
 
 class MediaSelectorAutoSelectUseCaseImpl(
@@ -32,7 +33,7 @@ class MediaSelectorAutoSelectUseCaseImpl(
     private val getMediaSelectorSourceTiers: GetMediaSelectorSourceTiersUseCase by inject()
     private val getPreferredWebMediaSource: GetPreferredWebMediaSourceUseCase by inject()
 
-    override suspend fun invoke(session: MediaFetchSession, mediaSelector: MediaSelector) {
+    override suspend fun invoke(session: MediaFetchSession, mediaSelector: MediaSelector, selectCache: Boolean) {
         val settings = getMediaSelectorSettingsFlow().first()
         AutoSelectTrace.step("selector settings read")
         // #355 Restore a temporarily enabled source using the merged media preference.
@@ -56,6 +57,7 @@ class MediaSelectorAutoSelectUseCaseImpl(
                     exactMatchAfter = settings.fastSelectWebLowTierToleranceDuration,
                 ) else null,
                 fallbackToOtherKinds = true,
+                selectCache = selectCache,
             ),
         )
     }

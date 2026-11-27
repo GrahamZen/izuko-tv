@@ -310,7 +310,7 @@ class RetainedPlaybackSessionHolder : ViewModel(), PlaybackSessionEntry, KoinCom
         // 会话作用域的后台任务 (自动选源、选中后 loadMedia、自动连播、进度记录……) 全都挂在
         // `EpisodeFetchSelectPlayState.onUIReady` 后面, 而调用它的只有播放页的组合
         // (EpisodePage / TvEpisodeScreen). 后台会话没有那一步, 于是**不补这一下就是半条流水线**:
-        // 数据源照样查 (guard 第 1 条订阅着 pageState), 但 AutoSelectExtension 一直没上岗 ——
+        // 数据源照样查 (guard 第 1 条订阅着 pageState), 但选源扩展 (SourceSelectionExtension) 一直没上岗 ——
         // 面板上先是一直"正在查找数据源", 所有源查完后变成"等待手动选择"; 而真进播放页时它才启动,
         // 当场就选中并开始加载, 正是用户看到的"点进去立刻就开始加载, 返回后又是好的".
         //

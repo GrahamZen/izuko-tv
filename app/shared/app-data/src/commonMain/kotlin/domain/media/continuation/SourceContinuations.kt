@@ -100,7 +100,7 @@ class TorrentContinuation(private val instances: Flow<List<MediaSourceInstance>>
         return TorrentLineage(
             media.mediaSourceId,
             packMediaId = media.mediaId.takeIf { isPack },
-            alliance = alliance,
+            alliance = TorrentReleaseGroup.of(alliance),
             resolution = media.properties.resolution,
             subtitleLanguageIds = media.properties.subtitleLanguageIds.sorted(),
         )
@@ -109,7 +109,7 @@ class TorrentContinuation(private val instances: Flow<List<MediaSourceInstance>>
     override fun continues(lineage: PlaybackLineage, candidate: Media): Boolean {
         if (lineage !is TorrentLineage || candidate.kind != MediaSourceKind.BitTorrent) return false
         if (lineage.packMediaId != null && candidate.mediaId == lineage.packMediaId) return true
-        return candidate.properties.alliance == lineage.alliance &&
+        return TorrentReleaseGroup.of(candidate.properties.alliance) == TorrentReleaseGroup.of(lineage.alliance) &&
                 candidate.properties.resolution == lineage.resolution &&
                 candidate.properties.subtitleLanguageIds.sorted() == lineage.subtitleLanguageIds
     }

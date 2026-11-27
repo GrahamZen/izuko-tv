@@ -13,7 +13,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.data.models.episode.EpisodeInfo
@@ -22,11 +21,9 @@ import me.him188.ani.app.data.repository.media.PlaybackLineageRepository
 import me.him188.ani.app.domain.media.fetch.MediaFetchSession
 import me.him188.ani.app.domain.media.fetch.MediaSourceFetchResult
 import me.him188.ani.app.domain.media.fetch.MediaSourceFetchState
-import me.him188.ani.app.domain.media.fetch.awaitCompletedResults
 import me.him188.ani.app.domain.media.fetch.isFinal
 import me.him188.ani.app.domain.media.fetch.isPaused
 import me.him188.ani.app.domain.media.selector.MaybeExcludedMedia
-import me.him188.ani.app.domain.media.selector.MediaAutoSelectSnapshot
 import me.him188.ani.app.domain.media.selector.MediaSelector
 import me.him188.ani.app.domain.media.selector.MediaSourceSelectionSnapshot
 import me.him188.ani.app.platform.DevSwitches
@@ -39,31 +36,27 @@ import me.him188.ani.utils.logging.logger
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * 选源的第一步: 顺着这部番的播放线索 ([PlaybackLineage]) 找这一集, 先于浏览记忆与自动选源.
+ * 选源时顺着这部番的播放线索 ([PlaybackLineage]) 找这一集网上的资源, 在缓存那一步 ([EpisodeCacheSelection]) 之后、浏览记忆与自动选源之前
+ * (顺序见 SourceSelectionExtension). 这里不选缓存: 有缓存时缓存那一步已经决定了播不播.
  *
- * 1. 这一集有能播的缓存时用缓存: 线索上的缓存直接选上; 只有别的版本的缓存时返回 false, 由自动选源选它 (它第一步就选缓存).
- *    从缓存页点进来的就是要播缓存, 「有缓存时直接播, 不搜索」也只等缓存. 先看本机有没有这一集的缓存记录 ([EpisodeCacheRecords],
- *    只读元数据): 没有就不等本地缓存源, 直接往下; 有才等它查完 (平时毫秒级). 等不到 (没下完的 BT 缓存要等 BT 服务连上)
- *    或选源器没准备好时也返回 false, 交给自动选源: 有缓存时就该用缓存, BT 缓存没下完也能边下边播;
- * 2. 在查完了的数据源的候选里找线索上的资源 (查询会话按条目复用, 切集时多半已经在手上);
- * 3. 还没有: 快的线索 ([EpisodeContinuation.isQuickToResolve], 网盘只列一个文件夹, 在线源只开记下的条目页) 马上去取,
+ * 1. 在查完了的数据源的候选里找线索上的资源 (查询会话按条目复用, 切集时多半已经在手上);
+ * 2. 还没有: 快的线索 ([EpisodeContinuation.isQuickToResolve], 网盘只列一个文件夹, 在线源只开记下的条目页) 马上去取,
  *    同时看它的数据源在会话里边查边交出的, 谁先给出线索上的资源用谁; 直接去取说没有这一集、线索失效都就此定下, 不再另起一轮查询,
  *    这回取不成 ([LineageResolution.Unavailable]: 页打不开) 时只等数据源那一路;
  *    别的线索等它的数据源: 它边查边交出的里有线索上的资源就用 (拆分季除外), 否则等它查完 (被暂停的照用暂停前拿到的) 再找一次, 这一轮正常查完了还没有就不再重搜 (重搜也是同样的结果),
  *    数据源被暂停、出错或等不到时才直接去取 ([EpisodeContinuation.resolve]);
- * 4. 直接取回来的资源不在候选里, 先按选源器的过滤规则判一次 (排除的字幕组、早于本集开播、条目名、别的季…), 被排除就当没找到;
+ * 3. 直接取回来的资源不在候选里, 先按选源器的过滤规则判一次 (排除的字幕组、早于本集开播、条目名、别的季…), 被排除就当没找到;
  *    线索彻底失效时忘掉它; 自动选源记住的源就是线索所在的源时一并忘掉 ([rememberedSource]): 那个版本已经没了,
  *    接着等这个源从头搜完 (固定分享的合集要重列十几个分享) 多半还是找不到, 交给自动选源照常选, 选上的再记成记住的源.
  *
  * 找到就自动选上 (不改选源偏好) 并返回 true; 找不到返回 false, 由调用方照常选 —— 选源设置只在这时才起作用.
  * 也能顺着别处给的线索找 ([selectAlong], 一起看时房间里别人正在播的那条), 步骤相同, 只是线索失效时不动本机记的.
- * 自动选上别的版本的缓存不换线索 (见 PlaybackLineageExtension), 下一集没有缓存时照样顺着线索找.
+ * 播缓存不换线索 (见 PlaybackLineageExtension), 下一集没有缓存时照样顺着线索找.
  * 播放出错换源时也先在线索上换 ([switchOnError]).
  */
 class PlaybackLineageSelection(
     private val repository: PlaybackLineageRepository,
     private val continuation: EpisodeContinuation,
-    private val cacheRecords: EpisodeCacheRecords,
     private val rememberedSource: RememberedSourceForgetter = RememberedSourceForgetter.None,
 ) {
     suspend fun select(subjectId: Int, episode: EpisodeInfo, session: MediaFetchSession, selector: MediaSelector): Boolean {
@@ -90,16 +83,6 @@ class PlaybackLineageSelection(
         selector: MediaSelector,
         own: Boolean,
     ): Boolean {
-        val caches = playableCaches(subjectId, episode, session, selector) ?: return false
-        if (caches.isNotEmpty()) {
-            val onLineage = caches.firstOrNull { continuation.continues(lineage, it) } ?: run {
-                logger.info { "Episode ${episode.sort} of subject $subjectId has a cache of another version, selecting the cache as usual" }
-                return false
-            }
-            if (selector.selectAutomatically(onLineage, expectedSelection = null) == null) return false
-            logger.info { "Continued playback lineage of subject $subjectId with its cache: ${onLineage.mediaId}" }
-            return true
-        }
         val media = findOnLineage(subjectId, lineage, episode, session, selector, own) ?: run {
             logger.info { "Episode ${episode.sort} of subject $subjectId is not on ${if (own) "its playback lineage" else "the handed-over lineage"}, selecting as usual" }
             return false
@@ -109,7 +92,7 @@ class PlaybackLineageSelection(
         return true
     }
 
-    /** 这一集在线索上的网络资源 (见类说明 2~4); 找不到为 null. */
+    /** 这一集在线索上的网络资源 (见类说明 1~3); 找不到为 null. */
     private suspend fun findOnLineage(
         subjectId: Int,
         lineage: PlaybackLineage,
@@ -118,7 +101,7 @@ class PlaybackLineageSelection(
         selector: MediaSelector,
         own: Boolean,
     ): Media? {
-        pick(lineage, candidatesOf(session, selector) ?: return null)?.let { return it }
+        pick(lineage, candidatesOf(session, selector, SOURCE_TIMEOUT) ?: return null, withCaches = false)?.let { return it }
         // 查询会话按条目复用, 记的是进播放页那一集的请求: 换成这一集
         val request = session.latestRequest.first().forEpisode(episode)
         val source = session.mediaSourceResults.firstOrNull { it.mediaSourceId == lineage.mediaSourceId }
@@ -203,7 +186,7 @@ class PlaybackLineageSelection(
             }
         }
         early?.let { return it }
-        return pick(lineage, candidatesOf(session, selector) ?: return null)
+        return pick(lineage, candidatesOf(session, selector, SOURCE_TIMEOUT) ?: return null, withCaches = false)
     }
 
     /** 直接取回的结果: 选源器排除的当没找到, 自己记的线索彻底失效时忘掉它 ([own] 为假时不动). */
@@ -241,50 +224,12 @@ class PlaybackLineageSelection(
      */
     suspend fun switchOnError(subjectId: Int, session: MediaFetchSession, selector: MediaSelector, blacklist: Set<String>, failed: Media?): Boolean {
         val lineage = repository.lineageOf(subjectId) ?: return false
-        val candidates = candidatesOf(session, selector)?.filter { it.mediaId !in blacklist && it != failed } ?: return false
-        val media = pick(lineage, candidates) ?: return false
+        val candidates = candidatesOf(session, selector, SOURCE_TIMEOUT)?.filter { it.mediaId !in blacklist && it != failed } ?: return false
+        val media = pick(lineage, candidates, withCaches = true) ?: return false
         if (selector.selectAutomatically(media, expectedSelection = failed) == null) return false
         logger.info { "Player errored, switched along the playback lineage of subject $subjectId: ${media.mediaId}" }
         return true
     }
-
-    /**
-     * 这一集能播的缓存 (不等网络); 拿不准时为 null, 交给自动选源. 本机没有这一集的缓存记录时不等本地缓存源;
-     * 有记录才等它查完, 等不到或选源器没准备好算拿不准. 没下完不能播的缓存 (在线源的 m3u8) 被选源器排除, 不在里面.
-     */
-    private suspend fun playableCaches(
-        subjectId: Int,
-        episode: EpisodeInfo,
-        session: MediaFetchSession,
-        selector: MediaSelector,
-    ): List<Media>? {
-        val cacheSources = session.mediaSourceResults.filter { it.kind == MediaSourceKind.LocalCache }
-        if (cacheSources.isEmpty() || !cacheRecords.hasRecord(subjectId, episode)) return emptyList()
-        withTimeoutOrNull(CACHE_TIMEOUT) { cacheSources.forEach { it.awaitCompletedResults() } } ?: run {
-            val pending = cacheSources.filter { !it.state.value.isFinal }.map { it.mediaSourceId }
-            logger.info { "Episode ${episode.sort} of subject $subjectId has a cache, but $pending did not finish in $CACHE_TIMEOUT, leaving it to auto select" }
-            return null
-        }
-        val candidates = candidatesOf(session, selector) ?: run {
-            logger.info { "Episode ${episode.sort} of subject $subjectId has a cache, but the selector was not ready in $SOURCE_TIMEOUT, leaving it to auto select" }
-            return null
-        }
-        return candidates.filter { it.kind == MediaSourceKind.LocalCache }
-    }
-
-    /**
-     * 这一集的候选 (已按集与排除条件过滤、按既有规则排好): 查完了的数据源给的结果. 选源器的上下文没准备好 (剧集、完结状态) 时为 null.
-     */
-    private suspend fun candidatesOf(session: MediaFetchSession, selector: MediaSelector): List<Media>? =
-        candidatesOf(sourceSnapshots(session), selector)
-
-    private suspend fun candidatesOf(sources: List<MediaSourceSelectionSnapshot>, selector: MediaSelector): List<Media>? =
-        snapshotOf(sources, selector)?.candidates?.map(MaybeExcludedMedia.Included::result)
-
-    private suspend fun snapshotOf(sources: List<MediaSourceSelectionSnapshot>, selector: MediaSelector): MediaAutoSelectSnapshot? =
-        withTimeoutOrNull(SOURCE_TIMEOUT) {
-            selector.autoSelectSnapshots(flowOf(sources)).first { it.context.hasEpisode && it.context.allFieldsLoaded() }
-        }
 
     /**
      * 还在查的线索数据源 [source] 已经交出的 (每开完一页交一页, 见 KeywordSearchScope.emitEarly) 里线索上的资源, 没有为 null:
@@ -298,30 +243,28 @@ class PlaybackLineageSelection(
     ): Media? {
         val partial = source.results.first()
         val sources = sourceSnapshots(session).map { if (it.mediaSourceId == source.mediaSourceId) it.copy(results = partial) else it }
-        val snapshot = snapshotOf(sources, selector) ?: return null
+        val snapshot = selectionSnapshotOf(sources, selector, SOURCE_TIMEOUT) ?: return null
         if (snapshot.context.subjectSeriesInfo?.splitSeason != null) return null
-        return pick(lineage, snapshot.candidates.map(MaybeExcludedMedia.Included::result))
+        return pick(lineage, snapshot.candidates.map(MaybeExcludedMedia.Included::result), withCaches = false)
     }
-
-    private suspend fun sourceSnapshots(session: MediaFetchSession): List<MediaSourceSelectionSnapshot> =
-        session.mediaSourceResults.map { source ->
-            val state = source.state.value
-            MediaSourceSelectionSnapshot(source.mediaSourceId, source.kind, state, if (state.isFinal) source.results.first() else emptyList())
-        }
 
     /** 直接取回来的 [media] (不在候选里) 和候选一起过选源器的过滤规则, 还在不在. */
     private suspend fun passesFilters(media: Media, session: MediaFetchSession, selector: MediaSelector): Boolean {
         val resolved = MediaSourceSelectionSnapshot(media.mediaSourceId, media.kind, MediaSourceFetchState.Succeed(0), listOf(media))
-        val candidates = candidatesOf(sourceSnapshots(session) + resolved, selector) ?: return false
+        val candidates = candidatesOf(sourceSnapshots(session) + resolved, selector, SOURCE_TIMEOUT) ?: return false
         return candidates.any { it.mediaId == media.mediaId }
     }
 
-    private fun pick(lineage: PlaybackLineage, candidates: List<Media>): Media? {
+    /**
+     * 候选里线索上的资源. [withCaches] 时线索上的缓存与网上资源下好的缓存优先 (出错换源时); 选源时缓存那一步已经决定过, 只挑网上的.
+     */
+    private fun pick(lineage: PlaybackLineage, candidates: List<Media>, withCaches: Boolean): Media? {
         val onLineage = candidates.filter { continuation.continues(lineage, it) }
-        onLineage.firstOrNull { it.kind == MediaSourceKind.LocalCache }?.let { return it }
+        if (withCaches) onLineage.firstOrNull { it.kind == MediaSourceKind.LocalCache }?.let { return it }
+        val network = onLineage.filter { it.kind != MediaSourceKind.LocalCache }
         // 同一个文件可能被几个数据源搜到 (同一个分享): 记下线索的那个源优先
-        val network = onLineage.firstOrNull { it.mediaSourceId == lineage.mediaSourceId } ?: onLineage.firstOrNull() ?: return null
-        return cacheOf(network, candidates) ?: network
+        val media = network.firstOrNull { it.mediaSourceId == lineage.mediaSourceId } ?: network.firstOrNull() ?: return null
+        return if (withCaches) cacheOf(media, candidates) ?: media else media
     }
 
     /** [media] 下载好的缓存 (候选里来源就是它的那条). */
@@ -343,8 +286,5 @@ class PlaybackLineageSelection(
 
         /** 直接去取那一集 (列一个文件夹) */
         val RESOLVE_TIMEOUT = 10.seconds
-
-        /** 有缓存记录时等本地缓存的数据源查完 (平时毫秒级; 同 AutoSelectExtension 的缓存检查) */
-        val CACHE_TIMEOUT = 2.seconds
     }
 }

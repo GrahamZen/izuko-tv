@@ -9,35 +9,25 @@
 
 package me.him188.ani.app.data.repository.media
 
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.stringPreferencesKey
-import kotlinx.coroutines.flow.first
-import me.him188.ani.app.data.persistent.DataStoreJson
 import me.him188.ani.app.domain.media.continuation.PlaybackLineage
+import me.him188.ani.app.domain.media.continuation.SubjectSourceTable
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
 
-/** 每部番的播放线索 ([PlaybackLineage]). 认不出的记录 (以后版本加的线索类型) 当作没有. */
+/** 每部番的播放线索 ([PlaybackLineage]), 存在 [SubjectSourceTable] 里. */
 class PlaybackLineageRepository(
-    private val store: DataStore<Preferences>,
+    private val table: SubjectSourceTable,
 ) {
     private val logger = logger<PlaybackLineageRepository>()
 
-    private fun key(subjectId: Int) = stringPreferencesKey("playback_lineage:$subjectId")
-
-    suspend fun lineageOf(subjectId: Int): PlaybackLineage? {
-        val encoded = store.data.first()[key(subjectId)]?.takeIf { it.isNotBlank() } ?: return null
-        return runCatching { DataStoreJson.decodeFromString(PlaybackLineage.serializer(), encoded) }.getOrNull()
-    }
+    suspend fun lineageOf(subjectId: Int): PlaybackLineage? = table.state().lineageOf(subjectId)
 
     /** [lineage] 为 null 时删掉. */
     suspend fun setLineage(subjectId: Int, lineage: PlaybackLineage?) {
         logger.info { "Playback lineage of subject $subjectId: $lineage" }
-        store.edit {
-            if (lineage == null) it.remove(key(subjectId))
-            else it[key(subjectId)] = DataStoreJson.encodeToString(PlaybackLineage.serializer(), lineage)
-        }
+        table.setPlayed(subjectId, lineage)
     }
+
+    /** 顺着线索播起来了: 表放不下时久没播的先丢. */
+    suspend fun markPlayed(subjectId: Int) = table.markPlayed(subjectId)
 }

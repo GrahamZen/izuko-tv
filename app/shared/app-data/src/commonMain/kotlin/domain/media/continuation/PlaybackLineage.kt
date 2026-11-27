@@ -11,6 +11,7 @@ package me.him188.ani.app.domain.media.continuation
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import me.him188.ani.app.data.persistent.DataStoreJson
 import me.him188.ani.app.domain.mediasource.clouddrive.DriveFolderLocation
 import me.him188.ani.app.domain.mediasource.clouddrive.DriveShareLocation
 
@@ -50,7 +51,8 @@ data class DriveFolderLineage(
  * @property subjectName 站点上的条目名 ([me.him188.ani.datasources.api.MediaProperties.subjectName]), 区分同一个源搜到的几个条目页
  * @property channel 线路名 ([me.him188.ani.datasources.api.MediaProperties.alliance]), 站点没有线路时为空
  * @property subjectUrl 这个条目页的地址 (从搜索缓存里按播放地址查到的); 有时下一集直接打开这一页挑
- *   ([me.him188.ani.app.domain.mediasource.web.SubjectPageMediaSource]), 不再让这个源整轮搜一遍. 没缓存过的为 null
+ *   ([me.him188.ani.app.domain.mediasource.web.SubjectPageMediaSource]), 不再让这个源整轮搜一遍. 没缓存过的为 null.
+ *   比较两条线索是不是同一条时不算它 ([encodedKey])
  */
 @Serializable
 @SerialName("web-source")
@@ -75,3 +77,7 @@ data class TorrentLineage(
     val resolution: String,
     val subtitleLanguageIds: List<String>,
 ) : PlaybackLineage
+
+/** 线索的 JSON, 不含条目页: 判断两个资源是不是同一个版本时用 (同一条线索这回知道条目页、那回不知道). */
+internal fun PlaybackLineage.encodedKey(): String =
+    DataStoreJson.encodeToString(PlaybackLineage.serializer(), if (this is WebSourceLineage) copy(subjectUrl = null) else this)
