@@ -66,6 +66,7 @@ import kotlin.time.Duration.Companion.seconds
  *   站点回应记忆 (给了 subject 时只清这一部的缓存行); `memory=1` 时连这一部记住的数据源与播放线索一起清 (同第一次看).
  * - `api/debug/ui...`: 读屏上的界面与焦点、按遥控器的键、按文字点、等文字出现, 哪一页都能用, 见 [RemoteDebugUi].
  * - `api/debug/notices...`: 造通知、看通知、打开通知弹窗, 见 [RemoteDebugNotices].
+ * - `POST api/debug/whatsnew` `notes=<更新说明>`: 存成当前版本的更新说明, 下次冷启动出「本版新功能」(自己编的包发布页上没有这一版), 见 [RemoteDebugWhatsNew].
  */
 internal object RemoteDebugActions {
     private val logger = logger<RemoteDebugActions>()
@@ -109,6 +110,7 @@ internal object RemoteDebugActions {
                 request.path.startsWith("api/debug/settings/") -> RemoteDebugSettingsPage.handle(request, navigator)
                 request.path.startsWith("api/debug/together/") -> RemoteDebugTogether.handle(request, scope)
                 request.path == "api/debug/notices" || request.path.startsWith("api/debug/notices/") -> RemoteDebugNotices.handle(request, scope)
+                request.path == "api/debug/whatsnew" -> RemoteDebugWhatsNew.handle(request)
                 else -> null
             }
         }.getOrElse {

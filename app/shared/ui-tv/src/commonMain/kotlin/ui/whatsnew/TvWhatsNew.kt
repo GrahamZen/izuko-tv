@@ -143,6 +143,11 @@ object TvWhatsNew {
         val sealed: Deferred<List<String>>,
     )
 
+    /** 看过的版本改回 [version] (控制台测「本版新功能」用): 下次冷启动按从那一版升上来算. */
+    internal fun forgetSeenVersion(context: Context, version: String = "0.9.0") {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_SEEN_VERSION, version).apply()
+    }
+
     /**
      * TV 根部一组合就调 (不等首页): 开始准备内容. 一个进程只做一次.
      * [onboardingPending] = 这次要走首次引导 (新装或重新走引导): 记下当前版本, 这次什么都不出现.
