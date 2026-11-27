@@ -106,6 +106,10 @@ class SubjectSourceTable internal constructor(
         if (row.played == null || now - row.lastPlayedMillis < MARK_PLAYED_INTERVAL) row else row.copy(lastPlayedMillis = now)
     }
 
+    /** 换电视带走的线索: 键 → JSON, 同升级前存在选源偏好里的格式 (只认这种的旧版本新电视也接得上; 新电视上按 [LegacyLineages] 导入). */
+    suspend fun exportedLineages(): Map<String, String> =
+        state().rows.mapNotNull { (subjectId, row) -> row.played?.let { LEGACY_KEY_PREFIX + subjectId to it } }.toMap()
+
     private suspend fun load(): SubjectSourcesState {
         loaded?.let { return it }
         val read = store.read() ?: SubjectSourcesState()

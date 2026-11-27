@@ -12,6 +12,7 @@ package me.him188.ani.app.domain.devicemigration
 import me.him188.ani.app.data.models.danmaku.DanmakuRegexFilter
 import me.him188.ani.app.data.repository.media.ManualBrowseMemories
 import me.him188.ani.app.data.repository.media.MediaSourceSaves
+import me.him188.ani.app.domain.media.continuation.SubjectSourcesState
 import me.him188.ani.app.domain.mediasource.instance.MediaSourceSave
 import me.him188.ani.app.domain.mediasource.subscription.MediaSourceSubscription
 import me.him188.ani.app.domain.torrent.peer.PeerFilterSubscription
@@ -94,4 +95,15 @@ internal object DeviceMigrationMerge {
         ManualBrowseMemories(existing.bySubjectId + incoming.bySubjectId)
 
     fun nsfwSubjects(incoming: List<Int>, existing: List<Int>): List<Int> = (existing + incoming).distinct()
+
+    /** 番 × 源的表: 旧电视的每一行并进新电视的表; 两边都有的番, 线索取最近播过的那边. */
+    fun subjectSources(incoming: SubjectSourcesState, existing: SubjectSourcesState): SubjectSourcesState {
+        val rows = existing.rows.toMutableMap()
+        for ((subjectId, moved) in incoming.rows) {
+            val own = rows[subjectId]
+            val movedPlayedLater = moved.played != null && (own?.played == null || moved.lastPlayedMillis > own.lastPlayedMillis)
+            if (own == null || movedPlayedLater) rows[subjectId] = moved
+        }
+        return SubjectSourcesState(rows.filterValues { !it.isEmpty })
+    }
 }

@@ -78,6 +78,7 @@ import kotlin.uuid.ExperimentalUuidApi
 import me.him188.ani.app.domain.profile.UserProfileRegistry
 import me.him188.ani.app.domain.profile.UserProfiles
 import me.him188.ani.android.activity.ProfileRestartActivity
+import me.him188.ani.app.domain.devicemigration.DeviceMigrationDataFiles
 import me.him188.ani.utils.io.inSystem
 import me.him188.ani.utils.io.toKtPath
 
@@ -147,6 +148,7 @@ class AniApplication : Application() {
         HttpPhaseLog.enabled = { DevSwitches.playDiagnostics.value }
         if (DevSwitches.playDiagnostics.value) MainThreadStallWatch.install()
 
+        DeviceMigrationDataFiles.applyStaged(filesDir.toKtPath().inSystem)
         // 本进程属于哪个用户: 必须在建数据库与配置 (startKoin) 之前定下来, 见 UserProfiles
         UserProfiles.install(
             UserProfileRegistry.load(filesDir.resolve(UserProfileRegistry.FILE_NAME).toKtPath().inSystem),

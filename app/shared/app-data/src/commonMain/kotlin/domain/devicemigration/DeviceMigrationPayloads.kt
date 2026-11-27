@@ -37,6 +37,8 @@ import kotlin.io.encoding.Base64
  * 每个用户的 [DeviceMigrationProfile] 与他的库文件快照 (见 [DeviceMigrationDatabases]); 新电视由 [DeviceMigrationImporter] 写进自己.
  * 除库文件外都是 JSON, 字段按名读、认不得的跳过, 两台电视的版本可以不同; 库文件要新电视打得开 (见 [DeviceMigrationManifest.databaseVersion]).
  *
+ * 数据目录顶层的其余文件默认都搬 (番 × 源的表、待处理的本地收藏…, 见 [DeviceMigrationDataFiles]), 不搬的另列.
+ *
  * 不搬: 缓存的视频与缓存索引、弹幕 / 推荐 / 图片这类缓存、内置浏览器的 Cookie、控制台地址、跟着设备走的设置 (缓存目录).
  */
 
@@ -100,6 +102,8 @@ data class DeviceMigrationShared(
     val nsfwSubjects: List<Int>,
     /** 应用内语言 (语言标签, 空 = 跟随系统). 安卓上才有, 由平台那一侧填与写. */
     val appLanguage: String = "",
+    /** 数据目录里整机的文件 (见 [DeviceMigrationDataFiles]); 旧版本的旧电视不给. */
+    val files: List<DeviceMigrationFile> = emptyList(),
 )
 
 /**
@@ -116,6 +120,8 @@ data class DeviceMigrationProfile(
     val scopedStores: Map<String, String>,
     /** Web 控制台里删掉的播放记录 (库里的记录还在, 按这份藏起来). 由控制台那一侧填与写. */
     val hiddenHistory: List<String> = emptyList(),
+    /** 数据目录里这个用户的文件, 名字不带用户后缀 (见 [DeviceMigrationDataFiles]); 旧版本的旧电视不给. */
+    val files: List<DeviceMigrationFile> = emptyList(),
 )
 
 /** [Preferences] 里的一项, 带上类型以便原样还原. */

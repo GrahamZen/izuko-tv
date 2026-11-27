@@ -66,6 +66,9 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import me.him188.ani.app.domain.media.continuation.SubjectSourceRow
+import me.him188.ani.app.domain.media.continuation.SubjectSourceTable
+import me.him188.ani.app.domain.media.continuation.SubjectSourcesState
 
 /**
  * 换电视 (DeviceMigrationExporter → DeviceMigrationImporter): 两台「电视」各有自己的库文件与 DataStore 文件, 走一遍旧电视交出、新电视写进.
@@ -101,6 +104,16 @@ class DeviceMigrationTest {
                 .setQueryCoroutineContext(Dispatchers.IO)
                 .build()
                 .also { opened += it }
+
+        /** 数据目录 (顶层的文件按文件搬, 见 DeviceMigrationDataFiles) */
+        val files: File = File(root, "files").apply { mkdirs() }
+        val dataDir: SystemPath = files.toKtPath().inSystem
+
+        fun table(): SubjectSourcesState = File(files, SubjectSourceTable.FILE_NAME).takeIf { it.exists() }
+            ?.let { DeviceMigrationJson.decodeFromString(SubjectSourcesState.serializer(), it.readText()) } ?: SubjectSourcesState()
+
+        fun writeTable(state: SubjectSourcesState) =
+            File(files, SubjectSourceTable.FILE_NAME).writeText(DeviceMigrationJson.encodeToString(SubjectSourcesState.serializer(), state))
 
         val currentProfile get() = registry.find(currentId)!!
         val current = open(currentProfile.databaseFileName)
@@ -142,6 +155,7 @@ class DeviceMigrationTest {
             openDatabase = ::open,
             stores = stores,
             appVersion = "1.0.6",
+            dataDir = dataDir,
         )
         val importer = DeviceMigrationImporter(
             registry = registry,
@@ -150,6 +164,8 @@ class DeviceMigrationTest {
             openDatabase = ::open,
             databaseFile = ::dbFile,
             stores = stores,
+            dataDir = dataDir,
+            subjectSources = { table() },
         )
 
         fun close() {
@@ -209,7 +225,7 @@ class DeviceMigrationTest {
         durationMillis = 1_440_000, updatedAtMillis = 100, deletedAtMillis = null,
     )
 
-    /** 走一遍: 旧电视交出清单、整机数据、每个用户 (配置 + 库快照), 新电视写进. */
+    /** 走一遍: 旧电视交出清单、整机数据、每个用户 (配置 + 库快照), 新电视写进; 数据目录的文件暂存后当重启了一样换上. */
     private suspend fun migrate(from: Tv, to: Tv): List<UserProfile> {
         val manifest = from.exporter.manifest()
         assertTrue(manifest.databaseVersion <= to.importer.databaseVersion())
@@ -219,15 +235,148 @@ class DeviceMigrationTest {
             DeviceMigrationJson.encodeToString(DeviceMigrationShared.serializer(), from.exporter.shared()),
         )
         to.importer.applyShared(shared)
-        return manifest.profiles.map { summary ->
+        val moved = manifest.profiles.map { summary ->
             val profile = DeviceMigrationJson.decodeFromString(
                 DeviceMigrationProfile.serializer(),
                 DeviceMigrationJson.encodeToString(DeviceMigrationProfile.serializer(), from.exporter.profile(summary.id)!!),
             )
             val snapshot = File(dir, "transfer-${to.root.name}-${summary.id}.db").toKtPath().inSystem
             assertTrue(from.exporter.snapshotDatabase(summary.id, snapshot))
-            to.importer.applyProfile(profile, snapshot, takeOverPrimary = takeOver && profile.profile.isPrimary)
+            profile to to.importer.applyProfile(profile, snapshot, takeOverPrimary = takeOver && profile.profile.isPrimary)
         }
+        to.importer.applyDataFiles(shared, moved)
+        DeviceMigrationDataFiles.applyStaged(to.dataDir)
+        return moved.map { it.second }
+    }
+
+    /** 旧电视数据目录里: 两个用户的待处理收藏、片库索引 (跟着盘, 不搬)、番 × 源的表、下载来的表、以后新加的文件 */
+    private fun Tv.writeOldDataFiles() {
+        File(files, "pending-local-collections.json").writeText("pending-1")
+        File(files, "pending-local-collections_user2.json").writeText("pending-2")
+        File(files, "media-library-index.json").writeText("index-old")
+        File(files, "bgm-series-graph.tsv").writeText("graph")
+        File(files, "some-new-feature.json").writeText("new-feature")
+        File(files, "rec-catalog").mkdirs()
+        writeTable(
+            SubjectSourcesState(
+                mapOf(
+                    101 to SubjectSourceRow(played = "{\"old\":1}", lastPlayedMillis = 5),
+                    102 to SubjectSourceRow(played = "{}", lastPlayedMillis = 9),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `data files move along on a fresh tv with the primary taken over`() = realTimeTest {
+        val old = oldTv().apply { writeOldDataFiles() }
+        val new = Tv("new", listOf(UserProfile(1)))
+
+        migrate(old, new)
+
+        assertEquals("pending-1", File(new.files, "pending-local-collections.json").readText())
+        assertEquals("pending-2", File(new.files, "pending-local-collections_user2.json").readText())
+        assertEquals("new-feature", File(new.files, "some-new-feature.json").readText())
+        assertFalse(File(new.files, "media-library-index.json").exists())
+        assertFalse(File(new.files, "bgm-series-graph.tsv").exists())
+        assertFalse(File(new.files, DeviceMigrationDataFiles.STAGED_DIR).exists())
+        assertEquals("{\"old\":1}", new.table().rows.getValue(101).played)
+        assertEquals("{}", new.table().rows.getValue(102).played)
+    }
+
+    @Test
+    fun `data files of moved users take the new numbers and the table joins the lineages already here`() = realTimeTest {
+        val old = oldTv().apply { writeOldDataFiles() }
+        val new = Tv("new", listOf(UserProfile(1, name = "丙")))
+        new.current.subjectCollection().upsert(testSubjectCollectionEntity(301, WISH))
+        File(new.files, "pending-local-collections.json").writeText("pending-own")
+        File(new.files, "some-new-feature.json").writeText("new-feature-own")
+        // 101 两边都播过, 这台播得晚; 103 只有这台有
+        new.writeTable(
+            SubjectSourcesState(
+                mapOf(
+                    101 to SubjectSourceRow(played = "{\"own\":1}", lastPlayedMillis = 7),
+                    103 to SubjectSourceRow(played = "{\"own\":3}", lastPlayedMillis = 1),
+                ),
+            ),
+        )
+
+        assertEquals(listOf(2, 3), migrate(old, new).map { it.id })
+
+        assertEquals("pending-own", File(new.files, "pending-local-collections.json").readText())
+        assertEquals("pending-1", File(new.files, "pending-local-collections_user2.json").readText())
+        assertEquals("pending-2", File(new.files, "pending-local-collections_user3.json").readText())
+        assertEquals("new-feature", File(new.files, "some-new-feature.json").readText())
+        assertEquals("{\"own\":1}", new.table().rows.getValue(101).played)
+        assertEquals("{}", new.table().rows.getValue(102).played)
+        assertEquals("{\"own\":3}", new.table().rows.getValue(103).played)
+    }
+
+    @Test
+    fun `which data files belong to whom`() {
+        val names = setOf("pending-local-collections.json", "pending-local-collections_user2.json", "authSession", "authSession_user3", "x.json", "x.json.tmp")
+        fun owner(name: String) = DeviceMigrationDataFiles.ownerOf(name, names)
+        assertEquals(DataFileOwner.Profile(1, "pending-local-collections.json"), owner("pending-local-collections.json"))
+        assertEquals(DataFileOwner.Profile(2, "pending-local-collections.json"), owner("pending-local-collections_user2.json"))
+        assertEquals(DataFileOwner.Profile(1, "authSession"), owner("authSession"))
+        assertEquals(DataFileOwner.Profile(3, "authSession"), owner("authSession_user3"))
+        assertEquals(DataFileOwner.Device, owner("x.json"))
+        assertEquals(DataFileOwner.Excluded, owner("x.json.tmp"))
+        assertEquals(DataFileOwner.Excluded, owner("subject-rewatch_user2.json"))
+        assertEquals(DataFileOwner.Excluded, owner("media-library-index.json"))
+        // 只有 1 号用户时也认得出它的待处理收藏
+        assertEquals(
+            DataFileOwner.Profile(1, "pending-local-collections.json"),
+            DeviceMigrationDataFiles.ownerOf("pending-local-collections.json", setOf("pending-local-collections.json")),
+        )
+    }
+
+    @Test
+    fun `a staged file that would escape the data dir is not written`() = realTimeTest {
+        val new = Tv("new", listOf(UserProfile(1)))
+        val shared = DeviceMigrationShared(
+            preferences = emptyList(), subjectPreferences = emptyList(), mediaSources = MediaSourceSaves.Empty, subscriptions = emptyList(),
+            peerFilterSubscriptions = emptyList(), danmakuFilters = emptyList(), manualBrowseMemories = ManualBrowseMemories.Empty, nsfwSubjects = emptyList(),
+            files = listOf(DeviceMigrationFile.of("../escape.json", byteArrayOf(1)), DeviceMigrationFile.of("ok.json", byteArrayOf(2))),
+        )
+        new.importer.applyDataFiles(shared, emptyList())
+        DeviceMigrationDataFiles.applyStaged(new.dataDir)
+        assertFalse(File(new.root, "escape.json").exists())
+        assertTrue(File(new.files, "ok.json").exists())
+    }
+
+    @Test
+    fun `a lineage that comes with the table is not also written as a preference of the old layout`() = realTimeTest {
+        val old = oldTv().apply { writeOldDataFiles() }
+        val new = Tv("new", listOf(UserProfile(1, name = "丙")))
+        // 102 两边都播过, 这台播得晚
+        new.writeTable(SubjectSourcesState(mapOf(102 to SubjectSourceRow(played = "{\"own\":1}", lastPlayedMillis = 100))))
+        val legacyKey = SubjectSourceTable.LEGACY_KEY_PREFIX + 102
+        val exported = old.exporter.shared()
+        val shared = exported.copy(subjectPreferences = exported.subjectPreferences + PreferenceEntry(legacyKey, PreferenceEntry.Type.STRING, "{}"))
+
+        new.importer.applyShared(shared)
+        new.importer.applyDataFiles(shared, emptyList())
+        DeviceMigrationDataFiles.applyStaged(new.dataDir)
+
+        // 表按文件并过来了, 两边都有的取最近播过的那边. 按旧键带来的那份再写进选源偏好的话, 重启后会被当成升级前留下的整个导入, 盖掉并好的
+        assertEquals("{\"own\":1}", new.table().rows.getValue(102).played)
+        assertNull(new.stores.subjectPreferences.data.first()[stringPreferencesKey(legacyKey)])
+    }
+
+    @Test
+    fun `a staged file that cannot replace its target does not stop the others or the start`() = realTimeTest {
+        val new = Tv("new", listOf(UserProfile(1)))
+        DeviceMigrationDataFiles.stage(new.dataDir, "blocked.json", byteArrayOf(1))
+        DeviceMigrationDataFiles.stage(new.dataDir, "ok.json", byteArrayOf(2))
+        // 要换的位置上是个放着东西的目录: 换不上
+        File(new.files, "blocked.json").mkdirs()
+        File(new.files, "blocked.json/inner").writeText("x")
+
+        DeviceMigrationDataFiles.applyStaged(new.dataDir)
+
+        assertTrue(File(new.files, "ok.json").isFile)
+        assertFalse(File(new.files, DeviceMigrationDataFiles.STAGED_DIR).exists())
     }
 
     @Test

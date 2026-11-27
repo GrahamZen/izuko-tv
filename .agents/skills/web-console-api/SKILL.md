@@ -1441,13 +1441,13 @@ BT 资源只在电视上 Izuko 在前台时才开始下载，返回里的 `btSta
 ### GET api/migrate/export/shared
 旧电视一侧: 整机共用的数据 (设置、数据源、订阅、弹幕屏蔽词等)。
 - 参数: 无。
-- 返回: JSON `{preferences[], subjectPreferences[], mediaSources, subscriptions[], peerFilterSubscriptions[], danmakuFilters[], manualBrowseMemories, nsfwSubjects[], appLanguage}`; `preferences` 每项 `{key, type, value, values}`。没有 ok 字段。
+- 返回: JSON `{preferences[], subjectPreferences[], mediaSources, subscriptions[], peerFilterSubscriptions[], danmakuFilters[], manualBrowseMemories, nsfwSubjects[], appLanguage, files[]}`; `preferences` 每项 `{key, type, value, values}`; `files[]` 是数据目录顶层整机的文件 `{name, content}` (`content` 为 Base64; 缓存、下载来的表、跟着这台盘的不给)。没有 ok 字段。
 - 注意: 含网盘、PikPak 等账号凭据, 要当密钥对待, 不要打印、保存或转发。
 
 ### GET api/migrate/export/profile
 旧电视一侧: 一个用户的资料与按人的配置。
 - 参数: 查询串 `id`, 必填, 用户编号 (`profiles[].id`)。
-- 返回: JSON `{profile, scopedStores{}, hiddenHistory[]}`; 缺 `id` 回 400, 没有这个用户回 404。
+- 返回: JSON `{profile, scopedStores{}, hiddenHistory[], files[]}`; `files[]` 是数据目录里这个用户的文件, 名字不带用户后缀, 格式同 `export/shared`; 缺 `id` 回 400, 没有这个用户回 404。
 - 注意: `scopedStores` 里有 Bangumi 登录凭据, 要当密钥对待。
 
 ### GET api/migrate/export/database
@@ -1466,7 +1466,7 @@ BT 资源只在电视上 Izuko 在前台时才开始下载，返回里的 `btSta
 新电视一侧: 开始从旧电视搬数据, 在后台进行。
 - 参数: `url`, 必填, 同 `api/migrate/preview`。
 - 返回 ok/message, 成功时 message 为「开始搬了」; 进度看 `GET api/migrate/status`。
-- 注意: 会改这台电视的数据: 设置换成旧电视的, 数据源与订阅两边合并, 旧电视的用户作为新用户加进来 (这台还没人用过时, 旧电视的 1 号用户直接放进这台的 1 号), 然后应用自动重启。旧电视上的数据不动, 缓存的视频不搬。先全部下载完才写入, 下载阶段失败或停止时这台电视什么都没改。Izuko 必须能叫到电视前台, 否则回「电视上没有显示 Izuko。先在电视上打开 Izuko 再试」; 正在搬时回「正在搬，搬完再试」, 正在导入收藏时回「正在导入收藏，导完再搬」。
+- 注意: 会改这台电视的数据: 设置换成旧电视的, 数据源与订阅两边合并, 旧电视的用户作为新用户加进来 (这台还没人用过时, 旧电视的 1 号用户直接放进这台的 1 号), 然后应用自动重启。数据目录里的文件 (见 `export/shared` 的 `files`) 先暂存, 重启时换上, 用户的文件按这台的用户编号改名。旧电视上的数据不动, 缓存的视频不搬。先全部下载完才写入, 下载阶段失败或停止时这台电视什么都没改。Izuko 必须能叫到电视前台, 否则回「电视上没有显示 Izuko。先在电视上打开 Izuko 再试」; 正在搬时回「正在搬，搬完再试」, 正在导入收藏时回「正在导入收藏，导完再搬」。
 
 ### GET api/migrate/status
 新电视一侧: 读搬运进度。

@@ -18,6 +18,7 @@ import me.him188.ani.app.domain.devicemigration.DeviceMigrationStores
 import me.him188.ani.app.domain.profile.UserProfiles
 import org.koin.core.module.Module
 import me.him188.ani.app.data.repository.subjectRewatchFile
+import me.him188.ani.app.domain.media.continuation.SubjectSourceTable
 
 /**
  * 换电视 (Web 控制台「维护 → 换电视」) 的两侧: 旧电视交出数据 ([DeviceMigrationExporter]), 新电视写进来 ([DeviceMigrationImporter]).
@@ -26,6 +27,7 @@ import me.him188.ani.app.data.repository.subjectRewatchFile
  */
 internal fun Module.deviceMigration(getContext: () -> Context, openDatabase: (fileName: String) -> AniDatabase) {
     single<DeviceMigrationExporter> {
+        val subjectSources = get<SubjectSourceTable>()
         DeviceMigrationExporter(
             registry = get(),
             currentProfileId = { UserProfiles.currentId },
@@ -35,6 +37,8 @@ internal fun Module.deviceMigration(getContext: () -> Context, openDatabase: (fi
             stores = DeviceMigrationStores.of(getContext().dataStores),
             appVersion = currentAniBuildConfig.versionName,
             rewatchFile = { profile -> subjectRewatchFile(getContext(), profile) },
+            playedLineages = subjectSources::exportedLineages,
+            dataDir = getContext().files.dataDir,
         )
     }
     single<DeviceMigrationImporter> {
@@ -45,6 +49,8 @@ internal fun Module.deviceMigration(getContext: () -> Context, openDatabase: (fi
             openDatabase = openDatabase,
             databaseFile = { fileName -> getContext().databaseFile(fileName) },
             stores = DeviceMigrationStores.of(getContext().dataStores),
+            dataDir = getContext().files.dataDir,
+            subjectSources = { get<SubjectSourceTable>().state() },
         )
     }
 }

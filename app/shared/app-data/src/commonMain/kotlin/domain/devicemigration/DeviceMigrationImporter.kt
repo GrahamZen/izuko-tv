@@ -23,6 +23,8 @@ import me.him188.ani.app.data.repository.user.TokenSave
 import me.him188.ani.app.domain.devicemigration.DeviceMigrationExporter.Companion.EPISODE_HISTORIES
 import me.him188.ani.app.domain.devicemigration.DeviceMigrationExporter.Companion.SELF_INFO
 import me.him188.ani.app.domain.devicemigration.DeviceMigrationExporter.Companion.TOKENS
+import me.him188.ani.app.domain.media.continuation.SubjectSourceTable
+import me.him188.ani.app.domain.media.continuation.SubjectSourcesState
 import me.him188.ani.app.domain.profile.UserProfile
 import me.him188.ani.app.domain.profile.UserProfileRegistry
 import me.him188.ani.datasources.api.topic.UnifiedCollectionType
@@ -55,6 +57,10 @@ class DeviceMigrationImporter(
     /** 库文件的位置 (同 [openDatabase] 的名字). */
     private val databaseFile: (fileName: String) -> SystemPath,
     private val stores: DeviceMigrationStores,
+    /** 数据目录: 搬来的文件暂存在这里, 重启时换上 (见 [DeviceMigrationDataFiles]). null = 不写 (测试). */
+    private val dataDir: SystemPath? = null,
+    /** 这台的番 × 源的表 (搬来的并进去). */
+    private val subjectSources: suspend () -> SubjectSourcesState = { SubjectSourcesState() },
 ) {
     /** 这台的库版本. 旧电视的库比它新时打不开 (见 [DeviceMigrationManifest.databaseVersion]). */
     suspend fun databaseVersion(): Int = DeviceMigrationDatabases.userVersion(currentDatabase)
@@ -76,8 +82,16 @@ class DeviceMigrationImporter(
         stores.preferences.updateData { existing ->
             PreferenceEntries.toPreferences(DeviceMigrationMerge.preferences(shared.preferences, PreferenceEntries.of(existing)))
         }
+        // 番 × 源的表按文件搬来时 (applyDataFiles), 播放线索已经在表里, 两边都有的番取最近播过的那边. 按旧键带来的那份不再写进选源偏好:
+        // 写了的话重启后表把它当成升级前留下的整个导入, 盖掉并好的
+        val lineagesComeWithTable = shared.files.any { it.name == SubjectSourceTable.FILE_NAME }
+        val subjectPreferences = if (lineagesComeWithTable) {
+            shared.subjectPreferences.filterNot { it.key.startsWith(SubjectSourceTable.LEGACY_KEY_PREFIX) }
+        } else {
+            shared.subjectPreferences
+        }
         stores.subjectPreferences.updateData { existing ->
-            PreferenceEntries.toPreferences(DeviceMigrationMerge.keyed(shared.subjectPreferences, PreferenceEntries.of(existing)))
+            PreferenceEntries.toPreferences(DeviceMigrationMerge.keyed(subjectPreferences, PreferenceEntries.of(existing)))
         }
         var replacedSubscriptions = emptySet<String>()
         stores.subscriptions.updateData { existing ->
@@ -111,6 +125,48 @@ class DeviceMigrationImporter(
         logger.info { "Device migration: user profile ${incoming.profile.id} -> ${target.id} (${target.kind})" }
         return target
     }
+
+    /**
+     * 数据目录里按文件搬的 (见 [DeviceMigrationDataFiles]) 暂存起来, 重启时换上. 用户都写进来之后调 ([profiles]: 搬来的 → 这台上的).
+     * - 整机的照搬: 这台同名的换成旧电视的 (同设置);
+     * - 番 × 源的表: 并进这台的表 ([DeviceMigrationMerge.subjectSources]);
+     * - 每个用户的: 按这台上的编号改名.
+     * 名字带路径的不写. 中途出错时暂存的都删掉.
+     */
+    suspend fun applyDataFiles(shared: DeviceMigrationShared, profiles: List<Pair<DeviceMigrationProfile, UserProfile>>) {
+        val dir = dataDir ?: return
+        withContext(Dispatchers.IO_) {
+            try {
+                for (file in shared.files) {
+                    if (!file.isPlainName()) continue
+                    val bytes = if (file.name == SubjectSourceTable.FILE_NAME) mergedSubjectSources(file) ?: continue else file.bytes
+                    DeviceMigrationDataFiles.stage(dir, file.name, bytes)
+                }
+                for ((incoming, target) in profiles) {
+                    for (file in incoming.files) {
+                        if (file.isPlainName()) DeviceMigrationDataFiles.stage(dir, target.scopedFileName(file.name), file.bytes)
+                    }
+                }
+            } catch (e: Throwable) {
+                withContext(NonCancellable) { DeviceMigrationDataFiles.clearStaged(dir) }
+                throw e
+            }
+        }
+        logger.info { "Device migration: staged ${shared.files.size} device files and ${profiles.sumOf { it.first.files.size }} profile files" }
+    }
+
+    private suspend fun mergedSubjectSources(file: DeviceMigrationFile): ByteArray? {
+        val incoming = try {
+            DeviceMigrationJson.decodeFromString(SubjectSourcesState.serializer(), file.bytes.decodeToString())
+        } catch (e: Exception) {
+            logger.warn { "Device migration: failed to read ${file.name}: ${e::class.simpleName}" }
+            return null
+        }
+        val merged = DeviceMigrationMerge.subjectSources(incoming, subjectSources())
+        return DeviceMigrationJson.encodeToString(SubjectSourcesState.serializer(), merged).encodeToByteArray()
+    }
+
+    private fun DeviceMigrationFile.isPlainName() = name.isNotEmpty() && name != "." && name != ".." && '/' !in name && '\\' !in name
 
     /**
      * 先用一个用完就关的连接看一眼: 是 SQLite 库, 版本不比这台新 (更新的库 Room 打开时会整个清掉).

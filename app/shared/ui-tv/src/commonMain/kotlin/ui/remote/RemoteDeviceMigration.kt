@@ -327,6 +327,7 @@ internal object RemoteDeviceMigration {
 
     private suspend fun apply(shared: DeviceMigrationShared, profiles: List<Pair<DeviceMigrationProfile, File>>, takeOver: Boolean) {
         importer.applyShared(shared)
+        val moved = mutableListOf<Pair<DeviceMigrationProfile, UserProfile>>()
         for ((payload, database) in profiles) {
             val target = importer.applyProfile(
                 payload,
@@ -334,7 +335,9 @@ internal object RemoteDeviceMigration {
                 takeOverPrimary = takeOver && payload.profile.isPrimary,
             )
             RemoteHistory.setHiddenEntries(target, payload.hiddenHistory)
+            moved += payload to target
         }
+        importer.applyDataFiles(shared, moved)
         // 设置换成了做完引导的那台的, 这台不用再走一遍
         TvOnboardingGate.markDoneNow(context)
         val language = LocaleList.forLanguageTags(shared.appLanguage)

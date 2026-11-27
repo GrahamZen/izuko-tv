@@ -39,9 +39,13 @@ class DeviceMigrationExporter(
     /** 打开某个用户的库文件 (当前用户与 1 号用户除外: 它们已经开着). */
     private val openDatabase: (fileName: String) -> AniDatabase,
     private val stores: DeviceMigrationStores,
+    /** 播放线索 (键 → 内容): 不在选源偏好里了, 按原来的键带过去, 新电视上并进表里 (见 SubjectSourceTable). */
+    private val playedLineages: suspend () -> Map<String, String> = { emptyMap() },
     private val appVersion: String,
     /** 某个用户的重温记录 (见 `SubjectRewatch`): 快照里重温中的番按开始时的看过算, 重温不跟去新电视. null = 不看重温 (测试). */
     private val rewatchFile: (UserProfile) -> SystemPath? = { null },
+    /** 数据目录: 顶层的文件按 [DeviceMigrationDataFiles] 搬. null = 不搬 (测试). */
+    private val dataDir: SystemPath? = null,
 ) {
     suspend fun manifest(): DeviceMigrationManifest = withContext(Dispatchers.IO_) {
         DeviceMigrationManifest(
@@ -67,13 +71,15 @@ class DeviceMigrationExporter(
     suspend fun shared(): DeviceMigrationShared = withContext(Dispatchers.IO_) {
         DeviceMigrationShared(
             preferences = PreferenceEntries.of(stores.preferences.data.first()),
-            subjectPreferences = PreferenceEntries.of(stores.subjectPreferences.data.first()),
+            subjectPreferences = PreferenceEntries.of(stores.subjectPreferences.data.first()) +
+                    playedLineages().map { (key, value) -> PreferenceEntry(key, PreferenceEntry.Type.STRING, value) },
             mediaSources = stores.mediaSources.data.first(),
             subscriptions = stores.subscriptions.data.first().list,
             peerFilterSubscriptions = stores.peerFilterSubscriptions.data.first().list,
             danmakuFilters = stores.danmakuFilters.data.first(),
             manualBrowseMemories = stores.manualBrowseMemories.data.first(),
             nsfwSubjects = stores.nsfwSubjects.data.first(),
+            files = dataDir?.let(DeviceMigrationDataFiles::deviceFiles).orEmpty(),
         )
     }
 
@@ -85,6 +91,7 @@ class DeviceMigrationExporter(
             scopedStores = UserProfile.SCOPED_DATASTORE_NAMES.mapNotNull { name ->
                 readScoped(profile, name)?.let { name to it }
             }.toMap(),
+            files = dataDir?.let { DeviceMigrationDataFiles.profileFiles(it, profile.id) }.orEmpty(),
         )
     }
 
