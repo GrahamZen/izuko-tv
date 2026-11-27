@@ -20,6 +20,7 @@ import me.him188.ani.app.data.models.notice.NoticeLog
 import me.him188.ani.app.data.repository.user.Settings
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.days
 
@@ -63,13 +64,39 @@ class NoticesTest {
     }
 
     @Test
-    fun `new first then pending then newer`() = runTest {
+    fun `unread first then pending then newer`() = runTest {
         notices.post(notice("old-message", clock - 3000))
         notices.post(notice("new-message", clock - 1000))
-        notices.post(notice("seen-message", clock - 500))
-        notices.markSeen(listOf(notice("seen-message", clock - 500)))
+        notices.post(notice("seen-message", clock - 600))
+        notices.post(notice("read-message", clock - 500))
+        // 只是列出来过的还在没读过的那一段里, 读过的在后
+        notices.markSeen(listOf(notice("seen-message", clock - 600)))
+        notices.markRead(listOf(notice("read-message", clock - 500)))
         notices.addSource(MutableStateFlow(listOf(notice("pending", clock - 2000))))
-        assertEquals(listOf("pending", "new-message", "old-message", "seen-message"), keys())
+        assertEquals(listOf("pending", "seen-message", "new-message", "old-message", "read-message"), keys())
+    }
+
+    @Test
+    fun `seen and read are two steps and reading also counts as seen`() = runTest {
+        notices.post(notice("a", clock))
+        notices.post(notice("b", clock))
+        // 打开通知弹窗: 都列出来了, 都看过, 还都没读
+        notices.markSeen(listOf(notice("a", clock), notice("b", clock)))
+        assertEquals(listOf(true to false, true to false), notices.all.first().map { it.seen to it.read })
+        // 读了一条 (右栏说了它一会儿): 只有它读过
+        notices.markRead(listOf(notice("a", clock)))
+        assertEquals(mapOf("a" to (true to true), "b" to (true to false)), notices.all.first().associate { it.notice.key to (it.seen to it.read) })
+        // 没列出来过就读了的 (在别处直接做了它的事): 也算看过
+        notices.post(notice("c", clock))
+        notices.markRead(listOf(notice("c", clock)))
+        val c = notices.all.first().single { it.notice.key == "c" }
+        assertTrue(c.seen && c.read)
+        // 同一条时间变晚了: 又是没看过、没读过的
+        clock += 1000
+        notices.post(notice("a", clock, "n" to "2"))
+        val a = notices.all.first().single { it.notice.key == "a" }
+        assertFalse(a.seen)
+        assertFalse(a.read)
     }
 
     @Test

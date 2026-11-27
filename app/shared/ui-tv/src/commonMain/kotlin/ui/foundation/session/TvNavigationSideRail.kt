@@ -12,7 +12,12 @@ package me.him188.ani.app.ui.foundation.session
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -104,7 +109,7 @@ import me.him188.ani.app.ui.foundation.playback.LocalPlaybackSessionEntry
 import me.him188.ani.app.ui.foundation.playback.PlaybackSessionStatus
 import me.him188.ani.app.ui.foundation.theme.AniThemeDefaults
 import me.him188.ani.app.ui.notice.TvNotices
-import me.him188.ani.app.ui.notice.rememberTvNoticesFresh
+import me.him188.ani.app.ui.notice.rememberTvNoticesFreshCount
 import me.him188.ani.app.ui.lang.Lang
 import me.him188.ani.app.ui.lang.exploration_search
 import me.him188.ani.app.ui.lang.login_sign_in
@@ -157,10 +162,11 @@ data class TvNavRailItem(
      */
     val keepFocusOnClick: Boolean = false,
     /**
-     * 返回 true 时图标右上角画红点 (这一项有新东西, 如「通知」有没看过的通知). 同 [iconContent], 状态读在这个 lambda 里面,
-     * 变了只重组这一项.
+     * 返回大于 0 时图标右上角画红底的数字 (这一项有几件新东西, 如「通知」有几条没看过的), 超过 [badgeMax] 写「[badgeMax]+」
+     * (见 [tvRailBadgeText]). 同 [iconContent], 状态读在这个 lambda 里面, 变了只重组这一项.
      */
-    val badge: (@Composable () -> Boolean)? = null,
+    val badgeCount: (@Composable () -> Int)? = null,
+    val badgeMax: Int = TV_RAIL_BADGE_MAX,
     val onClick: () -> Unit,
 )
 
@@ -175,7 +181,7 @@ data class TvNavRailItem(
 data class TvRailAvatarAction(
     val icon: ImageVector,
     val label: String,
-    /** 图标右上角画红点 (这一项有新东西时, 画法同 [TvNavRailItem.badge]). */
+    /** 图标右上角画红点 (这一项有新东西时, 见 [railBadge]). */
     val badge: Boolean = false,
     val onClick: () -> Unit,
 )
@@ -190,13 +196,13 @@ fun buildTvRailItems(
     onNavigateToPage: (MainScreenPage) -> Unit,
     onSettings: () -> Unit,
 ): List<TvNavRailItem> = buildList {
-    // 「通知」: 打开通知中心 (见 TvNotices), 有没看过的通知时带红点. 常驻在头像下、搜索上, 有没有通知位置都不变;
+    // 「通知」: 打开通知中心 (见 TvNotices), 有没看过的通知时带红底的数字 (几条). 常驻在头像下、搜索上, 有没有通知位置都不变;
     // 弹窗就地打开, 关了焦点回到这一项
     add(
         TvNavRailItem(
             icon = Icons.Rounded.Notifications,
             label = stringResource(Lang.notification_title),
-            badge = { rememberTvNoticesFresh() },
+            badgeCount = { rememberTvNoticesFreshCount() },
             keepFocusOnClick = true,
             onClick = { TvNotices.open() },
         ),
@@ -537,7 +543,8 @@ fun TvNavigationSideRail(
                         item.focusRequester
                     },
                     keepFocusOnClick = item.keepFocusOnClick,
-                    badge = item.badge,
+                    badgeCount = item.badgeCount,
+                    badgeMax = item.badgeMax,
                     onClick = item.onClick,
                     anchor = itemAnchors[index],
                     // 本条目带着焦点消失时交给上一个条目; 它是第一个就交给默认落点 (再没有就
@@ -767,7 +774,8 @@ private fun TvRailIconItem(
     onExitFocus: (() -> Unit)?,
     focusRequester: FocusRequester?,
     keepFocusOnClick: Boolean,
-    badge: (@Composable () -> Boolean)?,
+    badgeCount: (@Composable () -> Int)?,
+    badgeMax: Int,
     onClick: () -> Unit,
     /** 本条目自己的落点, 供下一个条目在消失时把焦点交回来 (见 [fallbackFocus]). */
     anchor: FocusRequester,
@@ -827,7 +835,7 @@ private fun TvRailIconItem(
             TvRailGlyphBox(
                 focused,
                 icon,
-                Modifier.railBadge(badge?.invoke() == true, MaterialTheme.colorScheme.error),
+                Modifier.railCountBadge(badgeCount?.invoke() ?: 0, badgeMax),
                 iconContent = iconContent,
             )
             if (expanded) {
@@ -915,11 +923,46 @@ private val TV_RAIL_AVATAR_IMAGE_SIZE = 24.dp
 /** 图标右上角红点的直径 (见 [railBadge]). */
 private val TV_RAIL_BADGE_SIZE = 8.dp
 
-/** [show] 时在 32dp 图标方块的右上角画红点 (见 [TvNavRailItem.badge]): 字形 (20dp) 居中, 点落在方块角上, 基本不压住字形. */
+/** [show] 时在 32dp 图标方块的右上角画红点 (见 [TvRailAvatarAction.badge]): 字形 (20dp) 居中, 点落在方块角上, 基本不压住字形. */
 private fun Modifier.railBadge(show: Boolean, color: Color): Modifier = if (!show) this else drawWithContent {
     drawContent()
     val radius = TV_RAIL_BADGE_SIZE.toPx() / 2
     drawCircle(color, radius, Offset(size.width - radius, radius))
+}
+
+/** 数字角标默认至多写到几 (见 [tvRailBadgeText]): 一位数. */
+const val TV_RAIL_BADGE_MAX = 9
+
+/** 数字角标的高 (一位数时是个圆)、字两边的留白、往方块外面探出多少 (少压一点字形). */
+private val TV_RAIL_COUNT_BADGE_HEIGHT = 16.dp
+private val TV_RAIL_COUNT_BADGE_PADDING = 4.dp
+private val TV_RAIL_COUNT_BADGE_OVERHANG = 6.dp
+
+/** 数字角标上写的字: [count] 本身, 超过 [max] 写「[max]+」(如「9+」). */
+internal fun tvRailBadgeText(count: Int, max: Int): String = if (count > max) "$max+" else count.toString()
+
+/**
+ * [count] 大于 0 时在 32dp 图标方块的右上角画红底白字的数字 (见 [TvNavRailItem.badgeCount]): 一位数是个圆, 再长是胶囊, 靠右上角、
+ * 往方块外面探出一点 (字形 20dp 居中, 少压一点).
+ */
+@Composable
+private fun Modifier.railCountBadge(count: Int, max: Int): Modifier {
+    if (count <= 0) return this
+    val measurer = rememberTextMeasurer()
+    val color = MaterialTheme.colorScheme.error
+    val style = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onError, fontWeight = FontWeight.Bold)
+    val text = tvRailBadgeText(count, max)
+    val layout = remember(text, style, measurer) { measurer.measure(text, style, maxLines = 1) }
+    return drawWithContent {
+        drawContent()
+        val height = TV_RAIL_COUNT_BADGE_HEIGHT.toPx()
+        val width = maxOf(height, layout.size.width + TV_RAIL_COUNT_BADGE_PADDING.toPx() * 2)
+        val overhang = TV_RAIL_COUNT_BADGE_OVERHANG.toPx()
+        val left = size.width + overhang - width
+        val top = -overhang
+        drawRoundRect(color, Offset(left, top), Size(width, height), CornerRadius(height / 2))
+        drawText(layout, topLeft = Offset(left + (width - layout.size.width) / 2f, top + (height - layout.size.height) / 2f))
+    }
 }
 
 /** 图标字形尺寸 (32dp 容器 / 20dp 字形). */

@@ -14,22 +14,27 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
+import me.him188.ani.app.data.models.preference.NsfwMode
+import me.him188.ani.app.data.repository.subject.SubjectNsfw
 import me.him188.ani.app.navigation.AniNavigator
 import me.him188.ani.app.ui.foundation.lan.LanHttpRequest
+import me.him188.ani.app.ui.notice.TvNoticeTab
 import me.him188.ani.app.ui.notice.TvNotices
 import me.him188.ani.app.ui.notice.listed
 
 /**
  * 手机控制台上的通知 (见 docs/contributing/code/notices.md「手机控制台」): 与电视上同一份列表.
  *
- * - `GET api/notices`: 列表 (那句话在电视上算好、看没看过、控制台去处、有没有电视去处);
- * - `POST api/notices/seen` (`key` 可多个): 这几条在网页上显示到屏幕上了, 算看过 —— 电视下次进应用不为它们弹;
- * - `POST api/notices/open` (`key`): 电视打开这一条的去处 (手机上处理不了的那几种).
+ * - `GET api/notices`: 列表 (那句话在电视上算好、读没读过、控制台去处、有没有电视去处);
+ * - `POST api/notices/seen` (`key` 可多个): 这几条在网页上显示到屏幕上了 (网页上整条字都写着), 算读过 (也就看过) —— 电视下次进应用不为它们弹,
+ *   电视通知弹窗里它们前面不画点;
+ * - `POST api/notices/open` (`key`): 电视上打开通知弹窗、停在这一条 (手机上处理不了的那几种; 说明与操作在电视上看、挑).
  *
  * 实时提示搭在网页每 2 秒一次的 `api/notice` 上 ([putPoll]): 回包带新的几条, 网页亮红点、弹一条提示.
  */
@@ -61,8 +66,13 @@ internal object RemoteNotices {
                     put("key", n.key)
                     put("text", n.title)
                     n.summary?.let { put("sub", it) }
+                    // 说的是哪一部作品的: 左边画它的封面 (候选地址, 网页依次试, 见 remoteCoverCandidates); NSFW 设置不是显示的作品网页上糊掉
+                    n.cover?.let { cover ->
+                        putJsonArray("cover") { remoteCoverCandidates(cover.subjectId, cover.url).forEach { add(it) } }
+                        if (SubjectNsfw.modeOf(cover.subjectId) != NsfwMode.DISPLAY) put("blur", true)
+                    }
                     put("at", n.notice.atMillis)
-                    put("fresh", !n.entry.seen)
+                    put("fresh", !n.entry.read)
                     put("pending", n.entry.pending)
                     n.kind.consoleHref(n.notice)?.let { put("href", it) }
                     put("tv", n.actions.isNotEmpty())
@@ -80,7 +90,7 @@ internal object RemoteNotices {
 
     private fun seen(request: LanHttpRequest): JsonObject {
         val keys = request.formFieldList().filter { it.first == "key" }.map { it.second }.toSet()
-        TvNotices.markSeen(TvNotices.shown.value.orEmpty().filter { it.key in keys })
+        TvNotices.markRead(TvNotices.shown.value.orEmpty().filter { it.key in keys })
         return result(true, "")
     }
 
@@ -89,9 +99,13 @@ internal object RemoteNotices {
         val item = TvNotices.shown.value.orEmpty().firstOrNull { it.key == key }
             ?: return result(false, tr("这条通知已经处理过了"))
         if (item.actions.isEmpty()) return result(false, tr("这条通知只是告知，没有要打开的内容"))
-        // 电视上处理这一条由 TV 根部的通知宿主做 (一个操作的直接做, 几个的打开列表、焦点在第一个操作上); 界面还没起来时做不了
+        // 电视上打开通知弹窗、停在这一条 (在别的签里看的开到那个签), 不直接做它的操作: 手机列表上只写了「在电视上打开」, 没写会做什么.
+        // 看说明、挑操作在电视上. 界面还没起来时做不了
         if (navigator == null) return result(false, tr("电视上的 Izuko 界面还没打开"))
-        scope.launch(Dispatchers.Main) { TvNotices.handle(item.key) }
+        val index = TvNotices.shown.value.orEmpty().filter { it.kind.tab == item.kind.tab }.indexOf(item)
+        scope.launch(Dispatchers.Main) {
+            TvNotices.open(focusKey = item.key, focusIndex = index.coerceAtLeast(0), tab = item.kind.tab ?: TvNoticeTab.NOTICES)
+        }
         return result(true, tr("已在电视上打开"))
     }
 
@@ -127,6 +141,13 @@ internal val NOTICE_STYLE = """
   background: var(--toast-bg); color: var(--toast-fg); font-size: 14px; line-height: 1.55; text-align: left; }
 @media (min-width: 560px) { #notice-banner { max-width: 30rem; } }
 .notice-row { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; margin: 8px 0; padding: 12px 14px; border: none; color: inherit; font: inherit; }
+.notice-lead { flex: none; position: relative; display: flex; align-items: center; justify-content: center; }
+.notice-covers .notice-lead { width: 32px; }
+.notice-cover { width: 32px; height: 48px; border-radius: 6px; overflow: hidden; background: rgba(128, 128, 128, .18); }
+.notice-cover img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.notice-cover.blur img { filter: blur(6px); transform: scale(1.25); }
+.notice-cover + .notice-dot { position: absolute; top: -3px; right: -3px; }
+.notice-covers .notice-link { margin-left: 58px; }
 .notice-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; }
 .notice-dot.on { background: var(--err); }
 .notice-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -191,12 +212,17 @@ internal val NOTICE_SCRIPT = """
     }
     // 新的与看过的都有时分两段, 各一行小标题 (同电视上的通知弹窗); 只有一种时不写
     var sectioned = items.some(function (n) { return n.fresh; }) && items.some(function (n) { return !n.fresh; });
+    // 说的是哪一部作品的通知左边画它的封面 (拉不到换下一个候选, 见 alt-src); 有带封面的行时别的行左边也留同样宽的一栏
+    body.classList.toggle('notice-covers', items.some(function (n) { return n.cover && n.cover.length; }));
     body.innerHTML = items.map(function (n, i) {
       var how = n.href ? T('在手机上处理') : n.tv ? T('在电视上打开') : '';
       var head = sectioned && (i === 0 || (!n.fresh && items[i - 1].fresh))
         ? '<div class="notice-sec">' + (n.fresh ? T('新通知') : T('之前的')) + '</div>' : '';
       return head + '<button type="button" class="card notice-row" data-ni="' + i + '">' +
-        '<span class="notice-dot' + (n.fresh ? ' on' : '') + '"></span>' +
+        '<span class="notice-lead">' + (n.cover && n.cover.length
+          ? '<span class="notice-cover' + (n.blur ? ' blur' : '') + '"><img class="alt-src" src="' + window.esc(n.cover[0]) + '" data-alt="' +
+            window.esc(n.cover.slice(1).join(' ')) + '" alt="" loading="lazy" referrerpolicy="no-referrer"></span>'
+          : '') + '<span class="notice-dot' + (n.fresh ? ' on' : '') + '"></span></span>' +
         '<span class="notice-main"><span class="notice-title">' + window.esc(n.text) + '</span>' +
         (n.sub ? '<span class="notice-sub">' + window.esc(n.sub) + '</span>' : '') + '<small>' + timeText(n.at) + (how ? ' · ' + how : '') + '</small></span>' +
         (how ? '<span class="notice-go">›</span>' : '') + '</button>' +

@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.ui.notice
 
+import android.os.SystemClock
 import android.view.KeyEvent
 import android.widget.FrameLayout
 import androidx.compose.foundation.focusable
@@ -29,6 +30,9 @@ import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.unit.dp
+import me.him188.ani.app.data.models.preference.ThemeSettings
+import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
+import me.him188.ani.app.ui.foundation.LONG_PRESS_MIN_HOLD
 import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.foundation.animation.AniMotionScheme
 import me.him188.ani.app.ui.foundation.animation.LocalAniMotionScheme
@@ -40,7 +44,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * 右上角的通知横幅 ([TvNoticeBubbleHost]): 出来时焦点在横幅上, 方向键不动; 按确定做它的操作, 按返回关掉.
+ * 右上角的通知横幅 ([TvNoticeBubbleHost]): 出来时焦点在横幅上; 按确定做它的操作, 按返回、方向键关掉.
  */
 class TvNoticeBannerTest {
     private val host = TvNativeTestHost()
@@ -48,6 +52,7 @@ class TvNoticeBannerTest {
     private val pageFocus = FocusRequester()
     private var actions = 0
     private var dismissals = 0
+    private var longActions = 0
     private lateinit var banner: TvNoticeBubble
 
     @BeforeTest
@@ -60,6 +65,8 @@ class TvNoticeBannerTest {
                 CompositionLocalProvider(
                     LocalAniUiBehavior provides TvAniUiBehavior,
                     LocalAniMotionScheme provides AniMotionScheme.calculate(LocalDensity.current),
+                    // 横幅第一行的走马灯读视觉效果档位
+                    LocalThemeSettings provides ThemeSettings.Default,
                 ) {
                     Box(Modifier.fillMaxSize()) {
                         Box(Modifier.size(100.dp).focusRequester(pageFocus).testTag(PAGE).focusable())
@@ -86,6 +93,10 @@ class TvNoticeBannerTest {
                 actions++
                 TvNoticeBubbles.hide(banner)
             },
+            onLongAction = {
+                longActions++
+                TvNoticeBubbles.hide(banner)
+            },
             onDismiss = {
                 dismissals++
                 TvNoticeBubbles.hide(banner)
@@ -95,14 +106,54 @@ class TvNoticeBannerTest {
     }
 
     @Test
-    fun `the banner takes focus and arrows do not move it`() {
+    fun `an arrow key closes the banner`() {
         show()
         host.waitUntil("横幅出来, 焦点在它身上 (现在在 ${focused()})") { focused() == TV_NOTICE_BANNER_TAG }
-        for (key in listOf(KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_RIGHT)) host.press(key)
-        assertEquals(TV_NOTICE_BANNER_TAG, host.onMain { focused() }, "方向键不动")
+        host.press(KeyEvent.KEYCODE_DPAD_DOWN)
+        host.waitUntil("方向键关掉横幅 (同返回)") { dismissals == 1 }
+        assertEquals(0, host.onMain { actions })
+        assertEquals(0, host.onMain { longActions })
+    }
+
+    @Test
+    fun `the banner takes focus and ok does its action`() {
+        show()
+        host.waitUntil("横幅出来, 焦点在它身上 (现在在 ${focused()})") { focused() == TV_NOTICE_BANNER_TAG }
+        // 刚出来那一下的确定不算 (见下一条), 过了那段再按
+        SystemClock.sleep(TV_NOTICE_BANNER_CONFIRM_GUARD.inWholeMilliseconds)
         host.press(KeyEvent.KEYCODE_DPAD_CENTER)
         host.waitUntil("按确定做它的操作") { actions == 1 }
         assertEquals(0, host.onMain { dismissals })
+        assertEquals(0, host.onMain { longActions })
+    }
+
+    @Test
+    fun `ok right after the banner appears does nothing`() {
+        show()
+        host.waitUntil("横幅出来") { focused() == TV_NOTICE_BANNER_TAG }
+        host.press(KeyEvent.KEYCODE_DPAD_CENTER)
+        assertEquals(0, host.onMain { actions }, "横幅刚出来那一下的确定多半是按给下面页面的, 不算")
+        assertEquals(TV_NOTICE_BANNER_TAG, host.onMain { focused() }, "横幅还在")
+        SystemClock.sleep(TV_NOTICE_BANNER_CONFIRM_GUARD.inWholeMilliseconds)
+        host.press(KeyEvent.KEYCODE_DPAD_CENTER)
+        host.waitUntil("过了那段再按就算") { actions == 1 }
+    }
+
+    @Test
+    fun `holding ok does the long action instead of the short one`() {
+        show()
+        host.waitUntil("横幅出来") { focused() == TV_NOTICE_BANNER_TAG }
+        SystemClock.sleep(TV_NOTICE_BANNER_CONFIRM_GUARD.inWholeMilliseconds)
+        host.keyDown(KeyEvent.KEYCODE_DPAD_CENTER)
+        SystemClock.sleep(LONG_PRESS_MIN_HOLD.inWholeMilliseconds + 100)
+        for (repeat in 1..3) {
+            host.keyDown(KeyEvent.KEYCODE_DPAD_CENTER, repeatCount = repeat)
+            SystemClock.sleep(50)
+        }
+        host.waitUntil("按住到长按的门槛当场做长按的操作 (不等松手)") { longActions == 1 }
+        host.keyUp(KeyEvent.KEYCODE_DPAD_CENTER)
+        SystemClock.sleep(200)
+        assertEquals(0, host.onMain { actions }, "松手不再算短按")
     }
 
     @Test

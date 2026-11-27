@@ -115,15 +115,15 @@ class FeedbackNoticesTest {
     }
 
     @Test
-    fun `marking a ticket read marks its notice seen`() = runTest {
+    fun `marking a ticket read marks its notice read`() = runTest {
         val (tickets, _) = tickets(listOf(ticket(61, unread = true, REPLY_1), ticket(47, unread = true, REPLY_1)))
         tickets.start()
         runCurrent()
         tickets.markRead(FeedbackKind.TICKET, 61)
-        val seen = notices.all.first().associate { it.notice.key to it.seen }
-        assertEquals(mapOf("feedback:TICKET-61" to true, "feedback:TICKET-47" to false), seen)
+        val read = notices.all.first().associate { it.notice.key to (it.seen to it.read) }
+        assertEquals(mapOf("feedback:TICKET-61" to (true to true), "feedback:TICKET-47" to (false to false)), read)
         tickets.markRead()
-        assertTrue(notices.all.first().all { it.seen }, "控制台的「反馈」页看过后全部算看过")
+        assertTrue(notices.all.first().all { it.seen && it.read }, "控制台的「反馈」页看过后全部算读过")
     }
 
     private companion object {

@@ -37,6 +37,44 @@ class ChangelogTest {
     }
 
     @Test
+    fun `full changes keep everything after the changes heading with its subheadings`() {
+        val changelog = Changelog(
+            "", "",
+            """
+            ## 下载
+
+            | 处理器架构 | 下载 |
+            |---|---|
+
+            ## 本次更新
+
+            - 新番时间表：按星期查看
+            - 修复一处闪退
+
+            ----
+
+            ### 已知问题
+
+            * 画质增强不可用
+            """.trimIndent(),
+        )
+        // 前言与下载那一节不要, 小节标题与分隔线留着 (电视通知右栏照它分段写)
+        assertEquals(
+            """
+            - 新番时间表：按星期查看
+            - 修复一处闪退
+
+            ----
+
+            ### 已知问题
+
+            * 画质增强不可用
+            """.trimIndent(),
+            changelog.fullChanges,
+        )
+    }
+
+    @Test
     fun `takes content after ben ci geng xin heading and drops subheadings`() {
         assertEquals(
             """

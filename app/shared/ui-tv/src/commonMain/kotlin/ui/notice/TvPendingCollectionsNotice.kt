@@ -56,7 +56,8 @@ internal object TvPendingCollectionsNotice : TvNoticeKind {
 
     override suspend fun detail(notice: Notice): TvNoticeDetail = TvNoticeDetail(
         body = listOf(TvNoticeParagraph(getStringOffMain(Lang.tv_notice_pending_collections_body, countOf(notice)))),
-        actions = listOf(TvNoticeAction(getStringOffMain(Lang.tv_notice_action_open), destination(notice))),
+        // 只是打开一个列表看看, 横幅上短按直接开
+        actions = listOf(getStringOffMain(Lang.tv_notice_action_open).let { open -> TvNoticeAction(open, destination(notice), quick = open) }),
     )
 
     private fun countOf(notice: Notice): Int = notice.args[ARG_COUNT]?.toIntOrNull() ?: 0

@@ -71,9 +71,15 @@ internal object RemoteDebugNotices {
                 put("kind", n.notice.kind)
                 put("title", n.title)
                 n.summary?.let { put("summary", it) }
+                // 左边画的封面: 哪一部作品、地址 (没有的画类别图标)
+                n.cover?.let { cover ->
+                    put("coverSubject", cover.subjectId)
+                    put("cover", cover.url)
+                }
                 put("category", n.kind.category.name)
                 put("at", n.notice.atMillis)
                 put("fresh", !n.entry.seen)
+                put("read", n.entry.read)
                 put("pending", n.entry.pending)
                 // 右栏写的: 哪一个、说明 (小标题与字) 与操作 (只有一个操作时列表里按确定键直接做)
                 n.detail?.let { detail ->
@@ -82,6 +88,7 @@ internal object RemoteDebugNotices {
                     detail.qr?.let { put("qr", it.url) }
                 }
                 putJsonArray("actions") { n.actions.forEach { add(it.label) } }
+                n.quick?.quick?.let { put("quick", it) }
             }
         }
     }

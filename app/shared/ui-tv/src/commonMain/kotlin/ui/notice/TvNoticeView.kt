@@ -23,10 +23,15 @@ import android.view.ViewGroup
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.recyclerview.widget.RecyclerView
+import com.github.panpf.sketch.Sketch
 import me.him188.ani.app.ui.foundation.tv.nativeview.TV_NATIVE_UNSPECIFIED
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeBubbleStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeButtonGroupStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeButtonView
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGlassTab
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGlassTabBar
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGlassTabStyle
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeGlassTabView
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativePanelStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeTextStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.measureWithin
@@ -41,20 +46,14 @@ import kotlin.math.roundToInt
 
 /**
  * 通知弹窗 (原生, [TvNoticeView]) 的尺寸 (px)、字与配色 (ARGB), 由 rememberTvNoticeStyle 按主题、界面缩放与触屏算好. 取值同 Compose 版
- * (TvNoticeDialog.kt / TvNoticeTab.kt), 两边画出来一个样子. 面板共用的配色与触屏在 [panel], 右栏的按钮在 [buttons], 来往记录的气泡在 [bubble].
+ * (TvNoticeDialog.kt / TvNoticeTab.kt), 两边画出来一个样子. 面板共用的配色与触屏在 [panel], 右栏的操作那一排在 [buttons], 来往记录的气泡在 [bubble].
  */
 @Immutable
 internal data class TvNoticeStyle(
     val panel: TvNativePanelStyle,
     // 顶栏
-    val tabGapPx: Int,
-    val tabPaddingPx: Int,
-    val tabUnderlineWidthPx: Int,
-    val tabUnderlineHeightPx: Int,
-    val tabUnderlineGapPx: Int,
-    val tabUnderlineCornerPx: Float,
-    val tabDotPx: Int,
-    val tabDotOffsetPx: Int,
+    /** 签那一排: 原生玻璃标签栏 (同追番页) */
+    val tabs: TvNativeGlassTabStyle,
     val headerGapTabsPx: Int,
     val headerGapTitlePx: Int,
     val refreshIconPx: Int,
@@ -77,6 +76,12 @@ internal data class TvNoticeStyle(
     val rowCornerPx: Float,
     val rowIconPx: Int,
     val rowIconGapPx: Int,
+    // 行左边的封面 (说的是哪一部作品的通知): 框的宽高与圆角; 列表里有带封面的行时左边那一栏离行的左边、离文字多远
+    val rowCoverWidthPx: Int,
+    val rowCoverHeightPx: Int,
+    val rowCoverCornerPx: Float,
+    val rowCoverStartPx: Int,
+    val rowCoverGapPx: Int,
     val rowLineGapPx: Int,
     val rowTimeGapPx: Int,
     val rowSecondaryAlpha: Float,
@@ -127,8 +132,6 @@ internal data class TvNoticeStyle(
     val statusDotGapPx: Int,
     // 字
     val pageTitle: TvNativeTextStyle,
-    val tab: TvNativeTextStyle,
-    val tabSelected: TvNativeTextStyle,
     val refreshStatus: TvNativeTextStyle,
     val refreshLabel: TvNativeTextStyle,
     val section: TvNativeTextStyle,
@@ -184,11 +187,13 @@ internal class TvNoticeViewContent(
     val qrUnavailable: String,
     val icons: Map<ImageVector, Bitmap>,
     val refreshIcon: Bitmap?,
+    /** 取列表行左边的封面用; null = 不画封面 */
+    val sketch: Sketch? = null,
 )
 
 /**
  * 一个签: 签上的字与红点、列的行 ([rows], 还在取为 null)、一行都没有时写的字, 与这个签的两个开关 (见 [TvNoticeTab]).
- * [reportsSeen]: 一行露出一半以上时报看过 (「通知」签).
+ * [reportsRead]: 右栏说一条带点的行 ([TvNoticeColumnItem.fresh]) 说满 [TV_NOTICE_READ_AFTER] 时报读过 (「通知」签).
  */
 internal class TvNoticeViewTab(
     val id: String,
@@ -198,7 +203,7 @@ internal class TvNoticeViewTab(
     val emptyText: String,
     val bodyStartsAtEnd: Boolean,
     val buttonsForSingleAction: Boolean,
-    val reportsSeen: Boolean,
+    val reportsRead: Boolean,
 )
 
 /** 列的一行与它在列表上写的时间 (已经换成字; 不写时间为 null). */
@@ -212,8 +217,8 @@ internal interface TvNoticeViewListener {
     /** 换到了签 [id] (视图已经换过去了, 宿主记下来): [intoList] = 从列表左右换的, 焦点落在 [focusKey] 那一行. */
     fun onSelectTab(id: String, intoList: Boolean, focusKey: String?)
 
-    /** 「通知」签里 [key] 那一行露出一半以上了. */
-    fun onSeen(key: String)
+    /** 「通知」签里右栏说 [key] 那一行 (带点的) 说满 [TV_NOTICE_READ_AFTER] 了: 算读过. */
+    fun onRead(key: String)
 
     /** 签 [tab] 的右栏换成了 [key] 那一行. */
     fun onShown(tab: String, key: String)
@@ -228,11 +233,13 @@ internal interface TvNoticeViewListener {
 }
 
 /**
- * 通知弹窗的内容 (原生 View, 电视与安卓平板): 顶栏左边是签 (只有「通知」一个时写标题), 右边是刷新; 下面左边列表、中间一条竖线、右栏说明与操作.
- * 规则同 Compose 版 (见 docs/contributing/code/notices.md 5.4): 列表里上下走、左右键换签 (右边没有签可换时右键同确定键进右栏)、第一行按上键到刷新;
- * 签那一排只显示选中的是哪个, 焦点不落上去 (触屏上点签换签); 刷新上下键回到列表那一行, 左右键不动 (这个签一行都没有时左右键换签);
- * 右栏横排按钮上下键翻正文, 竖排上下键换按钮, 最左一颗 (竖排时每一颗) 按左键或按返回键回到那一行. 没有操作的行正文放不下时,
- * 按确定键 (右边没有签可换时右键也行) 焦点进正文, 上下键翻, 左键或返回键回到那一行.
+ * 通知弹窗的内容 (原生 View, 电视与安卓平板): 顶栏左边是签 (原生玻璃标签栏 [TvNativeGlassTabBar], 同追番页; 只有「通知」一个时写标题),
+ * 右边是刷新; 下面左边列表、中间一条竖线、右栏说明与操作. 按键 (见 docs/contributing/code/notices.md 5.2、5.4):
+ * - 签: 左右键换签 (聚焦即选中, 两栏当场换), 最右的签再按右键到刷新; 下键进内容, 落在第一行;
+ * - 列表: 上下走, 第一行按上键到签; 右键、确定键都是进右栏 (有按钮到第一颗, 没按钮而正文放不下的进正文), 行本身就是一件事的 (「写新反馈」) 按确定键直接做;
+ * - 右栏: 按钮排一行 (放不下时那一行滚到持焦的那颗), 左右键在几颗之间走, 最左一颗按左键回到那一行, 到头不动; 上下键翻正文;
+ * - 返回键: 一次退一层 —— 右栏回到那一行, 列表、签与刷新上关掉弹窗 (再打开从第一行开始).
+ * 触屏上点签换签、点行看它, 一个操作也画成按钮 (遥控器上同样画, 右键能落上去).
  *
  * **方向键全部在这里判**: 视图挂在 Compose 的 AndroidView 里, 没被消费的方向键会交给 Compose 按屏幕位置找焦点. 确定键只认在这里按下的那一次
  * (打开弹窗的那次确定键的抬起不算).
@@ -247,7 +254,7 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
     var listener: TvNoticeViewListener? = null
 
     private val titleView = tvNativeText(context, style.pageTitle)
-    private val tabViews = ArrayList<TvNoticeTabView>()
+    private val tabBar = TvNativeGlassTabBar(context, style.tabs)
     private val refreshStatusView = tvNativeText(context, style.refreshStatus)
     private val refreshView = TvNoticeRefreshView(context, style)
     private val emptyView = tvNativeText(context, style.empty, maxLines = 3)
@@ -274,6 +281,9 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
     /** 焦点在右栏的按钮上 (列表里那一行画成「右栏说的是它」). */
     private var inPane = false
 
+    /** 焦点在顶上 (签、刷新): 列表里右栏说的那一行同样画成「右栏说的是它」. */
+    private var atTop = false
+
     private var opening: Any? = null
 
     /** 自己换签后交给宿主、还没回来的那几次 (回来的那份内容不再挪焦点). */
@@ -286,11 +296,18 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
     private var waitingGrid: TabList? = null
     private var waitingKey: String? = null
 
-    /** 这一次打开里报过看过的. */
-    private val seen = HashSet<String>()
+    /** 这一次打开里报过读过的. */
+    private val read = HashSet<String>()
+
+    /** 右栏正说着、说满 [TV_NOTICE_READ_AFTER] 就报读过的那一行 (见 [scheduleRead]) */
+    private var readingKey: String? = null
+    private val readTimer = Runnable {
+        val key = readingKey ?: return@Runnable
+        if (read.add(key)) listener?.onRead(key)
+    }
 
     private var pressed: View? = null
-    private var backInPane = false
+    private var backPending = false
     private var pageTarget = 0
     private var pageUntil = 0L
 
@@ -306,6 +323,7 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
             if (field == value) return
             field = value
             refreshView.covered = value
+            tabBar.covered = value
             pane.actions.covered = value
             for (list in lists.values) list.adapter.covered = value
         }
@@ -322,11 +340,15 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
         isFocusable = false
         descendantFocusability = FOCUS_AFTER_DESCENDANTS
         addView(titleView)
+        addView(tabBar)
         addView(refreshStatusView)
         addView(refreshView)
         addView(emptyView)
         addView(pane)
         refreshView.setOnClickListener { listener?.onRefresh() }
+        refreshView.setOnFocusChangeListener { _, _ -> onTopFocusChanged() }
+        tabBar.onTabClick = { index -> content?.tabs?.getOrNull(index)?.let { selectTab(it.id) } }
+        tabBar.onTabFocusChanged = { _, _ -> onTopFocusChanged() }
         pane.actions.onClick = { actionClicked(it) }
         pane.actions.onFocus = { _, _ -> onPaneFocusChanged() }
         pane.body.setOnFocusChangeListener { _, _ -> onPaneFocusChanged() }
@@ -342,6 +364,7 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
         var everShown = false
     }
 
+    /** 要落焦点的那一行 (键 [key], 它没了落第 [index] 行); 给了 [action] 落在它的那颗按钮上. */
     private class Pending(val tab: String, val key: String?, val index: Int, val action: Int?) {
         var attempts = 0
     }
@@ -408,7 +431,7 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
     }
 
     private fun applyOpening(c: TvNoticeViewContent, first: Boolean) {
-        seen.clear()
+        read.clear()
         pending = null
         selectedTab = c.selected
         listener?.onTabShown(c.selected)
@@ -423,21 +446,12 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
 
     private fun syncTabViews(c: TvNoticeViewContent) {
         val show = c.tabs.size > 1
-        if (tabViews.map { it.tabId } != c.tabs.map { it.id }) {
-            tabViews.forEach { removeView(it) }
-            tabViews.clear()
-            for (tab in c.tabs) {
-                val view = TvNoticeTabView(context, style)
-                view.setOnClickListener { selectTab(view.tabId, fromList = false) }
-                tabViews += view
-                addView(view)
-            }
-        }
-        c.tabs.forEachIndexed { i, tab ->
-            val view = tabViews[i]
-            view.bind(tab.id, tab.label, tab.fresh, tab.id == selectedTab, style)
-            view.visibility = if (show) VISIBLE else GONE
-        }
+        tabBar.setTabs(
+            c.tabs.map { TvNativeGlassTab(it.id, it.label, fresh = it.fresh) },
+            selected = c.tabs.indexOfFirst { it.id == selectedTab },
+            style = style.tabs,
+        )
+        tabBar.visibility = if (show) VISIBLE else GONE
         titleView.visibility = if (show) GONE else VISIBLE
     }
 
@@ -446,6 +460,7 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
         val old = list.tab
         list.tab = tab
         list.adapter.icons = c.icons
+        list.adapter.sketch = c.sketch
         val rows = tab.rows ?: return
         if (rows !== old?.rows) submitRows(list, rows)
     }
@@ -459,11 +474,6 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
         list.grid.verticalSpacing = style.rowGapPx
         list.grid.setFadingEdgeLength(style.fadePx)
         list.grid.addOnLayoutCompletedListener { onGridLaidOut(list) }
-        list.grid.addOnScrollListener(
-            object : RecyclerView.OnScrollListener() {
-                override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) = reportSeen(list)
-            },
-        )
         list.everShown = id == shownTab
         list.grid.visibility = if (id == shownTab) VISIBLE else GONE
         list.grid.descendantFocusability = if (id == shownTab) FOCUS_AFTER_DESCENDANTS else FOCUS_BLOCK_DESCENDANTS
@@ -499,7 +509,6 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
                 updateEmpty()
             }
             resolvePending()
-            reportSeen(list)
         }
     }
 
@@ -524,7 +533,6 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
         val rows = lists[id]?.tab?.rows.orEmpty()
         if (bind) bindPane(id, rows.firstOrNull { it.item.key == lastRow[id] } ?: rows.firstOrNull())
         updateEmpty()
-        lists[id]?.let { reportSeen(it) }
     }
 
     private fun updateEmpty() {
@@ -535,8 +543,10 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
         requestLayout()
     }
 
+    /** 右栏画不画按钮: 有操作的都画 (只有一个也画, 右键能落上去); 有 [TvNoticeColumnItem.rowAction] 的 (按确定键就做) 不画. */
+    @Suppress("UNUSED_PARAMETER")
     private fun hasButtons(item: TvNoticeColumnItem, tab: TvNoticeViewTab?): Boolean =
-        item.rowAction == null && (item.actions.size > 1 || ((style.panel.touch || tab?.buttonsForSingleAction == true) && item.actions.isNotEmpty()))
+        item.rowAction == null && item.actions.isNotEmpty()
 
     /** 右栏画 [row] (签 [tabId] 的); null = 空着. 同一行换了内容时原地换. */
     private fun bindPane(tabId: String, row: TvNoticeViewRow?) {
@@ -546,6 +556,7 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
                 paneTab = tabId
                 pane.clear()
                 syncSelectedRow()
+                scheduleRead()
             }
             return
         }
@@ -572,12 +583,32 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
             listener?.onShown(tabId, row.item.key)
         }
         syncSelectedRow()
+        scheduleRead()
+    }
+
+    /**
+     * 右栏换了行 (或那一行换了内容): 「通知」签里带点的那一行从这时起计 [TV_NOTICE_READ_AFTER], 说满了报读过 (同点开看了);
+     * 按着方向键一行行划过去的不算. 别的签、没点的行不计.
+     */
+    private fun scheduleRead() {
+        val row = paneRow
+        val key = row?.item?.key?.takeIf { row.item.fresh && lists[paneTab]?.tab?.reportsRead == true && it !in read }
+        if (key == readingKey) return
+        removeCallbacks(readTimer)
+        readingKey = key
+        if (key != null) postDelayed(readTimer, TV_NOTICE_READ_AFTER.inWholeMilliseconds)
     }
 
     private fun syncSelectedRow() {
         for (list in lists.values) {
-            list.adapter.selectedKey = if (list.id == paneTab && (inPane || style.panel.touch)) paneRow?.item?.key else null
+            list.adapter.selectedKey = if (list.id == paneTab && (inPane || atTop || style.panel.touch)) paneRow?.item?.key else null
         }
+    }
+
+    private fun onTopFocusChanged() {
+        val region = regionOf(findFocus())
+        atTop = region == Region.TABS || region == Region.REFRESH
+        syncSelectedRow()
     }
 
     /**
@@ -613,7 +644,7 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
 
     /**
      * 这一行能不能进正文翻: 没有操作 (只是告知、电视上的「写新反馈」这种) 且正文放不下 —— 不然多出来的那截看不到. 有操作的进按钮那里翻
-     * (横排按钮上下键); 只有一个操作、不画按钮的与有 [TvNoticeColumnItem.rowAction] 的按确定键直接做, 不进.
+     * (横排按钮上下键); 有 [TvNoticeColumnItem.rowAction] 的按确定键直接做, 不进.
      */
     private fun canEnterBody(item: TvNoticeColumnItem): Boolean =
         !style.panel.touch && item.actions.isEmpty() && item.rowAction == null && pane.body.maxScroll() > 0
@@ -622,18 +653,13 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
         pane.body.requestFocus()
     }
 
-    /** 右边没有签可换 (最右的签, 或没有别的签): 列表里右键同确定键进右栏. */
-    private fun rightEnters(): Boolean {
-        val tabs = content?.tabs ?: return true
-        return tabs.indexOfFirst { it.id == shownTab } >= tabs.lastIndex
-    }
-
     // ---- 焦点 ----
 
-    private enum class Region { NONE, REFRESH, LIST, PANE, BODY }
+    private enum class Region { NONE, TABS, REFRESH, LIST, PANE, BODY }
 
     private fun regionOf(view: View?): Region = when {
         view == null -> Region.NONE
+        tabBar.indexOf(view) >= 0 -> Region.TABS
         view === refreshView -> Region.REFRESH
         lists[shownTab]?.let { tvNativeIsInside(view, it.grid) } == true -> Region.LIST
         tvNativeIsInside(view, pane.actions) -> Region.PANE
@@ -735,7 +761,6 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
             waitingKey = null
         }
         resolvePending()
-        reportSeen(list)
     }
 
     /** 两栏里没有能停的行: 落在刷新上. */
@@ -812,6 +837,8 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
 
     override fun onDetachedFromWindow() {
         removeCallbacks(parkWatchdog)
+        removeCallbacks(readTimer)
+        readingKey = null
         super.onDetachedFromWindow()
     }
 
@@ -850,12 +877,20 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
                 resolvePending()
             }
 
-            Region.REFRESH -> when (code) {
-                KeyEvent.KEYCODE_DPAD_DOWN -> enterList()
-                // 这个签一行都没有 (焦点没有别处可去): 左右键照列表里一样换签
-                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> if (lists[shownTab]?.tab?.rows?.isEmpty() == true) {
-                    switchFromList(if (code == KeyEvent.KEYCODE_DPAD_LEFT) -1 else 1)
+            // 签: 聚焦即选中 (两栏当场换); 最右的签再往右是刷新; 下键进内容
+            Region.TABS -> {
+                val index = tabBar.indexOf(focused)
+                val tabs = content?.tabs.orEmpty()
+                when (code) {
+                    KeyEvent.KEYCODE_DPAD_LEFT -> if (index > 0) moveToTab(index - 1)
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> if (index < tabs.lastIndex) moveToTab(index + 1) else refreshView.requestFocus()
+                    KeyEvent.KEYCODE_DPAD_DOWN -> enterFromTop()
                 }
+            }
+
+            Region.REFRESH -> when (code) {
+                KeyEvent.KEYCODE_DPAD_DOWN -> enterFromTop()
+                KeyEvent.KEYCODE_DPAD_LEFT -> if (showTabs()) focusSelectedTab()
             }
 
             Region.LIST -> {
@@ -863,10 +898,10 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
                 val key = (rowViewOf(focused, list.grid) as? TvNoticeRowView)?.entry?.id ?: return
                 val entry = currentRow(list.id, key) ?: return
                 when (code) {
-                    KeyEvent.KEYCODE_DPAD_UP -> if (!stepRow(list, entry, -1)) focusAboveList()
+                    KeyEvent.KEYCODE_DPAD_UP -> if (!stepRow(list, entry, -1)) exitToTop()
                     KeyEvent.KEYCODE_DPAD_DOWN -> stepRow(list, entry, 1)
-                    KeyEvent.KEYCODE_DPAD_LEFT -> switchFromList(-1)
-                    KeyEvent.KEYCODE_DPAD_RIGHT -> if (!switchFromList(1) && rightEnters()) {
+                    // 右栏在右边: 有按钮到第一颗, 没按钮而正文放不下的进正文, 都没有不动
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> {
                         bindPane(list.id, entry.row)
                         when {
                             hasButtons(entry.row.item, list.tab) -> focusAction(0)
@@ -882,22 +917,15 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
                 KeyEvent.KEYCODE_DPAD_LEFT -> focusPaneRow()
             }
 
+            // 操作排一行 (放不下时那一行自己滚到持焦的那颗): 左右键在几颗之间走, 上下键翻正文
             Region.PANE -> {
                 val index = pane.actions.focusedIndex()
                 val count = pane.actions.buttons.size
-                if (count <= style.buttons.maxInRow) {
-                    when (code) {
-                        KeyEvent.KEYCODE_DPAD_LEFT -> if (index > 0) focusAction(index - 1) else focusPaneRow()
-                        KeyEvent.KEYCODE_DPAD_RIGHT -> if (index < count - 1) focusAction(index + 1)
-                        KeyEvent.KEYCODE_DPAD_UP -> page(-1)
-                        KeyEvent.KEYCODE_DPAD_DOWN -> page(1)
-                    }
-                } else {
-                    when (code) {
-                        KeyEvent.KEYCODE_DPAD_LEFT -> focusPaneRow()
-                        KeyEvent.KEYCODE_DPAD_UP -> if (index > 0) focusAction(index - 1)
-                        KeyEvent.KEYCODE_DPAD_DOWN -> if (index < count - 1) focusAction(index + 1)
-                    }
+                when (code) {
+                    KeyEvent.KEYCODE_DPAD_LEFT -> if (index > 0) focusAction(index - 1) else focusPaneRow()
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> if (index < count - 1) focusAction(index + 1)
+                    KeyEvent.KEYCODE_DPAD_UP -> page(-1)
+                    KeyEvent.KEYCODE_DPAD_DOWN -> page(1)
                 }
             }
         }
@@ -911,38 +939,50 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
         return true
     }
 
-    /** 列表第一行上面: 刷新 (签那一排不能聚焦). */
-    private fun focusAboveList() {
-        refreshView.requestFocus()
+    /**
+     * 从内容回到顶上 (第一行按上): 焦点到选中的签 (没有签时到刷新), 列表在最上面、右栏说第一行; 再按下键落在第一行 ([enterFromTop]).
+     */
+    private fun exitToTop() {
+        if (!showTabs() || !focusSelectedTab()) refreshView.requestFocus()
+        val list = lists[shownTab] ?: return
+        val first = list.tab?.rows?.firstOrNull() ?: return
+        // 刚才连按方向键时的滚动 (弹簧) 还在走的话会盖掉这一下: 先停下
+        list.grid.stopScroll()
+        list.grid.setSelectedPosition(0)
+        bindPane(shownTab, first)
     }
+
+    private fun focusSelectedTab(): Boolean = tabBar.focusTab(tabBar.selectedIndex)
 
     private fun focusAction(index: Int) {
         pane.actions.buttons.getOrNull(index)?.requestFocus()
     }
 
-    /** 刷新上按下键进列表: 落在右栏说的那一行. 刚换的签还没取到行 (两栏还是旧签的) 时不动. */
-    private fun enterList() {
+    /**
+     * 签或刷新上按下键进内容: 落在这个签的第一行 (回到顶上时列表已经滚回最上面, 见 [exitToTop]).
+     * 刚换的签还没取到行 (两栏还是旧签的)、一行都没有时不动.
+     */
+    private fun enterFromTop() {
         if (shownTab != selectedTab) return
         val rows = lists[shownTab]?.tab?.rows ?: return
         if (rows.isEmpty()) return
-        val key = paneRow?.takeIf { paneTab == shownTab }?.item?.key ?: rows.first().item.key
-        focusRowLater(shownTab, key, lastIndex[shownTab] ?: 0)
+        pending = Pending(shownTab, rows.first().item.key, 0, null)
+        resolvePending()
     }
 
-    /** 列表里左右键换签; 那一头没有签了 (最左 / 最右) 返回 false. */
-    private fun switchFromList(direction: Int): Boolean {
-        val tabs = content?.tabs ?: return false
-        if (tabs.size <= 1) return false
-        val next = tabs.getOrNull(tabs.indexOfFirst { it.id == selectedTab } + direction) ?: return false
-        selectTab(next.id, fromList = true)
-        return true
+    /** 签那一排左右移到第 [index] 个签: 焦点跟过去, 当场选中它 (两栏换成它的, 右栏说它的第一行); 换了签, 回内容时到第一行. */
+    private fun moveToTab(index: Int) {
+        val id = content?.tabs?.getOrNull(index)?.id ?: return
+        if (id != selectedTab) {
+            lastRow.remove(id)
+            lastIndex.remove(id)
+            selectTab(id)
+        }
+        tabBar.focusTab(index)
     }
 
-    /**
-     * 换到签 [id]. 触屏上点签换的 ([fromList] 为 false): 两栏当场换 (行还没取到时等取到再换). 从列表换的: 焦点进那个签的列表,
-     * 落在它上次说的那一行; 行还没取到时焦点先停在视图自己身上等着, 一行都没有时落在刷新上.
-     */
-    private fun selectTab(id: String, fromList: Boolean) {
+    /** 换到签 [id] (签上左右键、触屏上点签): 焦点不挪, 两栏当场换 (行还没取到时等取到再换). */
+    private fun selectTab(id: String) {
         val c = content ?: return
         if (c.tabs.none { it.id == id }) return
         pending = null
@@ -950,33 +990,9 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
         syncTabViews(c)
         listener?.onTabShown(id)
         val rows = lists[id]?.tab?.rows
-        if (!fromList) {
-            if (rows != null && shownTab != id) showColumns(id)
-            ownSelects += OwnSelect(id, intoList = false, focusKey = null)
-            listener?.onSelectTab(id, false, null)
-            return
-        }
-        val key = lastRow[id]
-        ownSelects += OwnSelect(id, intoList = true, focusKey = key)
-        listener?.onSelectTab(id, true, key)
-        when {
-            rows == null -> {
-                park()
-                pending = Pending(id, key, 0, null)
-            }
-
-            rows.isEmpty() -> {
-                showColumns(id)
-                refreshView.requestFocus()
-            }
-
-            else -> {
-                // 焦点所在的列表马上藏起来: 先停在自己身上, 新签的那一行排好再给
-                park()
-                showColumns(id, bind = false)
-                focusRowLater(id, key, 0)
-            }
-        }
+        if (rows != null && shownTab != id) showColumns(id)
+        ownSelects += OwnSelect(id, intoList = false, focusKey = null)
+        listener?.onSelectTab(id, false, null)
     }
 
     /** 横排按钮上按上下键: 翻正文可见高度的 [TvNoticeStyle.pageFraction]; 连按时接着上一下的目标往下算. */
@@ -1012,24 +1028,32 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
     private fun click(view: View) {
         when {
             view === refreshView -> listener?.onRefresh()
+            // 签上按确定同按下键: 进内容
+            tabBar.indexOf(view) >= 0 -> enterFromTop()
             view is TvNoticeRowView -> view.entry?.let { rowClicked(shownTab, currentRow(shownTab, it.id) ?: it, fromKey = true) }
-            view is TvNativeButtonView && view.parent === pane.actions -> actionClicked(view.index)
+            view is TvNativeButtonView && tvNativeIsInside(view, pane.actions) -> actionClicked(view.index)
         }
     }
 
-    /** 返回键: 焦点在右栏的按钮上时回到那一行, 不关弹窗 (按下与抬起都吃掉); 别处交给弹窗 (关掉). */
+    /**
+     * 返回键 (按下与抬起都吃掉的才不关弹窗): 一次退一层 —— 右栏 (按钮、正文) 回到那一行; 列表、签、刷新上交给弹窗, 关掉
+     * (通知弹窗是叠在页面上的一层, 关掉代价小, 再打开从第一行开始; 同常见电视应用的面板).
+     */
     private fun handleBack(event: KeyEvent): Boolean {
         when (event.action) {
             KeyEvent.ACTION_DOWN -> {
-                val region = regionOf(findFocus())
-                if (region != Region.PANE && region != Region.BODY) return false
-                backInPane = true
+                val consume = when (regionOf(findFocus())) {
+                    Region.PANE, Region.BODY -> true
+                    else -> false
+                }
+                if (!consume) return false
+                backPending = true
                 return true
             }
 
             KeyEvent.ACTION_UP -> {
-                if (!backInPane) return false
-                backInPane = false
+                if (!backPending) return false
+                backPending = false
                 focusPaneRow()
                 return true
             }
@@ -1038,8 +1062,8 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
     }
 
     /**
-     * 一行上按确定键 (触屏上点一下): 右栏换成它; 有 [TvNoticeColumnItem.rowAction] 的直接做; 画了按钮的焦点到第一颗 (触屏上只是选中它);
-     * 没有操作、正文放不下的焦点进正文 (上下键翻); 只有一个操作的直接做.
+     * 一行上按确定键 (触屏上点一下): 右栏换成它; 有 [TvNoticeColumnItem.rowAction] 的直接做; 有操作的焦点到第一颗按钮 (只有一个也是:
+     * 同常见的两栏, 左边按确定是选中、进右栏, 在右栏的按钮上才做; 触屏上只是选中它); 没有操作、正文放不下的焦点进正文 (上下键翻).
      */
     private fun rowClicked(tabId: String, entry: TvNoticeRowEntry, fromKey: Boolean) {
         val tab = lists[tabId]?.tab ?: return
@@ -1050,7 +1074,6 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
             rowAction != null -> listener?.onAction(tabId, entry.index, item, rowAction)
             hasButtons(item, tab) -> if (fromKey) focusAction(0)
             item.actions.isEmpty() -> if (fromKey && canEnterBody(item)) focusBody()
-            else -> item.actions.singleOrNull()?.let { listener?.onAction(tabId, entry.index, item, it) }
         }
     }
 
@@ -1065,24 +1088,6 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
         listener?.onAction(tabId, rowIndex, row.item, action)
     }
 
-    /** 「通知」签里露出一半以上的行报看过 (每行一次). */
-    private fun reportSeen(list: TabList) {
-        if (list.tab?.reportsSeen != true || list.grid.visibility != VISIBLE || !isAttachedToWindow) return
-        val grid = list.grid
-        val top = grid.paddingTop
-        val bottom = grid.height - grid.paddingBottom
-        for (i in 0 until grid.childCount) {
-            val child = grid.getChildAt(i) as? TvNoticeRowView ?: continue
-            val key = child.entry?.id ?: continue
-            if (key in seen || child.height <= 0) continue
-            val visible = min(child.bottom + child.translationY.toInt(), bottom) - max(child.top + child.translationY.toInt(), top)
-            if (visible >= child.height * SEEN_FRACTION) {
-                seen += key
-                listener?.onSeen(key)
-            }
-        }
-    }
-
     // ---- 布局 ----
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -1093,11 +1098,9 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
         var headerRow = refreshView.measuredHeight
         var leftWidth = 0
         if (showTabs()) {
-            tabViews.forEachIndexed { i, tab ->
-                tab.measure(TV_NATIVE_UNSPECIFIED, TV_NATIVE_UNSPECIFIED)
-                leftWidth += tab.measuredWidth + if (i > 0) s.tabGapPx else 0
-                headerRow = max(headerRow, tab.measuredHeight)
-            }
+            tabBar.measure(TV_NATIVE_UNSPECIFIED, TV_NATIVE_UNSPECIFIED)
+            leftWidth = tabBar.measuredWidth
+            headerRow = max(headerRow, tabBar.measuredHeight)
         } else {
             titleView.measureWithin(width - refreshView.measuredWidth)
             leftWidth = titleView.measuredWidth
@@ -1128,11 +1131,7 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
         val width = r - l
         val rowBottom = headerRowHeight
         if (showTabs()) {
-            var x = 0
-            tabViews.forEach {
-                it.tvNativeLayoutAt(x, rowBottom - it.measuredHeight)
-                x += it.measuredWidth + s.tabGapPx
-            }
+            tabBar.tvNativeLayoutAt(0, rowBottom - tabBar.measuredHeight)
         } else {
             titleView.tvNativeLayoutAt(0, rowBottom - titleView.fontOverflowTopPx - titleView.measuredHeight)
         }
@@ -1161,6 +1160,7 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
     /** 此刻聚焦的东西的字 (行的标题、按钮与签上的字、刷新的「刷新」); 停在自己身上或没有焦点为 null. */
     internal fun focusedText(): String? = when (val focused = findFocus()) {
         is TvNoticeRowView -> focused.entry?.row?.item?.title
+        is TvNativeGlassTabView -> focused.tab?.label
         is TvNativeButtonView -> focused.text
         refreshView -> refreshUi?.label
         else -> null
@@ -1168,6 +1168,9 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
 
     /** 右栏此刻说的那一行的键. */
     internal val shownKey: String? get() = paneRow?.item?.key
+
+    /** 焦点在第几个签上 (不在签上为 -1). */
+    internal val focusedTabIndex: Int get() = tabBar.focusedIndex()
 
     /** 两栏此刻画的签. */
     internal val shownTabId: String get() = shownTab
@@ -1201,8 +1204,5 @@ internal class TvNoticeView(context: Context, private var style: TvNoticeStyle) 
 
         /** 翻页动画在这段时间里连按时接着上一下的目标算. */
         const val PAGE_SETTLE_MILLIS = 300L
-
-        /** 一行露出多少算显示到屏幕上了 (算看过). */
-        const val SEEN_FRACTION = 0.5f
     }
 }

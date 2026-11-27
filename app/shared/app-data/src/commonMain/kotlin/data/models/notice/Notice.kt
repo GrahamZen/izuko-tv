@@ -29,13 +29,15 @@ data class Notice(
 )
 
 /**
- * 一个用户档存下的通知: 消息 ([messages], 新的在前)、看过的记录 ([seen]: 键 → 看过时那一条的时间), 与跟着状态而不知道时间的那几条
- * 第一次出现的时刻 ([firstSeen]: 键 → 时刻). 跟着状态的通知本身不存, 每次从各个来源算 (见 me.him188.ani.app.domain.notice.Notices).
+ * 一个用户档存下的通知: 消息 ([messages], 新的在前)、看过的记录 ([seen]: 键 → 看过时那一条的时间; 列出来过)、读过的记录
+ * ([read]: 同样的键与时间; 内容显示出来过、或在它上面做过操作), 与跟着状态而不知道时间的那几条第一次出现的时刻 ([firstSeen]: 键 → 时刻).
+ * 跟着状态的通知本身不存, 每次从各个来源算 (见 me.him188.ani.app.domain.notice.Notices).
  */
 @Serializable
 data class NoticeLog(
     val messages: List<Notice> = emptyList(),
     val seen: Map<String, Long> = emptyMap(),
+    val read: Map<String, Long> = emptyMap(),
     val firstSeen: Map<String, Long> = emptyMap(),
 ) {
     companion object {

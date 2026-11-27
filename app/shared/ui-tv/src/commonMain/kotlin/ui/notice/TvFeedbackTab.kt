@@ -137,7 +137,7 @@ internal object TvFeedbackTab : TvNoticeTab {
         get() = runCatching { KoinPlatform.getKoin().get<FeedbackRecordRepository>() }.getOrNull()
 
     override val hasFresh: Flow<Boolean>
-        get() = TvNotices.shown.map { list -> list.orEmpty().any { it.isFeedback() && !it.entry.seen } }.distinctUntilChanged()
+        get() = TvNotices.shown.map { list -> list.orEmpty().any { it.isFeedback() && !it.entry.read } }.distinctUntilChanged()
 
     @Composable
     override fun rememberItems(): List<TvNoticeColumnItem>? {
@@ -150,15 +150,15 @@ internal object TvFeedbackTab : TvNoticeTab {
     @Composable
     override fun emptyText(): String = stringResource(Lang.tv_settings_feedback_empty)
 
-    /** 焦点到了这个签: 反馈的回复全算看过, 签上与侧边栏「通知」的红点不再为它们亮, 也不再为它们弹气泡. */
+    /** 焦点到了这个签: 反馈的回复全算看过 (侧边栏「通知」上的数字不再为它们算, 也不再为它们弹气泡); 签上的点亮到那张单在右栏写过为止. */
     override fun onTabShown() {
         TvNotices.markSeen(TvNotices.shown.value.orEmpty().filter { it.isFeedback() })
     }
 
     override fun onShown(key: String) {
         if (key == NEW_KEY) return
-        // 这张单的那条通知也算看过 (键相同)
-        TvNotices.markSeenKeys(listOf(key))
+        // 这张单的那条通知也算读过 (键相同)
+        TvNotices.markReadKeys(listOf(key))
         val tickets = runCatching { KoinPlatform.getKoin().get<FeedbackTickets>() }.getOrNull() ?: return
         scope.launch {
             val record = repository?.current()?.items?.let { FeedbackNotices.recordOf(key, it) } ?: return@launch

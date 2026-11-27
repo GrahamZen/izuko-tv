@@ -1569,6 +1569,8 @@
     <string name="tv_notice_action_open">檢視</string>
     <string name="tv_notice_banner_hint">按確定鍵查看</string>
     <string name="tv_notice_banner_hint_more">還有 %1$d 條 · 按確定鍵查看</string>
+    <string name="tv_notice_banner_hint_quick">按確定鍵%1$s，長按查看詳情</string>
+    <string name="tv_notice_banner_hint_quick_more">還有 %2$d 條 · 按確定鍵%1$s，長按查看詳情</string>
     <string name="tv_rail_back">返回</string>
     <string name="pad_subject_details_more_tags">更多標籤</string>
     <string name="pad_subject_details_all_episodes">全部選集</string>

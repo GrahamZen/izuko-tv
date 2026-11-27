@@ -15,6 +15,7 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
 import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -23,16 +24,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
-import me.him188.ani.app.data.models.notice.Notice
-import me.him188.ani.app.domain.notice.NoticeEntry
-import me.him188.ani.app.ui.foundation.dialogs.LocalStackedDialog
-import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeTestHost
-import me.him188.ani.app.ui.foundation.widgets.AniCenteredPanelDialog
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertSame
+import me.him188.ani.app.data.models.notice.Notice
+import me.him188.ani.app.data.models.preference.ThemeSettings
+import me.him188.ani.app.domain.notice.NoticeEntry
+import me.him188.ani.app.ui.foundation.LocalSketch
+import me.him188.ani.app.ui.foundation.dialogs.LocalStackedDialog
+import me.him188.ani.app.ui.foundation.theme.LocalThemeSettings
+import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeTestHost
+import me.him188.ani.app.ui.foundation.widgets.AniCenteredPanelDialog
 
 /**
  * 通知弹窗里一条的操作开的小窗 ([TvNoticeDestination.Dialog]) 叠在通知弹窗上 (同 TvNoticeHost): 通知弹窗不收起、不重建, 小窗这一层不压暗,
@@ -61,32 +65,40 @@ class TvNoticeOverlayTest {
             val compose = ComposeView(host.activity)
             host.root.addView(compose, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
             compose.setContent {
-                AniCenteredPanelDialog(onDismissRequest = {}, heightFraction = null, maxWidth = 880.dp) {
-                    val view = LocalView.current
-                    SideEffect { noticeRoot = view.rootView }
-                    TvNoticeNativeBody(
-                        notices,
-                        state,
-                        tabs = emptyList(),
-                        onAction = { _, _, action -> if (action.label == DETAILS) overlayShown = true },
-                        onSeen = {},
-                        onSelectTab = { _, _, _ -> },
-                        refreshUi = { refreshUi },
-                        onRefresh = {},
-                    )
-                }
-                if (overlayShown) {
-                    CompositionLocalProvider(LocalStackedDialog provides true) {
-                        AniCenteredPanelDialog(onDismissRequest = { overlayShown = false }) {
-                            val view = LocalView.current
-                            SideEffect { overlayRoot = view.rootView }
-                            Text(OVERLAY)
-                        }
-                    }
+                // 签那一排读视觉效果档位, 封面要图片加载器
+                CompositionLocalProvider(LocalThemeSettings provides ThemeSettings.Default, LocalSketch provides host.sketch) {
+                    Body()
                 }
             }
         }
         host.waitUntil("一打开焦点在那一条 (现在在 ${focusedText()})") { focusedText() == NOTICE }
+    }
+
+    @Composable
+    private fun Body() {
+        AniCenteredPanelDialog(onDismissRequest = {}, heightFraction = null, maxWidth = 880.dp) {
+            val view = LocalView.current
+            SideEffect { noticeRoot = view.rootView }
+            TvNoticeNativeBody(
+                notices,
+                state,
+                tabs = emptyList(),
+                onAction = { _, _, action -> if (action.label == DETAILS) overlayShown = true },
+                onRead = {},
+                onSelectTab = { _, _, _ -> },
+                refreshUi = { refreshUi },
+                onRefresh = {},
+            )
+        }
+        if (overlayShown) {
+            CompositionLocalProvider(LocalStackedDialog provides true) {
+                AniCenteredPanelDialog(onDismissRequest = { overlayShown = false }) {
+                    val view = LocalView.current
+                    SideEffect { overlayRoot = view.rootView }
+                    Text(OVERLAY)
+                }
+            }
+        }
     }
 
     @AfterTest

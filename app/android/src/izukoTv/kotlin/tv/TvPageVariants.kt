@@ -49,6 +49,7 @@ import me.him188.ani.app.ui.foundation.LocalAniUiBehavior
 import me.him188.ani.app.ui.tv.withTouchNavigation
 import me.him188.ani.app.ui.foundation.tv.TvActionPanelRequests
 import me.him188.ani.app.ui.notice.TvNoticeHost
+import me.him188.ani.app.ui.notice.tvNoticeBannerRoute
 import me.him188.ani.app.ui.notice.TvAppUpdateHost
 import me.him188.ani.app.ui.notice.TvNotices
 import me.him188.ani.app.ui.subject.details.layout.TvViewAllCommentsList
@@ -504,9 +505,16 @@ fun InstallTvPageVariants(aniNavigator: AniNavigator, content: @Composable () ->
         // 应用自己改用户设置时告知或询问 (见 SettingAdjustments)
         TvSettingAdjustmentHost()
         // 应用内通知 (反馈回复、待处理的本地收藏、发版后的通知等): 进应用时有新的就在首页打开通知弹窗 (见 TvNoticeHost)
-        TvNoticeHost(aniNavigator, onMainPage = {
-            startupLogo?.visible != true && runCatching { aniNavigator.backStack.lastOrNull() }.getOrNull() is NavRoutes.Main
-        })
+        TvNoticeHost(
+            aniNavigator,
+            onMainPage = {
+                startupLogo?.visible != true && runCatching { aniNavigator.backStack.lastOrNull() }.getOrNull() is NavRoutes.Main
+            },
+            // 通知横幅在有侧边栏的页面上弹 (首页、搜索、条目详情; 横幅位由那一页挂, 见 TvNoticeBubbleHost)
+            onBannerPage = {
+                startupLogo?.visible != true && tvNoticeBannerRoute(runCatching { aniNavigator.backStack.lastOrNull() }.getOrNull())
+            },
+        )
         // 「标记看过后删除缓存」删了缓存时弹提示 (标记可能在任何一页或 Web 控制台发生)
         TvMarkedDoneCacheDeletionToasts()
         // 存储快满、缓存下载被全部暂停时弹提示 (见 DownloadSpaceGuard)

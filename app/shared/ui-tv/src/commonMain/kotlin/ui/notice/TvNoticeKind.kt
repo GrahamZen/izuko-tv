@@ -26,7 +26,7 @@ interface TvNoticeKind {
     /** 种类 id, 同 [Notice.kind]. */
     val id: String
 
-    /** 类别: 列表行左边的图标、右栏标题上面的签. */
+    /** 类别: 列表行左边的图标 (给了 [cover] 的画封面)、右栏标题上面的签. */
     val category: TvNoticeCategory
 
     /** 跟着状态的来源 (启动时接到 `Notices` 上, 一个进程一次); 只发消息的种类为 null. */
@@ -37,6 +37,9 @@ interface TvNoticeKind {
 
     /** 列表里标题下面那一行: 是哪一个 (作品、反馈…), 或说明的开头; null = 没有这一行. 切换语言后照样对. */
     suspend fun summary(notice: Notice): String? = null
+
+    /** 这条通知说的是哪一部作品: 给了, 列表行、横幅与手机控制台的列表左边画它的封面, 不画类别图标 (见 [TvNoticeCover]); 说的不是某一部作品的为 null. */
+    suspend fun cover(notice: Notice): TvNoticeCover? = null
 
     /** [title]、[summary] 与 [detail] 除了通知本身还看的状态: 它一变, 列出来的通知重算一遍 (该不列的不列); 只看通知本身的为 null. */
     fun textChanges(): Flow<*>? = null
@@ -52,7 +55,7 @@ interface TvNoticeKind {
 
     /**
      * 这一类在哪个签里看: null = 「通知」签里列一行. 别的签的 id ([TvNoticeTab.id]; 通知的键就是那个签里那一行的键, 如反馈回复在「我的反馈」签)
-     * = 不在「通知」签与手机控制台的通知列表里列, 由那个签自己提醒 (签上的红点) 与标看过; 照样算侧边栏「通知」的红点与通知气泡,
+     * = 不在「通知」签与手机控制台的通知列表里列, 由那个签自己提醒 (签上的红点) 与标读过; 照样算侧边栏「通知」的数字与通知气泡,
      * 气泡上按「查看」开到那个签的那一行.
      */
     val tab: String? get() = null
@@ -122,9 +125,14 @@ data class TvNoticeQr(
     val console: Boolean = false,
 ) : TvNoticeBlock
 
-/** 一个操作: 按钮上的字 [label] (只写动作, 如「更换资源」) 与按了去哪. */
+/**
+ * 一个操作: 按钮上的字 [label] (只写动作, 如「自动更新」) 与按了去哪.
+ *
+ * [quick] 给了 = 它是这一条的第一个操作时, 通知横幅上短按直接做它, 横幅第二行写「按确定键[quick]」
+ * (短的动作名, 如「查看」). null = 一按就做不合适 (开始下载安装这类事先要看说明的), 短按照旧打开通知弹窗.
+ */
 @Immutable
-class TvNoticeAction(val label: String, val destination: TvNoticeDestination)
+class TvNoticeAction(val label: String, val destination: TvNoticeDestination, val quick: String? = null)
 
 /** 按确定后去哪. */
 sealed interface TvNoticeDestination {

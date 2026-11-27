@@ -35,11 +35,13 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import me.him188.ani.app.ui.foundation.LocalSketch
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.delay
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeBubbleStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeButtonGroupStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeButtonStyle
+import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativeGlassTabStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativeIcon
 import me.him188.ani.app.ui.foundation.tv.nativeview.rememberTvNativePanelStyle
 import me.him188.ani.app.ui.foundation.tv.nativeview.toTvNativeTextStyle
@@ -57,7 +59,7 @@ import org.jetbrains.compose.resources.stringResource
 
 /**
  * 通知弹窗的内容, 原生视图画 ([TvNoticeView]; 电视与安卓平板). 内容同 Compose 画法 ([TvNoticeDialogBody]): 「通知」签与 [tabs] 各签的行在这里取好、
- * 换成字 (时间) 交给视图, 焦点与按键全在视图里, 换签、一条的操作、看过、刷新由视图报回来.
+ * 换成字 (时间) 交给视图, 焦点与按键全在视图里, 换签、一条的操作、读过、刷新由视图报回来.
  * 刷新那几个字每秒变, 单独在 [TvNoticeNativeRefresh] 里取, 不连带重算整份内容.
  */
 @Composable
@@ -66,7 +68,7 @@ internal fun TvNoticeNativeBody(
     state: TvNoticeDialogState,
     tabs: List<TvNoticeTab>,
     onAction: (index: Int, item: TvNoticeColumnItem, action: TvNoticeAction) -> Unit,
-    onSeen: (key: String) -> Unit,
+    onRead: (key: String) -> Unit,
     onSelectTab: (id: String, intoList: Boolean, focusKey: String?) -> Unit,
     refreshUi: @Composable () -> TvNoticeRefreshUi,
     onRefresh: () -> Unit,
@@ -85,12 +87,12 @@ internal fun TvNoticeNativeBody(
             TvNoticeViewTab(
                 id = TvNoticeTab.NOTICES,
                 label = stringResource(Lang.notification_title),
-                fresh = items.any { it.kind.listed && !it.entry.seen },
+                fresh = items.any { it.kind.listed && !it.entry.read },
                 rows = noticeRows,
                 emptyText = stringResource(Lang.notification_empty),
                 bodyStartsAtEnd = false,
                 buttonsForSingleAction = false,
-                reportsSeen = true,
+                reportsRead = true,
             ),
         )
         tabs.forEachIndexed { index, tab ->
@@ -107,13 +109,14 @@ internal fun TvNoticeNativeBody(
                         emptyText = tab.emptyText(),
                         bodyStartsAtEnd = tab.bodyStartsAtEnd,
                         buttonsForSingleAction = tab.buttonsForSingleAction,
-                        reportsSeen = false,
+                        reportsRead = false,
                     ),
                 )
             }
         }
     }
     val icons = rememberTvNoticeIcons(viewTabs)
+    val sketch = LocalSketch.current
     val content = TvNoticeViewContent(
         tabs = viewTabs,
         title = stringResource(Lang.notification_title),
@@ -126,10 +129,11 @@ internal fun TvNoticeNativeBody(
         qrUnavailable = stringResource(Lang.search_tv_remote_unavailable),
         icons = icons,
         refreshIcon = icons[Icons.Rounded.Refresh],
+        sketch = sketch,
     )
 
     val currentOnAction by rememberUpdatedState(onAction)
-    val currentOnSeen by rememberUpdatedState(onSeen)
+    val currentOnRead by rememberUpdatedState(onRead)
     val currentOnSelectTab by rememberUpdatedState(onSelectTab)
     val currentOnRefresh by rememberUpdatedState(onRefresh)
     val currentTabs by rememberUpdatedState(tabs)
@@ -145,7 +149,7 @@ internal fun TvNoticeNativeBody(
                         currentOnAction(index, item, action)
 
                     override fun onSelectTab(id: String, intoList: Boolean, focusKey: String?) = currentOnSelectTab(id, intoList, focusKey)
-                    override fun onSeen(key: String) = currentOnSeen(key)
+                    override fun onRead(key: String) = currentOnRead(key)
                     override fun onShown(tab: String, key: String) {
                         currentTabs.firstOrNull { it.id == tab }?.onShown(key)
                     }
@@ -261,7 +265,7 @@ private fun prewarmContent(): TvNoticeViewContent {
         ),
     )
     val rows = listOf(TvNoticeViewRow(item, "刚刚"))
-    fun tab(id: String) = TvNoticeViewTab(id, id, fresh = true, rows = rows, emptyText = "", bodyStartsAtEnd = false, buttonsForSingleAction = false, reportsSeen = false)
+    fun tab(id: String) = TvNoticeViewTab(id, id, fresh = true, rows = rows, emptyText = "", bodyStartsAtEnd = false, buttonsForSingleAction = false, reportsRead = false)
     return TvNoticeViewContent(
         tabs = listOf(tab(TvNoticeTab.NOTICES), tab("prewarm")),
         title = "",
@@ -283,7 +287,10 @@ private val NOTICE_PREWARM_DELAY = 10.seconds
 /** 预建时按这个宽排 (同弹窗最宽). */
 private val TV_NOTICE_PREWARM_WIDTH = 832.dp
 
-/** 通知弹窗原生视图的尺寸、字与配色 (见 [TvNoticeStyle]): 跟应用主题、界面缩放与触屏走, 数值同 Compose 版. 要在通知弹窗的面板里取 (面板里的淡底). */
+/**
+ * 通知弹窗原生视图的尺寸、字与配色 (见 [TvNoticeStyle]): 跟应用主题、界面缩放与触屏走, 数值同 Compose 版; 面板共用的配色取 [rememberTvNativePanelStyle].
+ * 要在通知弹窗的面板里取 (面板里的淡底).
+ */
 @Composable
 internal fun rememberTvNoticeStyle(): TvNoticeStyle {
     val density = LocalDensity.current
@@ -291,21 +298,16 @@ internal fun rememberTvNoticeStyle(): TvNoticeStyle {
     val colors = MaterialTheme.colorScheme
     val panel = rememberTvNativePanelStyle()
     val panelTitle = aniPanelTitleStyle
-    return remember(density, typography, colors, panel, panelTitle) {
+    // 签那一排同追番页的玻璃标签栏 (原生公共件), 红点用 error 色
+    val tabs = rememberTvNativeGlassTabStyle(colors.error)
+    return remember(density, typography, colors, panel, panelTitle, tabs) {
         with(density) {
             val onSurface = colors.onSurface
             val variant = colors.onSurfaceVariant
             val dark = colors.surface.luminance() < 0.5f
             TvNoticeStyle(
                 panel = panel,
-                tabGapPx = TV_NOTICE_TAB_GAP.roundToPx(),
-                tabPaddingPx = 4.dp.roundToPx(),
-                tabUnderlineWidthPx = TV_NOTICE_TAB_UNDERLINE_WIDTH.roundToPx(),
-                tabUnderlineHeightPx = 3.dp.roundToPx(),
-                tabUnderlineGapPx = 4.dp.roundToPx(),
-                tabUnderlineCornerPx = 2.dp.toPx(),
-                tabDotPx = TV_NOTICE_TAB_DOT_SIZE.roundToPx(),
-                tabDotOffsetPx = 8.dp.roundToPx(),
+                tabs = tabs,
                 headerGapTabsPx = TV_NOTICE_TABS_GAP.roundToPx(),
                 headerGapTitlePx = CENTERED_PANEL_TITLE_GAP.roundToPx(),
                 refreshIconPx = TV_NOTICE_REFRESH_ICON_SIZE.roundToPx(),
@@ -327,6 +329,11 @@ internal fun rememberTvNoticeStyle(): TvNoticeStyle {
                 rowCornerPx = 12.dp.toPx(),
                 rowIconPx = TV_NOTICE_ICON_SIZE.roundToPx(),
                 rowIconGapPx = 12.dp.roundToPx(),
+                rowCoverWidthPx = TV_NOTICE_COVER_WIDTH.roundToPx(),
+                rowCoverHeightPx = TV_NOTICE_COVER_HEIGHT.roundToPx(),
+                rowCoverCornerPx = TV_NOTICE_COVER_CORNER.toPx(),
+                rowCoverStartPx = TV_NOTICE_COVER_START.roundToPx(),
+                rowCoverGapPx = TV_NOTICE_COVER_GAP.roundToPx(),
                 rowLineGapPx = 2.dp.roundToPx(),
                 rowTimeGapPx = 8.dp.roundToPx(),
                 rowSecondaryAlpha = TV_NOTICE_TIME_ALPHA,
@@ -360,10 +367,8 @@ internal fun rememberTvNoticeStyle(): TvNoticeStyle {
                         pressedOverlay = panel.pressedOverlay,
                         touch = panel.touch,
                     ),
-                    maxInRow = TV_NOTICE_ROW_ACTIONS,
-                    rowGapPx = 12.dp.roundToPx(),
-                    columnGapPx = 8.dp.roundToPx(),
-                    columnWidthPx = TV_NOTICE_ACTIONS_COLUMN_WIDTH.roundToPx(),
+                    gapPx = 12.dp.roundToPx(),
+                    fadePx = ANI_SCROLL_FADE.roundToPx(),
                 ),
                 pageFraction = TV_NOTICE_PAGE_FRACTION,
                 touchNameLines = TV_NOTICE_TOUCH_NAME_LINES,
@@ -406,8 +411,6 @@ internal fun rememberTvNoticeStyle(): TvNoticeStyle {
                 statusDotPx = 8.dp.roundToPx(),
                 statusDotGapPx = 6.dp.roundToPx(),
                 pageTitle = panelTitle.toTvNativeTextStyle(density, onSurface),
-                tab = typography.titleMedium.toTvNativeTextStyle(density, variant),
-                tabSelected = typography.titleLarge.copy(fontWeight = FontWeight.Bold).toTvNativeTextStyle(density, onSurface),
                 refreshStatus = typography.labelMedium.toTvNativeTextStyle(density, variant),
                 refreshLabel = typography.titleMedium.toTvNativeTextStyle(density, variant),
                 section = typography.labelLarge.toTvNativeTextStyle(density, variant),

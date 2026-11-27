@@ -16,6 +16,7 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
 import android.view.ViewGroup
+import android.widget.HorizontalScrollView
 import androidx.compose.runtime.Immutable
 import kotlin.math.max
 import kotlin.math.min
@@ -41,19 +42,6 @@ internal data class TvNativeButtonStyle(
 )
 
 /**
- * 一组按钮的排法: 至多 [maxInRow] 颗横排 (间距 [rowGapPx], 各占自己的宽, 最多平分), 更多的一颗一行竖排 (定宽 [columnWidthPx],
- * 栏窄时按栏宽; 间距 [columnGapPx]).
- */
-@Immutable
-internal data class TvNativeButtonGroupStyle(
-    val button: TvNativeButtonStyle,
-    val maxInRow: Int,
-    val rowGapPx: Int,
-    val columnGapPx: Int,
-    val columnWidthPx: Int,
-)
-
-/**
  * 一颗按钮: 圆角底 (聚焦实底, 触屏上不画聚焦), 一行字, [center] 时居中、否则靠左. 宽: 量给 EXACTLY 时占满, AT_MOST 时按字宽 (最宽占满),
  * UNSPECIFIED 时按字宽.
  */
@@ -63,7 +51,7 @@ internal class TvNativeButtonView(context: Context, private var style: TvNativeB
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val rect = RectF()
 
-    /** 在所在那一组里的位置 (见 [TvNativeButtonGroupView]). */
+    /** 在所在那一排里的位置 (见 [TvNativeButtonGroupView]). */
     var index: Int = 0
 
     var center: Boolean = true
@@ -151,16 +139,27 @@ internal class TvNativeButtonView(context: Context, private var style: TvNativeB
 }
 
 /**
- * 一组按钮 (见 [TvNativeButtonGroupStyle] 的排法): 横排的字居中, 竖排的靠左. 按钮在内容变化时复用 (个数不变就只换字), 持焦的那颗不丢焦点.
+ * 一排按钮的排法: 按钮的样子 [button], 相邻两颗隔 [gapPx]; 一行放不下时被截住的那一头渐隐 [fadePx] 宽.
+ */
+@Immutable
+internal data class TvNativeButtonGroupStyle(
+    val button: TvNativeButtonStyle,
+    val gapPx: Int,
+    val fadePx: Int,
+)
+
+/**
+ * 一排按钮 (如弹窗、面板里一件事的几个操作): 排一行, 各占自己的宽 (主操作在左), 字居中、不截字. 一行放不下时这一行左右滚: 焦点到哪颗
+ * 滚到哪颗露全, 截住的那一头渐隐; 触屏上手指拖. 方向键由外面判, 这里只管排与滚.
+ * 按钮在内容变化时复用 (个数不变就只换字), 持焦的那颗不丢焦点; 换了内容而焦点不在这一排时滚回开头.
  * 按了哪一颗、哪一颗得失焦点报给 [onClick] / [onFocus] (按位置).
  */
 @SuppressLint("ViewConstructor")
-internal class TvNativeButtonGroupView(context: Context, private var style: TvNativeButtonGroupStyle) : ViewGroup(context) {
+internal class TvNativeButtonGroupView(context: Context, private var style: TvNativeButtonGroupStyle) : HorizontalScrollView(context) {
+    private val row = Row(context)
     val buttons = ArrayList<TvNativeButtonView>()
     var onClick: ((Int) -> Unit)? = null
     var onFocus: ((Int, Boolean) -> Unit)? = null
-
-    val inRow: Boolean get() = buttons.size <= style.maxInRow
 
     /** 窗口被叠在上面的小窗拿走了焦点 (见 [TvNativeButtonView.covered]). */
     var covered: Boolean = false
@@ -170,11 +169,22 @@ internal class TvNativeButtonGroupView(context: Context, private var style: TvNa
             buttons.forEach { it.covered = value }
         }
 
+    init {
+        // 焦点只落在按钮上
+        isFocusable = false
+        isHorizontalScrollBarEnabled = false
+        isHorizontalFadingEdgeEnabled = true
+        setFadingEdgeLength(style.fadePx)
+        overScrollMode = OVER_SCROLL_NEVER
+        addView(row, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
+    }
+
     fun bind(labels: List<String>, style: TvNativeButtonGroupStyle) {
         this.style = style
+        setFadingEdgeLength(style.fadePx)
         while (buttons.size > labels.size) {
             val removed = buttons.removeAt(buttons.lastIndex)
-            removeView(removed)
+            row.removeView(removed)
         }
         while (buttons.size < labels.size) {
             val button = TvNativeButtonView(context, style.button)
@@ -183,60 +193,35 @@ internal class TvNativeButtonGroupView(context: Context, private var style: TvNa
             button.setOnClickListener { onClick?.invoke(button.index) }
             button.setOnFocusChangeListener { _, hasFocus -> onFocus?.invoke(button.index, hasFocus) }
             buttons += button
-            addView(button)
+            row.addView(button)
         }
-        val center = labels.size <= style.maxInRow
-        labels.forEachIndexed { i, label ->
-            buttons[i].center = center
-            buttons[i].bind(label, style.button)
-        }
-        requestLayout()
+        labels.forEachIndexed { i, label -> buttons[i].bind(label, style.button) }
+        // 换了内容: 从头看起; 持焦的那颗还在时留在原处
+        if (!hasFocus()) scrollTo(0, 0)
+        row.requestLayout()
     }
 
     /** 持焦的那一颗的位置; 没有为 -1. */
     fun focusedIndex(): Int = buttons.indexOfFirst { it.isFocused }
 
-    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val s = style
-        val width = MeasureSpec.getSize(widthMeasureSpec)
-        if (buttons.isEmpty()) {
-            setMeasuredDimension(width, 0)
-            return
-        }
-        if (inRow) {
-            val gaps = s.rowGapPx * (buttons.size - 1)
-            val share = (width - gaps) / buttons.size
-            var height = 0
-            buttons.forEach {
-                it.measure(tvNativeAtMost(share), TV_NATIVE_UNSPECIFIED)
-                height = max(height, it.measuredHeight)
-            }
-            setMeasuredDimension(width, height)
-        } else {
-            val columnWidth = min(s.columnWidthPx, width)
+    /** 按钮那一行: 各颗按自己的宽并排, 一样高 (按最高的那颗). */
+    private inner class Row(context: Context) : ViewGroup(context) {
+        override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+            var width = 0
             var height = 0
             buttons.forEachIndexed { i, button ->
-                button.measure(tvNativeExactly(columnWidth), TV_NATIVE_UNSPECIFIED)
-                height += button.measuredHeight + if (i > 0) s.columnGapPx else 0
+                button.measure(TV_NATIVE_UNSPECIFIED, TV_NATIVE_UNSPECIFIED)
+                width += button.measuredWidth + if (i > 0) style.gapPx else 0
+                height = max(height, button.measuredHeight)
             }
             setMeasuredDimension(width, height)
         }
-    }
 
-    override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
-        val s = style
-        if (inRow) {
+        override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
             var x = 0
-            val rowHeight = b - t
             buttons.forEach {
-                it.layout(x, 0, x + it.measuredWidth, rowHeight)
-                x += it.measuredWidth + s.rowGapPx
-            }
-        } else {
-            var y = 0
-            buttons.forEach {
-                it.tvNativeLayoutAt(0, y)
-                y += it.measuredHeight + s.columnGapPx
+                it.layout(x, 0, x + it.measuredWidth, b - t)
+                x += it.measuredWidth + style.gapPx
             }
         }
     }

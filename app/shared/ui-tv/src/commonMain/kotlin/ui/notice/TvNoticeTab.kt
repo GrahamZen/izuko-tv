@@ -57,6 +57,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.flow.Flow
+import me.him188.ani.app.ui.foundation.ifThen
 import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.widgets.selectedSemantics
 import org.jetbrains.compose.resources.StringResource
@@ -72,7 +73,7 @@ internal interface TvNoticeTab {
     /** 签上的字. */
     val label: StringResource
 
-    /** 签上画红点: 签里有没看过的. 只管签上这个点, 不算进侧边栏「通知」的红点. */
+    /** 签上画红点: 签里有没读过的. 只管签上这个点, 不算进侧边栏「通知」的数字. */
     val hasFresh: Flow<Boolean>
 
     /** 签里列的几行, 排好先后 (分段写在 [TvNoticeColumnItem.section]); 还在取为 null. 在通知弹窗里组合. */
@@ -92,7 +93,7 @@ internal interface TvNoticeTab {
     /** 右栏正文一打开停在末尾 (最新的写在最下面); 一行可以自己另定 ([TvNoticeColumnItem.bodyStartsAtEnd]). */
     val bodyStartsAtEnd: Boolean get() = false
 
-    /** 只有一个操作也画成按钮: 按确定键或右键进右栏, 正文长时在那里上下翻看. */
+    /** 按了当场做完的操作 (Run) 焦点留在按钮上, 不回那一行 (来往记录这类签: 做完多半还要接着看). 操作都画成按钮, 列表里按确定键进右栏. */
     val buttonsForSingleAction: Boolean get() = false
 
     companion object {
@@ -106,7 +107,7 @@ internal interface TvNoticeTab {
  *
  * @param icon 列表行左边的图标, [iconLabel] 是它的说明
  * @param atMillis 列表行上写的时间; null = 不写 (如「写新反馈」这种不是一件事的行)
- * @param fresh 没看过: 图标右上角一个红点
+ * @param fresh 没读过: 图标右上角一个红点 (「通知」签里右栏说它说满一会儿算读过, 见 [TvNoticeColumns])
  * @param section 分段的小标题: 与上一行不同时写在这一行前面 (如「处理中」「已结束」); null = 不分段
  * @param chips 右栏大标题上面的签 (类别、状态)
  * @param meta 签后面那一行小字; null = 写 [atMillis] 的时间 (它也是 null 就不写)
@@ -135,6 +136,8 @@ internal class TvNoticeColumnItem(
     val rowAction: TvNoticeAction? = null,
     val blocks: List<TvNoticeBlock> = emptyList(),
     val bodyStartsAtEnd: Boolean? = null,
+    /** 这一行左边画的封面 (说的是哪一部作品的通知, 见 [TvNoticeKind.cover]); null = 画类别图标 [icon] */
+    val cover: TvNoticeCoverImage? = null,
 )
 
 /** 右栏大标题上面的一个签; [accent] 用主色 (如「处理中」), 否则是淡底 (如类别). */
@@ -147,21 +150,45 @@ internal class TvNoticeTabLabel(val id: String, val text: String, val fresh: Boo
 
 /**
  * 通知弹窗顶上的几个签 (只有「通知」一个时不画, 照旧写标题). 没选中的字小、淡, 有没看过的画红点; 选中的字加粗、白, 下面一条主色短横线.
- * 只显示选中的是哪个, 焦点不落上来 (电视上在列表里左右键换签); 触屏上点签换签 ([onSelect]).
+ * 按键同电视上的原生版 (TvNoticeView): 签能聚焦, 聚焦即选中 ([onSelect]); 左右键在签之间走, 最右的签再按右键到 [rightOfLast] (刷新);
+ * 下键、确定键进内容 ([onEnter]: 这个签的第一行); 上键不动. 选中的那个签挂 [selectedFocus] (列表第一行按上、刷新上按左落到它).
+ * 触屏上点签换签.
  */
 @Composable
 internal fun TvNoticeTabRow(
     tabs: List<TvNoticeTabLabel>,
     selected: String,
     onSelect: (id: String) -> Unit,
+    selectedFocus: FocusRequester,
+    onEnter: () -> Unit,
+    rightOfLast: FocusRequester?,
 ) {
     Row(horizontalArrangement = Arrangement.spacedBy(TV_NOTICE_TAB_GAP), verticalAlignment = Alignment.Bottom) {
-        tabs.forEach { tab ->
+        tabs.forEachIndexed { index, tab ->
+            val isSelected = tab.id == selected
             TvNoticeTabItem(
                 tab,
-                selected = tab.id == selected,
+                selected = isSelected,
                 onClick = { onSelect(tab.id) },
-                modifier = Modifier.focusProperties { canFocus = false },
+                modifier = Modifier
+                    .ifThen(isSelected) { focusRequester(selectedFocus) }
+                    .focusProperties {
+                        up = FocusRequester.Cancel
+                        down = FocusRequester.Cancel
+                        if (index == 0) left = FocusRequester.Cancel
+                        if (index == tabs.lastIndex) right = rightOfLast ?: FocusRequester.Cancel
+                    }
+                    .onFocusChanged { if (it.isFocused && !isSelected) onSelect(tab.id) }
+                    .onPreviewKeyEvent { event ->
+                        when (event.key) {
+                            Key.DirectionDown, Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
+                                if (event.type == KeyEventType.KeyDown) onEnter()
+                                true
+                            }
+
+                            else -> false
+                        }
+                    },
             )
         }
     }
@@ -170,8 +197,12 @@ internal fun TvNoticeTabRow(
 /** 一个签: 字 (与红点) 与下面 28dp 的短横线; 选中的字大、加粗、白, 横线主色. */
 @Composable
 private fun TvNoticeTabItem(tab: TvNoticeTabLabel, selected: Boolean, onClick: () -> Unit, modifier: Modifier) {
+    var focused by remember { mutableStateOf(false) }
     Column(
         modifier
+            .onFocusChanged { focused = it.isFocused }
+            // 遥控器、键盘上聚焦的签铺一层淡底 (触屏上点了不画)
+            .background(if (focused) MaterialTheme.colorScheme.onSurface.copy(alpha = TV_NOTICE_TAB_FOCUS_ALPHA) else Color.Transparent, RoundedCornerShape(8.dp))
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick)
             .selectedSemantics(selected)
             .testTag(TV_NOTICE_TAB_TAG)
@@ -274,6 +305,9 @@ internal val TV_NOTICE_TAB_DOT_SIZE = 8.dp
 /** 选中、聚焦的签下面那条横线的长度. */
 internal val TV_NOTICE_TAB_UNDERLINE_WIDTH = 28.dp
 internal val TV_NOTICE_TAB_GAP = 12.dp
+
+/** 聚焦的签那层淡底相对字色的不透明度. */
+private const val TV_NOTICE_TAB_FOCUS_ALPHA = 0.12f
 
 /** 刷新按钮: 图标边长、冷却中字与图标的不透明度、正在刷新时转一圈多久. */
 internal val TV_NOTICE_REFRESH_ICON_SIZE = 22.dp

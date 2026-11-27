@@ -143,6 +143,7 @@ import me.him188.ani.app.ui.foundation.tv.prefetchTvTmdbSummary
 import me.him188.ani.app.ui.foundation.widgets.windowSizeCap
 import me.him188.ani.app.ui.main.TvPosterWallPreviewPage
 import me.him188.ani.app.ui.main.TvWallScaleEntry
+import me.him188.ani.app.ui.notice.TvNoticeBubbleHost
 import me.him188.ani.app.ui.foundation.TV_CONFIRM_KEYS
 import me.him188.ani.app.ui.foundation.consumeHeldConfirmKey
 import me.him188.ani.app.ui.foundation.consumeHeldConfirmKeyOnFocus
@@ -679,6 +680,8 @@ fun TvSearchPage(
             // 触屏没有返回键: 左上角给一颗返回 (同详情页)
             onBack = if (LocalTvTouchInputEnabled.current) ({ navigator.popBackStack() }) else null,
         )
+        // 通知横幅 (见 TvNoticeBubbleHost): 结果态才弹; 挑关键词时不弹, 横幅会拿走输入框的焦点
+        TvNoticeBubbleHost(enabled = showResults)
     }
 }
 

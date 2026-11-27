@@ -303,6 +303,7 @@ import me.him188.ani.app.ui.lang.subject_details_stat_wish
 import me.him188.ani.app.ui.lang.subject_details_total_episodes
 import me.him188.ani.app.ui.lang.subject_details_tv_feedback
 import me.him188.ani.app.ui.lang.subject_details_tv_open_details_page
+import me.him188.ani.app.ui.notice.TvNoticeBubbleHost
 import me.him188.ani.app.ui.rating.isEditingFrom
 import me.him188.ani.app.ui.subject.AiringLabel
 import me.him188.ani.app.ui.subject.SubjectProgressState
@@ -1258,6 +1259,8 @@ fun SubjectDetailsTvPage(
                 modifier = Modifier.align(Alignment.CenterStart).zIndex(1f),
                 scrimColor = railScrimColor,
             )
+            // 通知横幅 (见 TvNoticeBubbleHost): 同侧边栏一起在, 首屏才弹
+            TvNoticeBubbleHost()
         }
         CompositionLocalProvider(LocalBringIntoViewSpec provides noBringIntoView) {
         MultiColumnScaffold(

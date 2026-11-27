@@ -1617,6 +1617,8 @@
     <string name="tv_notice_action_open">View</string>
     <string name="tv_notice_banner_hint">Press OK to view</string>
     <string name="tv_notice_banner_hint_more">%1$d more · Press OK to view</string>
+    <string name="tv_notice_banner_hint_quick">Press OK: %1$s · Hold: details</string>
+    <string name="tv_notice_banner_hint_quick_more">%2$d more · Press OK: %1$s · Hold: details</string>
     <string name="tv_rail_back">Back</string>
     <string name="pad_subject_details_more_tags">More tags</string>
     <string name="pad_subject_details_all_episodes">All episodes</string>

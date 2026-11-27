@@ -32,6 +32,7 @@ import me.him188.ani.app.data.models.notice.Notice
 import me.him188.ani.app.domain.notice.NoticeEntry
 import me.him188.ani.app.ui.foundation.tv.LocalTvTouchInputEnabled
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeTestHost
+import kotlin.math.abs
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -40,8 +41,8 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * 通知弹窗的列表与右栏 ([TvNoticeContent]): 只有一个操作的在列表里按确定键直接做、右栏不画按钮; 几个操作的按确定键进右栏第一颗
- * (没有别的签时按右键也进), 两颗横排 (左右键在两颗之间走), 在最左一颗按左键或在右栏按返回键回到那一条 (返回键不关弹窗).
+ * 通知弹窗的列表与右栏 ([TvNoticeContent]): 操作都画成按钮 (只有一个也画), 按确定键进右栏第一颗、在按钮上才做
+ * (没有别的签时按右键也进), 操作排一行 (左右键在几颗之间走, 放不下时那一行滚到持焦的那颗), 在最左一颗按左键或在右栏按返回键回到那一条 (返回键不关弹窗).
  * 资源名这类长串 ([TvNoticeParagraph.longName]) 触屏上截到三行, 电视上写全.
  */
 class TvNoticeContentNavigationTest {
@@ -60,6 +61,7 @@ class TvNoticeContentNavigationTest {
             item(MANY, atMillis = 2, FIRST, SECOND, detail = true),
             item(NONE, atMillis = 1),
             item(LONG, atMillis = 0, LONG_ACTION, detail = true, longName = LONG_NAME),
+            item(FOUR, atMillis = -1, FOUR_1, FOUR_2, FOUR_3, FOUR_4, detail = true),
         )
         host.onMain {
             compose = ComposeView(host.activity)
@@ -68,13 +70,13 @@ class TvNoticeContentNavigationTest {
                 CompositionLocalProvider(LocalTvTouchInputEnabled provides touch) {
                     Box(Modifier.fillMaxSize()) {
                         Box(Modifier.width(880.dp)) {
-                            // 同真机: 换了要落的那一条时通知弹窗是重新打开的 (叠在上面的弹窗关掉、从别处处理一条), 初始焦点照新的落
+                            // 同真机: 换了要落的那一条时通知弹窗是重新打开的 (如从去处页面回来), 初始焦点照新的落
                             key(dialogState) {
                                 TvNoticeContent(
                                     items,
                                     dialogState,
                                     onAction = { _, _, action -> done += action.label },
-                                    onSeen = {},
+                                    onRead = {},
                                     onDismiss = { dismissed = true },
                                 )
                             }
@@ -90,11 +92,12 @@ class TvNoticeContentNavigationTest {
     fun tearDown() = host.close()
 
     @Test
-    fun `ok on a notice with one action does it at once and draws no button`() {
-        assertEquals(0, host.onMain { actionButtons() }, "只有一个操作时右栏不画按钮")
+    fun `ok on a notice with one action enters its button instead of doing it`() {
+        host.waitUntil("只有一个操作也画按钮") { actionButtons() == 1 }
+        press(KeyEvent.KEYCODE_DPAD_CENTER, expect = ONE_ACTION)
+        assertEquals(emptyList(), host.onMain { done.toList() }, "列表里按确定只是进右栏")
         host.press(KeyEvent.KEYCODE_DPAD_CENTER)
-        assertEquals(listOf(ONE_ACTION), host.onMain { done.toList() })
-        assertEquals(ONE, host.onMain { focusedText() }, "焦点留在那一条")
+        host.waitUntil("按钮上按确定做") { done == listOf(ONE_ACTION) }
     }
 
     @Test
@@ -126,9 +129,10 @@ class TvNoticeContentNavigationTest {
     }
 
     @Test
-    fun `right on a notice with one action or none stays on the list`() {
-        host.press(KeyEvent.KEYCODE_DPAD_RIGHT)
-        assertEquals(ONE, host.onMain { focusedText() })
+    fun `right enters the button of a notice with one action and stays on a notice with none`() {
+        press(KeyEvent.KEYCODE_DPAD_RIGHT, expect = ONE_ACTION)
+        assertEquals(emptyList(), host.onMain { done.toList() }, "右键只是落到按钮上")
+        press(KeyEvent.KEYCODE_DPAD_LEFT, expect = ONE)
         press(KeyEvent.KEYCODE_DPAD_DOWN, expect = MANY)
         press(KeyEvent.KEYCODE_DPAD_DOWN, expect = NONE)
         host.press(KeyEvent.KEYCODE_DPAD_RIGHT)
@@ -154,6 +158,27 @@ class TvNoticeContentNavigationTest {
         host.waitUntil("焦点在开弹窗的那颗按钮上 (现在在 ${focusedText()})") { focusedText() == SECOND }
         press(KeyEvent.KEYCODE_DPAD_LEFT, expect = FIRST)
         press(KeyEvent.KEYCODE_DPAD_LEFT, expect = MANY)
+    }
+
+    @Test
+    fun `actions that do not fit in one row scroll to the focused one`() {
+        host.onMain { dialogState = TvNoticeDialogState(fresh = emptySet(), focusKey = FOUR, focusIndex = 4, focusAction = 0) }
+        host.waitUntil("焦点在那一条的第一个操作上 (现在在 ${focusedText()})") { focusedText() == FOUR_1 }
+        assertEquals(4, host.onMain { actionButtons() })
+        assertFalse(host.onMain { actionFullyShown(FOUR_4) }, "一行放不下: 最后一颗起初没露全")
+        for (label in listOf(FOUR_2, FOUR_3, FOUR_4)) {
+            press(KeyEvent.KEYCODE_DPAD_RIGHT, expect = label)
+            host.waitUntil("滚到 $label 露全") { actionFullyShown(label) }
+        }
+        host.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+        assertEquals(FOUR_4, host.onMain { focusedText() }, "最右一颗按右不动")
+        host.press(KeyEvent.KEYCODE_DPAD_UP)
+        host.press(KeyEvent.KEYCODE_DPAD_DOWN)
+        assertEquals(FOUR_4, host.onMain { focusedText() }, "上下键翻正文, 焦点不动")
+        for (label in listOf(FOUR_3, FOUR_2, FOUR_1)) press(KeyEvent.KEYCODE_DPAD_LEFT, expect = label)
+        host.waitUntil("滚回第一颗露全") { actionFullyShown(FOUR_1) }
+        press(KeyEvent.KEYCODE_DPAD_LEFT, expect = FOUR)
+        assertEquals(emptyList(), host.onMain { done.toList() })
     }
 
     @Test
@@ -208,6 +233,16 @@ class TvNoticeContentNavigationTest {
         return root.descendants().count { it.config.getOrNull(SemanticsProperties.TestTag) == TV_NOTICE_ACTION_TAG }
     }
 
+    /** 写着 [label] 的那颗操作按钮整颗露在外面 (没被那一行的可见范围截掉); 在主线程上调 */
+    private fun actionFullyShown(label: String): Boolean {
+        val root = (compose.getChildAt(0) as? ViewRootForTest)?.semanticsOwner?.unmergedRootSemanticsNode ?: return false
+        val button = root.descendants().firstOrNull { node ->
+            node.config.getOrNull(SemanticsProperties.TestTag) == TV_NOTICE_ACTION_TAG &&
+                node.descendants().any { d -> d.config.getOrNull(SemanticsProperties.Text).orEmpty().any { it.text == label } }
+        } ?: return false
+        return abs(button.boundsInRoot.width - button.size.width) < 1f
+    }
+
     private fun SemanticsNode.descendants(): List<SemanticsNode> = children.flatMap { listOf(it) + it.descendants() }
 
     private object TestKind : TvNoticeKind {
@@ -229,5 +264,10 @@ class TvNoticeContentNavigationTest {
         const val LONG_ACTION = "Change release"
         const val LONG_NAME = "Original release: [Some Group & Another Group] A Very Long Show Title / Another Very Long Title Written Out In Full / The Third Alternative Title Of The Same Show - 01-13 [BDRip 1080p HEVC-10bit FLAC 5.1 + 2.0][Simplified and Traditional Chinese Subtitles][Batch Release With Specials]"
         const val NAME_LINES = 3
+        const val FOUR = "Notice with four actions"
+        const val FOUR_1 = "Choose a release for episode 12"
+        const val FOUR_2 = "Change download preferences"
+        const val FOUR_3 = "Search again"
+        const val FOUR_4 = "Do not download these 3 episodes"
     }
 }

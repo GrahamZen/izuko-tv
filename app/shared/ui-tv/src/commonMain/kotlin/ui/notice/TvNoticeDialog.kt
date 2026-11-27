@@ -12,6 +12,7 @@ package me.him188.ani.app.ui.notice
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -62,8 +63,6 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.Layout
-import androidx.compose.ui.layout.boundsInWindow
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
@@ -71,9 +70,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
+import me.him188.ani.app.ui.foundation.rememberNsfwPolicy
 import kotlin.math.roundToInt
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -125,7 +126,7 @@ internal fun TvNoticeDialog(
     state: TvNoticeDialogState,
     tabs: List<TvNoticeTab>,
     onAction: (index: Int, item: TvNoticeColumnItem, action: TvNoticeAction) -> Unit,
-    onSeen: (key: String) -> Unit,
+    onRead: (key: String) -> Unit,
     onSelectTab: (id: String, intoList: Boolean, focusKey: String?) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -138,7 +139,7 @@ internal fun TvNoticeDialog(
         maxWidth = TV_NOTICE_DIALOG_MAX_WIDTH,
     ) {
         // 安卓 (电视与平板) 上是原生视图; Compose 画法 TvNoticeDialogBody 照同一份数据画, 给没有原生视图的平台
-        TvNoticeNativeBody(items, state, tabs, onAction, onSeen, onSelectTab, refreshUi = { rememberTvNoticeRefreshUi() }, onRefresh = refresh)
+        TvNoticeNativeBody(items, state, tabs, onAction, onRead, onSelectTab, refreshUi = { rememberTvNoticeRefreshUi() }, onRefresh = refresh)
     }
 }
 
@@ -146,10 +147,9 @@ internal fun TvNoticeDialog(
  * 通知弹窗里的内容 (见 [TvNoticeDialog]): 顶栏 (签或标题, 右边刷新), 下面是选中那个签的两栏.
  * [refreshUi] 给刷新按钮的样子 (在顶栏里组合, 它每秒变时只重画顶栏); null = 不放刷新.
  *
- * 焦点: 列表里按左右键换签, 焦点直接进那个签的列表, 落在那个签上次看的那一行 (没看过的落在第一行), 到头不绕回, 只有「通知」一个签时不动;
- * 签那一排只显示选中的是哪个, 焦点不落上去 (触屏上点签换签); 列表第一行按上键到刷新, 刷新上按下键回到列表, 左右键不动
- * (这个签一行都没有时左右键换签). 换签由 [onSelectTab] 交出去: intoList = 从列表换的 (焦点进新签的列表, 落在 focusKey 那一行),
- * 否则是触屏上点的签, 焦点不挪.
+ * 焦点同电视上的原生版 (TvNoticeView): 签能聚焦, 聚焦即选中, 左右键在签之间走, 最右的签再按右键到刷新, 刷新上按左键回到选中的签;
+ * 签与刷新上按下键进这个签的第一行; 列表第一行按上键到选中的签 (没有签时到刷新); 列表里右键进右栏, 左键不动.
+ * 返回键一次退一层: 右栏回到那一行, 列表、签与刷新上关掉弹窗. 换签由 [onSelectTab] 交出去 (焦点留在签上); 触屏上点签换签.
  */
 @Composable
 internal fun TvNoticeDialogBody(
@@ -157,7 +157,7 @@ internal fun TvNoticeDialogBody(
     state: TvNoticeDialogState,
     tabs: List<TvNoticeTab>,
     onAction: (index: Int, item: TvNoticeColumnItem, action: TvNoticeAction) -> Unit,
-    onSeen: (key: String) -> Unit,
+    onRead: (key: String) -> Unit,
     onSelectTab: (id: String, intoList: Boolean, focusKey: String?) -> Unit,
     onDismiss: () -> Unit,
     refreshUi: (@Composable () -> TvNoticeRefreshUi)? = null,
@@ -165,37 +165,21 @@ internal fun TvNoticeDialogBody(
 ) {
     val selected = tabs.firstOrNull { it.id == state.tab }?.id ?: TvNoticeTab.NOTICES
     val refreshFocus = remember { FocusRequester() }
+    // 选中的那个签: 列表第一行按上、刷新上按左落到它
+    val tabFocus = remember { FocusRequester() }
     // 从列表换签、新签的两栏还没画出来时焦点停的地方 (看不见): 旧签的列表马上拿掉, 不停的话焦点丢到弹窗里第一个能聚焦的地方
     val parkFocus = remember { FocusRequester() }
     val columnsFocus = remember { TvNoticeColumnsFocus() }
-    // 刚按左右键换的签 (还没重组出那个签的两栏时就按了下键的, 不进旧签的列表)
+    // 刚在签上换的签 (还没重组出那个签的两栏时就按了下键的, 不进旧签的列表)
     val selectedNow = remember { arrayOf(selected) }
     selectedNow[0] = selected
-    // 各签上次看的那一行 (右栏说的那一行): 从列表左右换签时焦点落回它
-    val lastRow = remember { HashMap<String, String>() }
-    // 画着的签一行都没有 (在下面两栏那里算, 顶栏的刷新读)
-    val shownEmptyNow = remember { booleanArrayOf(false) }
-    val tabIds = listOf(TvNoticeTab.NOTICES) + tabs.map { it.id }
-    // 返回有没有换成: 那一头没有签了 (最左 / 最右) 为 false
-    val switchFromList: ((Int) -> Boolean)? = if (tabs.isEmpty()) {
-        null
-    } else {
-        { direction ->
-            val next = tabIds.getOrNull(tabIds.indexOf(selectedNow[0]) + direction)
-            if (next != null) {
-                selectedNow[0] = next
-                onSelectTab(next, true, lastRow[next])
-            }
-            next != null
-        }
-    }
     Column {
         Row(
             Modifier.fillMaxWidth().padding(bottom = if (tabs.isEmpty()) CENTERED_PANEL_TITLE_GAP else TV_NOTICE_TABS_GAP),
             verticalAlignment = Alignment.Bottom,
         ) {
             if (tabs.isNotEmpty()) {
-                val labels = listOf(TvNoticeTabLabel(TvNoticeTab.NOTICES, stringResource(Lang.notification_title), items.any { it.kind.listed && !it.entry.seen })) +
+                val labels = listOf(TvNoticeTabLabel(TvNoticeTab.NOTICES, stringResource(Lang.notification_title), items.any { it.kind.listed && !it.entry.read })) +
                     tabs.map { extra ->
                         val fresh by remember(extra.id) { extra.hasFresh }.collectAsState(false)
                         TvNoticeTabLabel(extra.id, stringResource(extra.label), fresh)
@@ -207,6 +191,9 @@ internal fun TvNoticeDialogBody(
                         selectedNow[0] = id
                         onSelectTab(id, false, null)
                     },
+                    selectedFocus = tabFocus,
+                    onEnter = { columnsFocus.enterList(selectedNow[0]) },
+                    rightOfLast = if (refreshUi != null) refreshFocus else null,
                 )
             } else {
                 Text(stringResource(Lang.notification_title), style = aniPanelTitleStyle)
@@ -230,8 +217,8 @@ internal fun TvNoticeDialogBody(
                     onRefresh,
                     focusRequester = refreshFocus,
                     onDown = { columnsFocus.enterList(selectedNow[0]) },
-                    // 这个签一行都没有时 (焦点没有别处可去) 左右键照列表里一样换签
-                    onSideways = { direction -> if (shownEmptyNow[0]) switchFromList?.invoke(direction) },
+                    // 左键回到选中的签 (同原生版)
+                    onSideways = { direction -> if (direction < 0 && tabs.isNotEmpty()) runCatching { tabFocus.requestFocus() } },
                 )
             }
         }
@@ -255,12 +242,8 @@ internal fun TvNoticeDialogBody(
             }
         }
         val shownState = lastShown[0]
-        // 右键进不进右栏: 右边没有签可换时进
-        val rightEnters = tabIds.indexOf(shownTab) >= tabIds.lastIndex
-        // 画着的签一行都没有: 焦点在刷新上 (见 TvNoticeColumns), 刷新上左右键换签
-        shownEmptyNow[0] = tabs.indexOfFirst { it.id == shownTab }.let { if (it < 0) items.none { n -> n.kind.listed } else tabItems[it].isNullOrEmpty() }
-        // 列表第一行上面是刷新
-        val up = if (refreshUi != null) refreshFocus else null
+        // 列表第一行上面是选中的签 (没有签时是刷新)
+        val up = if (tabs.isNotEmpty()) tabFocus else if (refreshUi != null) refreshFocus else null
         key(shownTab) {
             val shownIndex = tabs.indexOfFirst { it.id == shownTab }
             if (shownIndex < 0) {
@@ -268,13 +251,10 @@ internal fun TvNoticeDialogBody(
                     items,
                     shownState,
                     onAction,
-                    onSeen,
+                    onRead,
                     onDismiss,
                     tabFocus = up,
                     columnsFocus = columnsFocus,
-                    onSwitchTab = switchFromList,
-                    rightEnters = rightEnters,
-                    onShown = { lastRow[TvNoticeTab.NOTICES] = it },
                 )
             } else {
                 TvNoticeTabContent(
@@ -285,9 +265,6 @@ internal fun TvNoticeDialogBody(
                     onDismiss,
                     tabFocus = up,
                     columnsFocus = columnsFocus,
-                    onSwitchTab = switchFromList,
-                    rightEnters = rightEnters,
-                    onShown = { lastRow[tabs[shownIndex].id] = it },
                 )
             }
         }
@@ -342,9 +319,9 @@ private fun TvNoticeRefreshHeader(
 }
 
 /**
- * 「通知」签: 一条通知一行 —— 类别图标 (没看过的图标右上角一个红点)、标题与时间、标题下面一行摘要; 右栏写焦点所在那一条:
- * 类别签与时间、标题、说明与操作 ([TvShownNotice.detail] / [TvShownNotice.actions]). 新的与看过的都有时分两段.
- * 只有一个操作的在列表里按确定键直接做、右栏不画按钮 (触屏上画). 一行在屏幕上露出一半以上时报 [onSeen] (每条一次).
+ * 「通知」签: 一条通知一行 —— 类别图标 (没读过的图标右上角一个红点)、标题与时间、标题下面一行摘要; 右栏写焦点所在那一条:
+ * 类别签与时间、标题、说明与操作 ([TvShownNotice.detail] / [TvShownNotice.actions]). 新的与之前的都有时分两段.
+ * 在列表里按确定键进右栏 (操作都画成按钮, 落在第一颗). 右栏说一条没读过的说满一会儿时报 [onRead].
  * 焦点与按键见 [TvNoticeColumns].
  */
 @Composable
@@ -352,12 +329,10 @@ internal fun TvNoticeContent(
     items: List<TvShownNotice>,
     state: TvNoticeDialogState,
     onAction: (index: Int, item: TvNoticeColumnItem, action: TvNoticeAction) -> Unit,
-    onSeen: (key: String) -> Unit,
+    onRead: (key: String) -> Unit,
     onDismiss: () -> Unit,
     tabFocus: FocusRequester? = null,
     columnsFocus: TvNoticeColumnsFocus? = null,
-    onSwitchTab: ((direction: Int) -> Boolean)? = null,
-    rightEnters: Boolean = true,
     onShown: (key: String) -> Unit = {},
 ) {
     val columnItems = rememberTvNoticeColumnItems(items, state)
@@ -373,21 +348,21 @@ internal fun TvNoticeContent(
         onDismiss = onDismiss,
         tabFocus = tabFocus,
         columnsFocus = columnsFocus,
-        onSwitchTab = onSwitchTab,
-        rightEnters = rightEnters,
-        onSeen = onSeen,
+        onRead = onRead,
         onShown = onShown,
     )
 }
 
 /**
- * 「通知」签列的行: 一条通知一行 (在别的签里看的那几类不列, 见 [TvNoticeKind.tab]), 照打开 ([state]) 那一刻排 —— 打开就算看过, 照此刻的「新不新」排的话, 列表一打开就重排一遍、行在焦点底下跳.
- * 新的与看过的都有时分两段, 各一行小标题 (同常见的「新 / 更早」); 只有一种时不写. 没有说明的种类正文写摘要, 外部链接 (码) 在正文后面.
+ * 「通知」签列的行: 一条通知一行 (在别的签里看的那几类不列, 见 [TvNoticeKind.tab]). 「新」那一段是打开 ([state]) 那一刻没读过的与开着时新来的
+ * ([TvNotices.arrivedWhileOpen]), 照它排 —— 照此刻读没读过排的话, 读了一条它就在焦点底下挪走. 前面的点照此刻的: 读了就灭.
+ * 新的与之前的都有时分两段, 各一行小标题 (同常见的「新 / 更早」); 只有一种时不写. 没有说明的种类正文写摘要, 外部链接 (码) 在正文后面.
  */
 @Composable
 internal fun rememberTvNoticeColumnItems(items: List<TvShownNotice>, state: TvNoticeDialogState): List<TvNoticeColumnItem> {
-    // 只看打开那一刻新的几条 (换签时不重排)
-    val fresh = state.fresh
+    // 只看打开那一刻没读过的与开着时新来的 (换签、读了一条时不重排)
+    val arrived by remember { TvNotices.arrivedWhileOpen }.collectAsState()
+    val fresh = state.fresh + arrived
     val sorted = remember(items, fresh) {
         items.filter { it.kind.listed }.sortedWith(
             compareBy<TvShownNotice> { it.key !in fresh }
@@ -399,7 +374,8 @@ internal fun rememberTvNoticeColumnItems(items: List<TvShownNotice>, state: TvNo
     val newLabel = stringResource(Lang.tv_notice_section_new)
     val earlierLabel = stringResource(Lang.tv_notice_section_earlier)
     val categories = TvNoticeCategory.entries.associateWith { stringResource(it.label) }
-    return remember(sorted, fresh, newLabel, earlierLabel, categories) {
+    val nsfw = rememberNsfwPolicy()
+    return remember(sorted, fresh, newLabel, earlierLabel, categories, nsfw.snapshot) {
         sorted.map { item ->
             val isFresh = item.key in fresh
             val category = categories.getValue(item.kind.category)
@@ -411,12 +387,13 @@ internal fun rememberTvNoticeColumnItems(items: List<TvShownNotice>, state: TvNo
                 title = item.title,
                 atMillis = item.notice.atMillis,
                 summary = item.summary,
-                fresh = isFresh,
+                fresh = isFresh && !item.entry.read,
                 section = if (!sectioned) null else if (isFresh) newLabel else earlierLabel,
                 chips = listOf(TvNoticeChip(category)),
                 subject = detail?.subject,
                 actions = item.actions,
                 blocks = (detail?.body ?: listOfNotNull(item.summary).map { TvNoticeParagraph(it) }) + listOfNotNull(detail?.qr),
+                cover = item.cover?.imageFor(nsfw),
             )
         }
     }
@@ -432,9 +409,6 @@ private fun TvNoticeTabContent(
     onDismiss: () -> Unit,
     tabFocus: FocusRequester?,
     columnsFocus: TvNoticeColumnsFocus?,
-    onSwitchTab: ((direction: Int) -> Boolean)?,
-    rightEnters: Boolean,
-    onShown: (key: String) -> Unit,
 ) {
     if (items == null) {
         // 还在取: 先占住两栏的高, 取到了再列 (这时才定焦点落在哪一行)
@@ -454,14 +428,9 @@ private fun TvNoticeTabContent(
         tabFocus = tabFocus,
         columnsFocus = columnsFocus,
         tabId = tab.id,
-        onSwitchTab = onSwitchTab,
-        rightEnters = rightEnters,
         bodyStartsAtEnd = tab.bodyStartsAtEnd,
         buttonsForSingleAction = tab.buttonsForSingleAction,
-        onShown = { key ->
-            onShown(key)
-            tab.onShown(key)
-        },
+        onShown = tab::onShown,
     )
 }
 
@@ -487,17 +456,17 @@ internal class TvNoticeColumnsFocus {
  * 左边列表、右栏说明与操作的两栏 (通知弹窗里每个签都是它). 两栏一样高, 高固定 (焦点换一行时弹窗不变高变矮).
  * 右栏写焦点所在那一行 ([TvNoticeColumnItem]): 签与时间、大标题、[TvNoticeColumnItem.subject]、正文 (放不下时自己滚)、操作与最后一行按键提示.
  *
- * - 操作画不画成按钮: 几个操作的画; 只有一个的触屏上 (平板) 或 [buttonsForSingleAction] 时画, 否则不画, 最后一行写「按确定键」接这个操作,
- *   在列表里按确定键直接交给 [onAction]. 没有操作的只是告知.
+ * - 操作都画成按钮 (只有一个也画): 列表里按确定键是选中、进右栏, 在按钮上才做 ([onAction]); 行本身就是一件事的 ([TvNoticeColumnItem.rowAction]) 直接做.
+ *   没有操作的只是告知.
  * - 画了按钮的: 在列表里按确定键焦点到第一颗, 列表里那一行铺浅底表示右栏说的是它; 进了右栏左右键在按钮之间走,
- *   最左一颗按左键 (竖排时每一颗) 或按返回键回到那一行. 两颗横排 (主操作在左) 时上下键翻右栏正文、按钮钉在底部不动; 三颗以上一颗一行竖排, 上下键在按钮之间走.
- * - 列表里左右键交给 [onSwitchTab] (换签). 右边没有签可换时 ([rightEnters]: 最右的签, 或没有别的签) 右键同确定键进右栏 (画了按钮的行);
- *   左边没有签时左键不动.
+ *   最左一颗按左键或按返回键回到那一行. 按钮排一行 (主操作在左), 放不下时那一行左右滚到持焦的那颗; 上下键翻右栏正文、按钮钉在底部不动.
+ * - 列表里右键同确定键进右栏 (画了按钮的行到第一颗, 没按钮而正文放不下的进正文), 左键不动; 换签在签上 (同原生版).
  * - [bodyStartsAtEnd]: 右栏正文一打开停在末尾 (最新的写在最下面).
  * - 有签 ([tabFocus]) 时列表第一行按上键到签上; 签上按下键回到列表 ([columnsFocus], 这一栏是签 [tabId] 的).
  *
  * 一打开 ([opening] 换了就是重新打开) 焦点在 [focusKey] 那一行 (没有就原来位置 [focusIndex] 上那一行, 再没有第一行); [takeInitialFocus] = false 时不抢焦点 (焦点在签上).
- * 指定了操作 ([focusAction]) 且那一行画了按钮时落在那颗按钮上. 一行在屏幕上露出一半以上时报 [onSeen] (每行一次); 右栏换成哪一行报 [onShown].
+ * 指定了操作 ([focusAction]) 且那一行画了按钮时落在那颗按钮上. 右栏换成哪一行报 [onShown]; 右栏说一条带点的 ([TvNoticeColumnItem.fresh])
+ * 说满 [TV_NOTICE_READ_AFTER] 报 [onRead].
  */
 @Composable
 internal fun TvNoticeColumns(
@@ -513,25 +482,20 @@ internal fun TvNoticeColumns(
     tabFocus: FocusRequester? = null,
     columnsFocus: TvNoticeColumnsFocus? = null,
     tabId: String = TvNoticeTab.NOTICES,
-    onSwitchTab: ((direction: Int) -> Boolean)? = null,
-    rightEnters: Boolean = true,
     bodyStartsAtEnd: Boolean = false,
     buttonsForSingleAction: Boolean = false,
-    onSeen: (key: String) -> Unit = {},
+    onRead: (key: String) -> Unit = {},
     onShown: (key: String) -> Unit = {},
 ) {
     val touch = LocalTvTouchInputEnabled.current
-    fun hasButtons(item: TvNoticeColumnItem) =
-        item.rowAction == null && (item.actions.size > 1 || ((touch || buttonsForSingleAction) && item.actions.isNotEmpty()))
+    fun hasButtons(item: TvNoticeColumnItem) = item.rowAction == null && item.actions.isNotEmpty()
     val initialKey = remember(opening) {
         items.firstOrNull { it.key == focusKey }?.key
             ?: items.getOrNull(focusIndex.coerceAtMost(items.lastIndex))?.key
             ?: items.firstOrNull()?.key
     }
     val now = remember(opening) { Clock.System.now().toEpochMilliseconds() }
-    // 已经报过看过的 (同一次打开里每行只报一次)
-    val reported = remember(opening) { HashSet<String>() }
-    // 指定了操作 (从别处处理一条、叠在列表上的弹窗关掉): 一打开焦点在右栏那颗按钮上, 不在行上. 只这一次: 之后回到这一行照常落在行上
+    // 指定了操作: 一打开焦点在右栏那颗按钮上, 不在行上. 只这一次: 之后回到这一行照常落在行上
     val focusActionIndex = remember(opening) {
         val item = items.firstOrNull { it.key == initialKey }
         val count = item?.actions?.size ?: 0
@@ -564,10 +528,19 @@ internal fun TvNoticeColumns(
     if (activeIndex >= 0) lastIndex[0] = activeIndex
     val currentOnShown by rememberUpdatedState(onShown)
     LaunchedEffect(active?.key) { active?.key?.let { currentOnShown(it) } }
+    // 右栏说一条没读过的说满 [TV_NOTICE_READ_AFTER]: 算读过 (同点开看了); 一按就换走的不算
+    val currentOnRead by rememberUpdatedState(onRead)
+    val reading = active?.takeIf { it.fresh }?.key
+    LaunchedEffect(reading) {
+        if (reading == null) return@LaunchedEffect
+        delay(TV_NOTICE_READ_AFTER)
+        currentOnRead(reading)
+    }
     val currentItems by rememberUpdatedState(items)
     SideEffect {
+        // 签上按下键: 落在第一行 (不回到刚才那一行, 同原生版)
         columnsFocus?.register(tabId) {
-            (activeKey ?: currentItems.firstOrNull()?.key)?.let { rowFocus[it] }?.let { runCatching { it.requestFocus() } }
+            currentItems.firstOrNull()?.key?.let { rowFocus[it] }?.let { runCatching { it.requestFocus() } }
         }
     }
     // 右栏说的那一行没了 (当场做完的操作、别处处理的): 焦点落到原来位置上的那一行
@@ -605,6 +578,7 @@ internal fun TvNoticeColumns(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
+                            val coverColumn = tvNoticeCoverColumn(items)
                             items.forEachIndexed { index, item ->
                                 val section = item.section
                                 if (section != null && (index == 0 || items[index - 1].section != section)) {
@@ -616,6 +590,7 @@ internal fun TvNoticeColumns(
                                     TvNoticeRow(
                                         item,
                                         now = now,
+                                        coverColumn = coverColumn,
                                         selected = (inPane || touch) && item.key == activeKey,
                                         focusLook = !focusLanded && !touch && item.key == initialKey,
                                         onClick = {
@@ -625,13 +600,12 @@ internal fun TvNoticeColumns(
                                                 rowAction != null -> onAction(index, item, rowAction)
                                                 buttons -> runCatching { firstAction.requestFocus() }
                                                 item.actions.isEmpty() -> if (canEnterBody(item)) runCatching { bodyFocus.requestFocus() }
-                                                else -> item.actions.singleOrNull()?.let { onAction(index, item, it) }
                                             }
                                         },
                                         modifier = Modifier
                                             .tvWindowInitialFocus(enabled = takeInitialFocus && item.key == initialKey && !actionFirst)
                                             .focusRequester(requester)
-                                            // 左右键换签; 右边没有签可换时右键进右栏 (同确定键); 第一行按上键到签上
+                                            // 右键进右栏 (同确定键), 左键不动; 第一行按上键到签上
                                             .focusProperties {
                                                 left = FocusRequester.Cancel
                                                 right = FocusRequester.Cancel
@@ -643,14 +617,11 @@ internal fun TvNoticeColumns(
                                                     Key.DirectionRight -> 1
                                                     else -> return@onPreviewKeyEvent false
                                                 }
-                                                if (event.type == KeyEventType.KeyDown) {
-                                                    val switched = onSwitchTab?.invoke(direction) == true
-                                                    if (!switched && direction > 0 && rightEnters) {
-                                                        activeKey = item.key
-                                                        when {
-                                                            buttons -> runCatching { firstAction.requestFocus() }
-                                                            canEnterBody(item) -> runCatching { bodyFocus.requestFocus() }
-                                                        }
+                                                if (event.type == KeyEventType.KeyDown && direction > 0) {
+                                                    activeKey = item.key
+                                                    when {
+                                                        buttons -> runCatching { firstAction.requestFocus() }
+                                                        canEnterBody(item) -> runCatching { bodyFocus.requestFocus() }
                                                     }
                                                 }
                                                 true
@@ -661,14 +632,6 @@ internal fun TvNoticeColumns(
                                                     activeKey = item.key
                                                     inPane = false
                                                     actionFocusPending = false
-                                                }
-                                            }
-                                            .onGloballyPositioned { coordinates ->
-                                                // 滚动区之外被裁掉的部分不算: 窗口里的边界已按各层父节点裁过
-                                                if (item.key in reported || coordinates.size.height <= 0) return@onGloballyPositioned
-                                                if (coordinates.boundsInWindow().height >= coordinates.size.height * TV_NOTICE_SEEN_FRACTION) {
-                                                    reported += item.key
-                                                    onSeen(item.key)
                                                 }
                                             },
                                     )
@@ -921,8 +884,8 @@ internal fun TvNoticeParagraphText(paragraph: TvNoticeParagraph, touch: Boolean)
 }
 
 /**
- * 右栏的操作按钮: 至多 [TV_NOTICE_ROW_ACTIONS] 颗横排 (主操作在左: 从列表按确定键进来先到最左一颗; 上下键交给 [onPage] 翻正文),
- * 更多的一颗一行竖着排. 左键从最左一颗 (竖排时每一颗) 回到 [rowFocus]; [initialFocusAction] 是一打开就有焦点的那一颗.
+ * 右栏的操作按钮: 排一行, 各占自己的宽 (主操作在左: 从列表按确定键进来先到最左一颗); 一行放不下时这一行左右滚, 焦点到哪颗滚到哪颗.
+ * 上下键交给 [onPage] 翻正文; 左键从最左一颗回到 [rowFocus]; [initialFocusAction] 是一打开就有焦点的那一颗.
  */
 @Composable
 private fun TvNoticeActions(
@@ -934,30 +897,11 @@ private fun TvNoticeActions(
     onAction: (TvNoticeAction) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val inRow = actions.size <= TV_NOTICE_ROW_ACTIONS
-    @Composable
-    fun buttonModifier(index: Int): Modifier = Modifier
-        .heightIn(min = TV_NOTICE_ACTION_HEIGHT)
-        .tvWindowInitialFocus(enabled = index == initialFocusAction)
-        .then(if (index == 0) Modifier.focusRequester(firstAction) else Modifier)
-        .focusProperties {
-            if (inRow) {
-                if (index == 0) left = rowFocus ?: FocusRequester.Cancel
-                if (index == actions.lastIndex) right = FocusRequester.Cancel
-                up = FocusRequester.Cancel
-                down = FocusRequester.Cancel
-            } else {
-                left = rowFocus ?: FocusRequester.Cancel
-                if (index == 0) up = FocusRequester.Cancel
-                if (index == actions.lastIndex) down = FocusRequester.Cancel
-                right = FocusRequester.Cancel
-            }
-        }
-        .testTag(TV_NOTICE_ACTION_TAG)
-    if (inRow) {
-        Row(
-            modifier.onPreviewKeyEvent { event ->
-                // 横排: 上下键翻正文, 焦点不动
+    Row(
+        modifier
+            .horizontalScroll(rememberScrollState())
+            .onPreviewKeyEvent { event ->
+                // 上下键翻正文, 焦点不动
                 val direction = when (event.key) {
                     Key.DirectionUp -> -1
                     Key.DirectionDown -> 1
@@ -966,23 +910,30 @@ private fun TvNoticeActions(
                 if (event.type == KeyEventType.KeyDown) onPage(direction)
                 true
             },
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            actions.forEachIndexed { index, action ->
-                TvNoticeActionButton(action.label, center = true, { onAction(action) }, Modifier.weight(1f, fill = false).then(buttonModifier(index)))
-            }
-        }
-    } else {
-        Column(modifier.width(TV_NOTICE_ACTIONS_COLUMN_WIDTH), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            actions.forEachIndexed { index, action ->
-                TvNoticeActionButton(action.label, center = false, { onAction(action) }, Modifier.fillMaxWidth().then(buttonModifier(index)))
-            }
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        actions.forEachIndexed { index, action ->
+            TvNoticeActionButton(
+                action.label,
+                { onAction(action) },
+                Modifier
+                    .heightIn(min = TV_NOTICE_ACTION_HEIGHT)
+                    .tvWindowInitialFocus(enabled = index == initialFocusAction)
+                    .then(if (index == 0) Modifier.focusRequester(firstAction) else Modifier)
+                    .focusProperties {
+                        if (index == 0) left = rowFocus ?: FocusRequester.Cancel
+                        if (index == actions.lastIndex) right = FocusRequester.Cancel
+                        up = FocusRequester.Cancel
+                        down = FocusRequester.Cancel
+                    }
+                    .testTag(TV_NOTICE_ACTION_TAG),
+            )
         }
     }
 }
 
 @Composable
-private fun TvNoticeActionButton(label: String, center: Boolean, onClick: () -> Unit, modifier: Modifier) {
+private fun TvNoticeActionButton(label: String, onClick: () -> Unit, modifier: Modifier) {
     AniFocusSelectableSurface(
         onClick = onClick,
         selected = false,
@@ -990,8 +941,8 @@ private fun TvNoticeActionButton(label: String, center: Boolean, onClick: () -> 
         modifier = modifier,
     ) {
         Box(
-            Modifier.padding(horizontal = if (center) 24.dp else 16.dp, vertical = 10.dp),
-            contentAlignment = if (center) Alignment.Center else Alignment.CenterStart,
+            Modifier.padding(horizontal = 24.dp, vertical = 10.dp),
+            contentAlignment = Alignment.Center,
         ) {
             Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
@@ -1157,6 +1108,7 @@ private fun TvNoticeSectionHeader(text: String, first: Boolean) {
 private fun TvNoticeRow(
     item: TvNoticeColumnItem,
     now: Long,
+    coverColumn: Boolean,
     selected: Boolean,
     focusLook: Boolean,
     onClick: () -> Unit,
@@ -1172,21 +1124,34 @@ private fun TvNoticeRow(
         unselectedContentColor = if (focusLook) aniFocusContentColor() else MaterialTheme.colorScheme.onSurface,
     ) {
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+            Modifier.fillMaxWidth().padding(start = if (coverColumn) TV_NOTICE_COVER_START else 14.dp, end = 14.dp, top = 10.dp, bottom = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(if (coverColumn) TV_NOTICE_COVER_GAP else 12.dp),
         ) {
-            Box(Modifier.size(TV_NOTICE_ICON_SIZE)) {
-                Icon(item.icon, contentDescription = item.iconLabel, Modifier.size(TV_NOTICE_ICON_SIZE))
-                // 没看过的: 图标右上角一个红点 (同侧边栏「通知」上的)
-                if (item.fresh) {
-                    Box(
-                        Modifier
-                            .align(Alignment.TopEnd)
-                            .offset(x = 3.dp, y = (-3).dp)
-                            .size(TV_NOTICE_DOT_SIZE)
-                            .background(MaterialTheme.colorScheme.error, CircleShape),
-                    )
+            // 左边那一栏: 说的是哪一部作品的画它的封面 (竖的框, 取不到时还是类别图标), 别的画类别图标;
+            // 列表里有带封面的行时这一栏都是封面那么宽 (字的起点对齐), 离行的左边、离文字收一点 (见 TV_NOTICE_COVER_START)
+            val cover = item.cover
+            Box(Modifier.width(if (coverColumn) TV_NOTICE_COVER_WIDTH else TV_NOTICE_ICON_SIZE), contentAlignment = Alignment.Center) {
+                Box(
+                    if (cover != null) Modifier.size(TV_NOTICE_COVER_WIDTH, TV_NOTICE_COVER_HEIGHT) else Modifier.size(TV_NOTICE_ICON_SIZE),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    val icon = @Composable { Icon(item.icon, contentDescription = item.iconLabel, Modifier.size(TV_NOTICE_ICON_SIZE)) }
+                    if (cover != null) {
+                        TvNoticeCoverBox(cover, Modifier.fillMaxSize(), RoundedCornerShape(TV_NOTICE_COVER_CORNER), icon)
+                    } else {
+                        icon()
+                    }
+                    // 没读过的: 封面 (图标) 右上角一个红点
+                    if (item.fresh) {
+                        Box(
+                            Modifier
+                                .align(Alignment.TopEnd)
+                                .offset(x = 3.dp, y = (-3).dp)
+                                .size(TV_NOTICE_DOT_SIZE)
+                                .background(MaterialTheme.colorScheme.error, CircleShape),
+                        )
+                    }
                 }
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -1301,8 +1266,8 @@ internal val TV_NOTICE_DOT_SIZE = 8.dp
 /** 一打开焦点要落的那一行先画成聚焦样子的最长时间 (焦点一般一两帧就送到; 被别处拿走了也不一直这么画). */
 internal val TV_NOTICE_PENDING_FOCUS_LOOK = 600.milliseconds
 
-/** 一行露出多少算显示到屏幕上了 (算看过). */
-internal const val TV_NOTICE_SEEN_FRACTION = 0.5f
+/** 右栏说一条通知说满多久算读过 (同点开看了; 按着方向键一行行划过去的不算). */
+internal val TV_NOTICE_READ_AFTER = 1.seconds
 
 /** 行里的时间与摘要那几个字相对行的内容色的不透明度. */
 internal const val TV_NOTICE_TIME_ALPHA = 0.75f
@@ -1332,10 +1297,6 @@ internal const val TV_NOTICE_DIVIDER_ALPHA = 0.14f
 internal const val TV_NOTICE_CHIP_ALPHA = 0.10f
 internal const val TV_NOTICE_ACCENT_CHIP_ALPHA = 0.22f
 internal val TV_NOTICE_DIVIDER_WIDTH = 1.dp
-
-/** 至多几颗操作横排; 竖排时一颗的宽. */
-internal const val TV_NOTICE_ROW_ACTIONS = 2
-internal val TV_NOTICE_ACTIONS_COLUMN_WIDTH = 260.dp
 
 /** 右栏一颗操作的高. */
 internal val TV_NOTICE_ACTION_HEIGHT = 40.dp

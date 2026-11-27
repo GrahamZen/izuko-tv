@@ -43,9 +43,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * 通知弹窗顶上的签 ([TvNoticeDialogBody] / [TvNoticeTabRow]) 与别的签里的两栏 ([TvNoticeColumns]): 签不能聚焦, 列表里左右键换签,
- * 列表第一行按上键到刷新、刷新上按下键回到那一行; 只有一个操作也画按钮的签里按确定键进右栏, 正文一打开停在末尾, 横排按钮上按上下键翻正文、焦点不动,
- * 按了当场做完的操作焦点留在按钮上.
+ * 通知弹窗顶上的签 ([TvNoticeDialogBody] / [TvNoticeTabRow]) 与别的签里的两栏 ([TvNoticeColumns]), 按键同电视上的原生版: 签能聚焦、聚焦即选中,
+ * 签上左右键换签、最右的签再往右到刷新、刷新上按左回到选中的签, 签与刷新上按下键进这个签的第一行; 列表第一行按上键到选中的签, 列表里左键不动、不换签;
+ * 按确定键进右栏, 正文一打开停在末尾, 横排按钮上按上下键翻正文、焦点不动, 按了当场做完的操作焦点留在按钮上.
  */
 class TvNoticeTabsNavigationTest {
     private val host = TvNativeTestHost()
@@ -100,7 +100,7 @@ class TvNoticeTabsNavigationTest {
                             dialogState,
                             tabs = tabs,
                             onAction = { _, _, action -> done += action.label },
-                            onSeen = {},
+                            onRead = {},
                             // 同 TvNotices.selectTab
                             onSelectTab = { id, intoList, focusKey ->
                                 dialogState = TvNoticeDialogState(dialogState.fresh, focusKey = focusKey, focusIndex = 0, tab = id, focusOnTabs = !intoList)
@@ -120,20 +120,24 @@ class TvNoticeTabsNavigationTest {
     fun tearDown() = host.close()
 
     @Test
-    fun `up from the first row goes to refresh and the tabs never take focus`() {
+    fun `up from the first row goes to the selected tab and the tabs switch as focus moves`() {
         press(KeyEvent.KEYCODE_DPAD_DOWN, expect = SECOND_NOTICE)
         press(KeyEvent.KEYCODE_DPAD_UP, expect = FIRST_NOTICE)
-        press(KeyEvent.KEYCODE_DPAD_UP, expect = REFRESH)
-        assertEquals(-1, host.onMain { focusedTab() }, "签不能聚焦")
-        host.press(KeyEvent.KEYCODE_DPAD_LEFT)
-        host.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+        pressToTab(KeyEvent.KEYCODE_DPAD_UP, 0)
         host.press(KeyEvent.KEYCODE_DPAD_UP)
-        assertEquals(REFRESH, host.onMain { focusedText() }, "刷新上左右、上键不动")
-        assertEquals(TvNoticeTab.NOTICES, host.onMain { dialogState.tab }, "不换签")
-        press(KeyEvent.KEYCODE_DPAD_DOWN, expect = FIRST_NOTICE)
-        press(KeyEvent.KEYCODE_DPAD_RIGHT, expect = OPEN)
-        press(KeyEvent.KEYCODE_DPAD_UP, expect = REFRESH)
+        host.press(KeyEvent.KEYCODE_DPAD_LEFT)
+        assertEquals(0, host.onMain { focusedTab() }, "签上按上、最左的签按左不动")
+        // 聚焦即选中: 两栏换成第二个签的, 焦点留在签上
+        pressToTab(KeyEvent.KEYCODE_DPAD_RIGHT, 1)
+        host.waitUntil("换到第二个签") { dialogState.tab == TAB && shows(OPEN) }
+        assertEquals(1, host.onMain { focusedTab() })
+        press(KeyEvent.KEYCODE_DPAD_RIGHT, expect = REFRESH)
+        pressToTab(KeyEvent.KEYCODE_DPAD_LEFT, 1)
         press(KeyEvent.KEYCODE_DPAD_DOWN, expect = OPEN)
+        pressToTab(KeyEvent.KEYCODE_DPAD_UP, 1)
+        pressToTab(KeyEvent.KEYCODE_DPAD_LEFT, 0)
+        host.waitUntil("换回第一个签") { dialogState.tab == TvNoticeTab.NOTICES && shows(FIRST_NOTICE) }
+        press(KeyEvent.KEYCODE_DPAD_DOWN, expect = FIRST_NOTICE)
         assertEquals(emptyList(), host.onMain { done.toList() })
     }
 
@@ -162,27 +166,28 @@ class TvNoticeTabsNavigationTest {
     }
 
     @Test
-    fun `left and right in the list switch tabs and land on the row last seen there`() {
+    fun `left and right in the list do not switch tabs and right enters the pane`() {
         press(KeyEvent.KEYCODE_DPAD_DOWN, expect = SECOND_NOTICE)
-        press(KeyEvent.KEYCODE_DPAD_RIGHT, expect = OPEN)
-        assertEquals(TAB, host.onMain { dialogState.tab }, "换到第二个签")
-        assertEquals(-1, host.onMain { focusedTab() }, "焦点在列表里, 不停在签上")
-        press(KeyEvent.KEYCODE_DPAD_RIGHT, expect = INSTALL)
-        assertEquals(TAB, host.onMain { dialogState.tab }, "最右的签按右键不绕回, 进右栏 (同确定键)")
-        assertEquals(emptyList(), host.onMain { done.toList() }, "只是进右栏, 不做操作")
-        press(KeyEvent.KEYCODE_BACK, expect = OPEN)
-        press(KeyEvent.KEYCODE_DPAD_DOWN, expect = CLOSED)
-        press(KeyEvent.KEYCODE_DPAD_LEFT, expect = SECOND_NOTICE)
-        assertEquals(TvNoticeTab.NOTICES, host.onMain { dialogState.tab })
         host.press(KeyEvent.KEYCODE_DPAD_LEFT)
-        assertEquals(SECOND_NOTICE, host.onMain { focusedText() }, "最左的签再按左不动")
-        press(KeyEvent.KEYCODE_DPAD_RIGHT, expect = CLOSED)
-        assertEquals(emptyList(), host.onMain { done.toList() })
+        host.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+        assertEquals(SECOND_NOTICE, host.onMain { focusedText() }, "没有操作的一行: 左右键都不动")
+        assertEquals(TvNoticeTab.NOTICES, host.onMain { dialogState.tab }, "列表里不换签")
+        host.onMain { dialogState = TvNoticeDialogState(fresh = emptySet(), focusKey = OPEN, focusIndex = 0, tab = TAB) }
+        host.waitUntil("焦点在第一张单 (现在在 ${focusedText()})") { focusedText() == OPEN }
+        press(KeyEvent.KEYCODE_DPAD_RIGHT, expect = INSTALL)
+        assertEquals(emptyList(), host.onMain { done.toList() }, "右键只是进右栏, 不做操作")
+        // 右栏按返回回到那一行
+        press(KeyEvent.KEYCODE_BACK, expect = OPEN)
+        host.press(KeyEvent.KEYCODE_DPAD_LEFT)
+        assertEquals(OPEN, host.onMain { focusedText() }, "列表里左键不动")
+        assertEquals(TAB, host.onMain { dialogState.tab })
     }
 
     @Test
     fun `ok on refresh refreshes`() {
-        press(KeyEvent.KEYCODE_DPAD_UP, expect = REFRESH)
+        pressToTab(KeyEvent.KEYCODE_DPAD_UP, 0)
+        pressToTab(KeyEvent.KEYCODE_DPAD_RIGHT, 1)
+        press(KeyEvent.KEYCODE_DPAD_RIGHT, expect = REFRESH)
         host.press(KeyEvent.KEYCODE_DPAD_CENTER)
         host.waitUntil("按确定键刷新") { refreshes == 1 }
         assertEquals(REFRESH, host.onMain { focusedText() })
@@ -192,12 +197,16 @@ class TvNoticeTabsNavigationTest {
     fun `switching to a tab still loading keeps the old columns until its rows arrive`() {
         host.onMain { ticketsLoaded = false }
         SystemClock.sleep(SETTLE_MILLIS)
-        host.press(KeyEvent.KEYCODE_DPAD_RIGHT)
+        pressToTab(KeyEvent.KEYCODE_DPAD_UP, 0)
+        pressToTab(KeyEvent.KEYCODE_DPAD_RIGHT, 1)
         host.waitUntil("换到第二个签") { dialogState.tab == TAB }
         SystemClock.sleep(SETTLE_MILLIS)
         assertTrue(host.onMain { shows(FIRST_NOTICE) && !shows(OPEN) }, "新签的行还没取到: 两栏留着旧签的, 不空着")
+        host.press(KeyEvent.KEYCODE_DPAD_DOWN)
+        assertEquals(1, host.onMain { focusedTab() }, "还没取到时按下键不进旧签的列表")
         host.onMain { ticketsLoaded = true }
-        host.waitUntil("取到了换成新签的两栏, 焦点进它的列表 (现在在 ${focusedText()})") { shows(OPEN) && focusedText() == OPEN }
+        host.waitUntil("取到了换成新签的两栏, 焦点留在签上") { shows(OPEN) && focusedTab() == 1 }
+        press(KeyEvent.KEYCODE_DPAD_DOWN, expect = OPEN)
     }
 
     @Test
@@ -259,6 +268,12 @@ class TvNoticeTabsNavigationTest {
     private fun press(keyCode: Int, expect: String) {
         host.press(keyCode)
         host.waitUntil("按键后焦点在 $expect (现在在 ${focusedText()})") { focusedText() == expect }
+    }
+
+    /** 按 [keyCode] 后焦点到第 [index] 个签上 */
+    private fun pressToTab(keyCode: Int, index: Int) {
+        host.press(keyCode)
+        host.waitUntil("按键后焦点在第 $index 个签上 (现在 ${focusedTab()})") { focusedTab() == index }
     }
 
     /** 画着写 [text] 的字; 在主线程上调 */

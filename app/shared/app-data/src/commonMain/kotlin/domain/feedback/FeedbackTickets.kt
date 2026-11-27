@@ -387,14 +387,14 @@ class FeedbackTickets(
         return deleted
     }
 
-    /** 看过了 (控制台的「反馈」页): 清掉全部未读, 这些单的通知也算看过 (见 [markReadWhere]). */
+    /** 看过了 (控制台的「反馈」页): 清掉全部未读, 这些单的通知也算读过 (见 [markReadWhere]). */
     suspend fun markRead() = markReadWhere { true }
 
-    /** 看过了这一张 (电视「我的反馈」的右栏写过它): 只清它的未读, 它的通知也算看过. */
+    /** 看过了这一张 (电视「我的反馈」的右栏写过它): 只清它的未读, 它的通知也算读过. */
     suspend fun markRead(kind: FeedbackKind, issue: Int) = markReadWhere { it.kind == kind && it.issue == issue }
 
     /**
-     * 清掉 [which] 里未读的单, 同时把它们的通知 ([FeedbackNotices]) 标成看过: 通知在电视「我的反馈」签里看, 在哪一边看过这张单,
+     * 清掉 [which] 里未读的单, 同时把它们的通知 ([FeedbackNotices]) 标成读过 (也就看过): 通知在电视「我的反馈」签里看, 在哪一边看过这张单,
      * 签上与侧边栏「通知」的红点就不再为它亮, 也不再为它弹气泡.
      */
     private suspend fun markReadWhere(which: (FeedbackRecord) -> Boolean) {
@@ -404,7 +404,7 @@ class FeedbackTickets(
             val hit: (FeedbackRecord) -> Boolean = { it.unread && which(it) }
             if (items.none(hit)) this else copy(items = items.map { if (hit(it)) it.copy(unread = false) else it })
         }
-        notices?.markSeen(read.map(FeedbackNotices::noticeOf))
+        notices?.markRead(read.map(FeedbackNotices::noticeOf))
     }
 
     /** 用户点「检查回复」: 一分钟内点多次只查一次. 查到了 (或刚查过) 回 `true`. */

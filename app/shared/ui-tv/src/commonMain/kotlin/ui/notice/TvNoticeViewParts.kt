@@ -30,6 +30,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.leanback.widget.BaseGridView
 import androidx.leanback.widget.VerticalGridView
 import androidx.recyclerview.widget.RecyclerView
+import com.github.panpf.sketch.Sketch
 import me.him188.ani.app.ui.foundation.tv.nativeview.TV_NATIVE_UNSPECIFIED
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeBubble
 import me.him188.ani.app.ui.foundation.tv.nativeview.TvNativeBubbleView
@@ -53,83 +54,10 @@ import me.him188.ani.app.ui.foundation.tv.nativeview.tvNativeWithAlpha
 import kotlin.math.max
 import kotlin.math.min
 
-// 通知弹窗 (原生, 见 TvNoticeView) 的各个小视图: 签、刷新、列表行、右栏与正文块; 按钮、二维码、气泡与进度条用公共的原生部件
+// 通知弹窗 (原生, 见 TvNoticeView) 的各个小视图: 刷新、列表行、右栏与正文块; 按钮与操作那一排、二维码、气泡与进度条用公共的原生部件
 // (foundation/tv/nativeview). 尺寸与配色都从 TvNoticeStyle 取, 自己不记数值.
 
 // ---- 顶栏 ----
-
-/**
- * 顶上的一个签: 字 (与红点) 与下面一条短横线. 没选中的字小、淡; 选中的字大、加粗, 下面一条主色横线. 只显示选中的是哪个, 焦点不落上来
- * (电视上在列表里左右键换签); 触屏上点它换签.
- */
-@SuppressLint("ViewConstructor")
-internal class TvNoticeTabView(context: Context, private var style: TvNoticeStyle) : ViewGroup(context) {
-    var tabId: String = ""
-        private set
-    private val label = tvNativeText(context, style.tab)
-    private var fresh = false
-    private var selectedTab = false
-    private var emphasized: Boolean? = null
-    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val rect = RectF()
-
-    init {
-        setWillNotDraw(false)
-        clipChildren = false
-        isFocusable = false
-        isClickable = true
-        addView(label)
-    }
-
-    fun bind(id: String, text: String, fresh: Boolean, selected: Boolean, style: TvNoticeStyle) {
-        if (this.style != style) {
-            this.style = style
-            emphasized = null
-        }
-        tabId = id
-        label.setTextIfChanged(text)
-        this.fresh = fresh
-        selectedTab = selected
-        if (emphasized != selected) {
-            emphasized = selected
-            (if (selected) style.tabSelected else style.tab).applyTo(label)
-            requestLayout()
-        }
-        label.setTextColor(if (selected) style.panel.onSurface else style.panel.onSurfaceVariant)
-        invalidate()
-    }
-
-    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val s = style
-        label.measure(TV_NATIVE_UNSPECIFIED, TV_NATIVE_UNSPECIFIED)
-        val width = max(label.measuredWidth, s.tabUnderlineWidthPx) + s.tabPaddingPx * 2
-        val height = s.tabPaddingPx * 2 + label.measuredHeight + label.fontOverflowTopPx * 2 + s.tabUnderlineGapPx + s.tabUnderlineHeightPx
-        setMeasuredDimension(width, height)
-    }
-
-    override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
-        label.tvNativeLayoutAt((r - l - label.measuredWidth) / 2, style.tabPaddingPx + label.fontOverflowTopPx)
-    }
-
-    override fun onDraw(canvas: Canvas) {
-        val s = style
-        if (selectedTab) {
-            val top = (label.bottom + label.fontOverflowTopPx + s.tabUnderlineGapPx).toFloat()
-            val left = (width - s.tabUnderlineWidthPx) / 2f
-            rect.set(left, top, left + s.tabUnderlineWidthPx, top + s.tabUnderlineHeightPx)
-            paint.color = s.panel.primary
-            canvas.drawRoundRect(rect, s.tabUnderlineCornerPx, s.tabUnderlineCornerPx, paint)
-        }
-        if (fresh && !selectedTab) {
-            // 字的右上角往右挪出去一点 (同 Compose 版的 offset)
-            val radius = s.tabDotPx / 2f
-            paint.color = s.panel.error
-            canvas.drawCircle(label.right - s.tabDotPx + s.tabDotOffsetPx + radius, label.top + radius, radius, paint)
-        }
-    }
-
-    override fun hasOverlappingRendering(): Boolean = false
-}
 
 /**
  * 顶栏右边的刷新: 图标 + 字, 不铺底, 聚焦时图标与字一下变主色 (触屏上不画), 冷却中变淡, 正在刷新时图标转圈.
@@ -252,24 +180,29 @@ internal sealed class TvNoticeListEntry(val id: String)
 
 internal class TvNoticeSectionEntry(val text: String, val first: Boolean) : TvNoticeListEntry("section:$text")
 
-/** 一行; [index] 是它在这个签的行里的位置 (交给操作, 见 TvNoticeViewListener.onAction). */
-internal class TvNoticeRowEntry(val row: TvNoticeViewRow, val index: Int) : TvNoticeListEntry(row.item.key)
+/**
+ * 一行; [index] 是它在这个签的行里的位置 (交给操作, 见 TvNoticeViewListener.onAction). [coverColumn] = 这个列表里有带封面的行
+ * (见 [tvNoticeCoverColumn]).
+ */
+internal class TvNoticeRowEntry(val row: TvNoticeViewRow, val index: Int, val coverColumn: Boolean = false) : TvNoticeListEntry(row.item.key)
 
 /** [rows] 排成列表项: 与上一行不同的段在行前面写一行小标题. */
 internal fun tvNoticeListEntries(rows: List<TvNoticeViewRow>): List<TvNoticeListEntry> {
     val entries = ArrayList<TvNoticeListEntry>(rows.size + 2)
+    val coverColumn = tvNoticeCoverColumn(rows.map { it.item })
     rows.forEachIndexed { index, row ->
         val section = row.item.section
         if (section != null && (index == 0 || rows[index - 1].item.section != section)) {
             entries += TvNoticeSectionEntry(section, first = entries.isEmpty())
         }
-        entries += TvNoticeRowEntry(row, index)
+        entries += TvNoticeRowEntry(row, index, coverColumn)
     }
     return entries
 }
 
 /**
- * 列表的一行: 类别图标 (没看过的右上角一个红点)、标题与时间、下面一行摘要. 自己画圆角底与图标, 不嵌套布局.
+ * 列表的一行: 左边一栏画类别图标, 说的是哪一部作品的画它的封面 ([TvNoticeRowCover]; 取到之前、取不到时还是图标), 没看过的在这一栏
+ * 右上角画一个红点; 右边标题与时间、下面一行摘要. 自己画圆角底与图标, 不嵌套布局.
  * 底色: 聚焦是实底 (触屏上不画), 右栏说的是它 ([selectedLook]) 是 secondaryContainer, 其余是面板里的淡底.
  */
 @SuppressLint("ViewConstructor")
@@ -281,6 +214,14 @@ internal class TvNoticeRowView(context: Context, private var style: TvNoticeStyl
     private val summary = tvNativeText(context, style.rowSummary)
     private var icon: Bitmap? = null
     private var fresh = false
+    private var coverColumn = false
+    private var coverShown = false
+    private val cover = TvNoticeRowCover(context, style.rowCoverCornerPx) { shown ->
+        if (coverShown != shown) {
+            coverShown = shown
+            invalidate()
+        }
+    }
     private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val iconPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val rect = RectF()
@@ -309,12 +250,13 @@ internal class TvNoticeRowView(context: Context, private var style: TvNoticeStyl
         isFocusable = true
         isFocusableInTouchMode = false
         isClickable = true
+        addView(cover)
         addView(title)
         addView(time)
         addView(summary)
     }
 
-    fun bind(entry: TvNoticeRowEntry, icon: Bitmap?, style: TvNoticeStyle) {
+    fun bind(entry: TvNoticeRowEntry, icon: Bitmap?, style: TvNoticeStyle, sketch: Sketch? = null) {
         if (this.style != style) {
             this.style = style
             style.rowTitle.applyTo(title)
@@ -325,6 +267,10 @@ internal class TvNoticeRowView(context: Context, private var style: TvNoticeStyl
         val item = entry.row.item
         this.icon = icon
         fresh = item.fresh
+        coverColumn = entry.coverColumn
+        cover.cornerPx = style.rowCoverCornerPx
+        val image = item.cover
+        if (image != null && sketch != null) cover.show(image, sketch, style.rowCoverWidthPx, style.rowCoverHeightPx) else cover.clear()
         contentDescription = item.iconLabel
         title.setTextIfChanged(item.title)
         val timeText = entry.row.time.orEmpty()
@@ -335,6 +281,17 @@ internal class TvNoticeRowView(context: Context, private var style: TvNoticeStyl
         applyColors()
         requestLayout()
     }
+
+    /** 回收进池子: 撤掉在取的封面 */
+    fun recycle() = cover.clear()
+
+    /** 左边那一栏的宽: 列表里有带封面的行时是封面的宽, 否则是图标的宽 */
+    private fun leadingPx(): Int = if (coverColumn) style.rowCoverWidthPx else style.rowIconPx
+
+    /** 左边那一栏离行的左边、离文字多远: 有封面那一栏时收一点 (见 TV_NOTICE_COVER_START) */
+    private fun leadingStartPx(): Int = if (coverColumn) style.rowCoverStartPx else style.rowPaddingHPx
+
+    private fun leadingGapPx(): Int = if (coverColumn) style.rowCoverGapPx else style.rowIconGapPx
 
     private fun applyColors() {
         val s = style
@@ -378,7 +335,8 @@ internal class TvNoticeRowView(context: Context, private var style: TvNoticeStyl
         title.forceLayout()
         time.forceLayout()
         summary.forceLayout()
-        val textWidth = (width - s.rowPaddingHPx * 2 - s.rowIconPx - s.rowIconGapPx).coerceAtLeast(0)
+        val textWidth = (width - leadingStartPx() - leadingPx() - leadingGapPx() - s.rowPaddingHPx).coerceAtLeast(0)
+        if (cover.visibility != GONE) cover.measure(tvNativeExactly(s.rowCoverWidthPx), tvNativeExactly(s.rowCoverHeightPx))
         var timeWidth = 0
         if (time.visibility != GONE) {
             time.measure(TV_NATIVE_UNSPECIFIED, TV_NATIVE_UNSPECIFIED)
@@ -386,7 +344,7 @@ internal class TvNoticeRowView(context: Context, private var style: TvNoticeStyl
         }
         title.measureWithin(textWidth - timeWidth)
         if (summary.visibility != GONE) summary.measureWithin(textWidth)
-        val height = max(textBlockHeight(), s.rowIconPx) + s.rowPaddingVPx * 2
+        val height = max(textBlockHeight(), if (coverColumn) s.rowCoverHeightPx else s.rowIconPx) + s.rowPaddingVPx * 2
         setMeasuredDimension(width, height)
     }
 
@@ -400,7 +358,11 @@ internal class TvNoticeRowView(context: Context, private var style: TvNoticeStyl
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
         val s = style
         val w = r - l
-        val x = s.rowPaddingHPx + s.rowIconPx + s.rowIconGapPx
+        val x = leadingStartPx() + leadingPx() + leadingGapPx()
+        if (cover.visibility != GONE) {
+            val coverTop = (b - t - s.rowCoverHeightPx) / 2
+            cover.layout(leadingStartPx(), coverTop, leadingStartPx() + s.rowCoverWidthPx, coverTop + s.rowCoverHeightPx)
+        }
         val top = (b - t - textBlockHeight()) / 2
         val line = firstLineHeight()
         title.tvNativeLayoutAt(x, top + (line - title.measuredHeight) / 2)
@@ -412,18 +374,25 @@ internal class TvNoticeRowView(context: Context, private var style: TvNoticeStyl
         val s = style
         canvas.drawTvNativePlate(rect, width, height, s.rowCornerPx, bgColor, bgPaint)
         if (isPressed && s.panel.touch) canvas.drawTvNativePlate(rect, width, height, s.rowCornerPx, s.panel.pressedOverlay, bgPaint)
-        val iconTop = (height - s.rowIconPx) / 2f
-        canvas.drawTvNativeIcon(icon, s.rowPaddingHPx.toFloat(), iconTop, s.rowIconPx, contentColor, iconPaint, iconRect)
-        if (fresh) {
-            val radius = s.dotPx / 2f
-            bgPaint.color = s.panel.error
-            canvas.drawCircle(
-                s.rowPaddingHPx + s.rowIconPx - s.dotPx + s.dotOffsetPx + radius,
-                iconTop - s.dotOffsetPx + radius,
-                radius,
-                bgPaint,
-            )
+        // 封面取到了就不画图标 (取到之前、取不到时照旧画), 图标在左边那一栏里居中
+        if (!coverShown) {
+            val iconLeft = leadingStartPx() + (leadingPx() - s.rowIconPx) / 2f
+            canvas.drawTvNativeIcon(icon, iconLeft, (height - s.rowIconPx) / 2f, s.rowIconPx, contentColor, iconPaint, iconRect)
         }
+    }
+
+    /** 红点画在子视图 (封面) 上面: 画着封面时在封面右上角, 画着图标时在图标右上角. */
+    override fun dispatchDraw(canvas: Canvas) {
+        super.dispatchDraw(canvas)
+        if (!fresh) return
+        val s = style
+        val boxWidth = if (coverShown) s.rowCoverWidthPx else s.rowIconPx
+        val boxHeight = if (coverShown) s.rowCoverHeightPx else s.rowIconPx
+        val left = leadingStartPx() + (leadingPx() - boxWidth) / 2f
+        val top = (height - boxHeight) / 2f
+        val radius = s.dotPx / 2f
+        bgPaint.color = s.panel.error
+        canvas.drawCircle(left + boxWidth - s.dotPx + s.dotOffsetPx + radius, top - s.dotOffsetPx + radius, radius, bgPaint)
     }
 
     override fun hasOverlappingRendering(): Boolean = false
@@ -453,6 +422,9 @@ internal class TvNoticeSectionView(context: Context, private var style: TvNotice
 internal class TvNoticeRowAdapter(var style: TvNoticeStyle) :
     TvNativeKeyedListAdapter<TvNoticeListEntry, RecyclerView.ViewHolder>(TvNativeKeyedDiff({ it.id }, ::sameTvNoticeEntry)) {
     var icons: Map<ImageVector, Bitmap> = emptyMap()
+
+    /** 取行左边的封面用; null = 不画封面 */
+    var sketch: Sketch? = null
     var onRowFocused: ((TvNoticeRowEntry) -> Unit)? = null
     var onRowClicked: ((TvNoticeRowEntry) -> Unit)? = null
 
@@ -499,11 +471,15 @@ internal class TvNoticeRowAdapter(var style: TvNoticeStyle) :
             is TvNoticeSectionEntry -> (holder.itemView as TvNoticeSectionView).bind(entry, style)
             is TvNoticeRowEntry -> {
                 val view = holder.itemView as TvNoticeRowView
-                view.bind(entry, icons[entry.row.item.icon], style)
+                view.bind(entry, icons[entry.row.item.icon], style, sketch)
                 view.selectedLook = entry.id == selectedKey
                 view.covered = covered
             }
         }
+    }
+
+    override fun onViewRecycled(holder: RecyclerView.ViewHolder) {
+        (holder.itemView as? TvNoticeRowView)?.recycle()
     }
 
     /** 从缓存里拿回来的行不重新绑定: 挂回列表时按此刻的标记对一次. */
@@ -528,14 +504,15 @@ internal class TvNoticeRowAdapter(var style: TvNoticeStyle) :
     }
 }
 
-/** 列表项的内容没变 (差异更新时不重新绑定): 段的小标题比是不是第一项, 行比列表上画的那几样. */
+/** 列表项的内容没变 (差异更新时不重新绑定): 段的小标题比是不是第一项, 行比列表上画的那几样 (含封面与有没有封面那一栏). */
 private fun sameTvNoticeEntry(oldItem: TvNoticeListEntry, newItem: TvNoticeListEntry): Boolean = when {
     oldItem is TvNoticeSectionEntry && newItem is TvNoticeSectionEntry -> oldItem.first == newItem.first
     oldItem is TvNoticeRowEntry && newItem is TvNoticeRowEntry -> {
         val a = oldItem.row
         val b = newItem.row
         a.time == b.time && a.item.title == b.item.title && a.item.summary == b.item.summary &&
-            a.item.fresh == b.item.fresh && a.item.icon === b.item.icon && a.item.iconLabel == b.item.iconLabel
+            a.item.fresh == b.item.fresh && a.item.icon === b.item.icon && a.item.iconLabel == b.item.iconLabel &&
+            a.item.cover == b.item.cover && oldItem.coverColumn == newItem.coverColumn
     }
 
     else -> false
@@ -544,9 +521,13 @@ private fun sameTvNoticeEntry(oldItem: TvNoticeListEntry, newItem: TvNoticeListE
 /**
  * 一个签的列表: 聚焦行停在离顶 1/3 处, 两头贴边 (短的不滚). 比两栏的高长时被截住的那一头渐隐 —— leanback 的竖列表没有渐隐,
  * 借 View 自带的渐隐边, 强度按头尾那一行露没露全自己算 (同选源面板).
+ *
+ * 行只画在列表自己的框里 (见 [draw]): 弹窗那一层不裁子视图, 滚出框的行在这里裁掉, 不压到上面的签与刷新按钮上.
+ * leanback 的列表默认跳过自己那一遍绘制 (willNotDraw), 渐隐边与这里的裁剪都在那一遍里, 所以打开.
  */
 internal class TvNoticeGrid(context: Context) : VerticalGridView(context) {
     init {
+        setWillNotDraw(false)
         clipToPadding = false
         isFocusable = false
         itemAnimator = null
@@ -556,6 +537,13 @@ internal class TvNoticeGrid(context: Context) : VerticalGridView(context) {
         setSmoothScrollByBehavior(TvNativeSpringScroll())
         isVerticalFadingEdgeEnabled = true
         overScrollMode = OVER_SCROLL_NEVER
+    }
+
+    override fun draw(canvas: Canvas) {
+        val save = canvas.save()
+        canvas.clipRect(0, 0, width, height)
+        super.draw(canvas)
+        canvas.restoreToCount(save)
     }
 
     override fun getTopFadingEdgeStrength(): Float {

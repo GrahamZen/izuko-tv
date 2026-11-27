@@ -41,8 +41,8 @@ import kotlin.time.Duration.Companion.minutes
 /** 自动检查更新多久看一眼 (真查另有一小时的门槛). */
 private val UPDATE_CHECK_LOOK_INTERVAL = 10.minutes
 
-/** 本次发布在 GitHub 上的页面; 详情弹窗底部那颗按钮跳这里. */
-private fun releaseNotesUrl(version: String) =
+/** 本次发布在 GitHub 上的页面; 详情弹窗底部那颗按钮跳这里, 电视通知右栏的「查看详情」也是它. */
+fun releaseNotesUrl(version: String) =
     "https://github.com/$FORK_OWNER/$FORK_REPO/releases/tag/v$version"
 
 /**

@@ -475,6 +475,9 @@ class Changelog(
     /** 条目正文, 不含小节标题 —— 更新气泡上只列前几条, 标题混在里面反而看不出哪条是更新内容. */
     val changes: String = cleanReleaseBody(changes, keepSectionHeadings = false, keepPreamble = false)
 
+    /** 「本次更新」以后的全部, 保留小节标题 (如「已知问题」), 不含前言: 电视通知右栏照它写完整的更新内容. */
+    val fullChanges: String = cleanReleaseBody(changes, keepSectionHeadings = true, keepPreamble = false)
+
     /**
      * 这一版的 note 里带加群那一段 (见 `ci-helper/release-template.md`).
      *

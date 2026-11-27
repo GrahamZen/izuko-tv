@@ -44,7 +44,7 @@ import org.koin.mp.KoinPlatform
 import kotlin.concurrent.Volatile
 
 /**
- * 列出来的一条: 种类认得出、标题取得到的. 列表里写标题与 [summary]; 右栏写 [detail] (没有时写标题与摘要), 处理它的操作是 [actions].
+ * 列出来的一条: 种类认得出、标题取得到的. 列表里写标题与 [summary], 左边画 [cover] (没有的画类别图标); 右栏写 [detail] (没有时写标题与摘要), 处理它的操作是 [actions].
  */
 @Immutable
 class TvShownNotice(
@@ -54,21 +54,28 @@ class TvShownNotice(
     val detail: TvNoticeDetail? = null,
     val actions: List<TvNoticeAction> = emptyList(),
     val summary: String? = null,
+    val cover: TvNoticeCover? = null,
 ) {
     val notice: Notice get() = entry.notice
     val key: String get() = entry.notice.key
 
     /** 在列表里按确定键直接做的那一个 (只有一个操作时); 几个时进右栏挑, 没有时只是告知 */
     val destination: TvNoticeDestination? get() = actions.singleOrNull()?.destination
+
+    /** 横幅上短按直接做的那一个: 第一个操作, 它给了 [TvNoticeAction.quick] 时; 没有时短按打开通知弹窗 */
+    val quick: TvNoticeAction? get() = tvNoticeQuickAction(actions)
 }
+
+/** [actions] 里横幅上短按直接做的那一个 (见 [TvNoticeAction.quick]): 只看第一个, 它不能一按就做时没有 (不往后找). */
+internal fun tvNoticeQuickAction(actions: List<TvNoticeAction>): TvNoticeAction? = actions.firstOrNull()?.takeIf { it.quick != null }
 
 /**
  * 开着的通知弹窗.
  *
- * @param fresh 打开时还是新的那几条 (前面画点); 打开就算看过了, 这里留着打开那一刻的样子
+ * @param fresh 打开时还没读过的那几条 (排在「新」那一段; 前面的点画到读了为止, 见 [TvShownNotice.entry] 的 read); 打开就都算看过了,
+ *   这里留着打开那一刻的样子, 读了一条它也不挪位置. 弹窗开着时新来的见 [TvNotices.arrivedWhileOpen]
  * @param focusKey 一打开焦点落在哪条; 那条没了 (处理掉了) 落在原来的位置 [focusIndex] 上
- * @param focusAction 一打开焦点落在 [focusKey] 那一条的第几个操作上 (那一条画了按钮时): 从别处处理一条 ([TvNotices.handle]) 是第一个;
- *   没给落在那一行上
+ * @param focusAction 一打开焦点落在 [focusKey] 那一条的第几个操作上 (那一条画了按钮时); 没给落在那一行上
  * @param tab 开在哪个签上 ([TvNoticeTab.NOTICES] 或 [TvNotices.tabs] 里一个的 id); [focusKey] 是这个签里的一行
  * @param focusOnTabs 焦点不挪进列表 (触屏上点签换的签)
  */
@@ -112,13 +119,20 @@ object TvNotices {
     /** 列出来的通知, 排好先后 (见 [Notices.all]); 还没算出来为 null. */
     val shown: StateFlow<List<TvShownNotice>?> = _shown.asStateFlow()
 
-    /** 有新的 (没看过的) 通知: 侧边栏「通知」上的红点. */
-    val hasFresh: Flow<Boolean> = shown.map { list -> list.orEmpty().any { !it.entry.seen } }.distinctUntilChanged()
+    /** 没看过的通知有几条 (新来的、打开通知弹窗后还没列出来过的): 侧边栏「通知」上红底的数字 (0 = 不画). 打开通知弹窗就清掉. */
+    val freshCount: Flow<Int> = shown.map { list -> list.orEmpty().count { !it.entry.seen } }.distinctUntilChanged()
 
     private val _dialog = MutableStateFlow<TvNoticeDialogState?>(null)
 
     /** 开着的通知弹窗; null = 没开. */
     val dialog: StateFlow<TvNoticeDialogState?> = _dialog.asStateFlow()
+
+    private val _arrivedWhileOpen = MutableStateFlow<Set<String>>(emptySet())
+
+    /**
+     * 通知弹窗开着时新来的几条 (键): 同打开时没读过的排在「新」那一段 (列出来了, 当场算看过, 铃铛上的数字不为它亮). 重新打开弹窗时清空.
+     */
+    val arrivedWhileOpen: StateFlow<Set<String>> = _arrivedWhileOpen.asStateFlow()
 
     /** 通知气泡开始弹了 (进应用时的控制台二维码弹窗关掉之后, 见 [startBubbles]); 之前不弹. */
     internal val bubbleArmed = MutableStateFlow(false)
@@ -148,7 +162,10 @@ object TvNotices {
         scope.launch {
             combine(notices.all, textChanges) { entries, _ -> entries }
                 .mapLatest { entries -> entries.mapNotNull { resolve(it) } }
-                .collect { _shown.value = it }
+                .collect { list ->
+                    seeWhileOpen(list)
+                    _shown.value = list
+                }
         }
     }
 
@@ -158,9 +175,14 @@ object TvNotices {
         val summary = resolving(entry, "summary") { kind.summary(entry.notice) }
         // 说明取不到的照没有说明列: 右栏写标题与摘要, 去处是唯一的操作
         val detail = resolving(entry, "detail") { kind.detail(entry.notice) }
+        // 没给说明的, 去处就是「查看」, 横幅上短按直接去; 在别的签里看的 (反馈回复) 去处就是打开那个签, 同打开通知弹窗, 不算
         val actions = detail?.actions
-            ?: kind.destination(entry.notice)?.let { listOf(TvNoticeAction(getStringOffMain(Lang.tv_notice_action_open), it)) }.orEmpty()
-        return TvShownNotice(entry, title, kind, detail, actions, summary)
+            ?: kind.destination(entry.notice)?.let { destination ->
+                val open = getStringOffMain(Lang.tv_notice_action_open)
+                listOf(TvNoticeAction(open, destination, quick = open.takeIf { kind.listed }))
+            }.orEmpty()
+        val cover = resolving(entry, "cover") { kind.cover(entry.notice) }
+        return TvShownNotice(entry, title, kind, detail, actions, summary, cover)
     }
 
     private inline fun <T> resolving(entry: NoticeEntry, what: String, block: () -> T?): T? = try {
@@ -175,8 +197,8 @@ object TvNotices {
 
     /**
      * 打开通知弹窗, 开在签 [tab] 上 (没登记的照「通知」签开), 焦点在 [focusKey] 那一行 (不在列表里的落在第 [focusIndex] 行).
-     * 弹窗已经开着时就是换到那个签、那一行. 显示到屏幕上的才算看过 (由弹窗报, 见 [markSeenKeys]): 一页放不下的, 翻到才算.
-     * [fresh] 给了时照它画「新的」那个点 (从去处页面回来时接着用第一次打开那一刻的); 没给时弹窗开着照开着时的, 否则照此刻没看过的.
+     * 弹窗已经开着时就是换到那个签、那一行. 打开就把列出来的都算看过 (铃铛上的数字清掉); 读过由弹窗报 (右栏说一条说满一会儿, 见 [markReadKeys]).
+     * [fresh] 给了时照它分「新」那一段 (从去处页面回来时接着用第一次打开那一刻的); 没给时弹窗开着照开着时的, 否则照此刻没读过的.
      */
     fun open(
         focusKey: String? = null,
@@ -186,8 +208,11 @@ object TvNotices {
         tab: String = TvNoticeTab.NOTICES,
     ) {
         val list = _shown.value.orEmpty()
+        val opened = _dialog.value
+        if (fresh == null && opened == null) _arrivedWhileOpen.value = emptySet()
+        markSeen(list)
         _dialog.value = TvNoticeDialogState(
-            fresh = fresh ?: _dialog.value?.fresh ?: list.filter { !it.entry.seen }.map { it.key }.toSet(),
+            fresh = fresh ?: opened?.fresh ?: list.filter { it.kind.listed && !it.entry.read }.map { it.key }.toSet(),
             focusKey = focusKey,
             focusIndex = focusIndex,
             focusAction = focusAction,
@@ -205,17 +230,6 @@ object TvNotices {
         }
     }
 
-    /** 等 [TvNoticeHost] 处理的那一条 (见 [handle]). */
-    internal val handleRequest = MutableStateFlow<String?>(null)
-
-    /**
-     * 从别处处理一条 (订阅详情最上面那一行、手机控制台的「在电视上打开」): 只有一个操作的直接做, 不打开通知列表 (弹窗叠在当时的页面上,
-     * 关掉回到原处); 几个操作的打开通知列表、焦点在它的第一个操作上. 由 TV 根部的 [TvNoticeHost] 做 (要导航与提示).
-     */
-    fun handle(key: String) {
-        handleRequest.value = key
-    }
-
     fun close() {
         _dialog.value = null
     }
@@ -225,18 +239,38 @@ object TvNotices {
         bubbled.value += _shown.value.orEmpty().map(::tvNoticeBubbleKey)
     }
 
-    /** 这几条显示到屏幕上了 (通知弹窗里一行露出一半以上, 见 TvNoticeDialog). */
-    internal fun markSeenKeys(keys: Collection<String>) {
-        if (keys.isEmpty()) return
-        markSeen(_shown.value.orEmpty().filter { it.key in keys })
-    }
-
-    /** 这几条看过了 (手机控制台的列表里显示到屏幕上了, 或 [markSeenKeys]). */
+    /** 这几条看过了 (列出来了: 打开了通知弹窗, 换到了「我的反馈」签). */
     internal fun markSeen(list: List<TvShownNotice>) {
         val notices = notices ?: return
         val unseen = list.filter { !it.entry.seen }
         if (unseen.isEmpty()) return
         scope.launch { notices.markSeen(unseen.map { it.notice }) }
+    }
+
+    /**
+     * 这几条读过了: 通知弹窗右栏说它说满一会儿 (见 TvNoticeView), 在它上面做了操作 (弹窗里、横幅上短按), 「我的反馈」右栏写过这张单.
+     */
+    internal fun markReadKeys(keys: Collection<String>) {
+        if (keys.isEmpty()) return
+        markRead(_shown.value.orEmpty().filter { it.key in keys })
+    }
+
+    /** 这几条读过了 (手机控制台的列表里显示到屏幕上了: 那里整条字都写着, 或 [markReadKeys]). */
+    internal fun markRead(list: List<TvShownNotice>) {
+        val notices = notices ?: return
+        val unread = list.filter { !it.entry.read }
+        if (unread.isEmpty()) return
+        scope.launch { notices.markRead(unread.map { it.notice }) }
+    }
+
+    /** 弹窗开着时新来的 (没看过的): 记进 [arrivedWhileOpen] (列表里的「新」那一段), 当场算看过 */
+    private fun seeWhileOpen(list: List<TvShownNotice>) {
+        val dialog = _dialog.value ?: return
+        val arrived = list.filter { !it.entry.seen }
+        if (arrived.isEmpty()) return
+        val added = arrived.filter { it.kind.listed && !it.entry.read && it.key !in dialog.fresh }.map { it.key }
+        if (added.isNotEmpty()) _arrivedWhileOpen.value += added
+        markSeen(arrived)
     }
 
     /**
@@ -264,6 +298,6 @@ internal fun tvNoticesToBubble(shown: List<TvShownNotice>, bubbled: Set<String>)
     return if (fresh.any { tvNoticeBubbleKey(it) !in bubbled }) fresh else emptyList()
 }
 
-/** 侧边栏「通知」上的红点 (有没看过的通知时, 见 buildTvRailItems). */
+/** 侧边栏「通知」上的数字: 没看过的通知有几条 (见 buildTvRailItems). */
 @Composable
-fun rememberTvNoticesFresh(): Boolean = remember { TvNotices.hasFresh }.collectAsState(false).value
+fun rememberTvNoticesFreshCount(): Int = remember { TvNotices.freshCount }.collectAsState(0).value

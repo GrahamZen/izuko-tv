@@ -32,12 +32,15 @@ import kotlin.time.Duration.Companion.days
  * 列表里的一条.
  *
  * @property pending 跟着状态的 (来自 [Notices.addSource] 的来源): 状态没了它自己消失
- * @property seen 看过了: 在电视的通知弹窗或手机控制台的通知列表里列出来过, 之后时间没变晚
+ * @property seen 看过了: 列出来过 (电视上打开过通知弹窗, 手机控制台的通知列表里显示过), 之后时间没变晚. 侧边栏「通知」上的数字与通知气泡数没看过的
+ * @property read 读过了: 内容显示出来过 (电视通知弹窗右栏说它说满一会儿, 手机控制台列表里显示到屏幕上), 或在它上面做过操作, 之后时间没变晚.
+ * 读过的都算看过. 列表上一行的点画没读过的
  */
 data class NoticeEntry(
     val notice: Notice,
     val pending: Boolean,
     val seen: Boolean,
+    val read: Boolean = false,
 )
 
 /**
@@ -47,7 +50,8 @@ data class NoticeEntry(
  * - **消息**: 发生过的一件事, [post] 存下, [MESSAGE_TTL] 后或超过 [MAX_MESSAGES] 条时最早的清掉;
  * - **跟着状态的**: 一个来源 ([addSource]) 从状态算出此刻还在的几条, 不存; 状态没了 (在电视上、控制台上处理掉了) 它自己消失.
  *
- * [all] 把两类合起来, 带上看没看过, 照文档的先后排好: 新的在前; 同是新的或同是看过的, 跟着状态的在前, 再按时间新的在前.
+ * [all] 把两类合起来, 带上看没看过、读没读过 (两步: 列出来过是看过, 内容显示出来过是读过), 照文档的先后排好: 没读过的在前;
+ * 同是没读过的或同是读过的, 跟着状态的在前, 再按时间新的在前.
  *
  * 跟着状态的来源不知道这件事从什么时候起的 (如有待处理的本地收藏), 时间给 [UNKNOWN_TIME]: 用这件事这一次出现时 (第一次在来源里看到这个键)
  * 的时刻, 记在 [NoticeLog.firstSeen] 里 (在 [scope] 里一直看着各个来源记, 记下之前这条先不列, 免得看过的时刻与记下的对不上;
@@ -131,15 +135,20 @@ class Notices(
         if (notices.isEmpty()) return
         lock.withLock {
             log.update {
-                val next = seen.toMutableMap()
-                var changed = false
-                for (n in notices) {
-                    if ((next[n.key] ?: Long.MIN_VALUE) < n.atMillis) {
-                        next[n.key] = n.atMillis
-                        changed = true
-                    }
-                }
-                if (!changed) this else copy(seen = trimSeen(next))
+                val next = withRecorded(seen, notices)
+                if (next == null) this else copy(seen = next)
+            }
+        }
+    }
+
+    /** 这几条读过了 (内容显示出来过, 或在它上面做过操作), 也就看过了. 记下每条此刻的时间, 同 [markSeen]. */
+    suspend fun markRead(notices: Collection<Notice>) {
+        if (notices.isEmpty()) return
+        lock.withLock {
+            log.update {
+                val nextRead = withRecorded(read, notices)
+                val nextSeen = withRecorded(seen, notices)
+                if (nextRead == null && nextSeen == null) this else copy(read = nextRead ?: read, seen = nextSeen ?: seen)
             }
         }
     }
@@ -157,12 +166,17 @@ class Notices(
         /** 不知道时间的那几条, 第一次出现的时刻最多记多少个 (见 recordFirstSeen) */
         const val MAX_FIRST_SEEN = 100
 
-        /** 看过的记录最多留几条 (只记键与时间; 再多丢时间最早的). */
+        /** 看过的、读过的记录各最多留几条 (只记键与时间; 再多丢时间最早的). */
         const val MAX_SEEN = 500
 
         internal fun entriesOf(log: NoticeLog, pending: List<Notice>, now: Long, waitFirstSeen: Boolean = false): List<NoticeEntry> {
             val byKey = LinkedHashMap<String, NoticeEntry>()
-            fun seen(n: Notice) = (log.seen[n.key] ?: Long.MIN_VALUE) >= n.atMillis
+            fun entry(n: Notice, pending: Boolean) = NoticeEntry(
+                n,
+                pending = pending,
+                seen = (log.seen[n.key] ?: Long.MIN_VALUE) >= n.atMillis,
+                read = (log.read[n.key] ?: Long.MIN_VALUE) >= n.atMillis,
+            )
             // 同一个键几个来源都给了: 取时间晚的
             for (raw in pending) {
                 val n = if (raw.atMillis != UNKNOWN_TIME) raw else {
@@ -170,15 +184,15 @@ class Notices(
                     raw.copy(atMillis = first)
                 }
                 val old = byKey[n.key]
-                if (old == null || old.notice.atMillis < n.atMillis) byKey[n.key] = NoticeEntry(n, pending = true, seen = seen(n))
+                if (old == null || old.notice.atMillis < n.atMillis) byKey[n.key] = entry(n, pending = true)
             }
             val cutoff = now - MESSAGE_TTL.inWholeMilliseconds
             for (n in log.messages) {
                 if (n.atMillis < cutoff || n.key in byKey) continue
-                byKey[n.key] = NoticeEntry(n, pending = false, seen = seen(n))
+                byKey[n.key] = entry(n, pending = false)
             }
             return byKey.values.sortedWith(
-                compareBy<NoticeEntry> { it.seen }
+                compareBy<NoticeEntry> { it.read }
                     .thenBy { !it.pending }
                     .thenByDescending { it.notice.atMillis },
             )
@@ -187,6 +201,19 @@ class Notices(
         private fun trimMessages(messages: List<Notice>, now: Long): List<Notice> {
             val cutoff = now - MESSAGE_TTL.inWholeMilliseconds
             return messages.filter { it.atMillis >= cutoff }.sortedByDescending { it.atMillis }.take(MAX_MESSAGES)
+        }
+
+        /** [recorded] (看过或读过的记录) 记上 [notices] 每条此刻的时间; 一条都没变时为 null. */
+        private fun withRecorded(recorded: Map<String, Long>, notices: Collection<Notice>): Map<String, Long>? {
+            val next = recorded.toMutableMap()
+            var changed = false
+            for (n in notices) {
+                if ((next[n.key] ?: Long.MIN_VALUE) < n.atMillis) {
+                    next[n.key] = n.atMillis
+                    changed = true
+                }
+            }
+            return if (changed) trimSeen(next) else null
         }
 
         private fun trimSeen(seen: Map<String, Long>): Map<String, Long> =
