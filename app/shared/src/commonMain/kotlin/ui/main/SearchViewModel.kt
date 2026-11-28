@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.withTimeoutOrNull
 import me.him188.ani.app.data.models.preference.NsfwMode
 import me.him188.ani.app.data.models.subject.SubjectInfo
 import me.him188.ani.app.data.repository.episode.EpisodeCollectionRepository
@@ -58,6 +59,7 @@ import me.him188.ani.utils.analytics.AnalyticsEvent.Companion.SubjectEnter
 import me.him188.ani.utils.analytics.recordEvent
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
+import kotlin.time.Duration.Companion.milliseconds
 
 @Stable
 open class SearchViewModel(
@@ -204,17 +206,30 @@ open class SearchViewModel(
 
             is SearchPageIntent.Play -> {
                 launchInBackground {
-                    episodeCollectionRepository.subjectEpisodeCollectionInfosFlow(intent.item.subjectId)
-                        .first()
-                        .firstOrNull()
-                        ?.let {
-                            _searchPageEffects.emit(
-                                SearchPageEffect.NavigateToEpisodeDetails(
-                                    subjectId = intent.item.subjectId,
-                                    episodeId = it.episodeInfo.episodeId,
-                                ),
-                            )
+                    // 没打开过的条目分集还没进库, 第一份是空的: 等到有分集, 最多等 [PLAY_EPISODES_BUDGET]; 等不到进详情页, 点了总有响应
+                    val episodeId = try {
+                        withTimeoutOrNull(PLAY_EPISODES_BUDGET) {
+                            episodeCollectionRepository.subjectEpisodeCollectionInfosFlow(intent.item.subjectId)
+                                .first { it.isNotEmpty() }
+                                .first().episodeInfo.episodeId
                         }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        null
+                    }
+                    _searchPageEffects.emit(
+                        if (episodeId != null) {
+                            SearchPageEffect.NavigateToEpisodeDetails(subjectId = intent.item.subjectId, episodeId = episodeId)
+                        } else {
+                            SearchPageEffect.NavigateToSubjectDetails(
+                                subjectId = intent.item.subjectId,
+                                title = intent.item.title,
+                                originalTitle = intent.item.originalTitle,
+                                imageUrl = intent.item.imageUrl,
+                            )
+                        },
+                    )
                 }
             }
 
@@ -388,3 +403,6 @@ private fun SubjectSearchQuery.shouldTriggerSearch(): Boolean {
             // 其余排序在没有关键词也没有筛选时服务端返回空列表, 不值得发这次请求
             sort == SearchSort.RANK
 }
+
+/** 搜索页「直接播放」等分集进库最多等多久 (同探索页) */
+private val PLAY_EPISODES_BUDGET = 1500.milliseconds

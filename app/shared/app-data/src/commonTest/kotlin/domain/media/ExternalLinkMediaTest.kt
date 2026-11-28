@@ -9,6 +9,7 @@
 
 package me.him188.ani.app.domain.media
 
+import me.him188.ani.app.domain.media.range.ProxiedPlaybackOrigins
 import me.him188.ani.app.domain.media.selector.testFramework.runFetchMediaSelectorTestSuite
 import me.him188.ani.datasources.api.DefaultMedia
 import me.him188.ani.datasources.api.Media
@@ -54,6 +55,20 @@ class ExternalLinkMediaTest {
         assertEquals("https://cdn.example/v/1.m3u8?sign=abc", link.url)
         assertEquals(mapOf("Referer" to "https://site.example/", "User-Agent" to "UA"), link.headers)
         assertEquals("第 1 集", link.title)
+    }
+
+    @Test
+    fun `a video played through the local proxy is handed over by its original link`() {
+        val proxy = data("http://127.0.0.1:50123/media.mp4")
+        ProxiedPlaybackOrigins.register(proxy.uri, data("https://cdn.example/v/1.mp4", mapOf("Referer" to "https://site.example/")))
+        try {
+            val link = assertNotNull(ExternalLinkMedia.shareableOf(media(page), proxy))
+            assertEquals("https://cdn.example/v/1.mp4", link.url)
+            assertEquals(mapOf("Referer" to "https://site.example/"), link.headers)
+        } finally {
+            ProxiedPlaybackOrigins.unregister(proxy.uri)
+        }
+        assertNull(ExternalLinkMedia.shareableOf(media(page), proxy))
     }
 
     @Test

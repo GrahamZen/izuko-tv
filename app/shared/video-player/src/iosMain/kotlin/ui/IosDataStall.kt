@@ -23,12 +23,12 @@ import platform.CoreMedia.CMTimeGetSeconds
 import platform.Foundation.NSValue
 
 /**
- * 等数据卡死: AVPlayer 想播、item 就绪、在等数据, 已缓冲的部分却一点也不长, 也不报错, 一等就是几分钟 (iPad 上播网页源的 mp4 实测:
- * 同一时刻这台设备自己去取那一段是通的, 是 AVPlayer 不再去要). 原地精确 seek 拨不动; 往后跳一点 (要的是另一段) 当场就接上.
+ * 等数据卡死: AVPlayer 想播、item 就绪、在等数据, 已缓冲的部分却一点也不长, 也不报错, 一等就是几分钟. iPad 上直连网页源的 mp4 实测是
+ * AVPlayer 自己连源站的连接坏了一阵 (同一时刻这台设备用应用自己的客户端取那一段是通的; 原地 seek、往后跳都拨不动, 同一地址新建播放项一秒内报网络错).
  *
- * 等数据期间缓冲 [STALL_MILLIS] 一点没长就拨: 先往后跳 [SKIP_MILLIS] ([Action.Skip], 当场接上、缓冲留着); 跳过之后不远处 ([SKIP_RANGE_SECONDS] 以内)
- * 又卡死, 就请求原地重新打开 ([Action.Reopen] → [PlaybackStallReopen]: 重新取地址、用新连接, 回到卡住的位置), 每个 item 只请求一次
- * (重开后是新的 item; 一条资源最多重开几次由接的那边管). 拨的时候把 AVPlayer 自己的传输记录记一行 (见 [IosAvPlayerErrorLog.describeTransfer]).
+ * 等数据期间缓冲 [STALL_MILLIS] 一点没长, 就请求原地重开 ([PlaybackStallReopen]): 接的那边记下这条资源卡死过, 重新取地址、这次经本机代理
+ * (AVPlayer 只连本机, 见 app-data 的 StalledMediaRoute 与 ParallelRangePlayback), 回到卡住的位置. 每个 item 只请求一次
+ * (重开后是新的 item; 一条资源最多重开几次由接的那边管). 请求时把 AVPlayer 自己的传输记录记一行 (见 [IosAvPlayerErrorLog.describeTransfer]).
  *
  * 片源慢不算: 慢的时候缓冲在长, 只是长得慢. 判断由 [IosVideoLayerWake] 盯着做 ([Watch]).
  */
@@ -40,72 +40,48 @@ internal object IosDataStall {
     /** 缓冲长了这么多秒以上才算在长 */
     private const val GROWTH_SECONDS = 0.05
 
-    /** 卡死时往后跳多少 */
-    private const val SKIP_MILLIS = 500L
-
-    /** 跳过之后这么远以内又卡死就不再跳, 改成重开 */
-    private const val SKIP_RANGE_SECONDS = 30.0
-
-    enum class Action { None, Skip, Reopen }
-
-    /** 一个 item 的观察: 每次轮询调 [check], 返回这一次要怎么拨 */
+    /** 一个 item 的观察: 每次轮询调 [check], 返回这一次要不要请求重开 */
     class Watch {
         private var item: AVPlayerItem? = null
         private var loaded = 0.0
         private var stalledMillis = 0L
-        private var skippedAt: Double? = null
-        private var reopened = false
+        private var requested = false
 
         /**
          * @param waiting AVPlayer 想播、item 就绪, 在等数据
-         * @param time 当前播放时间 (秒)
          * @param pollMillis 距上一次调过了多久
          */
-        fun check(current: AVPlayerItem?, waiting: Boolean, time: Double, pollMillis: Long): Action {
+        fun check(current: AVPlayerItem?, waiting: Boolean, pollMillis: Long): Boolean {
             if (current != item) {
                 item = current
                 loaded = 0.0
                 stalledMillis = 0L
-                skippedAt = null
-                reopened = false
+                requested = false
             }
-            if (current == null || reopened) return Action.None
+            if (current == null || requested) return false
             val now = loadedSeconds(current)
             // 长了, 或者少了 (拖动后旧的缓冲被丢掉): 都从这里重新算
             val changed = now > loaded + GROWTH_SECONDS || now < loaded - GROWTH_SECONDS
             loaded = now
             if (!waiting || changed) {
                 stalledMillis = 0L
-                return Action.None
+                return false
             }
             stalledMillis += pollMillis
-            if (stalledMillis < STALL_MILLIS) return Action.None
-            stalledMillis = 0L
-            val lastSkip = skippedAt
-            if (lastSkip == null || time - lastSkip > SKIP_RANGE_SECONDS || time < lastSkip) {
-                skippedAt = time
-                return Action.Skip
-            }
-            reopened = true
-            return Action.Reopen
+            if (stalledMillis < STALL_MILLIS) return false
+            requested = true
+            return true
         }
     }
 
-    /** 按 [action] 拨一下, 记一行 */
-    fun nudge(action: Action, player: MediampPlayer, item: AVPlayerItem, timeSeconds: Double) {
-        if (action == Action.None) return
+    /** 请求原地重开 [item] (卡在 [timeSeconds]), 记一行 */
+    fun reopen(player: MediampPlayer, item: AVPlayerItem, timeSeconds: Double) {
         val loaded = (loadedSeconds(item) * 10).toLong() / 10.0
         val at = (timeSeconds * 10).toLong() / 10.0
-        val what = if (action == Action.Skip) "往后跳 ${SKIP_MILLIS}ms" else "请求原地重开"
         logger.info {
-            "[AVStall] 等数据 ${STALL_MILLIS / 1000} 秒缓冲一点没长 (t=${at}s, 已缓冲 ${loaded}s), $what; ${IosAvPlayerErrorLog.describeTransfer(item)}"
+            "[AVStall] 等数据 ${STALL_MILLIS / 1000} 秒缓冲一点没长 (t=${at}s, 已缓冲 ${loaded}s), 请求原地重开; ${IosAvPlayerErrorLog.describeTransfer(item)}"
         }
-        val positionMillis = (timeSeconds * 1000).toLong()
-        when (action) {
-            Action.Skip -> player.seekTo(positionMillis + SKIP_MILLIS)
-            Action.Reopen -> PlaybackStallReopen.request(player, positionMillis, "no data for ${STALL_MILLIS / 1000}s at ${at}s")
-            Action.None -> {}
-        }
+        PlaybackStallReopen.request(player, (timeSeconds * 1000).toLong(), "no data for ${STALL_MILLIS / 1000}s at ${at}s")
     }
 
     /** item 已经缓冲了多少秒 (各段加起来) */

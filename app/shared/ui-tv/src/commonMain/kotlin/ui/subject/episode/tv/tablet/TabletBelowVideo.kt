@@ -426,7 +426,9 @@ private fun TabletSeriesRow(related: LazyPagingItems<RelatedSubjectInfo>) {
             pending = scope.launch {
                 val progress = try {
                     withTimeoutOrNull(TABLET_SERIES_PROGRESS_BUDGET_MILLIS) {
-                        collectionRepo.subjectCollectionFlow(info.subjectId).first()
+                        // 条目那一行先进库、分集稍后才到 (没打开过的): 收藏了的等分集到了再看进度; 没收藏的没有进度可接, 不用等
+                        collectionRepo.subjectCollectionFlow(info.subjectId)
+                            .first { it.episodes.isNotEmpty() || it.collectionType == UnifiedCollectionType.NOT_COLLECTED }
                     }?.progressInfo
                 } catch (e: CancellationException) {
                     throw e

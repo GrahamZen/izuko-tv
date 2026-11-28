@@ -16,10 +16,10 @@ import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.header
 import io.ktor.client.request.prepareGet
 import io.ktor.client.statement.bodyAsChannel
-import io.ktor.client.statement.readRawBytes
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.Url
+import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.readAvailable
 import kotlinx.atomicfu.atomic
 import kotlinx.atomicfu.locks.SynchronizedObject
@@ -51,6 +51,7 @@ import me.him188.ani.app.domain.media.hls.HlsProxyResponseSink
 import me.him188.ani.app.domain.media.hls.HlsProxyServer
 import me.him188.ani.app.domain.media.hls.HlsProxyServerFactory
 import me.him188.ani.app.domain.media.hls.PlatformHlsProxyServerFactory
+import me.him188.ani.app.domain.media.isPublicHttpUrl
 import me.him188.ani.app.platform.PlaybackRequestHints
 import me.him188.ani.utils.coroutines.IO_
 import me.him188.ani.utils.ktor.ScopedHttpClient
@@ -66,35 +67,51 @@ import org.openani.mediamp.source.UriMediaData
 import kotlin.time.TimeSource
 
 /*
- * 网盘原文件在 iOS 上的多连接播放. 有的网盘直链每个连接限速, 一个连接跟不上视频码率; 解析器在请求头里放了「按几个连接并发分块」的提示
- * ([PlaybackRequestHints.PARALLEL_RANGE_HEADER]). 安卓的播放器自己读它 (ParallelRangeDataSource); iOS 的 AVPlayer 只会单连接去取,
- * 所以经本机代理: 播放器向代理要一段字节, 代理把这一段拆成块, 分给几条通道同时向网盘拉, 拉到的按顺序送出.
+ * iOS 上视频文件经本机代理播放: AVPlayer 只连 127.0.0.1, 向代理要一段字节; 代理用应用自己的 HTTP 客户端把这一段拆成块,
+ * 分给几条通道向源站拉, 每块要准范围, 拉到的按顺序送出. 两种情况走它, 其余都由 AVPlayer 直连:
+ * - 带并发提示的网盘原文件: 有的网盘直链每个连接限速, 一个连接跟不上视频码率; 解析器在请求头里放了「按几个连接并发分块」的提示
+ *   ([PlaybackRequestHints.PARALLEL_RANGE_HEADER]). 安卓的播放器自己读它 (ParallelRangeDataSource); iOS 的 AVPlayer 只会单连接去取.
+ * - 等数据卡死过的资源 ([StalledMediaRoute] 记着的), 公网地址, [REOPEN_CONNECTIONS] 条通道: AVPlayer 自己连源站的连接会坏一阵 ——
+ *   等数据时一点也不来, 同一地址新建播放项一秒内就报网络错, 两三分钟后才好; 同一时刻应用自己的客户端取同一段是通的.
+ *   原地重开时经代理, AVPlayer 面对的是本机, 源站那头断了、读不动了由代理从断开处接着要 (见 ParallelRangeProxySession.fetchPart).
+ * 本机与局域网的地址、地址里带 .m3u8 的 (归 HLS 本地代理, PlatformHlsPlaybackPreparer)、内容是播放列表的、源站不认范围请求的, 照旧直接交给播放器.
  *
  * 每条通道是一个独立的 HTTP 客户端. iOS 的网络库 (NSURLSession) 碰上 HTTP/2 会把同一个会话里的请求挤进一条连接, 而网盘按连接限速,
  * 又没有公开的开关能关掉 HTTP/2; 每个客户端一个独立的会话, 也就各自一条连接 (安卓那边直接只走 HTTP/1.1).
  */
 
 /**
- * 把带并发提示的地址经本机代理交给播放器 (见上). 只在 [enabled] (iOS) 时做, 不带提示、不是 http(s)、网盘不认范围请求时返回 null,
- * 照旧直接交给播放器. 返回的会话在停播时关掉 (同 HLS 本地代理).
+ * 把地址经本机代理交给播放器 (见上). 只在 [enabled] (iOS) 时做; 不走代理时返回 null, 照旧直接交给播放器.
+ * 返回的会话在停播时关掉 (同 HLS 本地代理). [isRemote] 判断地址是不是公网的.
  */
 class ParallelRangePlayback internal constructor(
     private val httpClientProvider: HttpClientProvider,
     private val serverFactory: HlsProxyServerFactory,
     private val enabled: Boolean,
+    private val isRemote: (String) -> Boolean = ::isPublicHttpUrl,
 ) {
     constructor(httpClientProvider: HttpClientProvider) : this(httpClientProvider, PlatformHlsProxyServerFactory, currentPlatform().isIos())
 
-    suspend fun prepare(data: MediaData): HlsPlaybackPreparerResult? {
+    /** [player] 要装资源 [mediaId] 的 [data]; 是它卡死过的那条时经代理 (见 [StalledMediaRoute]), 装别的时那条记录随之忘掉. */
+    suspend fun prepare(data: MediaData, player: Any? = null, mediaId: String? = null): HlsPlaybackPreparerResult? {
+        val stalled = player != null && mediaId != null && StalledMediaRoute.throughProxy(player, mediaId)
         if (!enabled || data !is UriMediaData) return null
-        val connections = data.headers[PlaybackRequestHints.PARALLEL_RANGE_HEADER]?.toIntOrNull()?.takeIf { it > 1 } ?: return null
         if (!data.uri.startsWith("https://") && !data.uri.startsWith("http://")) return null
-        logger.info { "[RangeProxy] 带并发提示 ($connections 路), 经本机代理交给播放器" }
+        val hinted = data.headers[PlaybackRequestHints.PARALLEL_RANGE_HEADER]?.toIntOrNull()?.takeIf { it > 1 }
+        val connections = when {
+            hinted != null -> hinted.coerceAtMost(MAX_CONNECTIONS)
+            stalled && isRemote(data.uri) && !data.uri.lowercase().contains(".m3u8") -> REOPEN_CONNECTIONS
+            else -> return null
+        }
+        logger.info {
+            if (hinted != null) "[RangeProxy] 带并发提示 ($hinted 路), 经本机代理交给播放器"
+            else "[RangeProxy] 等数据卡死过, 这次经本机代理交给播放器 ($connections 路)"
+        }
         val session = withContext(Dispatchers.IO_) {
             ParallelRangeProxySession.createOrNull(
                 url = data.uri,
                 headers = PlaybackRequestHints.strip(data.headers),
-                connections = connections.coerceAtMost(MAX_CONNECTIONS),
+                connections = connections,
                 httpClientProvider = httpClientProvider,
                 serverFactory = serverFactory,
             )
@@ -108,7 +125,24 @@ class ParallelRangePlayback internal constructor(
 
         /** 解析器给的路数再多也只开这么多条通道 (同安卓多开时的上限). */
         const val MAX_CONNECTIONS = 48
+
+        /** 卡死过的直链开几条通道: 一条读不动时 (等它超时重拉期间) 播放器的新请求还有一条可用. */
+        const val REOPEN_CONNECTIONS = 2
     }
+}
+
+/**
+ * 正在经本机代理播的地址背后的原地址与请求头 (交给别的设备时交原地址, 见 ExternalLinkMedia.shareableOf). 代理会话建好时登记, 关掉时注销.
+ */
+internal object ProxiedPlaybackOrigins {
+    private val origins = atomic(emptyMap<String, UriMediaData>())
+
+    fun register(proxyUri: String, origin: UriMediaData) = origins.update { it + (proxyUri to origin) }
+
+    fun unregister(proxyUri: String) = origins.update { it - proxyUri }
+
+    /** [data] 是代理地址时换成原地址, 不是的原样返回. */
+    fun originOf(data: UriMediaData): UriMediaData = origins.value[data.uri] ?: data
 }
 
 /**
@@ -149,9 +183,10 @@ internal class ParallelRangeProxySession private constructor(
 
     init {
         logger.info {
-            "[RangeProxy] #$id 经本机代理多连接播放: $host, 共 ${totalLength.mib()} MiB, $contentType, " +
+            "[RangeProxy] #$id 经本机代理播放: $host, 共 ${totalLength.mib()} MiB, $contentType, " +
                 "$connections 条通道 (实际 ${lanes.distinctClients} 个客户端), 每块 ${firstChunkSize / 1024} KiB 起、最大 ${chunkSize / 1024} KiB"
         }
+        ProxiedPlaybackOrigins.register(uri, UriMediaData(url, headers))
         server.start { request, sink -> handle(request, sink) }
     }
 
@@ -311,8 +346,9 @@ internal class ParallelRangeProxySession private constructor(
     }
 
     /**
-     * 拉 [part], 拉到多少交给 [onBytes] 多少. 借一条空着的通道 ([urgent] 的排在前面), 网络出错从断开处接着重试 [MAX_RETRIES] 次
-     * (网盘回 4xx 不重试, 直链多半过期了); 要它的已经停了 (播放器断开、窗口被挤掉) 就不重试. 拉不下来时抛出.
+     * 拉 [part], 拉到多少交给 [onBytes] 多少. 借一条空着的通道 ([urgent] 的排在前面). 拉到一些才断的 (读到一半断了、读超时,
+     * 或源站回的比要的短) 当场从断开处接着要, 不算失败; 一点没拉到就出错的从断开处重试 [MAX_RETRIES] 次 (源站回 4xx 不重试, 直链多半过期了);
+     * 要它的已经停了 (播放器断开、窗口被挤掉) 就不重试. 拉不下来时抛出.
      */
     private suspend fun fetchPart(part: LongRange, urgent: Boolean, onBytes: suspend (ByteArray) -> Unit) {
         var from = part.first
@@ -340,6 +376,11 @@ internal class ParallelRangeProxySession private constructor(
                 continue
             } catch (e: Throwable) {
                 currentCoroutineContext().ensureActive()
+                if (from > before) {
+                    attempt = 0
+                    logger.info { "[RangeProxy] #$id 块 ${part.first}-${part.last} 拉到 $from 断了, 接着拉: ${describe(e)}" }
+                    continue
+                }
                 val status = (e as? ResponseException)?.response?.status?.value
                 if (attempt >= MAX_RETRIES || status in 400..499) {
                     logger.warn { "[RangeProxy] #$id 块 ${part.first}-${part.last} 拉不下来 (试了 ${attempt + 1} 次): ${describe(e)}" }
@@ -348,7 +389,7 @@ internal class ParallelRangeProxySession private constructor(
                 attempt++
                 logger.info { "[RangeProxy] #$id 块 ${part.first}-${part.last} 第 $attempt 次重试 (从 $from 接着拉): ${describe(e)}" }
             } finally {
-                lanes.give(client)
+                lanes.give(client, urgent)
             }
             delay(RETRY_DELAY_MILLIS * attempt)
         }
@@ -404,10 +445,14 @@ internal class ParallelRangeProxySession private constructor(
         return ahead
     }
 
-    /** 读前窗口每段多大: 按每条连接的速度约 [READ_AHEAD_PIECE_MILLIS] 拉完, 夹在 [MIN_READ_AHEAD_PIECE]..[MAX_READ_AHEAD_PIECE]; 还没测到速度时取最小. */
+    /**
+     * 读前窗口每段多大: 按每条连接的速度约 [READ_AHEAD_PIECE_MILLIS] 拉完, 夹在 [MIN_READ_AHEAD_PIECE]..[MAX_READ_AHEAD_PIECE].
+     * 还没测到速度时按路数分, 两轮拉满最小的窗口: 路多的网盘每段小 (每条连接慢, 播放器先要的那段早到), 路少的直链每段大
+     * (每段都要等一次首字节, 32 KiB 一段的话两条连接合起来也就一两百 KiB/s; 测速又不算这么小的段, 一直测不出来).
+     */
     private fun readAheadPieceSize(): Long {
         val speed = laneSpeed.value
-        if (speed <= 0) return MIN_READ_AHEAD_PIECE
+        if (speed <= 0) return (READ_AHEAD_MIN_BYTES / 2 / connections).coerceIn(MIN_READ_AHEAD_PIECE, MAX_READ_AHEAD_PIECE)
         return (speed * READ_AHEAD_PIECE_MILLIS / 1000).coerceIn(MIN_READ_AHEAD_PIECE, MAX_READ_AHEAD_PIECE)
     }
 
@@ -490,6 +535,7 @@ internal class ParallelRangeProxySession private constructor(
 
     override fun close() {
         logger.info { "[RangeProxy] #$id 关闭 (共答了 ${requestCount.value} 个请求)" }
+        ProxiedPlaybackOrigins.unregister(uri)
         server.close()
         scope.cancel()
         lanes.close()
@@ -536,7 +582,8 @@ internal class ParallelRangeProxySession private constructor(
             (chunkSize / connections.coerceAtLeast(1)).coerceAtLeast(MIN_FIRST_CHUNK_SIZE).coerceAtMost(chunkSize / FIRST_CHUNK_DIVISOR)
 
         /**
-         * 建一个会话: 先借好各通道, 用第一条通道探一次 (要开头 16 个字节: 拿到总长、类型, 也认出文件格式). 网盘不认范围请求或探测失败时返回 null.
+         * 建一个会话: 先借好各通道, 用第一条通道探一次 (要开头 16 个字节: 拿到总长、类型, 也认出文件格式).
+         * 源站不认范围请求、内容是播放列表或探测失败时返回 null.
          */
         suspend fun createOrNull(
             url: String,
@@ -559,6 +606,10 @@ internal class ParallelRangeProxySession private constructor(
                 val started = TimeSource.Monotonic.markNow()
                 val probe = lanes.probe(url, headers) ?: return null
                 logger.info { "[RangeProxy] 探测 ${probe.totalLength} 字节、${probe.upstreamType} (${started.elapsedNow().inWholeMilliseconds}ms)" }
+                if (MediaFormat.isPlaylist(probe.head, probe.upstreamType)) {
+                    logger.info { "[RangeProxy] 是播放列表, 不走代理" }
+                    return null
+                }
                 server = serverFactory.create()
                 val format = MediaFormat.sniff(probe.head, url, probe.upstreamType)
                 return ParallelRangeProxySession(url, headers, connections, lanes, server, probe.totalLength, format.mimeType, format.extension)
@@ -580,7 +631,9 @@ internal class ParallelRangeProxySession private constructor(
 
 /**
  * 各条通道: 每条一个借来的独立客户端, 一次只拉一块. 整次播放一直借着 (还回去客户端就关了, 连接跟着断, 下一块又要重新握手).
- * 空出来的通道先给急用的 (读前窗口), 再按先来后到给长请求的块.
+ * 空出来的通道先给急用的 (读前窗口), 再按先来后到给长请求的块; 长请求有块在等时至少有一条在拉它.
+ * 开播时 AVPlayer 一边顺着读长请求、一边接连发零碎的小请求 (iPad 播直链 mp4 实测), 小请求开的读前窗口一个接一个,
+ * 急用的一直有人在等; 通道全让给它们的话, 长请求每拿到一条通道只读一段就让, 画面要的数据一直到不了.
  */
 @OptIn(UnsafeScopedHttpClientApi::class)
 private class Lanes(private val scoped: List<ScopedHttpClient>) : AutoCloseable {
@@ -596,14 +649,20 @@ private class Lanes(private val scoped: List<ScopedHttpClient>) : AutoCloseable 
     /** 已经答应让出、还没交到急用的手上的通道数 (见 [shouldYield]). */
     private var yielding = 0
 
+    /** 不急的 (长请求的块) 手上有几条通道. */
+    private var steadyHeld = 0
+
     /** 实际有几个不同的客户端 (日志里核对: 应当等于通道数, 不然几条通道共用一条连接). */
     val distinctClients: Int = tickets.map { it.client }.distinct().size
 
-    /** 借一条通道, 没有空的就排队 ([urgent] 排在不急的前面). 会话关了抛出. */
+    /** 借一条通道, 没有空的就排队 ([urgent] 排在不急的前面). 用完按同样的 [urgent] 还 ([give]). 会话关了抛出. */
     suspend fun take(urgent: Boolean = false): HttpClient {
         val mailbox = synchronized(lock) {
             check(!closed.value) { "lanes closed" }
-            free.removeFirstOrNull()?.let { return it }
+            free.removeFirstOrNull()?.let {
+                if (!urgent) steadyHeld++
+                return it
+            }
             Channel<HttpClient>(1).also { (if (urgent) urgentWaiters else waiters).addLast(it) }
         }
         try {
@@ -615,33 +674,39 @@ private class Lanes(private val scoped: List<ScopedHttpClient>) : AutoCloseable 
             }
             mailbox.close()
             // 不等了的那一刻刚好交到手上的, 还回去
-            mailbox.tryReceive().getOrNull()?.let(::give)
+            mailbox.tryReceive().getOrNull()?.let { give(it, urgent) }
             throw e
         }
     }
 
-    fun give(client: HttpClient) {
+    fun give(client: HttpClient, urgent: Boolean = false) {
+        synchronized(lock) { if (!urgent) steadyHeld-- }
         while (true) {
-            val mailbox = synchronized(lock) {
-                urgentWaiters.removeFirstOrNull()?.also { if (yielding > 0) yielding-- }
-                    ?: waiters.removeFirstOrNull()
-                    ?: run {
+            val (mailbox, steady) = synchronized(lock) {
+                val steadyFirst = steadyHeld == 0 && waiters.isNotEmpty()
+                val next = if (steadyFirst) null else urgentWaiters.removeFirstOrNull()?.also { if (yielding > 0) yielding-- }
+                when {
+                    next != null -> next to false
+                    waiters.isNotEmpty() -> waiters.removeFirst().also { steadyHeld++ } to true
+                    else -> {
                         if (!closed.value) free.addLast(client)
                         return
                     }
+                }
             }
             // 已经不等了的信箱是关着的, 交给下一个
             if (mailbox.trySend(client).isSuccess) return
+            if (steady) synchronized(lock) { steadyHeld-- }
         }
     }
 
     /**
      * 不急的拉取每读一段问一次: 有急用的在等 (通道都占着才会等) 时让出手上这条, 每个在等的只换一条, 返回 true 的那个要马上还回通道.
-     * 长请求的一块要拉好几秒 (慢的网盘每条连接几十 KB/s), 不让的话急用的得等到哪块拉完.
+     * 长请求的一块要拉好几秒 (慢的网盘每条连接几十 KB/s), 不让的话急用的得等到哪块拉完. 长请求手上的最后一条不让.
      */
     fun shouldYield(): Boolean = synchronized(lock) {
         if (yielding > urgentWaiters.size) yielding = urgentWaiters.size
-        if (urgentWaiters.size > yielding) {
+        if (urgentWaiters.size > yielding && steadyHeld - yielding > 1) {
             yielding++
             true
         } else {
@@ -649,26 +714,26 @@ private class Lanes(private val scoped: List<ScopedHttpClient>) : AutoCloseable 
         }
     }
 
-    /** 要开头 [PROBE_BYTES] 个字节; 回的不是 206 (网盘不认范围请求) 时返回 null. */
+    /** 要开头 [PROBE_BYTES] 个字节; 回的不是 206 (源站不认范围请求) 时返回 null. */
     suspend fun probe(url: String, headers: Map<String, String>): Probe? {
         val client = take()
         try {
-            // 流式取: 不认范围的网盘会回整个文件, 只看状态码不读正文
+            // 流式取: 不认范围的源站会回整个文件, 只看状态码不读正文; 回了 206 也只读开头 (有的不管要到哪, 一直回到文件尾)
             return client.prepareGet(url) {
                 resolverHeaders(headers)
                 header(HttpHeaders.Range, "bytes=0-${PROBE_BYTES - 1}")
                 chunkTimeouts()
             }.execute { response ->
                 if (response.status != HttpStatusCode.PartialContent) {
-                    logger.info { "[RangeProxy] 网盘对范围请求回了 ${response.status.value} (不认范围), 不走代理" }
+                    logger.info { "[RangeProxy] 源站对范围请求回了 ${response.status.value} (不认范围), 不走代理" }
                     return@execute null
                 }
                 val total = response.headers[HttpHeaders.ContentRange]?.substringAfterLast('/')?.toLongOrNull()
                 if (total == null) {
-                    logger.info { "[RangeProxy] 网盘回的 Content-Range 看不出总长 (${response.headers[HttpHeaders.ContentRange]}), 不走代理" }
+                    logger.info { "[RangeProxy] 源站回的 Content-Range 看不出总长 (${response.headers[HttpHeaders.ContentRange]}), 不走代理" }
                     return@execute null
                 }
-                Probe(total, response.headers[HttpHeaders.ContentType], response.readRawBytes())
+                Probe(total, response.headers[HttpHeaders.ContentType], response.bodyAsChannel().readUpTo(PROBE_BYTES))
             }
         } finally {
             give(client)
@@ -696,8 +761,8 @@ private class Lanes(private val scoped: List<ScopedHttpClient>) : AutoCloseable 
 }
 
 /**
- * 要 [part] 这一段, 拉到多少就交给 [onBytes] 多少: 必须回 206 且长度对得上. 网盘没按范围回 (整个文件) 时不读正文;
- * 中途断了抛出, 已经交出去的不收回 (调用方从断开处接着要).
+ * 要 [part] 这一段, 拉到多少就交给 [onBytes] 多少: 必须回 206、从要的地方起, 且长度对得上. 源站没按范围回 (整个文件)、回的范围起点不对时不读正文;
+ * 中途断了、回的比要的短时抛出, 已经交出去的不收回 (调用方从断开处接着要).
  */
 private suspend fun HttpClient.fetchRange(
     url: String,
@@ -711,7 +776,9 @@ private suspend fun HttpClient.fetchRange(
         header(HttpHeaders.Range, "bytes=${part.first}-${part.last}")
         chunkTimeouts()
     }.execute { response ->
-        check(response.status == HttpStatusCode.PartialContent) { "网盘没按范围回: ${response.status}" }
+        check(response.status == HttpStatusCode.PartialContent) { "源站没按范围回: ${response.status}" }
+        val start = response.headers[HttpHeaders.ContentRange]?.removePrefix("bytes")?.trim()?.substringBefore('-')?.toLongOrNull()
+        check(start == null || start == part.first) { "源站回的范围从 $start 起, 要的是 ${part.first}" }
         val channel = response.bodyAsChannel()
         val buffer = ByteArray(PIECE_BYTES)
         var received = 0L
@@ -728,6 +795,18 @@ private suspend fun HttpClient.fetchRange(
 
 /** 拉块时一次最多读多少 (边拉边送的粒度). */
 private const val PIECE_BYTES = 64 * 1024
+
+/** 读到 [limit] 个字节或读完为止, 后面的不读. */
+private suspend fun ByteReadChannel.readUpTo(limit: Int): ByteArray {
+    val buffer = ByteArray(limit)
+    var filled = 0
+    while (filled < limit) {
+        val read = readAvailable(buffer, filled, limit - filled)
+        if (read < 0) break
+        filled += read
+    }
+    return buffer.copyOf(filled)
+}
 
 /**
  * 带上解析器给的请求头. Cookie 原样发 ([rawCookieHeader]): 客户端的 Cookie 插件会把它重新编码一遍, 网盘登录 Cookie 里的 base64 与百分号编码的值
@@ -817,6 +896,11 @@ internal class MediaFormat(val mimeType: String, val extension: String) {
             val extension = url.substringBefore('?').substringAfterLast('/').substringAfterLast('.', "").lowercase()
             return TYPE_BY_EXTENSION[extension]?.let { MediaFormat(it, extension) } ?: MediaFormat("video/mp4", "mp4")
         }
+
+        /** 是不是 HLS 播放列表 (地址不以 .m3u8 结尾的也有): 开头是 `#EXTM3U`, 或源站说的类型是 mpegurl. */
+        fun isPlaylist(head: ByteArray, upstreamType: String?): Boolean =
+            head.decodeToString().trimStart { it.isWhitespace() || it == Char(0xFEFF) }.startsWith("#EXTM3U") ||
+                upstreamType?.lowercase()?.contains("mpegurl") == true
 
         private val TYPE_BY_EXTENSION = mapOf(
             "mp4" to "video/mp4",

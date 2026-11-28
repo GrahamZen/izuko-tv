@@ -14,9 +14,9 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 
 /**
- * 连接卡死时请求原地重新打开: 播放器在等数据, 已缓冲的部分却一点也不长, 也不报错 (连上的连接挂住了).
+ * 等数据卡死时请求原地重新打开: 播放器在等数据, 已缓冲的部分却一点也不长, 也不报错 (播放器自己连源站的连接挂住了).
  * 平台播放器认出来就 [request] (现在只有 iOS, 见 IosDataStall); 播放会话那边 (PlaybackStallReopenExtension)
- * 收到自己那个播放器的请求后重新取地址、用新连接, 回到卡住的位置接着播.
+ * 收到自己那个播放器的请求后重新取地址、直链这次经本机代理, 回到卡住的位置接着播.
  */
 object PlaybackStallReopen {
     /**

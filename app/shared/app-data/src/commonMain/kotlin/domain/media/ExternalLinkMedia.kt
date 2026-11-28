@@ -12,6 +12,7 @@ package me.him188.ani.app.domain.media
 import kotlinx.atomicfu.locks.SynchronizedObject
 import kotlinx.atomicfu.locks.synchronized
 import kotlinx.serialization.Serializable
+import me.him188.ani.app.domain.media.range.ProxiedPlaybackOrigins
 import me.him188.ani.app.domain.media.selector.MediaSelector
 import me.him188.ani.app.videoplayer.link.PlaybackLinks
 import me.him188.ani.datasources.api.DefaultMedia
@@ -155,13 +156,13 @@ object ExternalLinkMedia {
      * 本机正在播的 [media] (交给播放器的是 [data]) 能交给别的设备直接播的地址; 不能交的为 null:
      * - 只交网页类数据源解析出来的地址 ([ResourceLocation.WebVideo]: 站点公开的页面), 以及别处交来、本机正在播的 (可以再转交)。
      *   网盘 (地址绑着账号, 多个地方同时取还可能被风控)、自建的媒体服务器 (地址里带访问凭据)、BT、本地与缓存的文件都不交;
-     * - 地址要是公网的 http(s): 本机代理 (HLS 去广告)、局域网里的别人够不着;
+     * - 地址要是公网的 http(s): 本机代理 (HLS 去广告)、局域网里的别人够不着; iOS 上视频文件经本机代理播时交它背后的原地址 ([ProxiedPlaybackOrigins]);
      * - 带 `Cookie` / `Authorization` 的不交 (登录信息);
      * - 太长的不交 (房间消息有大小上限)。
      */
     fun shareableOf(media: Media, data: MediaData?): ExternalLink? {
         if (media.download !is ResourceLocation.WebVideo && !isExternalLink(media)) return null
-        val uriData = data as? UriMediaData ?: return null
+        val uriData = (data as? UriMediaData)?.let(ProxiedPlaybackOrigins::originOf) ?: return null
         val link = ExternalLink(
             PlaybackLinks.currentUriOf(uriData.uri),
             uriData.headers.filterValues { it.isNotBlank() },

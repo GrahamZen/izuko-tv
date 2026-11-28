@@ -85,7 +85,7 @@ class PlayerSession(
 ) {
     val mediaResolver: MediaResolver by koin.inject()
     private val hlsPlaybackPreparer: HlsPlaybackPreparer by koin.inject()
-    // 只有 iOS 注册: 网盘原文件经本机代理多连接取 (见 ParallelRangePlayback)
+    // 只有 iOS 注册: 网盘原文件、卡死过的直链经本机代理取 (见 ParallelRangePlayback)
     private val parallelRangePlayback: ParallelRangePlayback? by lazy { koin.getOrNull() }
     private val getVideoScaffoldConfigUseCase: GetVideoScaffoldConfigUseCase by koin.inject()
     private val getMediaSourceInstancesUseCase: GetMediaSourceInstancesUseCase by koin.inject()
@@ -263,7 +263,7 @@ class PlayerSession(
                 behind.close()
                 logger.info { "Handing over to ${media.mediaId} at ${startAt}ms" }
             }
-            val preparedData = (parallelRangePlayback?.prepare(data)?.let { PreparedMediaData(it.data, it.session) } ?: prepareHlsPlaybackIfEnabled(
+            val preparedData = (parallelRangePlayback?.prepare(data, player, media.mediaId)?.let { PreparedMediaData(it.data, it.session) } ?: prepareHlsPlaybackIfEnabled(
                 data.forPlatformPlayer(),
                 media,
                 startPositionHintMillis = startAt.takeIf { it > 0L },

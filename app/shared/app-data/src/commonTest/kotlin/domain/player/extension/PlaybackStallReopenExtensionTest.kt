@@ -20,19 +20,19 @@ import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TestTimeSource
 
 /**
- * 连接卡死时原地重开: 回到卡住的位置; 同一条资源最多重开几次、两次之间隔多久; 换了资源重新算; 没选中资源时不做.
+ * 等数据卡死时原地重开: 带着卡住的资源回到卡住的位置; 同一条资源最多重开几次、两次之间隔多久; 换了资源重新算; 没选中资源时不做.
  */
 class PlaybackStallReopenExtensionTest {
     private val player = Any()
     private val time = TestTimeSource()
     private var mediaId: String? = "a"
-    private val reloads = mutableListOf<Long>()
+    private val reloads = mutableListOf<Pair<String, Long>>()
 
     private val extension = PlaybackStallReopenExtension(
         player = player,
         requests = emptyFlow(),
         currentMediaId = { mediaId },
-        reload = { reloads += it; true },
+        reload = { media, position -> reloads += media to position; true },
         timeSource = time,
     )
 
@@ -41,7 +41,7 @@ class PlaybackStallReopenExtensionTest {
     @Test
     fun `reopens at the stalled position`() = runTest {
         assertTrue(extension.handle(request(5_000)))
-        assertEquals(listOf(5_000L), reloads)
+        assertEquals(listOf("a" to 5_000L), reloads)
     }
 
     @Test

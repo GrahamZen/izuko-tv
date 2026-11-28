@@ -13,7 +13,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import me.him188.ani.app.domain.foundation.DefaultHttpClientProvider
+import me.him188.ani.app.domain.media.hls.HlsPlaybackPreparerResult
 import me.him188.ani.app.domain.media.hls.KtorNetworkHlsProxyServer
+import me.him188.ani.app.domain.media.isPublicHttpUrl
 import me.him188.ani.app.domain.settings.NoProxyProvider
 import me.him188.ani.app.platform.PlaybackRequestHints
 import org.openani.mediamp.source.UriMediaData
@@ -29,6 +31,7 @@ import java.nio.charset.StandardCharsets
 import java.util.Collections
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.concurrent.thread
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
@@ -42,14 +45,26 @@ import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource
 
 /**
- * 网盘原文件经本机代理多连接播放 (iOS 用的那套代理): 播放器要的那一段由几条连接同时拉、按顺序送; 请求头照带, 提示不外发;
- * 网盘不认范围请求时不走代理; 播放器断开后没送的块不再拉; 跳转后的小请求从读前窗口答, 不排在长请求的块后面.
+ * iOS 上视频文件经本机代理播放: 播放器要的那一段由几条连接同时拉、按顺序送; 请求头照带, 提示不外发;
+ * 不带提示的直链只有卡死过才经代理, 两条通道; 本机与局域网地址、播放列表、源站不认范围请求时不走代理; 源站回得比要的短时接着要;
+ * 播放器断开后没送的块不再拉; 跳转后的小请求从读前窗口答, 不排在长请求的块后面; 小请求接连来时长请求也留着一条通道.
  */
 class ParallelRangePlaybackTest {
     private val file = ByteArray(2 * 1024 * 1024) { (it * 31 % 251).toByte() }
 
-    private fun playback(provider: DefaultHttpClientProvider, enabled: Boolean = true) =
-        ParallelRangePlayback(provider, KtorNetworkHlsProxyServer.Factory, enabled)
+    private fun playback(provider: DefaultHttpClientProvider, enabled: Boolean = true, isRemote: (String) -> Boolean = ::isPublicHttpUrl) =
+        ParallelRangePlayback(provider, KtorNetworkHlsProxyServer.Factory, enabled, isRemote)
+
+    /** 卡死过的资源: 先记下这个播放器卡在它上面, 再装它 */
+    private suspend fun ParallelRangePlayback.prepareStalled(data: UriMediaData): HlsPlaybackPreparerResult? {
+        val player = Any()
+        StalledMediaRoute.markStalled(player, "stalled")
+        try {
+            return prepare(data, player, "stalled")
+        } finally {
+            StalledMediaRoute.forget(player)
+        }
+    }
 
     private fun hinted(url: String, connections: Int = 8, extra: Map<String, String> = emptyMap()) = UriMediaData(
         url,
@@ -174,14 +189,76 @@ class ParallelRangePlaybackTest {
     }
 
     @Test
-    fun `nothing happens without the hint or off iOS`() = runTest {
+    fun `links without the hint play directly unless they stalled and nothing is proxied off iOS`() = runTest {
         val origin = RangeOrigin(file)
         val provider = DefaultHttpClientProvider(NoProxyProvider, backgroundScope)
         try {
-            assertNull(withContext(Dispatchers.Default) { playback(provider).prepare(UriMediaData("${origin.baseUrl}/v/file")) })
+            val direct = UriMediaData("${origin.baseUrl}/v/01.mp4")
+            // 平常的公网直链: AVPlayer 自己连
+            assertNull(withContext(Dispatchers.Default) { playback(provider, isRemote = { true }).prepare(direct, Any(), "a") })
+            // 卡死过的本机、局域网地址
+            assertNull(withContext(Dispatchers.Default) { playback(provider).prepareStalled(direct) })
             assertNull(withContext(Dispatchers.Default) { playback(provider, enabled = false).prepare(hinted("${origin.baseUrl}/v/file")) })
             assertEquals(0, origin.requests.get())
         } finally {
+            provider.forceReleaseAll()
+            origin.close()
+        }
+    }
+
+    @Test
+    fun `a stalled direct link goes through the proxy on two connections`() = runTest {
+        val origin = RangeOrigin(file, requiredHeader = "Referer" to "https://site.example/")
+        val provider = DefaultHttpClientProvider(NoProxyProvider, backgroundScope)
+        val direct = UriMediaData("${origin.baseUrl}/v/01.mp4", mapOf("Referer" to "https://site.example/"))
+        val result = withContext(Dispatchers.Default) { playback(provider, isRemote = { true }).prepareStalled(direct) }
+        try {
+            assertNotNull(result)
+            assertEquals(2, (result.session as ParallelRangeProxySession).laneClients)
+            val (status, _, body) = withContext(Dispatchers.IO) { get(result.data.uri, "bytes=5000-900000") }
+            assertEquals(206, status)
+            assertContentEquals(file.copyOfRange(5000, 900001), body)
+            // 交给别的设备的是原地址与请求头
+            assertEquals(direct.uri, ProxiedPlaybackOrigins.originOf(result.data).uri)
+            assertEquals(direct.headers, ProxiedPlaybackOrigins.originOf(result.data).headers)
+        } finally {
+            result?.session?.close()
+            provider.forceReleaseAll()
+            origin.close()
+        }
+        assertEquals(result.data.uri, ProxiedPlaybackOrigins.originOf(result.data).uri)
+    }
+
+    @Test
+    fun `playlists are played directly`() = runTest {
+        val playlist = "#EXTM3U\n#EXT-X-VERSION:3\n#EXTINF:10,\nseg-1.ts\n".encodeToByteArray()
+        val origin = RangeOrigin(playlist)
+        val provider = DefaultHttpClientProvider(NoProxyProvider, backgroundScope)
+        try {
+            // 地址带 .m3u8 的归 HLS 那边, 不去探
+            assertNull(withContext(Dispatchers.Default) { playback(provider, isRemote = { true }).prepareStalled(UriMediaData("${origin.baseUrl}/v/index.m3u8?t=1")) })
+            assertEquals(0, origin.requests.get())
+            // 地址看不出、内容是播放列表的
+            assertNull(withContext(Dispatchers.Default) { playback(provider, isRemote = { true }).prepareStalled(UriMediaData("${origin.baseUrl}/play?id=1")) })
+        } finally {
+            provider.forceReleaseAll()
+            origin.close()
+        }
+    }
+
+    @Test
+    fun `an origin answering less than asked is stitched together`() = runTest {
+        // 源站每次最多回 64 KiB (Content-Range 照实写): 一块要好几次才拉完, 不能算成几次失败
+        val origin = RangeOrigin(file, maxReplyBytes = 64 * 1024)
+        val provider = DefaultHttpClientProvider(NoProxyProvider, backgroundScope)
+        val result = withContext(Dispatchers.Default) { playback(provider, isRemote = { true }).prepareStalled(UriMediaData("${origin.baseUrl}/v/01.mp4")) }
+        try {
+            assertNotNull(result)
+            val (status, _, body) = withContext(Dispatchers.IO) { get(result.data.uri, "bytes=0-1999999") }
+            assertEquals(206, status)
+            assertContentEquals(file.copyOfRange(0, 2000000), body)
+        } finally {
+            result?.session?.close()
             provider.forceReleaseAll()
             origin.close()
         }
@@ -400,6 +477,90 @@ class ParallelRangePlaybackTest {
         }
     }
 
+    @Test
+    fun `a long read keeps a connection while small reads keep coming`() = runTest {
+        // 开播时 AVPlayer 一边顺着读、一边接连在后面发小请求; 直链只有两条通道, 小请求开的读前窗口不能把长请求饿住
+        val content = ByteArray(24 * 1024 * 1024) { (it * 31 % 251).toByte() }
+        val origin = RangeOrigin(content, bytesPerSecond = 1024 * 1024, firstByteDelayMillis = 150)
+        val provider = DefaultHttpClientProvider(NoProxyProvider, backgroundScope)
+        val result = withContext(Dispatchers.Default) {
+            playback(provider, isRemote = { true }).prepareStalled(UriMediaData("${origin.baseUrl}/v/01.mp4", emptyMap()))
+        }
+        val longRead = AtomicBoolean(true)
+        val received = AtomicLong(0)
+        try {
+            assertNotNull(result)
+            val reader = thread(isDaemon = true) {
+                val connection = URI(result.data.uri).toURL().openConnection() as HttpURLConnection
+                try {
+                    connection.inputStream.use { input ->
+                        val buffer = ByteArray(8192)
+                        while (longRead.get()) {
+                            val read = input.read(buffer)
+                            if (read < 0) break
+                            received.addAndGet(read.toLong())
+                        }
+                    }
+                } catch (_: Exception) {
+                    // 会话关了
+                } finally {
+                    connection.disconnect()
+                }
+            }
+            val (bytes, elapsed) = withContext(Dispatchers.IO) {
+                Thread.sleep(300)
+                val before = received.get()
+                val started = TimeSource.Monotonic.markNow()
+                var place = 6 * 1024 * 1024
+                while (started.elapsedNow() < 4.seconds && place + 64 * 1024 <= content.size) {
+                    sequentialSmallReads(result.data.uri, content, start = place, count = 1)
+                    place += 1280 * 1024
+                }
+                received.get() - before to started.elapsedNow()
+            }
+            longRead.set(false)
+            reader.join(5000)
+            val perSecond = bytes * 1000 / elapsed.inWholeMilliseconds.coerceAtLeast(1)
+            assertTrue(perSecond >= 400 * 1024, "小请求接连来的 $elapsed 里长请求只拿到 ${bytes / 1024} KiB")
+        } finally {
+            longRead.set(false)
+            result?.session?.close()
+            provider.forceReleaseAll()
+            origin.close()
+        }
+    }
+
+    @Test
+    fun `a read ahead on two connections is fetched in large pieces`() = runTest {
+        // 直链每段都要等一次首字节, 段太小时两条连接合起来也拉不快
+        val content = ByteArray(8 * 1024 * 1024) { (it * 31 % 251).toByte() }
+        val origin = RangeOrigin(content)
+        val provider = DefaultHttpClientProvider(NoProxyProvider, backgroundScope)
+        val result = withContext(Dispatchers.Default) {
+            playback(provider, isRemote = { true }).prepareStalled(UriMediaData("${origin.baseUrl}/v/01.mp4", emptyMap()))
+        }
+        try {
+            assertNotNull(result)
+            withContext(Dispatchers.IO) {
+                val before = origin.requests.get()
+                sequentialSmallReads(result.data.uri, content, start = 4 * 1024 * 1024, count = 1)
+                // 等窗口拉完: 段与段之间可能一个连接也没有, 要连着一阵没有新请求
+                val started = TimeSource.Monotonic.markNow()
+                var seen = -1
+                while (started.elapsedNow() < 10.seconds && (origin.active.get() > 0 || origin.requests.get() != seen)) {
+                    seen = origin.requests.get()
+                    Thread.sleep(300)
+                }
+                // 1 MiB 的窗口分 4 段
+                assertEquals(4, origin.requests.get() - before)
+            }
+        } finally {
+            result?.session?.close()
+            provider.forceReleaseAll()
+            origin.close()
+        }
+    }
+
     /**
      * 假网盘: 每个连接一个线程, 认 Range (除非 [ignoreRange]), 每个连接限速 [bytesPerSecond] (0 = 不限), 记下同时最多几个连接.
      * 要求带 [requiredHeader] 时没带的回 403.
@@ -413,6 +574,8 @@ class ParallelRangePlaybackTest {
         private val strictUserAgent: String? = null,
         /** 每个请求等这么久才回 (网盘的首字节要等几百毫秒到两秒多). */
         private val firstByteDelayMillis: Long = 0,
+        /** 范围请求每次最多回这么多 (Content-Range 照实写), 0 = 要多少回多少. */
+        private val maxReplyBytes: Int = 0,
     ) : AutoCloseable {
         private val closed = AtomicBoolean(false)
         private val serverSocket = ServerSocket(0, 200, InetAddress.getByName("127.0.0.1"))
@@ -465,7 +628,9 @@ class ParallelRangePlaybackTest {
                         return
                     }
                     val range = headers["range"]?.takeIf { !ignoreRange }?.let { parseByteRange(it, content.size.toLong()) }
-                    val (start, end) = range?.let { it.first.toInt() to it.last.toInt() } ?: (0 to content.size - 1)
+                    val (start, end) = range?.let { it.first.toInt() to it.last.toInt() }
+                        ?.let { (start, end) -> start to if (maxReplyBytes > 0) minOf(end, start + maxReplyBytes - 1) else end }
+                        ?: (0 to content.size - 1)
                     val head = buildString {
                         if (range != null) {
                             append("HTTP/1.1 206 Partial Content\r\nContent-Range: bytes $start-$end/${content.size}\r\n")

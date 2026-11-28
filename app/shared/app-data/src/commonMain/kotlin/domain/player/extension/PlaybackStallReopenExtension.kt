@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import me.him188.ani.app.domain.episode.EpisodeSession
+import me.him188.ani.app.domain.media.range.StalledMediaRoute
 import me.him188.ani.app.videoplayer.link.PlaybackStallReopen
 import me.him188.ani.utils.logging.info
 import me.him188.ani.utils.logging.logger
@@ -23,21 +24,22 @@ import kotlin.time.TimeMark
 import kotlin.time.TimeSource
 
 /**
- * 播放器认出连接卡死 (见 [PlaybackStallReopen]) 时原地重新打开当前资源: [PlayerExtensionContext.reloadCurrentMedia] 重新取地址、
- * 用新连接, 回到卡住的位置接着播. 不拉黑、不换源: 片源本身是好的, 是这一条连接挂住了.
+ * 播放器认出等数据卡死 (见 [PlaybackStallReopen]) 时原地重新打开当前资源: 记下这个播放器卡在这条资源上 ([StalledMediaRoute],
+ * iOS 上直链这次经本机代理, AVPlayer 自己连源站的那条连接坏了), 再 [PlayerExtensionContext.reloadCurrentMedia] 重新取地址,
+ * 回到卡住的位置接着播. 不拉黑、不换源: 片源本身是好的, 是这一条连接挂住了.
  *
  * 同一处最多连着重开 [MAX_REOPENS] 次 (重开后往下播过 [MOVED_ON] 再卡算另一处), 两次之间至少隔 [MIN_INTERVAL];
  * 用完了不再管, 播放器接着等, 用户可以自己换源.
  * 只接自己这个播放器的请求 (同时可能还有一个保留在后台的播放会话).
  *
  * @param currentMediaId 正在播的资源; 还没选中时 `null`
- * @param reload 原地重开到给的位置, 见 [PlayerExtensionContext.reloadCurrentMedia]
+ * @param reload 把卡住的资源原地重开到给的位置
  */
 class PlaybackStallReopenExtension(
     private val player: Any,
     private val requests: Flow<PlaybackStallReopen.Request>,
     private val currentMediaId: suspend () -> String?,
-    private val reload: suspend (positionMillis: Long) -> Boolean,
+    private val reload: suspend (mediaId: String, positionMillis: Long) -> Boolean,
     private val timeSource: TimeSource = TimeSource.Monotonic,
 ) : PlayerExtension("PlaybackStallReopen") {
     private var mediaId: String? = null
@@ -70,9 +72,13 @@ class PlaybackStallReopenExtension(
         reopens++
         lastReopen = timeSource.markNow()
         lastReopenPositionMillis = request.positionMillis
-        val reloaded = reload(request.positionMillis)
+        val reloaded = reload(current, request.positionMillis)
         logger.info { "Playback stalled (${request.reason}) on $current at ${request.positionMillis}ms, reopened in place (#$reopens): $reloaded" }
         return reloaded
+    }
+
+    override suspend fun onClose() {
+        StalledMediaRoute.forget(player)
     }
 
     companion object : EpisodePlayerExtensionFactory<PlaybackStallReopenExtension> {
@@ -92,7 +98,10 @@ class PlaybackStallReopenExtension(
                 player = context.player,
                 requests = PlaybackStallReopen.requests,
                 currentMediaId = { context.sessionFlow.first().fetchSelectFlow.first()?.mediaSelector?.selected?.value?.mediaId },
-                reload = { position -> context.reloadCurrentMedia(position, playWhenReady = true) },
+                reload = { mediaId, position ->
+                    StalledMediaRoute.markStalled(context.player, mediaId)
+                    context.reloadCurrentMedia(position, playWhenReady = true)
+                },
             )
     }
 }

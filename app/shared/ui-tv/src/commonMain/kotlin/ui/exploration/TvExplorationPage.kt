@@ -60,6 +60,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.launch
 import me.him188.ani.app.data.models.player.EpisodeHistory
@@ -451,8 +452,8 @@ private fun TvExplorationPageContent(
             }
         }
     // 立即观看: 直接进播放页 —— 有观看进度接着播下一集, 没有则从第一集开始.
-    // 分集信息是卡片聚焦后才去拉的: 还没到 (触屏上点之前卡片没聚焦过, 遥控器上聚焦后马上按) 就当场取,
-    // 最多等 [TV_PLAY_INFO_BUDGET_MILLIS]; 取不到才进详情页, 保证点击总有响应
+    // 分集信息是卡片聚焦后才去拉的: 还没到 (触屏上点之前卡片没聚焦过, 遥控器上聚焦后马上按) 就当场取, 等到有能播的那一集
+    // (条目那一行先进库、分集稍后才到, 只有条目的那一份不算), 最多等 [TV_PLAY_INFO_BUDGET_MILLIS]; 取不到才进详情页, 保证点击总有响应
     fun SubjectCollectionInfo.episodeToPlay(): Int? = progressInfo.nextEpisodeIdToPlay ?: episodes.firstOrNull()?.episodeId
     val navigateToPlay: (subjectId: Int, name: String, cover: String, source: String) -> Unit =
         { subjectId, name, cover, source ->
@@ -474,15 +475,16 @@ private fun TvExplorationPageContent(
                 } else {
                     // 取的这段时间按返回 = 反悔 (见下方 BackHandler)
                     pendingNav = scope.launch {
-                        val fetched = try {
-                            withTimeoutOrNull(TV_PLAY_INFO_BUDGET_MILLIS) { collectionRepo.subjectCollectionFlow(subjectId).first() }
+                        val episodeId = try {
+                            withTimeoutOrNull(TV_PLAY_INFO_BUDGET_MILLIS) {
+                                collectionRepo.subjectCollectionFlow(subjectId).mapNotNull { it.episodeToPlay() }.first()
+                            }
                         } catch (e: CancellationException) {
                             throw e
                         } catch (_: Exception) {
                             null
                         }
                         pendingNav = null
-                        val episodeId = fetched?.episodeToPlay()
                         if (episodeId != null) {
                             play(episodeId)
                         } else {

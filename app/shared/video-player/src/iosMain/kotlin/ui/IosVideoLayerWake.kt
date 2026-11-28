@@ -55,7 +55,7 @@ import platform.CoreMedia.kCMTimeZero
  * item 打不开时把 AVPlayer 自己的错误记录也记下来 (见 [IosAvPlayerErrorLog]).
  *
  * 另外, 只有声音、画面解不了的视频在这里判出来, 报成播放失败 (见 [IosUndecodableVideo]); 等数据卡死 (缓冲一点不长) 也在这里判出来,
- * 往后跳一点或请求原地重开 (见 [IosDataStall]).
+ * 请求原地重开 (见 [IosDataStall]).
  *
  * 还有一种: 在等数据 (缓冲) 时 AVPlayer 的速率与设定的倍速 ([PlaybackSpeed]) 对不上, 就直接改成设定的. mediamp 的 `PlaybackSpeed.set` 只在在播时下发,
  * 长按倍速撞上缓冲时松手、或缓冲中在菜单里改倍速, 都没落到 AVPlayer 上; AVPlayer 按长按时的倍速等「不会再卡」的缓冲, 片源跟不上 2 倍速就一直等,
@@ -122,7 +122,7 @@ internal object IosVideoLayerWake {
                     IosUndecodableVideo.fail(current)
                 }
                 val waitingForData = itemReady && avPlayer.rate > 0f && status == AVPlayerTimeControlStatusWaitingToPlayAtSpecifiedRate
-                if (current != null) IosDataStall.nudge(dataStall.check(current, waitingForData, time, POLL_MILLIS), player, current, time)
+                if (current != null && dataStall.check(current, waitingForData, POLL_MILLIS)) IosDataStall.reopen(player, current, time)
 
                 if (status == AVPlayerTimeControlStatusWaitingToPlayAtSpecifiedRate &&
                     desiredSpeed != null && desiredSpeed > 0f && avPlayer.rate > 0f && avPlayer.rate != desiredSpeed
